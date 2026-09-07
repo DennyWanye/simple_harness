@@ -317,6 +317,9 @@ class SdkRuntimeIngress:
         ready = self._stack.require_ready()
         return ready.client.query(RunId(run_id))
 
+    def read_authorization_decision(self, *, run_id: str, decision_id: str):
+        return self._stack.read_authorization_decision(run_id=run_id, decision_id=decision_id)
+
     def list_open_authorizations(
         self,
         *,

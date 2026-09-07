@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import logging
 import os
@@ -12,7 +14,7 @@ import stat
 import threading
 from contextvars import ContextVar, Token
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Awaitable, Callable, Mapping
 
 SDK_EVENTS_FILENAME = "sdk-observability-events.jsonl"
 SDK_RING_FILENAME = "sdk-observability-ring.json"
@@ -72,7 +74,7 @@ class HostSdkObservability:
         self.correlation = HostCorrelationPolicy()
         self._logger = logger or logging.getLogger("simple_harness.host_observability")
         self._lock = threading.Lock()
-        self._snapshot_sources: dict[str, Callable[[], Mapping[str, Any]]] = {}
+        self._snapshot_sources: dict[str, Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]]] = {}
         self._degraded_codes: set[str] = set()
 
         try:
@@ -106,7 +108,7 @@ class HostSdkObservability:
         self.sink = CompositeSink(children, child_capacity=256, close_timeout=1.0)
 
     def register_snapshot_source(
-        self, name: str, source: Callable[[], Mapping[str, Any]]
+        self, name: str, source: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]]
     ) -> None:
         with self._lock:
             self._snapshot_sources[name] = source
@@ -122,6 +124,46 @@ class HostSdkObservability:
         self.correlation.reset(token)
 
     def export(self) -> Mapping[str, str]:
+        """Synchronous compatibility; async sources explicitly require export_async."""
+        with self._lock:
+            sources = tuple(self._snapshot_sources.items())
+        snapshots, degraded = {}, set(self._degraded_codes)
+        for name, source in sources:
+            try:
+                value = source()
+                if inspect.isawaitable(value):
+                    if inspect.iscoroutine(value):
+                        value.close()
+                    snapshots[name] = {"health": "degraded", "error_code": "snapshot_requires_async_export"}
+                    degraded.add(f"{name}_snapshot_requires_async_export")
+                else:
+                    snapshots[name] = dict(value)
+            except Exception:
+                snapshots[name] = {"health": "degraded", "error_code": "snapshot_unavailable"}
+                degraded.add(f"{name}_snapshot_unavailable")
+        return self._export_snapshots(snapshots, degraded)
+
+    async def export_async(self) -> Mapping[str, str]:
+        """Collect SDK-owned aggregate snapshots with a bounded await per source.
+
+        No background tasks or cross-loop database access. Caller cancellation
+        propagates; snapshot exceptions are represented without exception text.
+        """
+        with self._lock:
+            sources = tuple(self._snapshot_sources.items())
+        snapshots, degraded = {}, set(self._degraded_codes)
+        for name, source in sources:
+            try:
+                value = source()
+                if inspect.isawaitable(value):
+                    value = await asyncio.wait_for(value, timeout=0.5)
+                snapshots[name] = dict(value)
+            except Exception:
+                snapshots[name] = {"health": "degraded", "error_code": "snapshot_unavailable"}
+                degraded.add(f"{name}_snapshot_unavailable")
+        return self._export_snapshots(snapshots, degraded)
+
+    def _export_snapshots(self, snapshots, degraded) -> Mapping[str, str]:
         """Best-effort bounded exports; never inspect product payload or databases."""
 
         statuses: dict[str, str] = {}
@@ -135,19 +177,6 @@ class HostSdkObservability:
             self.log_dir / SDK_RING_FILENAME, ring_payload
         )
 
-        with self._lock:
-            sources = tuple(self._snapshot_sources.items())
-        snapshots: dict[str, Any] = {}
-        degraded = set(self._degraded_codes)
-        for name, source in sources:
-            try:
-                snapshots[name] = dict(source())
-            except BaseException:
-                snapshots[name] = {
-                    "health": "degraded",
-                    "error_code": "snapshot_unavailable",
-                }
-                degraded.add(f"{name}_snapshot_unavailable")
         snapshot_payload = {
             "schema_version": 1,
             "health": "degraded" if degraded else "ok",

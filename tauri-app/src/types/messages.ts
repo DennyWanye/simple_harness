@@ -922,8 +922,10 @@ export interface MemoryForgetUndoResponse {
 export interface EmbedderStatusResponse {
   type: "embedder_status_response";
   payload: {
-    /** Embedder.warmup() 是否已完成（mock 也算 ready）。 */
+    /** 模型是否已加载可用；查询状态不会触发加载。 */
     is_ready: boolean;
+    state?: "cold" | "loading" | "ready" | "failed";
+    model_name?: string;
     /** True = 当前走 mock 路径（语义搜索能力受限）。 */
     is_mock: boolean;
     /** Embedder 期望的模型路径（绝对路径，已脱敏不含密码）。 */

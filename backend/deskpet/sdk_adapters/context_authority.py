@@ -10,14 +10,18 @@ SessionDB and the Inspector may retain.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from simple_harness import freeze_json, thaw_json
+
+_LOG = logging.getLogger(__name__)
 
 
 class SnapshotContractConflict(RuntimeError):
@@ -344,6 +348,10 @@ class ContextRouteLedgerError(RuntimeError):
         super().__init__(message or self.code)
 
 
+class ContextRouteWorkspaceAlreadyBound(ContextRouteLedgerError):
+    code = "context_route_workspace_reuse_requires_new_run"
+
+
 class ContextRouteLedgerStore:
     """Append-only v45 context/route ledger on the Host human-memory state.db."""
 
@@ -403,13 +411,40 @@ class ContextRouteLedgerStore:
     async def _connect(self):
         import aiosqlite
 
-        db = await aiosqlite.connect(self._db_path)
-        # Row supports positional access (ledger reads) and named access
-        # (evidence ingress `_tx` helpers sharing this transaction).
-        db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys=ON")
-        await db.execute("PRAGMA busy_timeout=5000")
-        return db
+        db = aiosqlite.connect(self._db_path)
+        connecting = asyncio.ensure_future(db)
+        try:
+            # Keep ownership even when cancellation arrives while SQLite is
+            # opening on its worker thread; finish opening before closing it.
+            await asyncio.shield(connecting)
+            # Positional and named access are both used by ledger consumers.
+            db.row_factory = aiosqlite.Row
+            await db.execute("PRAGMA foreign_keys=ON")
+            await db.execute("PRAGMA busy_timeout=5000")
+            return db
+        except BaseException:
+            async def close_owned():
+                try:
+                    await connecting
+                except BaseException:
+                    pass
+                await db.close()
+
+            cleanup = asyncio.create_task(close_owned())
+            # Further cancel requests must not detach the connection cleanup.
+            # This is an ownership guarantee, not a wall-clock timeout claim.
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            try:
+                cleanup.result()
+            except BaseException:
+                _LOG.warning("context_route_connection_cleanup_unavailable")
+            raise
 
     async def record_snapshot_receipt(
         self,
@@ -420,6 +455,8 @@ class ContextRouteLedgerStore:
         payload_hash: str,
         expected_request_fingerprint: str,
         source_revisions: Mapping[str, int],
+        occurrence_coordinator: Any = None,
+        occurrence_presentation: Any = None,
     ) -> tuple[str, int]:
         """Allocate (snapshot_id, snapshot_revision); idempotent on replay."""
 
@@ -428,7 +465,7 @@ class ContextRouteLedgerStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             cursor = await db.execute(
-                "SELECT snapshot_id,snapshot_revision FROM run_context_snapshot_receipts "
+                "SELECT * FROM run_context_snapshot_receipts "
                 "WHERE sdk_run_id=? AND provider_turn_ordinal=? AND payload_hash=? "
                 "ORDER BY snapshot_revision DESC LIMIT 1",
                 (run, provider_turn_ordinal, payload_hash),
@@ -436,8 +473,15 @@ class ContextRouteLedgerStore:
             existing = await cursor.fetchone()
             await cursor.close()
             if existing is not None:
+                if occurrence_coordinator is not None:
+                    from deskpet.memory.prospective_occurrence import decode_snapshot, presentation_payload
+                    _,original=decode_snapshot(existing)
+                    if original is None or presentation_payload(original)!=presentation_payload(occurrence_presentation):
+                        raise ContextRouteLedgerError("s5c_snapshot_replay_group_differs")
+                    await occurrence_coordinator.record_tx(db,prepared=occurrence_presentation,
+                        snapshot_id=str(existing['snapshot_id']),snapshot_receipt_hash=str(existing['receipt_hash']))
                 await db.commit()
-                return str(existing[0]), int(existing[1])
+                return str(existing['snapshot_id']), int(existing['snapshot_revision'])
             cursor = await db.execute(
                 "SELECT COALESCE(MAX(snapshot_revision),0) FROM "
                 "run_context_snapshot_receipts WHERE sdk_run_id=?",
@@ -447,18 +491,23 @@ class ContextRouteLedgerStore:
             await cursor.close()
             revision = head + 1
             snapshot_id = f"ctx-snap:{run}:{revision}:{payload_hash[:16]}"
-            receipt_hash = canonical_sha256(
-                {
-                    "expected_request_fingerprint": expected_request_fingerprint,
-                    "payload_hash": payload_hash,
-                    "prior_context_revision": prior_context_revision,
-                    "provider_turn_ordinal": provider_turn_ordinal,
-                    "sdk_run_id": run,
-                    "snapshot_id": snapshot_id,
-                    "snapshot_revision": revision,
-                    "source_revisions": dict(source_revisions),
-                }
-            )
+            receipt_body = {
+                "expected_request_fingerprint":expected_request_fingerprint,
+                "payload_hash":payload_hash,"prior_context_revision":prior_context_revision,
+                "provider_turn_ordinal":provider_turn_ordinal,"sdk_run_id":run,
+                "snapshot_id":snapshot_id,"snapshot_revision":revision,
+                "source_revisions":dict(source_revisions),
+            }
+            stored_revisions = dict(source_revisions)
+            if occurrence_coordinator is not None:
+                from deskpet.memory.prospective_occurrence import presentation_payload
+                group = presentation_payload(occurrence_presentation)
+                receipt_body.update(host_snapshot_schema_version=2,host_occurrence_group=group)
+                # Versioned Host storage envelope; only the true inner revisions
+                # travel in the SDK RunContextSnapshot.source_revisions mapping.
+                stored_revisions = dict(host_snapshot_schema_version=2,
+                    source_revisions=dict(source_revisions),host_occurrence_group=group)
+            receipt_hash = canonical_sha256(receipt_body)
             await db.execute(
                 "INSERT INTO run_context_snapshot_receipts("
                 "snapshot_id,sdk_run_id,provider_turn_ordinal,prior_context_revision,"
@@ -471,13 +520,16 @@ class ContextRouteLedgerStore:
                     provider_turn_ordinal,
                     prior_context_revision,
                     revision,
-                    canonical_json(dict(source_revisions)),
+                    canonical_json(stored_revisions),
                     payload_hash,
                     expected_request_fingerprint,
                     receipt_hash,
                     float(self._clock()),
                 ),
             )
+            if occurrence_coordinator is not None:
+                await occurrence_coordinator.record_tx(db,prepared=occurrence_presentation,
+                    snapshot_id=snapshot_id,snapshot_receipt_hash=receipt_hash)
             await self._ingest_fact_tx(
                 db,
                 sdk_run_id=run,
@@ -509,6 +561,7 @@ class ContextRouteLedgerStore:
         origin: str,
         idempotency_key: str,
         request_fingerprint: str | None = None,
+        require_unbound_run: bool = False,
     ) -> None:
         """Durably record one route / no-recall decision (idempotent)."""
 
@@ -541,6 +594,17 @@ class ContextRouteLedgerStore:
                         "sdk_context_route_decision_immutable"
                     )
                 return
+            if require_unbound_run:
+                if self._evidence_ingress is None:
+                    raise ContextRouteLedgerError("context_route_evidence_authority_missing")
+                bound = await self._evidence_ingress.resolve_run_scope_tx(db, receipt.run_id)
+                cursor = await db.execute(
+                    "SELECT 1 FROM context_route_decisions WHERE sdk_run_id=? AND task_scope_id IS NOT NULL LIMIT 1",
+                    (receipt.run_id,))
+                prior_task = await cursor.fetchone()
+                await cursor.close()
+                if bound is not None or prior_task is not None:
+                    raise ContextRouteWorkspaceAlreadyBound()
             await db.execute(
                 "INSERT INTO context_route_decisions("
                 "decision_id,sdk_run_id,provider_turn_ordinal,route,origin,"
@@ -672,11 +736,13 @@ class ContextRouteLedgerStore:
         finally:
             await db.close()
 
-    async def latest_route_decision_for_run(self, sdk_run_id: str) -> Mapping[str, Any] | None:
+    async def latest_route_decision_for_run(self, sdk_run_id: str, *, task_only: bool = False) -> Mapping[str, Any] | None:
         """Most recent durable route decision of one Run (S5b Task 3 handler gate).
 
         ``task_scope_id`` is ``None`` for standalone routes → ``task_scope_update``
-        is rejected with ``task_scope_update_scope_unbound``.
+        is rejected with ``task_scope_update_scope_unbound``. ``task_only``
+        retains the latest actual task association even after a standalone route;
+        it is used to reject unsupported same-Run workspace Scope replacement.
         """
 
         db = await self._connect()
@@ -684,7 +750,8 @@ class ContextRouteLedgerStore:
             cursor = await db.execute(
                 "SELECT route,origin,task_scope_id,receipt_id,provider_turn_ordinal,recorded_at "
                 "FROM context_route_decisions WHERE sdk_run_id=? "
-                "ORDER BY provider_turn_ordinal DESC, recorded_at DESC, decision_id DESC LIMIT 1",
+                + ("AND task_scope_id IS NOT NULL " if task_only else "")
+                + "ORDER BY provider_turn_ordinal DESC, recorded_at DESC, decision_id DESC LIMIT 1",
                 (str(sdk_run_id),),
             )
             row = await cursor.fetchone()
@@ -712,6 +779,7 @@ class ContextRouteLedgerStore:
         verdict: str,
         decision_id: str | None,
         detail: Mapping[str, Any],
+        wait_for_lock: bool = True,
     ) -> None:
         """Record route tool lineage; idempotent per (run, effect_id)."""
 
@@ -731,6 +799,10 @@ class ContextRouteLedgerStore:
         )
         db = await self._connect()
         try:
+            if not wait_for_lock:
+                # Cancellation audit must not queue behind the normal 5s
+                # SQLite writer wait before rollback/close can complete.
+                await db.execute("PRAGMA busy_timeout=0")
             await db.execute("BEGIN IMMEDIATE")
             cursor = await db.execute(
                 "SELECT invocation_hash FROM context_route_tool_invocations "
@@ -740,6 +812,8 @@ class ContextRouteLedgerStore:
             existing = await cursor.fetchone()
             await cursor.close()
             if existing is not None:
+                if "typed_carrier" in detail and str(existing[0]) != invocation_hash:
+                    raise ContextRouteLedgerError("sdk_context_route_typed_carrier_immutable")
                 await db.commit()
                 return
             await db.execute(
@@ -819,7 +893,7 @@ def _resolve_window_tokens(metadata: Mapping[str, Any]) -> int | None:
     return None
 
 
-def _pending_occurrence_message(pending: tuple[Any, ...]) -> Any:
+def _pending_occurrence_message(pending: tuple[Any, ...], *, overdue_keys=frozenset()) -> Any:
     """Bounded, Host-authored summary of eligible pending occurrences."""
 
     from simple_harness.contracts.messages import Message, MessageRole
@@ -830,6 +904,7 @@ def _pending_occurrence_message(pending: tuple[Any, ...]) -> Any:
             "occurred_at": float(entry.occurred_at),
             "occurrence_key": entry.occurrence_key,
             "memory_id": entry.memory_id,
+            "overdue": entry.occurrence_key in overdue_keys,
         }
         for entry in pending[:8]
     ]
@@ -852,6 +927,7 @@ def _plan_turn_messages(
     window_tokens: int | None,
     *,
     extra_protected: Any = None,
+    exact_tool_sources: bool = False,
 ) -> tuple[tuple[Any, ...], dict[str, int]]:
     """Per-turn causal-group + frozen-budget assembly over the Run context.
 
@@ -897,7 +973,12 @@ def _plan_turn_messages(
         }
         for m in tail
     ]
-    plan = plan_recent_causal_groups(history)
+    # With an actual source projector, generic synthetic page:causal locators
+    # must not replace unpageable control/typed carriers. Keep their true bytes
+    # for the original budget checks, or fail the budget without losing proof.
+    plan = plan_recent_causal_groups(history, **({"large_result_bytes":
+        max((len(row["content"].encode("utf-8")) for row in history), default=0) + 1}
+        if exact_tool_sources else {}))
     protected_caps = PARTITION_CAPS[tier]["protected"]
     protected_bytes = sum(
         len(_message_text(m).encode("utf-8")) for m in protected
@@ -1014,7 +1095,13 @@ class ProductRunContextAuthority:
         reconcile: Any = None,
         closure_reader: Any = None,
         binding_store: Any = None,
+        typed_use_authority: Any = None,
+        occurrence_coordinator: Any = None,
+        current_tool_projector: Any = None,
     ) -> None:
+        self._occurrences = occurrence_coordinator
+        self._typed_use_authority = typed_use_authority
+        self._current_tool_projector = current_tool_projector
         self._ports_resolver = ports_resolver
         self._exposure_resolver = exposure_resolver
         self._ledger = ledger
@@ -1090,7 +1177,20 @@ class ProductRunContextAuthority:
             if isinstance(metadata, Mapping):
                 window_tokens = _resolve_window_tokens(metadata)
         inbox_message = None
-        if self._reconcile is not None:
+        presentation = None
+        occurrences = self._occurrences
+        if occurrences is not None and not await occurrences.applies_to_run(request.run_id.value):
+            occurrences = None
+        if occurrences is not None:
+            presentation = await occurrences.restore_snapshot(sdk_run_id=request.run_id.value,
+                provider_turn_ordinal=request.provider_turn_ordinal,
+                prior_context_revision=request.prior_context_revision)
+            if presentation is None:
+                presentation = await occurrences.prepare(request.run_id.value)
+            if presentation.items:
+                inbox_message = _pending_occurrence_message(tuple(item.entry for item in presentation.items),
+                    overdue_keys=frozenset(item.entry.occurrence_key for item in presentation.items if item.overdue))
+        elif self._reconcile is not None:
             presented = await self._ledger.presented_occurrence_keys()
             pending = await self._reconcile(presented)
             if pending:
@@ -1098,8 +1198,28 @@ class ProductRunContextAuthority:
         closure_message = None
         if self._closure_reader is not None:
             closure_message = await self._closure_reader(request.run_id)
+        source_messages = tuple(context.messages)
+        exact_sources = False
+        if self._current_tool_projector is not None:
+            projected = await self._current_tool_projector(request, source_messages)
+            if projected is not None:
+                source_messages, exact_sources = projected, True
+            if ports.context.load(request.run_id).revision != request.prior_context_revision:
+                raise SnapshotContractConflict("sdk_context_authority_revision_drift")
+        feedback = getattr(request, "mandatory_context_feedback", None)
+        feedback_message = None
+        if feedback is not None:
+            from simple_harness import MandatoryContextFeedbackV1
+            if type(feedback) is not MandatoryContextFeedbackV1:
+                raise SnapshotContractConflict("sdk_mandatory_context_feedback_invalid")
+            feedback_message = feedback.message()
+            # The SDK also persisted this exact control in Context for generic
+            # consumers. Protect one copy inside the Host budgeted snapshot.
+            source_messages = tuple(m for m in source_messages if m != feedback_message)
         messages, assembly_facts = _plan_turn_messages(
-            tuple(context.messages), window_tokens, extra_protected=(inbox_message, closure_message)
+            source_messages, window_tokens,
+            extra_protected=(inbox_message, closure_message, feedback_message),
+            exact_tool_sources=exact_sources,
         )
         probe = ProviderRequest(
             RequestId("hash-only"),
@@ -1113,6 +1233,8 @@ class ProductRunContextAuthority:
             "context": int(request.prior_context_revision),
             **assembly_facts,
         }
+        if occurrences is not None:
+            await occurrences.recheck(presentation)
         snapshot_id, snapshot_revision = await self._ledger.record_snapshot_receipt(
             sdk_run_id=request.run_id.value,
             provider_turn_ordinal=request.provider_turn_ordinal,
@@ -1120,7 +1242,14 @@ class ProductRunContextAuthority:
             payload_hash=expected,
             expected_request_fingerprint=expected,
             source_revisions=source_revisions,
+            occurrence_coordinator=occurrences,
+            occurrence_presentation=presentation,
         )
+        typed_fields = {}
+        if self._typed_use_authority is not None:
+            intents = await self._typed_use_authority.snapshot_intents(request=request, messages=messages)
+            typed_fields = dict(schema_version=2, recall_subject=self._typed_use_authority.subject,
+                                recall_intents=intents)
         snapshot = RunContextSnapshot(
             snapshot_id,
             request.run_id.value,
@@ -1134,6 +1263,7 @@ class ProductRunContextAuthority:
             max_output_tokens,
             {},
             expected,
+            **typed_fields,
         )
         if snapshot.payload_hash != expected:
             raise SnapshotContractConflict(
@@ -1175,11 +1305,8 @@ class ProductRuntimeDecisionSink:
         provider_turn_ordinal: int,
         request_fingerprint: str,
     ) -> Any:
-        if self._reconcile is not None:
-            presented = await self._ledger.presented_occurrence_keys()
-            pending = await self._reconcile(presented)
-            if pending:
-                raise NoRecallBlockedError(len(pending))
+        await self.check_mandatory_context_actions(run_id=run_id,
+            provider_turn_ordinal=provider_turn_ordinal, request_fingerprint=request_fingerprint)
         import uuid
 
         from simple_harness.execution.context_authority import ContextRouteReceipt
@@ -1205,3 +1332,13 @@ class ProductRuntimeDecisionSink:
             request_fingerprint=request_fingerprint,
         )
         return receipt
+
+    async def check_mandatory_context_actions(self, *, run_id, provider_turn_ordinal, request_fingerprint):
+        """Read current ACK/mandatory-exit authority; never create a route here."""
+        if self._reconcile is not None:
+            presented = await self._ledger.presented_occurrence_keys()
+            pending = await self._reconcile(presented)
+            if pending:
+                from simple_harness import MandatoryContextActionRequired, MandatoryContextRejectionV1
+                raise MandatoryContextActionRequired(MandatoryContextRejectionV1(
+                    run_id.value, provider_turn_ordinal, request_fingerprint))

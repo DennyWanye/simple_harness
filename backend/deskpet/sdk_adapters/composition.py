@@ -359,6 +359,17 @@ class ProductSdkRuntimeStack:
             workflow_registrations: tuple[object, ...] = ()
             try:
                 verify_sdk_candidate(self._candidate_identity)
+                # Official schema9 migration before any execution handle opens.
+                # The retained same-directory backup is never overwritten.
+                from simple_harness import migrate_execution_to_v9
+                execution_path = self._paths.execution_database
+                if execution_path.exists():
+                    self.schema_upgrade_receipt = migrate_execution_to_v9(
+                        execution_path,
+                        backup_path=execution_path.with_name(execution_path.name + ".pre-schema-9.backup"),
+                    )
+                else:
+                    self.schema_upgrade_receipt = None
                 dependencies = await self._load_dependencies()
                 owned_resources = dependencies.owned_resources
                 if dependencies.runtime_factory is not None:
@@ -719,6 +730,168 @@ class ProductSdkRuntimeStack:
                     break
         return ClosureRunFacts(binding_record=binding, last_assistant_message=last_answer)
 
+    def verify_current_input_provider_request(self, run_id, request):
+        """Compare physical request with the public durable SDK reservation."""
+        from simple_harness import RequestId, thaw_json
+        from simple_harness.execution.provider_invocations import (
+            provider_invocation_id, provider_request_fingerprint, provider_request_from_json,
+        )
+        self.require_ready()
+        if self._uow is None:
+            raise ValueError("current_input_provider_store_unavailable")
+        record = self._uow.read_provider_invocation(provider_invocation_id(RunId(run_id), request.request_id))
+        if (record is None or record.run_id.value != run_id or record.request_id != request.request_id
+                or record.request_json is None):
+            raise ValueError("current_input_provider_request_unbound")
+        actual = provider_request_from_json(record.request_id, thaw_json(record.request_json))
+        if not (record.request_fingerprint == provider_request_fingerprint(actual)
+                == provider_request_fingerprint(request)):
+            raise ValueError("current_input_provider_request_mismatch")
+
+    def read_provider_context_use(self, run_id: str, request_id: str):
+        """Actual Harness handoff witness via the public RunClient."""
+        from simple_harness import RequestId
+        return self.require_ready().client.read_provider_context_use(RunId(run_id), RequestId(request_id))
+
+    def read_primary_tool_parent_use(self, context):
+        """Resolve the actual parent from public projections/response, not an ID recipe.
+
+        ToolContext.request_id is the admitted Run request, not the physical
+        Provider request. This bounded public scan fails on incomplete coverage.
+        """
+        from simple_harness import EffectId, RequestId, thaw_json
+        from simple_harness.execution.audit import audit_hash
+        from simple_harness.execution.provider_invocations import provider_response_from_json
+        self.require_ready()
+        if self._uow is None or context.effect_id is None:
+            raise ValueError("typed_use_tool_effect_missing")
+        effect = self._uow.read_effect(EffectId(context.effect_id.value))
+        if (effect is None or effect.run_id != context.run_id
+                or effect.call_id != context.call_id or effect.tool_name != "context_route"
+                or effect.task_execution_envelope != context.task_execution_envelope):
+            raise ValueError("typed_use_actual_tool_identity_differs")
+        after, found, complete = 0, {}, False
+        for _ in range(32):
+            receipts = self._uow.list_provider_projection_receipts(after_sequence=after, limit=256)
+            for receipt in receipts:
+                if receipt.sequence <= after:
+                    raise ValueError("typed_use_provider_projection_order")
+                after = receipt.sequence
+                if receipt.run_id != context.run_id.value:
+                    continue
+                if audit_hash(thaw_json(receipt.payload)) != receipt.payload_hash:
+                    raise ValueError("typed_use_provider_projection_hash")
+                invocation = self._uow.read_provider_invocation(receipt.invocation_id)
+                if invocation is None or invocation.run_id != context.run_id:
+                    raise ValueError("typed_use_provider_projection_identity")
+                if invocation.version != receipt.invocation_version or invocation.state.value != "succeeded":
+                    continue
+                view = self.read_provider_context_use(context.run_id.value, invocation.request_id.value)
+                if view is None or view.provider_turn_ordinal != effect.turn_ordinal:
+                    continue
+                if invocation.response_json is None:
+                    raise ValueError("typed_use_parent_response_missing")
+                response = provider_response_from_json(thaw_json(invocation.response_json))
+                if not 0 <= effect.call_ordinal < len(response.tool_calls):
+                    raise ValueError("typed_use_parent_call_missing")
+                call = response.tool_calls[effect.call_ordinal]
+                if (call.call_id.value != effect.raw_call_id or call.name != effect.tool_name
+                        or thaw_json(call.arguments) != thaw_json(effect.arguments)):
+                    raise ValueError("typed_use_parent_call_differs")
+                found[view.provider_request_id] = view
+            if len(receipts) < 256:
+                complete = True
+                break
+        if not complete or len(found) != 1:
+            raise ValueError("typed_use_parent_projection_unverifiable")
+        return next(iter(found.values()))
+
+    def read_primary_effect_page_facts(self, run_id: str, effect_id: str):
+        """Exact current effect/parent through public SDK records and audit."""
+        from deskpet.execution.current_tool_pages import read_effect_facts
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        return read_effect_facts(self._uow, run_id, effect_id)
+
+    def read_primary_dependency_facts(self, run_id: str, effect_ids=()):
+        """Public start and effect facts, never SDK-private history SQL."""
+        from simple_harness import EffectId, thaw_json
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        start = self._uow.read_start_snapshot(run_id)
+        if start is None:
+            raise RuntimeError("primary_dependencies_start_missing")
+        return thaw_json(start), tuple(self._uow.read_effect(EffectId(value)) for value in effect_ids)
+
+    def read_settled_primary_run(self, run_id: str, *, current_text: str):
+        """Rebuild pre-S6 history from the real terminal and public Context."""
+        terminal = self.read_run_terminal_evidence(run_id)
+        if terminal is None:
+            raise RuntimeError("primary_history_sdk_terminal_missing")
+        return terminal, self.read_primary_run_messages(run_id, current_text=current_text)
+
+    def read_corpus_scoring_trace(self, run_id: str):
+        """Read exact public SDK records, including unsuccessful Provider attempts.
+
+        Evaluation-only read surface. It neither authorizes a request nor derives
+        model type choices from Host defaults. The caller owns stack lifetime.
+        """
+        from deskpet.quality.corpus_trace import read_public_trace
+
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        return read_public_trace(self._uow, run_id)
+
+    def read_primary_run_messages(self, run_id: str, *, current_text: str) -> tuple[dict, ...]:
+        """Public transcript of this turn, excluding seeded history/system data.
+
+        Read the real SDK Context through its public port, not a checkpoint JSON
+        layout. The admitted current user message anchors the turn suffix. Missing
+        or changed anchors fail closed rather than inventing history.
+        """
+        from simple_harness.runtime import SqliteContextPort
+
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        messages = tuple(SqliteContextPort(self._uow.database).load(RunId(run_id)).messages)
+
+        return project_primary_transcript(messages, current_text=current_text)
+
+    async def read_primary_tool_causal_sources(self, *, db_path, host_run_id, run_id,
+                                             subject, current_text, messages):
+        """Host identity index plus public SDK result authority; no new grant."""
+        import aiosqlite
+        from deskpet.task_scope.protocol import canonical_hash, canonical_json
+        from deskpet.memory.primary_tool_causality import (
+            PrimaryToolCausalityUnavailable, read_tool_causal_sources,
+        )
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            rows = await (await db.execute(
+                "SELECT i.* FROM primary_effect_identities i "
+                "JOIN foreground_runs r ON r.host_run_id=i.host_run_id "
+                "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id AND b.sdk_run_id=i.sdk_run_id "
+                "WHERE i.host_run_id=? AND i.sdk_run_id=? AND r.subject=? ORDER BY i.sequence LIMIT 257",
+                (host_run_id, run_id, subject))).fetchall()
+            if not rows or len(rows) > 256:
+                raise PrimaryToolCausalityUnavailable("primary_tool_host_identity_missing_or_limit")
+            for row in rows:
+                body = dict(host_run_id=host_run_id, sdk_run_id=run_id,
+                            effect_id=row["effect_id"], tool_name=row["tool_name"])
+                if row["identity_json"] != canonical_json(body) or row["identity_hash"] != canonical_hash(body):
+                    raise PrimaryToolCausalityUnavailable("primary_tool_host_identity_mismatch")
+        return read_tool_causal_sources(self._uow, run_id, current_text=current_text,
+            transcript=messages, project=project_primary_transcript,
+            effect_ids=tuple(row["effect_id"] for row in rows))
+
     def read_run_terminal_evidence(
         self, run_id: str
     ) -> SdkRunTerminalEvidence | None:
@@ -731,43 +904,44 @@ class ProductSdkRuntimeStack:
         expected = str(run_id).strip()
         if not expected:
             raise ValueError("run_id is required")
-        with uow.database.transaction() as connection:
-            run = connection.execute(
-                "SELECT state FROM runs WHERE run_id=?", (expected,)
-            ).fetchone()
-            if run is None:
-                return None
-            state = str(run["state"])
-            if state not in {"completed", "failed", "cancelled"}:
-                return None
-            events = connection.execute(
-                "SELECT event_id,kind,payload_json,created_at FROM run_events "
-                "WHERE run_id=? AND kind IN "
-                "('run.completed','run.failed','run.cancelled')",
-                (expected,),
-            ).fetchall()
-            if len(events) != 1 or str(events[0]["kind"]) != f"run.{state}":
-                raise SdkRuntimeNotReady("SDK terminal event is ambiguous")
-            event = events[0]
-            raw_payload = str(event["payload_json"])
-            error_code: str | None = None
-            if state == "failed":
-                try:
-                    payload = json.loads(raw_payload)
-                except ValueError:
-                    payload = None
-                if isinstance(payload, Mapping):
-                    code = payload.get("code")
-                    if isinstance(code, str) and code.strip():
-                        error_code = code.strip()
-            return SdkRunTerminalEvidence(
-                expected,
-                state,
-                str(event["event_id"]),
-                hashlib.sha256(raw_payload.encode("utf-8")).hexdigest(),
-                float(event["created_at"]),
-                error_code,
-            )
+        reader = getattr(uow, "read_run_terminal_record", None)
+        if not callable(reader):
+            raise SdkRuntimeNotReady("SDK public terminal metadata reader is unavailable")
+        record = reader(RunId(expected))
+        if record is None:
+            return None
+        proof = record.terminal_evidence
+        if record.run_id != expected or not proof.matches(
+            event_id=record.event_id, payload_hash=proof.event_payload_hash, state=proof.state
+        ):
+            raise SdkRuntimeNotReady("SDK public terminal metadata differs from its proof")
+        return SdkRunTerminalEvidence(expected, proof.state, record.event_id,
+                                      proof.event_payload_hash, proof.created_at, record.error_code)
+
+    def recover_expired_authorization_terminal(self, run_id: str):
+        """Explicit SDK-owned expiry repair for the exact bound foreground Run.
+
+        Called by terminal observation only after the public reader reports missing
+        evidence. Unknown/ambiguous shapes propagate rejection. No Host SDK SQL or
+        synthesized event identity is involved.
+        """
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        reader = getattr(self._uow, "read_expired_authorization_terminal_recovery", None)
+        recover = getattr(self._uow, "recover_expired_authorization_terminal", None)
+        if not callable(reader) or not callable(recover):
+            raise SdkRuntimeNotReady("SDK explicit expiry recovery is unavailable")
+        witness = reader(RunId(run_id))
+        if witness is None:
+            raise SdkRuntimeNotReady("SDK expired authorization is not recoverable")
+        proof = recover(witness, now=float(self._clock()))
+        metadata = self.read_run_terminal_evidence(run_id)
+        if metadata is None or not proof.matches(
+            event_id=metadata.event_id, payload_hash=metadata.event_hash, state=metadata.state
+        ):
+            raise SdkRuntimeNotReady("SDK recovered terminal differs from its public proof")
+        return metadata
 
     async def commit_preflight_blocked_root(
         self,
@@ -881,6 +1055,14 @@ class ProductSdkRuntimeStack:
             finally:
                 uow.release_runtime_lease(execution_lease, now=float(self._clock()))
 
+    def read_authorization_decision(self, *, run_id: str, decision_id: str):
+        """Exact lookup through the public ExecutionUnitOfWork port."""
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        record = self._uow.read_decision(decision_id)
+        return record if record is not None and record.run_id == run_id else None
+
     def list_open_authorization_decisions(
         self,
         *,
@@ -983,3 +1165,42 @@ __all__ = (
     "WorkflowRuntimeBuild",
     "build_product_runtime",
 )
+
+
+def project_primary_transcript(messages, *, current_text):
+    """Whitelist public SDK Context messages; no provider/private block promotion."""
+    from deskpet.task_scope.protocol import redact_credential_shapes
+    def text_content(message):
+        if isinstance(message.content, str):
+            return message.content
+        return "".join(str(block.data.get("text", "")) for block in message.content
+                       if block.type in {"text", "input_text", "output_text"})
+
+    anchors = [i for i, message in enumerate(messages)
+               if message.role.value == "user" and text_content(message) == current_text]
+    if not anchors:
+        raise RuntimeError("primary_history_current_turn_missing")
+    public = []
+    for message in messages[anchors[-1]:]:
+        if message.role.value == "system":
+            continue
+        content = redact_credential_shapes(text_content(message))[0]
+        if not isinstance(message.content, str):
+            artifacts = []
+            for block in message.content:
+                if block.type != "artifact":
+                    continue
+                data = {key: redact_credential_shapes(block.data[key])[0]
+                        for key in ("artifact_ref", "name", "mime_type", "uri")
+                        if isinstance(block.data.get(key), str)}
+                if data:
+                    artifacts.append({"type": "artifact", "data": data})
+            if artifacts:
+                content = ([{"type": "text", "data": {"text": content}}] if content else []) + artifacts
+        item = {"role": message.role.value, "content": content}
+        if message.role.value == "tool":
+            item["call_id"] = message.call_id.value
+            if message.name:
+                item["name"] = message.name
+        public.append(item)
+    return tuple(public)

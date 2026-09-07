@@ -57,7 +57,7 @@ from deskpet.tools.capabilities import (
     set_tool_execution_context,
 )
 from deskpet.types.task_grants import ResourceSelector, TaskGrant
-from deskpet.types.task_work_context import TaskWorkContext
+from deskpet.types.task_work_context import PrimaryRunWorkContext, TaskWorkContext
 from deskpet.workflows.effects import PreparedToolCall
 
 # S5b design-freeze §1: built-in Tools that write into, or execute inside, the
@@ -99,6 +99,7 @@ SDK_TOOL_EXECUTION_POLICY_OVERRIDES: dict[str, tuple[str, str, str]] = {
     # model-visible ROUTE_BARRIER_NOT_OBSERVED rejection rather than a whole-Run
     # fault, and the Host handler gates the rest (scope_unbound / nothing_to_close).
     "task_scope_update": ("non_project_effect", "required", "required"),
+    "procedure_use": ("non_project_effect", "required", "required"),
 }
 
 
@@ -121,6 +122,9 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         # cheap to request in the same conversation.
         "context_route",
         "task_scope_search",
+        "prospective_ack",
+        "procedure_use",
+        "procedure_discover",
         # S5b Task 3: semantic closure must be reachable every provider turn
         # (a hidden Tool call is a whole-Run fault in the frozen SDK).
         "task_scope_update",
@@ -332,7 +336,7 @@ class SdkRunToolAuthorityV1:
     session_id: str
     request_id: str
     root_run_id: str
-    task_work_context: TaskWorkContext
+    task_work_context: TaskWorkContext | PrimaryRunWorkContext
     prepared_tool_set: PreparedToolSet
     catalog_generation: int
     catalog_fingerprint: str
@@ -359,7 +363,7 @@ class SdkRunToolAuthorityV1:
         effect_id: str = "",
         turn_id: str = "",
     ) -> ToolExecutionContext:
-        return ToolExecutionContext(
+        context = ToolExecutionContext(
             scope_id=self.prepared_tool_set.scope_id,
             session_id=self.session_id,
             request_id=self.request_id,
@@ -383,6 +387,9 @@ class SdkRunToolAuthorityV1:
             binding_epoch=self.task_work_context.binding_version,
             capability_snapshot_ref=self.catalog_fingerprint,
         )
+
+        from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
+        return project_tool_execution_context(context)
 
     def assert_workspace_current(self) -> None:
         kind = str(self.workspace_resolution.get("kind") or "")
@@ -524,7 +531,7 @@ class SdkRunToolAuthorityRegistry:
         session_id: str,
         request_id: str,
         root_run_id: str,
-        task_scope_id: str,
+        task_scope_id: str | None,
         workspace_root: str | None,
         catalog: Mapping[str, Any],
         inventory: Sequence[object],
@@ -539,7 +546,12 @@ class SdkRunToolAuthorityRegistry:
         session_id = _required(session_id, "session_id")
         request_id = _required(request_id, "request_id")
         root_run_id = _required(root_run_id, "root_run_id")
-        task_scope_id = _required(task_scope_id, "task_scope_id")
+        if task_scope_id is not None:
+            task_scope_id = _required(task_scope_id, "task_scope_id")
+        elif (workspace_root is not None or type(binding_version) is not int or binding_version != 0
+              or not isinstance(workspace_resolution, Mapping)
+              or workspace_resolution.get("kind") != "projectless"):
+            raise ValueError("unscoped primary Tool authority must be projectless")
         principal_id = _required(principal_id, "principal_id")
         if workspace_resolution is None:
             normalized_workspace_resolution: dict[str, Any] = {
@@ -685,6 +697,7 @@ class SdkRunToolAuthorityRegistry:
             if (
                 normalized_workspace_resolution["kind"] == "projectless"
                 and projectless_admission != "safe"
+                and not (task_scope_id is None and name in PROJECT_EFFECT_TOOL_NAMES)
             ):
                 raise RuntimeError("projectless_catalog_contains_project_tool")
             function_schema = {
@@ -775,14 +788,14 @@ class SdkRunToolAuthorityRegistry:
             policy_fingerprint=policy_fingerprint,
             decisions=decisions,
         )
-        work_context = TaskWorkContext(
+        work_context = (PrimaryRunWorkContext(session_id, root_run_id) if task_scope_id is None else TaskWorkContext(
             session_id=session_id,
             root_run_id=root_run_id,
             task_scope_id=task_scope_id,
             workspace_root=workspace_root,
             workspace_source="existing" if workspace_root else "none",
             binding_version=binding_version,
-        )
+        ))
         authority_fingerprint = _canonical_sha256(
             {
                 "disclosure_policy": disclosure_policy,
@@ -1177,9 +1190,8 @@ class SdkRunToolAuthorityRegistry:
             root_run_id=_required(
                 run_start_record.get("root_run_id"), "root_run_id"
             ),
-            task_scope_id=_required(
-                run_start_record.get("task_scope_id"), "task_scope_id"
-            ),
+            task_scope_id=(None if run_start_record["task_scope_id"] is None
+                           else _required(run_start_record["task_scope_id"], "task_scope_id")),
             workspace_root=(
                 str(run_start_record["workspace_root"])
                 if run_start_record.get("workspace_root") is not None

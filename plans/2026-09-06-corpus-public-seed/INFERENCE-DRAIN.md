@@ -1,0 +1,75 @@
+# C02/C03 多来源 fixture analysis drain
+
+2026-09-06，后继基线 d2e55fc9。源码准备，**NOT_RUN / 不可作为已完成合入**。
+r17 使用资源槽，本叶未运行 pytest、模型、native、build 或安装。
+
+## aea141af 只读 P1 与源码修订（尚未测试）
+
+Dirac 指出旧源码错误使用 `reason`，M618 仅接受 `closure_reason`；此外 SDK job APPLIED
+包括 validator REJECTED，旧判据可能错误确认完成。保留旧 commit，不将源码审读称实际红测。
+修订要求 exact fixture NO_MUTATION 全 result（包含0usage/fixture responseidentity）、
+application receipt ACCEPTED，job_id=claim.batch_id=request.job_id，run/request/result hash
+逐项绑定且 decisions 为空。拒绝的 application 可由 SDK 正常 finalize，但不进入成功集合。
+新控将实际发送非法 reason 的本地 analysis result，必须得到 SDK APPLIED + receipt REJECTED，
+同时 adapter confirmed=False。只准备，NOT_RUN。
+
+prior proof 共用上述 validator；claim.envelope 若存在必须等本 fixture durable envelope。
+公开幂等 `ingest_committed_evidence` 对原pair回读真实 mutation_job_id，核 claim.job_ids 单成员，
+不从ID格式猜造、不相信调用方自洽替换；USER传原lineage，ASSISTANT保留None，未覆盖旧身份。
+也绑定 case_id 对应原USER完整 setup 字符串。新增原proof换job_ids/receipt result_hash负控准备。
+
+## 已核公共接缝
+
+- `build_human_memory_v7(analysis_delivery_authority=authority)` 在构造时绑定同一对象。
+  不能在 manager 已构造后替换 authority。重开使用新的 constructor-bound 对象。
+- 已审核 C02/C03 setup 的真实原 USER/ASSISTANT S1、完整 completed group、公开
+  strict_atomic mutation receipt 是前提。fixture NO_MUTATION 只承认已提交的原 plan，
+  不重新 CREATE，不触碰 job 表、不复制 scoring history、不改变 USER 持久 lineage。
+- USER 使用原 group.user_analysis_lineage；原未设置 lineage 的 ASSISTANT job 使用明确
+  fixture worker fallback。前者保留的 provider/model 字段是原请求约束，不能解读成
+  本次真的调用了该模型。新增 delivery 明确 `deterministic-setup-only`、fixture-local、0 usage。
+- 通用 `FixtureSetupExecutor` 仍只支持 C01 CREATE。本叶不把它扩成任意推断编译器；
+  多来源 adapter 只处理已有公开 mutation receipt 的 C02-19/C03-20。
+
+## 每 job 与恢复
+
+新增 `corpus_inference_drain.py`：每个 actual claim 绑定完整 subject、Run、disclosure、
+单 source ID/hash/ordinal 与 lineage；再次读取原 group、scoring exact pair、公开 plan receipt。
+调用真实 `DurableMemoryJobRunner`，公开 repository 协议转发层仅记录原 claim 及真实
+`finalize_analysis_application` 返回，所有存储和事务仍为 installed SDK。
+
+必须这样观察：SDK audit_pending 恢复路径可以跳过 executor 和 delivery callback。
+不能用 executor 次数或两次 IDLE 证明完成。回读 invocation audit 也在 finalize 之前，
+不能把仅有 audit 行当 job APPLIED。
+
+`drain_inference_setup` 返回每源真实 finalize proof、outcomes、confirmed、fixture_executions。
+缺任何来源 finalize 返回 `inference_fixture_settlement_unconfirmed`，不补齐 IDLE。
+`prior_applied` 是保留的原 public claim/application 对象，重开再次经 SDK idempotent finalize
+验证；不是调用方 success flag，也不是新增 ledger。尚无跨进程序列化 checkpoint codec；
+丢失原 proof 后不得从空队列推定先前完成。claim 恢复已有 envelope 时必须匹配本 fixture
+原 durable delivery，不能接管其他 real-model application。
+
+## 尚未关闭 / 下一批只测新增风险
+
+1. 已准备真实 C03 多来源两 APPLIED、原 lineage、graph不增、评分无 sourceRun/history、
+   close/reopen 原 proof 零 executor 复验控制，尚未运行。
+2. C02 main 已审 adapter 接线尚未完成；本树未跟踪 C02 两 reference 文件原样保留，
+   不纳入本固定交付。C02 完成前不会把 C03 单例宣称两类全部支持。
+3. 尚需中途 finalize/取消恢复、foreign source/request/lineage 拒绝、无原 proof IDLE
+   不算完成的决定性控制。不得重跑原20 setup或graph旧绿。
+4. 当前 bounded 函数是每次至多两次 runner 调用，未提供任意来源批处理或任意旧 job
+   扫描能力。失败 claim 保留 SDK lease/backoff 事实，不删 job，不启动生产 worker。
+
+240质量仍0；这些只属于 synthetic fixture setup/隔离控制。
+
+## 896d790d 后续控制准备
+
+Dirac 对896d790d delta只读未发现新增确定P1，明确NOT_RUN而非终ACCEPT。
+测试现准备三个新分支：合法两来源、非法reason被SDK真实拒绝、公开finalize接缝取消后
+audit_pending跨close/reopen（可信clock越过原210s lease）。恢复必须保留原application，
+第一job零executor重发，第二job执行一次。
+
+合法分支另以完整 `drain_inference_setup(prior_applied=...)` 入口验证自洽换job_ids、
+错误receipt result_hash、另一真实job application混用拒绝；不再仅直接调用validator。
+真实已完成库重开但不提供原proof时只IDLE且confirmedFalse。
+上述全部只源码准备；无进程/测试结果，不计入原20setup绿。

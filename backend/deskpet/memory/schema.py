@@ -38,6 +38,12 @@ from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
     EFFECT_CLOSURE_MIGRATION,
     EFFECT_CLOSURE_SCHEMA_VERSION,
+    PRIMARY_EFFECT_SOURCES_MIGRATION,
+    PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION,
+    ADMISSION_REJECTIONS_MIGRATION,
+    ADMISSION_REJECTIONS_SCHEMA_VERSION,
+    TRUSTED_DISCLOSURE_MIGRATION,
+    TRUSTED_DISCLOSURE_SCHEMA_VERSION,
     FOREGROUND_EXECUTION_MIGRATION,
     FOREGROUND_EXECUTION_SCHEMA_VERSION,
     FOREGROUND_QUEUE_MIGRATION,
@@ -314,6 +320,9 @@ def _validate_s4_migration_chain(
         # `migrator.repair_context_route_registration` before this check.
         (CONTEXT_ROUTE_MIGRATION, CONTEXT_ROUTE_SCHEMA_VERSION),
         (EFFECT_CLOSURE_MIGRATION, EFFECT_CLOSURE_SCHEMA_VERSION),
+        (PRIMARY_EFFECT_SOURCES_MIGRATION, PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION),
+        (TRUSTED_DISCLOSURE_MIGRATION, TRUSTED_DISCLOSURE_SCHEMA_VERSION),
+        (ADMISSION_REJECTIONS_MIGRATION, ADMISSION_REJECTIONS_SCHEMA_VERSION),
     )
     required = [item for item in expected_steps if item[1] <= expected_user_version]
     if not required:
@@ -344,6 +353,80 @@ def _validate_s4_migration_chain(
             raise HumanMemoryProgramEpochError(
                 "human_memory_migration_chain_invalid"
             )
+    if expected_user_version >= PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION:
+        _validate_primary_effect_index(db_path)
+    if expected_user_version >= TRUSTED_DISCLOSURE_SCHEMA_VERSION:
+        _validate_trusted_disclosure_schema(db_path)
+    if expected_user_version >= ADMISSION_REJECTIONS_SCHEMA_VERSION:
+        _validate_admission_rejections_schema(db_path)
+
+
+def _validate_trusted_disclosure_schema(db_path: Path) -> None:
+    """Require actual persisted policy tables/triggers, not only migration receipts."""
+    try:
+        with sqlite3.connect(":memory:") as expected, sqlite3.connect(
+            f"file:{db_path.resolve()}?mode=ro", uri=True
+        ) as actual:
+            expected.executescript((DEFAULT_MIGRATIONS_DIR / TRUSTED_DISCLOSURE_MIGRATION).read_text())
+            for kind, name, sql in expected.execute(
+                "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL"
+            ):
+                if actual.execute("SELECT type,sql FROM sqlite_master WHERE name=?", (name,)).fetchone() != (kind, sql):
+                    raise ValueError("disclosure schema differs")
+            for name, taxonomy in (("human_memory_disclosure_configs", "A"), ("human_memory_disclosure_heads", "B")):
+                if actual.execute("SELECT taxonomy FROM human_memory_recovery_table_registry WHERE table_name=?",
+                                  (name,)).fetchone() != (taxonomy,):
+                    raise ValueError("disclosure recovery registration differs")
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HumanMemoryProgramEpochError("human_memory_disclosure_schema_invalid") from exc
+
+
+def _validate_admission_rejections_schema(db_path: Path) -> None:
+    """Require actual persisted policy tables/triggers, not only migration receipts."""
+    try:
+        with sqlite3.connect(":memory:") as expected, sqlite3.connect(
+            f"file:{db_path.resolve()}?mode=ro", uri=True
+        ) as actual:
+            expected.executescript((DEFAULT_MIGRATIONS_DIR / ADMISSION_REJECTIONS_MIGRATION).read_text())
+            for kind, name, sql in expected.execute(
+                "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL"
+            ):
+                if actual.execute("SELECT type,sql FROM sqlite_master WHERE name=?", (name,)).fetchone() != (kind, sql):
+                    raise ValueError("disclosure schema differs")
+            for name, taxonomy in (("foreground_admission_rejections", "A"),):
+                if actual.execute("SELECT taxonomy FROM human_memory_recovery_table_registry WHERE table_name=?",
+                                  (name,)).fetchone() != (taxonomy,):
+                    raise ValueError("disclosure recovery registration differs")
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HumanMemoryProgramEpochError("foreground_admission_rejections_schema_invalid") from exc
+
+
+def _validate_primary_effect_index(db_path: Path) -> None:
+    """A migration receipt alone cannot prove the actual source index exists."""
+    try:
+        with sqlite3.connect(":memory:") as expected, sqlite3.connect(
+            f"file:{db_path.resolve()}?mode=ro", uri=True
+        ) as actual:
+            expected.executescript((DEFAULT_MIGRATIONS_DIR / PRIMARY_EFFECT_SOURCES_MIGRATION).read_text())
+            for kind, name, sql in expected.execute(
+                "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name<>'sqlite_sequence'"
+            ):
+                row = actual.execute("SELECT type,sql FROM sqlite_master WHERE name=?", (name,)).fetchone()
+                if row != (kind, sql):
+                    raise ValueError("source index schema differs")
+            registration = actual.execute("SELECT taxonomy FROM human_memory_recovery_table_registry WHERE table_name='primary_effect_identities'").fetchone()
+            if registration != ("A",):
+                raise ValueError("source index recovery registration missing")
+            for operation in ("insert", "update", "delete"):
+                name = f"hm_recovery_fence_primary_effect_identities_{operation}"
+                row = actual.execute("SELECT sql FROM sqlite_master WHERE name=? AND type='trigger'", (name,)).fetchone()
+                expected_sql = (f'CREATE TRIGGER "{name}" BEFORE {operation.upper()} ON "primary_effect_identities" '
+                    "WHEN (SELECT state FROM human_memory_recovery_fence WHERE singleton=1)<>'OPEN' "
+                    "BEGIN SELECT RAISE(ABORT,'human_memory_ingress_fenced'); END")
+                if row != (expected_sql,):
+                    raise ValueError("source index recovery fence differs")
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HumanMemoryProgramEpochError("primary_effect_index_schema_invalid") from exc
 
 
 def _validate_recovery_marker(
@@ -428,6 +511,45 @@ def _validate_execution_marker(
         expected_sha256,
     ) or version != expected_user_version:
         raise HumanMemoryProgramEpochError("foreground_execution_marker_invalid")
+
+
+def _validate_composed_extension(path: Path, version: int) -> None:
+    """Reopen only published, fully validated scheduler extensions of v49.
+
+    This does not install extensions: the owning composition retains that
+    responsibility, including resuming between its transactional migrations.
+    """
+    from deskpet.memory.s5c_schema import validate_s5c_state_db
+    from deskpet.memory.s5c_timer_schema import validate_s5c_timer_state_db
+    from deskpet.memory.s5c_terminal_schema import validate_s5c_terminal_state_db
+    from deskpet.memory.procedure_schema import validate_procedure_state_db
+    from deskpet.memory.procedure_recovery_schema import validate_procedure_recovery_state_db
+
+    validators = {
+        50: validate_s5c_state_db,
+        51: validate_s5c_timer_state_db,
+        52: validate_s5c_terminal_state_db,
+        53: validate_procedure_state_db,
+        54: validate_procedure_recovery_state_db,
+    }
+    validator = validators.get(version)
+    if validator is None:
+        raise HumanMemoryProgramEpochError(
+            "human_memory_program_future_database_unsupported"
+        )
+    try:
+        with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            bootstrap = db.execute(
+                "SELECT format_epoch,origin FROM human_memory_program_bootstrap "
+                "WHERE singleton=1"
+            ).fetchone()
+    except sqlite3.Error as exc:
+        raise HumanMemoryProgramEpochError(
+            "human_memory_bootstrap_marker_invalid"
+        ) from exc
+    if bootstrap != ("human-memory-v1", "fresh-empty-database"):
+        raise HumanMemoryProgramEpochError("human_memory_bootstrap_marker_invalid")
+    validator(path)
 
 
 def inspect_startup_epoch(
@@ -533,6 +655,8 @@ def inspect_startup_epoch(
                     path, expected_user_version=version
                 )
             _validate_recovery_marker(path, expected_user_version=version)
+            if version > HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
+                _validate_composed_extension(path, version)
         except (HumanMemoryProgramEpochError, OSError):
             return StartupEpochDecision(
                 StartupEpoch.INVALID,
@@ -599,6 +723,9 @@ async def initialize_human_memory_program_state_db(
     path.parent.mkdir(parents=True, exist_ok=True)
     async with _human_memory_program_lock(path):
         current = await read_user_version(path)
+        if current > HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
+            _validate_composed_extension(path, current)
+            return
         bootstrap = _has_bootstrap_marker(path)
         if current >= CONTEXT_ROUTE_SCHEMA_VERSION:
             # S5b Task 6: 037 registration backfill for databases that applied
@@ -626,10 +753,6 @@ async def initialize_human_memory_program_state_db(
                 path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
             )
             return
-        if current > HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
-            raise HumanMemoryProgramEpochError(
-                "human_memory_program_future_database_unsupported"
-            )
         if current == HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
             _validate_human_memory_program_marker(
                 path, expected_user_version=HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
@@ -768,7 +891,8 @@ async def dispatch_startup_epoch(
     async with _startup_epoch_lock(path):
         await _repair_chain_registration_before_inspect(path)
         decision = inspect_startup_epoch(
-            path, approved_fresh_lane=approved_fresh_lane
+            path, approved_fresh_lane=approved_fresh_lane,
+            maximum_human_schema_version=54,
         )
         if decision.epoch in {StartupEpoch.FRESH, StartupEpoch.HUMAN_RESUME}:
             await initialize_human_memory_program_state_db(
@@ -812,7 +936,7 @@ async def initialize_state_db(
     db_path.parent.mkdir(parents=True, exist_ok=True)
     bootstrap_version = (
         await read_user_version(db_path)
-        if db_path.exists() and _has_bootstrap_marker(db_path)
+        if db_path.exists()
         else None
     )
     if (
@@ -820,10 +944,10 @@ async def initialize_state_db(
         and bootstrap_version >= HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
     ):
         decision = inspect_startup_epoch(
-            db_path, approved_fresh_lane=False
+            db_path, approved_fresh_lane=False, maximum_human_schema_version=54,
         )
         if decision.epoch is StartupEpoch.HUMAN_RESUME:
-            if decision.user_version == HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
+            if decision.user_version >= HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
                 return
             raise HumanMemoryProgramEpochError(
                 "human_memory_program_requires_human_initializer"

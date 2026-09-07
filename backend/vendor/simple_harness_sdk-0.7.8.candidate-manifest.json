@@ -1,0 +1,11 @@
+{
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.7.8",
+  "commit": "f778cba9c5ee599e7ff5ac55796d0f331d215f62",
+  "artifacts": {
+    "simple_harness_sdk-0.7.8-py3-none-any.whl": "5aa1112803b5b617142b015f4989c679b455f34444f512a4ede957161b41138e"
+  },
+  "build_count": 1,
+  "execution_schema": 9,
+  "scope": "SDK-owned start-mode driver selection and scoped recording; Host/native acceptance pending"
+}

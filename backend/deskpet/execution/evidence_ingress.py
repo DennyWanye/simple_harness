@@ -522,7 +522,11 @@ class ExecutionEvidenceIngress:
     async def resolve_run_scope_tx(
         self, db: aiosqlite.Connection, run_id: str
     ) -> RunScopeBinding | None:
-        """Admission scope of one foreground SDK Run (``None`` when unbound)."""
+        """Admission scope, or a real accepted task route for unscoped admission.
+
+        This only selects the existing S1/closure lane. It grants no workspace
+        authority; effect admission still verifies the exact route/binding.
+        """
 
         try:
             row = await self._store._fetchone(
@@ -536,6 +540,19 @@ class ExecutionEvidenceIngress:
             )
         except sqlite3.OperationalError:  # pre-v41 database: no foreground queue
             return None
+        if row is not None and row["task_scope_id"] is None:
+            routed = await self._store._fetchone(
+                db,
+                "SELECT r.host_run_id,d.task_scope_id,r.subject "
+                "FROM foreground_run_sdk_bindings b JOIN foreground_runs r ON r.host_run_id=b.host_run_id "
+                "JOIN context_route_decisions d ON d.sdk_run_id=b.sdk_run_id "
+                "JOIN task_scopes s ON s.task_scope_id=d.task_scope_id AND s.subject=r.subject "
+                "WHERE b.sdk_run_id=? AND d.task_scope_id IS NOT NULL "
+                "ORDER BY d.provider_turn_ordinal DESC,d.recorded_at DESC,d.decision_id DESC LIMIT 1",
+                (run_id,),
+            )
+            if routed is not None:
+                row = routed
         if row is None or row["task_scope_id"] is None or row["subject"] is None:
             return None
         return RunScopeBinding(

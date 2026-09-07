@@ -16,6 +16,7 @@
  * 规格：openspec/specs/permission-gate/spec.md
  */
 import React, { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 import type {
   PermissionRequest,
@@ -36,8 +37,11 @@ interface Props {
   request: PermissionRequest["payload"] | null;
   onResolve: (decision: Decision) => void;
   onStopRun?: () => void;
+  allowSession?: boolean;
   resolving?: boolean;
   resolveError?: string | null;
+  /** Escape scroll/containing blocks; the owner must suppress hidden-view requests. */
+  portalToBody?: boolean;
 }
 
 interface CategoryMeta {
@@ -121,16 +125,18 @@ function permissionMeta(request: PermissionRequest["payload"]): CategoryMeta {
 export const PermissionPopup: React.FC<Props> = ({
   request,
   onResolve,
+  allowSession = true,
   onStopRun,
   resolving = false,
   resolveError = null,
+  portalToBody = false,
 }) => {
   const allowOnceRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!request) return;
     // 自动聚焦"允许一次"，回车确认
-    allowOnceRef.current?.focus();
+    allowOnceRef.current?.focus({ preventScroll: true });
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !resolving) {
         e.preventDefault();
@@ -152,7 +158,7 @@ export const PermissionPopup: React.FC<Props> = ({
       ? tokens.color.warning.bg
       : tokens.color.info.bg;
 
-  return (
+  const popup = (
     <div
       style={{ ...backdropStyle, zIndex: 9999 }}
       role="dialog"
@@ -322,7 +328,7 @@ export const PermissionPopup: React.FC<Props> = ({
           >
             拒绝<span style={{ opacity: 0.5, marginLeft: 6 }}>Esc</span>
           </button>
-          <button
+          {allowSession && <button
             type="button"
             disabled={resolving}
             className="bp-btn-secondary"
@@ -331,7 +337,7 @@ export const PermissionPopup: React.FC<Props> = ({
             title="本会话内同类操作不再询问"
           >
             本会话始终允许
-          </button>
+          </button>}
           <button
             ref={allowOnceRef}
             type="button"
@@ -358,6 +364,7 @@ export const PermissionPopup: React.FC<Props> = ({
       </div>
     </div>
   );
+  return portalToBody ? createPortal(popup, document.body) : popup;
 };
 
 export default PermissionPopup;

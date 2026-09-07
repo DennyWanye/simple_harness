@@ -29,6 +29,8 @@ registers its owner before the first read.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import asyncio
 import hashlib
 import time
@@ -47,7 +49,8 @@ _NON_PRESENTABLE_STATES = frozenset(
 _ELIGIBLE_PRIVACY_CLASSES = frozenset({"public", "personal"})
 
 HOST_SUPPORTED_FILTER_POLICIES: frozenset[str] = frozenset(
-    {"credential-filter/v1", "host-public-turn/v1", "host-typed-ingress/v1"}
+    {"credential-filter/v1", "host-public-turn/v1", "host-typed-ingress/v1", "host-primary-runtime-v1",
+     "host-closure-attempt-input/v1", "host-closure-result-source/v1"}
 )
 HOST_CLASSIFICATION_POLICY_ID = "deskpet-host-classification"
 HOST_CLASSIFICATION_POLICY_VERSION = "1"
@@ -96,10 +99,25 @@ class HumanMemoryV7Runtime:
         embedder_getter: Any = None,
         evidence_authority: Any = None,
         analysis_authority: Any = None,
+        memory_action_authority: Any = None,
+        history_source_authority: Any = None,
+        prospective_signal_authority: Any = None,
+        current_input_authority: Any = None,
+        audit_access_authority: Any = None,
+        conversation_evidence_authority: Any = None,
+        procedure_observation_authority: Any = None,
         backend_factory: Callable[..., Any] | None = None,
         principal: Any = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
+        if not callable(clock):
+            raise TypeError("memory runtime clock must be callable")
+        # Business/scenario time. Keep physical deadlines and leases on their
+        # own elapsed-time clocks; never monkeypatch process-global time.
+        self._clock = clock
         self._db_path = Path(db_path)
+        from deskpet.operation_audit.memory_attempts import MemoryAttemptJournal
+        self.operation_audit = MemoryAttemptJournal(self._db_path.with_name("operation-audit.db"))
         # Production: the single authenticated local owner.  Tests may bind a
         # subject-specific principal (same deployment/household shape).
         self._principal = principal
@@ -108,14 +126,30 @@ class HumanMemoryV7Runtime:
         self._embedder_getter = embedder_getter
         self._evidence_authority = evidence_authority
         self._analysis_authority = analysis_authority
-        # Test seam only: build the backend with an injected clock/fault injector
+        self._memory_action_authority = memory_action_authority
+        self._history_source_authority = history_source_authority
+        self._prospective_signal_authority = prospective_signal_authority
+        self._current_input_authority = current_input_authority
+        self.audit_access_authority = audit_access_authority
+        self._conversation_evidence_authority = conversation_evidence_authority
+        self._procedure_observation_authority = procedure_observation_authority
+        self.procedure_runtime = None
+        # Test seam only: optionally replace the public backend constructor.
+        # The trusted clock follows the normal production builder path too.
         # (the production path is always ``build_human_memory_v7``).
         self._backend_factory = backend_factory
         self.registration_receipt: Any | None = None
+        self.schema_upgrade_receipt: Any | None = None
+        self.settlement_schema_upgrade_receipt: Any | None = None
 
     @property
     def db_path(self) -> Path:
         return self._db_path
+
+    @property
+    def semantic_clock(self):
+        """The trusted clock shared with typed recall public consumers."""
+        return self._clock
 
     def principal(self) -> Any:
         return self._principal if self._principal is not None else local_memory_principal()
@@ -133,6 +167,10 @@ class HumanMemoryV7Runtime:
     def analysis_authority(self) -> Any:
         return self._analysis_authority
 
+    @property
+    def conversation_evidence_authority(self) -> Any:
+        return self._conversation_evidence_authority
+
     def build_kwargs(self) -> dict[str, Any]:
         embedder = self._embedder_getter() if self._embedder_getter else None
         if getattr(embedder, "kind", None) in {"hash", "mock"}:
@@ -140,24 +178,73 @@ class HumanMemoryV7Runtime:
             # power the short-horizon vector lane.
             embedder = None
         return {
+            "clock": self._clock,
             "short_horizon_embedder": embedder,
             "supported_filter_policies": HOST_SUPPORTED_FILTER_POLICIES,
             "evidence_authority": self._evidence_authority,
             "analysis_delivery_authority": self._analysis_authority,
             "classification_policy": host_classification_policy(),
+            **({"conversation_evidence_authority": self._conversation_evidence_authority}
+               if self._conversation_evidence_authority is not None else {}),
+            **({"procedure_observation_authority": self._procedure_observation_authority}
+               if self._procedure_observation_authority is not None else {}),
         }
 
     async def manager(self) -> Any:
         async with self._lock:
             if self._manager is None:
                 self._db_path.parent.mkdir(parents=True, exist_ok=True)
+                # The successor SDK owns old-catalog recognition, WAL-aware
+                # backup, migration and replay. Host never probes its schema.
+                # Older SDKs retain their existing initializer behavior.
+                if self._backend_factory is None and self._db_path.exists():
+                    from simple_harness_memory import migrations
+
+                    from simple_harness_memory.core.errors import MemoryLegacySchemaUnsupported
+                    for api, version, receipt_field in (
+                        ("migrate_human_memory_v7_to_v7_2", "7.2", "schema_upgrade_receipt"),
+                        ("migrate_human_memory_v7_2_to_v7_3", "7.3", "settlement_schema_upgrade_receipt"),
+                    ):
+                        upgrade = getattr(migrations, api, None)
+                        if upgrade is None:
+                            continue
+                        try:
+                            receipt = await upgrade(
+                                self._db_path,
+                                backup_path=self._db_path.with_name(
+                                    f"{self._db_path.name}.pre-schema-{version}.backup"
+                                ),
+                            )
+                        except MemoryLegacySchemaUnsupported:
+                            # An interrupted first initialization can leave an
+                            # empty file. The migration only recognizes old
+                            # initialized stores; the public builder below owns
+                            # fresh-store admission and still rejects unknown
+                            # schemas. Never remove/probe/rewrite the SDK DB here.
+                            continue
+                        setattr(self, receipt_field, receipt)
                 kwargs = self.build_kwargs()
+                if self._memory_action_authority is not None:
+                    kwargs["memory_action_authority"] = self._memory_action_authority
+                if self._history_source_authority is not None:
+                    kwargs["history_source_authority"] = self._history_source_authority
+                if self._prospective_signal_authority is not None:
+                    kwargs["prospective_signal_authority"] = self._prospective_signal_authority
+                if self._current_input_authority is not None:
+                    kwargs["current_input_authority"] = self._current_input_authority
+                if self.audit_access_authority is not None:
+                    kwargs["audit_access_authority"] = self.audit_access_authority
                 if self._backend_factory is not None:
                     manager = await self._backend_factory(self._db_path, **kwargs)
                 else:
                     from simple_harness_memory import build_human_memory_v7
 
                     manager = await build_human_memory_v7(self._db_path, **kwargs)
+                if self._history_source_authority is not None:
+                    enforcement = getattr(manager, "history_source_enforcement_version", None)
+                    if type(enforcement) is not int or enforcement != 1:
+                        await manager.close()
+                        raise RuntimeError("memory_history_source_enforcement_unavailable")
                 # Memory 0.6.1 §8.4: idempotent owner registration on every build
                 # (fresh install → the first reconcile read succeeds; replay → same receipt).
                 self.registration_receipt = await manager.register_principal_owner(
@@ -185,6 +272,8 @@ class HumanMemoryV7Runtime:
 
     async def close(self) -> None:
         async with self._lock:
+            if self.audit_access_authority is not None:
+                self.audit_access_authority.invalidate_all()
             if self._manager is not None:
                 await self._manager.close()
                 self._manager = None
@@ -236,6 +325,9 @@ class HumanMemoryV7Runtime:
         run_id: str,
         turn_ordinal: int,
         now: float | None = None,
+        memory_types: tuple[str, ...] | None = None,
+        include_short_horizon: bool | None = None,
+        admitted_context: Any | None = None,
     ) -> Any:
         """Execute a Host-authored typed RecallPlan; degraded lanes stay stable."""
 
@@ -258,9 +350,20 @@ class HumanMemoryV7Runtime:
             RecallSelectorDomain,
         )
 
+        from deskpet.memory.recall_selection import (
+            HOST_DEFAULT_MEMORY_TYPES, REQUESTABLE_MEMORY_TYPES, parse_recall_selection,
+        )
+
+        explicit_selection = memory_types is not None or include_short_horizon is not None
+        if explicit_selection:
+            requested_names, typed_short = parse_recall_selection(
+                memory_types, False if include_short_horizon is None else include_short_horizon,
+            )
+        else:
+            requested_names, typed_short = HOST_DEFAULT_MEMORY_TYPES, False
         manager = await self.manager()
         principal = self.principal()
-        moment = time.time() if now is None else float(now)
+        moment = float(self._clock()) if now is None else float(now)
         subject = principal.actor_id
         # The Host is the only author of disclosure identity; model payloads
         # can never override recipient/purpose (program hard contract 89-91).
@@ -284,23 +387,29 @@ class HumanMemoryV7Runtime:
             ).hexdigest(),
             1,
         )
-        memory_types = (
-            LongTermMemoryType.SEMANTIC,
-            LongTermMemoryType.EPISODE,
-            LongTermMemoryType.PROCEDURE,
-        )
+        if admitted_context is not None:
+            if admitted_context.run_id != run_id or admitted_context.subject != subject:
+                raise ValueError("typed_recall_admitted_context_mismatch")
+            disclosure = admitted_context.disclosure
+            evidence_ref = admitted_context.evidence_ref
+        available_types = tuple(LongTermMemoryType(name) for name in (
+            REQUESTABLE_MEMORY_TYPES if explicit_selection else HOST_DEFAULT_MEMORY_TYPES
+        ))
+        requested_types = tuple(LongTermMemoryType(name) for name in requested_names)
         context = RecallContext(
             run_id,
             subject,
-            f"turn-{turn_ordinal}",
+            f"turn-{turn_ordinal}" if admitted_context is None else admitted_context.turn_id,
             turn_ordinal,
             moment + 60.0,
             query,
             None,
-            memory_types,
-            False,
-            (RecallSelectorDomain.MEMORY_TYPE,),
-            (RecallRetrievalMode.FULL_TEXT,),
+            available_types,
+            typed_short,
+            (RecallSelectorDomain.MEMORY_TYPE, *((RecallSelectorDomain.SHORT_HORIZON,) if typed_short else ())),
+            # Short search already executes the vector lane; the typed plan
+            # must request it too, or fitting vector-only groups are discarded.
+            (RecallRetrievalMode.FULL_TEXT, *((RecallRetrievalMode.VECTOR,) if typed_short else ())),
             (),
             (),
             None,
@@ -313,6 +422,10 @@ class HumanMemoryV7Runtime:
             (evidence_ref,),
             RecallBudget(8, 16_384, 2_048, 1_000),
         )
+        if self.procedure_runtime is not None:
+            from dataclasses import replace
+            context = replace(context, procedure_applicability_fingerprints=(
+                await self.procedure_runtime.current_fingerprints(run_id)))
         plan = RecallPlan(
             str(
                 uuid.uuid5(
@@ -325,9 +438,10 @@ class HumanMemoryV7Runtime:
             context.context_hash,
             context.context_revision,
             context.query,
-            context.available_memory_types,
+            requested_types,
             context.short_horizon_allowed,
-            context.allowed_selector_domains,
+            (*((RecallSelectorDomain.MEMORY_TYPE,) if requested_types else ()),
+             *((RecallSelectorDomain.SHORT_HORIZON,) if typed_short else ())),
             context.allowed_retrieval_modes,
             (),
             context.allowed_entity_constraints,
@@ -342,9 +456,40 @@ class HumanMemoryV7Runtime:
             f"context-route:{run_id}:{turn_ordinal}",
             (RecallReasonCode.USER_FACT_DEPENDENCY,),
         )
-        execution = await manager.execute_typed_recall(
-            principal=principal, context=context, plan=plan, now=moment
+        execution = await self.operation_audit.execute_typed_recall(
+            manager, principal=principal, context=context, plan=plan, now=moment,
+            caller="foreground_recall",
         )
+        if explicit_selection:
+            # A single public typed result owns ranking, budget and durable
+            # selection. Never call the separate standalone short query here.
+            selected = None
+            if typed_short:
+                from simple_harness_memory import HistoryRecallBinding
+                from deskpet.memory.selected_short_sources import SelectedShortSourceReader, SelectedShortSources
+                bindings = tuple(
+                    HistoryRecallBinding(execution.result.result_id, execution.result.result_hash,
+                                         item.selected_item.item_id, item.result_item_hash)
+                    for item in execution.result.items
+                    if item.selected_item.source_kind.value == "short_horizon"
+                )
+                if not bindings:
+                    selected = SelectedShortSources(())
+                else:
+                    try:
+                        authority = self._conversation_evidence_authority
+                        if authority is None:
+                            raise RuntimeError("selected_short_authority_unavailable")
+                        await authority.bind_primary()
+                        selected = await SelectedShortSourceReader(
+                            authority, manager=manager, principal=principal,
+                        ).resolve_typed(disclosure_context=disclosure, bindings=bindings)
+                    except Exception:  # cancellation must still propagate
+                        selected = None
+            return RecallLanes(
+                execution=execution, short_horizon=None, short_horizon_requested=False,
+                typed_short_horizon_requested=typed_short, selected_typed_short_sources=selected,
+            )
         try:
             short_horizon = await manager.recall_short_horizon(
                 principal=principal,
@@ -353,9 +498,29 @@ class HumanMemoryV7Runtime:
                 limit=8,
                 now=moment,
             )
+            from dataclasses import replace
+            from simple_harness_memory import HistoryShortHorizonBinding
+            from deskpet.memory.selected_short_sources import SelectedShortSourceReader
+
+            authority = self._conversation_evidence_authority
+            if authority is None:
+                raise RuntimeError("selected_short_authority_unavailable")
+            await authority.bind_primary()
+            selected = await SelectedShortSourceReader(
+                authority, manager=manager, principal=principal,
+            ).resolve(disclosure_context=disclosure, bindings=tuple(
+                HistoryShortHorizonBinding(short_horizon.audit_id, hit.chunk_ref, hit.content_hash)
+                for hit in short_horizon.hits
+            ))
+            short_horizon = replace(short_horizon, hits=tuple(
+                hit for hit, item in zip(short_horizon.hits, selected.items, strict=True)
+                if item.visible
+            ))
         except Exception:  # noqa: BLE001 - degraded lane must stay stable
             short_horizon = None
-        return RecallLanes(execution=execution, short_horizon=short_horizon)
+            selected = None
+        return RecallLanes(execution=execution, short_horizon=short_horizon,
+                           selected_short_sources=selected)
 
 
 @dataclass(frozen=True, slots=True)
@@ -364,6 +529,18 @@ class RecallLanes:
 
     execution: Any
     short_horizon: Any | None
+    short_history_dependencies: Mapping[str, Any] | None = None
+    short_horizon_requested: bool = True
+    selected_short_sources: Any | None = None
+    typed_short_horizon_requested: bool = False
+    selected_typed_short_sources: Any | None = None
+
+    def __post_init__(self):
+        if self.short_history_dependencies is not None:
+            from simple_harness import freeze_json
+            from deskpet.execution.primary_dependencies import parse_dependencies
+            object.__setattr__(self, "short_history_dependencies",
+                freeze_json(parse_dependencies(self.short_history_dependencies)))
 
     @property
     def degradation_codes(self) -> tuple[str, ...]:
@@ -371,9 +548,14 @@ class RecallLanes:
             getattr(code, "value", str(code))
             for code in self.execution.degradation_codes
         )
-        if self.short_horizon is None:
+        if self.typed_short_horizon_requested:
+            if self.selected_typed_short_sources is None:
+                codes = (*codes, "short_horizon_sources_unavailable")
+            elif any(not item.visible for item in self.selected_typed_short_sources.items):
+                codes = (*codes, "short_horizon_sources_rejected")
+        if self.short_horizon_requested and self.short_horizon is None:
             codes = (*codes, "short_horizon_unavailable")
-        elif self.short_horizon.degradation_code is not None:
+        elif self.short_horizon is not None and self.short_horizon.degradation_code is not None:
             codes = (
                 *codes,
                 getattr(
@@ -405,11 +587,29 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
     anything enters Context and deduplicates by public payload hash.
     """
 
+    from simple_harness import thaw_json
+
     execution = getattr(lanes, "execution", lanes)
     short_horizon = getattr(lanes, "short_horizon", None)
     fragments: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in execution.result.items:
+        source_kind = getattr(item.selected_item, "source_kind", "cognitive_memory")
+        typed_short = getattr(source_kind, "value", source_kind) == "short_horizon"
+        source_proof = None
+        if typed_short:
+            selected = getattr(lanes, "selected_typed_short_sources", None)
+            if selected is None:
+                continue
+            matched = next((observed for observed in selected.items if observed.visible and (
+                observed.binding.result_id, observed.binding.result_hash,
+                observed.binding.item_id, observed.binding.item_hash,
+            ) == (execution.result.result_id, execution.result.result_hash,
+                  item.selected_item.item_id, item.result_item_hash)), None)
+            if matched is None:
+                continue
+            from deskpet.memory.selected_short_sources import SelectedShortSources
+            source_proof = SelectedShortSources((matched,)).visibility_dependencies
         privacy = getattr(
             item.effective_privacy_class, "value", str(item.effective_privacy_class)
         )
@@ -423,22 +623,43 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
         fragments.append(
             {
                 "ref": item.selected_item.item_id,
-                "memory_type": getattr(
+                "memory_type": "short_horizon" if typed_short else getattr(
                     item.selected_item.memory_type,
                     "value",
                     str(item.selected_item.memory_type),
                 ),
                 "privacy_class": privacy,
                 "score": float(item.score),
-                "payload": item.public_payload,
+                "payload": thaw_json(item.public_payload),
                 "payload_hash": payload_hash,
                 "source_task_scope_ids": list(item.source_task_scope_ids),
                 "bytes": bytes_len,
                 "tokens": tokens,
-                "lane": "long_term_typed",
+                "lane": "short_horizon_typed" if typed_short else "long_term_typed",
+                "history_binding": {
+                    "result_id": execution.result.result_id,
+                    "result_hash": execution.result.result_hash,
+                    "item_id": item.selected_item.item_id,
+                    "item_hash": item.result_item_hash,
+                },
+                **({"history_source_dependencies": thaw_json(source_proof)}
+                   if source_proof is not None else {}),
             }
         )
     for hit in getattr(short_horizon, "hits", ()) or ():
+        proof = getattr(lanes, "short_history_dependencies", None)
+        selected = getattr(lanes, "selected_short_sources", None)
+        if selected is not None:
+            from deskpet.memory.selected_short_sources import SelectedShortSources
+
+            item = next((item for item in selected.items if item.visible and (
+                item.binding.audit_id, item.binding.chunk_ref, item.binding.content_hash
+            ) == (short_horizon.audit_id, hit.chunk_ref, hit.content_hash)), None)
+            if item is None:
+                continue
+            # Bind each emitted fragment only to its own full group. A later
+            # projection/budget cut must not retain dependencies of a dropped hit.
+            proof = SelectedShortSources((item,)).visibility_dependencies
         privacy = getattr(
             hit.effective_privacy_class, "value", str(hit.effective_privacy_class)
         )
@@ -454,12 +675,16 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
                 "memory_type": "short_horizon",
                 "privacy_class": privacy,
                 "score": float(hit.score),
-                "payload": hit.content,
+                "payload": thaw_json(hit.content),
                 "payload_hash": hit.content_hash,
                 "source_task_scope_ids": [],
                 "bytes": bytes_len,
                 "tokens": tokens,
                 "lane": "short_horizon",
+                "history_binding": {"audit_id": short_horizon.audit_id,
+                    "chunk_ref": hit.chunk_ref, "content_hash": hit.content_hash},
+                **({"history_source_dependencies": thaw_json(proof)}
+                   if proof is not None else {}),
             }
         )
     return tuple(fragments)

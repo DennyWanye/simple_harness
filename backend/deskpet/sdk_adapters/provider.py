@@ -14,6 +14,7 @@ import time
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from contextvars import ContextVar
 from typing import Any, Protocol
 
 import httpx
@@ -41,6 +42,58 @@ _PROVIDER_TOOL_CALLS_METADATA_KEY = "provider_tool_calls"
 _PROVIDER_REASONING_CONTENT_METADATA_KEY = "provider_reasoning_content"
 _PUBLIC_PROGRESS_ARGUMENT = "deskpet_public_progress"
 logger = logging.getLogger(__name__)
+_diagnostic_request_ref: ContextVar[str] = ContextVar("provider_diagnostic_request_ref", default="missing")
+
+
+class _DiagnosticPostClient:
+    """Borrow the existing HTTP client; never own, retry or close it.
+
+    SDK status rejection precedes response parsing. Observe that one returned
+    response here, while leaving SDK cancellation, taxonomy and parsing intact.
+    """
+    def __init__(self, client: httpx.AsyncClient, redactor: Any) -> None:
+        self._client = client
+        self._redactor = redactor
+
+    async def post(self, *args: Any, **kwargs: Any) -> httpx.Response:
+        response = await self._client.post(*args, **kwargs)
+        if response.status_code >= 400:
+            try:
+                raw = response.content
+                diagnostic: dict[str, Any] = {
+                    "body_sha256": hashlib.sha256(raw).hexdigest(),
+                    "body_bytes": len(raw),
+                    "body_format": "oversized" if len(raw) > 65536 else "unstructured",
+                }
+                # Do not parse arbitrary-size bodies or log arbitrary JSON.
+                if len(raw) <= 65536:
+                    try:
+                        payload = response.json()
+                    except (ValueError, UnicodeError):
+                        payload = None
+                    error = payload.get("error") if isinstance(payload, Mapping) else None
+                    if isinstance(error, Mapping):
+                        diagnostic["body_format"] = "structured_error"
+                        for field, limit in (("code", 128), ("type", 128), ("param", 256), ("message", 1024)):
+                            value = error.get(field)
+                            if isinstance(value, str):
+                                # Redact before truncation, including a secret
+                                # crossing the clipping boundary. JSON escaping
+                                # prevents line/control-character log injection.
+                                diagnostic[field] = self._redactor.text(value)[:limit]
+                logger.warning(
+                    "product_provider_http_rejected request_ref=%s status_code=%s diagnostic=%s",
+                    _diagnostic_request_ref.get(), response.status_code,
+                    json.dumps(diagnostic, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+                )
+            except Exception:
+                # Diagnostics must never replace the original Provider error.
+                try:
+                    logger.warning("product_provider_http_rejection_diagnostic_unavailable request_ref=%s status_code=%s",
+                                   _diagnostic_request_ref.get(), response.status_code)
+                except Exception:
+                    pass
+        return response
 
 
 def _opaque_ref(value: object) -> str:
@@ -168,11 +221,24 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._reasoning_wire = dict(reasoning_wire or {})
+        self._client = _DiagnosticPostClient(self._client, self._redactor)
+
+    async def _post_once(self, request: ProviderRequest) -> ProviderResponse:
+        token = _diagnostic_request_ref.set(_opaque_ref(request.request_id.value))
+        try:
+            return await super()._post_once(request)
+        finally:
+            _diagnostic_request_ref.reset(token)
 
     def _request_payload(self, request: ProviderRequest) -> dict[str, Any]:
         payload = super()._request_payload(request)
         payload["messages"] = self._wire_messages(request.messages)
         payload.update(self._reasoning_wire)
+        # Preserve Chat Completions' non-strict optional-field contract
+        # explicitly on the physical wire; do not rewrite schemas or arguments.
+        for tool in payload.get("tools", ()):
+            if tool.get("type") == "function":
+                tool["function"]["strict"] = False
         return payload
 
     @classmethod
@@ -514,6 +580,7 @@ class ProductProviderAdapter:
         # （.local-test-evidence/real-ui-channel/20260904T165832、T170608）。
         # 取 240s：高于当前最大车道 deadline（analysis 180s）并留余量。
         timeout: float = 240.0,
+        pre_invoke_guard=None,
     ) -> None:
         entry = registry.get_entry(provider_id)
         if entry is None or not bool(getattr(entry, "enabled", True)):
@@ -575,6 +642,7 @@ class ProductProviderAdapter:
             pricing_key=pricing_key,
             reasoning_wire=self.reasoning_wire,
         )
+        self._pre_invoke_guard = pre_invoke_guard
         self._timeout_seconds = float(timeout)
         self._target = ProviderTarget(
             provider_id,
@@ -591,6 +659,10 @@ class ProductProviderAdapter:
     async def invoke(
         self, request: ProviderRequest, *, cancel: CancelToken
     ) -> ProviderResponse:
+        # Only this pre-delegate boundary may reject as a definite request
+        # failure. Do not reclassify errors after a physical handoff.
+        if self._pre_invoke_guard is not None:
+            await self._pre_invoke_guard(request)
         started_at = time.monotonic()
         request_ref = _opaque_ref(request.request_id.value)
         summary = _request_diagnostic_summary(request)
@@ -800,9 +872,10 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
     a tombstone).
     """
 
-    def __init__(self, *args: Any, evidence_ingress: Any | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, evidence_ingress: Any | None = None, typed_terminal=None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._evidence_ingress = evidence_ingress
+        self._typed_terminal = typed_terminal
 
     async def invoke(
         self,
@@ -812,6 +885,7 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
         cancel,
         execution_lease,
         workflow_lease=None,
+        context_use=None,
     ):
         binding = None
         ingress = getattr(self, "_evidence_ingress", None)
@@ -831,6 +905,7 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
                 cancel=cancel,
                 execution_lease=execution_lease,
                 workflow_lease=workflow_lease,
+                context_use=context_use,
             )
         except ProviderInvocationUnknownError:
             if cancel.is_cancelled:
@@ -846,6 +921,24 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
                 fact=provider_invocation_fact(run_id.value, request, response),
             )
         return response
+
+    async def prepare_context_use_terminal(self, run_id, request, *, checkpoint, execution_lease):
+        # SDK calls this after the actual successful response is checkpointed.
+        await super().prepare_context_use_terminal(
+            run_id, request, checkpoint=checkpoint, execution_lease=execution_lease,
+        )
+        if self._typed_terminal is not None:
+            from simple_harness import ProviderContextUseAttemptV1
+            attempt = ProviderContextUseAttemptV1.from_json(checkpoint["context_use_attempt"])
+            await self._typed_terminal.record_terminal(run_id, request, attempt)
+
+    def verify_context_use_terminal(self, run_id, request_id, *, checkpoint, execution_lease):
+        view = super().verify_context_use_terminal(
+            run_id, request_id, checkpoint=checkpoint, execution_lease=execution_lease,
+        )
+        if self._typed_terminal is not None:
+            self._typed_terminal.verify_terminal(run_id, request_id, checkpoint, verified_use=view)
+        return view
 
 
 def provider_invocation_fact(run_id: str, request: ProviderRequest, response: ProviderResponse | None, *, error_code: str | None = None):

@@ -150,3 +150,64 @@ def test_main_wires_one_host_sink_into_memory_and_harness() -> None:
     assert 'runtime_config_kwargs["observability_sink"] = _sdk_observability.sink' in main_source
     assert "_sdk_observability.bind_ingress(" in main_source
     assert "_sdk_observability.reset_ingress(observability_token)" in main_source
+
+
+@pytest.mark.asyncio
+async def test_installed_memory_async_snapshot_reaches_export_without_coroutine_leak(tmp_path):
+    import warnings
+    from simple_harness_memory import MemoryManager
+
+    host = HostSdkObservability(tmp_path / "logs")
+    manager = await MemoryManager.build_development(tmp_path / "memory.db", embedder="hash")
+    try:
+        host.register_snapshot_source("memory", manager.diagnostics_snapshot)
+        host.register_snapshot_source("sync", lambda: {"health": "ok"})
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", RuntimeWarning)
+            host.export()  # Compatibility path explicitly reports async-required.
+            before = json.loads((host.log_dir / SDK_SNAPSHOT_FILENAME).read_text())
+            assert before["sources"]["memory"]["error_code"] == "snapshot_requires_async_export"
+            assert set((await host.export_async()).values()) == {"ok"}
+        assert not [item for item in caught if "never awaited" in str(item.message)]
+        actual = json.loads((host.log_dir / SDK_SNAPSHOT_FILENAME).read_text())
+        expected = await manager.diagnostics_snapshot()
+        assert actual["sources"]["memory"] == expected
+        assert actual["sources"]["memory"]["lifecycle"] == "open"
+        assert "storage" in actual["sources"]["memory"]
+        assert actual["sources"]["sync"] == {"health": "ok"}
+        assert actual["degraded_codes"] == []
+    finally:
+        await manager.close()
+        host.sink.close()
+
+
+@pytest.mark.asyncio
+async def test_async_snapshot_timeout_and_cancellation_leave_no_pending_collector(tmp_path):
+    import asyncio
+
+    host = HostSdkObservability(tmp_path)
+    started, stopped = asyncio.Event(), asyncio.Event()
+    async def blocked():
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+    host.register_snapshot_source("blocked", blocked)
+    host.register_snapshot_source("sync", lambda: {"health": "ok"})
+    try:
+        await host.export_async()
+        assert started.is_set() and stopped.is_set()
+        result = json.loads((tmp_path / SDK_SNAPSHOT_FILENAME).read_text())
+        assert result["sources"]["blocked"] == {"health": "degraded", "error_code": "snapshot_unavailable"}
+        assert result["sources"]["sync"] == {"health": "ok"}
+        started.clear()
+        stopped.clear()
+        pending = asyncio.create_task(host.export_async())
+        await started.wait()
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        assert stopped.is_set()
+    finally:
+        host.sink.close()

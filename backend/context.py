@@ -107,6 +107,8 @@ _VALID_SERVICES = frozenset({
     "provider_invocation_coordinator",
     "provider_workload_router",
     "provider_workload_audit",
+    "terminal_operation_audit",
+    "terminal_operation_audit_status",
     "harness_public_read_service",
     "session_terminal_projection_gate",
     # Slice B: the sole immutable publication for the closed-ingress SDK stack.
@@ -120,6 +122,8 @@ _VALID_SERVICES = frozenset({
     "sdk_runtime_tool_inventory",
     "sdk_prepared_authorization_policy",
     "sdk_run_context_authority",
+    "sdk_typed_context_use_authority",
+    "prospective_occurrence_coordinator",
     "sdk_runtime_decision_sink",
     "sdk_task_execution_authority",
     # S5b: EffectGate (Task 1), closure instruction reader (Task 3 review F-2) and
@@ -273,6 +277,8 @@ class ServiceContext:
     provider_invocation_coordinator: Any | None = None
     provider_workload_router: Any | None = None
     provider_workload_audit: Any | None = None
+    terminal_operation_audit: Any | None = None
+    terminal_operation_audit_status: str | None = None
     harness_public_read_service: Any | None = None
     session_terminal_projection_gate: Any | None = None
     sdk_runtime_ready: Any | None = None
@@ -282,6 +288,8 @@ class ServiceContext:
     sdk_runtime_tool_inventory: Any | None = None
     sdk_prepared_authorization_policy: Any | None = None
     sdk_run_context_authority: Any | None = None
+    sdk_typed_context_use_authority: Any | None = None
+    prospective_occurrence_coordinator: Any | None = None
     sdk_runtime_decision_sink: Any | None = None
     sdk_task_execution_authority: Any | None = None
     sdk_effect_gate: Any | None = None

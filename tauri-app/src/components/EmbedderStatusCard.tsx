@@ -12,21 +12,19 @@ type Props = {
   getChannel: () => ControlChannel | null;
 };
 
-// EmbedderStatusCard — P4-S16: SettingsPanel 内嵌卡片，显示当前 BGE-M3
-// embedder 状态。后端 handler `embedder_status` 返回 is_ready/is_mock/
-// model_path/reason；UI 据此分三档渲染：
-//   - is_ready=true && is_mock=false → 绿色「BGE-M3 已就绪」
-//   - is_ready=true && is_mock=true  → 黄色「Mock 模式」+ 下载提示
-//   - is_ready=false 或服务未注册   → 灰色「加载中…」+ reason
-//
-// 跟 SettingsPanel 的 inline-style 风格保持一致（不引 CSS-in-JS 库）。
+// Metadata-only status: refreshing never requests a model load.
 type Status =
   | { kind: "loading" }
+  | { kind: "cold" }
+  | { kind: "failed"; reason: string }
   | { kind: "real"; modelPath: string }
   | { kind: "mock"; modelPath: string }
   | { kind: "error"; reason: string };
 
 export function EmbedderStatusCard({ getChannel }: Props) {
+  const [modelName, setModelName] = useState("语义嵌入模型");
+  const [modelPath, setModelPath] = useState("");
+  const [checking, setChecking] = useState(true);
   const [status, setStatus] = useState<Status>({ kind: "loading" });
 
   const refresh = useCallback(() => {
@@ -35,7 +33,7 @@ export function EmbedderStatusCard({ getChannel }: Props) {
       setStatus({ kind: "error", reason: "control channel unavailable" });
       return;
     }
-    setStatus({ kind: "loading" });
+    setChecking(true);
     ch.send({ type: "embedder_status", payload: {} });
   }, [getChannel]);
 
@@ -48,6 +46,17 @@ export function EmbedderStatusCard({ getChannel }: Props) {
       if (msg.type !== "embedder_status_response") return;
       const m = msg as EmbedderStatusResponse;
       const p = m.payload;
+      setChecking(false);
+      setModelName(p.model_name || "语义嵌入模型");
+      setModelPath(p.model_path);
+      if (p.state === "cold") {
+        setStatus({ kind: "cold" });
+        return;
+      }
+      if (p.state === "failed") {
+        setStatus({ kind: "failed", reason: p.reason || "模型加载失败" });
+        return;
+      }
       if (p.reason) {
         setStatus({ kind: "error", reason: p.reason });
         return;
@@ -85,7 +94,7 @@ export function EmbedderStatusCard({ getChannel }: Props) {
           marginBottom: "4px",
         }}
       >
-        <strong style={{ fontSize: "12px" }}>BGE-M3 语义嵌入</strong>
+        <strong style={{ fontSize: "12px" }}>{modelName}</strong>
         <button
           data-testid="embedder-status-refresh"
           onClick={refresh}
@@ -104,13 +113,32 @@ export function EmbedderStatusCard({ getChannel }: Props) {
       </div>
 
       {status.kind === "loading" && (
-        <Badge color="#64748b" label="加载中…" />
+        <>
+          <Badge color="#64748b" label={checking ? "读取状态…" : "加载中…"} />
+          <PathLine path={modelPath} />
+        </>
+      )}
+
+      {status.kind === "cold" && (
+        <>
+          <Badge color="#64748b" label="按需加载" />
+          <Hint>模型已配置，首次语义请求时加载。</Hint>
+          <PathLine path={modelPath} />
+        </>
+      )}
+
+      {status.kind === "failed" && (
+        <>
+          <Badge color="#ef4444" label="加载失败" />
+          <Hint>下次语义请求可重试；刷新仅查看状态。{status.reason}</Hint>
+          <PathLine path={modelPath} />
+        </>
       )}
 
       {status.kind === "real" && (
         <>
-          <Badge color="#10b981" label="BGE-M3 已就绪 ✓" />
-          <Hint>语义搜索完整激活（向量召回 + 跨语言）。</Hint>
+          <Badge color="#10b981" label={`${modelName} 已就绪 ✓`} />
+          <Hint>模型已加载，可处理语义嵌入请求。</Hint>
           <PathLine path={status.modelPath} />
         </>
       )}
@@ -119,9 +147,7 @@ export function EmbedderStatusCard({ getChannel }: Props) {
         <>
           <Badge color="#f59e0b" label="Mock 模式 ⚠" />
           <Hint>
-            BGE-M3 模型未加载，语义搜索能力受限（仅关键词 / 历史回忆）。
-            运行 <code style={codeStyle}>python backend/scripts/download_bge_m3.py</code>{" "}
-            下载真实模型（约 2.3GB）。
+            当前使用模拟嵌入，语义搜索能力受限。请检查已选择模型的本地资源配置。
           </Hint>
           <PathLine path={status.modelPath} />
         </>
@@ -192,11 +218,3 @@ function PathLine({ path }: { path: string }) {
     </div>
   );
 }
-
-const codeStyle: React.CSSProperties = {
-  background: "rgba(15,23,42,0.6)",
-  padding: "1px 4px",
-  borderRadius: "3px",
-  fontSize: "10px",
-  fontFamily: "monospace",
-};

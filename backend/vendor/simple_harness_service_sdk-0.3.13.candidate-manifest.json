@@ -1,0 +1,81 @@
+{
+  "authority": {
+    "index_sha256": "99165c10601dbd2461eeda37c89185c14b2ed91e26959a99106078b17e5a61f4",
+    "packs": [
+      {
+        "directory": "openai-native-2026-08-27.1",
+        "manifest_sha256": "d55c5b9f5c1813bbdc97997f750eac6a98d1f85cdd020c32d43d7358ac49f2b2",
+        "protocol_id": "openai-native/2026-08-27.1",
+        "sha256sums_sha256": "cc2ebafd90ac1109bc2f0dce2e95a5c93408e8f3c62e14bc4ee6551878ac8109"
+      },
+      {
+        "directory": "qwen-native-2026-08-28.3",
+        "manifest_sha256": "1a7c118bf96dcb3cee7e2545aecd3a053240c84d4ac1d0c0f1ac3e97db0d7df8",
+        "protocol_id": "qwen-native/2026-08-28.3",
+        "sha256sums_sha256": "f11b88f84f93e5a6241aaa641facd13fcf1f4499c4325ad9d21a2c56eda387ab"
+      },
+      {
+        "directory": "realtime-local-2026-08-27.1",
+        "manifest_sha256": "f2cd8ce696a2851cfb17f56cf073228c82ee2065f5888c828dc2b1041dc6b2a0",
+        "protocol_id": "simple-harness.realtime-local/2026-08-27.1",
+        "sha256sums_sha256": "a682f9658203ad6265400382709592fd1ce12540c25029fff41f7d66e874582a"
+      },
+      {
+        "directory": "tokenseller-realtime-control-2026-08-28.3",
+        "manifest_sha256": "cb86369b98753713910083f0c1350f3bd56832b7e8f9b756d02f0e7b0c34b234",
+        "protocol_id": "tokenseller.realtime-control/2026-08-28.3",
+        "sha256sums_sha256": "d6677c09d338c642ce5a93676b12fa0457fae1373cd7a87c1905e370b3030547"
+      }
+    ],
+    "root_digest_algorithm": "sha256(path_utf8 + NUL + lowercase_file_sha256_ascii + LF)",
+    "root_sha256": "b9675a5c64136bb9ba7064cc78b3cc39662f7f374629bcd4731a833bbff2873d"
+  },
+  "build_manifest_sha256": "2a3fd60579fa4a9fca461f419de7350fdcd362d4fba980f3209653a357f7e4dc",
+  "ci_artifact_id": null,
+  "ci_run_id": null,
+  "declared_dependencies": [
+    "simple-harness-sdk @ https://github.com/DennyWanye/simple-harness-sdk/releases/download/v0.6.2/simple_harness_sdk-0.6.2-py3-none-any.whl#sha256=ffb7c0619851f3c936fcc1d0cf527d07f49e87770291b85e57fe87032ac02c2e",
+    "prompt-toolkit>=3.0.52,<4"
+  ],
+  "declared_optional_dependencies": {
+    "memory": [
+      "simple-harness-memory-sdk @ https://github.com/DennyWanye/simple-harness-memory-sdk/releases/download/v0.5.2/simple_harness_memory_sdk-0.5.2-py3-none-any.whl#sha256=deff2fa85a269a3978f2c6efcd99fda77abcb74444170361365fd00ec0164e9e"
+    ],
+    "realtime": [
+      "httpx>=0.28.1,<1",
+      "websockets>=15,<16"
+    ]
+  },
+  "schema": "simple-harness-service-candidate-manifest-v2",
+  "sdk_release_unit": {
+    "members": [
+      {
+        "distribution": "simple-harness-service-sdk",
+        "role": "service",
+        "sha256": "26205f89854e27bd7ed8cbd6f7ac1f6b621603f973a081823bc6b707ae0784a8",
+        "version": "0.3.13",
+        "wheel": "simple_harness_service_sdk-0.3.13-py3-none-any.whl"
+      },
+      {
+        "distribution": "simple-harness-sdk",
+        "role": "harness",
+        "sha256": "1a9ed5c95e6cddd4e0ccd85124320a6001008740a53213712fc89f3467cb4cd7",
+        "version": "0.7.3",
+        "wheel": "simple_harness_sdk-0.7.3-py3-none-any.whl"
+      },
+      {
+        "distribution": "simple-harness-memory-sdk",
+        "role": "memory",
+        "sha256": "1095d90c8f6202a4dab6a547076bb6517944f3f964a032136c2378bbd5ba8774",
+        "version": "0.6.12",
+        "wheel": "simple_harness_memory_sdk-0.6.12-py3-none-any.whl"
+      }
+    ],
+    "schema": "simple-harness-three-sdk-release-unit-v1",
+    "status": "explicit-local-host-combination-not-published-release"
+  },
+  "source": {
+    "commit": "74a622572602bf3b6973f5d8a55c09bf62ff08ba"
+  },
+  "status": "local-candidate-not-release"
+}

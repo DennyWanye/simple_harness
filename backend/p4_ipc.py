@@ -368,6 +368,13 @@ async def _handle_embedder_status(
         )
         return
     try:
+        # WeMM returns one atomic metadata-only snapshot; probing must not load.
+        snapshot_probe = getattr(embedder, "status_snapshot", None)
+        if callable(snapshot_probe):
+            await ws.send_json({
+                "type": "embedder_status_response", "payload": snapshot_probe(),
+            })
+            return
         # Legacy product embedders expose is_ready()/is_mock().  The official
         # Memory SDK embedder is constructed synchronously from pinned local
         # resources and exposes kind/lineage instead.  Support both while the

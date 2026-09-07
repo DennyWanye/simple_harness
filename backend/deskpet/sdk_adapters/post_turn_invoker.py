@@ -176,6 +176,11 @@ class ForegroundLeaseFence:
             boundary=EffectBoundary.CLOSURE,
         )
 
+    async def reserve_attempt_with_input(self, row, members, observer):
+        await self._store.reserve_post_turn_attempt(
+            host_run_id=self.host_run_id, sdk_run_id=self.sdk_run_id, owner_id=self.owner_id,
+            generation=self.generation, attempt=row, members=members, input_observer_tx=observer)
+
 
 class RunBoundInvoker:
     def __init__(
@@ -359,6 +364,7 @@ class RunBoundInvoker:
         build_request: Callable[[AttemptRow], Any],
         plan_id: str | None = None,
         deadline_seconds: float | None = 60.0,
+        prepare_attempt=None,
     ) -> InvocationOutcome:
         if purpose not in PURPOSES:
             raise ValueError("post_turn_purpose_invalid")
@@ -448,7 +454,13 @@ class RunBoundInvoker:
             "reserved_at": self._clock(),
         }
         # reserved row + lease validation in one store transaction (owner only).
-        await self._fence.reserve_attempt(row, members)
+        if prepare_attempt is not None and reuse_response is None and adapter is not None:
+            # Existing success/UNKNOWN/reconciled results above never need a new
+            # carrier. Only a genuinely new physical attempt prepares sources.
+            members, observer = await prepare_attempt(row)
+            await self._fence.reserve_attempt_with_input(row, members, observer)
+        else:
+            await self._fence.reserve_attempt(row, members)
         self._fault("attempt-reserved")
         if adapter is None:
             await self._settle_failed(
@@ -532,6 +544,12 @@ class RunBoundInvoker:
                 unknown_class="sent_unknown", provider_calls=1,
             )
         except ProviderError as exc:
+            from deskpet.execution.closure_request_guard import ClosurePhysicalRequestRejected
+            if purpose == "closure" and isinstance(exc, ClosurePhysicalRequestRejected):
+                reason = "closure_request_disclosure_rejected"
+                await self._settle_failed(attempt_id, unknown_class="not_sent", reason=reason)
+                return InvocationOutcome("failed", attempt_id, ordinal, reason_code=reason,
+                                         unknown_class="not_sent", provider_calls=0)
             reason = f"provider_{_error_code(exc)}"
             await self._settle_failed(attempt_id, unknown_class=None, reason=reason)
             return InvocationOutcome("failed", attempt_id, ordinal, reason_code=reason, provider_calls=1)

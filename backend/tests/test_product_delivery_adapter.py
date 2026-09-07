@@ -471,6 +471,16 @@ async def test_web_outcomes_round_trip_real_session_db_with_idempotent_public_pr
         ToolResult.succeeded(succeeded_call.call_id, {"results": [{}, {}]}),
     )
 
+    # PrimaryRunPanel correlates live request/result rows by the SDK call ID.
+    frames = [item.args[0] for item in websocket.send_json.await_args_list]
+    requested = [f["payload"] for f in frames if f["type"] == "tool_call"]
+    returned = [f["payload"] for f in frames if f["type"] == "tool_result"]
+    assert [p["call_id"] for p in requested] == [
+        "call-web-failed", "call-web-succeeded"
+    ]
+    assert [p["call_id"] for p in returned] == [p["call_id"] for p in requested]
+    assert all(p["run_id"] == context.run_id for p in requested + returned)
+
     rows = await session_db.get_recent_messages(context.session_id, limit=20)
     tool_rows = [row for row in rows if row["role"] == "tool"]
     assert len(tool_rows) == 2

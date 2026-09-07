@@ -3021,7 +3021,31 @@ async def _authorization_auto_mode() -> bool:
     return (await store.get_policy_state()).mode == "auto"
 
 
-async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ignore[no-untyped-def]
+async def _activate_terminal_operation_audit():
+    """Default-on audit of actual foreground terminals; no Provider work here."""
+    import sqlite3
+
+    from deskpet.operation_audit.composition import compose_terminal_audit
+
+    consumer = service_context.get("terminal_operation_audit")
+    if consumer is None:
+        try:
+            consumer = await compose_terminal_audit(
+                _state_db_path,
+                stack_getter=lambda: _sdk_runtime_stack,
+                subject="deskpet-local-owner-v1",
+            )
+        except (OSError, sqlite3.Error):
+            service_context.register("terminal_operation_audit_status", "storage_unavailable")
+            logger.warning("terminal_operation_audit_storage_unavailable")
+            return None
+        service_context.register("terminal_operation_audit", consumer)
+        service_context.register("terminal_operation_audit_status", "started")
+    return consumer
+
+
+async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=None,
+        configured_workspace_root=None) -> None:  # type: ignore[no-untyped-def]
     """Publish fresh-HUMAN authorities only after their dependencies are ready."""
 
     from deskpet.memory.schema import StartupCompositionMode
@@ -3051,6 +3075,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         subject="deskpet-local-owner-v1",
         foreground=foreground,
         policy=policy,
+        configured_workspace_root=configured_workspace_root,
     )
     recovery = build_recovery_lifecycle_port(
         db_path=_state_db_path,
@@ -3087,10 +3112,10 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         ForegroundRuntimeExecutionAuthority,
         SqliteSdkTerminalObserver,
     )
+    from deskpet.execution.primary_context import PrimaryForegroundContextPort
     from deskpet.execution.foreground_runtime_ports import (
         ProductForegroundProviderPort,
         ProductForegroundToolPort,
-        TaskScopeForegroundContextPort,
     )
 
     class _AuditSink:
@@ -3137,12 +3162,21 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
                 generation=self.generation, boundary=EffectBoundary.CLOSURE,
             )
 
+        async def reserve_attempt_with_input(self, row, members, observer):
+            await foreground.reserve_post_turn_attempt(
+                host_run_id=self.host_run_id, sdk_run_id=self.sdk_run_id, owner_id=self.owner_id,
+                generation=self.generation, attempt=row, members=members, input_observer_tx=observer)
+
     _runtime_owner_id = f"deskpet-foreground:{os.getpid()}:{uuid.uuid4().hex}"
     _closure_fence = _RuntimeLeaseFence(_runtime_owner_id)
+    from deskpet.execution.closure_request_guard import ClosureRequestAuthority, ClosurePhysicalRequestGuard
+    _closure_request_authority = ClosureRequestAuthority(
+        _state_db_path, stack_getter=lambda: _sdk_runtime_stack, policy_factory=_primary_history_policy)
 
     def _closure_adapter(record):  # type: ignore[no-untyped-def]
         binding = SdkRunBindingV1.from_record(record)
-        return _sdk_provider_binding_resolver.build_authority(binding).provider
+        return _sdk_provider_binding_resolver.build_authority(binding,
+            request_guard=ClosurePhysicalRequestGuard(_closure_request_authority, binding=binding)).provider
 
     class _BoundClosureFallback:
         """Binds the fence to the (host_run, sdk_run, generation) of each settle call."""
@@ -3155,6 +3189,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
                 ),
                 service=_closure_service,
                 run_facts_reader=_sdk_runtime_stack,
+                request_authority=_closure_request_authority,
             )
 
         async def settle(self, *, host_run_id, sdk_run_id, owner_id, generation, terminal_state):  # type: ignore[no-untyped-def]
@@ -3175,77 +3210,49 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
             _state_db_path, evidence_ingress=_ensure_evidence_ingress()
         )
 
-    async def _foreground_conversation_entrypoint(
-        *,
-        session_id: str,
-        sdk_run_id: str,
-        text: str,
-        context_snapshot_id: str,
-        provider_messages: tuple = (),
-    ) -> object:
-        """前台 Run 的主对话入口。
+    from deskpet.execution.primary_context import ForegroundConversationEntrypoint
 
-        冻结 SDK ``runtime/kernel.py:729-733`` 规定：启用 Agent Memory 时 ``start()``
-        必须带 ``conversation``。前台链此前不传，于是生产上从未真正启动过一个前台
-        SDK Run（实测 ``conversation_entrypoint_required``）。这里用与 chat 路径
-        （``main.py:10409``/``:10440``）**同一套**身份权威与 context source 仓库构造它。
-        """
+    _foreground_conversation_entrypoint = ForegroundConversationEntrypoint(
+        session_store=service_context.get("session_db"),
+        identity_authority=service_context.get("memory_identity_authority"),
+        context_sources=service_context.get("sdk_context_source_repository"),
+    )
 
-        from simple_harness.contracts.messages import Message, MessageRole
-        from simple_harness.runtime import ConversationTurnInput
+    async def _primary_state_changed() -> None:
+        await _broadcast_control({"type": "human_memory_changed", "payload": {}})
 
-        identity_authority = service_context.get("memory_identity_authority")
-        if identity_authority is None:
-            raise RuntimeError("validated Memory identity authority is unavailable")
-        context_sources = service_context.get("sdk_context_source_repository")
-        if context_sources is None:
-            raise RuntimeError("SDK context source repository is unavailable")
-        # Memory 身份绑定要求 ``memory_session_identities.session_id`` 有一条真实
-        # ``sessions`` 行（``memory/identity.py:76-79`` 的外键）。前台 Run 用的是
-        # ``foreground_runtime.py:207-209`` 从 host_run_id 确定性派生的
-        # ``foreground-execution-<sha256>``，此前不存在该行 → FOREIGN KEY 失败，
-        # **前台链因此从未启动过一个 SDK Run**。
-        #
-        # 这里为该派生 id 建一条普通 sessions 行。**不用主对话 id**：
-        # ``memory/primary_authority.py`` 的 ``assert_not_primary_authority`` 是有意闸门，
-        # 主对话不得被当作普通会话写入（``session_db.py:1393``/``:1421`` 两处强制），
-        # 绕开它等于削弱已批准的不可变性。也**不放宽外键**（那等于允许记忆身份挂空）。
-        # 与 TC-HM-11 S4-7 不冲突：该条禁的是 production foreground **ports 读取**
-        # SessionDB、以及把派生 id 当作 SessionDB **selector** 取上下文；这里既不读
-        # 也不选，只为身份外键补一条属于本 Run 的会话行。
-        session_store = service_context.get("session_db")
-        if session_store is None:
-            raise RuntimeError("session store is unavailable")
-        await session_store.ensure_session(
-            session_id,
-            {"origin": "foreground-execution", "sdk_run_id": sdk_run_id},
-        )
-        identity = await identity_authority.bind(session_id=session_id)
-        _binding_id, source_ref = await context_sources.put_pending(
-            root_run_id=sdk_run_id,
-            continuation_id=None,
-            payload={
-                "provider_messages": [dict(item) for item in provider_messages],
-                "foreground_context_snapshot_id": context_snapshot_id,
-            },
-        )
-        return ConversationTurnInput(
-            identity=identity,
-            message=Message(MessageRole.USER, text),
-            memory_text=text,
-            context_source_snapshot_ref=source_ref,
-        )
+    _terminal_audit = await _activate_terminal_operation_audit()
 
+    def _occurrence_terminal_hook(sdk_run_id):
+        from deskpet.memory.prospective_terminal_hook import prepare_occurrence_terminal_hook
+        coordinator=service_context.get("prospective_occurrence_coordinator")
+        if coordinator is None:
+            return None
+        # Public SDK read occurs before the Host terminal writer transaction.
+        actual=_sdk_runtime_stack.read_run_terminal_evidence(sdk_run_id)
+        return prepare_occurrence_terminal_hook(principal=coordinator.store.principal,
+            sdk_run_id=sdk_run_id,actual_sdk_terminal=actual)
+
+    # The Context's trusted date and Memory's public as_of use the same owned
+    # business clock. Physical workers/leases retain their existing clocks.
+    _context_memory_runtime = service_context.get("human_memory_v7_runtime")
+    if _context_memory_runtime is None:
+        raise RuntimeError("human_memory_v7_runtime_unavailable")
     runtime = ForegroundRuntimeExecutionAuthority(
         store=foreground,
         subject="deskpet-local-owner-v1",
         owner_id=_runtime_owner_id,
         closure_fallback=_BoundClosureFallback(),
         ingress=_sdk_ingress,
-        context=TaskScopeForegroundContextPort(
+        context=PrimaryForegroundContextPort(
             _state_db_path,
             subject="deskpet-local-owner-v1",
+            **({"history_reader": history_reader} if history_reader is not None else {}),
+            clock=_context_memory_runtime.semantic_clock,
+            policy=_primary_history_policy("deskpet-local-owner-v1"),
+            stack_getter=lambda: _sdk_runtime_stack,
             route_ledger=_foreground_route_ledger(),
+            settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
         ),
         provider=ProductForegroundProviderPort(
             _provider_registry,
@@ -3262,6 +3269,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
             _sdk_ingress,
             _sdk_runtime_stack,
             run_fault_memo=_ensure_run_fault_memo(),
+            occurrence_coordinator=service_context.get("prospective_occurrence_coordinator"),
         ),
         audit_sink=_AuditSink(),
         effect_gate=_ensure_foreground_effect_gate(),
@@ -3270,11 +3278,40 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id),
         endpoint_identity_resolver=_provider_endpoint_identity_for_binding,
         conversation_entrypoint=_foreground_conversation_entrypoint,
+        state_changed=_primary_state_changed,
+        terminal_audit_wake=_terminal_audit.wake if _terminal_audit is not None else None,
+        terminal_commit_hook_factory=_occurrence_terminal_hook,
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
     service_context.register(
         "human_memory_foreground_runtime_execution_authority", runtime
     )
+
+
+async def _initialize_product_memory() -> None:
+    """Own the real product Memory manager before any Runtime borrower starts."""
+    global _memory_backend
+    if _memory_backend is not None:
+        return
+    from paths import resolve_model_dir
+    from simple_harness_memory import MemoryManager
+    from deskpet.memory.wemm_embedder import WeMMEmbedder
+
+    memory_resource = resolve_model_dir("wemm-embedding-2b").resolve()
+    if not memory_resource.is_dir():
+        raise RuntimeError("memory_embedding_resource_unavailable")
+    memory_embedder = WeMMEmbedder(memory_resource, revision="product-bundled")
+    memory_build_kwargs = {"embedder": memory_embedder, "resource_path": memory_resource}
+    if "observability_sink" in inspect.signature(MemoryManager.build_production).parameters:
+        memory_build_kwargs.update(observability_sink=_sdk_observability.sink,
+            correlation=_sdk_observability.correlation)
+    _memory_backend = await MemoryManager.build_production(_memory_db_path, **memory_build_kwargs)
+    memory_snapshot = getattr(_memory_backend, "diagnostics_snapshot", None)
+    if callable(memory_snapshot):
+        _sdk_observability.register_snapshot_source("memory", memory_snapshot)
+    await _sdk_observability.export_async()
+    service_context.register("embedder", memory_embedder)
+    _session_db.bind_memory_manager(_memory_backend)
 
 
 @asynccontextmanager
@@ -3304,52 +3341,36 @@ async def lifespan(app: FastAPI):
         _state_db_path,
         approved_fresh_lane=approved_fresh_lane,
     )
+    async def _primary_suppression_resolver(candidate, purpose):
+        runtime = service_context.get("human_memory_v7_runtime")
+        if runtime is None:
+            raise RuntimeError("human_memory_v7_runtime_unavailable")
+        manager = await runtime.manager()
+        return await manager.backend.resolve_suppression(
+            candidate, purpose, principal=runtime.principal(),
+        )
+
+    from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
+
+    memory_display_invalidation = MemoryDisplayInvalidation(_broadcast_control)
     service_context.register(
         "human_memory_host_service_factory",
         (
-            HumanMemoryHostServiceFactory(_state_db_path, startup_epoch)
+            HumanMemoryHostServiceFactory(
+                _state_db_path, startup_epoch,
+                settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
+                suppression_resolver=_primary_suppression_resolver,
+                history_visibility_checker=_primary_history_visibility_checker,
+                run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id).binding_record,
+                decision_ingress_getter=lambda: _sdk_ingress,
+                cognitive_runtime_getter=lambda: service_context.get("human_memory_v7_runtime"),
+                display_invalidation=memory_display_invalidation,
+            )
             if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
             else None
         ),
     )
-    if _memory_backend is None:
-        from paths import resolve_model_dir
-        from simple_harness_memory import MemoryManager
-
-        from deskpet.memory.wemm_embedder import WeMMEmbedder
-
-        # 2026-09-01: user-selected vector model — tencent/WeMM-Embedding-2B
-        # replaces BGE-M3 across the memory composition.
-        memory_resource = resolve_model_dir("wemm-embedding-2b").resolve()
-        if not memory_resource.is_dir():
-            raise RuntimeError("memory_embedding_resource_unavailable")
-        memory_embedder = WeMMEmbedder(
-            memory_resource,
-            revision="product-bundled",
-        )
-        memory_build_kwargs = {
-            "embedder": memory_embedder,
-            "resource_path": memory_resource,
-        }
-        if "observability_sink" in inspect.signature(
-            MemoryManager.build_production
-        ).parameters:
-            memory_build_kwargs.update(
-                observability_sink=_sdk_observability.sink,
-                correlation=_sdk_observability.correlation,
-            )
-        _memory_backend = await MemoryManager.build_production(
-            _memory_db_path, **memory_build_kwargs
-        )
-        memory_snapshot = getattr(_memory_backend, "diagnostics_snapshot", None)
-        if callable(memory_snapshot):
-            _sdk_observability.register_snapshot_source("memory", memory_snapshot)
-        _sdk_observability.export()
-        # Settings must report the embedder that the production Memory SDK
-        # actually owns.  Leaving this slot at the legacy ``None`` placeholder
-        # makes the UI claim BGE is stopped while recall is already using it.
-        service_context.register("embedder", memory_embedder)
-        _session_db.bind_memory_manager(_memory_backend)
+    await _initialize_product_memory()
     try:
         # SessionDB owns the migration/backup recovery path. Registry identity
         # is loaded only after v23 exists, then legacy bindings are reconciled
@@ -4983,14 +5004,14 @@ async def lifespan(app: FastAPI):
 
         # fire-and-forget; we deliberately don't await (same as embedder warmup)
         asyncio.create_task(_skill_matcher_prewarm_bg())
-    # P4-S15: Embedder warmup runs in the background so cold-start isn't
-    # blocked by 286 MB of BGE-M3 weights. Mock fallback returns instantly.
+    # Preload the registered production embedder in the background. Reopening
+    # an existing short generation reuses vectors and does not load the encoder.
     _emb = service_context.get("embedder")
     if _emb is not None and callable(getattr(_emb, "warmup", None)):
         async def _embedder_warmup_bg() -> None:
             try:
                 await _emb.warmup()
-                logger.info("p4_embedder_ready", is_mock=_emb.is_mock())
+                logger.info("p4_embedder_ready", embedder_kind=getattr(_emb, "kind", None))
             except Exception as exc:
                 logger.warning("p4_embedder_warmup_failed", error=str(exc))
         # fire-and-forget; we deliberately don't await
@@ -5725,7 +5746,7 @@ async def lifespan(app: FastAPI):
             _realtime_voice_service = None
     from deskpet.retrieval.runtime import shutdown_default_gateway
     await shutdown_default_gateway()
-    global _sdk_runtime_stack, _sdk_ingress
+    global _sdk_runtime_stack, _sdk_ingress, _memory_analysis_lane
     global _sdk_desktop_bridge
     _foreground_runtime = service_context.get(
         "human_memory_foreground_runtime_execution_authority"
@@ -5739,6 +5760,14 @@ async def lifespan(app: FastAPI):
                 "human_memory_foreground_runtime_shutdown_failed",
                 error=str(exc),
             )
+    _terminal_audit = service_context.get("terminal_operation_audit")
+    if _terminal_audit is not None:
+        try:
+            await _terminal_audit.close(timeout=5.0)
+        except Exception:
+            logger.warning("terminal_operation_audit_shutdown_incomplete")
+        finally:
+            service_context.register("terminal_operation_audit", None)
     if _memory_analysis_lane is not None:
         try:
             await _memory_analysis_lane.close(timeout_seconds=5.0)
@@ -5746,6 +5775,8 @@ async def lifespan(app: FastAPI):
         except Exception as exc:  # noqa: BLE001
             logger.warning("memory_analysis_lane_shutdown_failed", error=str(exc))
         finally:
+            _memory_analysis_lane = None
+            service_context.register("sdk_memory_ingestion_outbox", None)
             service_context.register(
                 "human_memory_foreground_scheduler_wake", None
             )
@@ -5838,6 +5869,16 @@ async def lifespan(app: FastAPI):
             _sdk_retained_presentations.clear()
             _sdk_unavailable_tool_authority_runs.clear()
             service_context.register("sdk_runtime_ready", None)
+    # The foreground, audit lane and Runtime borrowers have stopped above.
+    # v7 owns a separate lazy manager; stop indexing before closing that owner.
+    _owned_v7 = service_context.get("human_memory_v7_runtime")
+    if _owned_v7 is not None:
+        try:
+            await asyncio.wait_for(_owned_v7.close(), timeout=6.0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("human_memory_v7_shutdown_failed", error=type(exc).__name__)
+        finally:
+            service_context.register("human_memory_v7_runtime", None)
     # SessionDB is the sole owner of the borrowed MemoryManager and its
     # product outbox dispatcher.  Close it after every Runtime borrower, once,
     # with a hard bound so shutdown cannot hang on a provider/storage fault.
@@ -5881,18 +5922,11 @@ async def lifespan(app: FastAPI):
         finally:
             service_context.register("capability_platform", None)
     _workflow_service = service_context.get("workflow_service")
-    _workflow_launcher = getattr(_workflow_service, "launcher", None)
-    if _workflow_launcher is not None:
+    if _workflow_service is not None:
         try:
-            await _workflow_launcher.shutdown()
+            await asyncio.wait_for(_workflow_service.close(), timeout=5.0)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("workflow_launcher_shutdown_failed", error=str(exc))
-    _execution_uow = getattr(_workflow_service, "execution_uow", None)
-    if _execution_uow is not None:
-        try:
-            await asyncio.wait_for(_execution_uow.close(), timeout=5.0)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("execution_uow_shutdown_failed", error=str(exc))
+            logger.warning("workflow_owner_shutdown_failed", error=str(exc))
     # P5-S1: stop the watchdog cleanly so its task doesn't dangle past
     # shutdown and produce "Task was destroyed but it is pending!" noise.
     _wd = service_context.get("watchdog")
@@ -7709,6 +7743,24 @@ def _freeze_sdk_catalog(
     }
 
 
+async def _primary_history_visibility_checker(*, subject, disclosure_context, bindings):
+    runtime = service_context.get("human_memory_v7_runtime")
+    if runtime is None:
+        raise RuntimeError("human_memory_v7_runtime_unavailable")
+    principal = runtime.principal()
+    if principal.actor_id != subject or disclosure_context.subject != subject:
+        raise RuntimeError("primary_history_principal_mismatch")
+    manager = await runtime.manager()
+    from deskpet.memory.current_input_visibility import check_primary_input_visibility
+    return await check_primary_input_visibility(db_path=_state_db_path, manager=manager, principal=principal,
+        disclosure_context=disclosure_context, bindings=bindings)
+
+
+def _primary_history_policy(subject):
+    from deskpet.memory.primary_visibility import PrimaryHistoryPolicy
+    return PrimaryHistoryPolicy(_state_db_path, subject, _primary_history_visibility_checker)
+
+
 class _ProductSdkProviderBindingResolver:
     """SDK resolver backed only by immutable per-Run product bindings."""
 
@@ -7720,7 +7772,7 @@ class _ProductSdkProviderBindingResolver:
         self._client = client
         self._authorities: dict[str, Any] = {}
 
-    def build_authority(self, binding: Any) -> Any:
+    def build_authority(self, binding: Any, *, request_guard: Any = ...) -> Any:
         from simple_harness.execution import ProviderBinding
         from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
         from simple_harness import thaw_json
@@ -7736,6 +7788,21 @@ class _ProductSdkProviderBindingResolver:
             != binding.provider_config_revision
         ):
             raise RuntimeError("SDK bound Provider incarnation changed")
+        async def primary_guard(request):
+            from deskpet.execution.primary_dependencies import check_runtime_dependencies
+            await check_runtime_dependencies(db_path=_state_db_path, stack=_sdk_runtime_stack,
+                sdk_run_id=binding.run_id, request=request, policy_factory=_primary_history_policy,
+                typed_use_authority=service_context.get("sdk_typed_context_use_authority"))
+            coordinator=service_context.get("prospective_occurrence_coordinator")
+            if coordinator is not None and await coordinator.applies_to_run(binding.run_id):
+                from deskpet.sdk_adapters.prospective_request_guard import ProspectiveRequestGuard
+                await ProspectiveRequestGuard(sdk_run_id=binding.run_id,coordinator=coordinator,
+                    read_provider_context_use=_sdk_runtime_stack.read_provider_context_use)(request)
+
+        if request_guard is ...:
+            request_guard = primary_guard
+        elif not callable(request_guard):
+            raise TypeError("SDK provider request guard must be callable")
         provider = ProductProviderAdapter(
             self._provider_registry,
             provider_id=binding.provider_id,
@@ -7743,6 +7810,7 @@ class _ProductSdkProviderBindingResolver:
             price_resolver=_sdk_price_snapshot,
             model=binding.model_id,
             model_params=thaw_json(binding.model_params),
+            pre_invoke_guard=request_guard,
         )
         price = provider.price_snapshot
         estimator = FrozenPriceEstimator(
@@ -7793,6 +7861,13 @@ class _ProductSdkProviderBindingResolver:
         self.registry.mark_waiting(run_id)
 
     def mark_terminal(self, run_id: str, state: str) -> None:
+        if str(state).lower() not in {"completed", "failed", "cancelled", "stopped"}:
+            raise ValueError("terminal_state must be completed, failed, cancelled, or stopped")
+        # Cold terminal recovery never binds a Provider in this process. Only
+        # an entirely absent registration may skip process-local cleanup;
+        # inconsistent caches and errors for existing bindings still surface.
+        if self.registry.resolve(run_id) is None and str(run_id) not in self._authorities:
+            return
         self.registry.mark_terminal(run_id, state)
         self._authorities.pop(str(run_id), None)
 
@@ -7871,6 +7946,13 @@ class _SdkRunContextAuthorityProxy:
 
 
 class _SdkRuntimeDecisionSinkProxy:
+    async def check_mandatory_context_actions(self, **values):
+        target = service_context.get("sdk_runtime_decision_sink")
+        operation = getattr(target, "check_mandatory_context_actions", None)
+        if not callable(operation):
+            raise RuntimeError("sdk_mandatory_context_action_recheck_unavailable")
+        return await operation(**values)
+
     async def record_no_recall(self, **values):  # type: ignore[no-untyped-def]
         target = service_context.get("sdk_runtime_decision_sink")
         operation = getattr(target, "record_no_recall", None)
@@ -7908,6 +7990,7 @@ def _local_owner_auth():
 
 async def _build_product_sdk_runtime_stack(
     generation: int,
+    *, clock=time.time, configured_workspace_root=None,
 ):
     """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
     verify_memory_candidate()
@@ -8079,13 +8162,10 @@ async def _build_product_sdk_runtime_stack(
         tool_authorities.validate_runtime_tool_admission
     )
     driver = build_react_driver(
-        # max_consecutive_same_tool 此前漏设，取 SDK 默认值 3——而同处已放到
-        # 25 轮 / 50 次工具调用。「总共允许 50 次、同一工具连续 3 次就掐断 Run」
-        # 这个不对称是漏配：连读 4 个文件即触发，工具报可纠正错误后模型改对重试
-        # 也在第 4 次被杀。S5b 终验实测：三个不同厂商的模型都因此
-        # react_repeated_tool_exceeded 终止（file_read 连挂 7~12 次）。
-        # 取 10：覆盖连读 5~10 个文件与 2~3 次纠错重试这类正常形态，同时只占
-        # 50 次预算的五分之一，真死循环仍在烧掉五分之一预算前被终止，护栏目的不变。
+        clock=clock,
+        # SDK H079 的重复键是工具名 + canonical arguments hash；10 限制的是
+        # 同名同参的连续调用。改变参数会重置 streak，不是同一工具名总计10次。
+        # 25轮/50工具的持久累计计数跨授权恢复保留；外部测试限时另行记录。
         limits=TerminationLimits(
             max_turns=25, max_tool_calls=50, max_consecutive_same_tool=10
         ),
@@ -8103,11 +8183,14 @@ async def _build_product_sdk_runtime_stack(
     )
     if verification_driver_factory is None:
         raise RuntimeError("Skill verification driver factory is unavailable")
-    driver = ProductRootDriverRouter(
+    from simple_harness.runtime import StartModeDriverRouter
+
+    host_control_driver = ProductRootDriverRouter(
         react_driver=driver,
         attempt_resolver=SkillInstallVerificationAttemptResolver(capability_store),
         verification_driver_factory=verification_driver_factory,
     )
+    driver = StartModeDriverRouter(ordinary=driver, host_control=host_control_driver)
 
     def execution_context_getter():
         from deskpet.sdk_adapters.tools import (
@@ -8121,10 +8204,12 @@ async def _build_product_sdk_runtime_stack(
         effect_id = str(getattr(effect, "value", effect) or "")
         if not effect_id:
             raise RuntimeError("SDK product Tool effect identity is unavailable")
-        return tool_authorities.resolve(run_id).execution_context(
+        from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
+        base = tool_authorities.resolve(run_id).execution_context(
             call_id=active_product_tool_call_id().value,
             effect_id=effect_id,
         )
+        return project_tool_execution_context(base, tool_context)
 
     capability_bridge = SdkRuntimeCapabilityBridgeAdapter(
         tool_authorities, execution_context_getter
@@ -8279,32 +8364,89 @@ async def _build_product_sdk_runtime_stack(
             WorkspaceBindingAuthorityStore,
         )
 
-        return WorkspaceBindingAuthorityStore(_state_db_path)
+        return WorkspaceBindingAuthorityStore(_state_db_path,
+            configured_workspace_root=configured_workspace_root)
 
-    from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
-    from deskpet.memory.evidence_authority import HostEvidenceAuthority
-    from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
+    from deskpet.memory.runtime_composition import compose_human_memory_runtime
 
     # S5b Task 4: the v7 store is built with the Host state.db evidence resolver and
     # the Host analysis executor as its delivery authority (identity-bound), so the
     # accepted analysis plan materializes inside Memory 0.6.1.
     def _analysis_adapter(record):  # type: ignore[no-untyped-def]
         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+        from deskpet.memory.analysis_request_guard import AnalysisPhysicalRequestGuard
 
         resolver = _resolve_sdk_provider_binding_resolver()
         if resolver is None:
             raise RuntimeError("sdk_provider_binding_resolver_unavailable")
         binding = SdkRunBindingV1.from_record(record)
-        return resolver.build_authority(binding).provider
+        guard = AnalysisPhysicalRequestGuard(
+            _state_db_path, binding=binding, runtime_getter=lambda: _human_memory_v7,
+        )
+        return resolver.build_authority(binding, request_guard=guard).provider
 
-    _human_memory_v7 = HumanMemoryV7Runtime(
+    _human_memory_v7 = compose_human_memory_runtime(
+        _state_db_path,
         Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db",
         embedder_getter=lambda: service_context.get("embedder"),
-        evidence_authority=HostEvidenceAuthority(_state_db_path),
-        analysis_authority=HostMemoryAnalysisExecutor(_state_db_path, adapter_factory=_analysis_adapter),
+        adapter_factory=_analysis_adapter,
+        clock=clock,
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
+    from deskpet.execution.primary_context_pages import PrimaryContextPageReader
+    context_page_store.primary_reader = PrimaryContextPageReader(
+        _state_db_path, stack_getter=lambda: _sdk_runtime_stack,
+        policy_factory=_primary_history_policy,
+    )
+    from deskpet.memory.procedure_recovery_schema import initialize_procedure_recovery_state_db
+    from deskpet.sdk_adapters.procedure_use import procedure_use_registration
+    from deskpet.sdk_adapters.procedure_discovery import procedure_discovery_registration
+    from simple_harness_memory import MemoryManager as _ProcedureMemoryManager
+    import simple_harness_memory as _procedure_memory_sdk
+    if getattr(_procedure_memory_sdk, "PROCEDURE_OBSERVATION_RECOVERY_VERSION", None) != 1:
+        raise RuntimeError("procedure_public_recovery_sdk_required")
+    if any(not callable(getattr(_ProcedureMemoryManager, name, None)) for name in (
+        "read_procedure_use_target", "prepare_procedure_observation", "record_procedure_observation", "discover_procedure_drafts",
+    )):
+        raise RuntimeError("procedure_public_sdk_successor_required")
+    await initialize_procedure_recovery_state_db(_state_db_path)
+    projected_registrations = (*projected_registrations,
+        procedure_use_registration(_human_memory_v7.procedure_runtime),
+        procedure_discovery_registration(_human_memory_v7.procedure_runtime))
+    _typed_use_authority = None
+    if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
+        from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
+        from deskpet.sdk_adapters.context_authority import ProductRuntimeDecisionSink
+        _typed_ledger = _ContextRouteLedgerStore(_state_db_path, evidence_ingress=_ensure_evidence_ingress())
+        _typed_ledger.verify_schema()
+        _typed_sink = ProductRuntimeDecisionSink(ledger=_typed_ledger, reconcile=_human_memory_v7.pending_occurrences)
+        _typed_use_authority = await ProductTypedContextUseAuthority.create(
+            state_path=_state_db_path, memory_runtime=_human_memory_v7,
+            stack_getter=lambda: _sdk_runtime_stack, ledger=_typed_ledger, terminal_sink=_typed_sink,
+        )
+    service_context.register("sdk_typed_context_use_authority", _typed_use_authority)
 
+    _occurrence_coordinator = None
+    if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
+        from deskpet.memory.s5c_terminal_schema import initialize_s5c_terminal_state_db
+        from deskpet.memory.s5c_store import S5cStore
+        from deskpet.memory.prospective_occurrence import ProspectiveOccurrenceCoordinator
+        from deskpet.memory.prospective_current_reader import PublicOccurrenceCurrentReader
+        from deskpet.memory.prospective_source_dependencies import ProspectiveSourceDependencies
+        from deskpet.sdk_adapters.prospective_ack import prospective_ack_registration
+        await initialize_s5c_terminal_state_db(_state_db_path)
+        _occurrence_store=S5cStore(_state_db_path,_human_memory_v7.principal())
+        _occurrence_coordinator=ProspectiveOccurrenceCoordinator(store=_occurrence_store,
+            read_current=PublicOccurrenceCurrentReader(store=_occurrence_store,
+                runtime_getter=lambda:service_context.get("human_memory_v7_runtime")),clock=clock,
+            source_dependencies=ProspectiveSourceDependencies(store=_occurrence_store,
+                runtime_getter=lambda:service_context.get("human_memory_v7_runtime")))
+        projected_registrations=(*projected_registrations,
+            prospective_ack_registration(coordinator=_occurrence_coordinator))
+    service_context.register("prospective_occurrence_coordinator",_occurrence_coordinator)
+
+    from deskpet.task_scope.disclosure import ScopeDisclosureReader
+    scope_disclosure = ScopeDisclosureReader(_state_db_path, stack_getter=lambda: _sdk_runtime_stack, policy_factory=_primary_history_policy)
     _context_route_service = ContextRouteToolService(
         service_factory_getter=lambda: service_context.get(
             "human_memory_host_service_factory"
@@ -8318,6 +8460,9 @@ async def _build_product_sdk_runtime_stack(
         ),
         tool_context_getter=active_product_tool_context,
         recall_executor=_human_memory_v7.typed_recall,
+        typed_use_authority=_typed_use_authority,
+        scope_disclosure_reader=scope_disclosure.read,
+        producer_dependencies_reader=scope_disclosure.producer_dependencies,
     )
 
     async def context_route_handler(arguments, _context):
@@ -8336,13 +8481,18 @@ async def _build_product_sdk_runtime_stack(
                 "continue_active (exact current task), resume_existing (exact "
                 "task_scope_id from a confirmed task_scope_search candidate; "
                 "returns the bounded ResumePackage), or create_new (new "
-                "multi-step task; requires title). Search hits never "
+                "multi-step task; requires title). To continue editing files of a "
+                "completed task, use create_new with reuse_workspace_of and its "
+                "exact expected_source_hash: a new active Scope receives an explicit "
+                "binding to the original single root under current policy. Without "
+                "reuse_workspace_of, create_new uses a separate new directory. Search hits never "
                 "authorize; only this tool commits a route."
             ),
             input_schema=CONTEXT_ROUTE_SCHEMA,
             handler=context_route_handler,
             dispatch_kind="async",
             permission_category="context_route",
+            projectless_admission="safe",
             metadata={
                 "source": "product-context-route",
                 "version": "1",
@@ -8355,13 +8505,18 @@ async def _build_product_sdk_runtime_stack(
                 "Permission-first search over the caller's own archived task "
                 "scopes. Returns read-only candidates (title, goal, snippet, "
                 "rank); candidates grant no authority and never change the "
-                "active task. Confirm one and pass its exact task_scope_id to "
-                "context_route(route=resume_existing)."
+                "active task. For an active task, pass its exact task_scope_id to "
+                "context_route(route=resume_existing). For completed candidates, "
+                "use create_new with reuse_workspace_of "
+                "and expected_source_hash as the first task route in a new Run "
+                "to request a new active Scope bound to the original workspace; "
+                "do not resume the completed task first when you intend to edit."
             ),
             input_schema=TASK_SCOPE_SEARCH_SCHEMA,
             handler=task_scope_search_handler,
             dispatch_kind="async",
             permission_category="task_scope_search",
+            projectless_admission="safe",
             metadata={
                 "source": "product-context-route",
                 "version": "1",
@@ -8390,6 +8545,7 @@ async def _build_product_sdk_runtime_stack(
             handler=task_scope_update_handler,
             dispatch_kind="async",
             permission_category="task_scope_update",
+            projectless_admission="safe",
             metadata={
                 "source": "product-task-scope-closure",
                 "version": "1",
@@ -8407,6 +8563,7 @@ async def _build_product_sdk_runtime_stack(
         execution_context_getter=execution_context_getter,
     )
     tools_adapter.bind_run_authorities(tool_authorities)
+    _human_memory_v7.procedure_runtime.bind_tools(tool_authorities, tools_adapter)
     frozen_catalog = _freeze_sdk_catalog(
         tools_adapter,
         generation,
@@ -8453,7 +8610,7 @@ async def _build_product_sdk_runtime_stack(
             ),
         ),
         grant_factory=authorization_policy.grant_factory,
-        clock=time.time,
+        clock=clock,
         terminal_lifecycle=project_skill_install_service,
     )
 
@@ -8518,7 +8675,7 @@ async def _build_product_sdk_runtime_stack(
     def ports_factory(database, uow):
         nonlocal projection_pump
         global _sdk_context_port
-        context = SqliteContextPort(database)
+        context = SqliteContextPort(database, clock=clock)
         _sdk_context_port = context
         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
@@ -8555,6 +8712,7 @@ async def _build_product_sdk_runtime_stack(
                         state=record_state,
                     )
         effects = ProductEffectExecutor(
+            clock=clock,
             uow=uow,
             registry=tools_adapter,  # tools_adapter is already a ToolRegistry
             authorization=authorization_adapter,
@@ -8562,6 +8720,7 @@ async def _build_product_sdk_runtime_stack(
             foreground_admission=_ensure_foreground_effect_gate(),
             effect_gate=effect_gate,
             evidence_ingress=_ensure_evidence_ingress(),
+            procedure_runtime=_human_memory_v7.procedure_runtime,
         )
         from simple_harness.execution.context_authority import (
             DurableToolCatalogResolver,
@@ -8626,6 +8785,9 @@ async def _build_product_sdk_runtime_stack(
             uow=uow,
             resolver=provider_binding_resolver,
             evidence_ingress=_ensure_evidence_ingress(),
+            context_use_authority=_typed_use_authority,
+            typed_terminal=_typed_use_authority,
+            clock=clock,
         )
         if projection_pump is None:
             from deskpet.sdk_adapters.provider_projection_pump import (
@@ -8666,7 +8828,7 @@ async def _build_product_sdk_runtime_stack(
             tools=effects,
             authorization=authorization_adapter,
             context=context,
-            delivery=DeliveryDispatcher(uow, {"product": delivery_adapter}),
+            delivery=DeliveryDispatcher(uow, {"product": delivery_adapter}, clock=clock),
             tool_reconciliation=reconciliation_adapter,
             reconciliation=_NoopReconciliation(),
             provider_reconciliation=_NoopReconciliation(),
@@ -8726,6 +8888,7 @@ async def _build_product_sdk_runtime_stack(
         production_ports.clear()
         profiles = {"agent.general": RuntimeProfile("agent.general", "react")}
         runtime_config_kwargs = dict(
+            clock=clock,
             execution_path=execution_path,
             provider_builder=lambda uow: _production_ports_for(uow).provider,
             tools_builder=lambda uow: _production_ports_for(uow).tools,
@@ -8758,7 +8921,6 @@ async def _build_product_sdk_runtime_stack(
         runtime_snapshot = getattr(runtime, "diagnostics_snapshot", None)
         if callable(runtime_snapshot):
             _sdk_observability.register_snapshot_source("harness", runtime_snapshot)
-        _sdk_observability.export()
         return ProductionRuntimeBuild(
             runtime=runtime,
             transaction_owner=production_ports["ports"].react_checkpoint,
@@ -8845,6 +9007,9 @@ async def _build_product_sdk_runtime_stack(
             exposure_resolver=tool_authorities.resolve_exposure,
             ledger=context_route_ledger,
             reconcile=_occurrence_reconcile,
+            typed_use_authority=_typed_use_authority,
+            occurrence_coordinator=_occurrence_coordinator,
+            configured_workspace_root=configured_workspace_root,
         ),
     )
     service_context.register(
@@ -8879,6 +9044,7 @@ SDK_COMPOSITION_SLOTS: tuple[str, ...] = (
     "sdk_provider_binding_resolver",
     "sdk_tool_authority_registry",
     "sdk_run_context_authority",
+    "sdk_typed_context_use_authority",
     "sdk_runtime_decision_sink",
     "sdk_task_execution_authority",
     "sdk_effect_gate",
@@ -8903,6 +9069,9 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
     exposure_resolver,
     ledger,
     reconcile,
+    typed_use_authority=None,
+    occurrence_coordinator=None,
+    configured_workspace_root=None,
 ):
     """Production ``ProductRunContextAuthority`` with the real semantic-closure reader (F-2)."""
 
@@ -8916,14 +9085,19 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         return await closure_instruction_for_run(db_path, getattr(run_id, "value", str(run_id)))
 
     service_context.register("sdk_closure_instruction_reader", closure_reader)
+    from deskpet.execution.current_tool_pages import CurrentToolProjector
     return ProductRunContextAuthority(
         ports_resolver=ports_resolver,
         exposure_resolver=exposure_resolver,
         ledger=ledger,
         reconcile=reconcile,
+        typed_use_authority=typed_use_authority,
+        occurrence_coordinator=occurrence_coordinator,
+        current_tool_projector=CurrentToolProjector(db_path, lambda: _sdk_runtime_stack),
         closure_reader=closure_reader,
         # S5b Task 6 (AC-3⑥): ≥2-root scopes never see PROJECT_EFFECT Tools.
-        binding_store=WorkspaceBindingAuthorityStore(db_path),
+        binding_store=WorkspaceBindingAuthorityStore(db_path,
+            configured_workspace_root=configured_workspace_root),
     )
 
 
@@ -9022,6 +9196,9 @@ def _activate_memory_analysis_lane() -> None:
             executor=executor,
             config=build_worker_config(provider_id=provider_id, model_id=model_id, model_config_hash=config_hash),
             worker_id=f"deskpet-memory-analysis:{os.getpid()}",
+            display_invalidation=getattr(
+                service_context.get("human_memory_host_service_factory"), "display_invalidation", None
+            ),
         )
         _memory_analysis_lane.start()
         logger.info("memory_analysis_lane_started")
@@ -9475,6 +9652,9 @@ async def _signal_product_harness_decision(
     if not run_id or not decision_id or not nonce or version is None:
         raise ValueError("decision response requires run_id/decision_id/nonce/version")
     sdk_run_id = _sdk_run_ids_by_root.get(run_id, run_id)
+    from deskpet.memory.primary_decisions import is_primary_sdk_target
+    if is_primary_sdk_target(_state_db_path, sdk_run_id):
+        raise ValueError("primary_decision_requires_authenticated_control")
     if authorization:
         receipt = await _sdk_ingress.decide_authorization(
             run_id=sdk_run_id,
@@ -10861,6 +11041,7 @@ def _provider_chain_or_none(provider_registry):
 
 
 async def _activate_product_sdk_runtime(
+    *, clock=time.time, configured_workspace_root=None,
 ) -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
     global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_catalog
@@ -10918,7 +11099,8 @@ async def _activate_product_sdk_runtime(
     # `product_sdk_runtime_skipped` left the Host running with no SDK runtime
     # at all (every chat turn then fails later, far from the cause).
     try:
-        stack = await _build_product_sdk_runtime_stack(state.generation)
+        stack = await _build_product_sdk_runtime_stack(state.generation, clock=clock,
+            configured_workspace_root=configured_workspace_root)
     except Exception as exc:
         logger.exception("product_sdk_runtime_build_failed", reason=str(exc))
         raise RuntimeError(f"product_sdk_runtime_build_failed: {exc}") from exc
@@ -11035,6 +11217,10 @@ async def _activate_product_sdk_runtime(
     )
     for recovered_run_id in tuple(_sdk_retained_presentations):
         _ensure_sdk_recovery_watcher(recovered_run_id)
+
+    # Publish owning references before this cancellable diagnostic await, so
+    # ordinary shutdown can close the started stack if collection is cancelled.
+    await _sdk_observability.export_async()
 
     logger.info(
         "product_sdk_runtime_ready",
@@ -12586,7 +12772,6 @@ async def _execute_sdk_run(
         )
 
     finally:
-        _sdk_observability.export()
         _sdk_observability.reset_ingress(observability_token)
         if terminal_binding_state is not None and _sdk_provider_binding_resolver is not None:
             try:
@@ -12616,6 +12801,7 @@ async def _execute_sdk_run(
             root_run_id=root_run_id,
             remaining_adapters=len(_delivery_adapters),
         )
+        await _sdk_observability.export_async()
 
 
 async def _watch_retained_sdk_run(
@@ -13814,6 +14000,9 @@ async def control_channel(ws: WebSocket):
                 },
             }
         )
+    from deskpet.memory.control_binding import HumanMemoryControlBinding
+
+    human_memory_control_binding = HumanMemoryControlBinding()
     companion_challenge = None
     if _companion_control_ingress is not None:
         try:
@@ -13917,6 +14106,12 @@ async def control_channel(ws: WebSocket):
                         strict_raw,
                         challenge=companion_challenge,
                     )
+                    if msg_type == "companion_profile_bind":
+                        human_memory_control_binding.bound(
+                            _companion_control_ingress, companion_challenge
+                        )
+                    elif msg_type == "companion_profile_unbind":
+                        human_memory_control_binding.clear()
                     if msg_type in {
                         "companion_growth_evaluation_decision",
                         "companion_growth_activation_decision",
@@ -14983,29 +15178,50 @@ async def control_channel(ws: WebSocket):
             elif msg_type == "human_memory_request":
                 from deskpet.memory.human_memory_api import (
                     handle_human_memory_command,
+                    send_human_memory_response,
                 )
-                from deskpet.memory.human_memory_service import (
-                    AuthenticatedHostSnapshot,
-                )
+                try:
+                    _hm_auth = human_memory_control_binding.authenticate(
+                        _companion_control_ingress, companion_challenge
+                    )
+                except Exception as exc:
+                    await ws.send_json({
+                        "type": "human_memory_response",
+                        "request_id": str(raw.get("request_id") or ""),
+                        "payload": {"ok": False, "error": {
+                            "code": getattr(exc, "code", "human_memory_connection_unbound")
+                        }},
+                    })
+                    continue
 
-                _hm_response = await handle_human_memory_command(
-                    raw,
-                    factory=service_context.get(
-                        "human_memory_host_service_factory"
-                    ),
-                    auth=_local_owner_auth(),
-                    binding_append=service_context.get(
-                        "human_memory_binding_append_authority"
-                    ),
-                    recovery=service_context.get(
-                        "human_memory_recovery_lifecycle"
-                    ),
-                    scheduler_wake=service_context.get(
-                        "human_memory_foreground_scheduler_wake"
-                    ),
-                )
-                if _hm_response is not None:
-                    await ws.send_json(_hm_response)
+                with human_memory_control_binding.request_scope(
+                    _companion_control_ingress, companion_challenge
+                ):
+                    _hm_response = await handle_human_memory_command(
+                        raw,
+                        factory=service_context.get(
+                            "human_memory_host_service_factory"
+                        ),
+                        auth=_hm_auth,
+                        binding_append=service_context.get(
+                            "human_memory_binding_append_authority"
+                        ),
+                        recovery=service_context.get(
+                            "human_memory_recovery_lifecycle"
+                        ),
+                        scheduler_wake=service_context.get(
+                            "human_memory_foreground_scheduler_wake"
+                        ),
+                    )
+                    if _hm_response is not None:
+                        await send_human_memory_response(
+                            _hm_response,
+                            factory=service_context.get(
+                                "human_memory_host_service_factory"
+                            ),
+                            auth=_hm_auth,
+                            send=ws.send_json,
+                        )
 
             elif msg_type in {
                 "project_preview_register", "project_register", "session_create",

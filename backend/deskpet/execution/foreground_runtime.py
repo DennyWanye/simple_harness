@@ -35,6 +35,7 @@ from deskpet.execution.foreground_queue import (
     EffectBoundary,
     ForegroundQueueError,
     ForegroundQueueStore,
+    ForegroundRunSnapshot,
     PreparationCandidate,
     RunState,
 )
@@ -97,6 +98,17 @@ class FrozenContextAuthority:
     provider_messages: tuple[Mapping[str, object], ...]
     current_text: str
     resume_refs: tuple[str, ...]
+    visibility_dependencies: Mapping[str, object] | None = None
+    scope_disclosure: Mapping[str, object] | None = None
+
+    def __post_init__(self):
+        if self.scope_disclosure is not None:
+            from simple_harness import freeze_json, thaw_json
+            object.__setattr__(self, "scope_disclosure", freeze_json(thaw_json(self.scope_disclosure)))
+        if self.visibility_dependencies is not None:
+            from simple_harness import freeze_json
+            from deskpet.execution.primary_dependencies import parse_dependencies
+            object.__setattr__(self, "visibility_dependencies", freeze_json(parse_dependencies(self.visibility_dependencies)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,18 +256,27 @@ class ForegroundEffectAdmissionGate:
         sdk_run_id: str,
         owner_id: str,
         generation: int,
+        start_ready: asyncio.Event | None = None,
     ) -> None:
         self._bindings[sdk_run_id] = _ForegroundEffectBinding(
-            store, host_run_id, sdk_run_id, owner_id, generation
+            store, host_run_id, sdk_run_id, owner_id, generation, start_ready
         )
 
     def release(self, sdk_run_id: str) -> None:
         self._bindings.pop(sdk_run_id, None)
 
-    async def authorize(self, sdk_run_id: str) -> None:
+    async def authorize(self, sdk_run_id: str) -> _ForegroundEffectBinding | None:
         binding = self._bindings.get(sdk_run_id)
         if binding is None:
             return
+        # SDK.start schedules its driver before the Host start observation is
+        # durable. Wait only for this captured invocation, then re-authorize the
+        # unchanged owner/generation against the ordinary RUNNING-state fence.
+        if binding.start_ready is not None:
+            try:
+                await asyncio.wait_for(binding.start_ready.wait(), timeout=5.0)
+            except TimeoutError as exc:
+                raise ForegroundRuntimeError("foreground_tool_start_barrier_timeout") from exc
         await binding.store.authorize_effect(
             host_run_id=binding.host_run_id,
             sdk_run_id=binding.sdk_run_id,
@@ -263,6 +284,7 @@ class ForegroundEffectAdmissionGate:
             generation=binding.generation,
             boundary=EffectBoundary.TOOL,
         )
+        return binding
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +294,7 @@ class _ForegroundEffectBinding:
     sdk_run_id: str
     owner_id: str
     generation: int
+    start_ready: asyncio.Event | None = None
 
 
 def resolve_host_terminal(
@@ -321,6 +344,9 @@ class ForegroundRuntimeExecutionAuthority:
         run_binding_reader: Callable[[str], object] | None = None,
         endpoint_identity_resolver: Callable[[Mapping[str, object]], str | None] | None = None,
         conversation_entrypoint: Callable[..., Awaitable[object]] | None = None,
+        state_changed: Callable[[], Awaitable[None]] | None = None,
+        terminal_audit_wake: Callable[[], None] | None = None,
+        terminal_commit_hook_factory=None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -360,8 +386,36 @@ class ForegroundRuntimeExecutionAuthority:
         self._driver_started = False
         self._driver_lock = asyncio.Lock()
         self._control_wake = asyncio.Event()
+        self._lease_task: asyncio.Task[None] | None = None
+        self._lease_identity: tuple[str, int] | None = None
         self._closed = False
         self._last_error: Exception | None = None
+        self._state_changed = state_changed
+        self._terminal_audit_wake = terminal_audit_wake
+        self._terminal_commit_hook_factory = terminal_commit_hook_factory
+        self._notification_task: asyncio.Task[None] | None = None
+        self._notification_pending = False
+
+    def _notify_state_changed(self) -> None:
+        """Best-effort invalidation after commit; coalesce without delaying the driver."""
+        if self._state_changed is None or self._closed:
+            return
+        self._notification_pending = True
+        if self._notification_task is None or self._notification_task.done():
+            self._notification_task = asyncio.create_task(
+                self._flush_state_changes(), name="foreground-state-invalidation"
+            )
+
+    async def _flush_state_changes(self) -> None:
+        while self._notification_pending and not self._closed:
+            self._notification_pending = False
+            try:
+                async with asyncio.timeout(0.5):
+                    await self._state_changed()
+            except Exception:
+                # Reconnection reads SQLite; this hint is neither ledger nor ACK.
+                # Never publish callback errors, which may contain private data.
+                pass
 
     @property
     def subject(self) -> str:
@@ -409,6 +463,7 @@ class ForegroundRuntimeExecutionAuthority:
         if self._closed:
             raise ForegroundRuntimeError("foreground_runtime_closed")
         self._control_wake.set()
+        self._notify_state_changed()
         await self.after_enqueue(subject=subject)
 
     async def drain(self) -> None:
@@ -420,12 +475,15 @@ class ForegroundRuntimeExecutionAuthority:
 
     async def close(self, *, timeout: float = 5.0) -> None:
         self._closed = True
+        if self._notification_task is not None:
+            self._notification_task.cancel()
+            await asyncio.gather(self._notification_task, return_exceptions=True)
         task = self._driver
         # ``_driver`` 为 None 有两种情形，处理不同：
         #  · 从未起过驱动 → 没有租约可清，照旧提前返回；
         #  · 驱动已正常退出并在退出时置空引用（见 _run_driver）→ **必须**继续
         #    走下面的租约清理，否则驱动跑完后租约永不关闭。
-        if task is None and not self._driver_started:
+        if task is None and not self._driver_started and self._lease_task is None:
             return
         if task is not None:
             try:
@@ -433,6 +491,7 @@ class ForegroundRuntimeExecutionAuthority:
             except TimeoutError:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+        await self._stop_lease_keeper()
         snapshot = await self._store.current_snapshot(self._subject)
         if snapshot is None or snapshot.owner_id != self._owner_id:
             return
@@ -530,6 +589,7 @@ class ForegroundRuntimeExecutionAuthority:
             raise
         except Exception as exc:  # noqa: BLE001 - durable state remains recoverable
             self._last_error = exc
+            self._notify_state_changed()
             # 只记 error_code 时，SQLite IntegrityError 这类异常会退化成一个无从下手的
             # 类名（实测 20260903T1700-wsentry 卡住时只看到 "IntegrityError"）。
             # 追加异常类型与消息：这条日志只进 Host 日志、不对模型可见，且内容是
@@ -551,7 +611,16 @@ class ForegroundRuntimeExecutionAuthority:
                 return False
             if candidate.subject != self._subject:
                 raise ForegroundRuntimeError("foreground_runtime_candidate_subject_drift")
-            lineage = await self._context.draft_lineage(candidate)
+            from deskpet.memory.trusted_disclosure import TrustedDisclosureError
+            try:
+                lineage = await self._context.draft_lineage(candidate)
+            except TrustedDisclosureError as exc:
+                if exc.code not in {"host_disclosure_binding_stale", "host_disclosure_legacy_policy_changed"}:
+                    raise
+                from deskpet.execution.admission_rejection import reject_stale_candidate
+                await reject_stale_candidate(self._store, candidate)
+                self._notify_state_changed()
+                return True
             draft = await self._store.prepare_candidate(
                 subject=self._subject,
                 expected_candidate_hash=candidate.candidate_hash,
@@ -568,28 +637,44 @@ class ForegroundRuntimeExecutionAuthority:
             )
             if admission is None:
                 return False
+            self._notify_state_changed()
             snapshot = await self._store.current_snapshot(self._subject)
             if snapshot is None:
                 raise ForegroundRuntimeError("foreground_runtime_claim_disappeared")
-        elif snapshot.owner_id != self._owner_id:
-            delay = snapshot.lease_expires_at - time.time()
-            if delay > 0:
-                await asyncio.sleep(min(delay, 1.0))
-                return True
-            await self._store.reclaim_expired(
-                host_run_id=snapshot.host_run_id,
-                new_owner_id=self._owner_id,
-                expected_generation=snapshot.generation,
-                lease_seconds=self._lease_seconds,
-                idempotency_key=(
-                    f"runtime-reclaim:{snapshot.host_run_id}:g{snapshot.generation + 1}"
-                ),
-            )
-            snapshot = await self._store.current_snapshot(self._subject)
-            if snapshot is None:
-                raise ForegroundRuntimeError("foreground_runtime_reclaim_disappeared")
+        else:
+            # The store's clock/fence is authoritative, including a still-live
+            # Runtime waking after its own lease expired. Never infer freshness
+            # from owner equality or compare a fixture clock to wall time.
+            reclaim = snapshot.owner_id != self._owner_id
+            if not reclaim:
+                try:
+                    await self._store.read_claimed_execution(
+                        host_run_id=snapshot.host_run_id, owner_id=self._owner_id,
+                        generation=snapshot.generation,
+                    )
+                except ForegroundQueueError as exc:
+                    if exc.code != "foreground_lease_expired":
+                        raise
+                    reclaim = True
+            if reclaim:
+                try:
+                    await self._store.reclaim_expired(
+                        host_run_id=snapshot.host_run_id,
+                        new_owner_id=self._owner_id,
+                        expected_generation=snapshot.generation,
+                        lease_seconds=self._lease_seconds,
+                        idempotency_key=f"runtime-reclaim:{snapshot.host_run_id}:g{snapshot.generation + 1}",
+                    )
+                except ForegroundQueueError as exc:
+                    if exc.code != "foreground_lease_not_expired":
+                        raise
+                    await asyncio.sleep(min(1.0, self._lease_seconds / 3))
+                    return True
+                snapshot = await self._store.current_snapshot(self._subject)
+                if snapshot is None:
+                    raise ForegroundRuntimeError("foreground_runtime_reclaim_disappeared")
 
-        await self._drive_claimed(snapshot.host_run_id, snapshot.sdk_run_id)
+        await self._drive_with_lease(snapshot)
         current = await self._store.current_snapshot(self._subject)
         return current is None or current.state.value in {
             "COMPLETED",
@@ -597,6 +682,93 @@ class ForegroundRuntimeExecutionAuthority:
             "STOPPED",
             "CANCELLED",
         }
+
+    async def _stop_lease_keeper(self) -> None:
+        task, self._lease_task = self._lease_task, None
+        self._lease_identity = None
+        if task is not None:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def _drive_with_lease(self, snapshot: ForegroundRunSnapshot) -> None:
+        """Maintain ownership while the driver is idle at permission WAITING.
+
+        The keeper is Runtime-owned and joined on terminal/close/lease loss.
+        Its random incarnation is only an idempotency namespace, never authority.
+        """
+        identity = (snapshot.host_run_id, snapshot.generation)
+        if self._lease_identity != identity or self._lease_task is None or self._lease_task.done():
+            await self._stop_lease_keeper()
+            self._lease_identity = identity
+            self._lease_task = asyncio.create_task(self._maintain_lease(snapshot), name="foreground-lease-keeper")
+            # Retrieve idle failures too; the next driver still observes them.
+            self._lease_task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+        keeper = self._lease_task
+        work = asyncio.create_task(self._drive_claimed(snapshot.host_run_id, snapshot.sdk_run_id))
+        succeeded = False
+        try:
+            done, _ = await asyncio.wait((work, keeper), return_when=asyncio.FIRST_COMPLETED)
+            if keeper in done:
+                await keeper  # stop this owner's work immediately on lost lease
+            await work
+            succeeded = True
+        finally:
+            if not work.done():
+                work.cancel()
+            await asyncio.gather(work, return_exceptions=True)
+            if not succeeded:
+                # Error/cancellation cleanup must not depend on another DB read.
+                await self._stop_lease_keeper()
+            else:
+                try:
+                    current = await self._store.current_snapshot(self._subject)
+                except BaseException:
+                    await self._stop_lease_keeper()
+                    raise
+                if current is None or (current.host_run_id, current.generation) != identity:
+                    await self._stop_lease_keeper()
+
+    async def _maintain_lease(self, snapshot: ForegroundRunSnapshot) -> None:
+        incarnation, ordinal = uuid.uuid4().hex, 0
+        interval = self._lease_seconds / 3
+        renew_at = asyncio.get_running_loop().time() + interval
+        try:
+            while True:
+                await asyncio.sleep(min(1.0, interval))
+                current = await self._store.current_snapshot(self._subject)
+                if current is None:
+                    return  # the authenticated Host terminal has committed
+                if (current.host_run_id, current.owner_id, current.generation) != (
+                    snapshot.host_run_id, self._owner_id, snapshot.generation
+                ):
+                    raise ForegroundQueueError("foreground_generation_stale")
+                if asyncio.get_running_loop().time() >= renew_at:
+                    ordinal += 1
+                    await self._store.heartbeat(
+                        host_run_id=snapshot.host_run_id, owner_id=self._owner_id,
+                        generation=snapshot.generation, lease_seconds=self._lease_seconds,
+                        idempotency_key=f"runtime-heartbeat:{snapshot.host_run_id}:g{snapshot.generation}:{incarnation}:{ordinal}",
+                    )
+                    renew_at = asyncio.get_running_loop().time() + interval
+                # Durable controls can be committed by another connection.
+                # Waiting alone must not busy-reprepare the original history.
+                if not self._closed and current.sdk_run_id is not None and (self._driver is None or self._driver.done()):
+                    record = self._ingress.query(current.sdk_run_id)
+                    state = str(getattr(getattr(record, "state", None), "value", ""))
+                    if state in {"completed", "failed", "cancelled"} or (
+                        current.desired_control is not None and await self._store.pending_signals(current.host_run_id)
+                    ):
+                        await self.after_enqueue(subject=self._subject)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._last_error = exc
+            self._notify_state_changed()
+            self._record_audit("foreground.runtime.lease_keeper_failed",
+                host_run_id=snapshot.host_run_id, generation=snapshot.generation,
+                error_code=str(getattr(exc, "code", type(exc).__name__)))
+            raise
 
     async def _drive_claimed(
         self, host_run_id: str, previously_bound_sdk_run_id: str | None
@@ -618,6 +790,40 @@ class ForegroundRuntimeExecutionAuthority:
         ).value
         if previously_bound_sdk_run_id not in (None, sdk_run_id):
             raise ForegroundRuntimeError("foreground_runtime_sdk_binding_drift")
+
+        # Recovery consumes the actual durable Run, not a newly prepared copy
+        # of its original context. In particular, forgetting old sources must
+        # not prevent STOP or the recording of an already-failed SDK terminal.
+        record = None if previously_bound_sdk_run_id is None else self._ingress.query(sdk_run_id)
+        if record is not None:
+            if (getattr(record, "run_id", None), getattr(record, "execution_session_id", None),
+                getattr(record, "request_id", None)) != (sdk_run_id, execution_session_id, request_id):
+                raise ForegroundRuntimeError("foreground_runtime_sdk_binding_drift")
+            await self._store.bind_sdk_run(
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=self._owner_id,
+                generation=claimed.generation, idempotency_key=f"runtime-sdk-bind:{host_run_id}",
+            )
+            await self._store.record_start_observation(
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=self._owner_id,
+                generation=claimed.generation, outcome="QUERY_FOUND",
+                result_ref=f"sdk-run:{sdk_run_id}:v{getattr(record, 'version', 0)}",
+                result_hash=canonical_hash({"run_id": sdk_run_id,
+                    "state": str(getattr(getattr(record, "state", None), "value", "")),
+                    "version": int(getattr(record, "version", 0))}),
+                idempotency_key=f"runtime-recovery-query:{host_run_id}:g{claimed.generation}:v{getattr(record, 'version', 0)}",
+            )
+            if snapshot.state is RunState.CLAIMED:
+                await self._store.record_sdk_started(
+                    host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=self._owner_id,
+                    generation=claimed.generation,
+                    sdk_event_id=f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}",
+                    idempotency_key=f"runtime-recovered-running:{host_run_id}:g{claimed.generation}",
+                )
+            if self._effect_gate is not None:
+                self._effect_gate.register(store=self._store, host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id, owner_id=self._owner_id, generation=claimed.generation)
+            await self._finish_bound(claimed, sdk_run_id)
+            return
 
         def _check_identity(authority: object) -> None:
             self._assert_authority_identity(
@@ -641,19 +847,40 @@ class ForegroundRuntimeExecutionAuthority:
             sdk_run_id=sdk_run_id,
         )
         _check_identity(tools)
-        context = await self._context.prepare(
-            claimed=claimed,
-            expected_context=ContextLineage(
-                snapshot.context_snapshot_id,
-                snapshot.context_snapshot_revision,
-                snapshot.context_snapshot_hash,
-            ),
-            execution_session_id=execution_session_id,
-            request_id=request_id,
-            sdk_run_id=sdk_run_id,
-            provider=provider,
-            tools=tools,
-        )
+        from deskpet.execution.preparation_rejection import PreparationDisclosureRejected
+
+        try:
+            context = await self._context.prepare(
+                claimed=claimed,
+                expected_context=ContextLineage(
+                    snapshot.context_snapshot_id,
+                    snapshot.context_snapshot_revision,
+                    snapshot.context_snapshot_hash,
+                ),
+                execution_session_id=execution_session_id,
+                request_id=request_id,
+                sdk_run_id=sdk_run_id,
+                provider=provider,
+                tools=tools,
+            )
+        except PreparationDisclosureRejected as exc:
+            rejection = exc.rejection
+            candidate = claimed.candidate
+            if (
+                rejection.host_run_id != host_run_id
+                or rejection.subject != candidate.subject
+                or rejection.turn_id != candidate.turn_id
+                or rejection.turn_hash != candidate.turn_hash
+                or rejection.candidate_hash != candidate.candidate_hash
+                or rejection.evidence_id != candidate.evidence_id
+                or rejection.evidence_hash != candidate.evidence_hash
+            ):
+                raise ForegroundRuntimeError("foreground_preparation_rejection_identity_mismatch") from exc
+            await self._store.settle_preparation_rejection(
+                rejection=exc.rejection, owner_id=claimed.owner_id, generation=claimed.generation,
+            )
+            self._notify_state_changed()
+            return
         _check_identity(context)
         bound_provider = await self._provider.bind(
             frozen=provider,
@@ -665,9 +892,8 @@ class ForegroundRuntimeExecutionAuthority:
         )
         _check_identity(bound_provider)
         candidate = claimed.candidate
-        if (
-            candidate.task_scope_id is None
-            or candidate.binding_set_revision < 1
+        if candidate.task_scope_id is not None and (
+            candidate.binding_set_revision < 1
             or candidate.binding_set_receipt_id is None
             or candidate.binding_set_receipt_hash is None
         ):
@@ -676,28 +902,30 @@ class ForegroundRuntimeExecutionAuthority:
             raise ForegroundRuntimeError(
                 "foreground_runtime_admission_receipt_missing"
             )
-        host_ref = claimed.admission_receipt_id
-        host_hash = claimed.admission_receipt_hash
-        route_receipt_id = _uuid(
-            f"foreground-initial-route:{host_run_id}:{host_ref}:{host_hash}"
-        )
-        route = ContextRouteReceipt(
-            route_receipt_id,
-            sdk_run_id,
-            None,
-            None,
-            TaskScopeRoute.RESUME_EXISTING,
-            candidate.task_scope_id,
-            candidate.binding_set_revision,
-            context.resume_refs,
-            schema_version=3,
-            binding_set_receipt_id=candidate.binding_set_receipt_id,
-            binding_set_receipt_hash=candidate.binding_set_receipt_hash,
-            origin=ContextRouteOrigin.HOST_INITIAL,
-            host_authority_ref=host_ref,
-            host_authority_hash=host_hash,
-        )
-        await self._context.verify_initial_route(route)
+        route = None
+        if candidate.task_scope_id is not None:
+            host_ref = claimed.admission_receipt_id
+            host_hash = claimed.admission_receipt_hash
+            route_receipt_id = _uuid(
+                f"foreground-initial-route:{host_run_id}:{host_ref}:{host_hash}"
+            )
+            route = ContextRouteReceipt(
+                route_receipt_id,
+                sdk_run_id,
+                None,
+                None,
+                TaskScopeRoute.RESUME_EXISTING,
+                candidate.task_scope_id,
+                candidate.binding_set_revision,
+                context.resume_refs,
+                schema_version=3,
+                binding_set_receipt_id=candidate.binding_set_receipt_id,
+                binding_set_receipt_hash=candidate.binding_set_receipt_hash,
+                origin=ContextRouteOrigin.HOST_INITIAL,
+                host_authority_ref=host_ref,
+                host_authority_hash=host_hash,
+            )
+            await self._context.verify_initial_route(route)
         turn_payload = _candidate_turn_payload(candidate)
         run_binding = bound_provider.binding
         catalog_generation = int(run_binding.catalog_generation)
@@ -706,6 +934,7 @@ class ForegroundRuntimeExecutionAuthority:
         tool_names = tools.catalog.get("tool_names")
         if not isinstance(tool_names, (list, tuple)):
             raise ForegroundRuntimeError("foreground_runtime_tool_catalog_invalid")
+        from simple_harness import thaw_json
         start_payload = {
             "input": {"text": context.current_text},
             "messages": [dict(item) for item in context.provider_messages],
@@ -717,6 +946,9 @@ class ForegroundRuntimeExecutionAuthority:
                 "root_run_id": host_run_id,
                 "request_id": request_id,
                 "task_scope_id": candidate.task_scope_id,
+                "visibility_dependencies": thaw_json(context.visibility_dependencies),
+                "primary_effect_index_version": 1,
+                "scope_disclosure": thaw_json(context.scope_disclosure),
                 "context_authority_ref": context.authority_ref,
                 "context_authority_hash": context.authority_hash,
                 "provider_authority_ref": bound_provider.authority_ref,
@@ -726,8 +958,8 @@ class ForegroundRuntimeExecutionAuthority:
                 "snapshot_id": context.snapshot_id,
                 "run_binding": run_binding.to_record(),
                 "tool_authority": dict(tools.run_start_record),
-                "initial_route_receipt_id": route.receipt_id,
-                "initial_route_receipt_hash": route.receipt_hash,
+                "initial_route_receipt_id": None if route is None else route.receipt_id,
+                "initial_route_receipt_hash": None if route is None else route.receipt_hash,
             },
             "turn": turn_payload,
         }
@@ -749,7 +981,7 @@ class ForegroundRuntimeExecutionAuthority:
             {
                 "sdk_run_id": sdk_run_id,
                 "execution_request_hash": execution_request_hash,
-                "route_receipt_hash": route.receipt_hash,
+                "route_receipt_hash": None if route is None else route.receipt_hash,
             }
         )
         await self._store.record_start_intent(
@@ -767,6 +999,8 @@ class ForegroundRuntimeExecutionAuthority:
             generation=claimed.generation,
             idempotency_key=f"runtime-sdk-bind:{host_run_id}",
         )
+        self._notify_state_changed()
+        tool_start_ready = asyncio.Event()
         if self._effect_gate is not None:
             self._effect_gate.register(
                 store=self._store,
@@ -774,6 +1008,7 @@ class ForegroundRuntimeExecutionAuthority:
                 sdk_run_id=sdk_run_id,
                 owner_id=self._owner_id,
                 generation=claimed.generation,
+                start_ready=tool_start_ready,
             )
 
         should_start = previously_bound_sdk_run_id is None
@@ -888,7 +1123,7 @@ class ForegroundRuntimeExecutionAuthority:
                     provider_budget_fingerprint=budget_fingerprint,
                     conversation=conversation,
                     initial_route_receipt=route,
-                    initial_route_receipt_hash=route.receipt_hash,
+                    initial_route_receipt_hash=None if route is None else route.receipt_hash,
                 )
             except Exception as exc:
                 await self._store.record_start_observation(
@@ -988,19 +1223,24 @@ class ForegroundRuntimeExecutionAuthority:
                 sdk_event_id=result_ref,
                 idempotency_key=f"runtime-running:{host_run_id}",
             )
+        tool_start_ready.set()
+        self._notify_state_changed()
         self._record_audit(
             "foreground.runtime.bound",
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,
             generation=claimed.generation,
-            route_receipt_id=route.receipt_id,
-            route_receipt_hash=route.receipt_hash,
+            route_receipt_id=None if route is None else route.receipt_id,
+            route_receipt_hash=None if route is None else route.receipt_hash,
         )
-        await self._deliver_controls(
-            host_run_id=host_run_id,
-            sdk_run_id=sdk_run_id,
-            generation=claimed.generation,
-        )
+        await self._finish_bound(claimed, sdk_run_id)
+
+    async def _finish_bound(self, claimed: ClaimedExecution, sdk_run_id: str) -> None:
+        host_run_id = claimed.host_run_id
+        record = self._ingress.query(sdk_run_id)
+        state = str(getattr(getattr(record, "state", None), "value", ""))
+        if resolve_host_terminal(state, None) is None:
+            await self._deliver_controls(host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=claimed.generation)
         terminal = await self._observe_with_heartbeats(
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,
@@ -1025,6 +1265,8 @@ class ForegroundRuntimeExecutionAuthority:
                     f"{state_value or 'running'}"
                 ),
             )
+            if observed == "BOUND_WAITING":
+                self._notify_state_changed()
             return
         await self._store.record_reconciliation(
             host_run_id=host_run_id,
@@ -1061,6 +1303,8 @@ class ForegroundRuntimeExecutionAuthority:
             if settlement.status == "lease_lost":
                 raise ForegroundRuntimeError("foreground_runtime_lease_lost_during_closure")
         run_binding, endpoint_identity = self._terminal_binding(sdk_run_id)
+        terminal_hook = (None if self._terminal_commit_hook_factory is None else
+                         self._terminal_commit_hook_factory(sdk_run_id))
         await self._store.record_sdk_terminal(
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,
@@ -1070,6 +1314,7 @@ class ForegroundRuntimeExecutionAuthority:
             sdk_event_id=terminal.sdk_event_id,
             sdk_event_hash=terminal.sdk_event_hash,
             idempotency_key=f"runtime-terminal:{host_run_id}",
+            terminal_observer_tx=terminal_hook,
             run_binding=run_binding,
             endpoint_identity=endpoint_identity,
             outbox_dead_letter_reason=(
@@ -1078,8 +1323,19 @@ class ForegroundRuntimeExecutionAuthority:
                 else None
             ),
         )
+        if self._terminal_audit_wake is not None:
+            try:
+                self._terminal_audit_wake()
+            except Exception:
+                # Wake is only an optimization. Durable terminal discovery recovers
+                # missed notifications without changing the business result.
+                pass
+        self._notify_state_changed()
         self._provider.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
-        self._tools.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
+        cleanup_tools = getattr(self._tools, "mark_terminal_if_registered", None)
+        if not callable(cleanup_tools):
+            cleanup_tools = self._tools.mark_terminal
+        cleanup_tools(sdk_run_id, terminal.terminal_state.value.lower())
         if self._effect_gate is not None:
             self._effect_gate.release(sdk_run_id)
 
@@ -1152,6 +1408,7 @@ class ForegroundRuntimeExecutionAuthority:
                         # moot and the superseding signal delivers next pass.
                         continue
                     raise
+                self._notify_state_changed()
                 self._record_audit(
                     "foreground.runtime.paused",
                     host_run_id=host_run_id,
@@ -1203,27 +1460,11 @@ class ForegroundRuntimeExecutionAuthority:
     async def _observe_with_heartbeats(
         self, *, host_run_id: str, sdk_run_id: str, generation: int
     ) -> AuthenticatedTerminalObservation | None:
-        stop = asyncio.Event()
-
-        async def heartbeat() -> None:
-            ordinal = 0
-            interval = max(0.1, self._lease_seconds / 3)
-            while not stop.is_set():
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=interval)
-                except TimeoutError:
-                    ordinal += 1
-                    await self._store.heartbeat(
-                        host_run_id=host_run_id,
-                        owner_id=self._owner_id,
-                        generation=generation,
-                        lease_seconds=self._lease_seconds,
-                        idempotency_key=(
-                            f"runtime-heartbeat:{host_run_id}:g{generation}:{ordinal}"
-                        ),
-                    )
-
-        heartbeat_task = asyncio.create_task(heartbeat())
+        record = self._ingress.query(sdk_run_id)
+        state = str(getattr(getattr(record, "state", None), "value", ""))
+        if resolve_host_terminal(state, None) is not None:
+            return await self._terminal.observe(host_run_id=host_run_id, sdk_run_id=sdk_run_id,
+                subject=self._subject, owner_id=self._owner_id, generation=generation)
         pump_task = asyncio.create_task(
             self._pump_controls(
                 host_run_id=host_run_id,
@@ -1240,10 +1481,9 @@ class ForegroundRuntimeExecutionAuthority:
                 generation=generation,
             )
         finally:
-            stop.set()
             pump_task.cancel()
             results = await asyncio.gather(
-                heartbeat_task, pump_task, return_exceptions=True
+                pump_task, return_exceptions=True
             )
             for result in results:
                 if isinstance(result, Exception) and not isinstance(
@@ -1280,12 +1520,14 @@ class SqliteSdkTerminalObserver:
         *,
         run_fault_memo: object | None = None,
         fault_inject: Callable[[str], None] | None = None,
+        occurrence_coordinator: object | None = None,
     ) -> None:
         self._db_path = db_path
         self._ingress = ingress
         self._runtime_stack = runtime_stack
         self._run_fault_memo = run_fault_memo
         self._fault_inject = fault_inject
+        self._occurrence_coordinator = occurrence_coordinator
 
     def _terminal_error_code(self, sdk_run_id: str, sdk_evidence: object) -> str | None:
         """Stable ``error_code`` of a FAILED terminal: Host memo first, else SDK public code.
@@ -1317,7 +1559,6 @@ class SqliteSdkTerminalObserver:
         owner_id: str,
         generation: int,
     ) -> AuthenticatedTerminalObservation | None:
-        del owner_id
         await self._ingress.wait_idle(sdk_run_id)
         record = self._ingress.query(sdk_run_id)
         raw_state = str(
@@ -1342,7 +1583,32 @@ class SqliteSdkTerminalObserver:
             raise ForegroundRuntimeError(
                 "foreground_sdk_terminal_evidence_reader_unavailable"
             )
-        sdk_evidence = read_terminal(sdk_run_id)
+        from simple_harness.execution.audit import RunAuditUnavailable
+        try:
+            sdk_evidence = read_terminal(sdk_run_id)
+        except RunAuditUnavailable as exc:
+            # Only the supported missing-proof failure can request explicit repair.
+            # Conflicting/multiple terminals and every other audit failure remain
+            # failures. Recovery independently proves the exact original Run.
+            if raw_state != "failed" or str(exc) != "terminal_event_unavailable":
+                raise
+            recover = getattr(self._runtime_stack, "recover_expired_authorization_terminal", None)
+            if not callable(recover):
+                raise
+            # Repair only the actual still-owned Host/SDK binding being observed.
+            # This is Host SQL; the SDK independently owns all terminal sources.
+            async with aiosqlite.connect(self._db_path) as recovery_db:
+                bound = await (await recovery_db.execute(
+                    "SELECT 1 FROM foreground_run_heads h "
+                    "JOIN foreground_runs r ON r.host_run_id=h.host_run_id "
+                    "JOIN foreground_run_sdk_bindings b ON b.host_run_id=h.host_run_id "
+                    "WHERE h.host_run_id=? AND r.subject=? AND h.owner_id=? "
+                    "AND h.generation=? AND h.sdk_run_id=? AND b.sdk_run_id=?",
+                    (host_run_id, subject, owner_id, generation, sdk_run_id, sdk_run_id),
+                )).fetchone()
+            if bound is None:
+                raise ForegroundRuntimeError("foreground_sdk_terminal_recovery_binding_mismatch")
+            sdk_evidence = recover(sdk_run_id)
         if sdk_evidence is None:
             return None
         if (
@@ -1354,6 +1620,86 @@ class SqliteSdkTerminalObserver:
             raise ForegroundRuntimeError(
                 "foreground_sdk_terminal_evidence_mismatch"
             )
+        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+        evidence_ingress = ExecutionEvidenceIngress(self._db_path, fault_inject=self._fault_inject)
+        effective_scope = await evidence_ingress.resolve_run_scope(sdk_run_id)
+        read_messages = getattr(self._runtime_stack, "read_primary_run_messages", None)
+        if callable(read_messages):
+            async with aiosqlite.connect(self._db_path) as source_db:
+                cursor = await source_db.execute(
+                    "SELECT t.turn_json FROM foreground_runs r "
+                    "JOIN foreground_turns t ON t.turn_id=r.turn_id "
+                    "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id "
+                    "WHERE r.host_run_id=? AND b.sdk_run_id=? AND r.subject=?",
+                    (host_run_id, sdk_run_id, subject),
+                )
+                turn = await cursor.fetchone()
+            if turn is None:
+                raise ForegroundRuntimeError("foreground_terminal_run_binding_missing")
+            text = json.loads(turn[0])["payload"]["text"]
+            messages = read_messages(sdk_run_id, current_text=text)
+            from deskpet.execution.primary_dependencies import read_run_dependencies
+            proof = None
+            if callable(getattr(self._runtime_stack, "read_primary_dependency_facts", None)):
+                async with aiosqlite.connect(self._db_path) as dependency_db:
+                    dependency_db.row_factory = aiosqlite.Row
+                    try:
+                        source = await read_run_dependencies(db=dependency_db,
+                            stack=self._runtime_stack, sdk_run_id=sdk_run_id)
+                        proof = None if source is None else source[1]
+                    except (ValueError, TypeError, KeyError):
+                        # Unverifiable/old source stays archived; never fabricate
+                        # an empty complete proof to make generated history visible.
+                        proof = None
+            from deskpet.execution.primary_history import record_terminal_observation
+            occurrence_sources = None
+            coordinator = self._occurrence_coordinator
+            if coordinator is not None and coordinator.source_dependencies is not None:
+                try:
+                    occurrence_sources = await coordinator.source_dependencies.for_run(coordinator, sdk_run_id)
+                    if proof is not None:
+                        from simple_harness import thaw_json
+                        proof = thaw_json(proof)
+                        bindings = {item['evidence_id']: item['envelope_hash'] for item in proof['evidence']}
+                        for snapshot in occurrence_sources:
+                            for item in snapshot['evidence']:
+                                previous = bindings.setdefault(item['evidence_id'], item['envelope_hash'])
+                                if previous != item['envelope_hash']:
+                                    raise ValueError('s5c_occurrence_source_hash_conflict')
+                        proof['evidence'] = [dict(evidence_id=key, envelope_hash=value)
+                                             for key, value in sorted(bindings.items())]
+                except (ValueError, TypeError, KeyError):
+                    # Archive the actual terminal even if source closure is no
+                    # longer available. A7 physical preflight already rejects a
+                    # missing source, and ordinary history requires this proof.
+                    proof, occurrence_sources = None, None
+            tool_sources = None
+            read_tool_sources = getattr(self._runtime_stack, "read_primary_tool_causal_sources", None)
+            if terminal is RunState.COMPLETED and any(message.get("role") == "tool" for message in messages):
+                from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
+                if callable(read_tool_sources):
+                    try:
+                        tool_sources = await read_tool_sources(db_path=self._db_path,
+                            host_run_id=host_run_id, run_id=sdk_run_id, subject=subject,
+                            current_text=text, messages=messages)
+                    except PrimaryToolCausalityUnavailable:
+                        # Archive the complete original terminal. A missing or
+                        # incomplete tool source never permits partial indexing.
+                        tool_sources = None
+            primary_event_id, primary_event_hash = await record_terminal_observation(
+                self._db_path, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
+                owner_id=owner_id, generation=generation, terminal=terminal,
+                sdk_evidence=sdk_evidence, messages=messages, visibility_dependencies=proof,
+                occurrence_sources=occurrence_sources,
+                tool_causal_sources=tool_sources,
+                error_code=self._terminal_error_code(sdk_run_id, sdk_evidence) if terminal is RunState.FAILED else None,
+            )
+            if effective_scope is None:
+                if self._fault_inject is not None:
+                    self._fault_inject("primary-terminal-observed")
+                return AuthenticatedTerminalObservation(terminal, primary_event_id, primary_event_hash)
+        elif effective_scope is None:
+            raise ForegroundRuntimeError("foreground_primary_message_reader_unavailable")
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             # S5b Task 6 (review F-6): the durable run_terminal row is looked up
@@ -1395,7 +1741,7 @@ class SqliteSdkTerminalObserver:
             self._db_path, fault_inject=self._fault_inject
         )
         if row is None:
-            if authority is None or authority["task_scope_id"] is None:
+            if authority is None or effective_scope is None:
                 raise ForegroundRuntimeError(
                     "foreground_terminal_task_scope_authority_missing"
                 )
@@ -1470,7 +1816,7 @@ class SqliteSdkTerminalObserver:
             # the sequence is allocated under the write lock, never read
             # outside a transaction.
             await evidence_ingress.ingest_terminal(
-                task_scope_id=str(authority["task_scope_id"]),
+                task_scope_id=effective_scope.task_scope_id,
                 evidence=evidence,
             )
             # The stable code is now durable in the run_terminal row: release

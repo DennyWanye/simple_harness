@@ -33,7 +33,7 @@ from deskpet.sdk_adapters.effect_gate import EffectGateRejected
 logger = logging.getLogger(__name__)
 
 PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
-    ["agent", "agent_parallel", "agent_reach_doctor", "agent_reach_read", "app_discover", "app_launch", "await_subagents", "capability_build", "capability_repair", "context_page_in", "desktop_create_file", "doc_create", "doc_edit", "doc_read", "download_file", "edit_file", "excel_create", "external_action_wait", "fetch_tool_result", "file_glob", "file_grep", "file_organize", "file_read", "file_write", "generate_image", "glob", "gold_price_lookup", "grep", "image_ocr", "list_directory", "context_route", "memory_forget", "memory_read", "memory_recall", "memory_search", "memory_write", "move_file", "office_pick_file", "pdf_export", "ppt_create", "process_list", "process_start", "process_stop", "process_wait", "project_directory_select", "project_group_send", "read_file", "register_artifacts", "run_browser_task", "run_shell", "scrapling_fetch", "screen_capture", "screen_click", "screen_key", "screen_move", "screen_scroll", "screen_type", "skill_invoke", "spawn_subagents", "spawn_team", "skill_install", "task_scope_search", "task_scope_update", "todo_complete", "todo_write", "tool_activate", "tool_describe", "tool_search", "web_crawl", "web_extract_article", "web_fetch", "web_read_sitemap", "web_search", "window_capture", "window_focus", "window_key", "window_list", "workflow_spawn", "workspace_prepare", "workspace_recall", "write_file"]
+    ["agent", "agent_parallel", "agent_reach_doctor", "agent_reach_read", "app_discover", "app_launch", "await_subagents", "capability_build", "capability_repair", "context_page_in", "desktop_create_file", "doc_create", "doc_edit", "doc_read", "download_file", "edit_file", "excel_create", "external_action_wait", "fetch_tool_result", "file_glob", "file_grep", "file_organize", "file_read", "file_write", "generate_image", "glob", "gold_price_lookup", "grep", "image_ocr", "list_directory", "context_route", "prospective_ack", "procedure_use", "procedure_discover", "memory_forget", "memory_read", "memory_recall", "memory_search", "memory_write", "move_file", "office_pick_file", "pdf_export", "ppt_create", "process_list", "process_start", "process_stop", "process_wait", "project_directory_select", "project_group_send", "read_file", "register_artifacts", "run_browser_task", "run_shell", "scrapling_fetch", "screen_capture", "screen_click", "screen_key", "screen_move", "screen_scroll", "screen_type", "skill_invoke", "spawn_subagents", "spawn_team", "skill_install", "task_scope_search", "task_scope_update", "todo_complete", "todo_write", "tool_activate", "tool_describe", "tool_search", "web_crawl", "web_extract_article", "web_fetch", "web_read_sitemap", "web_search", "window_capture", "window_focus", "window_key", "window_list", "workflow_spawn", "workspace_prepare", "workspace_recall", "write_file"]
 )
 
 # Host-composed administrative tools are registered only after their durable
@@ -41,7 +41,7 @@ PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
 # built without them for conformance and recovery, while production wiring is
 # still checked against PRODUCT_TOOL_NAMES once the registration is appended.
 HOST_COMPOSED_TOOL_NAMES = frozenset(
-    {"skill_install", "context_route", "task_scope_search", "task_scope_update"}
+    {"prospective_ack", "procedure_use", "procedure_discover", "skill_install", "context_route", "task_scope_search", "task_scope_update"}
 )
 
 DispatchKind = Literal["sync", "async", "context", "staged", "control", "provider"]
@@ -60,6 +60,8 @@ PROJECTLESS_SAFE_TOOL_NAMES = frozenset(
         "task_scope_search",
         # S5b Task 3: semantic closure never touches the workspace.
         "task_scope_update",
+        "procedure_use",
+        "procedure_discover",
         "gold_price_lookup",
         "memory_forget",
         "memory_read",
@@ -191,6 +193,14 @@ def _product_tool_execution_identity(
             "input_schema": thaw_json(tool.spec.input_schema),
         }
     )
+
+
+_foreground_invocation_origin = contextvars.ContextVar("foreground_invocation_origin", default=None)
+
+
+def active_product_foreground_origin():
+    """Exact admission captured before dispatch; never a lookup of latest Run."""
+    return _foreground_invocation_origin.get()
 
 
 def active_product_tool_call_id() -> CallId:
@@ -325,6 +335,11 @@ class ProductToolsAdapter(ToolRegistry):
         token = _current_call_id.set(call.call_id)
         context_token = _current_tool_context.set(context)
         try:
+            origin = _foreground_invocation_origin.get()
+            if origin is not None:
+                from deskpet.execution.primary_effect_index import record_effect
+
+                await record_effect(origin, context, call.name)
             delivery_adapter = None
             try:
                 from .desktop_runtime import _delivery_adapters
@@ -355,7 +370,7 @@ class ForegroundEffectAdmissionPort(Protocol):
     through unchanged.
     """
 
-    async def authorize(self, sdk_run_id: str) -> None: ...
+    async def authorize(self, sdk_run_id: str) -> object | None: ...
 
 
 class EffectGatePort(Protocol):
@@ -380,6 +395,7 @@ class ProductEffectExecutor(EffectExecutor):
         foreground_admission: ForegroundEffectAdmissionPort | None = None,
         effect_gate: EffectGatePort | None = None,
         evidence_ingress: Any | None = None,
+        procedure_runtime: Any | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(registry=registry, **kwargs)
@@ -389,6 +405,7 @@ class ProductEffectExecutor(EffectExecutor):
         # dispatch, objective event + evidence row + tool_invocation import in
         # one state.db transaction after the SDK settled the effect.
         self._evidence_ingress = evidence_ingress
+        self._procedure_runtime = procedure_runtime
 
     async def _evidence_scope(self, context: ToolContext) -> tuple[str, str] | None:
         """(task_scope_id, subject) of the Run's admission scope, or ``None``.
@@ -522,12 +539,13 @@ class ProductEffectExecutor(EffectExecutor):
                 )
                 return EffectExecution(effect=None, result=rejection)
         self._registry.assert_workspace_current(context.run_id)
+        origin = None
         if self._foreground_admission is not None:
             # Final current-generation admission immediately before the
             # physical Tool effect.  A foreground lease reclaimed after the
             # authorization decision fails here, so a stale worker's Run
             # cannot produce external Tool side effects.
-            await self._foreground_admission.authorize(context.run_id.value)
+            origin = await self._foreground_admission.authorize(context.run_id.value)
         evidence_scope = await self._evidence_scope(context)
         if evidence_scope is not None:
             call = kwargs.get("call")
@@ -564,15 +582,38 @@ class ProductEffectExecutor(EffectExecutor):
                 )
                 return EffectExecution(effect=None, result=rejected.result)
         token = _validation_run_id.set(context.run_id.value)
+        origin_token = _foreground_invocation_origin.set(origin)
         try:
-            execution = await super().execute(**kwargs)
+            from contextlib import nullcontext
+            binding_scope = getattr(self._effect_gate, "execution_scope", None)
+            scope = binding_scope(context, kwargs["call"].name) if gated and callable(binding_scope) else nullcontext()
+            async with scope:
+                # A foreground/binding rejection must not consume a Procedure
+                # step. Recheck and reserve only inside the final execution
+                # scope, after the existing admission/evidence gates.
+                procedure_rejection = None
+                if self._procedure_runtime is not None and gated:
+                    from deskpet.memory.procedure_applicability import ProcedureUseRejected
+                    try:
+                        await self._procedure_runtime.before_call(context, kwargs["call"])
+                    except ProcedureUseRejected as error:
+                        procedure_rejection = ToolResult.rejected(
+                            kwargs["call"].call_id, str(error),
+                            "Procedure use was rejected before execution.")
+                if procedure_rejection is not None:
+                    execution = EffectExecution(effect=None, result=procedure_rejection)
+                else:
+                    execution = await super().execute(**kwargs)
         finally:
+            _foreground_invocation_origin.reset(origin_token)
             _validation_run_id.reset(token)
         if evidence_scope is not None:
             if execution.effect is None:
                 await self._abandon_rejected_reservation(context, execution)
             else:
                 await self._commit_evidence(context, kwargs["call"], execution, evidence_scope)
+        if self._procedure_runtime is not None and execution.effect is not None:
+            await self._procedure_runtime.store.commit_effect(record=execution.effect)
         return execution
 
     def _is_first_occurrence(self, kwargs: Mapping[str, Any]) -> bool:
@@ -976,6 +1017,7 @@ def filter_sdk_catalog_for_workspace(
     inventory: Sequence[ProductToolInventoryEntry],
     *,
     workspace_resolution_kind: str,
+    primary_route_capable: bool = False,
 ) -> tuple[dict[str, Any], tuple[ProductToolInventoryEntry, ...]]:
     """Return the per-Run model/tool projection for one workspace tag.
 
@@ -984,6 +1026,8 @@ def filter_sdk_catalog_for_workspace(
     restart can deterministically reapply the same projection before exact
     authority reconstruction.
     """
+
+    from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
 
     kind = str(workspace_resolution_kind).strip()
     if kind == "legacy":
@@ -1034,7 +1078,8 @@ def filter_sdk_catalog_for_workspace(
             item,
             availability_reason=(
                 item.availability_reason
-                if item.projectless_admission == "safe"
+                if (item.projectless_admission == "safe"
+                    or (primary_route_capable and item.name in PROJECT_EFFECT_TOOL_NAMES))
                 else item.availability_reason or "workspace_unscoped"
             ),
         )

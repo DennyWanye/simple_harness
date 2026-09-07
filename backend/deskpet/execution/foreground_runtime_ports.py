@@ -122,6 +122,7 @@ class TaskScopeForegroundContextPort:
         sdk_run_id: str,
         provider: FrozenProviderAuthority,
         tools: FrozenToolAuthority,
+        ordinary_projection: Mapping[str, object] | None = None,
     ) -> FrozenContextAuthority:
         candidate = claimed.candidate
         if candidate.subject != self._subject or candidate.task_scope_id is None:
@@ -168,7 +169,7 @@ class TaskScopeForegroundContextPort:
             text=_turn_text(candidate),
             provider_binding=provider_binding,
             catalog=tools.catalog,
-            project_task_snapshot=opened.resume_package,
+            project_task_snapshot=opened.resume_package if ordinary_projection is None else ordinary_projection,
         )
         private = snapshot.private_record()
         messages = tuple(
@@ -298,6 +299,11 @@ class ProductForegroundProviderPort:
         )
 
     def mark_terminal(self, sdk_run_id: str, state: str) -> None:
+        # A cold Host terminal recovery does not restore authority for an SDK
+        # Run that is already terminal. This hook only releases process-local
+        # authority after the verified Host terminal transaction has committed.
+        if self._resolver.registry.resolve(sdk_run_id) is None:
+            return
         self._resolver.mark_terminal(sdk_run_id, state)
 
 
@@ -326,30 +332,36 @@ class ProductForegroundToolPort:
         sdk_run_id: str,
     ) -> FrozenToolAuthority:
         candidate = claimed.candidate
-        if candidate.task_scope_id is None:
-            raise RuntimeError("foreground_tool_scope_missing")
-        if (
-            candidate.binding_set_revision < 1
-            or candidate.binding_set_receipt_id is None
-            or candidate.binding_set_receipt_hash is None
-        ):
-            raise RuntimeError("foreground_tool_binding_authority_missing")
-        receipt = await self._bindings.exact_receipt(
-            task_scope_id=candidate.task_scope_id,
-            binding_set_revision=candidate.binding_set_revision,
-            binding_set_receipt_id=candidate.binding_set_receipt_id,
-            binding_set_receipt_hash=candidate.binding_set_receipt_hash,
-        )
         roots = []
-        for root_hash in receipt.root_identity_hashes:
-            authority = await self._bindings.verify_effect_authority(
+        binding_revision = candidate.binding_set_revision
+        if candidate.task_scope_id is not None:
+            if (
+                candidate.binding_set_revision < 1
+                or candidate.binding_set_receipt_id is None
+                or candidate.binding_set_receipt_hash is None
+            ):
+                raise RuntimeError("foreground_tool_binding_authority_missing")
+            receipt = await self._bindings.exact_receipt(
                 task_scope_id=candidate.task_scope_id,
-                binding_set_revision=receipt.binding_set_revision,
-                binding_set_receipt_id=receipt.receipt_id,
-                binding_set_receipt_hash=receipt.receipt_hash,
-                root_identity_hash=root_hash,
+                binding_set_revision=candidate.binding_set_revision,
+                binding_set_receipt_id=candidate.binding_set_receipt_id,
+                binding_set_receipt_hash=candidate.binding_set_receipt_hash,
             )
-            roots.append(authority.root)
+            for root_hash in receipt.root_identity_hashes:
+                authority = await self._bindings.verify_effect_authority(
+                    task_scope_id=candidate.task_scope_id,
+                    binding_set_revision=receipt.binding_set_revision,
+                    binding_set_receipt_id=receipt.receipt_id,
+                    binding_set_receipt_hash=receipt.receipt_hash,
+                    root_identity_hash=root_hash,
+                )
+                roots.append(authority.root)
+        elif (
+            binding_revision != 0
+            or candidate.binding_set_receipt_id is not None
+            or candidate.binding_set_receipt_hash is not None
+        ):
+            raise RuntimeError("foreground_tool_binding_authority_invalid")
         if len(roots) == 1:
             workspace_root = roots[0].canonical_path
             resolution_kind = "project_bound"
@@ -362,12 +374,13 @@ class ProductForegroundToolPort:
             workspace_resolution = {
                 "kind": "projectless",
                 "effective_root": None,
-                "binding_version": receipt.binding_set_revision,
+                "binding_version": binding_revision,
             }
         catalog, inventory = filter_sdk_catalog_for_workspace(
             self._catalog,
             self._inventory,
             workspace_resolution_kind=resolution_kind,
+            primary_route_capable=candidate.task_scope_id is None,
         )
         visible = frozenset(str(item) for item in catalog["tool_names"])
         direct = visible & SDK_DIRECT_TOOL_KERNEL
@@ -389,7 +402,7 @@ class ProductForegroundToolPort:
                 if deferred
                 else SDK_FULL_CATALOG_DISCLOSURE_POLICY
             ),
-            binding_version=receipt.binding_set_revision,
+            binding_version=binding_revision,
             workspace_resolution=workspace_resolution,
         )
         start_record = authority.run_start_record()
@@ -406,7 +419,30 @@ class ProductForegroundToolPort:
         )
 
     def mark_terminal(self, sdk_run_id: str, state: str) -> None:
+        try:
+            self._registry.resolve(sdk_run_id)
+        except KeyError:
+            # Completed SDK Runs are absent from the startup recovery inventory.
+            # Do not recreate active tool authority just to release it. Catch
+            # only this lookup: listener/cleanup failures must remain visible.
+            return
         self._registry.mark_terminal(sdk_run_id, state)
+
+    def mark_terminal_if_registered(self, sdk_run_id: str, state: str) -> None:
+        """Release process-local authority after an authenticated durable terminal.
+
+        A cold recovered terminal has no registration in this process. Do not
+        reconstruct its old tool grant just to clean it up.
+        """
+        if state not in {"completed", "failed", "cancelled", "stopped"}:
+            raise ValueError("invalid terminal state")
+        try:
+            self._registry.resolve(sdk_run_id)
+        except KeyError as exc:
+            if exc.args != (sdk_run_id,):
+                raise
+            return
+        self.mark_terminal(sdk_run_id, state)
 
 
 __all__ = (

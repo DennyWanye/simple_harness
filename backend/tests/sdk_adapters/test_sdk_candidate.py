@@ -53,13 +53,26 @@ def test_memory_candidate_exact_wheel_passes_verify() -> None:
     assert verify_memory_candidate() is None
 
 
-def test_service_candidate_exact_release_passes_verify() -> None:
+def test_memory_lock_matches_candidate_identity() -> None:
+    import tomllib
+    from deskpet.sdk_adapters.sdk_candidate import SDK_MEMORY_VERSION, SDK_MEMORY_WHEEL_SHA256
+
+    wheel = sdk_memory_wheel_path()
+    backend = wheel.parent.parent
+    locked = tomllib.loads((backend / "uv.lock").read_text())
+    package, = (p for p in locked["package"] if p["name"] == "simple-harness-memory-sdk")
+    assert package["version"] == SDK_MEMORY_VERSION
+    assert package["source"] == {"path": str(wheel.relative_to(backend))}
+    assert package["wheels"] == [{"filename": wheel.name, "hash": "sha256:" + SDK_MEMORY_WHEEL_SHA256}]
+
+
+def test_service_candidate_exact_local_successor_passes_verify() -> None:
     assert sdk_service_wheel_path().name == SDK_SERVICE_WHEEL_FILENAME
     assert sdk_service_candidate_manifest_path().is_file()
     assert verify_service_candidate() is None
-    assert SDK_SERVICE_VERSION == "0.3.12"
+    assert SDK_SERVICE_VERSION == "0.3.13"
     assert SDK_SERVICE_WHEEL_SHA256 == (
-        "710ae66ba1cc0f0f838f816f3b98108100af560bfb210ed6834246d6d802f8c6"
+        "26205f89854e27bd7ed8cbd6f7ac1f6b621603f973a081823bc6b707ae0784a8"
     )
     assert SDK_SERVICE_AUTHORITY_ROOT_SHA256 == (
         "b9675a5c64136bb9ba7064cc78b3cc39662f7f374629bcd4731a833bbff2873d"

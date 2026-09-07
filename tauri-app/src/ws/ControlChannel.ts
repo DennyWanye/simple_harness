@@ -76,10 +76,10 @@ export class ControlChannel {
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      this.setState("connected");
       // Connection-scoped control credentials (notably Companion challenges)
       // must never leak across reconnects.
       this.latestMessages.clear();
+      this.setState("connected");
       // PRD §6.3: send client_hello on connect so the backend can advertise
       // its v2 feature set via server_hello. Old backends silently ignore
       // unknown message types → we proceed with empty server features.
@@ -106,6 +106,17 @@ export class ControlChannel {
         // listen for server_hello (S2 diagnostics) still see the message.
         const anyMsg = msg as unknown as { type?: string; payload?: { features?: unknown; version?: unknown } };
         if (typeof anyMsg.type === "string" && anyMsg.type) {
+          if (["companion_identity_unready", "companion_control_rechallenge", "companion_profile_unbound"].includes(anyMsg.type) ||
+              (anyMsg.type === "companion_identity_status" && (msg as unknown as { payload?: { ready?: boolean } }).payload?.ready === false)) {
+            this.latestMessages.delete("companion_profile_bound");
+          }
+          if (anyMsg.type === "companion_identity_status") {
+            const current = msg as unknown as { payload?: { profile_id?: unknown; profile_generation?: unknown } };
+            const bound = this.latestMessages.get("companion_profile_bound") as unknown as { payload?: { profile_id?: unknown; profile_generation?: unknown } } | undefined;
+            if (current.payload?.profile_id && bound && (current.payload.profile_id !== bound.payload?.profile_id || current.payload.profile_generation !== bound.payload?.profile_generation)) {
+              this.latestMessages.delete("companion_profile_bound");
+            }
+          }
           this.latestMessages.set(anyMsg.type, msg);
         }
         if (anyMsg.type === "server_hello") {
@@ -128,6 +139,7 @@ export class ControlChannel {
 
     this.ws.onclose = () => {
       this.ws = null;
+      this.latestMessages.clear();
       this.setState("disconnected");
       if (!this.closing) {
         this.scheduleReconnect();
@@ -147,11 +159,12 @@ export class ControlChannel {
     }
     this.ws?.close();
     this.ws = null;
+    this.latestMessages.clear();
     this.setState("disconnected");
   }
 
-  send(msg: ControlMessage): boolean {
-    const identified = withClientTurnIdentity(msg);
+  send(msg: ControlMessage | import("../primary/requests").PrimaryWireRequest): boolean {
+    const identified = msg.type === "human_memory_request" ? msg : withClientTurnIdentity(msg as ControlMessage);
     const serialized = JSON.stringify(identified);
     if (this.ws?.readyState === WebSocket.OPEN) {
       try {

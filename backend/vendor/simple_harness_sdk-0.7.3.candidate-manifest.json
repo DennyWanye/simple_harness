@@ -1,0 +1,11 @@
+{
+  "artifacts": {
+    "simple_harness_sdk-0.7.3-py3-none-any.whl": "1a9ed5c95e6cddd4e0ccd85124320a6001008740a53213712fc89f3467cb4cd7"
+  },
+  "build_manifest_sha256": "ba7625655fd088e6d5a39396f82dba00ce0754a4badd2c53ae4e7eb23171d550",
+  "ci_artifact_id": null,
+  "ci_run_id": null,
+  "commit": "0282fa982995b24bc893fdf6bed69d2caacd6587",
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.7.3"
+}

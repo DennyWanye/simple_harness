@@ -82,7 +82,11 @@ _MAX_INSTRUCTION_REFS = 64
 _MAX_ANSWER_BYTES = 8192
 
 CLOSURE_SYSTEM_INSTRUCTION = (
-    "你是桌面工作台的主模型。这一轮你已经替用户完成了工作并写好了最终回答，但任务档案还没有收口。"
+    "你是桌面工作台的主模型。这一轮已经产生了执行结果和最终回答，但任务档案还没有收口。"
+    "单个工具成功、文件创建或本轮回答结束，不等于整个任务目标完成。"
+    "按用户的完整目标逐项核对；包括要求的读取、检查和验证，尚未执行的必须如实保留为未完成。"
+    "不得把目标缩写为已完成的子步骤来调用task.complete。仅全部目标义务已完成时才标记任务完成；"
+    "否则记录实际进度、未完成项和下一步，保留合适的非完成状态。"
     "现在只允许调用 task_scope_update 一次：如果客观事件表明任务状态/进度/下一步发生了实质变化，"
     "提交 outcome=mutate 并逐项引用 allowed_evidence_refs 里的 evidence_refs；"
     "如果没有实质变化，提交 outcome=no_mutation 并给 closure_reason。"
@@ -90,6 +94,8 @@ CLOSURE_SYSTEM_INSTRUCTION = (
 )
 CLOSURE_SNAPSHOT_INSTRUCTION = (
     "本任务档案有尚未收口的客观事件（见 material_events / pending_receipts）。"
+    "回合收口不等于整个任务完成；单个工具成功不能代替用户要求的读取、检查和验证。"
+    "仅全部目标义务已完成时才task.complete，不得缩小目标；否则记录实际进度、未完成项与下一步。"
     "在给出最终回答之前，调用一次 task_scope_update：实质变化 → outcome=mutate 并引用 "
     "allowed_evidence_refs 中的 evidence_refs；无实质变化 → outcome=no_mutation 并给 closure_reason。"
     "base_revision 必须等于 current_revision。"
@@ -591,6 +597,7 @@ class ClosureFallback:
         invoker: Any,
         service: Any,
         run_facts_reader: Any,
+        request_authority: Any = None,
         clock: Callable[[], float] = time.time,
         fault_inject: Callable[[str], None] | None = None,
         deadline_seconds: float = 60.0,
@@ -600,6 +607,7 @@ class ClosureFallback:
         self._invoker = invoker
         self._service = service
         self._facts = run_facts_reader
+        self._request_authority = request_authority
         self._clock = clock
         self._fault_inject = fault_inject
         self._deadline_seconds = float(deadline_seconds)
@@ -615,8 +623,8 @@ class ClosureFallback:
     ) -> ClosureSettlement:
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
-        del owner_id  # the lease fence bound into the invoker carries the owner
         ingress = ExecutionEvidenceIngress(self._db_path)
+        state_value = str(getattr(terminal_state, "value", terminal_state)).upper()
         async with self._store._connection() as db:
             binding = await ingress.resolve_run_scope_tx(db, sdk_run_id)
             if binding is None:
@@ -631,11 +639,13 @@ class ClosureFallback:
                 return ClosureSettlement("clean")
             if coverage.pending_by_run:
                 own = await receipts_for_run_tx(db, sdk_run_id)
-                return ClosureSettlement("already_closed", own[-1].reason_code if own else None, own[-1] if own else None)
+                return ClosureSettlement("pending", own[-1].reason_code if own else None, own[-1] if own else None)
             dirty = coverage.dirty
-            observation = await _scope_observation_tx(db, scope, dirty)
+            # Non-success settlement needs only an honest pending debt, never
+            # a source-bearing model observation (sources may be withdrawn).
+            observation = (await _scope_observation_tx(db, scope, dirty)
+                           if state_value == "COMPLETED" else None)
         watermark = dirty.event_watermark
-        state_value = str(getattr(terminal_state, "value", terminal_state)).upper()
 
         async def pending(reason: str, *, attempt_id: str | None = None, extension: Any = None) -> ClosureSettlement:
             receipt = await write_closure_receipt(
@@ -694,21 +704,39 @@ class ClosureFallback:
                 max_output_tokens=1200,
             )
 
-        outcome = await self._invoker.invoke(
-            purpose="closure",
-            host_run_id=host_run_id,
-            sdk_run_id=sdk_run_id,
-            generation=generation,
-            task_scope_id=scope,
-            closure_watermark=watermark,
-            request_hash=request_hash,
-            evidence_set_key=evidence_set_key([event.event_id for event in dirty.material_events]),
-            members=members,
-            binding_record=facts.binding_record,
-            build_request=build_request,
-            plan_id=plan_id,
-            deadline_seconds=self._deadline_seconds,
-        )
+        async def prepare_attempt(row):
+            from types import SimpleNamespace
+            prepared = await self._request_authority.prepare(
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
+                owner_id=owner_id, generation=generation, scope=scope,
+                observation=observation, answer=answer, binding_record=facts.binding_record)
+            actual_members = tuple((subject, s["run_id"], s["evidence_id"])
+                                   for s in prepared["host"]["sources"])
+            request = build_request(SimpleNamespace(**row))
+            async def observer(attempt, db):
+                await self._request_authority.bind_attempt(prepared, attempt, request, db=db)
+            return actual_members, observer
+
+        from deskpet.execution.closure_request_guard import ClosureSourceIncomplete
+        try:
+            outcome = await self._invoker.invoke(
+                purpose="closure",
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                generation=generation,
+                task_scope_id=scope,
+                closure_watermark=watermark,
+                request_hash=request_hash,
+                evidence_set_key=evidence_set_key([event.event_id for event in dirty.material_events]),
+                members=members,
+                binding_record=facts.binding_record,
+                build_request=build_request,
+                plan_id=plan_id,
+                deadline_seconds=self._deadline_seconds,
+                **({"prepare_attempt": prepare_attempt} if self._request_authority is not None else {}),
+            )
+        except ClosureSourceIncomplete:
+            return await pending("closure_source_incomplete")
         provider_calls = int(outcome.provider_calls)
         attempt_id = outcome.attempt_id
         if outcome.status == "lease_lost":
@@ -726,6 +754,10 @@ class ClosureFallback:
 
         async def settle_success(db: aiosqlite.Connection) -> None:
             await self._invoker.settle_succeeded_tx(db, attempt_id, response=response, plan_id=plan_id)
+            if self._request_authority is not None:
+                from deskpet.task_scope.mutation_disclosure import record_closure_result_tx
+                await record_closure_result_tx(db, db_path=self._db_path,
+                    attempt_id=attempt_id, plan_id=plan_id, response=response)
 
         arguments = _closure_arguments(response)
         if arguments is None:

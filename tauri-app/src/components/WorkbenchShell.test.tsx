@@ -235,3 +235,15 @@ describe("Sidebar T13 — 「更多」入口与连接徽章聚合（WB-3）", ()
     );
   });
 });
+
+describe("S6 primary navigation cutover", () => {
+  it("keeps one primary entry and settings without exposing Session management", () => {
+    render(<Harness />);
+    expect(screen.getByRole("button", { name: "主对话" })).toBeTruthy();
+    expect(screen.queryByTestId("sidebar-session-area")).toBeNull();
+    expect(screen.queryByText("新建普通会话")).toBeNull();
+    expect(screen.queryByText("添加项目")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "模型与设置" }));
+    expect(screen.getByTestId("view-settings")).toBeTruthy();
+  });
+});

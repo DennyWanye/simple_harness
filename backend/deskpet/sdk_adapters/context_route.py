@@ -6,8 +6,8 @@
 Host adjudication over the model's route proposal:
 
 - ``direct_standalone`` — standalone receipt, no TaskScope, no Memory query.
-- ``memory_standalone`` — stable failure until the Task 5 recall lane lands
-  (never a Noop/fake receipt).
+- ``memory_standalone`` — explicit long-term and/or short-horizon selection,
+  with one typed RecallPlan budget and current source checks.
 - ``continue_active``   — exact current active scope (latest durable
   ROUTED_TASK decision) revalidated against the live binding head.
 - ``resume_existing``   — requires an exact ``task_scope_id`` (search hits
@@ -22,7 +22,10 @@ every non-commit outcome is a stable ``{"ok": false, "error": {...}}`` failure
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
+from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
 
@@ -33,6 +36,7 @@ from deskpet.sdk_adapters.context_authority import (
     ContextRouteLedgerStore,
     canonical_sha256,
 )
+from deskpet.memory.recall_selection import REQUESTABLE_MEMORY_TYPES, parse_recall_selection
 
 ROUTES = (
     "direct_standalone",
@@ -45,16 +49,46 @@ ROUTES = (
 # The SDK bounds tool arguments but not tool results; the Host bounds its own
 # inputs again so an oversized model payload can never reach the S4 stores.
 _MAX_TEXT = 2048
+_AUDIT_CANCEL_SECONDS = 2.0
+_LOG = logging.getLogger(__name__)
+_WORKSPACE_REUSE_OMIT = (
+    "reuse_workspace_of is only valid for create_new with an exact verified task ID "
+    "and source hash. For memory_standalone, omit both reuse_workspace_of and "
+    "expected_source_hash entirely, or set them to JSON null. Do not supply "
+    "placeholder strings, whitespace, or a fabricated hash."
+)
+_WORKSPACE_REUSE_NEW_RUN = (
+    "This Run is already bound to a task. End this turn without switching scopes. "
+    "In the next Run, use task_scope_search to obtain the completed task's current source_hash, "
+    "then create_new with reuse_workspace_of before binding any other task. "
+    "This request did not reopen the completed task or edit its files."
+)
 
 CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "route": {"type": "string", "enum": list(ROUTES)},
         "query": {"type": "string", "maxLength": _MAX_TEXT},
+        "memory_types": {
+            "type": "array", "minItems": 0, "maxItems": 4,
+            "items": {"type": "string", "enum": list(REQUESTABLE_MEMORY_TYPES)},
+            "description": "Required for memory_standalone. Select only the needed long-term types: semantic (facts/preferences), episode (past events), procedure (applicable steps), prospective (future intentions/reminders). An empty list is valid only with include_short_horizon=true. Selection grants no permission to disclose or execute.",
+        },
+        "include_short_horizon": {
+            "type": "boolean",
+            "description": "For memory_standalone, request relevant prior conversation groups outside the current recent context. Defaults to false. Short and long-term results share one Host budget and current source checks.",
+        },
         "task_scope_id": {"type": "string", "maxLength": 128},
+        "reuse_workspace_of": {
+            "type": ["string", "null"], "minLength": 1, "maxLength": 128,
+            "description": "Only create_new: explicitly bind the new active task to the completed task's existing workspace. Copy its exact task_scope_id and expected_source_hash from public search/resume. Requires one verified root and a new binding grant; never reopens the old task. For a new separate workspace or memory_standalone, omit this field and expected_source_hash or set them to JSON null; never use placeholder strings or whitespace.",
+        },
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
-        "expected_source_hash": {"type": "string", "minLength": 64, "maxLength": 64},
+        "expected_source_hash": {
+            "type": ["string", "null"], "minLength": 64, "maxLength": 64,
+            "description": "Exact source_hash from public task search/resume for resume_existing or create_new workspace reuse. Otherwise omit this field or set it to JSON null; never fabricate a hash or use placeholders.",
+        },
     },
     "required": ["route"],
     "additionalProperties": False,
@@ -102,6 +136,9 @@ class ContextRouteToolService:
         tool_context_getter: Any,
         auth_factory: Any = local_owner_auth,
         recall_executor: Any = None,
+        scope_disclosure_reader: Any = None,
+        producer_dependencies_reader: Any = None,
+        typed_use_authority: Any = None,
     ) -> None:
         self._service_factory_getter = service_factory_getter
         self._binding_store_factory = binding_store_factory
@@ -110,13 +147,18 @@ class ContextRouteToolService:
         self._tool_context_getter = tool_context_getter
         self._auth_factory = auth_factory
         self._recall_executor = recall_executor
+        self._scope_disclosure_reader = scope_disclosure_reader
+        self._producer_dependencies_reader = producer_dependencies_reader
+        self._typed_use_authority = typed_use_authority
 
     # -- shared -----------------------------------------------------------
 
-    def _bind_service(self) -> Any:
+    def _bind_service(self, *, binding_append: Any = None) -> Any:
         factory = self._service_factory_getter()
         if factory is None:
             raise _CompositionUnavailable()
+        if binding_append is not None:
+            return factory.bind(self._auth_factory(), binding_append=binding_append)
         return factory.bind(self._auth_factory())
 
     def _identity(self) -> tuple[str, str, str, int]:
@@ -141,7 +183,22 @@ class ContextRouteToolService:
         verdict: str,
         decision_id: str | None,
         detail: Mapping[str, Any],
+        wait_for_lock: bool = True,
     ) -> None:
+        if proposal.get("route") == "memory_standalone":
+            # Keep only the bounded enum/boolean projection. Raw query, invalid
+            # model values and provider exception text are not audit metadata.
+            try:
+                selected, short = parse_recall_selection(
+                    proposal.get("memory_types"), proposal.get("include_short_horizon", False),
+                )
+                selection = {"origin": "model_proposal",
+                             "requested_memory_types": list(selected),
+                             "include_short_horizon": short}
+            except ValueError as exc:
+                selection = {"origin": "model_proposal", "selection_status": "invalid",
+                             "selection_error": str(exc)}
+            detail = {**detail, "recall_selection": selection}
         await self._ledger.record_tool_invocation(
             sdk_run_id=run_id,
             raw_call_id=raw_call_id,
@@ -150,6 +207,7 @@ class ContextRouteToolService:
             verdict=verdict,
             decision_id=decision_id,
             detail=detail,
+            wait_for_lock=wait_for_lock,
         )
 
     async def _commit_receipt(
@@ -165,6 +223,9 @@ class ContextRouteToolService:
         binding: Mapping[str, Any] | None = None,
         extras: Mapping[str, Any] | None = None,
         recall_refs: tuple[str, ...] = (),
+        recall_types: tuple[str, ...] = (),
+        recall_short_horizon: bool | None = None,
+        typed_carrier: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         receipt = ContextRouteReceipt(
             receipt_id=str(
@@ -194,7 +255,12 @@ class ContextRouteToolService:
             provider_turn_ordinal=turn_ordinal,
             origin="context_tool",
             idempotency_key=effect_id,
+            **({"require_unbound_run": True} if route is TaskScopeRoute.CREATE_NEW
+               and proposal.get("reuse_workspace_of") is not None else {}),
         )
+        result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
+        if extras:
+            result.update(dict(extras))
         await self._record(
             run_id=run_id,
             raw_call_id=raw_call_id,
@@ -202,11 +268,17 @@ class ContextRouteToolService:
             proposal=proposal,
             verdict="accepted",
             decision_id=f"route-decision:{run_id}:{effect_id}",
-            detail={"route": route.value, "task_scope_id": task_scope_id},
+            detail={
+                "route": route.value, "task_scope_id": task_scope_id,
+                **({"typed_carrier": dict(typed_carrier),
+                    "public_result_hash": canonical_sha256(result)} if typed_carrier is not None else {}),
+                **({"recall_selection": {
+                    "origin": "model_proposal",
+                    "requested_memory_types": list(recall_types),
+                    "include_short_horizon": bool(recall_short_horizon),
+                }} if recall_types or recall_short_horizon is not None else {}),
+            },
         )
-        result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
-        if extras:
-            result.update(dict(extras))
         return result
 
     async def _binding_head(self, task_scope_id: str) -> dict[str, Any]:
@@ -236,6 +308,19 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_route_invalid",
             )
+        if proposal.get("reuse_workspace_of") is not None and route_value != "create_new":
+            return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                                      "context_route_workspace_reuse_requires_create_new",
+                                      message=_WORKSPACE_REUSE_OMIT)
+        if proposal.get("expected_source_hash") is not None and not (
+            route_value == "resume_existing" or (
+                route_value == "create_new" and proposal.get("reuse_workspace_of") is not None
+            )
+        ):
+            return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                "context_route_source_hash_not_applicable",
+                message="expected_source_hash requires resume_existing or exact create_new workspace reuse. "
+                        "Otherwise omit expected_source_hash or set it to JSON null; never fabricate a hash.")
         try:
             if route_value == "direct_standalone":
                 return await self._commit_receipt(
@@ -262,12 +347,18 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, turn_ordinal, proposal
             )
         except _CompositionUnavailable as exc:
-            return _error(exc.code)
+            return await self._reject(run_id, raw_call_id, effect_id, proposal, exc.code)
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
+            if route_value == "memory_standalone":
+                # Exception messages/codes can contain provider or source text.
+                code = ("context_route_recall_timeout" if isinstance(exc, TimeoutError)
+                        else "context_route_adjudication_failed")
+                return await self._reject(run_id, raw_call_id, effect_id, proposal, code)
             code = str(getattr(exc, "code", "") or "context_route_adjudication_failed")
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal, code,
-                message=str(exc)[:512],
+                message=(_WORKSPACE_REUSE_NEW_RUN if code == "context_route_workspace_reuse_requires_new_run"
+                         else str(exc)[:512]),
             )
 
     async def _reject(
@@ -310,12 +401,49 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_recall_query_required",
             )
+        try:
+            memory_types, include_short_horizon = parse_recall_selection(
+                proposal.get("memory_types"), proposal.get("include_short_horizon", False),
+            )
+        except ValueError as exc:
+            return await self._reject(
+                run_id, raw_call_id, effect_id, proposal, str(exc),
+            )
         from deskpet.memory.human_memory_v7 import project_recall_fragments
 
-        execution = await self._recall_executor(
-            query=query, run_id=run_id, turn_ordinal=turn_ordinal
-        )
+        admitted = None
+        if self._typed_use_authority is not None:
+            admitted = await self._typed_use_authority.admitted_tool_context(self._tool_context_getter())
+        try:
+            execution = await self._recall_executor(
+                query=query, run_id=run_id, turn_ordinal=turn_ordinal,
+                memory_types=memory_types,
+                include_short_horizon=include_short_horizon,
+                **({"admitted_context": admitted} if admitted is not None else {}),
+            )
+        except asyncio.CancelledError:
+            # This boundary precedes route commit; cancellation is not a
+            # successful route or a normal tool return. Do not wait for a DB
+            # writer lock. The deadline requests cancellation; wait_for still
+            # awaits owned rollback/close, so it is not a wall-clock hard cap.
+            # Always propagate cancellation, including if storage fails.
+            try:
+                await asyncio.wait_for(self._record(
+                    run_id=run_id, raw_call_id=raw_call_id, effect_id=effect_id,
+                    proposal=proposal, verdict="rejected", decision_id=None,
+                    detail={"code": "context_route_recall_cancelled"},
+                    wait_for_lock=False,
+                ), timeout=_AUDIT_CANCEL_SECONDS)
+            except (Exception, asyncio.CancelledError):
+                _LOG.warning("context_route_cancel_audit_unavailable run_id=%s effect_id=%s",
+                             run_id, effect_id)
+            raise
         fragments = project_recall_fragments(execution)
+        carrier = None
+        if self._typed_use_authority is not None:
+            carrier = await self._typed_use_authority.build_carrier(
+                execution=execution, projected=fragments, admitted=admitted, effect_id=effect_id,
+            )
         refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
         return await self._commit_receipt(
             run_id=run_id,
@@ -325,6 +453,9 @@ class ContextRouteToolService:
             route=TaskScopeRoute.MEMORY_STANDALONE,
             proposal=proposal,
             recall_refs=refs,
+            recall_types=memory_types,
+            recall_short_horizon=include_short_horizon,
+            typed_carrier=carrier,
             extras={
                 "fragments": list(fragments),
                 "degradation_codes": list(execution.degradation_codes),
@@ -425,6 +556,9 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_binding_lineage_stale",
             )
+        if self._scope_disclosure_reader is None:
+            return await self._reject(run_id, raw_call_id, effect_id, proposal, "scope_disclosure_reader_missing")
+        resume_package = await self._scope_disclosure_reader(run_id, resume_package, effect_id)
         return await self._commit_receipt(
             run_id=run_id,
             raw_call_id=raw_call_id,
@@ -436,7 +570,7 @@ class ContextRouteToolService:
             binding=binding,
             extras={
                 "resume_package": resume_package,
-                "resume_sha256": opened["resume_sha256"],
+                "resume_sha256": canonical_sha256(resume_package),
                 "drift_report": opened.get("drift_report"),
             },
         )
@@ -455,9 +589,24 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_title_required",
             )
-        service = self._bind_service()
-        from deskpet.memory.human_memory_service import CreateTaskScopeRequest
+        service = self._bind_service(binding_append=self._binding_append_getter())
+        from deskpet.memory.human_memory_service import AppendBindingRequest, CreateTaskScopeRequest
 
+        continuation = None
+        if proposal.get("reuse_workspace_of") is not None:
+            bound = await self._ledger.latest_route_decision_for_run(run_id, task_only=True)
+            envelope = self._tool_context_getter().task_execution_envelope
+            if bound is not None or envelope.task_scope_id is not None:
+                return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                    "context_route_workspace_reuse_requires_new_run",
+                    message=_WORKSPACE_REUSE_NEW_RUN)
+            from deskpet.sdk_adapters.workspace_continuation import resolve_workspace_continuation
+            continuation = await resolve_workspace_continuation(
+                service=service, binding_store=self._binding_store_factory(),
+                disclosure_reader=self._scope_disclosure_reader, run_id=run_id,
+                effect_id=effect_id, proposal=proposal)
+        producer_dependencies = (None if self._producer_dependencies_reader is None
+            else await self._producer_dependencies_reader(run_id))
         created = await service.create_task_scope(
             CreateTaskScopeRequest(
                 fixture_key=f"chat:{canonical_sha256({'title': title})[:16]}",
@@ -482,19 +631,24 @@ class ContextRouteToolService:
                 "context_route_workspace_root_not_configured",
                 task_scope_id=scope,
             )
-        outcome = await binding_append.append_binding(
-            subject=self._auth_factory().subject,
-            task_scope_id=scope,
-            root=str(root),
+        # Normal creation gets its own stable direct child. Explicit reuse
+        # selects the exact verified old root; model text never supplies a path.
+        task_root = (Path(root.canonical_path) / f"task-{scope}" if continuation is None
+                     else Path(continuation.root.canonical_path))
+        outcome = await service.append_binding(AppendBindingRequest(
+            scope_ref=scope,
+            root=str(task_root),
             idempotency_key=f"context-route:{run_id}:{effect_id}",
-            interaction_evidence_id=f"context-route:{run_id}:{effect_id}",
-            interaction_evidence_hash=canonical_sha256(dict(proposal)),
-        )
+            expected_filesystem_identity_hash=(None if continuation is None else
+                continuation.root.filesystem_identity.identity_hash),
+        ))
         if str(outcome.get("status", "")) == "authorization_required":
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_binding_authorization_required",
                 task_scope_id=scope,
+                binding_challenge=dict(outcome),
+                required_action="binding.manual.decide",
             )
         binding = await self._binding_head(scope)
         return await self._commit_receipt(
@@ -506,7 +660,8 @@ class ContextRouteToolService:
             proposal=proposal,
             task_scope_id=scope,
             binding=binding,
-            extras={"created": dict(created)},
+            extras={"created": dict(created), "producer_dependencies": producer_dependencies,
+                    **({} if continuation is None else {"workspace_source": dict(continuation.source)})},
         )
 
     # -- task_scope_search ------------------------------------------------
@@ -537,13 +692,27 @@ class ContextRouteToolService:
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
             code = str(getattr(exc, "code", "") or "task_scope_search_failed")
             return _error(code)
+        from deskpet.memory.human_memory_service import OpenTaskScopeRequest
+        if self._scope_disclosure_reader is None:
+            return _error("scope_disclosure_reader_missing")
+        run_id, _, effect_id, _ = self._identity()
+        candidates = []
+        for item in result["candidates"]:
+            scope_id = item["scope_ref"]
+            opened = await service.open_task_scope(OpenTaskScopeRequest(scope_ref=scope_id,
+                expected_source_hash=item["source_hash"]))
+            package = await self._scope_disclosure_reader(run_id, opened["resume_package"], effect_id)
+            candidates.append({"task_scope_id": scope_id, "source_id": package["source_id"],
+                "source_hash": package["source_hash"], "scope_disclosure": package})
         return {
-            "candidates": list(result["candidates"]),
+            "candidates": candidates,
             "next_cursor": result.get("next_cursor"),
             "receipt_hash": result.get("receipt_hash"),
-            "note": "Candidates are permission-first hits only; they grant no "
-            "authority. Confirm one and pass its exact task_scope_id to "
-            "context_route(route=resume_existing).",
+            "note": "Candidates grant no authority. resume_existing reads history/status and does not reopen a completed task. "
+            "To edit a completed task's files, copy its task_scope_id to reuse_workspace_of and source_hash to expected_source_hash "
+            "in create_new with a new title/goal and explicit original-workspace "
+            "binding. It must be the first task route in a new Run; do not resume the old task first. "
+            "Active tasks may use resume_existing with their exact task_scope_id.",
         }
 
 

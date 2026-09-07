@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import aiosqlite
+from deskpet.memory.writer_fence import human_memory_connection
 
 from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.task_scope.projection_sources import load_projection_source_tx
@@ -549,7 +550,7 @@ class TaskScopeSearchStore:
 
     @asynccontextmanager
     async def _connection(self):
-        async with aiosqlite.connect(self._db_path) as connection:
+        async with human_memory_connection(self._db_path) as connection:
             connection.row_factory = aiosqlite.Row
             await connection.execute("PRAGMA foreign_keys=ON")
             await connection.execute("PRAGMA busy_timeout=5000")

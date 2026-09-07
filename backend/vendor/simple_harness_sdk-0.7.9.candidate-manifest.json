@@ -1,0 +1,11 @@
+{
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.7.9",
+  "commit": "f841098b11c40192f1ad6b5676148533567ba706",
+  "artifacts": {
+    "simple_harness_sdk-0.7.9-py3-none-any.whl": "ba1c13cd711635c9f59555d087422766d597fb7e213f954af26bcf18b9cdb02d"
+  },
+  "build_count": 1,
+  "execution_schema": 9,
+  "scope": "Bounded same-Run mandatory context action repair; source 14 unique controls accepted; installed and native pending"
+}

@@ -1,6 +1,212 @@
+最后更新：2026-09-07。新构建原生r25固定d86e4805/H079/M619冷恢复与两次实际授权可用；首查询错把taskactive当流程状态，澄清后实际Procedure发现返回0且模型如实答无。正向草稿/完整Procedure仍未验收，240质量不计。PG62018正常退出清空，退出后仅清可再生构建缓存，防熄屏继续。[结果](../plans/2026-09-06-typed-use-primary/NATIVE-R25.md)。
+
+最后更新：2026-09-07。r24已allowed后旧等待提示的UI接线修复：手刷显式exact授权补读、同Run工具/终态推进补读、断线与空pending区分。真实View/Panel/Channel组合新增3控分批通过，原负控保留；尚未新构建/native复验。[结果与边界](../plans/2026-09-07-primary-decision-refresh/RESULTS.md)。
+
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-30（Project Skill 历史链路、全局 Skill 与 Realtime 单一入口校准）
+## 2026-09-06 WeMM按需加载与内存引用修复已接入组合
+
+最后更新：2026-09-06。独审b70ccda5以fast-forward接入；构造/元数据/状态不加载权重，首次真实embedding共享加载；取消下异步排队和物理线程互斥，失败完成任务丢弃实例引用，防异常保留模型。WeMM2048/L2/本地模型及SDK pin不变。设置页四状态真实WebKit组件检查和刷新通过，浏览器峰值433MiB、进程已退出；相关叶子线程/公开空库/IPC/React/类型检查见证据。
+旧库补向量仍可能启动加载；未实测真实权重/GPU内存释放、自动卸载或新组合native，不作整体program完成声明。用户主checkout未切换。
+[组合验证及后续内存管理](../plans/2026-09-06-wemm-lazy/COMBINED.md)。
+
+## 2026-09-06 无边图谱标签布局已修复
+
+最后更新：2026-09-06。Cytoscape无边节点用网格，布局包含标签尺寸并允许中文换行，保留有边有向布局及全部身份/遗忘/viewport行为。真实WebKit两个尺寸各7节点：标签重叠17/13→0/0，最终有效渲染字号估计9.53/11.05px，真实选择/缩放通过。
+前端18PASS/1个旧API-fixture未配置SKIP，TypeScript通过；所有浏览器/测试进程结束。合成fixture不代表真实API/native或密集边标签完成，原生复验仍待续。
+[原红、实际测量、边界与证据](../plans/2026-09-06-graph-label-layout/RESULTS.md)。
+
+## 2026-09-06 审计查看入口组合验证
+
+最后更新：2026-09-06。独审1097b272合入c53caff2：记忆面板显式打开用途绑定的HUMAN元数据审计，分页/持久ACK重放、关闭与身份失效拒绝；保留原图谱viewport及遗忘ACK修复。组合独审限定ACCEPT。
+后端54项通过，新增真实/ws/control审计往返2项通过，前端44通过/1个可选API-fixture未配置跳过，TypeScript通过。单进程有界执行；没有真实Provider、native或全操作覆盖。初始snapshot成本及原生验收仍待续。
+[组合证据、命令与范围](../plans/2026-09-05-agent-operation-audit/human-access-leaf/COMBINED.md)。
+
+## 2026-09-06 HUMAN metadata audit source entry
+
+Last updated: 2026-09-06. PrimaryMemoryPanel adds an explicit operation-record tab;
+PrimaryAuditPanel uses the existing bound PrimaryPort for primary.audit.open/page/
+close. Grants require a user click; pages require explicit reads. Unknown ACK keeps
+the original logical action while transport IDs change. Hiding/rebinding/expiry
+removes metadata immediately, and a new owner cannot replay the old capability.
+Actual ControlChannel cached bound replay is distinguished from a fresh bound
+frame; the full React parent chain regression and counterfactual red are recorded.
+Frontend25 focused tests and no-emit typecheck pass; browser/native and fixed-source
+independent acceptance remain pending. Graph, Agent input and ordinary memory
+forget semantics are unchanged. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
+
+## 2026-09-06 原生遗忘确认通过；重启验收因内存中断
+
+最后更新：2026-09-06。native b32a96d9 / H0.7.2 M0.6.12 S0.3.12实际点击遗忘，UI显示成功确认，图谱由6条更新为5条且恢复可用。
+正常退出后重启验证被系统内存告警中断，未记通过。清理两个约6GB的测试模型后端与子进程后内存回落；本地启动器补进程组清理与单实例/资源准入。
+仅该遗忘确认闭环完成，关系展示/标签可读性和重启持久化仍有剩余。[证据与边界](../plans/2026-09-06-primary-forget-ack/NATIVE.md)。
+
+## 2026-09-06 Forget ACK survives primary content invalidation
+
+Last updated: 2026-09-06. Isolated `feat/primary-forget-ack` fromcf4d8e0a retains
+only the verified primary ID/readiness across read invalidation, keeping the parent
+MemoryPanel's same-connection write correlation alive. Content/detail/graph readers
+still retract; actual authority changes clear the reference and preserve unknown
+safety. React parent first-red/expanded-red evidence and focused47 tests pass, with
+typecheck/build/ESLint. Dirac pre-review found no P0/P1; fixed review pending.
+Main owns native integration/ACK proof; no backend/pin or native process changes.
+No new native/SDK success claim; seven-node label overlap P2 remains separate.
+See [scoped handoff](../plans/2026-09-06-primary-forget-ack/RESULTS.md).
+
+## 2026-09-06 Native viewport verified; forget ACK recovery remains FAIL
+
+Last updated: 2026-09-06. Actual9b57c5c8 rebuilt native app shows real nodes and
+passes coordinate selection, zoom/filter/fit/wheel/details. Forget removes content
+but parent invalidation cancels ACK listening and exact retry stays unknown.
+Full forget/reopen and dense label readability remain unfinished.
+See [native scope and retained evidence](../plans/2026-09-06-cytoscape-viewport/NATIVE.md).
+
+## 2026-09-06 Primary Cytoscape viewport repair
+
+Last updated: 2026-09-06. Three frontend files address the reproduced half-height
+scroll-pane clipping: responsive canvas, first/explicit reveal, wheel page scroll
+with button zoom. Layout-only reveal state survives owner-key graph remount; graph
+authority/invalidations are unchanged. Actual WebKit 1000x700/800x560 oracle:
+original 8 failures, candidate22 checks pass; focused frontend9 pass/1 optional
+API-fixture skip, typecheck/build/ESLint pass. Native exact-build verification is
+coordinator-owned and pending; not a renderer-engine diagnosis or full HM-AC6 PASS.
+Reviewed `feat/cytoscape-native-canvas` from65a604f8 is integrated here.
+See [scoped result and evidence](../plans/2026-09-06-cytoscape-viewport/RESULTS.md).
+
+## 2026-09-05 Native graph blocked by SDK credential false positive
+
+Last updated: 2026-09-05. Actual21c55cf9/native18120 with installedMemory0610
+created the requested preference, then public history rejected terminal tool names
+as credentials. Memory controls became unavailable before graph interaction.
+Native acceptance remains FAIL; successor SDK repair and rerun are pending.
+See [native evidence and boundaries](../plans/2026-09-05-s6-cytoscape-display/NATIVE-0610-BLOCKER.md).
+
+
+## 2026-09-05 Cytoscape primary graph display source candidate
+
+Last updated: 2026-09-05. PrimaryMemoryPanel adds a default-available graph tab over verified HUMAN primary.memory.graph. Real canonical nodes/relations only; local Cytoscape3.34.2 with keyboard/text selection, filter, zoom, pan and details. Pending/unknown forget, owner change and real completion hints invalidate old data. API-fixture browser renderer verification passes; coordinator native verification remains pending.
+See [scoped results](../plans/2026-09-05-s6-cytoscape-display/RESULTS.md) and [contract](../plans/2026-09-05-s6-cytoscape-display/CONTRACT.md).
+
+## 2026-09-05 Primary cognitive panel connected locally
+
+默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，
+同owner隐藏/重挂载保留未决动作，换owner清空。匹配forget ACK同步清历史/detail再补读。
+父视图组合24项、tsc及定向lint通过；backend已独立限定ACCEPT。尚未native真测，
+完整进程重启不保留UI内存动作ID；自然语言纠正/全闭环仍待完成。
+见[组合记录](../plans/2026-09-05-cognitive-controls/COMBINED.md)。
+
+
+> 最后更新：2026-09-05（认知面板与主对话接线，native待验收）
+
+## 2026-09-05 Cognitive controls frontend leaf
+
+新增独立 PrimaryMemoryPanel 与 CognitiveRequests，复用 bound HUMAN 通道；页面显示记忆
+内容，真实 memory_id/revision 仅用于请求，使用 primary_ref/action_id/status=applied 契约。父组件保留 requests
+实例可跨隐藏/重挂载保存未知动作；同 owner 显式重试原 payload/key，verified owner 更换
+清空。匹配 ACK 后 onForgotten 先同步通知主层撤下 history/detail，再补读记忆。
+13 项前端聚焦、tsc、定向 eslint 通过。backend/PrimaryChatView 组合与 native 验收由主负责，
+不是已接通的生产忘记闭环；图只用于 USER 显示，不进入 Agent。接口、命令和 ignored
+证据索引见 [前端契约](../plans/2026-09-05-cognitive-controls/FRONTEND-CONTRACT.md)。
+
+## 2026-09-05 Primary 授权布局后继候选
+
+从 `1862e383` 小改：Primary PermissionPopup portal 至 body，避开运行区域的滚动与
+containing block；Workbench 显式传当前 chat 可见性，隐藏时撤下 popup 及其 Escape handler，
+运行订阅和未决授权保持原样。旧 ChatView 的 popup 默认仍按原位置挂载。未改授权默认、
+exact target、未知 ACK 或自动重试规则。
+
+真实 WebKit 26.5 浏览器加载实际 Workbench/Primary/PermissionPopup/CSS，仅替换网络边界：
+1000×700、800×560 两套布局场景通过，含参数展开、滚动、含 transform 容器压力控制、
+补读/重挂载/重连、切页和后继授权；截图与真实鼠标命中均检查。修前压力控制按钮越出视口、
+隐藏视图 Escape 否决分别实测红，修后绿；未加 transform 的浏览器基线没有复现 native
+消失，故不能将压力控制等同 native 根因证明。前端59、backend decision18、tsc/lint 通过。
+原生 `dfdaec4a` 的视觉 FAIL 保留，主负责新 candidate 的可见鼠标点击复验；本片不运行 Provider。
+命令/原始证据索引和hash见 [RESULTS](../plans/2026-09-05-primary-sdk-decisions/RESULTS.md#portal-layout-candidate-after-1862e383)。
+
+## 2026-09-05 Primary 精确 SDK 授权独立候选
+
+`feat/human-memory-primary-decisions`（base `5da24d6f`）接入 authenticated HUMAN
+`primary.decisions.list/respond`。主对话权限卡通过 App 已 bound 的 ControlChannel
+读取实际当前 Run 的 SDK decision；不使用 secondary controlWS 的旧权限补读/ACK。
+提交前重验当前 Host run/generation 与连接 scope，复用 SDK exact decision API；旧未认证
+permission_response 对 Primary binding 拒绝。UI 仅允许本次 allow/deny，区分 expired，
+超时不自动重发，重挂载/重连/通知补读，不把 Primary ID 当 Session ID。
+
+真实生产授权策略 + installed SDK + SQLite + signed HUMAN scope + 实际 scheduler wake
+的确定性 fixture 完成 challenge→批准→项目文件 effect→终态；受影响 backend 66 passed，
+最终新增聚焦 18 passed，前端后继 36 passed + typecheck。批准后并发补读不能吞超时错误，已补红绿；独立 review 待完成；
+未起 native/真实 Provider，不是 S6/program PASS。Carver 的 WAITING 通知须另行组合。
+SDK read_decision 是 public port，但旧 open-decision 列表仍是 Host 内部 SDK SQL；本片未扩
+私有 SQL，仅限制返回最多32，不能声称底层扫描有界。停止结果历史缺口维持独立未闭合。
+详见 [契约与测试边界](../plans/2026-09-05-primary-sdk-decisions/CONTRACT.md)。
+
+## 2026-09-05 隔离组合原生观察
+
+Host `87c42b43` / SimpleHarness Primary P18120 的真实原生输入已得到 gpt-5.5 回复，
+草稿清空、队列回空闲、TaskScope=0。正常退出重启看到两条消息恢复，账本无已完成调用重发。
+解锁后第二轮追问已通过且实际出站包含原用户/助手历史；新项目因控制工具注册缺失失败，
+目录和路由指引修复后，`5da24d6f` 已实际到达 SDK 工具授权等待；Primary 未显示该授权卡，
+因此新建项目仍失败。原生停止该等待后 Host STOPPED / SDK cancelled / 授权 cancelled，界面回空闲。
+尚未显示历史停止原因，批准/拒绝/过期恢复与 Manual binding 仍待接线，不能据此声明完整遗忘或 S6 完成。
+固定候选、失败启动记录和本地证据哈希见 [INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
+
+## 2026-09-05 工具活动调用关联修复
+
+真实 `ProductDeliveryAdapter` → presenter → WebSocket 的 `tool_call` 补齐 SDK
+`call_id`，与既有 `tool_result` 一致；PrimaryRunPanel 才能关联执行中/返回两种状态。
+既有真实 SessionDB 投影用例修前因缺字段失败，修后 delivery 文件 **14 passed**。
+仅为事件契约验证，尚未原生工具操作验收。原始日志在该隔离树 ignored
+`.local-test-evidence/2026-09-05/primary-tool-identity/`：red SHA-256
+`558cf677e0abb183892a374aa992dffa8190da30c32872f1c42d14238f6bc09e`，green
+`f374d45aa1a832cf5c888b78fa022f02ac39cdea4b2c0a2fd154f44805163a71`。
+命令：`PYTHONPATH=$PWD/backend /Users/denny/projects/simple_harness/backend/.venv/bin/python -m pytest backend/tests/test_product_delivery_adapter.py -q -p no:cacheprovider`。
+
+## 2026-09-05 单主对话前端候选（尚非完整 S6 cutover）
+
+`feat/human-memory-primary-ui` 从 Host `c183fe70` 建立独立树，仅修改前端与本节/PROJECT_STATUS。
+Workbench 默认入口为 `PrimaryChatView`，Sidebar 不再挂载 Session catalog/CRUD；原 ChatView/SessionList
+保留历史代码与测试，不由 Workbench 生产路由挂载。设置、技能中心、产物库入口保留。
+
+主对话复用 App 已有 `ControlChannel` 的 signed `companion_profile_bind` 连接，只有当前连接真实 bound
+才读取 `primary.open/state/messages.page`；global identity_status 不作为本 socket 授权。晚挂载复用当前
+连接 bound cache；disconnect/unbind/rechallenge 清 cache。未知 enqueue 的 delivery_key 在同 owner
+rechallenge/重连时保留，只有重新 bound 确认 owner 改变才丢弃。无 `chat_v2` fallback 或伪造 Session ID。
+
+delivery 在内存中累计 ACK 未知状态：一次超时后，即使后续同 key 重试明确未发出或被拒绝，也不能
+推断最初未入库，仍保留原 key，直至匹配的有效 ACK 或 verified owner 变化。首次明确未发出仍允许
+修改草稿重新提交；该本地状态不写入 wire DTO。三个决定性用例修前 2 failed/1 passed，修后均通过，
+controller/requests 聚焦 25 passed、typecheck/受影响文件 lint 通过；原始证据在 ignored
+`.local-test-evidence/2026-09-05/primary-ui-retry/`。Dirac 独立固定源码复核 ACCEPT：原重试探针、
+29 项聚焦测试及 verified owner 切换负控制通过；未执行原生 UI/Provider 复验。
+
+输入框仅在 request_id/operation/delivery_key 关联的完整 enqueue receipt 后清草稿；拒绝、超时、断连
+保留草稿，无自动 mutation 重发。停止固定按钮渲染时的 Host run_ref/generation，并核验响应目标、
+receipt 与 outcome；拒绝、过期、superseded、already_terminal 不当作控制已受理。
+
+历史为服务端过滤的非流式 durable page：默认扫描十 turns、前端每页最多20消息，preview1024 Unicode
+codepoints；详情每次4096 codepoints，逐段替换。opaque revision 不是 privacy epoch，不跳过服务端
+suppression 检查；`human_memory_changed` 立即清页/详情、取消旧 read，再补读，保留在途 queue ACK。
+有界兜底最多12次，真实事件/focus/手动刷新恢复预算；耗尽不伪报运行失败。队列 truncated 显示“至少 N”。
+
+权限 popup 和 bounded 工具活动按 Host 返回的真实 `execution_session_ref` + `sdk_run_ref` 关联，
+权限补读指定 execution session，保留原 request/decision/nonce/version；不将 primary_ref 代成旧 sid。
+模型入口进入当前 foreground 使用的全局 Provider 设置，不发旧 `session_set_model`。附件选择 UI 保留，
+queue 附件尚未支持时明确拒绝发送并保留草稿/附件；slash 命令同样明确提示尚未接通。
+
+**项目交互/恢复未验证**：旧 `project_directory_request` 卡为 live-only，若生产使用该路径，事件先于
+mapping、同 Run 重挂载或重连会丢卡（条件性 P1）。Carver 源码接线确认动态 `context_route.create_new` 不触发该卡；Manual append 只返回
+`context_route_binding_authorization_required`。真实待接路径是 `binding.manual.propose(scope_ref,root)`
+→ `binding.manual.decide(challenge_ref,decision)` → `route.resume_existing`。主协调已暂停旧目录
+pending API 扩展；以上 Manual/route UI 尚未实现或真测。当前目录卡仅显示“已提交，等待运行确认”，
+不把后端 logger 当成功 ACK。TaskScope/Context Inspector、完整 Artifact 卡、primary slash/附件/
+Realtime 等保留项也仍未接完。
+
+验证：聚焦前端100 passed + PrimaryRunPanel 实际权限组件集成1 passed；typecheck 通过。
+新增 primary 源文件 lint 通过；受影响 InputBar 的 `react-refresh/only-export-components` 单项红在
+`c183fe70` 原文件复现（旧 `_testing` 导出），未放宽规则。原始日志在 ignored
+`.local-test-evidence/2026-09-05/primary-ui/`，测试契约见
+[`UI-CONTRACT.md`](../tauri-app/src/primary/UI-CONTRACT.md)。未起 App/Provider，未改 backend/SDK，
+不声称首价值真测通过、完整 S6 cutover 或 program/full-audit gate PASS。
 
 ## 1.0 Project-scoped Capability Center（2026-08-29）
 

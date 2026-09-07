@@ -361,7 +361,8 @@ class _Ingress:
         ).value
         self.starts.append(kwargs)
         self.records[run_id] = type(
-            "Record", (), {"state": type("State", (), {"value": "completed"})(), "version": 1}
+            "Record", (), {"state": type("State", (), {"value": "completed"})(), "version": 1,
+                           "run_id": run_id, "execution_session_id": kwargs["session_id"], "request_id": kwargs["request_id"]}
         )()
         return IngressStartReceipt(run_id, 1, kwargs["session_id"], kwargs["request_id"])
 
@@ -441,11 +442,28 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
         sdk_run_id=sdk_run_id,
     )
     ingress.records[sdk_run_id] = type(
-        "Record", (), {"state": type("State", (), {"value": "waiting"})(), "version": 4}
+        "Record", (), {"state": type("State", (), {"value": "waiting"})(), "version": 4,
+                       "run_id": sdk_run_id, "execution_session_id": session_id, "request_id": request_id}
     )()
 
+    reconciled = False
+    notifications = []
+    original_reconcile = store.record_reconciliation
+    async def reconcile(**kwargs):
+        nonlocal reconciled
+        result = await original_reconcile(**kwargs)
+        if kwargs["observed_state"] == "BOUND_WAITING":
+            reconciled = True
+        return result
+    store.record_reconciliation = reconcile
+    async def changed():
+        notifications.append(reconciled)
     class WaitingTerminal:
         async def observe(self, **kwargs):  # type: ignore[no-untyped-def]
+            # Recovery may have no preceding invalidation. If one exists,
+            # finish it before checking the actual WAITING notification.
+            if runtime._notification_task is not None:
+                await asyncio.shield(runtime._notification_task)
             return None
 
     runtime = ForegroundRuntimeExecutionAuthority(
@@ -457,6 +475,7 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
         provider=_Provider(),
         tools=_Tools(),
         terminal_observer=WaitingTerminal(),
+        state_changed=changed,
     )
     await runtime.after_enqueue(subject=SUBJECT)
     await runtime.drain()
@@ -464,6 +483,9 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
     assert runtime.last_error is None
     assert ingress.starts == []
     assert store.start_observations == ["QUERY_FOUND"]
+    await asyncio.shield(runtime._notification_task)
+    assert notifications and notifications[-1] is True
+    await runtime.close()
 
 
 @pytest.mark.asyncio

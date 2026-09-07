@@ -1,6 +1,468 @@
+最后更新：2026-09-07。C06主六新描述控6PASS3.20s、16sources已控；后继17/18/19额外Episode/第二Procedure/设备声明源码及独立3控NOT_RUN。19/20仅具备来源映射；19缺算法/实际设备能力证明通过source_limits明确，18真实finance适用性仍待runtime，01等真实archive。无SDK/session/资源变更。[契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
+
+最后更新：2026-09-07。C05当前任务保持/完成任务只读/提前切换拒绝3控分批通过47.18s；旧scalar拒Host混合声明已按原来源绑定修复。C09正式退役/原子双修订两新组合首次2PASS14.69s，关闭fixture再生产重开/评分请求隔离。均受控HTTP非质量，PG87968/88533/88901清空，无旧绿重复。[C05](../plans/2026-09-07-corpus-complete-dispatch/C05-STATE-RESULTS.md)／[C09](../plans/2026-09-07-corpus-complete-dispatch/C09-RESULTS.md)。
+
+最后更新：2026-09-07。C06新增六条条件Procedure来源首次6PASS3.20s，旧11未重跑；保留原描述/确认/授权/不删除限制及双条件分支，16/20来源准备有控，非执行许可/跨Task/模型质量。PG88468自然清空。[结果](../plans/2026-09-07-corpus-c06-preparation/RESULTS.md)。
+
+最后更新：2026-09-07。C06主r2报告11控通过（10条setup，原r1顺序断言红保留）；后继05/07/10/13/14/20六条安全条件描述映射及独立控源码NOT_RUN，16/20仅具备准备映射。确认/授权/不删除/分支条件保留，不构造动作授权，不算actualTask或质量；剩01/17/18/19来源未闭合。[契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
+
+最后更新：2026-09-07。C06十条S+Procedure来源及编译共11唯一控制通过：原r1 canonical操作顺序测试假设红，改按真实operation_id后原红/未跑/新七项11PASS4.88s，公共job/精确来源/foreign owner/冷重开。非跨Task/物理评分/质量通过；PG87793/88125均清空。[结果](../plans/2026-09-07-corpus-c06-preparation/RESULTS.md)。
+
+最后更新：2026-09-07。C06后继同构setup新增06/08/09/11/12/15/16七条，仅SPECS映射与独立控制selector；复用32eb已审builder/authority，首3条selector保持固定。20原setup/hash未改，10条具备准备源码，全部新控NOT_RUN，非跨Task/模型质量结论；其余10条约束仍明确保留。[契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
+
+最后更新：2026-09-07。C09编译+19标量公开修订准备首次20PASS10.59s：真实job/原新receipt/同ID rev2、退役不入当前召回、16不变字段r1及20原子双修订。07回填单位已按原setup修正，13 Procedure与正式dispatcher仍待；不计模型质量。PG87580自然清空。[结果](../plans/2026-09-07-corpus-c09-prepare/RESULTS.md)。
+
+最后更新：2026-09-07。C06跨scope语料准备首组02/03/04新增专属public Host S1→Memory分析job→Semantic/Procedure回读源码；20原setup/hash全保留。全部新控NOT_RUN，未接共享scoring/session，未证明跨Task typed召回/非SELF出站/质量。无测试、模型或SDK制品变更。[源码契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
+
+最后更新：2026-09-07。C08历史纪要15/检查列表16两个新控制首次2PASS16.01s：实际main旧USER与派生assistant→真实job→公开抑制→生产重开→下一受控HTTP无旧内容。PG87213自然清空；文档文本来源，非文件/模型质量，正式dispatcher接入另待，旧绿未重跑。[结果](../plans/2026-09-07-corpus-c01-scoring/C08-DOCUMENTS-RESULTS.md)。
+
+最后更新：2026-09-07。C05正式04/09/14/20多轮+真实empty及来源parser共6控制通过74.03s：同root真实setup/审批/marker/closure/terminal、过滤prefix、独立评分/followup/exact resume；context_route控制/physical来源误分类修复已在真实main闭合。原scope红/FK夹具红保留，PG85016/85509/85863均清空。固定HTTP非模型质量，剩余16case仍待。[结果](../plans/2026-09-07-corpus-complete-dispatch/C05-RESULTS.md)。
+
+最后更新：2026-09-07。C08正式dispatcher e81a9af7+helper f45da5f9新增1PASS8.00s：01跳scalar，真实旧组/抑制/生产重开CONFIRMED后独立评分Provider，next physical无旧内容/统计1；只本共享入口01组合，不重复旧5绿、不计模型质量。PG85743自然清空。[结果](../plans/2026-09-07-corpus-complete-dispatch/C08-RESULTS.md)。
+
+最后更新：2026-09-07。C05审批/缺证据3唯一控制分批通过：r1真empty与missing通过、pending无Effect红；公开audit+response身份proof修复后仅原红与False新控2PASS2.75s。无typed原因False不冒真零，PG83853/84899清空；marker/closure及多轮actualmain另首测，非模型质量。[结果](../plans/2026-09-06-corpus-public-seed/C05-AUTHORITY-RESULTS.md)。
+
+最后更新：2026-09-07。C08-01/06/11/18保留旧USER+assistant摘要实际main及wrongassistant共5新控首批5PASS38.78s：原job APPLIED/IDLE，公开suppression后两history隐藏，重开生产authority后下一physical请求无旧内容。PG84053五child自然清空，非真实模型/原生/rolling-summary；正式dispatcher待接。本批也确认d60异步诊断两SDK来源实际写出且无未await警告。[结果](../plans/2026-09-07-corpus-c01-scoring/C08-RETAINED-RESULTS.md)。
+
+最后更新：2026-09-07。Host诊断异步消费修复d60a94f4：真实installed Memory SQLite快照/timeout-cancel两个新控及三个受影响同步控制首批5PASS1.04s，PG83640清空。main改显式await，尚待下一新组合观测；SDK诊断版本硬编码原0.6.0另待，不冒称完整审计或改制品。[结果](../plans/2026-09-07-sdk-async-snapshot/RESULTS.md)。
+
+最后更新：2026-09-07。C05新增07/08/10/11及TOOL调用ID共5唯一控制分批通过（r1 3绿2红，完整标题查询修复后仅2红复测2PASS4.76s）；固定身份真实分页，不保证所有并列ID顺序。PG83131/83471清空，无真实模型/原生结论，正式main多轮接线仍待。[结果](../plans/2026-09-06-corpus-public-seed/C05-RUNTIME-RESULTS.md)。
+
+最后更新：2026-09-07。当前H0710/M619 C01-06实际main完整路由控制新增1PASS7.16s：真实job同ID修订→nullable proposal/公开审批→真实typed route→下一physical请求exact fragment为rev2小周。HTTP两响应受控，不算模型质量。原错字段oracle红保留，PG81693/81834都清空；原生/服务model_not_found仍待。[结果](../plans/2026-09-07-corpus-c01-scoring/MAIN-REVISION-ROUTE.md)。
+
+<!-- 最后更新：2026-09-07 -->
+
+C05 固定 f78004ef 在 H079/M619 installed 的原5红定向复验5PASS/12.15s，3绿未重跑。
+04/09/14真实material marker→closure→来源绑定字段、20归档/prefix、真实评分分页与late suppression精确USER-only通过。
+仅确定性fixture/public runtime，不计模型质量或C05全部20准备；最终physical outbound race及其他case接线仍待完成。
+PG80017 exit0/remaining=[]，原两批红保留、WIP隔离，已释放资源。
+[来源、命令及历史结果](../plans/2026-09-06-corpus-public-seed/C05-RESULTS.md)。
+
+最后更新：2026-09-07。主H0710/M619完整来源组合新增3唯一控制分批通过：C01同ID修订/公开选新版、可信日期冻结与跨日；C07 actualmain真实recent fixture终态后独立scoring Run/统计，评分HTTP受控。r1两绿+C07错误oracle红，r2只红1PASS7.28s，PG80368/80594皆清空；无WeMM实际加载，非真实模型质量。06/11正式评分适配仍待接，服务model_not_found独立阻塞。[结果](../plans/2026-09-07-corpus-c01-scoring/MAIN-PHASE-CLOCK.md)。
+
+最后更新：2026-09-07。C08标量准备叶7022e8e0/287176d0在H0710/M619/S0313首批13PASS5.55s，PG79749自然清空。12事实真实APPLIED+ACCEPTED/抑制前非空→公开EVIDENCE suppression→冷重开隐藏且S1保留；其中01/02/04/09显式partial、另8case派生源未支持，不称12完整setup或模型质量。正式评分接线仍待。[结果与未完边界](../plans/2026-09-07-corpus-c08-prepare/RESULTS.md)。
+
+最后更新：2026-09-07。计分叶ebd81721修缺response时exact预测指标误零，改为null并保留lower_bound；失败denominator/credit不变，旧r4不覆写。仅affected真实SDK failed单Run控制1PASS0.91s，PG78605自然清空；非模型质量。[指标与结果](../plans/2026-09-07-corpus-c01-scoring/MISSING-RESPONSE-METRICS.md)。
+
+最后更新：2026-09-07。独立单POST诊断收到HTTP400/model_not_found，param=model，message unknown provider for model gpt-5.5；1post/0工具，PG77944正常退出无残留。只证明该次拒绝，不追认原r4同因、不称nullable线上通过。主另报告/models列该模型，清单不等于POST可用，暂停进一步请求并等待模型取舍。[受限结论与审核证据](../plans/2026-09-07-corpus-c01-scoring/HTTP-REJECTION.md)。
+
+最后更新：2026-09-07。C07独立准备叶（业务ade43237/测试修41296300）在原H079/M619载体分批6个唯一控制通过：20原setup编译边界、3种真实非空seed/job/public冷回读、06/14真实最近组→下一确定性请求。首批同因字段5红保留；PG77451正常退出无残留。只证明helper/Context准备，不是20条实际评分READY；正式06/14评分Provider相位、标量actualmain组合及模型质量仍未验，不改S3完成度。Dirac限定终审已接受并接入隔离主候选。[结果与边界](../plans/2026-09-07-corpus-c07-prepare/RESULTS.md)。
+
+最后更新：2026-09-07。H0710/M619/S0313实际main安装组合1PASS6.38s，PG76882自然退出清空。新候选eaa72b51显式复验C01-20仅1请求HTTP400、无模型响应或工具、EXECUTION_FAILED；原因旧日志不可恢复，后继有界诊断已接入，不猜原因。PG76962自然退出9.136s且清空。240历史3个不同case/0通过，缺响应不算零extra的质量成功；原生仍待，防熄屏持续。[安装态](../plans/2026-09-07-corpus-c01-scoring/INSTALLED-0710619.md)／[真实复验](../plans/2026-09-07-corpus-c01-scoring/REAL-R4.md)。
+
+最后更新：2026-09-07。Host HTTP拒绝诊断叶0be92572/60e6ea88：r4原400未保存body/private_cause，原因不可回溯。借原client.post在SDK拒绝前记录白名单有界脱敏字段/bytes/hash，不改状态分类、nullable或重试；新增本地HTTP组合1PASS0.01s，PG77306正常清空。仅已注入secret脱敏，非未知凭据检测；尚无真实服务拒绝原因，缺response不能把extra0当观测零。原FAIL保留。[事实与结果](../plans/2026-09-07-corpus-c01-scoring/HTTP-REJECTION.md)。
+
+最后更新：2026-09-07。Harness0.7.10已从审定031fdc6不可变源离线构建一次并从vendor安装新H0710/M619/S0313 target，174/92/116成员逐字节一致。Host nullable叶与生产pin/lock/manifest同批接入；锁检查通过。4个源控制分批通过，当前installed功能组合/失败case复验及原生仍待。旧H079制品与三原FAIL保留。[制品与边界](../plans/2026-09-07-corpus-c01-scoring/INSTALLED-0710619.md)。
+
+最后更新：2026-09-07。nullable后继Host2d64e6e5/fad81ebb配SDK031fdc6/0.7.10 source新增4唯一控制通过；仅两workspace/source字段允许JSON null，3reuse判断一致，非适用hash拒绝，rawhash与exact绑定不归一。原夹具红保留，PG76045清空；需主统一新wheel/installed组合后使用（旧H079不支持），未称main/模型质量通过，原3case FAIL保留。[契约与结果](../plans/2026-09-07-corpus-c01-scoring/NULLABLE.md)。
+
+最后更新：2026-09-07。Manual组合原生UI固定e1e714d2已一次完整TypeScript/Vite/Rust/app构建通过；独立bundle端口18120，PG72450正常退出清空132.283s。尚未启动；先待SDK nullable继任/主组合及失败链复验，再用本UI验收。仅后端变化不重复同UI构建，防熄屏持续。[构建](../plans/2026-09-07-manual-workspace-binding/BUILD.md)。
+
+最后更新：2026-09-07。C01-20固定2c02be03首次真实评分仍FAIL：4Provider/3路由拒绝，无A/B；明确nonstrict与omit指引未解决实际环境。PG71822自然退出51.88s且清空。240历史3个不同case尝试/0通过，暂停扩跑同故障；推进SDK可选null支持，修后显式新候选复验失败链，旧FAIL保留。防熄屏持续。[真实结果](../plans/2026-09-07-corpus-c01-scoring/REAL-R3.md)。
+
+最后更新：2026-09-07。Host9073b965显式发送function.strict=false，保留原optional参数/精确workspace reuse校验，并给memory_standalone省略字段的公开失败指导。Dirac源窄审后唯一fakeHTTP→SDK参数→Host handler/ledger组合1PASS0.19s，PG71603正常退出无残留；空recall/合成tool context只证明协议路由，不代表真实relay/main或质量。C01-10/13原FAIL均保留（2尝试0通过），新真实case另验。[合同及结果](../plans/2026-09-07-corpus-c01-scoring/NONSTRICT.md)。
+
+最后更新：2026-09-07。Manual workspace UI产品ef0ed7bf/夹具修48169ae8/结果7324a740已独审接受并合候选；真实Host授权链与View父卸载恢复7backend＋4UI分批通过，原红保留，PG69778清空。包含工具发现说明的事实修正，尚不宣称解决模型反复搜索；组合构建/native、App进程冷启动自动发现仍待验。[结果](../plans/2026-09-07-manual-workspace-binding/RESULTS.md)。
+
+最后更新：2026-09-07。新C01-13真实324aa613首次评分FAIL：15物理请求/14次路由因无关workspace参数拒绝，未取得A；原提议四类型extra3保留。176.565s自然退出且PG69877清空，退出修复真实生效。240已尝试2/通过0；暂停同故障路径扩跑，修参数无值契约与核预算跨恢复计数。全阶段防熄屏保持。[真实结果](../plans/2026-09-07-corpus-c01-scoring/REAL-R2.md)。
+
+最后更新：2026-09-07。Procedure prompt/v5.1叶342e2722/20f58862已独审：6限定控制通过；2次真实分类与public strict mutation提交通过（未采用流程→DRAFT+Episode，一次性任务→仅Episode），零重试，PG69158正常退出。旧v3/v4/v5持久请求保留；这只是Provider适配器/编译/公开写入，durable分析job与原生完整链仍待验，原r24FAIL保留。[真实分类](../plans/2026-09-07-procedure-draft-classification/MODEL-RESULTS.md)。
+
+最后更新：2026-09-07。评分自然退出叶ab36b6a5：WorkflowRunner独立UoW owner原未释放，补public runner/service close与main/carrier统一收尾；bootstrap明确服务拥有共享端口UoW，runner不关借用端口。唯一独立child实际main执行自然SystemExit控制1PASS17.01s，PG69388清空，无pytest全局lane清理代替。原C01-10语义FAIL及deadline保留，下一新case质量另验。[定位与结果](../plans/2026-09-07-corpus-c01-scoring/PROCESS-EXIT.md)。
+
+最后更新：2026-09-07。首真实C01-10固定30b07393/H079/M619：1物理请求、0工具，排序正确但未取得已存A，原gold FAIL（主审+独审）；240已尝试1/通过0。业务COMPLETED后worker线程退场挂起，180s外部deadline退出125并清空PG67059，非内存/磁盘门。修复退出与通用记忆来源指导继续，均未称通过。全阶段防熄屏保持。[真实结果](../plans/2026-09-07-corpus-c01-scoring/REAL-R1.md)。
+
+最后更新：2026-09-07。C01生产评分接线99d17c11/结果d111ce21已独审合入候选，新增实际main初始化/失败及未终态trace3控分批通过；当前真实模型评分仍0，需首次运行及逐条gold终态复核。[结果](../plans/2026-09-07-corpus-c01-scoring/RESULTS.md)。
+
+最后更新：2026-09-07。新构建原生r25固定d86e4805/H079/M619冷恢复与两次实际授权可用；首查询错把taskactive当流程状态，澄清后实际Procedure发现返回0且模型如实答无。正向草稿/完整Procedure仍未验收，240质量不计。PG62018正常退出清空，退出后仅清可再生构建缓存，防熄屏继续。[结果](../plans/2026-09-06-typed-use-primary/NATIVE-R25.md)。
+
+最后更新：2026-09-07。原目录新active Scope续改独审叶636d6c38合候选；新Run原root复用和同Run双绑定拒绝共7唯一控制分批通过，仅H079/M618确定性运行，Manual UI/当前组合/native另验。[结果](../plans/2026-09-06-completed-scope-continuation/RESULTS.md)。
+
+最后更新：2026-09-07。r24已allowed后旧等待提示的UI接线修复：手刷显式exact授权补读、同Run工具/终态推进补读、断线与空pending区分。真实View/Panel/Channel组合新增3控分批通过，原负控保留；尚未新构建/native复验。[结果与边界](../plans/2026-09-07-primary-decision-refresh/RESULTS.md)。
+
+最后更新：2026-09-07。原生r24固定b2da14da/H079/M619，待定流程记录可见；第二轮界面等待授权但停止后补出成功context_route及4次tool_search，Procedure发现/使用和文件核验未完成。PG50771正常退出且清空，非内存/预算阻塞。全测试阶段防熄屏保持。[现场与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R24.md)。
+
+最后更新：2026-09-07。C04 20条setup分批19+1通过，新增同时间戳游标修复5控已独审接受并合入候选；仅原H078/M618叶证据，当前H079/M619组合与240真实质量另验。晚到更早时间戳不在保证内。[结果](../plans/2026-09-06-corpus-public-seed/C04-CURSOR-RESULTS.md)。
+
+最后更新：2026-09-07。共同Memory0.6.19 clean源e27003c已离线只构建一次，H079/M619/S0313安装新组合1PASS0.86s、174/92/116成员和184加载模块精确来自target；版本3控通过。Host vendor/pin/lock/生产identity固定新wheel，初次origin校验失败后通过真实vendor安装纠正，不手改metadata/不重build；PG50135清空。旧M618不改，当前候选可供M619原生验证，完整native/240质量待验。[制品与实际结果](../plans/2026-09-07-current-input-procedure/INSTALLED-079619.md)。
+
+最后更新：2026-09-07。Host80764c13/共同Memorya15c7be源组合1PASS0.82s并独审接受：真实签名当前输入与独立Procedure draft同批前均可见，公开遗忘后只draft拒绝，当前项不受误伤；Host审计请求/快照精确绑定。PG49417清空，原属性oracle红保留。Memory新0.6.19制品/installed/native另验。[结果](../plans/2026-09-07-current-input-procedure/RESULTS.md)。
+
+最后更新：2026-09-07。Procedure恢复/发现固定5ca45216已独审合入隔离候选源码：旧恢复13项限定通过；新发现链有效6项为首批有效4+实际遗忘负控2，旧时钟异常误绿已撤回。原signal lane、context page reader与current-input接线均保留，依赖聚合含v3 draft。共同Memory新制品/当前安装组合和native完整TC04仍待验，旧M618不能启动此候选。[新发现结果](../plans/2026-09-06-procedure-adoption/DISCOVERY-RESULTS.md)／[恢复结果](../plans/2026-09-06-procedure-adoption/RECOVERY-RESULTS.md)。
+
+最后更新：2026-09-06。r19收尾指导产品a189的实际运行链2个唯一控制已独审接受并合入：真实原任务目标/未回读债务保留，完成Scope的两次拒绝与公开tool proposal/下一物理输入精确关联、无文件写入。原测试oracle两红保留、修后只复跑红1；最终PG47277清空。不是模型/native质量通过，旧root新activeScope续改仍独立实现。[控制与边界](../plans/2026-09-06-completed-scope-guidance/RESULTS.md)。
+
+最后更新：2026-09-06。已审非SELF本轮输入消费者c0fbe30a接入隔离候选源码，保留既有提醒signal authority；组合需Memory后继的新current-input公开API，当前旧M618 pin不能作为此源码可启动证明。在共同Memory源码1df01d1审查/新制品及安装组合完成前暂停该候选原生启动，用户主checkout未变。旧9项源验不重跑。[来源与边界](../plans/2026-09-06-nonself-input/RESULTS.md)。
+
+最后更新：2026-09-06。合入prepare叶后的Host9cace208，当前H079/M618/S0313新增C02完整prepare跨进程lostACK组合1PASS4.48s，174/84/116成员精确、188加载SDK来自target；PG46613清空。旧H078套件不重跑，C03新组合/240质量不外推。[组合结果](../plans/2026-09-06-corpus-public-seed/H079-PREPARE.md)。
+
+最后更新：2026-09-06。C02-19/C03-20完整fixture prepare与跨进程恢复叶e0e7d68c（产品182a5aa6）已独审合入候选：public seed后实际drain，finalize前保存原候选、重开经SDK确认；2新控制PASS7.30s、PG34647清空，旧绿未重跑。限定H078/M618源运行证据，当前H079完整prepare组合待验，240质量仍0。[准备与恢复](../plans/2026-09-06-corpus-public-seed/INFERENCE-PREPARE-RECOVERY.md)。
+
+最后更新：2026-09-06。固定ff35fb82/H079/M618正确18120新构建，r22真实新松柏提醒ACK后独立“提醒”正文可见；r23冷启动保留同一历史回执/提醒，后续普通问题只答44无新增提醒，两项限定通过。PG42213/45599正常退出且清空。前置r20 carrier异常原因未定、r21编译端口错误已纠正；原r18FAIL保留，完整旅程/240质量仍未完成。[原生与资源证据](../plans/2026-09-06-typed-use-primary/NATIVE-R20-R23.md)。
+
+2026-09-06：提醒独立正文notice叶26c19b5e已独审合候选，产品1355c5b7，新7backend/2UI分批通过。新ACK投影独立reminder，不改模型原答或旧ACK，合法改期撤旧notice，保留原r18FAIL；真实原生正文/新构建仍待验。[源码与控制](../plans/2026-09-06-prospective-ack-notice/RESULTS.md)。
+
+2026-09-06 原生r19独立长旅程仅前5轮：真实任务/docx创建但漏readback；原任务被模型收尾为complete，后续resume路由成功但编辑被生命周期门拒绝，第4轮FAIL并原生停止；随后43正常。完整两组旅程未完成，PG29074正常退出清空，非内存阻塞。[现场与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R19.md)。
+
+2026-09-06：固定3d83ac81的C03两来源收尾在当前H079/M618安装组合新增1PASS/2.25s，PG28861清空；189加载SDK模块来自target，原H078其余绿不重跑。不计质量语料，C02/自动prepare/跨进程proof另验。[组合证据](../plans/2026-09-06-corpus-public-seed/H079-COMPOSITION.md)。
+
 # ARCHITECTURE 索引
 
+2026-09-06 C03与推断准备收尾已审叶bfd56d99合入候选：C03全部20条setup分批通过，C01–C03共60条准备验证；240真实质量仍0。C03-20两来源实际SDK job的合法无修改收尾、非法分析虽APPLIED但拒绝确认、取消后的原application恢复共3个新控制分批通过。仅H078/M618独立叶证据，C02接线、prepare自动收尾、跨进程proof及当前H079组合仍另验；不是全部评分运行就绪。[C03准备](../plans/2026-09-06-corpus-public-seed/C03-PREPARE.md)／[收尾结果](../plans/2026-09-06-corpus-public-seed/INFERENCE-DRAIN-RESULTS.md)。
+
+
+2026-09-06 原生r17/r18（Host55eb273d/H079/M618）：旧提醒真实ACK后正文送达、下一轮去重及冷启动去重通过；新银杏提醒到期虽ACK成功，最终回复却未展示提醒正文，**完整提醒交付仍FAIL**。两组正常退出且无残留，不是内存/锁屏阻塞。新增缺陷继续修复，旧r14/r16失败保留；240质量仍0。[实际结果与证据](../plans/2026-09-06-typed-use-primary/NATIVE-R17-R18.md)。
+
+2026-09-06 H079/M618候选：新SDK单次离线制品已固定，main factory/真实零tool恢复至ACK/身份3项安装组合PASS4.37s，174/84/116包成员与202加载模块精确核对；PG21846正常退出并清空。源14绿不重跑，原生r17仍待验、r16失败保留。[安装结果与边界](../plans/2026-09-06-typed-use-primary/COMBINED-079618.md)。
+
+
+2026-09-06：source/runtime叶006a67dc已独审合入候选。真实C01 CREATE job、graph backoff拒假成功、source/scoring对话隔离三项新增控制分批通过；仅普通v1链，不含C02推断接线、A7/typed/short跨库或240质量。[结果与边界](../plans/2026-09-06-corpus-public-seed/SOURCE-RUNTIME-WIP.md)。
+
+
+2026-09-06 C02-19原setup关联补强：完整原始S1/receipt与实际group USER精确比较，新增真实同文异Run负控1PASS；已有正向/19绿未重跑，PG19055清空。仅setup来源，runtime隔离/240质量不计完成。[结果](../plans/2026-09-06-corpus-public-seed/C02-BATCH.md)。
+
+
+2026-09-06 C02全部20条setup已分批通过（18首批、C20及C19失败修复后各1）；C19用真实完成Host/SDK assistant来源保留llm_inference/unverified，C20不补造颜色或通用预算。C01+C02共40条准备验证，240真实质量仍0，运行来源隔离继续。所有测试组已清空。[准备结果与失败历史](../plans/2026-09-06-corpus-public-seed/C02-BATCH.md)。
+
+
+2026-09-06 原生r16：时间调度修复已在r14原userdata实际恢复并触发1条；普通问题却被SDK pending occurrence/no_recall检查拦截，UI无本轮回答/提醒，端到端仍FAIL。不自动ACK或放宽检查；PG17276正常退出并清空。[原生结果与卡点](../plans/2026-09-06-typed-use-primary/NATIVE-R16.md)。
+
+
+2026-09-06 原生r15：公开SDK准备的2节点/1条APPLIES_TO在真实Cytoscape画布显示、点击边打开正确有向详情；筛选为1节点0边时隐藏详情，清空后恢复原选择。限定图谱UI通过，不计模型抽取/240质量/完整旅程；PG14481正常退出并清空，峰1,327,584KiB。[原生结果](../plans/2026-09-06-typed-use-primary/NATIVE-R15.md)。
+
+
+2026-09-06 原生r14：一次性提醒后台实际创建且UI记忆可见，前台却否认；到期后真实普通下一轮仅答43，未展示提醒，Host登记/计时/occurrence/presented均0。判时间提醒原生FAIL，正在补生产调度生命周期；不以两Run COMPLETED或旧组件绿替代。PG11237正常退出并清空。[Run与原生证据](../plans/2026-09-06-typed-use-primary/NATIVE-R14.md)。
+
+
+2026-09-06：大结果边界增量：8k小参数调用的1MiB精确分页通过（最大物理请求19,219字节）；4k预算拒绝后的真实ClosureFallback收尾/冷重开零重发负控通过，保留FAILED与Scope pending，不报4k分页成功。大型assistant参数原4k/8k超限失败保留，未提高预算或复跑32k/8k绿；进程组均清空。[结果与失败边界](../plans/2026-09-06-primary-context-compaction/MEGABYTE.md)。
+
+
+2026-09-06：公开SDK语料准备已合入，C01全部20条setup按各批验证，含同ID修订、遗忘前后可见性及独立2节点1条APPLIES_TO图谱fixture；没有真实模型评分，不计240完成。[结果与边界](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。
+
+2026-09-06：当前运行新增1MiB边界控制1PASS/6.32s，两个实际文件结果均超过1MiB，8次物理请求最大28,209字节，精确尾页及重开依赖通过。仅32k窗口/fixture producer/MockTransport，不代表4k8k或原生；PG7739清空。[结果](../plans/2026-09-06-primary-context-compaction/MEGABYTE.md)。
+
+
+2026-09-06：用户明确将“发布成功后提醒”缺失的实际发布来源接入及对应端到端验收延期为F01。本次不继续推进、不计为通过，其余当前交付继续；已有事件协议层证据不替代真实发布。[后续待办](../plans/2026-09-06-typed-use-primary/FOLLOWUPS.md)。
+
+
+2026-09-06：实际生产fallback已证明撤回来源后可FAILED收尾并继续新输入，原fixture缺fallback不外推main死锁。后继53940598修复非成功路径多余来源正文构造及pending重放状态，两项实际控制通过并独审合入；未伪称任务语义完成。[结果](../plans/2026-09-06-revoked-scope-terminal/RESULTS.md)。
+
+2026-09-06：真实v4提案混入多种正文被编译拒绝，后继v5按memory_type分支schema并保持旧协议恢复。固定85a19260新3控通过；真实gpt5.5三意图分别产出ACTIVE/DRAFT/DRAFT，无编译拒绝。仅模型分类+编译，非Host持久链/原生/240质量；PG4986正常退出并清空。[实际失败、修复和三条结果](../plans/2026-09-06-procedure-adoption/V5-CLASSIFICATION.md)。
+
+
+2026-09-06：当前运行分页合并A7的构造器和调用均保留双方参数；固定320a419e在H078/M618实际main factory及current page allow两项2PASS/5.34s。PG3663清空；未closed写Scope撤回后终态pending仍单独修复，原生未开始。[组合结果](../plans/2026-09-06-typed-use-primary/COMBINED-078618.md)。
+
+
+2026-09-06：当前运行大工具结果分页固定c5aea726已独审合入，两个唯一实际栈控制通过；来源为已完成effect及实际父请求，保留A7协调器和原预算。未关闭写Scope后撤回来源的终态pending真实缺口仍在修复，H078/M618组合和原生另验。[当前运行结果](../plans/2026-09-06-primary-context-compaction/CURRENT-RESULTS.md)。
+
+2026-09-06：历史分页合并A7后，固定c9e1aebf在H078/M618运行1条必要交互检查，1PASS/4.71s，实际首/续/尾页、后续物理请求与重开依赖通过；PG3328正常退出并清空。当前运行分页及原生长旅程仍待验。[组合增量](../plans/2026-09-06-typed-use-primary/COMBINED-078618.md)。
+
+
+2026-09-06：固定1491309f的H078/M618组合5PASS/4.82s，覆盖实际main factory、A7直接路由ACK终态、Procedure旧v3响应跨配置恢复及Memory身份/锁。173/84/116包成员与vendor一致、201模块全部来自新小target；PG2168正常退出并清空。原生/质量及随后历史分页代码不在此批范围。[当前组合结果](../plans/2026-09-06-typed-use-primary/COMBINED-078618.md)。
+
+
+2026-09-06：历史工具大内容分页固定536daece已独审接受并合候选。4个唯一场景验证真实S1/公开SDK来源、首/续/尾页、错误hash拒绝、后置遗忘阻止外发及冷重开依赖；证据为H077/M616和确定性HTTP，当前运行分页、当前组合及原生另验。[结果](../plans/2026-09-06-primary-context-compaction/RESULTS.md)。
+
+2026-09-06：Procedure提案按新v4区分明确采用/步骤叙述/不确定，Host核真实USER来源与有序引文；明确采用ACTIVE，其余合法分类DRAFT且观察成功数0，ACTIVE不授予执行权限。v3完整协议保留，普通失败跨配置重试P1由M618固定完整输入/cohort恢复；原Host反例零新Provider并应用旧v3语义已实际通过。源码/独立安装验收不代表Scope观察、适用性或真实分类质量；H078/M618组合另验。[来源与范围](../plans/2026-09-06-procedure-adoption/SOURCE.md)。
+
+2026-09-06：A7展示/ACK与来源继承已独审合入候选（固定cd594b8f）。真实五路由ACK终态、三轮未ACK保留pending/唯一overdue、第四轮ACK、终态故障恢复、异主体拒绝及跨轮派生历史遗忘分别通过；slow-source等待期间Host换代真实红例已修复并验证零外发。原no_recall规则不放宽，snapshot注入不当作用户已见。生产默认登记协调器/ACK并由组件升级52；H078组合和原生A7另验，事件触发来源继续。[原红、结果和范围](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。
+
+2026-09-06原生r13（Hostb3680732/H078/M617）：新普通对话真实回答45/idle，默认后台审计45/45公开DTO enumerated，SDK明确verified_current_intervals与coverage_gaps[]。只关闭本场景驱动核验，旧r12 unverified不追认，完整工具/Service/Memory覆盖另验。正常退出PG99878、组清空。[Run、截图及审计](../plans/2026-09-06-typed-use-primary/NATIVE-R13.md)。
+
+2026-09-06：H078/M617/S0313接入候选。SDK正式按持久start_mode选择实际driver，保留Host控制校验，避免普通主对话因不透明wrapper失去审计核验；源4项、安装3项、Host新组合4项分别通过。旧r12实际98/98条审计已读取但coverage仍unverified，不追认旧区间；新native/fullcoverage另验。所属进程清空。[组合及真实缺口](../plans/2026-09-06-typed-use-primary/COMBINED-078617.md)。
+
+2026-09-06：提醒状态库50/51/52已接入应用启动及通用初始化的逐版完整校验；新增负控发现并修复bootstrap缺失时绕过human校验的问题。9个唯一新增场景分批通过（非空重开/损坏拒绝/未知版本/fresh49），资源组均清空；完整A7与原生schema52重启仍待验，未默认安装半成品。[结果与边界](../plans/2026-09-06-typed-use-primary/STARTUP-52.md)。
+
+2026-09-06 原生r12（Host33809aae/H077/M617）：同实例启动load+prime完成后，新进程首次short查询真实成功，无手动重试；新工具三条recall refs和模型青竹九月/无糖茉莉茶回答均可见。本场景PASS，工具总耗时1516.972ms不等SDK检索或p95；原预算未增，广泛性能/质量另验。PG96027正常退出/组清空，磁盘5219MiB；原r10/r11失败保留。[首查结果、Run与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R12.md)。
+
+最后更新：2026-09-06。r11 load-only 后首query仍超时；后继68f525e2在原实例／encode队列执行一次固定无用户数据priming，startup完成含加载及priming。三项新控制3PASS／0.27s，PG95734清空、锁释放；原1s预算不变，已独审合入primary候选，待真实新进程首query，不能以暖态重试关闭。[结果与边界](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
+
+2026-09-06 原生r11（Host464b86ee/H077/M617）：既有startup hook实际完成WeMM预加载，但新进程唯一首query的encode1.44s仍超1s预算；UI明确查询失败，未重试，不以r10暖成功替代首查。PG93935正常退出且组清空；仅清可再生Rust链接对象恢复磁盘4.15GiB，native二进制哈希/模型/证据/用户库不变。继续同实例编码预热。[本次失败与资源证据](../plans/2026-09-06-typed-use-primary/NATIVE-R11.md)。
+
+最后更新：2026-09-06。WeMM公开 warmup 接通原 startup hook，共享原实例／加载任务；成功日志不再调用不存在的 is_mock。固定源码270320d3，两项新控制2PASS／0.25s，PG93645清空、共享锁释放。保持1s预算，已独审合入，真实冷启动初次query待主，不以r10暖态PASS关闭冷FAIL。[边界与证据](../plans/2026-09-06-short-terminal-source/WARMUP.md)。
+
+2026-09-06 原生r10（Host0bedaa87/H077/M617）：FTS+VECTOR修复后的真实暖态短期查询成功，UI工具有三条recall refs，模型正确回答青竹九月/无糖茉莉茶。冷态首查仍timeout，单独保留失败并继续预热定位；不称完整short/性能/program通过。两轮均空闲，正常退出PG89400 exit0/remaining[]。已合closure九场景修复的原生Scope旅程另验。[实际结果与证据](../plans/2026-09-06-typed-use-primary/NATIVE-R10.md)。
+
+最后更新：2026-09-06。短期显式 typed 请求补齐 FTS＋VECTOR，long-only 仍 FTS；原 1s／2048 预算与来源门不变。固定源码 f8b2d41c，实际 H077/M617 公共链路新增反例 1PASS／4.74s，证明大 FTS 组超预算时小 vector-only 偏好可进入 Host fragments。PG89042 清空、锁释放；Dirac限定ACCEPT、已合隔离primary候选；待native 短期叶。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
+
+2026-09-06 原生r9（Host fa7580b0/H077/M617）：生产Provider清理错误本次未再观察到；short祖先补齐和后台generation修复已经独审合入，实际WeMM生成active索引。真实查询首次超时，模型同Run重试后SDK审计used/FTS1/vector3，但UI最终仍答无片段，短期端到端未通过，返回链路待定位。现场保存后正常退出，资源exit0/remaining[]/cleanup_error=null。此前r8各场景证据与失败历史保留。[最新原生结果](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
+
+最后更新：2026-09-06。generation 生产源码161702be未改，追加冷加载跨两次有界超时恢复控1PASS：并发step串行、共享load仅一次、失败不确认cache/推进维护时间、完成加载后立即恢复。PG83348无残留、锁释放；不代表实际WeMM/native验收。[补充证据](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
+
+最后更新：2026-09-06。02bf 后继后台 worker 已接公共 generation：同锁/既有 timeout 内 projection→generation，成功才确认 cache，失败/超时/取消可重试，SDK 按 lineage/manifest 幂等复用。实际 installed H077/M617 + 小测试 embedder 四控分批绿（含公共 query、维护/重开/lost-ACK 不重复 embedding）；PG82943 无残留、锁释放。尚待独审/主组合/实际 WeMM/native。[边界与结果](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
+
+最后更新：2026-09-06。隔离 Host 短期 terminal 来源补齐叶：r8 最终一致性副本在实际 M617 公共 rebuild 复现 history_source_lineage_missing；Host 同事务核验 terminal 后经公共 source-only admission 补齐祖先，13 组投影 0→3 chunks，重开保持，旧 registration/suppression/revision/jobs 不变。新增三控分批通过，PG82219 清空、锁释放；未改 SDK/原库，generation/真实 shortquery/native 尚未验证；Dirac限定ACCEPT并已合候选。[原因与证据](../plans/2026-09-06-short-terminal-source/RESULTS.md)。
+
+2026-09-06 原生r8：H077/M617/Host2c8c57c6在原userdata真实完成新偏好写入、长期召回命中、UI遗忘后同条件零命中，Cytoscape两节点/筛选一节点可见。旧任务已FAILED但后置Provider清理仍报KeyError；第11完整组后短期投影MemoryCorruptionError，窗口外短召回未通过。正常CmdQ后runner回收残留，资源125/最终组清空。[原生范围、Run与失败证据](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
+
+
+2026-09-06：候选固定 H077/M617/S0313，授权过期与冷启动修复8cec2353已合；主vendor小target离线安装和3项受影响身份/锁校验通过。旧功能测试按原组合复用，新组合native尚未验收，用户主树不变。[接入与边界](../plans/2026-09-06-typed-use-primary/COMBINED-077617.md)。
+
+
+最后更新：2026-09-06。Host默认Memory builder已接7.3公开升级链；实际installed M616旧库→M617升级/重开保留属主与升级回执，新控1项及空库/未知库2邻居分批通过。原生userdata未升级，完整consumer/native仍未通过。[升级边界与证据](../plans/2026-09-06-prospective-source-audit/HOST-617-UPGRADE.md)。
+
+最后更新：2026-09-06。Host明确接入M617 V2/settle观察，H076/M617实际installed组合4新+4受影响检查共8PASS/2.91s，无源码overlay/模型/native；终局真正消费、跨库恢复及完整scheduler仍单独验收。PG71205清空。[边界与证据](../plans/2026-09-06-prospective-source-audit/SUCCESSOR-617.md)。
+
+最后更新：2026-09-06。原生r7包含已审租约修复，冷重建仍在Host读取实际SDK终态时因事件歧义拒绝，STOP_REQUESTED未闭合；没有放宽/篡改终态。遗忘后重启列表仍为空。原生现场采集后正常退出PG69808清空。完整native仍FAIL/未完成。[r7证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
+
+最后更新：2026-09-06 14:38。原生r6真实Provider已完成后台分析并生成长期认知记忆；独立UI遗忘后列表及相关当前历史不再展示。semantic召回因授权等待后foreground_lease_expired失败，UI停止未收敛；Cytoscape画布有记忆仍空白。上述缺陷修复中，窗口外short/遗忘后召回未验，完整native/program未通过。完成现场采集后正常退出，PG60384清空。[r6证据与范围](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
+
+最后更新：2026-09-06。H075/M616原生r5已实际完成中文Provider响应、WeMM编码、对话写入和审计UI；结束本轮后清空PG54846。后台analysis误用foreground guard已定位，正在修复；短期当前4组处于SDK最近10组排除窗口，尚无窗口外召回证据。完整native/program未闭合。[本轮证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
+
+最后更新：2026-09-06。原生启动暴露的服务登记槽与中断空库初始化已修复；新增两项实际 runtime 检查通过，原生主对话恢复可输入。真实 Provider 已返回，但中文输入用例和随后模型加载异常仍未闭合，完整 native 未通过。[本次结论与证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
+最后更新：2026-09-06。独立Host提醒来源观察接收叶`0e983edc`通过新增14项/5.17s及Dirac限定审查；复用既有sidecar，默认登记实际Manager读取接入，原SDK观察不提升为授权/持久receipt。已合入隔离primary候选；v2/scheduler/全操作coverage/native不在此验收内。[结果与接线边界](../plans/2026-09-06-prospective-source-audit/RESULTS.md)。
+最后更新：2026-09-06。隔离 Host schema52 新增 typed cursor/独立终局表，保持50/51旧DDL及恢复注册身份、旧游标值/hash，封闭旧writer；正常注册接新版游标，5项新增迁移/故障/拒绝检查通过。not_required 公共回执消费及完整scheduler尚未接完，默认组合未切换。[范围与证据](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-52.md)。
+
+最后更新：2026-09-06。[隔离schema51时间事件日志](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-51.md)完成新4项及并发发布1项控制；只数据库扩展，完整scheduler和默认接线仍未完成。旧50SQL/默认49不在本叶变更。
+
+2026-09-06：当前组合的M616锁文件hash已修正并定向验证，Host恢复/提醒来源限定独审已归档在组合记录。
+
+最后更新：2026-09-06。[当前 H075/M616 组合](../plans/2026-09-06-typed-use-primary/COMBINED-075616.md)已完成必要功能与安装身份检查；后文叶子状态保留当时证据，不能代替原 program 剩余项。
+
+## 2026-09-06 Host typed-use 生产接线独立叶
+
+最后更新：2026-09-06。独立typed-use叶现闭合H075 short及no-recall必要恢复范围。
+原short伪revision保持拒绝、actualNone经H075公开page/grant→真实physicalguard正常外发；
+独立Host来源遗忘仍拒绝。新4场景分别证明sink前/后进程丢失恢复、response_reserved恢复
+同receipt不重发、真实pending拒绝同时保留Provider成功事实。发现并修复本叶启动时序P1：
+使用SDK原terminal verifier返回的实际publicview，避免查询尚未发布的Hoststack；原校验不减。
+两新批分别2PASS后1FAIL、修复后只重试余下2PASS，进程全部清空；未重跑旧long/clock/short。
+冻结H075制品独审ACCEPT、旧074614环境/用户库不变；主H075/M616组合和native另验，
+不标401/program完成。[固定结果与全部失败保留](../plans/2026-09-06-typed-use-primary/RESULTS.md)。
+
+2026-09-06：Timer新增late-invalidation/lease接管/observation篡改三控分批通过（先1PASS2FAIL，修复仅2红后2PASS）；产品修复2ce1dff1规范SQLite REAL lease签名字节，旧绿未重跑。schema52未合，presentation/ack/native未验。[风险控制结果](../plans/2026-09-06-prospective-scheduler-time/RESULTS.md)。
+
+## 2026-09-06 Timer必要installed H076/M616组合
+
+Host d3f9720a真实pending/rescheduled两路径2PASS1.71s：到期Memory提交丢ACK、过期重开same-ref重放、inbox唯一。原失败保留，旧控制不重跑；尚缺独立竞争控制与presentation/ack/native，未称完整scheduler。进程退出槽释放。[局部结果](../plans/2026-09-06-prospective-scheduler-time/RESULTS.md)。
+
+最后更新：2026-09-06。[隔离schema51时间事件日志](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-51.md)完成新4项及并发发布1项控制；只数据库扩展，完整scheduler和默认接线仍未完成。旧50SQL/默认49不在本叶变更。
+
+最后更新：2026-09-06。[S5c 提醒注册公开来源及7项局部验证](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)；完整 scheduler 仍在进行，未切换默认运行路径。
+
+## 2026-09-06 M0615 installed tool groups
+
+Updated2026-09-06:935d3e12 H073/M0615/S0313 own installs verified169/76/121 members. Original empty-assistant failure is fixed in this successor;22 tests+2 subtests passed13.05s, owned processes cleared. Text tool source chain only; nontext/native/H074/240 remain. [Chinese result and evidence](../plans/2026-09-06-tool-causality/INSTALLED-0615.md).
+## 2026-09-06 S5c schema50 successor
+
+Updated 2026-09-06: Primary49 to isolated50; 43 tests passed, real old S5c47/48 rejected without DB byte changes. Default remains49; scheduler/presentation/ACK not wired. Fixedf8e59f31 passed independent scoped review and is merged in the primary candidate. Default remains49; not active scheduler. [Mapping and evidence](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-50.md).
+
+## 2026-09-06 工具组与可信披露组合接入
+
+最后更新：2026-09-06。工具v2非空组源码及证据、可信披露f3675064的两个P1修复均已由主审和独立代理审查。当前合入同一隔离Host候选1268e884，必要交叉检查21项通过14.55秒，测试组已清空（[证据](../plans/2026-09-06-host-trusted-disclosure/COMBINED.md)）；下列开发记录中的未合并/待独审状态为此前阶段。空assistant仍有M0614真实失败，SDK后继修复中；非SELF、真实Provider/native及240质量尚未完成。
+
+## 2026-09-06 工具多消息v2生产接线，仍有SDK空文本阻塞
+
+最后更新2026-09-06。新实际工具组的terminal/逐消息来源原子提交，Host实际结算attestation、完整6item公开注册/short非空/重开/遗忘通过；写中断无半组、两个来源篡改与五个旧v1邻居通过。新空assistant真实完整组被M0614 short non_blank校验拒绝，保持原红并继续修SDK，不丢消息/填placeholder。故本片未完成；源码独审待续，无真实Provider/native/用户主树切换。[各批范围与未完成项](../plans/2026-09-06-tool-causality/PRODUCER.md)。
+
+
+## 2026-09-06 工具多消息公开因果读取局部验证
+
+最后更新：2026-09-06。新增内部reader通过实际Host effect index和SDK公开投影/bounded审计/结果读取绑定每个工具与父Provider消息，正确区分跨轮重复raw call ID；真实dynamic Host+SDK一个集成测试（含5个篡改及1个截断控制）后继通过，重复读取不新增audit查看缓存，峰165MiB，进程清空。仅来源投影，未接入terminal producer/短期整组索引，不签工具terminal receipt；原始失败保留、独审待续。[实现边界与证据](../plans/2026-09-06-tool-causality/RESULTS.md)。
+
+## 2026-09-06 Dirac披露并发两P1局部修复
+
+最后更新：2026-09-06。自有feat/host-trusted-disclosure/base955a19cd，整片未合主、待主/Dirac复核。真实双控制连接先复现FIFO陈旧A阻塞B与慢checker换代后仍物理send两红；新增schema49 Host入场拒绝记录（无Run/Memory伪receipt）让A拒绝后B继续，出站checker后新连接复核原token。历史source不改。最终新增及必要邻居94项通过/41.51秒/峰222944KiB；PGID40284及全部本轮组已清空，测试槽释放。非SELF/完整外发原子撤权与240质量仍未完成，未跑真实模型/native。
+[两P1修复、接口、schema、原红和指纹](../plans/2026-09-06-host-trusted-disclosure/Dirac两P1修复.md)。
+
+## 2026-09-06 披露绑定历史来源回归修复
+
+最后更新：2026-09-06。真实默认SELF foreground/outbox/short/history链复现精确形状回归后修复，最新29项通过；历史配置事实与当前head判定分离，待主/Dirac终审，非SELF和完整外发仍待后继。
+[修复、消费者扫描与证据](../plans/2026-09-06-host-trusted-disclosure/验收与跨层修复.md)。
+
+## 2026-09-06 Host可信披露配置源码候选
+
+最后更新：2026-09-06。authenticated control配置经queue幂等绑定进入turn/run解析器；schema48及8个契约测试函数已写，未测试、未合并，完整非SELF/输入许可/外发仍待后继。
+[源码复核接口和边界](../plans/2026-09-06-host-trusted-disclosure/固定源码交接.md)。
+
+## 2026-09-06 Memory 0.6.14隔离Host组合
+
+最后更新：2026-09-06。固定ec046e84接入受众绑定候选，独立6.3MiB环境H073/M0614/S0313全部SDK成员与vendor一致；必要组合32项及2个subtests通过，峰399MiB/22.247秒，进程清空。旧M0613环境保留。SELF与不同最终受众默认拒绝；协作者语义配对不构成外部原始历史授权。该结果不代表实际Provider/native或401/240完成。用户主树未切换，原计划继续。
+[安装身份、失败保留、命令和证据](../plans/2026-09-06-disclosure-audience/COMBINED.md)。
+
+
+2026-09-06主复核：clock固定e32a2542纳入cbf99364，7个源码/证据hash一致；受影响实际memory job/semantic correction/history组合11项通过、进程已清理。原6项clock独立保留；[组合复核及限制](../plans/2026-09-06-corpus-clock/主代理复核.md)。以下待整合表述保留为当时历史。
+
+## 2026-09-06 Host业务clock局部验收
+
+最后更新：2026-09-06。可信clock透传到runtime与公开SDK，进程内lease使用monotonic；6项真实SDK空库/clock契约通过，待主复核整合。未完成240质量或受众用途接线。
+[边界事实](MEMORY_SDK_BOUNDARY.md) · [命令、证据与限制](../plans/2026-09-06-corpus-clock/验收结果.md)。
+
+## 2026-09-06 记忆提议失败审计与连接取消清理
+
+最后更新：2026-09-06。后继c39b2569默认在Host调用账本记录成功/拒绝的安全记忆类型与short选择；召回执行器取消在提交路由前记录取消原因并传播CancelledError。非法输入及异常原文不进入该审计投影。取消写入不等待SQLite写锁，连接建立/PRAGMA初始化失败或取消由内部等待并关闭自有连接；2秒仅为取消请求deadline，不冒称物理硬限额。实际后继32项必要检查通过（含12项故障/取消检查），峰约97MiB、进程已清理；源码独审限定ACCEPT。原36项批次独立保留。仍不覆盖强杀、写盘失败的完整持久性、route决策/审计两事务原子性、Service全部操作或真实模型/native。
+[实现、真实故障边界与本机证据](../plans/2026-09-06-model-recall-selection/FAILURE-AUDIT.md)。
+
+## 2026-09-06 新组合原生构建通过，启动因内存前置未执行
+
+最后更新：2026-09-06。18ec7194新前端嵌入独立app构建通过，18.737秒/峰1.06GiB/进程清理。native carrier改同一资源组，两个实际进程/流检查通过；首次启动在Popen前因5579MiB<7GiB预算被拒，应用和模型未启动，无UI/重启证据，不冒称原生验收完成。
+[准确构建/身份/启动限制及本机证据](../plans/2026-09-06-model-short-recall/NATIVE.md)。
+
+## 2026-09-06 模型短期召回及测试资源管理已组合
+
+最后更新：2026-09-06。独审cb743007、145baed3依次fast-forward接入组合：H073/M0613/S0313再次核对169/75/121 installed成员与本树vendor一致；实际候选/短期worker22PASS/9.90秒，峰值265MiB、进程已退出。新模型长短期请求单typed预算、完整来源和最终出站再检查；资源入口默认串行锁/RSS/时间限制及父退出后组清理，三个实际故障点均原红→修复绿并独审通过。
+叶子53项及补充混合/认知测试各自证据保留，未冒称整体重跑。资源采样非硬限额/全系统监控；用户原main未切换，仍无真实模型/native新组合或401/240全量，原程序继续执行。
+[组合身份、命令和待办](../plans/2026-09-06-model-short-recall/COMBINED.md)。
+
+## 2026-09-06 磁盘空间资源管理
+
+最后更新2026-09-06。磁盘439MiB后清理下载缓存实测释放3415MiB；测试入口新增默认1GiB准入和256MiB运行停止。三个实际子进程反例原红→修复后含邻居13项绿，进程清空，d739dcf7已获独立只读ACCEPT并合入默认共享入口。采样不保证硬配额或满盘receipt，原始证据保留。[范围和证据](../plans/2026-09-06-test-resource-cleanup/DISK.md)。
+
+## 2026-09-06 测试资源入口
+
+最后更新：2026-09-06。`scripts/run_resource_bounded.py`默认跨工作树串行锁、2GiB/180秒采样上限；父命令结束后仍清理其进程组，支持信号清理，资源异常不计PASS。实际6项进程测试及追加1项信号检查通过；随后ps probe异常留下TERM拒绝进程的真实反例先红，再修复KILL/reap，必要3项绿。独审再现父退出快照及spawn信号两个P1：旧源两红→后继两项及必要邻居5绿，先poll后快照、信号仅标记避免丢归属；固定复核待续。全部进程退出。仅自身进程组，不触及用户应用；采样上限非OS硬限制，主动脱离进程组与SIGKILL不保证回收。
+[资源管理边界、命令和本机证据](../plans/2026-09-06-test-resource-cleanup/RESULTS.md)。
+
+
+## 2026-09-06 模型短期统一召回已通过安装候选测试
+
+最后更新：2026-09-06。隔离feat/model-short-recall/base a0764047，H073/M0613/S0313逐文件匹配本树wheel。显式模型长期/短期选择共用一次typed计划和预算；真正选中的short绑定公开四元组及当前完整Host因果来源，缺证据或晚遗忘阻止物理出站。成功选择进入既有调用记录，默认工具启用。
+首批53PASS/31.31秒/峰值261MiB；另两项认知出站邻居通过，新增非空长短期混合从fixture两次红修复至1PASS。原始失败及范围见下链；非真实模型/native或全量重跑，全部进程退出。独审待固定提交；完整失败attempt观测、工具多消息、401/240和原程序仍未完成，未切换用户main。
+[契约、批次结果与本机证据索引](../plans/2026-09-06-model-short-recall/RESULTS.md)。
+
+
+## 2026-09-06 WeMM按需加载与内存引用修复已接入组合
+
+最后更新：2026-09-06。独审b70ccda5以fast-forward接入；构造/元数据/状态不加载权重，首次真实embedding共享加载；取消下异步排队和物理线程互斥，失败完成任务丢弃实例引用，防异常保留模型。WeMM2048/L2/本地模型及SDK pin不变。设置页四状态真实WebKit组件检查和刷新通过，浏览器峰值433MiB、进程已退出；相关叶子线程/公开空库/IPC/React/类型检查见证据。
+旧库补向量仍可能启动加载；未实测真实权重/GPU内存释放、自动卸载或新组合native，不作整体program完成声明。用户主checkout未切换。
+[组合验证及后续内存管理](../plans/2026-09-06-wemm-lazy/COMBINED.md)。
+
+## 2026-09-06 WeMM lazy Host isolated leaf
+
+2026-09-06 follow-up：加载完成回调仅清理同一done task引用，避免失败traceback
+长期持有维度拒绝模型；不改waiter异常、不清traceback、不自动重试。fake weakref
+原红→绿，含必要邻居5PASS0.20s；pending/新task不会被旧回调清掉。ready措辞收紧
+为已加载，非完整搜索质量保证。物理线程/权重分配器释放仍不作推断。
+
+最后更新：2026-09-06。构造/metadata/状态不import或加载WeMM；首次真实embed共享
+加载，实际worker持异步encode队列锁+线程互斥。取消不终止物理线程、不自动卸载，
+排队取消不占executor线程。dim2048/L2/原lineage保留，加载及输出维度验证。
+WeMM状态cold/loading/ready/failed及真实模型名称接现P4卡片；未改main启动或SDK。
+installed Memory0612空库public build_production确认0模型构造；旧库ensure回填仍可能加载。
+独立树simple_harness-wemm-lazy/base134bc4b8，backend最终唯一13例、React2例通过，
+应用tsc0；原构造红保留。fake模型/真线程，无权重、native或build，独审待固定源核查。
+[契约、实际命令、结果及边界](../plans/2026-09-06-wemm-lazy/RESULTS.md)。
+
+
+## 2026-09-06 短期索引及 Service0313 已组合验证
+
+最后更新：2026-09-06。唯一MemoryAnalysisLane默认增加完整两消息组short登记/公开projection，保留低序号迟到重扫、ACK后确认、关闭清理和实际分析；工具多消息仍拒绝。主组合安装H073/M0612/S0313，受影响六模块62PASS/25.45秒、峰值290MiB，全部子进程已退出。三个wheel及installed成员逐字节一致。
+Service工具审计新增发送attempt/UNKNOWN/真实ACK/后继响应，仍非持久sink或完整Run绑定；全操作落盘、增量projection、多消息producer、模型short协议及原program未闭合。未切换用户main/runtime，无新模型/native。
+[命令、身份、结果与边界](../plans/2026-09-06-short-index-worker/COMBINED.md)。
+
+## 2026-09-06 无边图谱标签布局已修复
+
+最后更新：2026-09-06。Cytoscape无边节点用网格，布局包含标签尺寸并允许中文换行，保留有边有向布局及全部身份/遗忘/viewport行为。真实WebKit两个尺寸各7节点：标签重叠17/13→0/0，最终有效渲染字号估计9.53/11.05px，真实选择/缩放通过。
+前端18PASS/1个旧API-fixture未配置SKIP，TypeScript通过；所有浏览器/测试进程结束。合成fixture不代表真实API/native或密集边标签完成，原生复验仍待续。
+[原红、实际测量、边界与证据](../plans/2026-09-06-graph-label-layout/RESULTS.md)。
+
+## 2026-09-06 短期选中来源已合成
+
+最后更新：2026-09-06。独审2d98e083合入7fafe03a，同时保留审计authority；实际factory每hit完整来源、裁减/遗忘不互相污染、显式长期零short与HUMAN审计WS组合42项通过（21.12秒、峰值238MiB）。
+仅已有内部短请求来源路径闭合；自动生产索引worker、多消息完整producer、新模型short协议及原program仍未完成。无新模型/native运行。
+[组合结果与边界](../plans/2026-09-06-selected-short-runtime/COMBINED.md)。
+
+## 2026-09-06 审计查看入口组合验证
+
+最后更新：2026-09-06。独审1097b272合入c53caff2：记忆面板显式打开用途绑定的HUMAN元数据审计，分页/持久ACK重放、关闭与身份失效拒绝；保留原图谱viewport及遗忘ACK修复。组合独审限定ACCEPT。
+后端54项通过，新增真实/ws/control审计往返2项通过，前端44通过/1个可选API-fixture未配置跳过，TypeScript通过。单进程有界执行；没有真实Provider、native或全操作覆盖。初始snapshot成本及原生验收仍待续。
+[组合证据、命令与范围](../plans/2026-09-05-agent-operation-audit/human-access-leaf/COMBINED.md)。
+
+## 2026-09-06 模型召回类型选择局部完成
+
+最后更新：2026-09-06。memory_standalone工具显式类型经Host校验传入已安装Memory0612公共计划，保留Host身份/权限/预算；显式长期选择不偷偷附带短期查询。成功类型枚举写既有Host审计记录，原proposal仅hash，非公共SDK完整参数回读。
+独立叶子最终77项通过（50.57秒、峰值191MiB），包括实际选中来源/最终出站/任务披露链；没有真实Provider或native。固定49249dbd已独审限定ACCEPT并fast-forward主组合，完整类型质量、短期与调度、审计UI及原program仍未完成。
+[契约、命令、历史红与证据边界](../plans/2026-09-06-model-recall-selection/RESULTS.md)。
+
+## 2026-09-06 SDK073审计组合验证通过
+
+最后更新：2026-09-06。组合源码78647bb0集成独审通过的终态身份叶子；主组合专用venv安装H073/M0612/S0312，348个SDK文件与本树vendor逐字节一致。
+审计目录及candidate/composition组合100PASS/31.62s，单进程峰值258MiB，无本地模型、真实Provider或native。v1历史保留；全操作覆盖及受控审计UI仍待完成。
+[实际结果及边界](../plans/2026-09-06-terminal-audit-identity/COMBINED.md)。
+
+## 2026-09-06 Installed H073 exact terminal identity leaf
+
+Last updated: 2026-09-06. Isolated Host candidate consumes exact H073 (wheel1a9ed5c9…)
+through public RunTerminalAuditEvidenceV1.matches and existing Host raw-SDK normalization.
+Every persisted page binds actual Run/event/full payload/state; legacy scoped evidence
+uses its original envelope and terminal gate. RULE terminal-run-v2 preserves all v1 jobs.
+Selective installed group21PASS2FAIL then necessary repairs2PASS; failures were a guarded
+fixture mutation and obsolete global error-count expectation, retained verbatim. Non-null
+committed-turn public head/receipt + same-cursor reopen, namespace negatives and late-source
+rejection passed. Peak owned RSS147MiB; no model/native/full suite. Independent fixed-source
+review pending; no main production switch or whole-operation completion claim.
+See [contract and measured results](../plans/2026-09-06-terminal-audit-identity/RESULTS.md).
+
+## 2026-09-05 Host terminal audit candidate
+
+最后更新：2026-09-05。独立树 eaccab33 + 3e911c14 接入默认 terminal audit consumer；持久读取 attempt、
+固定 snapshot/pages 和幂等 findings，不产生 Provider calls/usage/cost 总计。
+仅 source-overlay/focused composition 验证，尚非 main installed successor 或完整 operation coverage。
+[当前边界与交接](../plans/2026-09-05-agent-operation-audit/host-terminal-leaf/HANDOFF.md)。
+
+## 2026-09-05 Source/auth/action combination verified
+
+Fixed e31c6efd source index closes the independent unscoped-search/late-forget P1;
+combined with exact SDK decisions, source-aware history, schema47 and action evidence:
+**51 passed** on installed067. Only test-fixture signature required merge resolution.
+The separate f9cbb7c8 native candidate also passed expanded visible authorization
+by real mouse click; this combined tree has not run native. Cognitive UI/SDK suppress
+and selected-source indexing remain incomplete; no main cutover or full program PASS.
+See [combined evidence and boundaries](../plans/2026-09-05-primary-effect-sources/COMBINED.md).
+
+
+## 2026-09-05 Primary source effect index v47 — reviewed local candidate
+
+8e896472 independent P1 confirmed: unscoped search could escape source checks when
+TaskScope reservations were absent. A Host append-only exact SDK effect identity
+index now records real handler entry under the captured foreground lease; Provider
+preflight reads actual SDK results and preserves search→create dependency prefixes.
+No scope grant/watermark, SDK change or old evidence restamp. Default schema is47;
+coordinator owns deferred S5c's explicit48 remap (historical47 AC remains historical).
+Fixed real late-forget counterexample is green; adjacent search/scope17, page-in1,
+startup/create32 and migration11 passed. Independent fixed-counterexample review accepted e31c6efd; no
+main/native or full privacy completion claim. Ordinary page-in lacking source proof
+rejects; generic page-in source projection and short source-only admission remain open.
+Details and raw-log hashes: [source migration contract](../plans/2026-09-05-primary-effect-sources/SOURCE-MIGRATION-CONTRACT.md).
+
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
+
+2026-09-05 installed067运行层v2保真/严格拒绝与new-message producer组合60绿；旧archive不改，
+真实short登记/选中来源由Hegel另线验证，不称native/program完成。见[运行契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
+
+2026-09-05 scoped普通投影恢复候选：initial/resume/search实际manifest、MEMORY-only抑制后
+结构effect/terminal相邻96绿；最终start字节负例2绿。原initialscoped红已恢复，仍待独立review，
+不声称所有旧producer/short/native完成。见[来源契约](../plans/2026-09-05-primary-resume-sources/CONTRACT.md)。
+
+2026-09-05 Primary history runtime隔离切片94项聚焦绿，**预先scoped ResumePackage首Provider仍有1项P1红**；
+后继动态ResumePackage漏发纠正21项聚焦绿；来源功能闭合及其他carrier完整性审计仍未完成。
+固定API/helper已入树；后继no_recall origin纠正，相邻合跑41绿/初始scoped1红，exit1。
+不得合主生产。见[运行层契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
+
+2026-09-05 primary history API 隔离候选已接公开 Memory batch visibility，50项聚焦通过；
+真实 memory-only forget / 跨 Run 来源 / recall binding / signed WS late fence 已有 library/API
+证据。runtime 组合、独立复核、short exact carrier 与真实 UI/provider 仍独立待续，未改 gate。
+见 [Memory 当前边界](MEMORY_SDK_BOUNDARY.md) 与 [验证记录](../plans/2026-09-05-primary-history-api/VALIDATION.md)。
+2026-09-05 Primary 精确 SDK 授权新增独立候选：生产授权策略/installed SDK/真实文件 effect
+确定性 fixture 通过，HUMAN bound socket 接权限补读与响应。native 未验收，WAITING通知
+由运行层另行组合；底层旧列表非 SDK public port。见 [UI](UI.md) 与
+[候选契约](../plans/2026-09-05-primary-sdk-decisions/CONTRACT.md)。
+
+2026-09-05 Primary API 后继修复处理 terminal authority/raw SDK hash 差异、当前 source
+过滤及 commit 后唤醒失败的 durable ACK；依赖 Carver 统一 helper，真实组合测试待主运行。
+公开 suppression 无原子 snapshot/epoch，不将逐来源复查或既有40项局部绿色称为完整闭环。
+
+2026-09-05 Primary API 隔离切片完成 source-bound history/state 与 exact control，聚焦40 passed。
+queued 下界计数及 history keyset 有界；仅证明 Host source suppression，来源谱系扩展仍后续。
+实际组合/UI 验证待主协调，不改变 S6/program 完成度。详见
+[接口契约](../plans/2026-09-05-s6-primary-preparation/PRIMARY-API.md)。
+
+2026-09-05 S6隔离分支新增control verified connection复用与无scope admission，聚焦29 passed；
+standalone/dynamic route→生产effect/terminal identity及状态通知聚焦181 passed；
+CREATE_NEW active None生产AUTO binding后继66 passed后发现origin P1；冻结来源纠正85 passed，
+origin获独立限定ACCEPT；首tool启动同步后继87 passed，仍需独立复核/native验收；完整历史来源suppression未闭合，
+Manual UI未接，UI/API组合待验证，不可合main。详见
+[实施交接](../plans/2026-09-05-s6-primary-preparation/IMPLEMENTATION.md)，不改变main完成度。
 
 2026-09-05 当前接续已安装 Harness 0.7.2 / Memory 0.6.3，两个真实 queue.enqueue root 完成
 workspace effect、TaskScope closure 与认知物化；独立质量审查发现了 episode 时间 P2。

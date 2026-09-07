@@ -20,8 +20,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiosqlite
+from deskpet.memory.writer_fence import human_memory_connection
 
 from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
@@ -32,6 +34,13 @@ from deskpet.task_scope.protocol import (
     identifier,
     reject_private_payload,
 )
+
+if TYPE_CHECKING:
+    from deskpet.memory.human_memory_program import (
+        SanitizedEvidenceEnvelopeLike,
+        SanitizedEvidenceReceiptLike,
+    )
+
 
 TERMINAL_STATES = frozenset({"COMPLETED", "FAILED", "STOPPED", "CANCELLED"})
 FOREGROUND_SCHEDULER_KIND = "foreground_scheduler"
@@ -364,6 +373,12 @@ class ForegroundQueueStore:
         idempotency_key: str,
         turn_payload: Mapping[str, object],
         task_scope_id: str | None = None,
+        disclosure_binding_ref: str | None = None,
+        input_declaration: dict | None = None,
+        input_auth: object | None = None,
+        admitted_evidence_pair: tuple[
+            SanitizedEvidenceEnvelopeLike, SanitizedEvidenceReceiptLike
+        ] | None = None,
     ) -> EnqueueReceipt:
         subject = identifier(subject, "subject", 512)
         primary_conversation_id = identifier(primary_conversation_id, "primary_conversation_id", 512)
@@ -372,10 +387,21 @@ class ForegroundQueueStore:
         idempotency_key = identifier(idempotency_key, "idempotency_key", 512)
         if task_scope_id is not None:
             task_scope_id = identifier(task_scope_id, "task_scope_id", 512)
+        if disclosure_binding_ref is not None:
+            disclosure_binding_ref = identifier(disclosure_binding_ref, "disclosure_binding_ref", 512)
         if not isinstance(turn_payload, Mapping):
             raise ForegroundQueueError("foreground_turn_payload_invalid")
         payload = dict(turn_payload)
         reject_private_payload(payload, "foreground_turn")
+        if admitted_evidence_pair is not None:
+            envelope, receipt = admitted_evidence_pair
+            if (
+                envelope.subject != subject
+                or envelope.evidence_id != evidence_id
+                or envelope.envelope_hash != evidence_hash
+                or dict(envelope.sanitized_payload) != payload
+            ):
+                raise ForegroundQueueError("foreground_evidence_pair_mismatch")
         request = {
             "schema_version": 1,
             "subject": subject,
@@ -399,11 +425,93 @@ class ForegroundQueueStore:
                     "SELECT * FROM foreground_turns WHERE subject=? AND idempotency_key=?",
                     (subject, idempotency_key),
                 )
-                if existing is not None:
-                    if existing["turn_hash"] != turn_hash:
+                from deskpet.memory.trusted_disclosure import current_record_tx, enqueue_binding_tx
+
+                existing_request = None if existing is None else json.loads(str(existing["turn_json"]))
+                if existing_request is not None and "disclosure_binding" in existing_request:
+                    current = await current_record_tx(db, subject)
+                    selected_ref = disclosure_binding_ref or (None if current is None else current["binding_ref"])
+                    if selected_ref != existing_request["disclosure_binding"]["binding_ref"]:
                         raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                elif existing_request is not None and disclosure_binding_ref is not None:
+                    raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                input_use = None
+                if input_declaration is not None:
+                    from deskpet.memory.current_input_source import build_input_use, validate_input_use
+                    from deskpet.memory.writer_fence import require_authenticated_host_snapshot
+                    require_authenticated_host_snapshot(input_auth)
+                    current = await current_record_tx(db, subject)
+                    if (current is None or disclosure_binding_ref != current["binding_ref"]
+                            or admitted_evidence_pair is None or task_scope_id is not None):
+                        raise ForegroundQueueError("foreground_input_configuration_unavailable")
+                    input_use = build_input_use(auth=input_auth, envelope=envelope, receipt=receipt,
+                        primary_ref=primary_conversation_id, delivery_key=idempotency_key,
+                        config=current, declared=input_declaration)
+                    if existing_request is not None:
+                        original = existing_request.get("input_use")
+                        if original is None:
+                            raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                        validate_input_use(original, envelope=envelope, receipt=receipt,
+                            primary_ref=primary_conversation_id, delivery_key=idempotency_key, config=current)
+                        # A verified reconnect preserves the original admission lease.
+                        comparable = dict(input_use)
+                        comparable["control"] = dict(input_use["control"], lease_ref=original["control"]["lease_ref"])
+                        if comparable != original:
+                            raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                        input_use = original
+                    request["input_use"] = input_use
+                token = await enqueue_binding_tx(db, subject=subject, requested_ref=disclosure_binding_ref,
+                    legacy=existing_request is not None and "disclosure_binding" not in existing_request,
+                    input_use=input_use)
+                if token is not None:
+                    request["disclosure_binding"] = token
+                turn_hash = canonical_hash(request)
+                if existing is not None:
+                    # Replay the actual persisted format, never upgrade an old
+                    # split-admission row into a new atomic-origin assertion.
+                    existing_request = json.loads(str(existing["turn_json"]))
+                    if existing_request.get("schema_version") in (2, 3):
+                        request["schema_version"] = existing_request["schema_version"]
+                        request["source_admission"] = "atomic-evidence-and-turn/v1"
+                        turn_hash = canonical_hash(request)
+                    if (
+                        existing["turn_hash"] != turn_hash
+                        or canonical_hash(existing_request) != turn_hash
+                    ):
+                        raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                    if admitted_evidence_pair is not None:
+                        from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+                        # Even a replay must validate the complete supplied pair;
+                        # an existing turn cannot launder a forged S1 receipt.
+                        await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
+                            db, envelope, receipt,
+                            primary_conversation_id=primary_conversation_id,
+                            committed_at=now,
+                        )
                     await db.commit()
                     return self._enqueue_receipt(existing)
+                if admitted_evidence_pair is not None:
+                    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+                    # Only a real insertion in THIS transaction can establish
+                    # atomic source order. Already admitted evidence stays legacy.
+                    prior_source = await self._fetchone(
+                        db, "SELECT evidence_id FROM human_memory_evidence WHERE evidence_id=?",
+                        (evidence_id,),
+                    )
+                    if input_use is not None and prior_source is not None:
+                        raise ForegroundQueueError("foreground_input_source_not_new")
+                    await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
+                        db, envelope, receipt,
+                        primary_conversation_id=primary_conversation_id,
+                        committed_at=now,
+                    )
+                    self._fault("enqueue.after_evidence_insert")
+                    if prior_source is None:
+                        request["schema_version"] = 3 if input_use is not None else 2
+                        request["source_admission"] = "atomic-evidence-and-turn/v1"
+                        turn_hash = canonical_hash(request)
                 await self._verify_evidence_tx(
                     db,
                     subject=subject,
@@ -1814,6 +1922,13 @@ class ForegroundQueueStore:
                 raise
         return snapshot
 
+    async def settle_preparation_rejection(self, *, rejection, owner_id, generation):
+        from deskpet.execution.preparation_rejection import settle_preparation_rejection
+
+        return await settle_preparation_rejection(
+            self, rejection=rejection, owner_id=owner_id, generation=generation,
+        )
+
     async def record_sdk_terminal(
         self,
         *,
@@ -1828,6 +1943,7 @@ class ForegroundQueueStore:
         run_binding: Mapping[str, object] | None = None,
         endpoint_identity: str | None = None,
         outbox_dead_letter_reason: str | None = None,
+        terminal_observer_tx=None,
     ) -> TerminalReceipt:
         """Host terminal commit: three watermarks, run/turn transitions and — S5b Task 4 —
         the ``memory_ingestion_outbox`` row (+ evidence links) in the **same transaction**.
@@ -1876,73 +1992,97 @@ class ForegroundQueueStore:
                         or existing["sdk_event_hash"] != sdk_event_hash
                     ):
                         raise ForegroundQueueError("foreground_terminal_immutable")
+                    if terminal_observer_tx is not None:
+                        await terminal_observer_tx(db,host_run_id=host_run_id,sdk_run_id=sdk_run_id)
                     await db.commit()
                     return self._terminal_receipt(existing)
                 head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
                 await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
                 run = await self._run_tx(db, host_run_id)
-                receipt = await self._fetchone(
-                    db,
-                    "SELECT r.task_scope_id,r.source_sequence,r.event_id,e.payload_json "
-                    "FROM task_scope_execution_ingest_receipts r "
-                    "JOIN task_scope_events e ON e.event_id=r.event_id "
-                    "AND e.task_scope_id=r.task_scope_id AND e.payload_hash=r.evidence_hash "
-                    "WHERE r.source_event_id=? AND r.run_id=? AND r.evidence_hash=? "
-                    "AND r.evidence_kind='run_terminal'",
-                    (sdk_event_id, sdk_run_id, sdk_event_hash),
+                from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+                from deskpet.execution.primary_history import terminal_observation_tx
+                effective_scope = await ExecutionEvidenceIngress(self._db_path).resolve_run_scope_tx(db, sdk_run_id)
+                observed = await terminal_observation_tx(
+                    db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=str(head["subject"]),
                 )
-                if receipt is None:
-                    raise ForegroundQueueError("foreground_terminal_sdk_evidence_missing")
-                if (
-                    run["task_scope_id"] is None
-                    or receipt["task_scope_id"] != run["task_scope_id"]
-                ):
-                    raise ForegroundQueueError("foreground_terminal_scope_mismatch")
-                gate = await self._fetchone(
-                    db,
-                    "SELECT g.gate_receipt_id,g.terminal_source_sequence,"
-                    "g.durable_source_sequence,w.durable_source_sequence AS current_durable_sequence,"
-                    "w.terminal_source_sequence AS current_terminal_sequence "
-                    "FROM task_scope_terminal_gate_receipts g "
-                    "JOIN task_scope_run_watermarks w ON w.run_id=g.run_id "
-                    "AND w.task_scope_id=g.task_scope_id "
-                    "WHERE g.run_id=? AND g.task_scope_id=? "
-                    "AND g.terminal_source_sequence=? "
-                    "AND g.durable_source_sequence>=g.terminal_source_sequence "
-                    "AND w.terminal_source_sequence=g.terminal_source_sequence "
-                    "AND w.durable_source_sequence>=g.terminal_source_sequence",
-                    (sdk_run_id, receipt["task_scope_id"], receipt["source_sequence"]),
-                )
-                if gate is None:
-                    raise ForegroundQueueError("foreground_terminal_gate_pending")
-                # S5b Task 3 — third watermark (semantic closure): every material
-                # event of the admission scope must be covered by a closing
-                # receipt, or this Run must have recorded a `pending` receipt.
-                # Applies to COMPLETED / FAILED / CANCELLED / STOPPED alike.
-                from deskpet.execution.semantic_closure import closure_coverage_tx
+                if effective_scope is None:
+                    residual = await self._fetchone(
+                        db, "SELECT source_event_id FROM task_scope_execution_ingest_receipts WHERE run_id=? "
+                        "UNION ALL SELECT source_event_id FROM harness_evidence_reservations WHERE run_id=? LIMIT 1",
+                        (sdk_run_id, sdk_run_id),
+                    )
+                    if residual is not None or run["task_scope_id"] is not None:
+                        raise ForegroundQueueError("foreground_terminal_scope_mismatch")
+                    if observed is None:
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_missing")
+                    observation, public_payload = observed
+                    if (observation["evidence_id"] != sdk_event_id
+                            or observation["envelope_sha256"] != sdk_event_hash
+                            or public_payload.get("kind") != "primary_run_terminal"):
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
+                    gate = None
+                else:
+                    receipt = await self._fetchone(
+                        db,
+                        "SELECT r.task_scope_id,r.source_sequence,r.event_id,e.payload_json "
+                        "FROM task_scope_execution_ingest_receipts r "
+                        "JOIN task_scope_events e ON e.event_id=r.event_id "
+                        "AND e.task_scope_id=r.task_scope_id AND e.payload_hash=r.evidence_hash "
+                        "WHERE r.source_event_id=? AND r.run_id=? AND r.evidence_hash=? "
+                        "AND r.evidence_kind='run_terminal'",
+                        (sdk_event_id, sdk_run_id, sdk_event_hash),
+                    )
+                    if receipt is None:
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_missing")
+                    if (
+                        receipt["task_scope_id"] != effective_scope.task_scope_id
+                    ):
+                        raise ForegroundQueueError("foreground_terminal_scope_mismatch")
+                    gate = await self._fetchone(
+                        db,
+                        "SELECT g.gate_receipt_id,g.terminal_source_sequence,"
+                        "g.durable_source_sequence,w.durable_source_sequence AS current_durable_sequence,"
+                        "w.terminal_source_sequence AS current_terminal_sequence "
+                        "FROM task_scope_terminal_gate_receipts g "
+                        "JOIN task_scope_run_watermarks w ON w.run_id=g.run_id "
+                        "AND w.task_scope_id=g.task_scope_id "
+                        "WHERE g.run_id=? AND g.task_scope_id=? "
+                        "AND g.terminal_source_sequence=? "
+                        "AND g.durable_source_sequence>=g.terminal_source_sequence "
+                        "AND w.terminal_source_sequence=g.terminal_source_sequence "
+                        "AND w.durable_source_sequence>=g.terminal_source_sequence",
+                        (sdk_run_id, receipt["task_scope_id"], receipt["source_sequence"]),
+                    )
+                    if gate is None:
+                        raise ForegroundQueueError("foreground_terminal_gate_pending")
+                    # S5b Task 3 — third watermark (semantic closure): every material
+                    # event of the admission scope must be covered by a closing
+                    # receipt, or this Run must have recorded a `pending` receipt.
+                    # Applies to COMPLETED / FAILED / CANCELLED / STOPPED alike.
+                    from deskpet.execution.semantic_closure import closure_coverage_tx
 
-                coverage = await closure_coverage_tx(
-                    db, task_scope_id=str(receipt["task_scope_id"]), sdk_run_id=sdk_run_id
-                )
-                if not coverage.satisfied:
-                    raise ForegroundQueueError("foreground_terminal_closure_pending")
-                try:
-                    evidence = json.loads(str(receipt["payload_json"]))
-                except (TypeError, ValueError, json.JSONDecodeError) as exc:
-                    raise ForegroundQueueError(
-                        "foreground_terminal_sdk_evidence_invalid"
-                    ) from exc
-                if (
-                    not isinstance(evidence, dict)
-                    or evidence.get("event_id") != sdk_event_id
-                    or evidence.get("run_id") != sdk_run_id
-                    or evidence.get("subject") != head["subject"]
-                    or evidence.get("kind") != "run_terminal"
-                ):
-                    raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
-                public_payload = evidence.get("public_payload")
-                if not isinstance(public_payload, dict):
-                    raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
+                    coverage = await closure_coverage_tx(
+                        db, task_scope_id=str(receipt["task_scope_id"]), sdk_run_id=sdk_run_id
+                    )
+                    if not coverage.satisfied:
+                        raise ForegroundQueueError("foreground_terminal_closure_pending")
+                    try:
+                        evidence = json.loads(str(receipt["payload_json"]))
+                    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                        raise ForegroundQueueError(
+                            "foreground_terminal_sdk_evidence_invalid"
+                        ) from exc
+                    if (
+                        not isinstance(evidence, dict)
+                        or evidence.get("event_id") != sdk_event_id
+                        or evidence.get("run_id") != sdk_run_id
+                        or evidence.get("subject") != head["subject"]
+                        or evidence.get("kind") != "run_terminal"
+                    ):
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
+                    public_payload = evidence.get("public_payload")
+                    if not isinstance(public_payload, dict):
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
                 payload_generation = public_payload.get("generation")
                 if (
                     isinstance(payload_generation, bool)
@@ -1981,15 +2121,19 @@ class ForegroundQueueStore:
                     "generation": generation,
                     "sdk_event_id": sdk_event_id,
                     "sdk_event_hash": sdk_event_hash,
-                    "terminal_gate_receipt_id": gate["gate_receipt_id"],
-                    "terminal_source_sequence": int(
+                    "terminal_authority_kind": "primary_runtime_observation" if gate is None else "task_scope_watermarks",
+                    "terminal_gate_receipt_id": None if gate is None else gate["gate_receipt_id"],
+                    "terminal_source_sequence": None if gate is None else int(
                         gate["terminal_source_sequence"]
                     ),
-                    "terminal_gate_durable_source_sequence": int(
+                    "terminal_gate_durable_source_sequence": None if gate is None else int(
                         gate["durable_source_sequence"]
                     ),
                     "recorded_at": now,
                 }
+                if observed is not None:
+                    terminal_payload["primary_observation_ref"] = observed[0]["evidence_id"]
+                    terminal_payload["primary_observation_hash"] = observed[0]["envelope_sha256"]
                 terminal_hash = canonical_hash(terminal_payload)
                 await db.execute(
                     "INSERT INTO foreground_terminal_receipts(terminal_receipt_id,host_run_id,sdk_run_id,terminal_state,generation,sdk_event_id,sdk_event_hash,receipt_hash,receipt_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -2036,6 +2180,8 @@ class ForegroundQueueStore:
                         dead_letter_reason=None if run_binding is not None else outbox_dead_letter_reason,
                     )
                     self._fault("terminal.after_outbox")
+                if terminal_observer_tx is not None:
+                    await terminal_observer_tx(db,host_run_id=host_run_id,sdk_run_id=sdk_run_id)
                 self._fault("terminal.before_commit")
                 row = await self._fetchone(db, "SELECT * FROM foreground_terminal_receipts WHERE host_run_id=?", (host_run_id,))
                 await db.commit()
@@ -2064,6 +2210,7 @@ class ForegroundQueueStore:
         generation: int,
         attempt: Mapping[str, object],
         members: Sequence[tuple[str, str, str]] = (),
+        input_observer_tx=None,
     ) -> str:
         """Insert one ``reserved`` post-turn attempt row under the current lease (one transaction).
 
@@ -2090,8 +2237,10 @@ class ForegroundQueueStore:
                     db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
                     attempt=attempt, members=members, now=now,
                 )
+                if input_observer_tx is not None:
+                    await input_observer_tx(attempt, db)
                 await db.commit()
-            except Exception:
+            except BaseException:
                 await db.rollback()
                 raise
         return attempt_id
@@ -2103,6 +2252,7 @@ class ForegroundQueueStore:
         sdk_run_id: str,
         attempt: Mapping[str, object],
         members: Sequence[tuple[str, str, str]] = (),
+        input_observer_tx=None,
     ) -> str:
         """Insert one ``reserved`` **analysis** attempt row for a terminal Run (S5b Task 4).
 
@@ -2135,6 +2285,8 @@ class ForegroundQueueStore:
                     db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=int(head["generation"]),
                     attempt=attempt, members=members, now=now,
                 )
+                if input_observer_tx is not None:
+                    await input_observer_tx(attempt, db)
                 await db.commit()
             except Exception:
                 await db.rollback()
@@ -2385,6 +2537,17 @@ class ForegroundQueueStore:
             "ORDER BY t.enqueue_sequence,t.turn_id LIMIT 1",
             (subject,),
         )
+        if turn is None:
+            return None
+        from deskpet.execution.admission_rejection import read_admission_rejection_tx
+        while turn is not None:
+            rejected = await read_admission_rejection_tx(db, turn_id=turn["turn_id"], subject=subject)
+            if rejected is None:
+                break
+            turn = await self._fetchone(db,
+                "SELECT t.* FROM foreground_turns t JOIN foreground_turn_heads h ON h.turn_id=t.turn_id "
+                "WHERE t.subject=? AND h.current_state='QUEUED' AND t.enqueue_sequence>? "
+                "ORDER BY t.enqueue_sequence,t.turn_id LIMIT 1", (subject, turn["enqueue_sequence"]))
         if turn is None:
             return None
         binding_revision = 0
@@ -2768,6 +2931,7 @@ class ForegroundQueueStore:
         causal_evidence_ref: str | None,
         causal_evidence_hash: str | None,
         recorded_at: float,
+        preparation_rejection: Mapping[str, object] | None = None,
     ) -> tuple[str, str]:
         transition_id = _uuid(f"foreground-run-transition:{host_run_id}:{idempotency_key}")
         payload = {
@@ -2785,6 +2949,8 @@ class ForegroundQueueStore:
             "causal_evidence_hash": causal_evidence_hash,
             "recorded_at": recorded_at,
         }
+        if preparation_rejection is not None:
+            payload["preparation_rejection"] = dict(preparation_rejection)
         transition_hash = canonical_hash(payload)
         await db.execute(
             "INSERT INTO foreground_run_transitions(transition_id,host_run_id,subject,from_state,to_state,generation,owner_id,sdk_event_id,idempotency_key,causal_evidence_ref,causal_evidence_hash,transition_hash,transition_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -2989,7 +3155,7 @@ class ForegroundQueueStore:
 
     @asynccontextmanager
     async def _connection(self):
-        async with aiosqlite.connect(self._db_path) as connection:
+        async with human_memory_connection(self._db_path) as connection:
             connection.row_factory = aiosqlite.Row
             await connection.execute("PRAGMA foreign_keys=ON")
             await connection.execute("PRAGMA busy_timeout=5000")

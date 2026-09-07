@@ -10,9 +10,11 @@ revision, or worker authority fields.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
+import logging
 import sqlite3
 import uuid
 from collections.abc import Awaitable, Mapping
@@ -57,6 +59,9 @@ from deskpet.task_scope.protocol import (
 )
 from deskpet.task_scope.search import TaskScopeSearchStore
 from deskpet.task_scope.store import CanonicalTaskScopeStore
+
+logger = logging.getLogger(__name__)
+SCHEDULER_WAKE_TIMEOUT_SECONDS = 0.5
 
 
 class HumanMemoryHostServiceError(RuntimeError):
@@ -165,11 +170,17 @@ class AppendBindingRequest:
     scope_ref: str
     root: str
     idempotency_key: str
+    expected_filesystem_identity_hash: str | None = None
 
     def __post_init__(self) -> None:
         identifier(self.scope_ref, "scope_ref", 512)
         identifier(self.root, "root", 4096)
         identifier(self.idempotency_key, "idempotency_key", 512)
+
+        if self.expected_filesystem_identity_hash is not None:
+            value = self.expected_filesystem_identity_hash
+            if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+                raise ValueError("expected_filesystem_identity_hash must be lowercase SHA-256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +209,30 @@ class ControlRunRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class ExactControlRunRequest:
+    expected_run_ref: str
+    expected_generation: int
+    control: str
+    reason: str
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        from deskpet.memory.primary_read_model import PrimaryReadError
+
+        try:
+            identifier(self.expected_run_ref, "expected_run_ref", 512)
+            if (type(self.expected_generation) is not int
+                    or not 1 <= self.expected_generation <= 2**63 - 1):
+                raise ValueError("invalid generation")
+            if self.control not in {"pause", "stop", "cancel"}:
+                raise ValueError("invalid control")
+            identifier(self.reason, "reason", 2048)
+            identifier(self.idempotency_key, "idempotency_key", 512)
+        except (TypeError, ValueError) as exc:
+            raise PrimaryReadError("primary_exact_control_invalid") from exc
+
+
+@dataclass(frozen=True, slots=True)
 class AuditRefsRequest:
     scope_ref: str
 
@@ -219,14 +254,19 @@ class OpenTaskScopeRequest:
 
 @dataclass(frozen=True, slots=True)
 class QueueTurnRequest:
-    scope_ref: str
+    scope_ref: str | None
     delivery_key: str
     text: str
+    disclosure_binding_ref: str | None = None
+    input_declaration: dict | None = None
 
     def __post_init__(self) -> None:
-        identifier(self.scope_ref, "scope_ref", 512)
+        if self.scope_ref is not None:
+            identifier(self.scope_ref, "scope_ref", 512)
         identifier(self.delivery_key, "delivery_key", 512)
         identifier(self.text, "text", 16_384)
+        if self.disclosure_binding_ref is not None:
+            identifier(self.disclosure_binding_ref, "disclosure_binding_ref", 512)
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,6 +342,7 @@ class WorkspaceBindingAppendPort(Protocol):
         idempotency_key: str,
         interaction_evidence_id: str,
         interaction_evidence_hash: str,
+        expected_filesystem_identity_hash: str | None = None,
     ) -> Mapping[str, object]: ...
 
     async def propose_manual_binding(
@@ -313,6 +354,7 @@ class WorkspaceBindingAppendPort(Protocol):
         idempotency_key: str,
         interaction_evidence_id: str,
         interaction_evidence_hash: str,
+        expected_filesystem_identity_hash: str | None = None,
     ) -> Mapping[str, object]: ...
 
     async def decide_manual_binding(
@@ -391,6 +433,13 @@ class HumanMemoryHostService:
         binding_append: WorkspaceBindingAppendPort | None = None,
         recovery: RecoveryLifecyclePort | None = None,
         scheduler_wake: ForegroundSchedulerWakePort | None = None,
+        settled_run_reader: object | None = None,
+        suppression_resolver: object | None = None,
+        run_binding_reader: object | None = None,
+        history_visibility_checker: object | None = None,
+        decision_ingress_getter: object | None = None,
+        cognitive_runtime_getter: object | None = None,
+        display_invalidation: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
             raise HumanMemoryHostServiceError(
@@ -408,6 +457,27 @@ class HumanMemoryHostService:
         self._binding_append = binding_append
         self._recovery = recovery
         self._scheduler_wake = scheduler_wake
+        self._cognitive_runtime_getter = cognitive_runtime_getter
+        self._display_invalidation = display_invalidation
+        from deskpet.memory.primary_read_model import PrimaryReadModel
+        from deskpet.memory.prospective_notice import ProspectiveNoticeReader
+
+        self._primary_read = PrimaryReadModel(
+            self._db_path,
+            subject=auth.subject,
+            settled_run_reader=settled_run_reader,
+            suppression_resolver=suppression_resolver,
+            run_binding_reader=run_binding_reader,
+            history_visibility_checker=history_visibility_checker,
+            prospective_notice_reader=ProspectiveNoticeReader(
+                path=self._db_path, subject=auth.subject,
+                runtime_getter=cognitive_runtime_getter, terminal_reader=settled_run_reader),
+        )
+        from deskpet.memory.primary_decisions import PrimaryDecisions
+        self._primary_decisions = PrimaryDecisions(
+            self._db_path, subject=auth.subject, read_model=self._primary_read,
+            ingress_getter=decision_ingress_getter,
+        )
         self._evidence_group_ref_cache: dict[
             tuple[str, str, str], tuple[dict[str, object], ...]
         ] = {}
@@ -424,6 +494,53 @@ class HumanMemoryHostService:
             "receipt_hash": receipt.receipt_sha256,
         }
 
+    def _history_disclosure(self, request_id: str) -> DisclosureContext:
+        identifier(request_id, "request_id", 512)
+        return DisclosureContext(
+            run_id=request_id, subject=self._auth.subject,
+            recipient=DeliveryRecipient.USER_SELF, recipient_id=self._auth.subject,
+            intended_audience=IntendedAudience.USER_SELF, purpose=DisclosurePurpose.USER_REVIEW,
+            source=DisclosureSource.AUTHENTICATED_HOST, trust=DisclosureTrust.TRUSTED_AUTHORITY,
+            generation=DisclosureGeneration.CURRENT, authority_ref=self._auth.authority_ref,
+            reason_codes=(DisclosureReasonCode.MINIMUM_NECESSARY,),
+        )
+
+    async def read_primary_state(self, *, request_id: str) -> Mapping[str, object]:
+        return await self._primary_read.state(disclosure_context=self._history_disclosure(request_id))
+
+    async def read_primary_messages(self, *, request_id: str, **request) -> Mapping[str, object]:
+        return await self._primary_read.page(disclosure_context=self._history_disclosure(request_id), **request)
+
+    async def read_primary_message_detail(self, *, request_id: str, **request) -> Mapping[str, object]:
+        return await self._primary_read.detail(disclosure_context=self._history_disclosure(request_id), **request)
+
+    async def list_primary_decisions(self, *, request_id: str, **request):
+        return await self._primary_decisions.list(
+            disclosure_context=self._history_disclosure(request_id), **request
+        )
+
+    def _primary_workspace_bindings(self):
+        from deskpet.memory.primary_workspace_bindings import PrimaryWorkspaceBindings
+        return PrimaryWorkspaceBindings(self._db_path, subject=self._auth.subject,
+            authority=self._binding_append, decide=self.decide_manual_binding)
+
+    async def list_primary_bindings(self, **request):
+        return await self._primary_workspace_bindings().pending(**request)
+
+    async def read_primary_binding(self, **request):
+        return await self._primary_workspace_bindings().status(**request)
+
+    async def respond_primary_binding(self, **request):
+        return await self._primary_workspace_bindings().respond(**request)
+
+    async def respond_primary_decision(self, *, request_id: str, **request):
+        result = await self._primary_decisions.respond(
+            disclosure_context=self._history_disclosure(request_id), **request
+        )
+        if self._scheduler_wake is not None:
+            await self._wake_committed("after_control", result["decision_id"])
+        return result
+
     async def append_primary_event(
         self, request: AppendPrimaryEventRequest
     ) -> Mapping[str, object]:
@@ -438,6 +555,56 @@ class HumanMemoryHostService:
             "receipt_ref": committed.receipt_id,
             "evidence_hash": committed.envelope_sha256,
         }
+
+    def _cognitive_controls(self):
+        from deskpet.memory.primary_cognitive_controls import PrimaryCognitiveControls
+
+        return PrimaryCognitiveControls(
+            self._db_path, auth=self._auth,
+            runtime_getter=self._cognitive_runtime_getter,
+            display_invalidation=self._display_invalidation,
+        )
+
+    async def list_primary_memories(self, **request):
+        return await self._cognitive_controls().list(**request)
+
+    async def read_primary_memory_graph(self, **request):
+        return await self._cognitive_controls().graph(**request)
+
+    async def forget_primary_memory(self, **request):
+        return await self._cognitive_controls().forget(**request)
+
+    def _human_audit_runtime(self):
+        from deskpet.memory.writer_fence import require_human_audit_request
+        from deskpet.sdk_adapters.context_route import local_owner_auth
+
+        require_human_audit_request()
+        if self._auth != local_owner_auth():
+            raise HumanMemoryHostServiceError("primary_audit_subject_mismatch")
+        runtime = self._cognitive_runtime_getter() if self._cognitive_runtime_getter else None
+        access = getattr(runtime, "audit_access_authority", None)
+        if access is None:
+            raise HumanMemoryHostServiceError("primary_audit_capability_unavailable")
+        return runtime, access
+
+    async def primary_audit(self, operation, **request):
+        from deskpet.memory.writer_fence import require_human_audit_request
+
+        runtime, access = self._human_audit_runtime()
+        if operation == "primary.audit.close":
+            return await access.close(auth=self._auth, **request)
+        # Lazy SDK initialization can be slow; it must not retain a stale lease.
+        lease = require_human_audit_request()
+        manager = await runtime.manager()
+        if require_human_audit_request() != lease:
+            raise HumanMemoryHostServiceError("primary_audit_connection_changed")
+        method = access.open if operation == "primary.audit.open" else access.page
+        return await method(manager=manager, principal=runtime.principal(), auth=self._auth, **request)
+
+    def check_primary_audit_response(self, operation, payload):
+        _, access = self._human_audit_runtime()
+        access.final_check(auth=self._auth, primary_ref=payload["primary_ref"],
+                           audit_ref=payload["audit_ref"], allow_closed=operation == "primary.audit.close")
 
     async def create_task_scope(
         self, request: CreateTaskScopeRequest
@@ -639,8 +806,11 @@ class HumanMemoryHostService:
             raise HumanMemoryHostServiceError(
                 "human_memory_binding_authority_unavailable"
             )
+        expected = ({} if request.expected_filesystem_identity_hash is None else
+                    {"expected_filesystem_identity_hash": request.expected_filesystem_identity_hash})
         committed = await self._append_host_evidence(
             payload={
+                **expected,
                 "schema_version": 1,
                 "action": "binding.append",
                 "scope_ref": request.scope_ref,
@@ -657,6 +827,7 @@ class HumanMemoryHostService:
             idempotency_key=request.idempotency_key,
             interaction_evidence_id=committed.evidence_id,
             interaction_evidence_hash=committed.envelope_sha256,
+            **expected,
         )
 
     async def propose_manual_binding(
@@ -667,8 +838,11 @@ class HumanMemoryHostService:
             raise HumanMemoryHostServiceError(
                 "human_memory_binding_authority_unavailable"
             )
+        expected = ({} if request.expected_filesystem_identity_hash is None else
+                    {"expected_filesystem_identity_hash": request.expected_filesystem_identity_hash})
         committed = await self._append_host_evidence(
             payload={
+                **expected,
                 "schema_version": 1,
                 "action": "binding.manual.propose",
                 "scope_ref": request.scope_ref,
@@ -685,6 +859,7 @@ class HumanMemoryHostService:
             idempotency_key=request.idempotency_key,
             interaction_evidence_id=committed.evidence_id,
             interaction_evidence_hash=committed.envelope_sha256,
+            **expected,
         )
 
     async def decide_manual_binding(
@@ -714,15 +889,22 @@ class HumanMemoryHostService:
         )
 
     async def control_current_run(
-        self, request: ControlRunRequest
+        self, request: ControlRunRequest | ExactControlRunRequest
     ) -> Mapping[str, object]:
-        current = await self._foreground.current_snapshot(self._auth.subject)
-        if current is None:
-            raise HumanMemoryHostServiceError("human_memory_foreground_run_not_found")
+        if isinstance(request, ExactControlRunRequest):
+            run_ref = request.expected_run_ref
+            generation = request.expected_generation
+        else:
+            current = await self._foreground.current_snapshot(self._auth.subject)
+            if current is None:
+                raise HumanMemoryHostServiceError(
+                    "human_memory_foreground_run_not_found"
+                )
+            run_ref, generation = current.host_run_id, current.generation
         receipt = await self._foreground.request_control(
-            host_run_id=current.host_run_id,
+            host_run_id=run_ref,
             subject=self._auth.subject,
-            generation=current.generation,
+            generation=generation,
             control_kind=request.control,
             reason=request.reason,
             idempotency_key=request.idempotency_key,
@@ -731,7 +913,7 @@ class HumanMemoryHostService:
         # committed above; wake the active Runtime so pause/stop/cancel are
         # delivered immediately instead of waiting for the next poll.
         if self._scheduler_wake is not None and receipt.outcome == "signalled":
-            await self._scheduler_wake.after_control(subject=self._auth.subject)
+            await self._wake_committed("after_control", receipt.control_id)
         return {
             "control_ref": receipt.control_id,
             "receipt_ref": receipt.control_id,
@@ -791,13 +973,32 @@ class HumanMemoryHostService:
             )
         return await self._recovery.emergency_export(subject=self._auth.subject)
 
+    async def _wake_committed(self, operation: str, receipt_ref: str) -> None:
+        # Called only after the store returned a committed receipt. Durable
+        # queue/signal rows remain the recovery source if this hint fails.
+        try:
+            async with asyncio.timeout(SCHEDULER_WAKE_TIMEOUT_SECONDS):
+                await getattr(self._scheduler_wake, operation)(
+                    subject=self._auth.subject
+                )
+        except Exception:
+            logger.warning(
+                "human_memory_scheduler_wake_deferred",
+                extra={
+                    "operation": operation,
+                    "receipt_ref": receipt_ref,
+                    "recovery_state": "durable_work_pending",
+                },
+            )
+
     async def enqueue_turn(self, request: QueueTurnRequest) -> Mapping[str, object]:
         # Recovery fencing is a global Host lifecycle boundary.  Check it
         # before scope authorization so callers cannot observe a lower-level
         # authorization result after ingress has closed; the actual writer
         # transaction performs the same check again to close the race.
         await assert_human_memory_ingress_open(self._db_path)
-        await self._assert_owned_scope(request.scope_ref)
+        if request.scope_ref is not None:
+            await self._assert_owned_scope(request.scope_ref)
         primary = await self._program.initialize_subject(self._auth.subject)
         envelope, receipt = build_foreground_turn_evidence(
             subject=self._auth.subject,
@@ -806,18 +1007,21 @@ class HumanMemoryHostService:
             text=request.text,
         )
         payload = dict(envelope.sanitized_payload)
-        committed = await self._program.append_evidence(envelope, receipt)
         queued = await self._foreground.enqueue_turn(
             subject=self._auth.subject,
             primary_conversation_id=primary.primary_conversation_id,
-            evidence_id=committed.evidence_id,
-            evidence_hash=committed.envelope_sha256,
+            evidence_id=envelope.evidence_id,
+            evidence_hash=envelope.envelope_hash,
             idempotency_key=request.delivery_key,
             turn_payload=payload,
             task_scope_id=request.scope_ref,
+            admitted_evidence_pair=(envelope, receipt),
+            disclosure_binding_ref=request.disclosure_binding_ref,
+            input_declaration=request.input_declaration,
+            input_auth=self._auth,
         )
         if self._scheduler_wake is not None:
-            await self._scheduler_wake.after_enqueue(subject=self._auth.subject)
+            await self._wake_committed("after_enqueue", queued.turn_id)
         return {
             "turn_ref": queued.turn_id,
             "receipt_ref": queued.turn_id,
@@ -826,6 +1030,15 @@ class HumanMemoryHostService:
             "content_sha256": queued.turn_hash,
             "delivery_key": request.delivery_key,
         }
+
+    async def configure_disclosure(self, *, request_id, expected_ref, selection):
+        from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
+        return await TrustedDisclosureStore(self._db_path).configure(
+            auth=self._auth, request_id=request_id, expected_ref=expected_ref, selection=selection)
+
+    async def current_disclosure_configuration(self):
+        from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
+        return await TrustedDisclosureStore(self._db_path).current(auth=self._auth)
 
     async def search_task_scopes(
         self, request: SearchTaskScopesRequest
@@ -1504,6 +1717,15 @@ class HumanMemoryHostService:
                 "ORDER BY t.enqueue_sequence,t.turn_id",
                 (self._auth.subject,),
             ).fetchall()
+        import aiosqlite
+        from deskpet.execution.admission_rejection import read_admission_rejection_tx
+        rejections = {}
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            for row in rows:
+                rejection = await read_admission_rejection_tx(db, turn_id=row["turn_id"], subject=self._auth.subject)
+                if rejection is not None:
+                    rejections[row["turn_id"]] = rejection
         turns = []
         for row in rows:
             stored = json.loads(str(row["turn_json"]))
@@ -1512,7 +1734,8 @@ class HumanMemoryHostService:
                 {
                     "turn_ref": str(row["turn_id"]),
                     "enqueue_sequence": int(row["enqueue_sequence"]),
-                    "state": str(row["current_state"]),
+                    "state": "REJECTED" if row["turn_id"] in rejections else str(row["current_state"]),
+                    **({"rejection_reason": rejections[row["turn_id"]]["reason"]} if row["turn_id"] in rejections else {}),
                     "delivery_key": payload.get("delivery_key"),
                 }
             )
@@ -1810,6 +2033,13 @@ def build_host_typed_evidence(
 class HumanMemoryHostServiceFactory:
     db_path: Path
     startup: StartupEpochDecision
+    settled_run_reader: object | None = None
+    suppression_resolver: object | None = None
+    run_binding_reader: object | None = None
+    history_visibility_checker: object | None = None
+    decision_ingress_getter: object | None = None
+    cognitive_runtime_getter: object | None = None
+    display_invalidation: object | None = None
 
     def bind(
         self,
@@ -1828,6 +2058,13 @@ class HumanMemoryHostServiceFactory:
             binding_append=binding_append,
             recovery=recovery,
             scheduler_wake=scheduler_wake,
+            settled_run_reader=self.settled_run_reader,
+            suppression_resolver=self.suppression_resolver,
+            run_binding_reader=self.run_binding_reader,
+            history_visibility_checker=self.history_visibility_checker,
+            decision_ingress_getter=self.decision_ingress_getter,
+            cognitive_runtime_getter=self.cognitive_runtime_getter,
+            display_invalidation=self.display_invalidation,
         )
 
 
@@ -1839,6 +2076,7 @@ __all__ = (
     "AuditRefsRequest",
     "AuthenticatedHostSnapshot",
     "ControlRunRequest",
+    "ExactControlRunRequest",
     "CreateTaskScopeRequest",
     "DecideManualBindingRequest",
     "DeterministicEventSeedPort",
