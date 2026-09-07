@@ -142,6 +142,22 @@ class SearchTaskScopesRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class ListTaskScopesRequest:
+    """Bounded active/recent listing; no query, no authority, no archive content."""
+
+    limit: int = 20
+    cursor: str | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.limit, bool) or not isinstance(self.limit, int):
+            raise TypeError("limit must be an integer")
+        if not 1 <= self.limit <= 32:
+            raise ValueError("limit must be between 1 and 32")
+        if self.cursor is not None:
+            identifier(self.cursor, "cursor", 4096)
+
+
+@dataclass(frozen=True, slots=True)
 class AppendPrimaryEventRequest:
     event: Mapping[str, object]
     idempotency_key: str
@@ -1082,6 +1098,11 @@ class HumanMemoryHostService:
             live_probe=request.live_probe,
         )
         drift = result.drift_report
+        # Checkpoint drift compares checkpoint metadata against a probe the
+        # trusted Run path observes; the Host cannot invent those fields from a
+        # workspace binding, so the public channel reports the probe origin
+        # explicitly instead of a fabricated report. Binding freshness is the
+        # Host's own re-stat in binding_summary (read-only, not authority).
         return {
             "scope_ref": result.task_scope_id,
             "receipt_ref": f"sha256:{result.receipt_hash}",
@@ -1099,6 +1120,164 @@ class HumanMemoryHostService:
                 "checkpoint_hash": drift.checkpoint_hash,
                 "report_hash": drift.report_hash,
             },
+            "drift_probe": "host_unavailable" if request.live_probe is None else "trusted_run",
+            "binding_summary": self._binding_summary(result.task_scope_id),
+        }
+
+    async def list_task_scopes(
+        self, request: ListTaskScopesRequest
+    ) -> Mapping[str, object]:
+        """Active/recent owned scopes as search-shaped candidates: no archive
+        content, no authority; keyset order (head updated_at desc, scope id asc)."""
+        subject = self._auth.subject
+        after_updated: float | None = None
+        after_scope: str | None = None
+        if request.cursor is not None:
+            cursor = self._decode_cursor(request.cursor, "task_scope_list")
+            if cursor.get("subject") != subject:
+                raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
+            updated = cursor.get("updated_at")
+            scope = cursor.get("scope_ref")
+            if (isinstance(updated, bool) or not isinstance(updated, (int, float))
+                    or not isinstance(scope, str) or not scope):
+                raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
+            after_updated, after_scope = float(updated), scope
+        sql = (
+            "SELECT s.task_scope_id,s.title,h.updated_at,h.current_revision,h.event_watermark,"
+            "r.state_json,p.source_id,p.source_hash,COALESCE(d.project,'') AS project "
+            "FROM task_scopes s "
+            "JOIN task_scope_heads h ON h.task_scope_id=s.task_scope_id "
+            "JOIN task_scope_canonical_revisions r ON r.task_scope_id=s.task_scope_id "
+            "AND r.revision=h.current_revision "
+            "JOIN task_scope_projection_source_heads p ON p.task_scope_id=s.task_scope_id "
+            "LEFT JOIN task_scope_search_heads sh ON sh.task_scope_id=s.task_scope_id "
+            "LEFT JOIN task_scope_search_documents d ON d.document_id=sh.document_id "
+            "WHERE s.subject=? "
+        )
+        params: list[object] = [subject]
+        if after_updated is not None:
+            sql += "AND (h.updated_at<? OR (h.updated_at=? AND s.task_scope_id>?)) "
+            params += [after_updated, after_updated, after_scope]
+        sql += "ORDER BY h.updated_at DESC,s.task_scope_id ASC LIMIT ?"
+        params.append(request.limit + 1)
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute(sql, params).fetchall()
+        has_more = len(rows) > request.limit
+        rows = rows[: request.limit]
+        items = []
+        for row in rows:
+            state = json.loads(str(row["state_json"]))
+            goal = "" if state.get("goal") is None else str(state["goal"])
+            items.append({
+                "scope_ref": str(row["task_scope_id"]),
+                "source_ref": str(row["source_id"]),
+                "source_hash": str(row["source_hash"]),
+                "title": str(row["title"])[:2048],
+                "goal": goal[:4096],
+                "project": str(row["project"])[:2048],
+                "status": str(state.get("status", "unknown"))[:256],
+                "snippet": "",
+                "rank": 0.0,
+                "updated_at": float(row["updated_at"]),
+                "canonical_revision": int(row["current_revision"]),
+                "event_watermark": int(row["event_watermark"]),
+                "binding_summary": self._binding_summary(str(row["task_scope_id"])),
+            })
+        next_cursor = None
+        if has_more and items:
+            last = items[-1]
+            next_cursor = self._encode_cursor({
+                "kind": "task_scope_list",
+                "subject": subject,
+                "updated_at": last["updated_at"],
+                "scope_ref": last["scope_ref"],
+            })
+        result = {
+            "items": items,
+            "next_cursor": next_cursor,
+            "receipt_hash": canonical_hash({
+                "schema_version": 1,
+                "operation": "list",
+                "subject": subject,
+                "items": [
+                    {"scope_ref": i["scope_ref"], "source_ref": i["source_ref"], "source_hash": i["source_hash"]}
+                    for i in items
+                ],
+                "next_cursor": next_cursor,
+            }),
+        }
+        self._assert_public_bound(result)
+        return result
+
+    def _binding_summary(self, task_scope_id: str) -> dict[str, object] | None:
+        """Read-only view of the Host's durable workspace binding for one scope.
+
+        ``mode`` is the grant source (manual/auto) the Host recorded; ``state``
+        is the Host's own re-stat of each root (active / missing / drifted).
+        Nothing here grants a path: it only reports what the append-only
+        binding tables and the filesystem currently say.
+        """
+        import os
+        import stat as stat_module
+
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
+            db.row_factory = sqlite3.Row
+            head = db.execute(
+                "SELECT binding_id,current_revision,current_receipt_id,current_receipt_hash,"
+                "root_set_digest,updated_at FROM task_workspace_binding_heads "
+                "WHERE task_scope_id=? AND subject=?",
+                (task_scope_id, self._auth.subject),
+            ).fetchone()
+            if head is None:
+                return None
+            roots = db.execute(
+                "SELECT o.root_id,o.canonical_path,o.root_identity_hash,o.filesystem_identity_kind,"
+                "o.filesystem_volume_id,o.filesystem_object_id,o.first_binding_set_revision,"
+                "v.receipt_hash,g.source FROM task_workspace_binding_roots o "
+                "JOIN task_workspace_binding_revisions v ON v.receipt_id=o.receipt_id "
+                "JOIN task_workspace_binding_grants g ON g.grant_id=v.grant_id "
+                "WHERE o.task_scope_id=? ORDER BY o.first_binding_set_revision ASC,o.root_id ASC",
+                (task_scope_id,),
+            ).fetchall()
+        summaries = []
+        for root in roots:
+            try:
+                raw = os.lstat(str(root["canonical_path"]))
+            except OSError:
+                state = "missing"
+            else:
+                if (
+                    stat_module.S_ISLNK(raw.st_mode)
+                    or not stat_module.S_ISDIR(raw.st_mode)
+                    or str(root["filesystem_identity_kind"]) != "posix_inode"
+                    or str(root["filesystem_volume_id"]) != str(raw.st_dev)
+                    or str(root["filesystem_object_id"]) != str(raw.st_ino)
+                ):
+                    state = "drifted"
+                else:
+                    state = "active"
+            summaries.append({
+                "root_ref": str(root["root_id"])[:512],
+                "root_path": str(root["canonical_path"])[:4096],
+                "root_digest": str(root["root_identity_hash"]),
+                "mode": str(root["source"]),
+                "revision": int(root["first_binding_set_revision"]),
+                "receipt_hash": str(root["receipt_hash"]),
+                "state": state,
+            })
+        modes = {item["mode"] for item in summaries}
+        states = [item["state"] for item in summaries]
+        return {
+            "binding_ref": str(head["binding_id"]),
+            "revision": int(head["current_revision"]),
+            "receipt_ref": str(head["current_receipt_id"]),
+            "receipt_hash": str(head["current_receipt_hash"]),
+            "root_set_digest": str(head["root_set_digest"]),
+            "mode": next(iter(modes)) if len(modes) == 1 else ("mixed" if modes else "unknown"),
+            "state": ("missing" if "missing" in states else "drifted" if "drifted" in states
+                      else "active" if states else "unknown"),
+            "roots": summaries,
         }
 
     async def read_view(
@@ -2078,6 +2257,7 @@ __all__ = (
     "ControlRunRequest",
     "ExactControlRunRequest",
     "CreateTaskScopeRequest",
+    "ListTaskScopesRequest",
     "DecideManualBindingRequest",
     "DeterministicEventSeedPort",
     "ForegroundSchedulerWakePort",

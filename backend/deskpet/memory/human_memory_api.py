@@ -21,6 +21,7 @@ from deskpet.memory.human_memory_service import (
     HumanMemoryHostServiceError,
     HumanMemoryHostServiceFactory,
     ListEvidenceGroupsRequest,
+    ListTaskScopesRequest,
     MutateTaskScopeRequest,
     OpenTaskScopeRequest,
     QueueTurnRequest,
@@ -289,12 +290,26 @@ async def _dispatch(  # type: ignore[no-untyped-def]
                 None if request.get("cursor") is None else str(request["cursor"]),
             )
         )
+    if operation == "task_scope.list":
+        if not set(request) <= {"limit", "cursor"}:
+            raise HumanMemoryHostServiceError("human_memory_request_invalid")
+        limit, cursor = request.get("limit", 20), request.get("cursor")
+        if (isinstance(limit, bool) or not isinstance(limit, int)
+                or (cursor is not None and not isinstance(cursor, str))):
+            raise HumanMemoryHostServiceError("human_memory_request_invalid")
+        try:
+            return await service.list_task_scopes(ListTaskScopesRequest(limit, cursor))
+        except (TypeError, ValueError) as exc:
+            raise HumanMemoryHostServiceError("human_memory_request_invalid") from exc
     if operation == "task_scope.open_exact":
-        probe = request.get("live_probe")
+        # The public HUMAN channel never accepts a client-reported live_probe:
+        # freshness evidence is the Host's to produce, not the UI's to assert.
+        if not set(request) <= {"scope_ref", "expected_source_hash"}:
+            raise HumanMemoryHostServiceError("human_memory_request_invalid")
         return await service.open_task_scope(
             OpenTaskScopeRequest(
                 str(request["scope_ref"]),
-                None if probe is None else dict(probe),
+                None,
                 None
                 if request.get("expected_source_hash") is None
                 else str(request["expected_source_hash"]),

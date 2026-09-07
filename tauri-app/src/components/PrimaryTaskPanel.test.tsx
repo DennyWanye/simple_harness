@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { PrimaryTaskPanel } from "./PrimaryTaskPanel";
 import { PrimaryMemoryPanel } from "./PrimaryMemoryPanel";
 import { wire } from "../primary/testing/graphFixture";
-import { evidenceView, groups, open, page, planView, search } from "../primary/testing/taskScopeFixture";
+import { boundOpen, evidenceView, groups, listPage, open, page, planView, search } from "../primary/testing/taskScopeFixture";
 vi.mock("./MemoryGraphCanvas", () => ({ memoryTypeLabels: {}, MemoryGraphCanvas: () => <div /> }));
 afterEach(cleanup);
 
@@ -96,4 +96,29 @@ it("memory panel exposes the task tab beside list, graph and audit", () => {
   expect(screen.getByRole("region", { name: "任务范围" })).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "搜索任务" })).toBeTruthy();
   expect(w.sent.filter((r) => r.operation.startsWith("task_scope."))).toHaveLength(0);
+});
+it("recent list is explicit, shows Host binding facts read-only, and opens items exactly", async () => {
+  const w = wire(); render(<PrimaryTaskPanel port={w.port} primaryRef="p" verifiedOwnerKey="owner:1" ready />);
+  expect(w.sent).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "最近任务" }));
+  expect(w.sent[0].operation).toBe("task_scope.list"); expect(w.sent[0].request).toEqual({ limit: 20 });
+  await act(async () => w.reply(0, listPage));
+  expect(screen.getByText(/最近任务 2 项/)).toBeTruthy();
+  const items = screen.getByRole("list", { name: "最近任务" });
+  expect(items.textContent).toMatch(/整理照片库.*整理视频库/s);
+  expect(items.textContent).toMatch(/\/Users\/me\/photos（Auto（自动），根目录仍在）/);
+  expect(items.textContent).toMatch(/尚无工作区绑定/);
+  expect(screen.queryByText(/归档秘密计划|下一步：导入 3 月/)).toBeNull();
+  expect(screen.queryByRole("article", { name: "任务详情" })).toBeNull();
+  expect(screen.queryByRole("switch")).toBeNull();
+  expect(screen.queryByRole("button", { name: /继续|绑定|修改|Auto|Manual/ })).toBeNull();
+  fireEvent.click(screen.getAllByRole("button", { name: "精确打开" })[0]);
+  expect(w.sent[1].operation).toBe("task_scope.open_exact");
+  expect(w.sent[1].request).toEqual({ scope_ref: "scope-a", expected_source_hash: "a".repeat(64) });
+  await act(async () => w.reply(1, boundOpen));
+  const article = screen.getByRole("article", { name: "任务详情" });
+  expect(article.textContent).toMatch(/Host 记录模式 Auto（自动），根目录仍在。根：\/Users\/me\/photos/);
+  expect(article.textContent).toMatch(/Host 未提供：host_unavailable/);
+  expect(screen.queryByRole("button", { name: /继续|绑定|修改|Auto|Manual/ })).toBeNull();
+  expect(w.sent.every((r) => r.operation.startsWith("task_scope.") && !/mutate|create|binding|enqueue/.test(r.operation))).toBe(true);
 });

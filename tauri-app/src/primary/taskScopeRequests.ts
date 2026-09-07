@@ -20,10 +20,26 @@ export interface TaskScopeResumePackage {
 export interface TaskScopeDrift {
   drifted: boolean; changed_fields: string[]; checkpoint_ref: string | null; checkpoint_hash: string | null; report_hash: string;
 }
+/** Host-recorded binding facts (mode = grant source, state = Host's own re-stat). Display only; grants nothing. */
+export interface TaskScopeBindingRoot {
+  root_ref: string; root_path: string; root_digest: string; mode: "manual" | "auto"; revision: number; receipt_hash: string;
+  state: "active" | "missing" | "drifted";
+}
+export interface TaskScopeBindingSummary {
+  binding_ref: string; revision: number; receipt_ref: string; receipt_hash: string; root_set_digest: string;
+  mode: "manual" | "auto" | "mixed" | "unknown"; state: "active" | "missing" | "drifted" | "unknown"; roots: TaskScopeBindingRoot[];
+}
 export interface TaskScopeOpen {
   scope_ref: string; receipt_ref: string; source_ref: string; source_hash: string; resume_package: TaskScopeResumePackage;
   resume_sha256: string; receipt_hash: string; drift_report: TaskScopeDrift | null;
+  /** Who produced the drift probe: the Host never fabricates one on the public channel. */
+  drift_probe: string; binding_summary: TaskScopeBindingSummary | null;
 }
+/** Recent/active listing item: the search candidate shape plus head timestamps; still grants nothing. */
+export interface TaskScopeListItem extends TaskScopeCandidate {
+  updated_at: number; canonical_revision: number; event_watermark: number; binding_summary: TaskScopeBindingSummary | null;
+}
+export interface TaskScopeListPage { items: TaskScopeListItem[]; next_cursor: string | null; receipt_hash: string }
 export interface TaskScopeView {
   scope_ref: string; source_ref: string; source_hash: string; kind: TaskScopeViewKind; content: string;
   content_sha256: string; root_block_id: string | null; block_count: number; receipt_hash: string;
@@ -51,19 +67,47 @@ export class TaskScopeStaleError extends Error { constructor() { super("已打�
 const mismatch = (v: Record<string, unknown>, open: { scope_ref: string; source_ref: string; source_hash: string }) =>
   v.scope_ref !== open.scope_ref || v.source_ref !== open.source_ref || v.source_hash !== open.source_hash;
 
+function candidateFields(c: Record<string, unknown>, seen: Set<string>): void {
+  if (!id(c.scope_ref) || seen.has(c.scope_ref) || !id(c.source_ref) || !hash(c.source_hash) ||
+      !text(c.title, 2048) || !text(c.goal, 4096) || !text(c.project, 2048) || !text(c.status, 256) || !text(c.snippet, 1024) ||
+      typeof c.rank !== "number" || !Number.isFinite(c.rank)) throw invalid();
+  seen.add(c.scope_ref);
+}
+const bindingModes = ["manual", "auto"], rootStates = ["active", "missing", "drifted"];
+/** A binding summary is either absent (null) or complete; a partial one is rejected, never shown. */
+function bindingSummary(raw: unknown): void {
+  if (raw === null) return;
+  const b = record(raw);
+  if (!id(b.binding_ref) || !count(b.revision, 1) || !id(b.receipt_ref) || !hash(b.receipt_hash) || !hash(b.root_set_digest) ||
+      ![...bindingModes, "mixed", "unknown"].includes(String(b.mode)) || ![...rootStates, "unknown"].includes(String(b.state)) ||
+      !Array.isArray(b.roots) || b.roots.length > 64) throw invalid();
+  for (const value of b.roots) {
+    const r = record(value);
+    if (!id(r.root_ref) || !text(r.root_path, 4096) || !hash(r.root_digest) || !bindingModes.includes(String(r.mode)) ||
+        !count(r.revision, 1) || !hash(r.receipt_hash) || !rootStates.includes(String(r.state))) throw invalid();
+  }
+}
 /** Candidates are bounded summaries; any missing or oversized field rejects the whole page. */
 export function parseTaskScopeSearch(raw: unknown): TaskScopeSearchPage {
   const v = record(raw);
   if (!Array.isArray(v.candidates) || v.candidates.length > 100 || !optId(v.next_cursor, 4096) || !hash(v.receipt_hash)) throw invalid();
   const seen = new Set<string>();
-  for (const value of v.candidates) {
-    const c = record(value);
-    if (!id(c.scope_ref) || seen.has(c.scope_ref) || !id(c.source_ref) || !hash(c.source_hash) ||
-        !text(c.title, 2048) || !text(c.goal, 4096) || !text(c.project, 2048) || !text(c.status, 256) || !text(c.snippet, 1024) ||
-        typeof c.rank !== "number" || !Number.isFinite(c.rank)) throw invalid();
-    seen.add(c.scope_ref);
-  }
+  for (const value of v.candidates) candidateFields(record(value), seen);
   return v as unknown as TaskScopeSearchPage;
+}
+/** Recent/active list: candidate shape plus head facts and the read-only binding summary; bounded to 32. */
+export function parseTaskScopeList(raw: unknown): TaskScopeListPage {
+  const v = record(raw);
+  if (!Array.isArray(v.items) || v.items.length > 32 || !optId(v.next_cursor, 4096) || !hash(v.receipt_hash)) throw invalid();
+  const seen = new Set<string>();
+  for (const value of v.items) {
+    const c = record(value);
+    candidateFields(c, seen);
+    if (typeof c.updated_at !== "number" || !Number.isFinite(c.updated_at) || !count(c.canonical_revision, 1) || !count(c.event_watermark) ||
+        !("binding_summary" in c)) throw invalid();
+    bindingSummary(c.binding_summary);
+  }
+  return v as unknown as TaskScopeListPage;
 }
 function packageView(raw: unknown): void {
   const v = record(raw);
@@ -82,6 +126,8 @@ export function parseTaskScopeOpen(raw: unknown, scope: string): TaskScopeOpen {
     if (typeof d.drifted !== "boolean" || !Array.isArray(d.changed_fields) || d.changed_fields.length > 64 ||
         !d.changed_fields.every((f) => id(f, 128)) || !optId(d.checkpoint_ref) || !optHash(d.checkpoint_hash) || !hash(d.report_hash)) throw invalid();
   } else if (!("drift_report" in v)) throw invalid();
+  if (!id(v.drift_probe, 64) || !("binding_summary" in v)) throw invalid();
+  bindingSummary(v.binding_summary);
   return v as unknown as TaskScopeOpen;
 }
 /** A paged-in view must belong to the opened source; other revisions never merge into this snapshot. */
@@ -113,12 +159,12 @@ export function parseTaskScopeEvidencePage(raw: unknown, open: { scope_ref: stri
 }
 
 export interface TaskScopeSnapshot {
-  ready: boolean; busy: boolean; query: string; search: TaskScopeSearchPage | null;
+  ready: boolean; busy: boolean; query: string; search: TaskScopeSearchPage | null; list: TaskScopeListPage | null;
   open: TaskScopeOpen | null; views: Partial<Record<TaskScopeViewKind, TaskScopeView>>;
   evidenceGroups: TaskScopeEvidenceGroups | null; evidencePage: TaskScopeEvidencePage | null;
   notice: string; error: string;
 }
-const empty = (): TaskScopeSnapshot => ({ ready: false, busy: false, query: "", search: null, open: null, views: {}, evidenceGroups: null, evidencePage: null, notice: "", error: "" });
+const empty = (): TaskScopeSnapshot => ({ ready: false, busy: false, query: "", search: null, list: null, open: null, views: {}, evidenceGroups: null, evidencePage: null, notice: "", error: "" });
 
 /** Read-only inspect client. No mutate/create/binding/enqueue, no live_probe, no polling, no storage. */
 export class TaskScopeRequests {
@@ -171,6 +217,12 @@ export class TaskScopeRequests {
         : error instanceof Error && !(error instanceof PrimaryRequestError) ? error.message : "任务数据暂时无法读取，请重试。" });
     } finally { if (epoch === this.epoch) this.update({ busy: false }); }
   }
+  /** Recent/active owned scopes on explicit request only; items are candidates, not permissions. */
+  list = (cursor: string | null = null) => {
+    if (!cursor) this.update({ list: null, open: null, views: {}, evidenceGroups: null, evidencePage: null });
+    return this.run("task_scope.list", { limit: 20, ...(cursor ? { cursor } : {}) }, parseTaskScopeList,
+      (page) => ({ list: cursor && this.value.list ? { ...page, items: [...this.value.list.items, ...page.items] } : page }));
+  };
   /** Candidates only. Never opens, never grants. */
   search = (query: string, cursor: string | null = null) => {
     const q = query.trim();
