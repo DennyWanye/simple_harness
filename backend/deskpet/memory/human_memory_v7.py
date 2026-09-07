@@ -407,9 +407,10 @@ class HumanMemoryV7Runtime:
             available_types,
             typed_short,
             (RecallSelectorDomain.MEMORY_TYPE, *((RecallSelectorDomain.SHORT_HORIZON,) if typed_short else ())),
-            # Short search already executes the vector lane; the typed plan
-            # must request it too, or fitting vector-only groups are discarded.
-            (RecallRetrievalMode.FULL_TEXT, *((RecallRetrievalMode.VECTOR,) if typed_short else ())),
+            # Memory 0.6.23: long-term cognitive memories have their own vector
+            # lane, so every typed plan requests VECTOR; whether the short lane
+            # also runs is still decided by typed_short (SHORT_HORIZON domain).
+            (RecallRetrievalMode.FULL_TEXT, RecallRetrievalMode.VECTOR),
             (),
             (),
             None,
