@@ -11,6 +11,8 @@ from deskpet.memory.human_memory_v7 import (
     local_memory_principal, host_classification_policy, HOST_SUPPORTED_FILTER_POLICIES,
 )
 from deskpet.quality.corpus_c08 import SETUPS, FACTS, UNPREPARED_CARRIERS, compile_c08_setup, validate_c08_setup
+from deskpet.quality.corpus_scoring import c08_retained_case_ids, c08_scalar_case_ids, supported_case_ids
+from deskpet.quality.corpus_scoring_session import requires_open_primary
 from deskpet.quality.corpus_c08_prepare import prepare_c08_seed
 from deskpet.quality.corpus_setup_jobs import SetupFixtureDeliveryAuthority
 from deskpet.sdk_adapters.context_route import local_owner_auth
@@ -86,3 +88,33 @@ async def test_real_nonempty_seed_then_suppression_survives_reopen(tmp_path, mon
         assert await HostEvidenceAuthority(host.path).read_admitted(source.evidence_id) == (source, proof)
     finally:
         await reopened.close()
+
+
+def test_session_opens_primary_for_every_setup_that_reads_it():
+    """run-01e: scalar C08 was the one family whose setup read an unopened primary."""
+    ids = supported_case_ids()
+    reads_primary = (c08_scalar_case_ids() | c08_retained_case_ids() | {'C01-06'}
+        | {case_id for case_id in ids if case_id[:4] in ('C05-', 'C07-', 'C09-')})
+    assert {case_id for case_id in ids if requires_open_primary(case_id)} == reads_primary & ids
+    assert c08_scalar_case_ids() <= reads_primary
+    assert not any(requires_open_primary(case_id) for case_id in
+                   ('C01-01', 'C02-01', 'C03-01', 'C04-01', 'C06-02', 'C11-01'))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('case_id', sorted(c08_scalar_case_ids()))
+async def test_scalar_seed_refuses_an_unopened_primary_conversation(tmp_path, case_id):
+    """Exact run-01e public_setup failure: no init receipt, so no isolation proof.
+
+    The seed must never treat a missing primary as an empty history; the session
+    opens the primary first (requires_open_primary) instead.
+    """
+    from deskpet.memory.history_source_authority import HostHistorySourceError
+    from deskpet.memory.schema import dispatch_startup_epoch
+    path = tmp_path / 'state.db'
+    await dispatch_startup_epoch(path, approved_fresh_lane=True)
+    batch = compile_c08_setup(case_id, SETUPS[case_id][0], scenario_clock=CLOCK)
+    with pytest.raises(HostHistorySourceError, match='host_history_primary_unverifiable'):
+        await prepare_c08_seed(path=path, manager=None, principal=local_memory_principal(),
+            authority_ref=local_owner_auth().authority_ref, batch=batch, delivery_authority=None)
+    assert requires_open_primary(case_id) is True

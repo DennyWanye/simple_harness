@@ -39,7 +39,9 @@ def supported_case_ids():
     Excluded on purpose (no complete setup mechanism yet): C02-19 (real inference
     source), C03-20 (inference drain), C06-01 (mapping pending), C08-20 (entity
     alias), C09-13 (procedure successor), C11-12/16/19 (derived/prospective/unknown
-    sources), C05 cases without runner scripts, all C10 and C12.
+    sources), C05 cases without runner scripts, C05-12 (its scope B is owned by a
+    second principal and the setup phase drives only the local owner lane), all
+    C10 and C12.
     """
     from deskpet.quality.corpus_c05_session import SUPPORTED_CASES
     from deskpet.quality.corpus_c09 import CHANGES
