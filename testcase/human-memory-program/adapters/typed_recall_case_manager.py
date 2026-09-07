@@ -245,7 +245,14 @@ class CaseManager:
         reasons = self.disclosure.reason_codes
         if recipient.lower()=='unknown':
             reasons = (*reasons, h.DisclosureReasonCode.UNKNOWN_RECIPIENT)
+        # Memory >=0.6.14 pairs recipient with intended_audience (same scope); a
+        # recipient-only substitution leaves audience=user_self and every non-SELF
+        # plan is rejected before the candidate layer (44 eligibility cells).
+        audience = {'user_self': 'user_self', 'household': 'household', 'task_collaborator': 'task_collaborators',
+                    'external_party': 'external', 'public': 'public', 'audit_reviewer': 'auditor',
+                    'unknown': 'unknown'}[recipient.lower()]
         disclosure = dc.replace(self.disclosure, recipient=h.DeliveryRecipient(recipient.lower()),
+                                intended_audience=h.IntendedAudience(audience),
                                 purpose=h.DisclosurePurpose(purpose.lower()), reason_codes=reasons)
         budget = h.RecallBudget(**(budget or dict(max_items=8,max_bytes=16384,max_tokens=2048,deadline_ms=2000)))
         context = h.RecallContext(run_id=disclosure.run_id, subject=self.principal.actor_id, turn_id='case-turn',

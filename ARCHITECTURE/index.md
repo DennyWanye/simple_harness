@@ -72,6 +72,8 @@ PG80017 exit0/remaining=[]，原两批红保留、WIP隔离，已释放资源。
 
 最后更新：2026-09-07（M0.6.23 采纳）。Host 已 pin Memory 0.6.23 候选（源 78ddf386，wheel 56a1a0dc…，schema 7.4 附加、7.3 库打开时前向）：`human_memory_v7.py` typed 计划恒请求 VECTOR（认知记忆向量通道），`short_index_worker.py` 同 tick 重建认知向量世代，`corpus_scoring_session.py` 评分轮前显式重建（跑道无 worker）。installed target `.local-test-evidence/2026-09-07/installed-h0710-m0623-s0313`。Host 控制：sdk_candidate/图谱/v6 关系/提醒 notice/procedure adoption 套件通过；`test_short_index_worker.py` 等 4 个短索引文件的 12 项失败在 0.6.22 wheel 下同样失败（fixture 无生产 embedder → `short_horizon_embedder_required`），属既有红；另 5 项因 fixture 缺 v50–v54 扩展（procedure_uses 表）已修。真实验收：run-02 语料重跑与原生 r8 待做。
 
+最后更新：2026-09-07（401 矩阵本机首扫）。M0.6.23 pin 正式扫描 run-06：PASS 227 / FAIL 0 / BLOCKED 174。首扫 44 个 eligibility FAIL 根因为验证适配器未按 recipient 同步 `intended_audience`（Memory ≥0.6.14 配对规则），已修并独立分析记录于 `plans/2026-09-07-corpus-c01-local/TYPED-RECALL-401-RUN-03.md`；bridge source 层 `passed_cells` 聚合已补。174 BLOCKED 全为既有类别（执行器未实现 30 / fixture 与公共契约不符 96 / oracle 未闭合 48）。
+
 最后更新：2026-09-07。评分自然退出叶ab36b6a5：WorkflowRunner独立UoW owner原未释放，补public runner/service close与main/carrier统一收尾；bootstrap明确服务拥有共享端口UoW，runner不关借用端口。唯一独立child实际main执行自然SystemExit控制1PASS17.01s，PG69388清空，无pytest全局lane清理代替。原C01-10语义FAIL及deadline保留，下一新case质量另验。[定位与结果](../plans/2026-09-07-corpus-c01-scoring/PROCESS-EXIT.md)。
 
 最后更新：2026-09-07。首真实C01-10固定30b07393/H079/M619：1物理请求、0工具，排序正确但未取得已存A，原gold FAIL（主审+独审）；240已尝试1/通过0。业务COMPLETED后worker线程退场挂起，180s外部deadline退出125并清空PG67059，非内存/磁盘门。修复退出与通用记忆来源指导继续，均未称通过。全阶段防熄屏保持。[真实结果](../plans/2026-09-07-corpus-c01-scoring/REAL-R1.md)。

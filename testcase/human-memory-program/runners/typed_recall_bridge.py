@@ -431,8 +431,10 @@ def _execute(args, layers, expected):
             else:
                 judged = assess_source_cells(response)
                 summary["cell_results"].update(judged)
+                summary["layers"][layer]["passed_cells"] = sorted(name for name,row in judged.items() if row["status"] == "PASS")
                 if any(row["status"]=="FAIL" for row in judged.values()):
                     summary["layers"][layer]["status"]="FAIL"
+                    summary["layers"][layer]["failed_cells"] = sorted(name for name,row in judged.items() if row["status"] == "FAIL")
             # Observation mode is never formal acceptance, in either execution layer.
             if args.observe_candidate or pin_changes:
                 for row in judged.values():
