@@ -18,6 +18,9 @@ import sqlite3
 import sys
 
 from deskpet.quality.corpus_trace import wire, digest
+from deskpet.quality.corpus_prospective import (
+    ProspectiveSetupNotReady, settle_prospective_registrations,
+)
 
 
 def requires_open_primary(case_id):
@@ -491,6 +494,24 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         cognitive_manager = await cognitive.manager()
         outcome["cognitive_vector_generation"] = dataclasses.asdict(
             await cognitive_manager.rebuild_cognitive_vector_generation())
+        # Same reason, one layer up: the SDK typed-recall type-authority gate
+        # withholds every pending/rescheduled reminder that has no accepted
+        # scheduler registration, and the registration consumer only runs on the
+        # ProspectiveRuntimeLane that MemoryAnalysisLane.close() above stopped.
+        # Drive the production lane explicitly, then refuse to score a reminder
+        # the gate would silently drop. (The short-horizon PrimaryShortIndexWorker
+        # is NOT ticked here: at this point the scoring history is empty, an empty
+        # chunk set never activates a generation, and indexing the setup phases'
+        # own turns would change the scored recall content.)
+        outcome["stage"] = "prospective_registration_settlement"
+        try:
+            outcome["prospective_registration"] = await settle_prospective_registrations(
+                lane=cognitive.prospective_lane, manager=cognitive_manager,
+                path=main._state_db_path, principal=cognitive.principal())
+        except ProspectiveSetupNotReady as exc:
+            outcome["execution_status"] = "SETUP_NOT_READY"
+            outcome["prospective_registration_error"] = str(exc)
+            raise
         outcome["execution_status"] = "DISPATCH_STARTED"
         outcome["stage"] = "original_scoring_turn"
         if c05 is not None:

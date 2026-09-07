@@ -101,6 +101,91 @@ def type_observations(trace):
     return observations
 
 
+def _transcripts(result):
+    """Every scored turn's public transcript, single-Run or C05 multi-Run."""
+    items = [result.get("transcript")]
+    items += [run.get("transcript") for run in result.get("scoring_runs", ())]
+    return [item for item in items if isinstance(item, (list, tuple))]
+
+
+def _seeded_procedure_ids(result):
+    labels = (result.get("setup_receipt") or {}).get("labels") or {}
+    if not isinstance(labels, dict):
+        return []
+    return sorted({str(node["memory_id"]) for node in labels.values()
+                   if isinstance(node, dict) and node.get("memory_type") == "procedure"
+                   and isinstance(node.get("memory_id"), str)})
+
+
+def procedure_access_evidence(result, oracle, traces):
+    """Observed access for a gold that measures a discovery tool, not a recall type.
+
+    A revision=1 Procedure keeps an UNBOUND applicability fingerprint until its
+    first real use, and `memory_standalone` supplies no current fingerprints, so
+    the SDK type-authority gate withholds it from typed recall by design. The
+    cross-scope class therefore declares `required_procedure_access` and is
+    scored on the actual discovery chain instead of on a type that cannot appear
+    (DECISION-PROSPECTIVE-PROCEDURE-RECALL.md 3.2). This reports evidence only;
+    the post-terminal review still decides the semantic verdict.
+    """
+    tool = (oracle.get("labels") or {}).get("required_procedure_access")
+    if tool is None:
+        return None
+    calls, results, candidates, seen = [], [], [], set()
+    for trace in traces:
+        for provider in (trace or {}).get("providers", ()):
+            response = provider.get("response_json")
+            if response is None:
+                continue
+            for call in response["tool_calls"]:
+                if call["name"] != tool:
+                    continue
+                key = (provider["invocation_id"], call["call_id"])
+                if key in seen:
+                    raise ValueError("corpus_duplicate_provider_call_identity")
+                seen.add(key)
+                calls.append(dict(invocation_id=key[0], call_id=key[1]))
+    for transcript in _transcripts(result):
+        for message in transcript:
+            if message.get("role") != "tool" or message.get("name") != tool:
+                continue
+            try:
+                envelope = json.loads(message["content"])
+                value = envelope["value"]
+            except (KeyError, TypeError, ValueError):
+                results.append(dict(call_id=message.get("call_id"), outcome="UNPARSED",
+                                    candidate_count=None))
+                continue
+            outcome = envelope.get("outcome")
+            found = []
+            if isinstance(value, dict) and value.get("kind") == "procedure_draft_preview":
+                for item in value.get("candidates") or ():
+                    binding = (item or {}).get("history_binding") or {}
+                    if isinstance(binding.get("memory_id"), str):
+                        found.append(binding["memory_id"])
+            results.append(dict(call_id=message.get("call_id"), outcome=outcome,
+                                candidate_count=len(found)))
+            if outcome == "succeeded":
+                candidates.extend(found)
+    seeded = _seeded_procedure_ids(result)
+    matched = sorted(set(candidates) & set(seeded))
+    nonempty = [item for item in results if item["outcome"] == "succeeded"
+                and (item["candidate_count"] or 0) > 0]
+    observed = bool(traces) and all(item is not None for item in traces) and bool(_transcripts(result))
+    if not observed:
+        status = "UNKNOWN"
+    elif not calls or not nonempty:
+        status = "NOT_SATISFIED"
+    elif seeded and not matched:
+        # Non-empty candidates that miss every seeded Procedure are not a hit.
+        status = "NOT_SATISFIED"
+    else:
+        status = "SATISFIED"
+    return dict(required_access=tool, status=status, observed_calls=calls,
+                observed_results=results, candidate_memory_ids=sorted(set(candidates)),
+                seeded_procedure_memory_ids=seeded, matched_memory_ids=matched)
+
+
 def prepare_batch(*, corpus_root, compiler_root, case_ids, output):
     """Use unchanged r4 compiler/member pins, then separate the process inputs."""
     sys.path.insert(0, str(Path(compiler_root).resolve()))
@@ -164,6 +249,9 @@ def review_packet(directory, exit_code):
         if any(item is not None for item in traces) else None)
     types = sorted({t for o in (observations or []) for t in (o["proposed_strings"] or [])})
     required = oracle["labels"]["required_types"]
+    # Parallel to required_types, never inside its denominator: this label
+    # measures a tool access, not a typed-recall type.
+    procedure_access = procedure_access_evidence(result, oracle, traces)
     completed = result["execution_status"] == "COMPLETED" and exit_code == 0
     blocked = result["execution_status"] == "SETUP_NOT_READY"
     observation_failed = result["execution_status"] == "OBSERVATION_FAILED"
@@ -191,6 +279,7 @@ def review_packet(directory, exit_code):
             # Failed executions stay in denominator. Missing proposal evidence
             # is unknown, never silently converted to a zero-extra success.
             required_credit=0 if not completed else None),
+        required_procedure_access=procedure_access,
         oracle_verdict="SETUP_BLOCKED" if blocked else
             "OBSERVATION_FAILED" if observation_failed else
             "PENDING_POST_TERMINAL_REVIEW" if completed else "EXECUTION_FAILED",
@@ -199,6 +288,7 @@ def review_packet(directory, exit_code):
             else "核实际候选披露/首轮无正式授权、原固定followup及最终exact resume；错候选不救场" if task_batch
             else "核原USER及真实派生摘要同源、抑制前非空与当前拒绝、评分物理请求无旧内容" if suppressed_batch
             else "按原gold核零查询，旧head不得作为当前事实；仅使用本轮合法current输入，不要求召回或注入A" if superseded_batch
+            else "核semantic经类型化召回、procedure经真实procedure_discover取回种子候选且未越权执行" if procedure_access is not None
             else "核实际A的ID/revision/ref进入工具结果及后续物理输入",
             "核timeout/refusal/invalid_plan及全部原始提议", "记录所引用trace路径与hash"],
         quality_thresholds_status="NOT_EVALUATED_PARTIAL_C07_BATCH" if no_match_batch

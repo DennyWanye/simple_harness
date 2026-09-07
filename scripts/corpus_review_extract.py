@@ -37,6 +37,13 @@ def render_case(case_dir: Path) -> str:
                  f"error {execution.get('error_type')} / stop {resource.get('stop_reason')} / "
                  f"{resource.get('elapsed_seconds')}s / 峰 {resource.get('peak_group_rss_kib')} KiB")
     lines.append(f"- 类型预测：{packet.get('predicted_types')}；指标 {json.dumps(packet.get('original_metric_components'), ensure_ascii=False)}")
+    access = packet.get("required_procedure_access")
+    if access:
+        # Parallel label: procedure is reached through the discovery tool, not typed recall.
+        lines.append(f"- 程序访问（{access.get('required_access')}）：{access.get('status')}；"
+                     f"调用 {len(access.get('observed_calls') or [])} 次，"
+                     f"结果 {json.dumps(access.get('observed_results'), ensure_ascii=False)}；"
+                     f"命中种子 {access.get('matched_memory_ids')} / 种子 {access.get('seeded_procedure_memory_ids')}")
     if execution.get("error_traceback"):
         lines.append("- 回溯尾部：`" + execution["error_traceback"].strip().splitlines()[-1][:200] + "`")
     if execution.get("followup_events"):
