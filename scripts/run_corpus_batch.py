@@ -27,7 +27,7 @@ def main() -> int:
     parser.add_argument("--python", type=Path)
     args = parser.parse_args()
     host = args.host_root.resolve()
-    python = (args.python or host / "backend/.venv/bin/python").resolve()
+    python = (args.python or host / "backend/.venv/bin/python").absolute()  # keep venv symlink
     cases = list(args.case)
     if args.case_file:
         cases += [line.strip() for line in args.case_file.read_text().splitlines()

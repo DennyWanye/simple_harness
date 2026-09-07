@@ -51,11 +51,14 @@ def configure_process(directory, host_root, *, initialize_only=False):
     # The key is neither copied into config/userdata nor written to keychain.
     from dotenv import dotenv_values
     import tomlkit
+    credential_file = Path(os.environ.get("CORPUS_CREDENTIAL_ENV_FILE")
+        or (host_root.parent / "simple_harness" / ".env"))
     values = {"APIKEY": "corpus-offline-not-a-key", "BASEURL": "http://127.0.0.1:9/v1"} \
-        if initialize_only else dotenv_values(Path(os.environ.get("CORPUS_CREDENTIAL_ENV_FILE") or (host_root.parent / "simple_harness" / ".env")), interpolate=False)
+        if initialize_only else dotenv_values(credential_file, interpolate=False)
     key, base_url = values.get("APIKEY"), values.get("BASEURL")
     if not key or not base_url:
-        raise ValueError("corpus_process_credentials_missing")
+        # Key names only; never the values.
+        raise ValueError(f"corpus_process_credentials_missing:{credential_file}:{sorted(values)}")
     from urllib.parse import urlsplit
     endpoint = urlsplit(base_url)
     if endpoint.username or endpoint.password or endpoint.query or endpoint.fragment:
@@ -561,8 +564,11 @@ def main():
             initialize_only=args.initialize_only))
     except Exception as exc:
         if not (directory / "execution.json").exists():
+            import traceback
+            redacted = re.sub(r"(?i)(sk-|tsk_|Bearer\s+)[^\s\"'\\]+", r"\1[REDACTED]",
+                traceback.format_exc())
             write_result(directory / "execution.json", dict(execution_status="SETUP_NOT_READY",
-                trace=None, error_type=type(exc).__name__))
+                trace=None, error_type=type(exc).__name__, error_traceback=redacted))
         return 1
 
 
