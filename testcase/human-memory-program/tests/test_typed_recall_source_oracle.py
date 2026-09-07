@@ -20,10 +20,14 @@ async def test_source_ten_complete_state_and_rejection_counterexamples(tmp_path)
     layers=json.loads((ROOT/'fixtures/typed-recall-execution-layers-v1.json').read_text())
     pin=layers['clean_wheel_public_manager']['candidate_memory_identity']
     import os
-    checkout=Path(os.environ.get('TYPED_RECALL_SOURCE_CHECKOUT', ROOT.parents[2]/'simple-harness-memory-sdk-0623-source'))
+    checkout=Path(os.environ.get('TYPED_RECALL_SOURCE_CHECKOUT', ROOT.parents[2]/'simple-harness-memory-sdk-0624-source'))
     bridge=load(ROOT/'runners/typed_recall_bridge.py')
     identity=bridge.source_identity(checkout,pin)
-    wheel=os.environ.get('TYPED_RECALL_MEMORY_WHEEL', str(ROOT.parents[1]/'backend/vendor'/('simple_harness_memory_sdk-'+pin['version']+'-py3-none-any.whl')))
+    wheel_name='simple_harness_memory_sdk-'+pin['version']+'-py3-none-any.whl'
+    vendor_wheel=ROOT.parents[1]/'backend/vendor'/wheel_name
+    # Before Host adopts the pinned candidate the exact wheel only exists in the local build artifact dir.
+    fallback=sorted(ROOT.parents[1].glob('.local-test-evidence/*/memory*-artifact/build/'+wheel_name))
+    wheel=os.environ.get('TYPED_RECALL_MEMORY_WHEEL', str(vendor_wheel if vendor_wheel.is_file() or not fallback else fallback[-1]))
     candidate=bridge.wheel_identity(wheel,pin['wheel_sha256'],pin['source_commit'],'simple-harness-memory-sdk','simple_harness_memory')
     request={'layer':'source','source_identity':identity,'candidate_identity':{'memory':candidate},
              'cell_ids':layers['source_exact_commit_integration']['exact_cells'],
