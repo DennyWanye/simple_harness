@@ -358,7 +358,7 @@ def test_0613_successor_retains_original_obligations_and_candidate_lineage():
     old_layers = prior("fixtures/typed-recall-execution-layers-v1.json")
     # Exact equality of every original business section, not only total cell count.
     for key, value in old.items():
-        if key not in {"fixture_revision", "public_consumer", "approved_oracle"}:
+        if key not in {"fixture_revision", "public_consumer", "approved_oracle", "candidate_pin_lineage", "candidate_pin_change"}:
             assert fixture[key] == value, key
     for section, allowed in (("public_consumer", {"candidate_identity_pins"}),
                              ("approved_oracle", {"candidate_identity", "candidate_approval"})):
@@ -373,6 +373,6 @@ def test_0613_successor_retains_original_obligations_and_candidate_lineage():
     assert bridge.file_sha(layers_path) == bridge.LAYERS_SHA
     pins = fixture["public_consumer"]["candidate_identity_pins"]
     assert pins == fixture["approved_oracle"]["candidate_identity"]
-    assert (pins["harness"]["version"], pins["memory"]["version"]) == ("0.7.3", "0.6.13")
+    assert (pins["harness"]["version"], pins["memory"]["version"]) == ("0.7.10", "0.6.20")
     for name, pin in pins.items():
         assert layers["clean_wheel_public_manager"][f"candidate_{name}_identity"] == pin

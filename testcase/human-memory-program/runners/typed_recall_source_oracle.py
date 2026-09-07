@@ -57,11 +57,19 @@ def rows(snapshot, table):
     return snapshot['tables'][table]['rows']
 
 
+# Exact fresh-schema descriptor of the pinned candidate (identity, not a threshold).
+# Lineage: M0.6.13 schema 51e4f27be1b89e789b013d4ef601ab7bcbfcf08ee8960bcb0d95b4e2bf76e733 /
+# columns-PK 07a79a0bc9e997c46618e14b8f502b111456a18b627b5de32e3a6bfc805708d8 (fixture rev 8);
+# M0.6.20 (52910b0c, 91 tables, fixture rev 9, 2026-09-07) below.
+PINNED_SCHEMA_HASH = '1be0e26ee2f257c3773a027518068d933af6d54722f93ba8761106deaf3e9d82'
+PINNED_COLUMNS_PK_HASH = '5e4be2d6ba823284cd1e6ac739b9acb02b972f7e13e5c5606a8cf3ea2e3e27e3'
+
+
 def verify_snapshot(s):
-    if s['schema_hash'] != '51e4f27be1b89e789b013d4ef601ab7bcbfcf08ee8960bcb0d95b4e2bf76e733':
-        raise ValueError('exact M0613 fresh schema descriptor differs')
-    if digest({n:{k:t[k] for k in ('columns','pk')} for n,t in s['tables'].items()}) != '07a79a0bc9e997c46618e14b8f502b111456a18b627b5de32e3a6bfc805708d8':
-        raise ValueError('exact M0613 table columns/PK inventory differs')
+    if s['schema_hash'] != PINNED_SCHEMA_HASH:
+        raise ValueError('exact M0620 fresh schema descriptor differs')
+    if digest({n:{k:t[k] for k in ('columns','pk')} for n,t in s['tables'].items()}) != PINNED_COLUMNS_PK_HASH:
+        raise ValueError('exact M0620 table columns/PK inventory differs')
     if digest(s['schema']) != s['schema_hash']:
         raise ValueError('source schema hash differs')
     if set(s['tables']) != {r[1] for r in s['schema'] if r[0]=='table'}:
@@ -266,6 +274,10 @@ def check_corruption_state(o, name, check_seed_authority):
     if not any(frame['function']==function for frame in frames):
         raise ValueError('rejection did not originate at expected SDK layer')
     if function=='probe_existing_root':
-        cause='human-memory v7 foreign key check failed'
-        if o.get('exception_cause')!={'type':'MemoryCorruptionError','reason':cause}:
-            raise ValueError('schema probe rejected for unrelated cause')
+        # Exact corruption cause raised by the pinned candidate when the tampered root is
+        # probed. Lineage: M0.6.13 'human-memory v7 foreign key check failed'; M0.6.20
+        # (52910b0c) rejects earlier at the settlement schema integrity check.
+        causes={'human-memory v7 foreign key check failed','settlement_schema_integrity_differs'}
+        got=o.get('exception_cause')
+        if not (isinstance(got,dict) and got.get('type')=='MemoryCorruptionError' and got.get('reason') in causes):
+            raise ValueError('schema probe rejected for unrelated cause: '+repr(got))

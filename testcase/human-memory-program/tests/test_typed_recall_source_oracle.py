@@ -19,10 +19,11 @@ async def test_source_ten_complete_state_and_rejection_counterexamples(tmp_path)
     fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
     layers=json.loads((ROOT/'fixtures/typed-recall-execution-layers-v1.json').read_text())
     pin=layers['clean_wheel_public_manager']['candidate_memory_identity']
-    checkout=Path('/Users/denny/projects/simple-harness-memory-sdk-0613-runner-source')
+    import os
+    checkout=Path(os.environ.get('TYPED_RECALL_SOURCE_CHECKOUT', ROOT.parents[2]/'simple-harness-memory-sdk-0620-source'))
     bridge=load(ROOT/'runners/typed_recall_bridge.py')
     identity=bridge.source_identity(checkout,pin)
-    wheel='/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/typed-short-sources/artifact/build1/simple_harness_memory_sdk-0.6.13-py3-none-any.whl'
+    wheel=os.environ.get('TYPED_RECALL_MEMORY_WHEEL', str(ROOT.parents[1]/'backend/vendor'/('simple_harness_memory_sdk-'+pin['version']+'-py3-none-any.whl')))
     candidate=bridge.wheel_identity(wheel,pin['wheel_sha256'],pin['source_commit'],'simple-harness-memory-sdk','simple_harness_memory')
     request={'layer':'source','source_identity':identity,'candidate_identity':{'memory':candidate},
              'cell_ids':layers['source_exact_commit_integration']['exact_cells'],

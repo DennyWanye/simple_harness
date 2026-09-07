@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "fixture_id": "typed-recall-execution-layers-v1",
-  "fixture_revision": 6,
+  "fixture_revision": 7,
   "typed_recall_fixture": "typed-recall-v3.json",
-  "typed_recall_fixture_revision": 8,
-  "typed_recall_fixture_sha256": "5264de18c41df71055330dfebcfe9d205aaed7d0fe3db44659749fb783363137",
+  "typed_recall_fixture_revision": 9,
+  "typed_recall_fixture_sha256": "a96bf22032e1f355cd0acf68ac3adbf8c36b27d5971a4829ab8c2e60c1fe3c26",
   "quality_gate": "NOT_RUN/BLOCKED",
   "all_cells": {
     "count": 401,
@@ -51,16 +51,16 @@
     "candidate_memory_identity": {
       "status": "PINNED",
       "distribution": "simple-harness-memory-sdk",
-      "version": "0.6.13",
-      "source_commit": "f2a6a706c5e3407e896ada3bd9e735cd9c0b77fd",
-      "wheel_sha256": "33fcc494f0cb8c9f358e411b372d4dcdc423725563dda6f5b96684f5fa1ffd62"
+      "version": "0.6.20",
+      "source_commit": "52910b0c2ab14b23a44e845ee4edc7f519f618f5",
+      "wheel_sha256": "0cc065d9db191d5c26a2111b64a79c362bce3d7d873f2a4907f07b878ffcea98"
     },
     "candidate_harness_identity": {
       "status": "PINNED",
       "distribution": "simple-harness-sdk",
-      "version": "0.7.3",
-      "source_commit": "0282fa982995b24bc893fdf6bed69d2caacd6587",
-      "wheel_sha256": "1a9ed5c95e6cddd4e0ccd85124320a6001008740a53213712fc89f3467cb4cd7"
+      "version": "0.7.10",
+      "source_commit": "031fdc688ceea604ffa409a06a69fd85071aa612",
+      "wheel_sha256": "e559bc1b58ebfce0423247bc11ead0969f2364d76209fe7b9481bb2892ad2539"
     }
   },
   "source_exact_commit_integration": {
@@ -135,9 +135,10 @@
     }
   },
   "hash_correction_previous_fixture_sha256": "594189edb4c46ff1c52a778c1caeef9a94d324bfd67f778ce61a3ec1c5f63d8a",
-  "candidate_pin_previous_layers_sha256": "1a9861e34c4b3fd7d1a5d0273035714bbc66e12d68102be66cf54a1e67352064",
+  "candidate_pin_previous_layers_sha256": "a599863e9c596d73e9d3cddff25c8794fb2b924801b366876ba084c8d9478518",
   "candidate_pin_layers_lineage": [
     "45d77ad06642c87141b3f96d4450f92ad1bfe7081238573fed89c45d462c6814",
-    "11002372a2d795726f819a63691e78d22b0c9c2d7bccc3eea1a21fe536fd0a25"
+    "11002372a2d795726f819a63691e78d22b0c9c2d7bccc3eea1a21fe536fd0a25",
+    "1a9861e34c4b3fd7d1a5d0273035714bbc66e12d68102be66cf54a1e67352064"
   ]
 }
