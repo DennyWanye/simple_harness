@@ -191,7 +191,7 @@ class TaskScopeSearchStore:
                     "document_id,task_scope_id,subject,title,goal,project,status,content) "
                     "VALUES (?,?,?,?,?,?,?,?)",
                     (document_id, task_scope_id, row["subject"], title, goal, project, status,
-                     document_text + "\n" + _cjk_bigram_zone(document_text)),
+                     document_text + "\n" + _cjk_bigram_zone(document_text) + "\n" + _cjk_unigram_zone(document_text)),
                 )
                 await db.execute(
                     "INSERT INTO task_scope_search_heads("
@@ -348,6 +348,14 @@ class TaskScopeSearchStore:
             )
             rows = await query_cursor.fetchall()
             await query_cursor.close()
+            if not rows:
+                unigram_query = _fts_unigram_query(query)
+                if unigram_query is not None:
+                    query_cursor = await db.execute(
+                        sql, (*authorized_documents, unigram_query, limit + 1, offset)
+                    )
+                    rows = await query_cursor.fetchall()
+                    await query_cursor.close()
         has_more = len(rows) > limit
         rows = rows[:limit]
         candidates = tuple(
@@ -585,6 +593,39 @@ def _lexical_units(text: str) -> list[str]:
 def _cjk_bigram_zone(document_text: str) -> str:
     bigrams = [unit for unit in _lexical_units(document_text) if len(unit) == 2 and _CJK_RUN.fullmatch(unit)]
     return " ".join(bigrams)
+
+
+# Function characters that would match almost every Chinese document; never
+# used as single-character fallback terms.
+_CJK_UNIGRAM_STOP = frozenset("的了是在和与及或我你他她它们这那不有把被让给请先再就也都很吗呢吧啊个之于对为到从")
+
+
+def _cjk_unigrams(text: str) -> list[str]:
+    seen: set[str] = set()
+    units: list[str] = []
+    for run in _CJK_RUN.findall(text):
+        for char in run:
+            if char not in _CJK_UNIGRAM_STOP and char not in seen:
+                seen.add(char)
+                units.append(char)
+    return units
+
+
+def _cjk_unigram_zone(document_text: str) -> str:
+    return " ".join(_cjk_unigrams(document_text))
+
+
+def _fts_unigram_query(query: str) -> str | None:
+    """Last-resort locator for Chinese queries with no word/bigram overlap.
+
+    「防止借东西忘还」 shares no bigram with a task titled 「社区物品登记 / 减少借还漏记」
+    (corpus C05-04); single characters 借/还 still locate it. Only used when the
+    ordinary query returns nothing; candidates grant no authority either way.
+    """
+    units = _cjk_unigrams(query)
+    if not units:
+        return None
+    return " OR ".join(f'"{unit}"' for unit in units[:64])
 
 
 def _fts_query(query: str) -> str:

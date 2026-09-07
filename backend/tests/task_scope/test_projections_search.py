@@ -263,3 +263,22 @@ async def test_chinese_query_matches_title_by_cjk_bigrams(tmp_path: Path) -> Non
     assert "[Alpha]" in result.candidates[0].snippet
     result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="预算", limit=10)
     assert result.candidates == ()
+
+
+@pytest.mark.asyncio
+async def test_chinese_query_without_bigram_overlap_falls_back_to_characters(tmp_path: Path) -> None:
+    """语料 C05-04：「防止借东西忘还」与「社区物品登记 / 减少借还漏记」无二字重叠，单字 借/还 兜底定位。"""
+    db_path, store = await _v40_db(tmp_path)
+    await store.create_task_scope(task_scope_id="lending", subject="actor-1", title="社区物品登记 减少借还漏记")
+    await store.create_task_scope(task_scope_id="archive", subject="actor-1", title="图书归档")
+    search = TaskScopeSearchStore(db_path)
+    await search.rebuild_index()
+    allowed = ["lending", "archive"]
+    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="防止借东西忘还 借东西 归还 提醒", limit=10)
+    # 单字兜底允许噪声候选（「归」也命中「图书归档」），但按 bm25 排序目标任务必须排第一。
+    assert result.candidates[0].task_scope_id == "lending"
+    assert "[" not in result.candidates[0].snippet and "社区物品登记" in result.candidates[0].snippet
+    # 只含停用单字的查询不兜底出候选；二字命中优先于单字兜底。
+    assert (await search.search(subject="actor-1", allowed_scope_ids=allowed, query="我的那个", limit=10)).candidates == ()
+    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="图书", limit=10)
+    assert [c.task_scope_id for c in result.candidates] == ["archive"]
