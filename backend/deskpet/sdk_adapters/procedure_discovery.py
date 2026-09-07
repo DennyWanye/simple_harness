@@ -10,8 +10,9 @@ def procedure_discovery_registration(service):
     async def handler(arguments, _context):
         return await service.discover(arguments, active_product_tool_context())
     return ProductToolRegistration(name="procedure_discover", description=(
-        "Find draft/eligible saved Procedures before first use, by a substring of their name or steps. "
-        "These are unqualified candidate instructions, not applicable recall and not permission. "
+        "Find saved Procedures (draft, eligible or adopted/active) before use, by one or two distinctive "
+        "words from their name, applicability or steps (not a sentence). Results are candidate instructions "
+        "ranked by term hits, not applicable recall and not permission to execute. "
         "After choosing a candidate, bind its exact revision and verbatim steps with procedure_use "
         "in an authorized TaskScope. Read next_after for another bounded page if needed."
     ),input_schema=SCHEMA,handler=handler,dispatch_kind="async",permission_category="procedure_discover",
