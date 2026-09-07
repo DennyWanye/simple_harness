@@ -297,3 +297,32 @@ def test_setup_http_tool_message_preserves_actual_wire_call_identity():
             _message(dict(role='tool', content='{}', tool_call_id=raw))
     with pytest.raises(ValueError):
         _message(dict(role='user', content='hi', tool_call_id='actual-call-17'))
+
+
+def test_foreign_owner_case_is_not_a_supported_single_owner_setup():
+    """run-01e C05-12: prepare_setup_phase drives only the local owner lane."""
+    from deskpet.quality.corpus_c05_session import (SINGLE_OWNER_CASES, SUPPORTED_CASES,
+                                                    validate_schedule)
+    from deskpet.quality.corpus_scoring import supported_case_ids
+    foreign = {case_id for case_id, specs in SPECS.items()
+               if any(spec.owner != 'self' for spec in specs)}
+    assert foreign == {'C05-12'}
+    assert SUPPORTED_CASES <= SINGLE_OWNER_CASES
+    assert not (foreign & SUPPORTED_CASES) and not (foreign & supported_case_ids())
+    with pytest.raises(ValueError, match='c05_session_case_requirements_not_implemented'):
+        validate_schedule('C05-12', {'scripted_followup': [], 'scheduler_state': 'NOT_IMPLEMENTED'})
+
+
+@pytest.mark.asyncio
+async def test_foreign_owner_scope_archive_refuses_the_local_owner_subject():
+    """The exact run-01e authored_task_setup_phase failure, kept deterministic."""
+    batch = compile_c05_setup('C05-12', SETUPS['C05-12'][0])
+    subject = local_owner_auth().subject
+    common = dict(batch=batch, subject=subject, service=None, provider=None, drive=None,
+        stack=None, path=None, policy=object(), disclosure_context=object())
+    with pytest.raises(ValueError, match='c05_actual_owner_context_required'):
+        await prepare_scope_archive(label='B', **common)
+    # Aliasing the foreign owner onto the local owner is not an escape hatch.
+    with pytest.raises(ValueError, match='c05_actual_owner_context_required'):
+        await prepare_scope_archive(label='B',
+            owner_subjects={'self': subject, 'other': subject}, **common)

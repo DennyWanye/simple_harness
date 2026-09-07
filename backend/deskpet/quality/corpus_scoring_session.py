@@ -20,6 +20,22 @@ import sys
 from deskpet.quality.corpus_trace import wire, digest
 
 
+def requires_open_primary(case_id):
+    """Case setups that read the Host primary conversation before scoring.
+
+    The registration/initialization receipt is what `history_namespace_tx`
+    recomputes; a setup that touches it without an opened primary fails as
+    `host_history_primary_unverifiable`. The scalar C08 seed asserts history
+    isolation through `PrimaryConversationAuthority.completed_run_ids()`, so it
+    belongs here next to the retained C08, C05, C07, C09 and C01-06 setups.
+    """
+    from deskpet.quality.corpus_scoring import c08_retained_case_ids, c08_scalar_case_ids
+    if type(case_id) is not str:
+        raise ValueError("corpus_case_id_required")
+    return bool(case_id.startswith(("C05-", "C07-", "C09-")) or case_id == "C01-06"
+                or case_id in c08_retained_case_ids() or case_id in c08_scalar_case_ids())
+
+
 def write_result(path, value):
     with Path(path).open("x", encoding="utf-8") as handle:
         json.dump(wire(value), handle, ensure_ascii=False, sort_keys=True, indent=2,
@@ -319,7 +335,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             cognitive_runtime_getter=lambda: main.service_context.get("human_memory_v7_runtime"),
             display_invalidation=MemoryDisplayInvalidation(main._broadcast_control))
         main.service_context.register("human_memory_host_service_factory", factory)
-        if c05 is not None or c08_retained is not None or c09 is not None or case_id.startswith("C07-") or case_id == "C01-06":
+        if requires_open_primary(case_id):
             await factory.bind(auth).open_primary()
         if c05 is not None:
             # Task archives require the real main runtime. No empty scalar seed

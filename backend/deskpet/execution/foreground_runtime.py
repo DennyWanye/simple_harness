@@ -297,6 +297,13 @@ class _ForegroundEffectBinding:
     start_ready: asyncio.Event | None = None
 
 
+# F06：一次 SDK Run 内前台最多触发的 provider reconcile 轮数（retry-once + 收尾）。
+_PROVIDER_RECONCILE_MAX_ROUNDS = 3
+# resolution 落库后等 kernel wake-drain（≤50ms 周期）把 Run 改回 running 的有界轮询。
+_PROVIDER_RECONCILE_DRAIN_POLLS = 60
+_PROVIDER_RECONCILE_DRAIN_INTERVAL_SECONDS = 0.05
+
+
 def resolve_host_terminal(
     raw_sdk_state: str, host_head_state: str | None
 ) -> RunState | None:
@@ -347,6 +354,8 @@ class ForegroundRuntimeExecutionAuthority:
         state_changed: Callable[[], Awaitable[None]] | None = None,
         terminal_audit_wake: Callable[[], None] | None = None,
         terminal_commit_hook_factory=None,
+        provider_reconciliation: object | None = None,
+        provider_reconcile: Callable[[str], Awaitable[object]] | None = None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -393,6 +402,13 @@ class ForegroundRuntimeExecutionAuthority:
         self._state_changed = state_changed
         self._terminal_audit_wake = terminal_audit_wake
         self._terminal_commit_hook_factory = terminal_commit_hook_factory
+        # F06（2026-09-07）：与 SDK ProviderReconciliationPort 共用的 retry-once 策略；
+        # 其 ``exhausted_runs`` 标记"同一 request 二次未知"的 run，前台以 cancel 收尾。
+        self._provider_reconciliation = provider_reconciliation
+        # 只跑 Host 的 provider reconcile 步骤（coordinator.reconcile_incomplete），不调
+        # kernel.reconcile()：后者还会 recover() 并统一 drain 所有 resolved wait，会与前台
+        # 自己的工具 continuation 交付路径互相干扰（实测 dynamic 路由用例卡死）。
+        self._provider_reconcile = provider_reconcile
         self._notification_task: asyncio.Task[None] | None = None
         self._notification_pending = False
 
@@ -1235,18 +1251,94 @@ class ForegroundRuntimeExecutionAuthority:
         )
         await self._finish_bound(claimed, sdk_run_id)
 
+    async def _reconcile_waiting_run(
+        self, *, host_run_id: str, sdk_run_id: str, generation: int, round_ordinal: int
+    ) -> bool:
+        """F06：对 waiting 的 SDK Run 触发一次 provider reconcile；True 表示应重新观察。
+
+        * Host 步骤 = ``reconcile_for_run(sdk_run_id)``：先过在途闸门（账本里还有
+          ``handed_off`` 的物理请求时直接返回 0，不碰别的 Run），再按 Run 作用域跑
+          ``coordinator.reconcile_incomplete(retry-once)``；blocker 一旦有
+          resolution，kernel 的 wake-drain（≤50ms 周期）把 Run 改回 running 并重驱 →
+          这里有界轮询到 Run 离开 waiting → ``provider_reconciled``；
+        * 策略已标记"同一 request 二次未知"→ ``provider_unknown_exhausted`` + cancel，
+          下一轮观察拿到 cancelled → Host CANCELLED 终态；
+        * 本 Run 没有可裁决的 provider 未知（权限 WAITING / 工具 continuation），或在途
+          闸门判定"此刻有别的调用在飞行中"→ ``settled == 0`` → False，维持原行为。
+        """
+        reconcile = self._provider_reconcile
+        if reconcile is None:
+            return False
+        before = self._ingress.query(sdk_run_id)
+        before_version = int(getattr(before, "version", 0) or 0)
+        try:
+            settled = await reconcile(sdk_run_id)
+        except Exception as exc:  # noqa: BLE001 - 不能让 reconcile 失败把 Run 变成静默停摆
+            self._record_audit(
+                "foreground.runtime.provider_reconcile_failed",
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
+                round=round_ordinal,
+                error_code=str(getattr(exc, "code", type(exc).__name__)),
+                error_detail=str(exc)[:500],
+            )
+            return False
+        exhausted = getattr(self._provider_reconciliation, "exhausted_runs", None) or ()
+        if sdk_run_id in exhausted:
+            self._record_audit(
+                "foreground.runtime.provider_unknown_exhausted",
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
+                round=round_ordinal,
+            )
+            try:
+                await self._ingress.cancel(sdk_run_id)
+            except Exception as exc:  # noqa: BLE001 - 入口关闭等；租约保活会在终态时续推
+                self._record_audit(
+                    "foreground.runtime.provider_unknown_cancel_failed",
+                    host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
+                    error_code=str(getattr(exc, "code", type(exc).__name__)),
+                )
+                return False
+            return True
+        if not settled:
+            return False
+        # 进展以 Run 记录版本变化为准，而不只看 state：重发后的 provider 可能再次
+        # 立刻超时，Run 在两次查询之间已经 waiting→running→waiting（版本 +2）。
+        for _ in range(_PROVIDER_RECONCILE_DRAIN_POLLS):
+            record = self._ingress.query(sdk_run_id)
+            state_value = str(getattr(getattr(record, "state", None), "value", "")).lower()
+            version = int(getattr(record, "version", 0) or 0)
+            if state_value != "waiting" or version != before_version:
+                self._record_audit(
+                    "foreground.runtime.provider_reconciled",
+                    host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
+                    round=round_ordinal, sdk_state=state_value, settled=int(settled),
+                    sdk_version=version,
+                )
+                return True
+            await asyncio.sleep(_PROVIDER_RECONCILE_DRAIN_INTERVAL_SECONDS)
+        return False
+
     async def _finish_bound(self, claimed: ClaimedExecution, sdk_run_id: str) -> None:
         host_run_id = claimed.host_run_id
         record = self._ingress.query(sdk_run_id)
         state = str(getattr(getattr(record, "state", None), "value", ""))
         if resolve_host_terminal(state, None) is None:
             await self._deliver_controls(host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=claimed.generation)
-        terminal = await self._observe_with_heartbeats(
-            host_run_id=host_run_id,
-            sdk_run_id=sdk_run_id,
-            generation=claimed.generation,
-        )
-        if terminal is None:
+        # F06（2026-09-07）：SDK 把 provider 传输超时记 UNKNOWN 后 Run 进 waiting 并挂
+        # provider wait-blocker，等 Host 给可判定结论。之前这里记完 BOUND_WAITING 就
+        # return，驱动循环随即"无进展"退出，Run 永久停摆。现在：waiting → 触发
+        # SDK reconcile（Host RuntimeReconciliationPort → reconcile_incomplete →
+        # _drain_resolved_waits_once 同步重驱）→ 重新观察；二次未知则 cancel 收尾。
+        # 循环有界：SDK 只允许一次 rehandoff，每轮至多 reconcile 一次。
+        reconcile_rounds = 0
+        while True:
+            terminal = await self._observe_with_heartbeats(
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                generation=claimed.generation,
+            )
+            if terminal is not None:
+                break
             state = self._ingress.query(sdk_run_id)
             state_value = str(
                 getattr(getattr(state, "state", None), "value", "")
@@ -1265,6 +1357,13 @@ class ForegroundRuntimeExecutionAuthority:
                     f"{state_value or 'running'}"
                 ),
             )
+            if observed == "BOUND_WAITING" and reconcile_rounds < _PROVIDER_RECONCILE_MAX_ROUNDS:
+                reconcile_rounds += 1
+                if await self._reconcile_waiting_run(
+                    host_run_id=host_run_id, sdk_run_id=sdk_run_id,
+                    generation=claimed.generation, round_ordinal=reconcile_rounds,
+                ):
+                    continue
             if observed == "BOUND_WAITING":
                 self._notify_state_changed()
             return

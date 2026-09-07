@@ -5,9 +5,18 @@ not their gold. Runtime event/phase wiring consumes Carver's public fact reader.
 """
 from dataclasses import dataclass
 
+from deskpet.quality.corpus_c05 import SPECS as _SPECS
 
-SUPPORTED_CASES = frozenset({'C05-04', 'C05-07', 'C05-08', 'C05-09', 'C05-10', 'C05-11', 'C05-12',
+# prepare_setup_phase drives exactly one authenticated principal (the local
+# owner) through main's single foreground runtime. A case seeding a scope under
+# another owner needs a second principal lane (corpus_c05_runtime.prepare_task_case
+# with lanes['other']), which main does not provide; those cases stay
+# unsupported here rather than being seeded under the owner they must exclude.
+SINGLE_OWNER_CASES = frozenset(case_id for case_id, specs in _SPECS.items()
+                               if all(spec.owner == 'self' for spec in specs))
+_SCRIPTED_CASES = frozenset({'C05-04', 'C05-07', 'C05-08', 'C05-09', 'C05-10', 'C05-11', 'C05-12',
                              'C05-14', 'C05-20'})
+SUPPORTED_CASES = _SCRIPTED_CASES & SINGLE_OWNER_CASES
 _PREVIEW = 'candidate_preview_then_turn_terminal'
 _UNMET = 'record_unmet_and_stop_no_rescue'
 # Exact authored scripts. No target ID, expected answer, or selected label.
