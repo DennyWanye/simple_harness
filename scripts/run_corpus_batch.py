@@ -14,6 +14,51 @@ import time
 from pathlib import Path
 
 
+def _preflight_factory(host: Path, model: str | None, wait: int, max_wait: int):
+    """Probe the relay with the Host's request shape before burning a case.
+
+    Reads only APIKEY/BASEURL from the credential file (same rule as the worker).
+    A non-200 answer waits and retries up to max_wait; the outcome is recorded per
+    case. This gates environment outages, it never alters the case or its scoring.
+    """
+    if model == "none":
+        return lambda: {"ready": True, "skipped": True, "waited_seconds": 0}
+    import tomllib
+    if model is None:
+        with (host / "config.toml").open("rb") as handle:
+            model = tomllib.load(handle)["llm"]["model"]
+    from dotenv import dotenv_values
+    values = dotenv_values(host.parent / "simple_harness" / ".env", interpolate=False)
+    base_url, key = values.get("BASEURL"), values.get("APIKEY")
+    import httpx
+    body = {"model": model, "max_tokens": 16,
+            "messages": [{"role": "system", "content": "你是助手。"},
+                         {"role": "user", "content": "只回答数字：1+1=?"}],
+            "tools": [{"type": "function", "function": {"name": "context_route", "description": "route",
+                       "parameters": {"type": "object", "properties": {"decision": {"type": "string"}},
+                                      "required": ["decision"]}}}],
+            "tool_choice": "none"}
+
+    def probe():
+        waited, attempts = 0, []
+        while True:
+            try:
+                response = httpx.post(base_url.rstrip("/") + "/chat/completions", json=body, timeout=90,
+                                      headers={"Authorization": "Bearer " + key})
+                status, detail = response.status_code, response.text[:160].replace(key, "[REDACTED]")
+            except Exception as error:  # network-level failure counts as unavailable
+                status, detail = None, type(error).__name__
+            attempts.append({"status": status, "detail": detail, "waited_seconds": waited})
+            if status == 200:
+                return {"ready": True, "model": model, "attempts": attempts, "waited_seconds": waited}
+            if waited >= max_wait:
+                return {"ready": False, "model": model, "attempts": attempts, "waited_seconds": waited}
+            print(f"preflight {model}: {status} {detail[:80]!r}; waiting {wait}s", flush=True)
+            time.sleep(wait)
+            waited += wait
+    return probe
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host-root", type=Path, required=True)
@@ -25,6 +70,10 @@ def main() -> int:
     parser.add_argument("--rss-mib", type=int, default=6144)
     parser.add_argument("--seconds", type=int, default=900)
     parser.add_argument("--python", type=Path)
+    parser.add_argument("--preflight-model", default=None,
+        help="Model to probe before each case (default: config.toml [llm] model); 'none' disables")
+    parser.add_argument("--preflight-wait-seconds", type=int, default=60)
+    parser.add_argument("--preflight-max-wait-seconds", type=int, default=1800)
     args = parser.parse_args()
     host = args.host_root.resolve()
     python = (args.python or host / "backend/.venv/bin/python").absolute()  # keep venv symlink
@@ -42,12 +91,20 @@ def main() -> int:
               "recall-corpus-candidate/review-zh/successor-12x20").resolve()
     compiler = (args.memory_sdk_root / "scripts").resolve()
     summary_path = evidence / "batch-summary.jsonl"
+    preflight = _preflight_factory(host, args.preflight_model, args.preflight_wait_seconds,
+                                   args.preflight_max_wait_seconds)
     for case_id in cases:
         case_dir = evidence / case_id
         if case_dir.exists():
             print(f"{case_id}: SKIP existing {case_dir}")
             continue
         case_dir.mkdir()
+        gate = preflight()
+        (case_dir / "preflight.json").write_text(json.dumps(gate, ensure_ascii=False, indent=2) + "\n")
+        if not gate["ready"]:
+            print(f"{case_id}: PREFLIGHT_UNAVAILABLE after {gate['waited_seconds']}s; stopping batch", flush=True)
+            case_dir.rmdir() if not any(case_dir.iterdir()) else None
+            return 2
         started = time.time()
         command = [str(python), str(host / "scripts/run_resource_bounded.py"),
                    "--evidence-dir", str(case_dir / "resource"),
