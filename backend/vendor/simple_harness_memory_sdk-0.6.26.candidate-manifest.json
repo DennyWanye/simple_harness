@@ -1,0 +1,13 @@
+{
+  "schema": "simple-harness-memory-candidate-v1",
+  "version": "0.6.26",
+  "source": "9b148b969926c7286fbac0e0371d81f9359b2bcd",
+  "reviewed_source": "9b148b969926c7286fbac0e0371d81f9359b2bcd",
+  "artifacts": {
+    "simple_harness_memory_sdk-0.6.26-py3-none-any.whl": "abe301b03f912b0b749cf5dedd1c0291a8f87cb449628e6b860b474603e4306c"
+  },
+  "build_count": 1,
+  "source_date_epoch": "1788814971",
+  "memory_schema": "7.4",
+  "scope": "0.6.25 plus prospective trigger rendered into vector and lexical text (date, weekday, time, \u63d0\u9192) with text format version 2 forcing generation rebuild (corpus C04 root cause); source controls passed locally; C04 rerun pending"
+}
