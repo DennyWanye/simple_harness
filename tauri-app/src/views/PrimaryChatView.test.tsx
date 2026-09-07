@@ -184,6 +184,8 @@ it("renders a typed Host reminder separately when the model only answers 47 and 
   await screen.findByText("检查银杏测试清单");
   expect(screen.getByText("提醒")).toBeTruthy();
   expect(screen.getByText("47")).toBeTruthy();
+  // 口径：提醒卡片固定在同一轮助手正文之后，前端按读模型顺序渲染、不重排。
+  expect(screen.getByText("47").compareDocumentPosition(screen.getByText("检查银杏测试清单")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   h.stopReads();
   act(() => h.emit({ type: "human_memory_changed" }));
   expect(screen.queryByText("检查银杏测试清单")).toBeNull();

@@ -152,8 +152,16 @@ async def test_actual_ack_answer_only_has_stable_notice_and_public_detail(tmp_pa
         detail = await env.read("primary.messages.detail", {"primary_ref": env.primary, "message_ref": item["message_ref"]})
         assert detail["payload"]["ok"] and detail["payload"]["result"]["text"] == item["text"]
         assert notices(await env.read()) == [item]
+        # 口径（DECISION-REMINDER-CARD-ORDER.md）：卡片固定排在完成 prospective_ack 那一轮的助手正文之后。
+        items = page["payload"]["result"]["items"]
+        order = [(m["role"], m["message_ref"]) for m in items]
+        answer_at = next(i for i, m in enumerate(items) if m["role"] == "assistant" and m["text"] == "47")
+        reminder_at = next(i for i, m in enumerate(items) if m["role"] == "reminder")
+        assert answer_at < reminder_at == len(items) - 1
         await env.w.manager.close(); await env.w.open()
         assert notices(await env.read()) == [item]  # fresh service/Memory handle, same durable ACK
+        reopened = (await env.read())["payload"]["result"]["items"]
+        assert [(m["role"], m["message_ref"]) for m in reopened] == order  # 冷重开顺序与 message_ref 逐项相等
         assert len(env.sends) == 2
 
 
