@@ -40,4 +40,4 @@ luna 一次请求 240s 传输超时后，SDK 将该 provider 调用 `settle_unkn
 
 ## F07 `context_page_in` 处理器失败后整个 Run 被判 history 不可核验（2026-09-08 语料 run-01e C04-16 发现，待修）
 
-模型调用 `context_page_in` 失败（`product_tool.failed code=tool_failed`，value 为空）后，下一次 provider 调用被 `PrimaryHistoryDisclosureRejected` 拒绝并终止 Run。`primary_dependencies.py` 只对 `primary_page_hash_mismatch` 做确定性复算、对参数拒绝（a8734fbf）跳过，其余失败 carrier 一律视为不可核验。需要：区分"处理器未返回任何内容"的失败（value 为空且有错误码）与真正不可核验的情况；同时查该次 page_in 失败的根因（页引用是否由模型编造）。与 F06 一起在 r12 前后处理。
+模型调用 `context_page_in` 失败（`product_tool.failed code=tool_failed`，value 为空）后，下一次 provider 调用被 `PrimaryHistoryDisclosureRejected` 拒绝并终止 Run。`primary_dependencies.py` 只对 `primary_page_hash_mismatch` 做确定性复算、对参数拒绝（a8734fbf）跳过，其余失败 carrier 一律视为不可核验。需要：区分"处理器未返回任何内容"的失败（value 为空且有错误码）与真正不可核验的情况；根因已查：模型把 typed 召回项 id `recall-item:…:1` 当作 `reference_id` 传给 `context_page_in`（该工具只接受本次请求准备好的精确页引用），处理器拒绝；属工具描述/提示引导不足 + 校验器过严的组合。与 F06 一起在 r12 前后处理。
