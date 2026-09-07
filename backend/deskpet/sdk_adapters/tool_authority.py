@@ -1861,6 +1861,23 @@ class SdkPreparedAuthorizationPolicy:
             **explicit_fences,
         )
         self._policy_generation = plan.policy_state.generation
+        if plan.action != "allow" and explicit_only and plan.policy_state.mode == "auto":
+            # 2026-09-07 product decision (user): the product has only two modes,
+            # manual and auto, and auto is the default in which NO prompt is ever
+            # shown -- confirm-only effect classes are auto-granted exactly like any
+            # other Tool. The frozen EffectClass still travels in the audit facts;
+            # only the REQUIRE_USER round trip is removed for auto mode.
+            plan = await self._runtime.plan_prepared_call(
+                call=call,
+                context=context,
+                permission_category=authority.permission_categories[call.tool_name],
+                task_grant_id=None,
+                principal_id=authority.principal_id,
+                explicit_only=False,
+                confirmed=False,
+            )
+            self._policy_generation = plan.policy_state.generation
+            explicit_only = False
         if plan.action != "allow" and (plan.policy_state.mode == "manual" or explicit_only):
             # SDK owns the final decision nonce.  Compute the exact user grant
             # candidate now, but return REQUIRE_USER so it remains prepared

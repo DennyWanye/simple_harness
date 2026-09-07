@@ -237,3 +237,10 @@ cd tauri-app && npm test
 - Update ARCHITECTURE/ when task completes
 - Default-ON for completed features in testing phase
 - Unit tests + E2E validation required for completion
+
+## 用户产品决定（2026-09-07，后续 Agent 必须遵守）
+
+1. **权限模式只有 manual 与 auto 两种，默认 auto。auto 模式下不弹任何授权提示，所有工具效果默认允许执行**（含 context_route、prospective_ack 等原 confirm-only 类）。原 S5b Task 6「auto 永不授予 confirm-only」口径作废；实现见 `backend/deskpet/sdk_adapters/tool_authority.py`（auto 下二次规划 `explicit_only=False`）。manual 模式仍逐次确认。
+2. **遗忘只针对记忆，不针对会话记录**：在 UI 忘记一条认知记忆，只影响该记忆的召回/图谱/工作记忆，**不得**把它的来源对话轮从主对话视图或短期历史中隐藏。原 acceptance HM-AC-1 中「相关内容立即退出六阅读视图/ResumePackage」应理解为"记忆派生内容"，不包含原始会话文本。显式删除会话记录是另一个尚未定义的功能。
+3. 聊天区渲染原始工具回执 JSON、召回为空后模型循环重提同一路由：记为 followup（`plans/2026-09-06-typed-use-primary/FOLLOWUPS.md` F02/F03），本轮不处理。
+4. 真实模型：主用 `gpt-5.6-luna`（svtun）；中转不可用时用 `.env` 的 `DEEPSEEKER_APIKEY`（DeepSeek 官方 API，`deepseek-v4-pro`）作为回退，并在证据中记录回退。

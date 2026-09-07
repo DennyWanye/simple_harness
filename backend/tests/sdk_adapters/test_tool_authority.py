@@ -1312,11 +1312,12 @@ async def _auto_policy(authorities: SdkRunToolAuthorityRegistry) -> SdkPreparedA
 
 
 @pytest.mark.asyncio
-async def test_auto_mode_never_grants_confirm_only() -> None:
-    """(a) auto + DESTRUCTIVE（inventory 冻结 EffectClass）→ REQUIRE_USER，reason
-    ``product_policy_user_confirmation``，候选 grant 来源 ``user``（绝不合成 ``policy:auto``）；
-    (b) auto + write_file（manifest reversible_local）→ ALLOW（既有 auto 策略，grant 来源 policy:auto）；
-    manifest dangerous（run_shell）同样 REQUIRE_USER；``explicit_only`` 经 ``plan_prepared_call`` 接入。"""
+async def test_auto_mode_grants_confirm_only_without_prompt() -> None:
+    """2026-09-07 用户产品决定：只有 manual / auto 两种模式，默认 auto，auto 下不弹任何
+    授权提示。(a) auto + DESTRUCTIVE（inventory 冻结 EffectClass）→ ALLOW，grant 来源
+    ``policy:auto``；manifest dangerous（run_shell）同样 ALLOW；(b) write_file（reversible_local）
+    → ALLOW。冻结 EffectClass 仍保留在 spec/facts 中（审计可见），只是 auto 模式不再 REQUIRE_USER。
+    原 S5b Task 6「auto 永不授予 confirm-only」的口径由该决定替代。"""
 
     inventory = (
         _Inventory("write_file", "async", "write_file"),
@@ -1344,21 +1345,18 @@ async def test_auto_mode_never_grants_confirm_only() -> None:
 
     policy._runtime.plan_prepared_call = spy  # type: ignore[method-assign]
 
-    # (a) DESTRUCTIVE → REQUIRE_USER，grant_source == user ≠ policy:auto。
+    # (a) DESTRUCTIVE → ALLOW，无 REQUIRE_USER；grant 来源 policy:auto。
     destructive = await policy.decide(_effect_for("run-auto", "purge_dir", effect_id="effect-purge"), request=None)
-    assert destructive.decision is AuthorizationDecision.REQUIRE_USER
-    assert destructive.reason_code == "product_policy_user_confirmation"
-    assert destructive.request is not None
-    assert destructive.request.metadata["grant_source"] == "user"
-    assert destructive.request.metadata["grant_source"] != "policy:auto"
+    assert destructive.decision is AuthorizationDecision.ALLOW
+    assert destructive.request is None
     facts = policy.facts_for(_effect_for("run-auto", "purge_dir", effect_id="effect-purge"))
-    assert facts.grant.source == "user"
-    assert facts.plan.authorization_origin == "explicit_decision"
-    assert [item for item in seen if item[0] == "purge_dir"] == [("purge_dir", True, False), ("purge_dir", True, True)]
-    # manifest dangerous（run_shell, EffectClass unknown）→ 同样 REQUIRE_USER。
+    assert facts.grant.source == "policy:auto"
+    # 第一次仍以 explicit_only 规划（保留冻结 EffectClass 事实），auto 下第二次以 explicit_only=False 授予。
+    assert [item for item in seen if item[0] == "purge_dir"] == [("purge_dir", True, False), ("purge_dir", False, False)]
+    # manifest dangerous（run_shell, EffectClass unknown）→ 同样 ALLOW。
     shell = await policy.decide(_effect_for("run-auto", "run_shell", effect_id="effect-shell"), request=None)
-    assert shell.decision is AuthorizationDecision.REQUIRE_USER
-    assert shell.request is not None and shell.request.metadata["grant_source"] == "user"
+    assert shell.decision is AuthorizationDecision.ALLOW
+    assert policy.facts_for(_effect_for("run-auto", "run_shell", effect_id="effect-shell")).grant.source == "policy:auto"
     # (b) write_file（reversible_local）→ ALLOW，既有 auto grant。
     allowed = await policy.decide(_effect_for("run-auto", "write_file", effect_id="effect-write"), request=None)
     assert allowed.decision is AuthorizationDecision.ALLOW
