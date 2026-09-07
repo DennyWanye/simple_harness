@@ -23,7 +23,7 @@ from deskpet.quality.corpus_fixture_delivery import FixtureAnalysisDelivery, CON
 class FixtureSetupExecutor(FixtureAnalysisDelivery):
     def __init__(self, *, path, batch, source_pair, principal, clock):
         if type(batch) is not SetupBatch:raise TypeError('SetupBatch required')
-        if not batch.case_id.startswith('C01-') or batch.case_id=='C01-06':
+        if not batch.case_id.startswith(('C01-','C02-')) or batch.case_id in ('C01-06','C02-19'):
             raise ValueError('corpus_runtime_setup_mapping_not_supported')
         self.batch=batch;self.source_pair=source_pair;self.principal=principal;self.clock=clock
         self.evidence=HostEvidenceAuthority(path);self.store=HumanMemoryProgramStore(path)

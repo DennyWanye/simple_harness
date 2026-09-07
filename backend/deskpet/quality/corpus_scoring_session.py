@@ -169,12 +169,15 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         c05_schedule = validate_schedule(case_id, json.loads((directory / "scheduler.json").read_text()))
         from deskpet.quality.corpus_c05_state_phase import compile_c05_initial_input
         c05_input = compile_c05_initial_input(c05, authored)
-    if type(case_id) is str and case_id.startswith("C08-"):
-        # Only source-complete retained carriers enter this phase. Other C08
-        # scalar/partial carriers are not made ready by an empty placeholder.
+    from deskpet.quality.corpus_scoring import c08_retained_case_ids, c08_scalar_case_ids
+    if type(case_id) is str and case_id in c08_retained_case_ids():
+        # Only source-complete retained carriers enter this phase. Scalar C08
+        # cases are seeded below through the suppressed scalar fixture instead.
         from deskpet.quality.corpus_c08_retained import compile_c08_retained_setup
         c08_retained = compile_c08_retained_setup(case_id, setup["setup_source_text"],
             scenario_clock=setup["scenario_clock"]["instant"])
+    elif type(case_id) is str and case_id.startswith("C08-") and case_id not in c08_scalar_case_ids():
+        raise ValueError("c08_case_setup_not_supported:" + case_id)
     if type(case_id) is str and case_id.startswith("C09-"):
         from deskpet.quality.corpus_c09 import compile_c09_setup
         c09 = compile_c09_setup(case_id, setup["setup_source_text"],
@@ -196,11 +199,27 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     from deskpet.sdk_adapters.context_route import local_owner_auth
     from deskpet.quality.corpus_c01 import compile_setup
     from deskpet.quality.corpus_setup_jobs import SetupFixtureDeliveryAuthority, prepare_runtime_seed
+    open_fixture = None
     if case_id.startswith("C07-"):
         from deskpet.quality.corpus_c07 import compile_c07_setup as compile_setup
         from deskpet.quality.corpus_c07_prepare import prepare_c07_seed as prepare_runtime_seed
     elif case_id == "C01-06":
         from deskpet.quality.corpus_c01_revision_prepare import compile_c01_revision_setup as compile_setup
+    elif case_id.startswith("C03-"):
+        from deskpet.quality.corpus_c03 import compile_c03_setup as compile_setup
+        from deskpet.quality.corpus_c03_prepare import prepare_c03_setup as prepare_runtime_seed
+    elif case_id.startswith("C06-"):
+        from deskpet.quality.corpus_c06 import compile_c06_setup as compile_setup
+        from deskpet.quality.corpus_c06_prepare import prepare_c06_setup as prepare_runtime_seed
+    elif case_id in c08_scalar_case_ids():
+        from deskpet.quality.corpus_c08 import compile_c08_setup as compile_setup
+        from deskpet.quality.corpus_c08_prepare import prepare_c08_seed as prepare_runtime_seed
+    elif case_id.startswith("C04-"):
+        from deskpet.quality.corpus_c04 import compile_c04_setup as compile_setup
+        from deskpet.quality.corpus_c04_prepare import open_c04_fixture as open_fixture
+    elif case_id.startswith("C11-"):
+        from deskpet.quality.corpus_c11 import compile_c11_setup as compile_setup
+        from deskpet.quality.corpus_c11_prepare import open_c11_fixture as open_fixture
     from deskpet.memory.human_memory_v7 import local_memory_principal, host_classification_policy, HOST_SUPPORTED_FILTER_POLICIES
     from deskpet.memory.evidence_authority import HostEvidenceAuthority
     from deskpet.memory.memory_ingestion_outbox import MemoryIngestionOutboxWorker
@@ -325,6 +344,13 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                         principal=local_memory_principal(), authority_ref=auth.authority_ref,
                         batch=batch, classification_policy=host_classification_policy(),
                         supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES))
+                elif open_fixture is not None:
+                    # C04 / C11 own their fixture clocks (ingestion time before scenario time).
+                    _, seed = await fixture_owners.enter_async_context(open_fixture(
+                        path=main._state_db_path, memory_path=memory_path,
+                        principal=local_memory_principal(), authority_ref=auth.authority_ref,
+                        batch=batch, classification_policy=host_classification_policy(),
+                        supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES))
                 else:
                     delivery = SetupFixtureDeliveryAuthority()
                     fixture_manager = await memory.build_human_memory_v7(
@@ -337,7 +363,10 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                         principal=local_memory_principal(), authority_ref=auth.authority_ref,
                         batch=batch, delivery_authority=delivery)
                 outcome["setup_receipt"] = wire({name: seed[name] for name in
-                    ("source_pair", "labels", "setup_hash", "outcome", "fixture_executions")})
+                    ("source_pair", "labels", "setup_hash", "outcome", "fixture_executions",
+                     "manifest_hash", "plan", "ingestion_receipt", "application", "request",
+                     "source_limits", "lifecycle", "graph_before", "graph_after")
+                    if name in seed})
                 if case_id.startswith("C07-"):
                     outcome["setup_receipt"].update(wire({name: seed[name] for name in
                         ("manifest_hash", "fixture_defaults", "application", "request")}))

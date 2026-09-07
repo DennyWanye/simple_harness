@@ -6,7 +6,8 @@ not their gold. Runtime event/phase wiring consumes Carver's public fact reader.
 from dataclasses import dataclass
 
 
-SUPPORTED_CASES = frozenset({'C05-04', 'C05-07', 'C05-08', 'C05-09', 'C05-14', 'C05-20'})
+SUPPORTED_CASES = frozenset({'C05-04', 'C05-07', 'C05-08', 'C05-09', 'C05-10', 'C05-11', 'C05-12',
+                             'C05-14', 'C05-20'})
 _PREVIEW = 'candidate_preview_then_turn_terminal'
 _UNMET = 'record_unmet_and_stop_no_rescue'
 # Exact authored scripts. No target ID, expected answer, or selected label.
@@ -15,6 +16,9 @@ _SCRIPTS = {
     'C05-07': ((_PREVIEW, '对，选家庭藏书那项。'),),
     'C05-08': ((_PREVIEW, '选已经结束那次，只看最终结论，别重新做。'),),
     'C05-09': ((_PREVIEW, '选等待字体授权的家谱任务，先告诉我卡点。'),),
+    'C05-10': ((_PREVIEW, '选修书脊那项。'),),
+    'C05-11': ((_PREVIEW, '选校稿，不是打印。'),),
+    'C05-12': ((_PREVIEW, '选本人那份家庭照片编目。'),),
     'C05-14': ((_PREVIEW, '选需要核对座位的那项。'),),
     'C05-20': ((_PREVIEW, '我原想选排版，先别切换。'),
                ('assistant_turn_terminal_after_f1', '改选封面校对，以这条为准。')),

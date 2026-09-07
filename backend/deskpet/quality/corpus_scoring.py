@@ -19,6 +19,47 @@ from deskpet.quality.corpus_trace import digest, wire
 C08_RETAINED_CASES = frozenset({'C08-01', 'C08-06', 'C08-11', 'C08-18'})
 
 
+def c08_retained_case_ids():
+    """C08 cases whose retained/document/derived carriers are source-complete."""
+    from deskpet.quality.corpus_c08_retained import RETAINED
+    from deskpet.quality.corpus_c08_documents import DOCUMENTS
+    from deskpet.quality.corpus_c08_derived import CARRIERS
+    return frozenset(RETAINED) | frozenset(DOCUMENTS) | frozenset(CARRIERS)
+
+
+def c08_scalar_case_ids():
+    """C08 cases seeded through the scalar suppressed fixture (no retained carrier)."""
+    from deskpet.quality.corpus_c08 import FACTS
+    return frozenset(FACTS) - c08_retained_case_ids()
+
+
+def supported_case_ids():
+    """Exact case IDs the scoring session can set up end-to-end on this tree.
+
+    Excluded on purpose (no complete setup mechanism yet): C02-19 (real inference
+    source), C03-20 (inference drain), C06-01 (mapping pending), C08-20 (entity
+    alias), C09-13 (procedure successor), C11-12/16/19 (derived/prospective/unknown
+    sources), C05 cases without runner scripts, all C10 and C12.
+    """
+    from deskpet.quality.corpus_c05_session import SUPPORTED_CASES
+    from deskpet.quality.corpus_c09 import CHANGES
+    from deskpet.quality.corpus_c03 import SPECS as C03_SPECS
+    from deskpet.quality.corpus_c06 import SPECS as C06_SPECS
+    from deskpet.quality.corpus_c11 import SPECS as C11_SPECS
+    ids = set()
+    ids |= {f"C01-{i:02d}" for i in range(1, 21)}
+    ids |= {f"C02-{i:02d}" for i in range(1, 21)} - {"C02-19"}
+    ids |= set(C03_SPECS) - {"C03-20"}
+    ids |= {f"C04-{i:02d}" for i in range(1, 21)}
+    ids |= set(SUPPORTED_CASES)
+    ids |= set(C06_SPECS) - {"C06-01"}
+    ids |= {f"C07-{i:02d}" for i in range(1, 21)}
+    ids |= c08_retained_case_ids() | c08_scalar_case_ids()
+    ids |= set(CHANGES)
+    ids |= set(C11_SPECS) - {"C11-12", "C11-16", "C11-19"}
+    return frozenset(ids)
+
+
 def save(path, value):
     with Path(path).open("x", encoding="utf-8") as handle:
         json.dump(wire(value), handle, ensure_ascii=False, sort_keys=True, indent=2,
@@ -81,12 +122,7 @@ def prepare_batch(*, corpus_root, compiler_root, case_ids, output):
     for case_id in case_ids:
         matches = [i for i, row in enumerate(catalog) if row["case_id"] == case_id]
         from deskpet.quality.corpus_c05_session import SUPPORTED_CASES, validate_schedule
-        c09_supported = False
-        if case_id.startswith('C09-'):
-            from deskpet.quality.corpus_c09 import CHANGES
-            c09_supported = case_id in set(CHANGES)
-        if len(matches) != 1 or not (case_id.startswith(("C01-", "C07-"))
-                or case_id in SUPPORTED_CASES or case_id in C08_RETAINED_CASES or c09_supported):
+        if len(matches) != 1 or case_id not in supported_case_ids():
             raise ValueError("corpus_batch_requires_exact_supported_id")
         i = matches[0]
         directory = output / case_id
