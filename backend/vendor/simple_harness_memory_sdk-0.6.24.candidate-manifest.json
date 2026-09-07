@@ -1,0 +1,13 @@
+{
+  "schema": "simple-harness-memory-candidate-v1",
+  "version": "0.6.24",
+  "source": "3b51e0f68680456792c6cf1947a5e689e1c35c12",
+  "reviewed_source": "3b51e0f68680456792c6cf1947a5e689e1c35c12",
+  "artifacts": {
+    "simple_harness_memory_sdk-0.6.24-py3-none-any.whl": "0c6548b8e0ed10f4b960a4f39e203cf59324760ec6beb4e0ed7514e355339179"
+  },
+  "build_count": 1,
+  "source_date_epoch": "1788784801",
+  "memory_schema": "7.4",
+  "scope": "0.6.23 plus cognitive vector generation skipping relation heads and persisting failed generations with error codes (native r8 defect); source controls passed locally; corpus run-02 on 0.6.23 11/11 PASS; native vector recall pending r9"
+}
