@@ -29,3 +29,7 @@
 ## F04 同一轮多条提醒到期时的卡片内部排序（2026-09-07 记录，后续处理）
 
 当前 `prospective_notice.py` 以 notice_id 哈希决定同轮多张卡片的相对顺序（稳定但与到期时间无关）。裁决 DECISION-REMINDER-CARD-ORDER.md 备查项：改为按到期时间排序只需改索引一行；本轮不处理。
+
+## F05 任务面板 README/STATUS 概览截断时的展示（2026-09-07 记录，后续处理）
+
+`task_scope.open_exact` 的 resume_package 视图超 4096 字节会被截断加「…」，STATUS JSON 截断后前端 `statusSummary` 返回 null，状态/目标/水位提示整段消失（独审 REVIEW-TASK-PANEL.md F-2）。建议显示「STATUS 概览已截断」并允许 README/STATUS 点击页入（后端 `task_scope.view` 已支持）。契约只要求首次概括，不阻塞 Task 2。
