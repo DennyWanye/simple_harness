@@ -46,6 +46,10 @@ const optId = (v: unknown, max = 512): v is string | null => v === null || id(v,
 const optHash = (v: unknown): v is string | null => v === null || hash(v);
 const count = (v: unknown, min = 0): v is number => Number.isSafeInteger(v) && Number(v) >= min;
 const invalid = () => new Error("任务响应未通过核对；本次结果尚未确认。");
+/** The reply belongs to another source revision: the opened snapshot is stale, not malformed. */
+export class TaskScopeStaleError extends Error { constructor() { super("已打开的任务来源已被更新，当前视图已过期；请重新搜索并精确打开。"); } }
+const mismatch = (v: Record<string, unknown>, open: { scope_ref: string; source_ref: string; source_hash: string }) =>
+  v.scope_ref !== open.scope_ref || v.source_ref !== open.source_ref || v.source_hash !== open.source_hash;
 
 /** Candidates are bounded summaries; any missing or oversized field rejects the whole page. */
 export function parseTaskScopeSearch(raw: unknown): TaskScopeSearchPage {
@@ -83,14 +87,15 @@ export function parseTaskScopeOpen(raw: unknown, scope: string): TaskScopeOpen {
 /** A paged-in view must belong to the opened source; other revisions never merge into this snapshot. */
 export function parseTaskScopeView(raw: unknown, open: { scope_ref: string; source_ref: string; source_hash: string }, kind: TaskScopeViewKind): TaskScopeView {
   const v = record(raw);
-  if (v.scope_ref !== open.scope_ref || v.source_ref !== open.source_ref || v.source_hash !== open.source_hash || v.kind !== kind ||
+  if (mismatch(v, open)) throw new TaskScopeStaleError();
+  if (v.kind !== kind ||
       !text(v.content, 65536) || !hash(v.content_sha256) || !optId(v.root_block_id) || !count(v.block_count) || !hash(v.receipt_hash)) throw invalid();
   return v as unknown as TaskScopeView;
 }
 export function parseTaskScopeEvidenceGroups(raw: unknown, open: { scope_ref: string; source_ref: string; source_hash: string }): TaskScopeEvidenceGroups {
   const v = record(raw);
-  if (v.scope_ref !== open.scope_ref || v.source_ref !== open.source_ref || v.source_hash !== open.source_hash ||
-      !Array.isArray(v.groups) || v.groups.length > 16 || !optId(v.next_cursor, 4096) || !hash(v.receipt_hash)) throw invalid();
+  if (mismatch(v, open)) throw new TaskScopeStaleError();
+  if (!Array.isArray(v.groups) || v.groups.length > 16 || !optId(v.next_cursor, 4096) || !hash(v.receipt_hash)) throw invalid();
   for (const value of v.groups) {
     const g = record(value);
     if (!id(g.group_ref) || !hash(g.group_hash) || !count(g.logical_group, 1) || !count(g.first_event_sequence, 1) ||
@@ -101,8 +106,8 @@ export function parseTaskScopeEvidenceGroups(raw: unknown, open: { scope_ref: st
 }
 export function parseTaskScopeEvidencePage(raw: unknown, open: { scope_ref: string; source_ref: string; source_hash: string }, group: TaskScopeEvidenceGroup): TaskScopeEvidencePage {
   const v = record(raw), page = record(v.page);
-  if (v.scope_ref !== open.scope_ref || v.source_ref !== open.source_ref || v.source_hash !== open.source_hash ||
-      v.group_ref !== group.group_ref || v.group_hash !== group.group_hash || !optHash(v.prior_page_hash) || !optId(v.next_cursor, 4096) ||
+  if (mismatch(v, open)) throw new TaskScopeStaleError();
+  if (v.group_ref !== group.group_ref || v.group_hash !== group.group_hash || !optHash(v.prior_page_hash) || !optId(v.next_cursor, 4096) ||
       !id(page.page_id, 1024) || !text(page.content, 65536) || !hash(page.content_sha256) || page.page_id !== `sha256:${page.content_sha256}`) throw invalid();
   return v as unknown as TaskScopeEvidencePage;
 }
@@ -153,6 +158,14 @@ export class TaskScopeRequests {
     } catch (error) {
       if (epoch !== this.epoch) return;
       const code = error instanceof PrimaryRequestError ? error.message : "";
+      const staleCode = code === "human_memory_evidence_source_stale" || code === "human_memory_evidence_source_unavailable";
+      if (staleCode || error instanceof TaskScopeStaleError) {
+        // The opened snapshot must not stay on screen as if it were current.
+        this.update({ open: null, views: {}, evidenceGroups: null, evidencePage: null,
+          error: code === "human_memory_evidence_source_unavailable" ? "已打开的任务来源当前不可用，当前视图已过期；请重新搜索并精确打开。"
+            : "已打开的任务来源已被更新，当前视图已过期；请重新搜索并精确打开。" });
+        return;
+      }
       this.update({ error: code === "task_scope_source_stale" ? "候选来源已过期，本次打开被拒绝；请重新搜索后再试。"
         : code === "human_memory_permission_denied" ? "该任务不属于当前身份，无法打开。"
         : error instanceof Error && !(error instanceof PrimaryRequestError) ? error.message : "任务数据暂时无法读取，请重试。" });

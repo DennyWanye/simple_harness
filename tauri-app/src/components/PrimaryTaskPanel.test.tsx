@@ -81,9 +81,14 @@ it("rejects a reply with missing fields and never shows partial data", async () 
   fireEvent.click(screen.getAllByRole("button", { name: "精确打开" })[0]);
   await act(async () => w.reply(3, open));
   fireEvent.click(screen.getByRole("button", { name: "读取 PLAN" }));
-  await act(async () => w.reply(4, { ...planView, source_hash: "9".repeat(64) }));
+  await act(async () => w.reply(4, { ...planView, content: undefined }));
   expect(screen.queryByText(/完整计划正文/)).toBeNull(); expect(screen.getByRole("alert").textContent).toMatch(/未通过核对/);
   expect(screen.getByRole("article", { name: "任务详情" })).toBeTruthy();
+  // 审查 F-1：另一 source revision 的视图是"过期"而非畸形——已打开快照必须退出。
+  fireEvent.click(screen.getByRole("button", { name: "读取 PLAN" }));
+  await act(async () => w.reply(5, { ...planView, source_hash: "9".repeat(64) }));
+  expect(screen.queryByText(/完整计划正文/)).toBeNull(); expect(screen.getByRole("alert").textContent).toMatch(/过期/);
+  expect(screen.queryByRole("article", { name: "任务详情" })).toBeNull();
 });
 it("memory panel exposes the task tab beside list, graph and audit", () => {
   const w = wire(); render(<PrimaryMemoryPanel port={w.port} primaryRef="p" verifiedOwnerKey="owner:1" ready />);

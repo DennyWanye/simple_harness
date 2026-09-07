@@ -71,3 +71,20 @@ it("stale source and invalid replies surface as errors without keeping partial d
   void c.loadView("EVIDENCE"); w.reply(4, evidenceView); await flush(); expect(c.getSnapshot().views.EVIDENCE?.block_count).toBe(3);
   stop();
 });
+
+it("evidence source stale/unavailable and cross-revision views drop the opened snapshot as stale", async () => {
+  const w = wire(), c = new TaskScopeRequests(); const stop = c.connect(w.port, "p", "owner:1", true);
+  void c.search("照片"); w.reply(0, search); await flush();
+  void c.open(candidate); w.reply(1, open); await flush(); expect(c.getSnapshot().open).not.toBeNull();
+  void c.loadEvidenceGroups();
+  w.emit({ type: "human_memory_response", request_id: w.sent[2].request_id, payload: { ok: false, operation: "task_scope.evidence_groups", error: { code: "human_memory_evidence_source_stale" } } });
+  await flush(); expect(c.getSnapshot().open).toBeNull(); expect(c.getSnapshot().views).toEqual({}); expect(c.getSnapshot().error).toMatch(/过期/);
+  void c.open(candidate); w.reply(3, open); await flush();
+  void c.loadView("EVIDENCE"); w.reply(4, { ...evidenceView, source_hash: "f".repeat(64) });
+  await flush(); expect(c.getSnapshot().open).toBeNull(); expect(c.getSnapshot().error).toMatch(/过期/);
+  void c.open(candidate); w.reply(5, open); await flush();
+  void c.loadEvidenceGroups();
+  w.emit({ type: "human_memory_response", request_id: w.sent[6].request_id, payload: { ok: false, operation: "task_scope.evidence_groups", error: { code: "human_memory_evidence_source_unavailable" } } });
+  await flush(); expect(c.getSnapshot().open).toBeNull(); expect(c.getSnapshot().error).toMatch(/不可用/);
+  stop();
+});
