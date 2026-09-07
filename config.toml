@@ -16,7 +16,7 @@ log_level = "INFO"
 # api_key 留空：由用户登录后从中转站下发并写入 keyring（见 backend/llm/
 # keys.py）—— 按设计**绝不**把真实 key 明文写进本文件。
 [llm]
-model = "gpt-5.5"
+model = "gpt-5.6-luna"
 base_url = "https://your-llm-relay.example.com/v1"
 api_key = ""
 temperature = 0.7
