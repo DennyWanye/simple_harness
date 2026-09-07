@@ -74,6 +74,8 @@ PG80017 exit0/remaining=[]，原两批红保留、WIP隔离，已释放资源。
 
 最后更新：2026-09-07（M0.6.23 采纳）。Host 已 pin Memory 0.6.23 候选（源 78ddf386，wheel 56a1a0dc…，schema 7.4 附加、7.3 库打开时前向）：`human_memory_v7.py` typed 计划恒请求 VECTOR（认知记忆向量通道），`short_index_worker.py` 同 tick 重建认知向量世代，`corpus_scoring_session.py` 评分轮前显式重建（跑道无 worker）。installed target `.local-test-evidence/2026-09-07/installed-h0710-m0623-s0313`。Host 控制：sdk_candidate/图谱/v6 关系/提醒 notice/procedure adoption 套件通过；`test_short_index_worker.py` 等 4 个短索引文件的 12 项失败在 0.6.22 wheel 下同样失败（fixture 无生产 embedder → `short_horizon_embedder_required`），属既有红；另 5 项因 fixture 缺 v50–v54 扩展（procedure_uses 表）已修。真实验收：run-02 语料重跑与原生 r8 待做。
 
+最后更新：2026-09-07（M0.6.25 采纳 + S6 Task 2 后端）。Host pin Memory 0.6.25（源 b45db92c，wheel f36bb383…，schema 7.4 不变）：Procedure 发现面对已采用（active/reinforced、unbound）流程可见并改为中文词项匹配（原生 r24/r25 根因，裁决 `plans/2026-09-07-native-main-journey/DECISION-PROCEDURE-USE-CHAIN.md`），`procedure_discover` 描述与 PERSONA 同步；S6 Task 2 后端补齐 `task_scope.list`、`open_exact.binding_summary`、公共通道拒绝 `live_probe`（独审 `REVIEW-TASK-PANEL.md` B-1/B-2/B-3）。401 runner 重 pin（rev 13 / layers 11）扫描 PASS 227 / FAIL 0 / BLOCKED 174 不变。原生 r10（Procedure 使用链）待做。
+
 最后更新：2026-09-07（原生 r9）。M0.6.24 原生：relation 世代缺陷零告警；12 轮填充后零词面重叠提问触发模型 context_route（full_text+vector），long_term_typed 召回 `backup_directory_device=外接硬盘`（查询词项对 payload 0 命中，只能来自向量通道），终答正确。记录 `plans/2026-09-07-native-main-journey/NATIVE-R9-VECTOR-RECALL.md`。
 
 最后更新：2026-09-07（TaskScope 只读审查）。记忆面板新增「任务」标签页：搜索只展示候选且不授予权限，精确打开后才显示 README/STATUS 与来源修订/drift，PLAN/DECISIONS/RESUME/EVIDENCE 按需页入，无写操作与 Manual/Auto 开关；前端 vitest/typecheck/eslint 通过，原生真实点击未验。见 `ARCHITECTURE/UI.md` 顶段。
