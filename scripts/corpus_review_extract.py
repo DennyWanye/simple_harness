@@ -39,10 +39,29 @@ def render_case(case_dir: Path) -> str:
     lines.append(f"- 类型预测：{packet.get('predicted_types')}；指标 {json.dumps(packet.get('original_metric_components'), ensure_ascii=False)}")
     if execution.get("error_traceback"):
         lines.append("- 回溯尾部：`" + execution["error_traceback"].strip().splitlines()[-1][:200] + "`")
-    transcript = _load(scoring / "observation-transcript.json")
+    if execution.get("followup_events"):
+        lines.append(f"- 多阶段：task_phase_status={execution.get('task_phase_status')} unmet={execution.get('unmet_followup')} "
+                     f"followups={json.dumps([{k: ev.get(k) for k in ('followup_id', 'status', 'after_event', 'on_unmet')} for ev in execution['followup_events']], ensure_ascii=False)}")
+    phases = sorted(d for d in scoring.glob("scoring-*") if d.is_dir())
+    for phase in phases:
+        lines.append(f"- 阶段 {phase.name}：")
+        lines.extend(_render_transcript(_load(phase / "observation-transcript.json"), indent="  "))
+    transcript = None if phases else _load(scoring / "observation-transcript.json")
     if transcript:
-        msgs = transcript if isinstance(transcript, list) else transcript.get("messages") or []
         lines.append("- 对话：")
+        lines.extend(_render_transcript(transcript))
+    elif not phases:
+        lines.append("- 对话：无 transcript")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_transcript(transcript, indent: str = "") -> list[str]:
+    if not transcript:
+        return [f"{indent}  - 无 transcript"]
+    lines: list[str] = []
+    msgs = transcript if isinstance(transcript, list) else transcript.get("messages") or []
+    if True:
         for m in msgs:
             role = m.get("role")
             if role == "tool":
@@ -61,10 +80,7 @@ def render_case(case_dir: Path) -> str:
                 lines.append(f"  - [assistant] {text[:800]}" + (f" CALLS={calls}" if calls else ""))
             elif role == "user":
                 lines.append(f"  - [user] {str(m.get('content'))[:300]}")
-    else:
-        lines.append("- 对话：无 transcript")
-    lines.append("")
-    return "\n".join(lines)
+    return [indent + line for line in lines]
 
 
 def main() -> int:
