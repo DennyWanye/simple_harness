@@ -1,24 +1,10 @@
 import { useEffect, useRef } from "react";
-import cytoscape, { type Core, type StylesheetJson } from "cytoscape";
+import cytoscape, { type Core } from "cytoscape";
 import { graphElements } from "../primary/graphElements";
+import { graphStyle } from "../primary/graphStyle";
 import type { GraphEdge, GraphNode } from "../primary/graphRequests";
 
 export type GraphSelection = { kind: "node" | "edge"; id: string } | null;
-const style: StylesheetJson = [
-  { selector: "node", style: { label: "data(label)", "background-color": "#8baaff", color: "#f1f5f9",
-    width: 44, height: 44, "font-size": 12, "text-wrap": "wrap", "text-max-width": "130px", "text-overflow-wrap": "anywhere",
-    "text-valign": "center", "text-halign": "right", "text-margin-x": 12, "border-width": 2, "border-color": "#cbd5e1" } },
-  { selector: 'node[memory_type = "episode"]', style: { shape: "ellipse", "background-color": "#57bd9b" } },
-  { selector: 'node[memory_type = "semantic"]', style: { shape: "round-rectangle" } },
-  { selector: 'node[memory_type = "procedure"]', style: { shape: "hexagon", "background-color": "#dfb970" } },
-  { selector: 'node[memory_type = "prospective"]', style: { shape: "diamond", "background-color": "#c3a0ee" } },
-  { selector: 'node[tentative = "yes"]', style: { "border-style": "dashed", "background-opacity": 0.6 } },
-  { selector: 'node[contested = "yes"]', style: { "border-color": "#fb923c", "border-width": 5 } },
-  { selector: "edge", style: { label: "data(label)", width: 2, "line-color": "#94a3b8", "target-arrow-color": "#94a3b8",
-    "target-arrow-shape": "triangle", "curve-style": "bezier", color: "#cbd5e1", "font-size": 11,
-    "text-background-color": "#111827", "text-background-opacity": 1, "text-background-padding": "3px" } },
-  { selector: ":selected", style: { "border-color": "#ffffff", "border-width": 5, "line-color": "#ffffff", "target-arrow-color": "#ffffff" } },
-];
 export function MemoryGraphCanvas({ nodes, edges, selected, onSelect, claimInitialReveal }: {
   nodes: GraphNode[]; edges: GraphEdge[]; selected: GraphSelection; onSelect: (selection: GraphSelection) => void;
   claimInitialReveal: () => boolean;
@@ -39,7 +25,7 @@ export function MemoryGraphCanvas({ nodes, edges, selected, onSelect, claimIniti
   useEffect(() => { select.current = onSelect; }, [onSelect]);
   useEffect(() => {
     if (!container.current) return;
-    const cy = cytoscape({ container: container.current, elements: graphElements(nodes, edges), style,
+    const cy = cytoscape({ container: container.current, elements: graphElements(nodes, edges), style: graphStyle(nodes.length),
       // Disconnected memories have no hierarchy: one breadth-first root row
       // crowds labels and makes fit shrink every word. Include real label bounds.
       layout: edges.length === 0

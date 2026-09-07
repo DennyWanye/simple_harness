@@ -10,6 +10,10 @@
 旧库补向量仍可能启动加载；未实测真实权重/GPU内存释放、自动卸载或新组合native，不作整体program完成声明。用户主checkout未切换。
 [组合验证及后续内存管理](../plans/2026-09-06-wemm-lazy/COMBINED.md)。
 
+## 2026-09-07 图谱密集标签可读性
+
+最后更新：2026-09-07。`src/primary/graphStyle.ts` 按当前视图记忆数分级：≤12 条标签预算 70 字、≤40 条 32 字、>40 条 18 字（超出以"…"截断），密集图缩小节点/字号并给标签加底色；选中节点始终显示完整标签（`full_label`，上限 140 字）并置顶，文字列表与详情栏一直显示完整标签。`MemoryGraphCanvas` 改用 `graphStyle(nodes.length)`。控制：`MemoryGraphCanvas.test.ts` 真实 headless Cytoscape（styleEnabled）验证 50 节点截断/选中恢复与少量节点不截断；vitest/typecheck/eslint 通过。真实 WebKit 密集画布截图验证待原生 r8 一并做。
+
 ## 2026-09-06 无边图谱标签布局已修复
 
 最后更新：2026-09-06。Cytoscape无边节点用网格，布局包含标签尺寸并允许中文换行，保留有边有向布局及全部身份/遗忘/viewport行为。真实WebKit两个尺寸各7节点：标签重叠17/13→0/0，最终有效渲染字号估计9.53/11.05px，真实选择/缩放通过。
