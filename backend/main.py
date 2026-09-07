@@ -2658,8 +2658,15 @@ agent = ToolUsingAgent(base=base_agent, registry=tool_registry)
 service_context.register("agent_engine", agent)
 
 
-async def _initialize_capability_runtime() -> None:
-    """Compose capability packs on the existing execution UoW."""
+async def _initialize_capability_runtime(*, clock=time.time) -> None:
+    """Compose capability packs on the existing execution UoW.
+
+    ``clock`` is the single time seam for every TaskGrant minted by this
+    composition. Production leaves it at the real wall clock; the corpus
+    runway injects the scenario clock so that grant ``expires_at`` is
+    derived from the same source the activation side compares against
+    (see DECISION-C04-15-TASKGRANT-EXPIRY).
+    """
 
     if deskpet_tool_registry_v2 is None:
         raise RuntimeError("ToolRegistry V2 is unavailable")
@@ -2909,10 +2916,11 @@ async def _initialize_capability_runtime() -> None:
         staging_base=platform.manager.layout.root / "builder",
         tool_service=platform.tool_service,
     )
-    authorization_runtime = PreparedAuthorizationRuntime(store)
+    authorization_runtime = PreparedAuthorizationRuntime(store, clock=clock)
     admission_task_grant_runtime = AdmissionTaskGrantRuntime(
         store,
         capability_managed_root=platform.manager.layout.root,
+        clock=clock,
     )
     refresh_snapshots = SqliteCapabilityRefreshSnapshotRepository(store)
     refresh_staging = CapabilityRefreshStagingService(store)
@@ -8623,6 +8631,7 @@ async def _build_product_sdk_runtime_stack(
     authorization_policy = SdkPreparedAuthorizationPolicy(
         authorization_runtime,
         tool_authorities,
+        clock=clock,
         initial_policy_generation=initial_authorization_policy.generation,
         skill_install_preflight=project_skill_install_service,
     )

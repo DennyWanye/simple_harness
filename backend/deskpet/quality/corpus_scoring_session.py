@@ -316,7 +316,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         gateway = build_search_gateway(main.config)
         set_default_gateway(gateway)
         main.service_context.register("search_gateway", gateway)
-        await main._initialize_capability_runtime()
+        await main._initialize_capability_runtime(clock=clock)
         await main._initialize_growth_authority()
 
         outcome["stage"] = "public_setup"
