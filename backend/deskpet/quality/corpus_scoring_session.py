@@ -85,6 +85,12 @@ def configure_process(directory, host_root, *, initialize_only=False):
     # Model/window/output parameters remain the actual source configuration.
     # Transport endpoint only is replaced by the authorized process endpoint.
     config["llm"]["base_url"] = base_url
+    model_override = os.environ.get("CORPUS_MODEL_OVERRIDE")
+    if model_override:
+        # Fallback provider decided by the user (2026-09-07): recorded, never silent.
+        config["llm"]["model"] = model_override
+        (runtime_root / "model-override.json").write_text(json.dumps(
+            {"model": model_override, "credential_file": str(credential_file)}))
     config_path = runtime_root / "config.toml"
     config_path.write_text(tomlkit.dumps(config))
     for name in tuple(os.environ):

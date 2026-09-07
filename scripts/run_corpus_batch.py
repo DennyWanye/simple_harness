@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 
-def _preflight_factory(host: Path, model: str | None, wait: int, max_wait: int):
+def _preflight_factory(host: Path, model: str | None, wait: int, max_wait: int, env_file: Path | None = None):
     """Probe the relay with the Host's request shape before burning a case.
 
     Reads only APIKEY/BASEURL from the credential file (same rule as the worker).
@@ -28,7 +28,7 @@ def _preflight_factory(host: Path, model: str | None, wait: int, max_wait: int):
         with (host / "config.toml").open("rb") as handle:
             model = tomllib.load(handle)["llm"]["model"]
     from dotenv import dotenv_values
-    values = dotenv_values(host.parent / "simple_harness" / ".env", interpolate=False)
+    values = dotenv_values(env_file or (host.parent / "simple_harness" / ".env"), interpolate=False)
     base_url, key = values.get("BASEURL"), values.get("APIKEY")
     import httpx
     body = {"model": model, "max_tokens": 16,
@@ -74,6 +74,11 @@ def main() -> int:
         help="Model to probe before each case (default: config.toml [llm] model); 'none' disables")
     parser.add_argument("--preflight-wait-seconds", type=int, default=60)
     parser.add_argument("--preflight-max-wait-seconds", type=int, default=1800)
+    parser.add_argument("--fallback-env-file", type=Path, default=None,
+        help="BASEURL/APIKEY file for the fallback provider used when the primary preflight fails")
+    parser.add_argument("--fallback-model", default=None)
+    parser.add_argument("--fallback-after-seconds", type=int, default=300,
+        help="switch to the fallback provider after the primary stayed unavailable this long")
     args = parser.parse_args()
     host = args.host_root.resolve()
     python = (args.python or host / "backend/.venv/bin/python").absolute()  # keep venv symlink
@@ -92,7 +97,11 @@ def main() -> int:
     compiler = (args.memory_sdk_root / "scripts").resolve()
     summary_path = evidence / "batch-summary.jsonl"
     preflight = _preflight_factory(host, args.preflight_model, args.preflight_wait_seconds,
-                                   args.preflight_max_wait_seconds)
+                                   args.fallback_after_seconds if args.fallback_env_file else args.preflight_max_wait_seconds)
+    fallback = None
+    if args.fallback_env_file:
+        fallback = _preflight_factory(host, args.fallback_model, args.preflight_wait_seconds,
+                                      args.preflight_max_wait_seconds, env_file=args.fallback_env_file)
     for case_id in cases:
         case_dir = evidence / case_id
         if case_dir.exists():
@@ -100,6 +109,13 @@ def main() -> int:
             continue
         case_dir.mkdir()
         gate = preflight()
+        provider = {"kind": "primary"}
+        if not gate["ready"] and fallback is not None:
+            fb = fallback()
+            gate = {"primary": gate, "fallback": fb, "ready": fb["ready"], "waited_seconds": gate["waited_seconds"] + fb["waited_seconds"]}
+            if fb["ready"]:
+                provider = {"kind": "fallback", "env_file": str(args.fallback_env_file), "model": args.fallback_model}
+        gate["provider"] = provider
         (case_dir / "preflight.json").write_text(json.dumps(gate, ensure_ascii=False, indent=2) + "\n")
         if not gate["ready"]:
             print(f"{case_id}: PREFLIGHT_UNAVAILABLE after {gate['waited_seconds']}s; stopping batch", flush=True)
@@ -116,11 +132,15 @@ def main() -> int:
         env = {"PYTHONDONTWRITEBYTECODE": "1",
                "PYTHONPATH": f"{args.installed_target.resolve()}:{host / 'backend'}",
                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(Path.home())}
+        if provider["kind"] == "fallback":
+            env["CORPUS_CREDENTIAL_ENV_FILE"] = str(Path(provider["env_file"]).resolve())
+            if provider.get("model"):
+                env["CORPUS_MODEL_OVERRIDE"] = provider["model"]
         with (case_dir / "driver.log").open("wb") as log:
             completed = subprocess.run(command, cwd=host, env=env, stdout=log,
                                        stderr=subprocess.STDOUT, check=False)
         record = {"case_id": case_id, "driver_returncode": completed.returncode,
-                  "elapsed_seconds": round(time.time() - started, 1)}
+                  "elapsed_seconds": round(time.time() - started, 1), "provider": provider}
         packet = case_dir / "scoring" / case_id / "review-packet.json"
         resource = case_dir / "resource" / "resource.json"
         if resource.is_file():

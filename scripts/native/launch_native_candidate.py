@@ -50,6 +50,7 @@ def main():
     parser.add_argument('--python', type=Path)
     parser.add_argument('--model', default=None, help='default: config.toml [llm] model')
     parser.add_argument('--fallback-model', default=None, help='used (and recorded) only when --model fails preflight')
+    parser.add_argument('--fallback-env-file', type=Path, default=None, help='BASEURL/APIKEY for the fallback provider (else the primary credential file)')
     parser.add_argument('--launch', action='store_true')
     parser.add_argument('--headroom-mib', type=int, default=7168)
     args = parser.parse_args()
@@ -82,10 +83,13 @@ def main():
     config = tomlkit.parse((source / 'config.toml').read_text())
     model = args.model or str(config['llm']['model'])
     preflight = [relay_ready(values['BASEURL'], values['APIKEY'], model)]
+    provider_kind = 'primary'
     if not preflight[0]['ready'] and args.fallback_model:
-        preflight.append(relay_ready(values['BASEURL'], values['APIKEY'], args.fallback_model))
+        fallback_values = dotenv_values(args.fallback_env_file, interpolate=False) if args.fallback_env_file else values
+        preflight.append({**relay_ready(fallback_values['BASEURL'], fallback_values['APIKEY'], args.fallback_model),
+                          'env_file': str(args.fallback_env_file) if args.fallback_env_file else None})
         if preflight[1]['ready']:
-            model = args.fallback_model
+            model, values, provider_kind = args.fallback_model, fallback_values, 'fallback'
     if not preflight[-1]['ready']:
         raise RuntimeError('native_relay_unavailable:' + json.dumps(preflight))
     args.evidence_root.mkdir(parents=True, exist_ok=True)
@@ -131,7 +135,8 @@ def main():
         'source': str(source), 'source_head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip(),
         'python': str(python), 'installed_target': str(installed), 'bundle': str(bundle),
         'binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(), 'userdata': str(user), 'port': args.port,
-        'model': model, 'model_preflight': preflight, 'model_fallback_used': model != (args.model or str(tomlkit.parse((source / 'config.toml').read_text())['llm']['model'])),
+        'model': model, 'model_preflight': preflight, 'provider_kind': provider_kind,
+        'model_fallback_used': provider_kind == 'fallback',
         'launched': args.launch, 'admission_headroom_mib': args.headroom_mib,
         'carrier_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     }
