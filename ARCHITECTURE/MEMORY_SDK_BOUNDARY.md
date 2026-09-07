@@ -70,6 +70,8 @@
 
 最后更新：2026-09-07（M0.6.23 采纳）。Host 已 pin Memory 0.6.23 候选（源 78ddf386，wheel 56a1a0dc…，schema 7.4 附加、7.3 库打开时前向）：`human_memory_v7.py` typed 计划恒请求 VECTOR（认知记忆向量通道），`short_index_worker.py` 同 tick 重建认知向量世代，`corpus_scoring_session.py` 评分轮前显式重建（跑道无 worker）。installed target `.local-test-evidence/2026-09-07/installed-h0710-m0623-s0313`。Host 控制：sdk_candidate/图谱/v6 关系/提醒 notice/procedure adoption 套件通过；`test_short_index_worker.py` 等 4 个短索引文件的 12 项失败在 0.6.22 wheel 下同样失败（fixture 无生产 embedder → `short_horizon_embedder_required`），属既有红；另 5 项因 fixture 缺 v50–v54 扩展（procedure_uses 表）已修。真实验收：run-02 语料重跑与原生 r8 待做。
 
+最后更新：2026-09-07（原生 r9）。M0.6.24 原生：relation 世代缺陷零告警；12 轮填充后零词面重叠提问触发模型 context_route（full_text+vector），long_term_typed 召回 `backup_directory_device=外接硬盘`（查询词项对 payload 0 命中，只能来自向量通道），终答正确。记录 `plans/2026-09-07-native-main-journey/NATIVE-R9-VECTOR-RECALL.md`。
+
 最后更新：2026-09-07（M0.6.24 采纳）。Host 已 pin Memory 0.6.24（源 3b51e0f6，wheel 0c6548b8…，schema 7.4 不变）：认知向量世代跳过 relation 类 SEMANTIC head、构建失败落 failed 行并抛 `CognitiveVectorGenerationFailed`；Host 短索引告警附 SDK 错误码。installed target `installed-h0710-m0624-s0313`；401 runner 重 pin（fixture rev 12 / layers rev 10）正式扫描 run-07：PASS 227 / FAIL 0 / BLOCKED 174。Host 控制同 0.6.23 采纳时（短索引 4 文件 12 项既有红不变）。原生 r9（向量召回同义查询）待做。
 
 最后更新：2026-09-07（run-02）。M0.6.23 + 任务搜索修复后重跑 11 例：11/11 PASS，C01 required 召回 7/7，路由次数全部 1 次，`cognitive_vector_unavailable` 消失；多提类型率 71% 仍超门槛（模型选型习惯，待提示词处理）。原生 r8：真实模型 v6 关系抽取→图谱「2 条记忆 · 1 条关系」applies_to 边通过；但 0.6.23 `rebuild_cognitive_vector_generation` 遇 relation 类 SEMANTIC head 每 tick 抛 MemoryCorruptionError（记录 `plans/2026-09-07-native-main-journey/NATIVE-R8-RELATION-GRAPH.md`），0.6.24 候选修复中，向量召回原生验证改 r9。
