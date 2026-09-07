@@ -471,7 +471,10 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         # worker tick; the scoring runway has no such worker, so build it once
         # here after every seed/setup phase and before the scoring turn. This
         # also warms the production embedder ahead of the recall deadline.
-        outcome["cognitive_vector_generation"] = wire(await cognitive.manager.rebuild_cognitive_vector_generation())
+        import dataclasses
+        cognitive_manager = await cognitive.manager()
+        outcome["cognitive_vector_generation"] = dataclasses.asdict(
+            await cognitive_manager.rebuild_cognitive_vector_generation())
         outcome["execution_status"] = "DISPATCH_STARTED"
         outcome["stage"] = "original_scoring_turn"
         if c05 is not None:
@@ -530,7 +533,10 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     except _InitializationComplete:
         pass
     except Exception as exc:
+        import traceback
         outcome["error_type"] = type(exc).__name__
+        outcome["error_traceback"] = re.sub(r"(?i)(sk-|tsk_|Bearer\s+)[^\s\"'\\]+", r"\1[REDACTED]",
+            traceback.format_exc())
     finally:
         # Every constructed owner is closed even when preparation or activation
         # fails; outer resource carrier is the final process-group cleanup owner.
