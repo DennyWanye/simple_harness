@@ -125,3 +125,46 @@ def test_discover_schema_makes_the_first_page_cursor_optional():
     from deskpet.sdk_adapters.procedure_discovery import SCHEMA
     assert SCHEMA["required"] == ["query"]
     assert "after" in SCHEMA["properties"]
+
+
+class BadFirstCallProvider(DiscoveryProvider):
+    """首次 procedure_discover 缺必填参数（原生 r10 步 5 形状），随后走正常发现→使用路径。"""
+    bad_sent=False
+    async def invoke(self,request,*,cancel):
+        if self.stage==1 and not self.bad_sent:
+            self.bad_sent=True
+            self.requests.append(request)
+            return ProviderResponse(request.request_id,Message(MessageRole.ASSISTANT,'先查流程'),
+                tool_calls=(ProviderToolCall(h.CallId('discover-bad-args'),'procedure_discover',{}),),
+                model='model',usage=ProviderUsage(10,10,20))
+        return await super().invoke(request,cancel=cancel)
+
+
+@pytest.mark.asyncio
+async def test_rejected_discover_arguments_do_not_make_the_run_unverifiable(tmp_path,monkeypatch):
+    provider=BadFirstCallProvider()
+    source_rejections=[]
+    async with session(tmp_path,provider,with_discovery=True) as ctx:
+        scope=await ctx.service.create_task_scope(CreateTaskScopeRequest('discover-scope','写记录','write','discover-create'))
+        await bind_scope_root(ctx.state,scope['scope_ref'],ctx.root,tag='discover-root')
+        provider.configure(scope['scope_ref'],'',0,1)
+        invoke=provider.invoke
+        async def guarded_invoke(request, *, cancel):
+            current=await ForegroundQueueStore(ctx.state).current_snapshot(local_owner_auth().subject)
+            try:
+                await check_runtime_dependencies(db_path=ctx.state,stack=ctx.stack,
+                    sdk_run_id=current.sdk_run_id,request=request,policy_factory=lambda _:ctx.runtime.history_policy)
+            except PrimaryHistoryDisclosureRejected as error:
+                source_rejections.append(error.error_code)
+                raise
+            return await invoke(request,cancel=cancel)
+        monkeypatch.setattr(provider,'invoke',guarded_invoke)
+        await ctx.service.enqueue_turn(QueueTurnRequest(None,'discover-turn','查找记录流程并执行两步。'))
+        await ctx.runtime.after_enqueue(subject=local_owner_auth().subject)
+        await asyncio.wait_for(ctx.runtime.drain(),30)
+        # 修前：缺参 attempt 的失败 carrier 被当作"不可核验"，第二次 provider 调用即抛 primary_history_disclosure_rejected。
+        assert source_rejections==[]
+        assert ctx.runtime.last_error is None
+        assert provider.bad_sent and provider.selected['memory_id']==ctx.memory_id
+        assert (ctx.root/'record-1.txt').read_text()=='actual record'
+        assert (ctx.root/'backup-1.txt').read_text()=='actual record'

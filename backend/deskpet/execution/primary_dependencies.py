@@ -293,6 +293,12 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             else:
                 raise ValueError("primary_page_rejection_mismatch")
             continue
+        if (fact.state.value == "failed" and fact.result.outcome.value == "failed" and value is None
+                and fact.result.error_code in ("missing_required_argument", "invalid_tool_arguments")):
+            # The tool wrapper rejected the arguments before any handler ran, so
+            # no candidate content was ever read; there is nothing to verify.
+            # (r10: an omitted first-page cursor must not make the Run unverifiable.)
+            continue
         if isinstance(value, str):
             value = json.loads(value)
         if not isinstance(value, Mapping):
