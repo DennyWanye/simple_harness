@@ -1,0 +1,13 @@
+{
+  "schema": "simple-harness-memory-candidate-v1",
+  "version": "0.6.22",
+  "source": "67b176d087094d514d3730b3a5f77c31fa412256",
+  "reviewed_source": "67b176d087094d514d3730b3a5f77c31fa412256",
+  "artifacts": {
+    "simple_harness_memory_sdk-0.6.22-py3-none-any.whl": "dafdc447e19e2b3fe1a594fb6c344c879aab498035c8983aa5703520a05034ce"
+  },
+  "build_count": 1,
+  "source_date_epoch": "1788775901",
+  "memory_schema": "7.3",
+  "scope": "0.6.21 plus duplicate-source aliases limited to memory candidates (source conversation stays visible); source controls passed locally; native acceptance pending"
+}
