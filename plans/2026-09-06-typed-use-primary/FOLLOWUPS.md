@@ -33,3 +33,7 @@
 ## F05 任务面板 README/STATUS 概览截断时的展示（2026-09-07 记录，后续处理）
 
 `task_scope.open_exact` 的 resume_package 视图超 4096 字节会被截断加「…」，STATUS JSON 截断后前端 `statusSummary` 返回 null，状态/目标/水位提示整段消失（独审 REVIEW-TASK-PANEL.md F-2）。建议显示「STATUS 概览已截断」并允许 README/STATUS 点击页入（后端 `task_scope.view` 已支持）。契约只要求首次概括，不阻塞 Task 2。
+
+## F06 provider 传输超时后 Run 停摆（2026-09-07 原生 r11 发现，待修）
+
+luna 一次请求 240s 传输超时后，SDK 将该 provider 调用 `settle_unknown`（`reconcile.unknown_settled`、`provider_attempt.degraded`），Host 前台运行时随后既不重试也不终止，Run 停在 RUNNING（20+ 分钟零事件）；同 userdata 冷启动后 `reconcile.recovered` 但仍不续推。证据 `plans/2026-09-07-native-main-journey/NATIVE-R11-PROCEDURE-CHAIN.md`。需要：Host 的 `_ProviderReconciliation` 对 unknown 调用给出可判定结果（重发或按失败收尾）并让前台循环续推；单测 + 原生 r12。
