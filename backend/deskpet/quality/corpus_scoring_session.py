@@ -52,7 +52,7 @@ def configure_process(directory, host_root, *, initialize_only=False):
     from dotenv import dotenv_values
     import tomlkit
     values = {"APIKEY": "corpus-offline-not-a-key", "BASEURL": "http://127.0.0.1:9/v1"} \
-        if initialize_only else dotenv_values(Path("/Users/denny/projects/simple_harness/.env"), interpolate=False)
+        if initialize_only else dotenv_values(Path(os.environ.get("CORPUS_CREDENTIAL_ENV_FILE") or (host_root.parent / "simple_harness" / ".env")), interpolate=False)
     key, base_url = values.get("APIKEY"), values.get("BASEURL")
     if not key or not base_url:
         raise ValueError("corpus_process_credentials_missing")
