@@ -447,7 +447,9 @@ class MemoryAnalysisLane:
                 raise
             except Exception as exc:  # local indexing failure cannot starve analysis
                 self.last_short_error = exc
-                log.warning("memory_short_index_unavailable type=%s", type(exc).__name__)
+                # The message is a stable SDK error code (never user text); without
+                # it a native run only shows the exception type (r8 lesson).
+                log.warning("memory_short_index_unavailable type=%s detail=%s", type(exc).__name__, str(exc)[:200])
         runner = await self.runner()
         try:
             job = await runner.run_once()
