@@ -35,6 +35,7 @@ it("shortens canvas labels as memories grow and restores the full label on selec
   expect(Array.from(node.data("label")).length).toBe(18);
   expect(node.data("label").endsWith("…")).toBe(true);
   expect(node.data("full_label")).toBe(many[0].label);
+  expect(Array.from(graphElements([{ ...graph.nodes[0], label: "长".repeat(200) }], [])[0].data.full_label).length).toBe(140);
   expect(node.style("label")).toBe(node.data("label"));
   node.select();
   expect(node.style("label")).toBe(many[0].label);

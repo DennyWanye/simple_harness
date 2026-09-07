@@ -241,3 +241,25 @@ async def test_evidence_group_reassembles_oversized_event_and_fails_on_missing_r
         db.commit()
     with pytest.raises(ProjectionIntegrityError, match="task_scope_projection_block_missing"):
         await projections.read_evidence_group(str(groups[0]["block_id"]))
+
+
+@pytest.mark.asyncio
+async def test_chinese_query_matches_title_by_cjk_bigrams(tmp_path: Path) -> None:
+    """语料 C05-09：查询「暂停的排版工作」必须命中标题「家谱排版」；「相册」只命中相册任务。"""
+    db_path, store = await _v40_db(tmp_path)
+    await store.create_task_scope(task_scope_id="genealogy", subject="actor-1", title="家谱排版")
+    await store.create_task_scope(task_scope_id="album", subject="actor-1", title="相册裁剪")
+    await store.create_task_scope(task_scope_id="alpha", subject="actor-1", title="Alpha launch")
+    search = TaskScopeSearchStore(db_path)
+    await search.rebuild_index()
+    allowed = ["genealogy", "album", "alpha"]
+    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="暂停的排版工作", limit=10)
+    assert [c.task_scope_id for c in result.candidates] == ["genealogy"]
+    assert "家谱排版" in result.candidates[0].snippet and "[" not in result.candidates[0].snippet
+    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="相册", limit=10)
+    assert [c.task_scope_id for c in result.candidates] == ["album"]
+    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="Alpha", limit=10)
+    assert [c.task_scope_id for c in result.candidates] == ["alpha"]
+    assert "[Alpha]" in result.candidates[0].snippet
+    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="预算", limit=10)
+    assert result.candidates == ()

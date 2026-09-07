@@ -190,7 +190,8 @@ class TaskScopeSearchStore:
                     "INSERT INTO task_scope_search_fts("
                     "document_id,task_scope_id,subject,title,goal,project,status,content) "
                     "VALUES (?,?,?,?,?,?,?,?)",
-                    (document_id, task_scope_id, row["subject"], title, goal, project, status, document_text),
+                    (document_id, task_scope_id, row["subject"], title, goal, project, status,
+                     document_text + "\n" + _cjk_bigram_zone(document_text)),
                 )
                 await db.execute(
                     "INSERT INTO task_scope_search_heads("
@@ -358,7 +359,7 @@ class TaskScopeSearchStore:
                 goal=_bounded(str(row["goal"]), 4096),
                 project=_bounded(str(row["project"]), 2048),
                 status=_bounded(str(row["status"]), 256),
-                snippet=_bounded(str(row["hit"]), MAX_SNIPPET_BYTES),
+                snippet=_bounded(_snippet(str(row["hit"]), str(row["title"]), str(row["goal"]), str(row["document_text"])), MAX_SNIPPET_BYTES),
                 rank=float(row["score"]),
             )
             for row in rows
@@ -557,11 +558,48 @@ class TaskScopeSearchStore:
             yield connection
 
 
+_CJK_RUN = re.compile(r"[\u3400-\u9fff]+")
+
+
+def _lexical_units(text: str) -> list[str]:
+    """Whole tokens plus CJK bigrams.
+
+    FTS5 unicode61 keeps a Chinese run (「暂停的排版工作」) as one token, so a
+    Chinese query never matched a title such as 「家谱排版」 unless the strings
+    were identical. Documents index the same bigrams (see rebuild_scope), which
+    keeps matching symmetric and deterministic; candidates still grant nothing.
+    """
+    units: list[str] = []
+    seen: set[str] = set()
+    for token in re.findall(r"[\w\-]+", text, flags=re.UNICODE):
+        parts = [token]
+        for run in _CJK_RUN.findall(token):
+            parts.extend(run[i : i + 2] for i in range(len(run) - 1)) if len(run) > 1 else parts.append(run)
+        for unit in parts:
+            if unit not in seen:
+                seen.add(unit)
+                units.append(unit)
+    return units
+
+
+def _cjk_bigram_zone(document_text: str) -> str:
+    bigrams = [unit for unit in _lexical_units(document_text) if len(unit) == 2 and _CJK_RUN.fullmatch(unit)]
+    return " ".join(bigrams)
+
+
 def _fts_query(query: str) -> str:
-    tokens = re.findall(r"[\w\-]+", query, flags=re.UNICODE)
+    tokens = _lexical_units(query)
     if not tokens:
         raise TaskScopeSearchError("human_memory_search_query_invalid")
     return " OR ".join(f'"{token.replace(chr(34), chr(34) * 2)}"' for token in tokens[:64])
+
+
+def _snippet(hit: str, title: str, goal: str, document_text: str) -> str:
+    # A hit inside the CJK bigram zone is not readable text; show the title/goal instead.
+    core = hit.replace("[", "").replace("]", "").replace("…", "").strip()
+    if core and core in document_text:
+        return hit
+    return f"{title} {goal}".strip()
 
 
 def _bounded(value: str, limit: int) -> str:
