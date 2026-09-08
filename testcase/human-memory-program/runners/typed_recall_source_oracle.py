@@ -63,19 +63,22 @@ def rows(snapshot, table):
 # M0.6.20/0.6.22 (52910b0c/67b176d0, 91 tables, fixture rev 9-10, 2026-09-07) schema
 # 1be0e26ee2f257c3773a027518068d933af6d54722f93ba8761106deaf3e9d82 /
 # columns-PK 5e4be2d6ba823284cd1e6ac739b9acb02b972f7e13e5c5606a8cf3ea2e3e27e3;
-# M0.6.23/0.6.24/0.6.25/0.6.26/0.6.28 (78ddf386/3b51e0f6/b45db92c/9b148b96/e554c20d, memory schema 7.4, 94 tables
-# incl. cognitive_vector_generations / cognitive_vectors / cognitive_vector_audit, fixture rev 11-15, 2026-09-07/08)
-# below; 0.6.24, 0.6.25, 0.6.26, 0.6.27 and 0.6.28 have no DDL change, recomputed with capture() on each fresh root
-# and identical to 0.6.23 (0.6.27 is a build-only step Host never pinned; 0.6.28 contains it).
+# M0.6.23/0.6.24/0.6.25/0.6.26/0.6.28/0.6.31 (78ddf386/3b51e0f6/b45db92c/9b148b96/e554c20d/ff8be5f3, memory schema 7.4, 94 tables
+# incl. cognitive_vector_generations / cognitive_vectors / cognitive_vector_audit, fixture rev 11-16, 2026-09-07/08)
+# below; 0.6.24-0.6.31 have no DDL change, recomputed with capture() on each fresh root and identical to 0.6.23
+# (0.6.27, 0.6.29 and 0.6.30 are intermediate candidates Host never pinned; 0.6.31 contains them. 0.6.30 changes the
+# short-horizon projection KEY VALUE stored in short_horizon_chunks.primary_conversation_id, not the DDL: the
+# UNIQUE (principal_id, primary_conversation_id, causal_group_id) constraint and every column are byte-identical,
+# so the fresh-root schema descriptor is unchanged; schema 7.5 is deferred).
 PINNED_SCHEMA_HASH = '9702ea1ecf969324d138418abafe1efafad6464d479b21c03ff1cd1ba7394aab'
 PINNED_COLUMNS_PK_HASH = '7a5ad1d179a8eea7fe1dc39dc72f1a414e8ad3c77e799737abadec0d34cb4384'
 
 
 def verify_snapshot(s):
     if s['schema_hash'] != PINNED_SCHEMA_HASH:
-        raise ValueError('exact M0628 fresh schema descriptor differs')
+        raise ValueError('exact M0631 fresh schema descriptor differs')
     if digest({n:{k:t[k] for k in ('columns','pk')} for n,t in s['tables'].items()}) != PINNED_COLUMNS_PK_HASH:
-        raise ValueError('exact M0628 table columns/PK inventory differs')
+        raise ValueError('exact M0631 table columns/PK inventory differs')
     if digest(s['schema']) != s['schema_hash']:
         raise ValueError('source schema hash differs')
     if set(s['tables']) != {r[1] for r in s['schema'] if r[0]=='table'}:
@@ -282,8 +285,8 @@ def check_corruption_state(o, name, check_seed_authority):
     if function=='probe_existing_root':
         # Exact corruption cause raised by the pinned candidate when the tampered root is
         # probed. Lineage: M0.6.13 'human-memory v7 foreign key check failed'; M0.6.20
-        # (52910b0c) rejects earlier at the settlement schema integrity check; M0.6.23/0.6.24/0.6.25/0.6.26/0.6.28
-        # (78ddf386/3b51e0f6/b45db92c/9b148b96/e554c20d, schema 7.4) reject at the cognitive-vector forward
+        # (52910b0c) rejects earlier at the settlement schema integrity check; M0.6.23/0.6.24/0.6.25/0.6.26/0.6.28/0.6.31
+        # (78ddf386/3b51e0f6/b45db92c/9b148b96/e554c20d/ff8be5f3, schema 7.4) reject at the cognitive-vector forward
         # integrity check.
         causes={'human-memory v7 foreign key check failed','settlement_schema_integrity_differs',
                 'cognitive_vector_schema_integrity_differs'}

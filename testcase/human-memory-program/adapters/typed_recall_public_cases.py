@@ -15,6 +15,13 @@ def execution_wire(value):
             "degradation_codes": list(value.degradation_codes),
             "decision_hash": value.decision.decision_hash, "result_hash": value.result.result_hash,
             "result_item_hashes": [item.result_item_hash for item in value.result.items],
+            # M0.6.31 lets a HistoryRecallBinding resolve against a confirmation member, so the
+            # public group/member hashes are recorded next to the item hashes as binding inputs.
+            "result_group_hashes": [group.result_group_hash for group in value.result.confirmation_groups],
+            "result_confirmation_member_hashes": [[member.result_member_hash for member in group.members]
+                                                  for group in value.result.confirmation_groups],
+            "result_confirmation_member_ids": [[member.member.item_id for member in group.members]
+                                               for group in value.result.confirmation_groups],
             "unsupported_capabilities": list(value.unsupported_capabilities)}
 
 

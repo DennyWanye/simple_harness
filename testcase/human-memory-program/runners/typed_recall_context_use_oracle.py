@@ -50,7 +50,10 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def check_bundle(bundle, shared):
+def check_bundle(bundle, shared, allow_advanced_epoch=False):
+    # allow_advanced_epoch is only set by the authority-event oracle for the M0.6.29 use fence
+    # (an epoch that advanced past the bound one while every bound source revalidated). The four
+    # context-use cells keep the strict equality; nothing below is relaxed for them.
     recall = bundle['recall']; wire = recall['execution']; result = wire['result']; request = bundle['request']
     shared['check_execution_wire'](wire, recall['context'], recall['plan'])
     require(len(result['items']) == 2 and len(bundle['pages']) == 2 and len(bundle['fragments']) == 2,
@@ -105,7 +108,9 @@ def check_bundle(bundle, shared):
                 and receipt['request_hash'] == domain('simple-harness/recall-context-use-request/v1', request)
                 and all(receipt[k] == request[k] for k in ('subject','run_id','turn_id','provider_attempt_id',
                     'decision_id','decision_hash','result_id','result_hash','item_bindings','snapshot_manifest_hash'))
-                and type(receipt['authority_epoch']) is int and receipt['authority_epoch'] == result['authority_epoch']
+                and type(receipt['authority_epoch']) is int
+                and (receipt['authority_epoch'] == result['authority_epoch']
+                     or (allow_advanced_epoch and receipt['authority_epoch'] > result['authority_epoch']))
                 and receipt['policy_hash'] == result['policy_hash']
                     and request['requested_at'] == receipt['authorized_at'] < receipt['expires_at'] <= result['authority_expires_at'],
                 'receipt public hash/epoch/policy/request/time differs')

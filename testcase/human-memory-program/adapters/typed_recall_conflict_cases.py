@@ -26,6 +26,24 @@ async def contest(case,op,payload,**kwargs):
         kind='contest',target=h.ExistingMemoryTarget(op.memory_id,op.revision),**kwargs)
 
 
+async def group_visibility(case,bundle,*,tamper=False):
+    """M0.6.31 public durable witness: a HistoryRecallBinding may resolve against a
+    confirmation-group member by result_member_hash, and the whole group is revalidated
+    (group still active, head still challenger, no resolution row). Input only."""
+    import simple_harness_memory as m
+    wire=bundle['execution'];result=wire['result']
+    ids=wire['result_confirmation_member_ids'][0];hashes=list(wire['result_confirmation_member_hashes'][0])
+    if tamper:
+        hashes[0]=('0' if hashes[0][0]!='0' else '1')+hashes[0][1:]
+    bindings=tuple(m.HistoryRecallBinding(result_id=result['result_id'],result_hash=wire['result_hash'],
+        item_id=item_id,item_hash=item_hash) for item_id,item_hash in zip(ids,hashes,strict=True))
+    request=[binding.to_json() for binding in bindings]
+    case.events.append({'call':'check_history_visibility','bindings':request,'tamper':tamper})
+    snapshot=await case.manager.check_history_visibility(principal=case.principal,
+        disclosure_context=case.disclosure,bindings=bindings)
+    return {'bindings':request,'snapshot':snapshot.to_json(),'snapshot_hash':snapshot.snapshot_hash}
+
+
 async def run_cases(inputs,workspace):
     module=helper();rows=[]
     payloads=inputs['payloads']
@@ -64,6 +82,8 @@ async def run_cases(inputs,workspace):
             else:
                 op=await contest(case,op,payloads['challenger']);observed['revision8']=op.to_json()
                 observed['confirmation']=await case.recall(query='preferred_python',key='conflict-before')
+                observed['group_visibility']=await group_visibility(case,observed['confirmation'])
+                observed['group_visibility_control']=await group_visibility(case,observed['confirmation'],tamper=True)
                 if name.startswith('resolve-'):
                     kind='supersede' if name.endswith('supersede') else 'suppress' if name.endswith('suppress') else 'revise'
                     payload=payloads['incumbent'] if name=='resolve-select-incumbent' else payloads['replacement']
@@ -73,6 +93,7 @@ async def run_cases(inputs,workspace):
                         target=h.ExistingMemoryTarget(op.memory_id,op.revision))
                     observed['revision9']=op.to_json()
                     observed['after_resolution']=await case.recall(query='preferred_python',key='conflict-after')
+                    observed['group_visibility_after']=await group_visibility(case,observed['confirmation'])
                 observed['state']=await case.snapshot()
         except Exception as exc:observed['exception']=dict(type=type(exc).__name__,reason=str(exc))
         finally:await case.close()

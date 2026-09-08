@@ -175,6 +175,11 @@ async def run(request, workspace):
     if authority_cells:
         cells += await authority.run_cases({'cells':authority_cells,'recipe':inputs['context_use'],
             'events':inputs['authority_events']['events']},workspace)
+    selection=_helpers('typed_recall_selection_cases.py')
+    selection_cells=sorted(selected.intersection(selection.CELLS))
+    if selection_cells:
+        cells += await selection.run_cases({'cells':selection_cells,'selection':inputs['selection']['cases'],
+            'version':inputs['selection']['version']},workspace)
     done={row['cell_id'] for row in cells}
     cells += [{'cell_id':name,'status':'BLOCKED',
         'reason':'CELL_EXECUTOR_NOT_IMPLEMENTED' if name in selected else 'CELL_NOT_SELECTED_THIS_BATCH',

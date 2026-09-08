@@ -17,6 +17,9 @@ from datetime import datetime
 
 VERSION = 1
 STALE = {'type': 'MemoryValidationError', 'reason': 'RECALL_AUTHORITY_STALE'}
+# Events whose net effect on the bound source set is the identity: since M0.6.29 the use fence
+# revalidates every bound source, so these can no longer produce the sealed stale rejection.
+RESTORING_EVENTS = {'revoke'}
 CONTROL_MARGIN = 0.000001
 
 
@@ -85,8 +88,8 @@ def inputs(fixture, base):
     return {'version': VERSION, 'events': events}
 
 
-def check_bundle(bundle, shared, context_use):
-    context_use.check_bundle(bundle, shared)
+def check_bundle(bundle, shared, context_use, allow_advanced_epoch=False):
+    context_use.check_bundle(bundle, shared, allow_advanced_epoch=allow_advanced_epoch)
 
 
 def assess(fixture, cell, shared):
@@ -94,7 +97,7 @@ def assess(fixture, cell, shared):
     from pathlib import Path
     spec_module = importlib.util.spec_from_file_location('context_use_oracle', Path(__file__).with_name('typed_recall_context_use_oracle.py'))
     context_use = importlib.util.module_from_spec(spec_module); spec_module.loader.exec_module(context_use)
-    o = cell['observations']; checks = []; name = cell['cell_id']
+    o = cell['observations']; checks = []; conflict = []; name = cell['cell_id']
     try:
         require(o.get('authority_event_cell') == name and name.startswith('current-use/authority:'), 'authority-event cell identity differs')
         require(o.get('phase') == 'complete' and not o.get('exception'), 'public authority-event execution incomplete: ' + str(o.get('exception')))
@@ -121,7 +124,13 @@ def assess(fixture, cell, shared):
             registrations = [e for e in o['calls'] if e['call'] == 'register_conversation_evidence']
             require(len(registrations) == 11 and registrations[0]['input_text'] == spec['short_text']
                     and registrations[0]['registration']['metadata']['occurred_at'] == spec['short_occurred_at'], 'short registration chain differs')
-            require(o['projection_build'] == {'projected_chunk_count': 1, 'removed_chunk_count': 0, 'audit_id': o['projection_build'].get('audit_id')}
+            # M0.6.30 added split_group_count / truncated_group_count to ShortHorizonProjectionBuildResult.
+            # The frozen short target is far below SHORT_HORIZON_CHUNK_MAX_CHARS (2048), so both must be 0:
+            # the group is projected as exactly one unsegmented chunk and nothing is dropped. This is an
+            # added obligation, not a relaxation - the chunk_id stays the pre-0.6.30 content-addressed value.
+            require(o['projection_build'] == {'projected_chunk_count': 1, 'removed_chunk_count': 0,
+                                              'split_group_count': 0, 'truncated_group_count': 0,
+                                              'audit_id': o['projection_build'].get('audit_id')}
                     and isinstance(o['projection_build'].get('audit_id'), str), 'short projection did not project exactly the oldest target')
         initial = o['initial']; wire = initial['execution']; result = wire['result']
         shared['check_execution_wire'](wire, initial['context'], initial['plan'])
@@ -152,9 +161,33 @@ def assess(fixture, cell, shared):
         after_use = o['uses']['after_event']
         require(after_use['recall'] == initial and after_use['request']['provider_attempt_id'] == spec['after_attempt']
                 and after_use['request']['requested_at'] == spec['next_use_at'], 'fresh attempt substituted recall/attempt/time')
-        check_bundle(after_use, shared, context_use)
-        require(after_use.get('exception') == STALE and 'receipt' not in after_use, 'old result use after the event was not rejected with the public stale code')
-        checks.append('first use receipt then exact stale rejection of a fresh attempt on the same result')
+        restoring = event in RESTORING_EVENTS
+        check_bundle(after_use, shared, context_use, allow_advanced_epoch=restoring)
+        if restoring:
+            # M0.6.29 replaced the authority-epoch equality test with a non-regression test: an advanced
+            # epoch is admitted when every bound source revalidates inside the same write lock. A revoke
+            # restores exactly the sources the old result was bound to, so no revoke can make that result
+            # stale any more. Witness the admission precisely, then report the sealed row as conflicting.
+            receipt = after_use.get('receipt')
+            require(receipt is not None and 'exception' not in after_use,
+                    'restoring event: fresh attempt was neither admitted nor a witnessed rejection')
+            require(receipt['authority_epoch'] == epoch0 + epoch_delta + 1 > epoch0
+                    and receipt['policy_hash'] == policy0,
+                    'admitted receipt does not carry the advanced epoch under an unchanged policy')
+            require(receipt['item_bindings'] == first['receipt']['item_bindings']
+                    and receipt['result_hash'] == first['receipt']['result_hash']
+                    and receipt['receipt_id'] != first['receipt']['receipt_id'],
+                    'admitted receipt is not a distinct receipt over the identical bound source set')
+            conflict.append('PUBLIC_CONTRACT_CONFLICT:authority_event_cases[' + event + '].expected_old_result_use is '
+                            + STALE['reason'] + ', but M0.6.29 admits a fresh use whose authority epoch advanced '
+                            'when every bound source revalidates; a revoke restores exactly the bound sources, so the '
+                            'sealed rejection is not producible by any public construction on this candidate '
+                            '(witnessed: receipt authority_epoch ' + str(receipt['authority_epoch']) + ' > bound '
+                            + str(epoch0) + ', identical item_bindings, unchanged policy_hash)')
+            checks.append('first use receipt, then a second receipt over the identical bound set at the advanced epoch (M0.6.29 use fence)')
+        else:
+            require(after_use.get('exception') == STALE and 'receipt' not in after_use, 'old result use after the event was not rejected with the public stale code')
+            checks.append('first use receipt then exact stale rejection of a fresh attempt on the same result')
         post = o['after']; shared['check_execution_wire'](post['execution'], post['context'], post['plan'])
         after = post['execution']['result']; decision = post['execution']['decision']
         # The frozen row for revoke is relative to the preceding suppression epoch (41 -> 42).
@@ -172,7 +205,7 @@ def assess(fixture, cell, shared):
                     and r['decision']['supersedes_directive_id'] == s['decision']['directive_id'] and r['decision']['scope_ref'] == ids[0], 'revocation does not target the exact directive')
             require(decision['outcome'] == 'recall' and sorted(after_refs) == sorted(ids), 'revoked suppression did not restore both items')
             require(o['order'].index('first') < o['order'].index('suppression_commit') < o['order'].index('revoke_commit') < o['order'].index('after_event'), 'event order differs')
-            checks.append('suppress then public revoke: epoch advanced twice, old result stale, fresh recall restores the item')
+            checks.append('suppress then public revoke: epoch advanced twice, the identical bound set revalidates, fresh recall restores the item')
         elif event in {'supersede', 'contest', 'classification_change'}:
             op = o['event_mutation']; source = o['sources'][-1]
             mutation = next(e['plan'] for e in o['calls'] if e['call'] == 'apply_memory_mutation_plan' and e['plan']['plan_id'] == source['receipt']['plan_id'])
@@ -233,6 +266,8 @@ def assess(fixture, cell, shared):
         require(replay['replayed'] and replay['candidate_query_count'] == 0 and replay['result'] == result
                 and replay['decision'] == initial['execution']['decision'], 'historical exact replay differs')
         checks.append('historical identical replay remains separate from the current authority')
+        if conflict:
+            return dict(status='BLOCKED', reason=conflict[0], business_assertions=checks, executor_version=VERSION)
         return dict(status='PASS', reason='original authority-event obligation verified through public operations',
                     business_assertions=checks, executor_version=VERSION)
     except (ValueError, KeyError, TypeError, IndexError, StopIteration) as exc:

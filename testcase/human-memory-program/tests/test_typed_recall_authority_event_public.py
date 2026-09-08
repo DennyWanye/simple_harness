@@ -34,20 +34,34 @@ class AuthorityEventPublicTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             rows = await adapter.run_cases({'cells': cells, 'recipe': base, 'events': compiled['events']}, Path(directory))
         verdicts = {row['cell_id']: (row, oracle.assess_cell(fixture, row)) for row in rows}
-        for name in cells[:4]:
+        for name in cells[1:4]:
             row, verdict = verdicts[name]
             self.assertEqual(row['status'], 'OBSERVED')
             self.assertEqual(verdict['status'], 'PASS', (name, verdict))
             self.assertGreaterEqual(len(verdict['business_assertions']), 4)
+        # M0.6.29 use fence: a revoke restores exactly the bound sources, so the sealed
+        # RECALL_AUTHORITY_STALE is no longer producible. The cell is executed and fully
+        # witnessed (four business assertions) but reported as a public-contract conflict.
+        row, verdict = verdicts['current-use/authority:revoke']
+        self.assertEqual(row['status'], 'OBSERVED')
+        self.assertEqual(verdict['status'], 'BLOCKED', verdict)
+        self.assertTrue(verdict['reason'].startswith('PUBLIC_CONTRACT_CONFLICT:authority_event_cases[revoke]'), verdict)
+        self.assertGreaterEqual(len(verdict['business_assertions']), 4)
         for name in cells[4:]:
             row, verdict = verdicts[name]
             self.assertEqual(row['status'], 'BLOCKED')
             self.assertTrue(verdict['reason'].startswith('PUBLIC_CONTRACT_CONFLICT:'), verdict)
         revoke = verdicts['current-use/authority:revoke'][0]
-        for attack in ('epoch', 'stale_accepted', 'revoke_directive', 'mid_leak', 'replay', 'order', 'first_time', 'policy'):
+        for attack in ('epoch', 'stale_accepted', 'revoke_rejected', 'revoke_directive', 'mid_leak', 'replay', 'order', 'first_time', 'policy'):
             row = copy.deepcopy(revoke); o = row['observations']
             if attack == 'epoch': o['after']['execution']['result']['authority_epoch'] += 1
-            elif attack == 'stale_accepted': o['uses']['after_event'].pop('exception'); o['uses']['after_event']['receipt'] = o['uses']['first']['receipt']
+            # The admitted receipt must be a distinct receipt at the advanced epoch; replaying the first one is not it.
+            elif attack == 'stale_accepted': o['uses']['after_event']['receipt'] = o['uses']['first']['receipt']
+            # If the candidate ever rejects here again, the sealed row becomes producible and the cell must stop
+            # being reported as a contract conflict - the oracle fails rather than silently keeping it BLOCKED.
+            elif attack == 'revoke_rejected':
+                o['uses']['after_event'].pop('receipt'); o['uses']['after_event'].pop('receipt_hash', None)
+                o['uses']['after_event']['exception'] = {'type': 'MemoryValidationError', 'reason': 'RECALL_AUTHORITY_STALE'}
             elif attack == 'revoke_directive': o['revocation']['decision']['supersedes_directive_id'] = 'other-directive'
             elif attack == 'mid_leak': o['mid']['execution']['result']['items'] = o['initial']['execution']['result']['items']
             elif attack == 'replay': o['historical_replay']['candidate_query_count'] = 1

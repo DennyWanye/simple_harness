@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "fixture_id": "typed-recall-execution-layers-v1",
-  "fixture_revision": 13,
+  "fixture_revision": 14,
   "typed_recall_fixture": "typed-recall-v3.json",
-  "typed_recall_fixture_revision": 15,
-  "typed_recall_fixture_sha256": "3e4f23b7a72bc271fc8a225ccf9cb862eb3be6bf6ee505d100c95d105f184d5a",
+  "typed_recall_fixture_revision": 16,
+  "typed_recall_fixture_sha256": "31fbb8bc8186143f5a06e77af42b36b56de8bb36e40ffa65edb5f60c013225c9",
   "quality_gate": "NOT_RUN/BLOCKED",
   "all_cells": {
     "count": 401,
@@ -51,9 +51,9 @@
     "candidate_memory_identity": {
       "status": "PINNED",
       "distribution": "simple-harness-memory-sdk",
-      "version": "0.6.28",
-      "source_commit": "e554c20dd8699606d44ac5af3bc88958822b8f56",
-      "wheel_sha256": "16498e49a8494ae2a3cb24bb1325a80576e3b2063bc921f732568cbcf55436f9"
+      "version": "0.6.31",
+      "source_commit": "ff8be5f38e6b7e925f54bcc9f4f5dc65d450b3db",
+      "wheel_sha256": "e8dc27cc7585a34e38f99a5b94ba1d5b500dcde537548a0cfc2dc85ae72b9896"
     },
     "candidate_harness_identity": {
       "status": "PINNED",
@@ -135,7 +135,7 @@
     }
   },
   "hash_correction_previous_fixture_sha256": "594189edb4c46ff1c52a778c1caeef9a94d324bfd67f778ce61a3ec1c5f63d8a",
-  "candidate_pin_previous_layers_sha256": "2f483112ffd4ca3478f979f5a2bacb436d215b465576b9a1d911cc2374cfe97d",
+  "candidate_pin_previous_layers_sha256": "ab0d0ad7f27b213cd4e243f93bee54f72a3bbf9f94fc93eaf125570619faa022",
   "candidate_pin_layers_lineage": [
     "45d77ad06642c87141b3f96d4450f92ad1bfe7081238573fed89c45d462c6814",
     "11002372a2d795726f819a63691e78d22b0c9c2d7bccc3eea1a21fe536fd0a25",
@@ -145,6 +145,7 @@
     "8e9b24ddc74680c338fb28005e73ccc62c62ca6e0e968a55ef93646cfcb3a7d5",
     "598ba9b2efde1a4f0c1c0769d67ce4446bdcf49431be660fdfe60e326e6c480a",
     "21be7cffe85a82b4a6c4c04b7444a8e957353086465a8cd32ede4d95c3fa245d",
-    "db7a68a48afdf12f931ff59b1a6c9261e6ff9e4a137193b2d8d8ae37e3df16f1"
+    "db7a68a48afdf12f931ff59b1a6c9261e6ff9e4a137193b2d8d8ae37e3df16f1",
+    "2f483112ffd4ca3478f979f5a2bacb436d215b465576b9a1d911cc2374cfe97d"
   ]
 }
