@@ -1,6 +1,6 @@
 # HM-TO-A6 尝试 5 结果（2026-09-08 23:20 – 09-09 00:33，Host f7b14325 + Memory 0.6.31，DeepSeek，窗口 32000）
 
-证据：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-08/native-a6-run5/primary-ui-htxhf38f`（单进程 24 轮；第 7 轮因旧驱动重发跑了两次；第 9 轮起驱动改为"发送前等上一 Run 终态"）。核对脚本：**PASS 11 / FAIL 1 / BLOCKED 1 / INCONCLUSIVE 5**（尝试 4 为 6/7/0/5）。
+证据：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-08/native-a6-run5/primary-ui-htxhf38f`（单进程 24 轮；第 7 轮因旧驱动重发跑了两次；第 9 轮起驱动改为"发送前等上一 Run 终态"）。核对脚本：**PASS 11 / FAIL 1 / BLOCKED 1 / INCONCLUSIVE 5**（尝试 4 为 6/7/0/5）；A6-9/A6-10 按契约两层投影规则改为可计算后复判 **PASS 13 / FAIL 1 / BLOCKED 1 / INCONCLUSIVE 3**（`DECISION-GRAPH-PROJECTION-POLICY.md`）。
 
 ## 通过项（11）
 
