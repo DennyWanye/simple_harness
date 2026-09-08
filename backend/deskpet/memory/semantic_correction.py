@@ -1,6 +1,7 @@
 """Typed semantic candidates and exact Host action authority; no graph/private SDK reads."""
 from __future__ import annotations
 
+import logging
 import time
 import re
 import json
@@ -13,6 +14,8 @@ from deskpet.memory.analysis_proposal import stable_id
 from deskpet.memory.evidence_authority import HostEvidenceAuthority, HostEvidenceUnavailable
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.task_scope.protocol import canonical_hash
+
+logger = logging.getLogger(__name__)
 
 POLICY = 'host-analysis-observation/v2'
 ISSUER = 'host:semantic-correction/v2'
@@ -211,11 +214,13 @@ def hedged_contradiction_marker(text):
 
 
 class SemanticCorrectionAuthority:
-    def __init__(self, db_path, *, manager_getter, principal_getter, clock=time.time):
+    def __init__(self, db_path, *, manager_getter, principal_getter, clock=time.time,
+                 procedure_fingerprints_getter=None):
         self._path = Path(db_path)
         self._manager = manager_getter
         self._principal = principal_getter
         self._clock = clock
+        self._procedure_fingerprints = procedure_fingerprints_getter
         self._evidence = HostEvidenceAuthority(db_path)
         self._store = HumanMemoryProgramStore(db_path)
 
@@ -283,7 +288,9 @@ class SemanticCorrectionAuthority:
         if old_terms:
             query = ' '.join(dict.fromkeys(old_terms))[:4096]
         if not query:
-            snapshot = {'evidence_set_key':key, 'subject':request.subject, 'candidates':[], 'result':None, 'prepared_at':float(self._clock())}
+            snapshot = {'evidence_set_key':key, 'subject':request.subject, 'candidates':[],
+                'relation_candidates':[], 'relation_candidates_unavailable':False,
+                'result':None, 'prepared_at':float(self._clock())}
             await self._save(identity, request, snapshot)
             return snapshot
         now = float(self._clock())
@@ -331,11 +338,70 @@ class SemanticCorrectionAuthority:
         for body in issued:
             body['correction_intent'] = explicit_correction_intent(body, items, issued)
             candidates.append({'candidate_key':stable_id('semantic-candidate', key, canonical_hash(body)), **body})
+        relation_candidates, relation_unavailable = await self._relation_candidates(
+            request, key, principal, manager, journal, now, query)
         snapshot = dict(evidence_set_key=key, subject=request.subject, prepared_at=now, context=context.to_json(),
             plan=plan.to_json(), decision=execution.decision.to_json(), result=result.to_json(),
-            result_hash=result.result_hash, candidates=candidates)
+            result_hash=result.result_hash, candidates=candidates,
+            relation_candidates=relation_candidates,
+            relation_candidates_unavailable=relation_unavailable)
         await self._save(identity, request, snapshot)
         return snapshot
+
+    async def _relation_candidates(self, request, key, principal, manager, journal, now, query):
+        """Existing Procedure/Prospective memories the model may use as a relation endpoint.
+
+        Incident L: an ``applies_to`` relation needs a Procedure/Prospective on the target
+        side, and before v8 that endpoint had to be created by the same proposal — so
+        「这套流程按我前面说的 Python 环境执行」 had no relation shape at all and degraded to a
+        literal claim.  This is an *additive* channel: it never grants a mutation by itself
+        (the SDK re-resolves every endpoint at apply time), so a failure here degrades to an
+        empty list and is recorded, rather than failing a turn that used to work.
+        """
+        from simple_harness import (RecallContext, RecallPlan, RecallBudget, LongTermMemoryType,
+            RecallSelectorDomain, RecallRetrievalMode, RecallReasonCode)
+        from deskpet.memory.recall_authority import execute_typed_recall_recollecting
+
+        types = (LongTermMemoryType.PROCEDURE, LongTermMemoryType.PROSPECTIVE)
+        try:
+            fingerprints = () if self._procedure_fingerprints is None else tuple(
+                await self._procedure_fingerprints(request.run_id))
+            context = RecallContext(request.run_id, request.subject,
+                stable_id('analysis-relation-query', key), 1, now + 60, query, None, types, False,
+                (RecallSelectorDomain.MEMORY_TYPE,), (RecallRetrievalMode.FULL_TEXT,),
+                (), (), None, None, (), (), (), fingerprints, request.disclosure_context,
+                request.ordered_evidence_refs, RecallBudget(8, 16384, 2048, 1000))
+            plan = RecallPlan(stable_id('analysis-relation-recall', key), context.run_id,
+                context.subject, context.context_hash, context.context_revision, context.query,
+                context.available_memory_types, False, context.allowed_selector_domains,
+                context.allowed_retrieval_modes, (), (), None, None, (), (), (),
+                context.disclosure_context, context.evidence_refs, context.budget,
+                stable_id('analysis-relation-candidates', key), (RecallReasonCode.USER_FACT_DEPENDENCY,))
+            execution = await execute_typed_recall_recollecting(journal, manager, principal=principal,
+                context=context, plan=plan, now=now, caller="analysis_relation_candidates")
+            result = execution.result
+            result.validate_decision(execution.decision)
+        except Exception:  # noqa: BLE001 - additive channel, never fails the analysis turn
+            logger.warning("memory.analysis_relation_candidates_unavailable key=%s", key, exc_info=True)
+            return [], True
+        rows = []
+        if not result.truncated and not result.confirmation_groups:
+            for item in result.items:
+                selected = item.selected_item
+                payload = thaw_json(item.public_payload)
+                if selected.source_kind.value != 'cognitive_memory' or selected.memory_type not in types:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                body = {'memory_id': selected.source_ref, 'revision': selected.source_revision,
+                    'memory_type': selected.memory_type.value,
+                    'source_content_hash': selected.source_content_hash, 'payload': payload,
+                    'result_id': result.result_id, 'result_hash': result.result_hash,
+                    'item_id': selected.item_id, 'item_hash': item.result_item_hash,
+                    'privacy_class': item.effective_privacy_class.value,
+                    'information_attributes': [a.value for a in item.information_attributes]}
+                rows.append({'candidate_key': stable_id('relation-candidate', key, canonical_hash(body)), **body})
+        return rows, False
 
     async def bind_attempt(self, request, row, snapshot, provider_request, *, db):
         # This observation and the real attempt reserve commit together. It is
@@ -395,7 +461,7 @@ class SemanticCorrectionAuthority:
             if envelope.envelope_hash != ref.content_hash:
                 raise ValueError('analysis_candidate_evidence_mismatch')
             bindings.append(HistoryEvidenceBinding(envelope, receipt))
-        for row in snapshot['candidates']:
+        for row in (*snapshot['candidates'], *snapshot.get('relation_candidates', ())):
             bindings.append(HistoryRecallBinding(row['result_id'], row['result_hash'], row['item_id'], row['item_hash']))
         observed = await manager.check_history_visibility(principal=principal,
             disclosure_context=request.disclosure_context, bindings=tuple(bindings))
@@ -405,6 +471,20 @@ class SemanticCorrectionAuthority:
     @staticmethod
     def prompt(snapshot):
         return [{'candidate_key':r['candidate_key'], 'semantic':r['payload']} for r in snapshot['candidates']]
+
+    @staticmethod
+    def relation_prompt(snapshot):
+        """Existing Procedure/Prospective endpoints, named only well enough to be picked."""
+        rows = []
+        for r in snapshot.get('relation_candidates', ()):
+            payload = r['payload'] if isinstance(r.get('payload'), dict) else {}
+            rows.append({'candidate_key': r['candidate_key'], 'memory_type': r['memory_type'],
+                         'name': str(payload.get('name') or payload.get('action') or '')})
+        return rows
+
+    @staticmethod
+    def relation_candidates(snapshot):
+        return list(snapshot.get('relation_candidates', ()))
 
     async def authorize_plan(self, request, snapshot, plan):
         from simple_harness import MemoryActionAuthorityRef, issue_memory_action_authority
@@ -540,3 +620,42 @@ class SemanticCorrectionAuthority:
         if reference != MemoryActionAuthorityRef.from_authority(authority):
             raise ValueError('analysis_action_reference_mismatch')
         return authority
+
+
+# ---------------------------------------------------------------- anaphora grammar
+#
+# Incident L (HM-TO-A6 turn 15): 「记住：秋分资料整理这套校对流程，就按我前面说的 Python
+# 环境执行。」 was stored as the semantic claim
+# ``秋分资料整理校对流程 · execution_environment · "前面说的 Python 环境"``.  That value is
+# not a fact, it is a dangling pointer: recall returns a phrase nobody can act on, and a
+# later correction of the real value (turn 20, Python 3.13) can never supersede it because
+# the two live in different slots.  The Host therefore refuses an anaphoric ``object_value``
+# outright, and offers the model two legal shapes instead — resolve the reference to the
+# exact value of an issued candidate (``object_value_candidate_key``), or state the link as
+# an ``applies_to`` relation.  The marker list is bounded and Host-owned: it recognises
+# *reference* phrases only, never ordinary values.
+_ANAPHORA_MARKERS = (
+    '前面说的', '前面提到的', '前面讲的', '前面那个', '上面说的', '上面提到的', '上面那个',
+    '之前说的', '之前提到的', '之前那个', '先前说的', '先前提到的',
+    '刚才说的', '刚刚说的', '刚才提到的', '刚说的', '我说过的', '说过的那个',
+    '上述', '前述', '如前所述', '同上', '同前',
+    'as mentioned', 'as i mentioned', 'aforementioned', 'previously mentioned',
+    'mentioned earlier', 'mentioned above', 'said earlier', 'said before',
+    'same as above', 'as above', 'as before', 'the one i mentioned', 'the one i said',
+)
+
+
+def anaphoric_reference_marker(text):
+    """The longest reference marker in ``text``, else ``None``.
+
+    Used twice: to reject an anaphoric ``object_value`` (a reference can never be a claim),
+    and to require that a Host-verified reference resolution really answers a referring
+    sentence rather than importing an unrelated candidate's value.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None
+    lowered = text.lower()
+    markers = [marker for marker in _ANAPHORA_MARKERS if marker in lowered]
+    if not markers:
+        return None
+    return sorted(markers, key=lambda marker: (-len(marker), marker))[0]

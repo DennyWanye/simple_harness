@@ -16,6 +16,11 @@ from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime, local_memory_pr
 from deskpet.memory.semantic_correction import SemanticCorrectionAuthority
 
 
+async def _no_fingerprints():
+    """No ProcedureRuntime yet → no applicability, so no Procedure endpoint candidates."""
+    return ()
+
+
 def compose_human_memory_runtime(
     state_db_path: str | Path,
     memory_db_path: str | Path,
@@ -46,6 +51,13 @@ def compose_human_memory_runtime(
         manager_getter=lambda: runtime.manager(),
         principal_getter=lambda: runtime.principal(),
         clock=clock,
+        # Relation-endpoint candidates go through the same public typed recall as every
+        # other read, so the SDK's Procedure applicability gate still decides which
+        # procedures may surface at all (a never-used Procedure stays invisible).
+        procedure_fingerprints_getter=lambda run_id: (
+            runtime.procedure_runtime.current_fingerprints(run_id)
+            if getattr(runtime, "procedure_runtime", None) is not None else _no_fingerprints()
+        ),
     )
     executor = HostMemoryAnalysisExecutor(
         state_db_path,

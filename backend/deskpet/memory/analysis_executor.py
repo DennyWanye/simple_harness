@@ -114,6 +114,17 @@ def _host_plan_id(request_hash: str, attempt_id: str) -> str:
 _LOGGABLE_REJECTION_DETAIL = ("reason", "memory_type", "role", "item_id", "operation_id")
 
 
+def _has_existing_relation_endpoint(operation) -> bool:
+    """True for a semantic relation that points at a memory created by an earlier plan."""
+    from simple_harness.runtime import ExistingMemoryTarget, SemanticRelationMemoryPayload
+
+    payload = getattr(operation, "payload", None)
+    if not isinstance(payload, SemanticRelationMemoryPayload):
+        return False
+    return any(isinstance(endpoint, ExistingMemoryTarget)
+               for endpoint in (payload.source_endpoint, payload.target_endpoint))
+
+
 def _rejection_detail(rejected: Any) -> dict[str, Any]:
     detail = dict(getattr(rejected, "detail", {}) or {})
     return {key: detail[key] for key in _LOGGABLE_REJECTION_DETAIL if key in detail}
@@ -347,6 +358,13 @@ class HostMemoryAnalysisExecutor:
                 "evidence_items": rendered,
                 "semantic_candidates": [] if candidate_snapshot is None else self._semantic_correction.prompt(candidate_snapshot),
             }
+            # v8+ only: persisted v3..v7 requests must re-render byte identically
+            # (``bind_attempt`` hashes this body and refuses a differing replay).
+            if getattr(protocol, "SUPPORTS_RELATION_CANDIDATES", False):
+                body["procedure_candidates"] = (
+                    [] if candidate_snapshot is None
+                    else self._semantic_correction.relation_prompt(candidate_snapshot)
+                )
             return ProviderRequest(
                 RequestId(f"post-turn-analysis-{request.request_hash[:24]}-{row.attempt_ordinal}"),
                 (
@@ -519,7 +537,14 @@ class HostMemoryAnalysisExecutor:
         candidate_snapshot = None
         if self._semantic_correction is not None:
             candidate_snapshot = await self._semantic_correction.snapshot_for_attempt(request, attempt_id, response)
-        compiled = protocol_for_request(request).compile_proposal(
+        protocol = protocol_for_request(request)
+        extra = {}
+        if getattr(protocol, "SUPPORTS_RELATION_CANDIDATES", False):
+            extra["relation_candidates"] = (
+                () if candidate_snapshot is None
+                else self._semantic_correction.relation_candidates(candidate_snapshot)
+            )
+        compiled = protocol.compile_proposal(
             proposal_from_response(response),
             request=request,
             items=items,
@@ -527,8 +552,15 @@ class HostMemoryAnalysisExecutor:
             plan_id=_host_plan_id(request.request_hash, attempt_id),
             now=float(self._clock()),
             candidates=() if candidate_snapshot is None else candidate_snapshot['candidates'],
+            **extra,
         )
-        if compiled.plan is not None and any(op.kind.value in ('revise', 'contest') for op in compiled.plan.operations):
+        # A relation whose endpoint is an existing memory must re-check that the issued
+        # candidate is still visible to this subject before the plan is applied; that check
+        # lives at the head of ``authorize_plan`` (which passes non-revise ops through).
+        if compiled.plan is not None and candidate_snapshot is not None and any(
+            op.kind.value in ('revise', 'contest') or _has_existing_relation_endpoint(op)
+            for op in compiled.plan.operations
+        ):
             authorized = await self._semantic_correction.authorize_plan(request, candidate_snapshot, compiled.plan)
             compiled = replace(compiled, plan=authorized, structured_result=json.loads(canonical_json(authorized.to_json())))
         for rejected in compiled.rejected:
