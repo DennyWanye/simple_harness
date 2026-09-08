@@ -99,7 +99,17 @@ async def test_state_executor_reaches_real_head_suppression_and_partial_group(tm
     for row in rows:
         assert 'exception' not in row['observations'],row['observations'].get('exception')
         judged=oracle.assess_state(fixture,row)
-        assert judged['status']=='BLOCKED' and judged['business_assertions'],judged
+        assert judged['status']=='PASS' and len(judged['business_assertions'])>=5,judged
+        # Independent negatives: broken receipt chain, transition writing final tables, missing grant.
+        bad=copy.deepcopy(row);bad['observations']['sources'][0]['receipt']['operations'][0]['revision']=9
+        assert oracle.assess_state(fixture,bad)['status']=='FAIL'
+        bad=copy.deepcopy(row);bad['observations']['post_transition']=copy.deepcopy(bad['observations']['pre_transition'])
+        assert oracle.assess_state(fixture,bad)['status']=='FAIL'
+        if len(row['observations']['sources'])>1:
+            bad=copy.deepcopy(row)
+            grant=next(e for e in bad['observations']['calls'] if e['call']=='resolve_memory_action_authority')
+            grant['grant']['nonce']='forged-nonce'
+            assert oracle.assess_state(fixture,bad)['status']=='FAIL'
 
 
 @pytest.mark.asyncio

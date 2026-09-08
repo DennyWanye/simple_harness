@@ -31,7 +31,8 @@ def recipes(fixture):
         add('eligibility/'+row['id'], 'lifecycle', seed(row['memory_type'],state=row['state']))
     axis = fixture['exhaustive_axis_contract']['epistemic_verification']
     for kind, epi, verification in product(axis['memory_types'],axis['epistemic_values'],axis['verification_values']):
-        add(f'eligibility/epistemic:{kind}:{epi}:{verification}', 'epistemic',seed(kind,epistemic=epi,verification=verification))
+        add(f'eligibility/epistemic:{kind}:{epi}:{verification}', 'epistemic',
+            seed(kind,epistemic=epi,verification=verification,**epistemic_seed_state(kind,epi)))
     axis = fixture['exhaustive_axis_contract']['disclosure']
     for recipient,purpose,privacy in product(axis['recipients'],axis['purposes'],axis['privacy_values']):
         add(f'eligibility/disclosure:{recipient}:{purpose}:{privacy}', 'disclosure',seed(),
@@ -53,6 +54,22 @@ def recipes(fixture):
     for row in rows:
         if row['family']=='lifecycle':row['lifecycle_path']=lifecycle_path(row)
     return rows
+
+
+def epistemic_seed_state(kind, epistemic):
+    """Runner-side legal creation state for the epistemic axis (input only, no expectation).
+
+    Memory (mutations._validate_epistemic_provenance) admits llm_inference/unknown only in a
+    non-authoritative state (candidate/draft) and never activates a non-explicit Procedure on
+    create. The axis cell asks whether such a memory can be recalled; the only publicly
+    constructible durable state is therefore seeded and the recall gate is observed for real.
+    Combinations Memory refuses outright stay ingress rejections (BLOCKED, never a recall PASS).
+    """
+    if epistemic in {'llm_inference', 'unknown'}:
+        return {'state': 'draft' if kind == 'procedure' else 'candidate'}
+    if kind == 'procedure' and epistemic != 'explicit_user':
+        return {'state': 'draft'}
+    return {}
 
 
 def lifecycle_path(recipe):

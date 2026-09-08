@@ -12,11 +12,23 @@ def digest(value):
         separators=(',', ':'), allow_nan=False).encode()).hexdigest()
 
 
+SNAPSHOT_STATES = {'draft', 'eligible', 'active', 'reinforced', 'revised', 'inapplicable', 'superseded'}
+
+
+def lifecycle_state(recipe):
+    state = recipe['seed'].get('state', 'active')
+    return 'eligible_for_activation' if state == 'eligible' else state
+
+
 def supported(recipe):
+    # Applicability is bound on the actual final head whatever its lifecycle state, so that an
+    # ineligible verdict is attributable to the state/epistemic under test, not to a missing
+    # fingerprint. Non-explicit epistemic Procedures only exist publicly as draft (Memory refuses
+    # to activate them on create); their draft head still receives a real snapshot.
     seed = recipe['seed']
     return (recipe['family'] in {'lifecycle', 'epistemic', 'procedure_applicability'} and seed['memory_type'] == 'procedure'
-        and seed.get('epistemic', 'explicit_user') == 'explicit_user'
-        and seed.get('state', 'active') in {'active', 'eligible'})
+        and seed.get('state', 'active') in SNAPSHOT_STATES
+        and (seed.get('epistemic', 'explicit_user') == 'explicit_user' or seed.get('state') == 'draft'))
 
 
 async def bind(case, recipe, target):
@@ -63,8 +75,7 @@ async def bind(case, recipe, target):
     case.events.append(event)
     registered = await case.manager.register_conversation_evidence(regref)
     event['result'] = dc.asdict(registered)
-    state = h.ProcedureLifecycleState('eligible_for_activation'
-        if recipe['seed'].get('state') == 'eligible' else 'active')
+    state = h.ProcedureLifecycleState(lifecycle_state(recipe))
     intent = h.ProcedureObservationIntent(observation_id='procedure-snapshot',
         subject=case.principal.actor_id, scope=h.MemoryScopeRef('personal', case.principal.actor_id),
         target_memory_id=target.memory_id, target_revision=target.revision,

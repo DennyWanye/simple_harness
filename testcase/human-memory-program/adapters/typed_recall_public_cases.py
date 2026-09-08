@@ -98,13 +98,15 @@ async def replay_cases(manager, principal, context, plan, inputs, now, snapshot)
         cells.append({"cell_id": name, "status": "OBSERVED", "reason": "", "observations": observed})
     # Same-idempotency changed valid query: actual original conflict entrypoint.
     changed = dataclasses.replace(context, query=context.query + " changed")
-    observed = {"calls": ["execute_typed_recall"], "memory_called": True}
+    changed_plan = plan_for(changed, plan)
+    observed = {"calls": ["execute_typed_recall"], "memory_called": True, "context": changed.to_json(),
+                "plan": changed_plan.to_json(), "principal_actor_id": principal.actor_id}
     try:
         result = await manager.execute_typed_recall(principal=principal, context=changed,
-            plan=plan_for(changed, plan), now=now)
+            plan=changed_plan, now=now)
         observed["execution"] = execution_wire(result)
     except Exception as exc:
-        observed.update(exception_type=type(exc).__name__, exception_reason=str(exc))
+        observed.update(exception_type=type(exc).__name__, exception_reason=str(exc), **rejection_wire(exc))
     cells.append({"cell_id": "unsupported-replay/conflicting-replay", "status": "OBSERVED",
                   "reason": "", "observations": observed})
     for case in inputs["unsupported"]:
@@ -129,6 +131,8 @@ async def replay_cases(manager, principal, context, plan, inputs, now, snapshot)
                             calls=["execute_typed_recall"])
             value = await manager.execute_typed_recall(principal=principal, context=c, plan=p, now=now)
             observed["execution"] = execution_wire(value)
+            observed["calls"].append("execute_typed_recall:replay")
+            observed["replay"] = execution_wire(await manager.execute_typed_recall(principal=principal, context=c, plan=p, now=now))
         except Exception as exc:
             observed.update(exception_type=type(exc).__name__, exception_reason=str(exc))
         cells.append({"cell_id": "unsupported-replay/" + case["id"], "status": "OBSERVED",

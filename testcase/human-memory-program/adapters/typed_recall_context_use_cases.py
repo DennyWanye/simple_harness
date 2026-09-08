@@ -49,8 +49,12 @@ async def context_bundle(case, recalled):
             value['result_hash'],selected['item_id'],value['result_item_hashes'][i],None,None,None,
             page.page_id,page.page_hash,None,None,selected['public_payload_hash'])
         size=len(canonical(item['public_payload']))
+        # Public fragment discriminant follows the selected source kind: short-horizon items carry
+        # no revision and use the SHORT_HORIZON fragment type (Harness ContextFragmentV2 contract).
+        short=selected['source_kind']=='short_horizon'
         fragment=h.ContextFragmentV2('context-use-item-'+str(i+1),recalled['context']['run_id'],case.principal.actor_id,
-            h.ContextFragmentType.RECALLED_MEMORY,selected['source_ref'],selected['source_revision'],item['public_payload'],
+            h.ContextFragmentType.SHORT_HORIZON if short else h.ContextFragmentType.RECALLED_MEMORY,
+            selected['source_ref'],selected['source_revision'],item['public_payload'],
             selected['public_payload_hash'],size,size,h.DisclosureContext.from_json(recalled['context']['disclosure_context']),
             tuple(h.EvidenceRef.from_json(r) for r in recalled['context']['evidence_refs']),binding)
         fragments.append({'fragment':fragment.to_json(),'fragment_hash':fragment.fragment_hash})

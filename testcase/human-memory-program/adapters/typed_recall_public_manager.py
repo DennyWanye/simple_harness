@@ -134,6 +134,8 @@ async def baseline_cases(request, workspace):
         except memory.MemoryValidationError as exc:
             page_wire = {"exception_type": type(exc).__name__, "exception_reason": str(exc)}
         observations = {"calls": calls, "mutation_receipt": receipt.to_json(),
+            "mutation_plan": mutation.to_json(), "apply_result": applied.to_json(), "apply_result_hash": applied.result_hash,
+            "execution": public_cases.execution_wire(execution), "replay": public_cases.execution_wire(replay),
             "recall_context": context.to_json(), "recall_plan": plan.to_json(),
             "decision": execution.decision.to_json(), "result": execution.result.to_json(),
             "result_hash": execution.result.result_hash,
@@ -168,6 +170,11 @@ async def run(request, workspace):
     context_cells=sorted(selected.intersection(context_use.CELLS))
     if context_cells:
         cells += await context_use.run_cases({'cells':context_cells,'recipe':inputs['context_use']},workspace)
+    authority=_helpers('typed_recall_authority_event_cases.py')
+    authority_cells=sorted(selected.intersection(authority.CELLS))
+    if authority_cells:
+        cells += await authority.run_cases({'cells':authority_cells,'recipe':inputs['context_use'],
+            'events':inputs['authority_events']['events']},workspace)
     done={row['cell_id'] for row in cells}
     cells += [{'cell_id':name,'status':'BLOCKED',
         'reason':'CELL_EXECUTOR_NOT_IMPLEMENTED' if name in selected else 'CELL_NOT_SELECTED_THIS_BATCH',
