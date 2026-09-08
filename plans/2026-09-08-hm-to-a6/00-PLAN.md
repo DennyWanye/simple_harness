@@ -123,6 +123,9 @@
 
 > **2026-09-08 用户决定后的调整**：T23 改为 **UI 操作**——在记忆面板「关系图」中对该关系（或其端点记忆）点击「忘记这条记忆」，记录 suppression 行；T24 保持关闭/重开图谱并重发 T22。对话式遗忘（模型面 `memory_forget` 忘记认知记忆）记为 F10，随 S5c 模型可见记忆视图一起做。
 
+
+> **2026-09-08 尝试 4 教训**：README/STATUS 视图按读取时物化（`task_scope_read_view_revisions` 不随 `goal.set` 自动重生成），T18 改为要求模型读取 README/STATUS 视图并报告是否截断，否则 A6-5 永远 INCONCLUSIVE。
+
 ## 3. ContextSnapshot 审计核对方法
 
 **（a）每次真实发送内容与 snapshot 一致**
