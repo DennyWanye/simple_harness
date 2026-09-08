@@ -244,3 +244,5 @@ cd tauri-app && npm test
 2. **遗忘只针对记忆，不针对会话记录**：在 UI 忘记一条认知记忆，只影响该记忆的召回/图谱/工作记忆，**不得**把它的来源对话轮从主对话视图或短期历史中隐藏。原 acceptance HM-AC-1 中「相关内容立即退出六阅读视图/ResumePackage」应理解为"记忆派生内容"，不包含原始会话文本。显式删除会话记录是另一个尚未定义的功能。
 3. 聊天区渲染原始工具回执 JSON、召回为空后模型循环重提同一路由：记为 followup（`plans/2026-09-06-typed-use-primary/FOLLOWUPS.md` F02/F03），本轮不处理。
 4. 真实模型：主用 `gpt-5.6-luna`（svtun）；中转不可用时用 `.env` 的 `DEEPSEEKER_APIKEY`（DeepSeek 官方 API，`deepseek-v4-pro`）作为回退，并在证据中记录回退。
+
+- 2026-09-08 用户决定：F01 事件触发本轮不做，记为下一轮 followup（首选方案 B：绑定工作区本地 git release tag）；release tag 待全部任务完成并真人验收后再授权；"通过对话遗忘认知记忆"暂不提前做 S5c 模型可见记忆视图（A6 T23 改 UI 面板遗忘，对话遗忘记 F10）。
