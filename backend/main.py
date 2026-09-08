@@ -8435,6 +8435,7 @@ async def _build_product_sdk_runtime_stack(
         CONTEXT_ROUTE_SCHEMA,
         TASK_SCOPE_SEARCH_SCHEMA,
         ContextRouteToolService,
+        read_current_turn_text as _read_current_turn_text,
     )
     from deskpet.sdk_adapters.tools import active_product_tool_context
 
@@ -8550,6 +8551,12 @@ async def _build_product_sdk_runtime_stack(
         typed_use_authority=_typed_use_authority,
         scope_disclosure_reader=scope_disclosure.read,
         producer_dependencies_reader=scope_disclosure.producer_dependencies,
+        # Event V: the contested probe asks with the model's own words AND this
+        # turn's admitted user text, so neither wording alone decides whether
+        # the Host gets to see an open conflict group.
+        current_turn_text_reader=(
+            lambda sdk_run_id: _read_current_turn_text(_state_db_path, sdk_run_id)
+        ),
     )
 
     async def context_route_handler(arguments, _context):

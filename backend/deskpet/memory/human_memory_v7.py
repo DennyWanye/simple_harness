@@ -89,6 +89,31 @@ def host_classification_policy() -> Any:
     )
 
 
+DEFAULT_RECALL_PURPOSE = "context-route"
+
+
+def recall_idempotency_key(
+    purpose: str, run_id: str, turn_ordinal: int, scope: str | None = None
+) -> str:
+    """The durable SDK request identity for one typed recall.
+
+    The SDK keys one stored request per ``RecallPlan.idempotency_key`` and
+    raises ``MemoryIdempotencyConflict`` when the same key returns with a
+    different request. ``turn_ordinal`` is per provider *response*, so every
+    tool call in one batch shares it: a Host that keys only on
+    ``{purpose}:{run}:{turn}`` can therefore issue exactly one recall per turn
+    before its second one is rejected. ``scope`` (the caller's per-call
+    ``effect_id``) and ``purpose`` (which Host lane is asking) are what make a
+    key per *request* rather than per *turn* — event V needs both, because the
+    contested probe fires alongside the model's own recall inside one batch.
+
+    Exported so tests and the ``context_route`` probe reason about the exact
+    string the runtime writes, instead of restating the format.
+    """
+
+    return ":".join((purpose, run_id, str(turn_ordinal), *((scope,) if scope else ())))
+
+
 class HumanMemoryV7Runtime:
     """Lazy singleton over ``build_human_memory_v7`` (fresh-only store)."""
 
@@ -328,8 +353,25 @@ class HumanMemoryV7Runtime:
         memory_types: tuple[str, ...] | None = None,
         include_short_horizon: bool | None = None,
         admitted_context: Any | None = None,
+        idempotency_purpose: str = DEFAULT_RECALL_PURPOSE,
+        idempotency_scope: str | None = None,
     ) -> Any:
-        """Execute a Host-authored typed RecallPlan; degraded lanes stay stable."""
+        """Execute a Host-authored typed RecallPlan; degraded lanes stay stable.
+
+        ``idempotency_purpose``/``idempotency_scope`` name the durable SDK
+        request. The SDK keys one request per ``plan.idempotency_key`` and
+        raises ``MemoryIdempotencyConflict`` when the same key comes back with a
+        different request (``sqlite_v5.py`` typed-recall admit; pinned by
+        ``test_model_recall_selection.py::
+        test_changed_selection_cannot_reuse_same_plan_result``). One provider
+        response can carry more than one ``context_route`` tool call, and they
+        all share ``turn_ordinal``, so ``{purpose}:{run}:{turn}`` alone made the
+        second call of a turn collide with the first — event V's contested probe
+        made that the ordinary case. Callers that can issue more than one recall
+        in a turn therefore pass their per-call ``effect_id`` as the scope, and a
+        different purpose keeps a different lane (the probe) out of the way of
+        the model's own ``memory_standalone`` recall entirely.
+        """
 
         from simple_harness.runtime import (
             DeliveryRecipient,
@@ -436,11 +478,19 @@ class HumanMemoryV7Runtime:
             from dataclasses import replace
             context = replace(context, procedure_applicability_fingerprints=(
                 await self.procedure_runtime.current_fingerprints(run_id)))
+        idempotency_key = recall_idempotency_key(
+            idempotency_purpose, run_id, turn_ordinal, idempotency_scope)
         plan = RecallPlan(
             str(
                 uuid.uuid5(
                     uuid.NAMESPACE_URL,
-                    f"simple-harness:recall-plan:{run_id}:{turn_ordinal}",
+                    # One plan identity per durable request: the plan travels
+                    # inside ``request_json``, so two requests of the same turn
+                    # must not present the same plan id either.
+                    f"simple-harness:recall-plan:{run_id}:{turn_ordinal}"
+                    if idempotency_key == recall_idempotency_key(
+                        DEFAULT_RECALL_PURPOSE, run_id, turn_ordinal)
+                    else f"simple-harness:recall-plan:{idempotency_key}",
                 )
             ),
             context.run_id,
@@ -463,7 +513,7 @@ class HumanMemoryV7Runtime:
             context.disclosure_context,
             context.evidence_refs,
             context.budget,
-            f"context-route:{run_id}:{turn_ordinal}",
+            idempotency_key,
             (RecallReasonCode.USER_FACT_DEPENDENCY,),
         )
         from deskpet.memory.recall_authority import execute_typed_recall_recollecting
@@ -679,6 +729,29 @@ CONTESTED_DISCLOSURE_MESSAGE = (
 )
 
 
+def _item_conflict_status(item: Any) -> str | None:
+    """The SDK's own conflict status for one selected recall item, if it has one.
+
+    Event V forward-compat. Memory SDK 0.6.34 never lets a contested head reach
+    ``result.items`` (``sqlite_v5.py::_cognitive_recall_state_allowed`` admits
+    only ``uncontested|resolved`` on the ordinary lane), so this reads ``None``
+    today and the projection below is byte-identical to 0.6.34 behaviour. If a
+    later SDK ever delivers the contested head as an ordinary item instead of an
+    atomic confirmation group, the Host must not hand it to the model as a plain
+    fact: ``project_recall_fragments`` drops it and
+    ``project_contested_confirmation`` raises the same notice.
+    """
+
+    for holder in (item, getattr(item, "selected_item", None)):
+        if holder is None:
+            continue
+        status = getattr(holder, "conflict_status", None)
+        if status is None:
+            continue
+        return str(getattr(status, "value", status))
+    return None
+
+
 def project_contested_confirmation(lanes: Any) -> dict[str, Any] | None:
     """Project the SDK's atomic confirmation groups into one Host notice.
 
@@ -690,6 +763,40 @@ def project_contested_confirmation(lanes: Any) -> dict[str, Any] | None:
 
     execution = getattr(lanes, "execution", lanes)
     groups: list[dict[str, Any]] = []
+    # Forward-compat lane (event V): a contested head delivered as an ordinary
+    # item carries no sibling, so it cannot be an incumbent/challenger pair.
+    # Disclose it as its own single-candidate group rather than as a fact — the
+    # same privacy gate as a confirmation member applies, and the candidate is
+    # deliberately payload-free: with no counter-candidate the only honest
+    # message is "this value is contested, do not execute on it", and printing
+    # the single value invites the model to adopt it (exactly the T22 failure).
+    for item in getattr(execution.result, "items", ()) or ():
+        if _item_conflict_status(item) != "contested":
+            continue
+        privacy = getattr(
+            item.effective_privacy_class, "value", str(item.effective_privacy_class)
+        )
+        if privacy not in _ELIGIBLE_PRIVACY_CLASSES:
+            continue
+        selected = item.selected_item
+        groups.append(
+            {
+                "conflict_group_id": str(
+                    getattr(selected, "conflict_group_id", None) or selected.item_id
+                ),
+                "memory_type": getattr(
+                    selected.memory_type, "value", str(selected.memory_type)
+                ),
+                "candidates": [
+                    {
+                        "role": "head",
+                        "revision": int(getattr(selected, "source_revision", 0) or 0),
+                        "payload_hash": selected.public_payload_hash,
+                        "privacy_class": privacy,
+                    }
+                ],
+            }
+        )
     for group in getattr(execution.result, "confirmation_groups", ()) or ():
         candidates: list[dict[str, Any]] = []
         # S3 §5.2 「恰好两个有序 cognitive_conflict_members（incumbent=rN、
@@ -765,6 +872,11 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
     fragments: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in execution.result.items:
+        # Event V: never let a contested value reach the model as a plain fact.
+        # 0.6.34 cannot produce this item; if a later SDK does, it leaves via
+        # ``project_contested_confirmation`` as a notice, not as a fragment.
+        if _item_conflict_status(item) == "contested":
+            continue
         source_kind = getattr(item.selected_item, "source_kind", "cognitive_memory")
         typed_short = getattr(source_kind, "value", source_kind) == "short_horizon"
         source_proof = None
