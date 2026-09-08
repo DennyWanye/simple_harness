@@ -421,7 +421,16 @@ class HumanMemoryV7Runtime:
             (),
             disclosure,
             (evidence_ref,),
-            RecallBudget(8, 16_384, 2_048, 1_000),
+            # 2026-09-08 HM-TO-A6：deadline 1000 → 2000 ms（协议上限，
+            # `memory_protocol.py` RecallBudget.__post_init__；契约
+            # `S3-cognitive-systems-recall.md:216` deadline_ms=1..2000、
+            # `:105` 「p95≤500ms / hard deadline 2s」）。
+            # 实测（DIAG-RECALL-TIMEOUT §2.2/§2.3）：DB 侧端到端 24–31 ms，
+            # 查询嵌入热态 206–237 ms、warmup 后首次 1033 ms —— 1000 ms 里
+            # 单次嵌入就能吃掉 20%–100%，抗抖动余量为零。这是余量，不是修复：
+            # 本次 5 次超时分别超出 1.44/3.5/4.6/4.8/2.77 s，真正的根因是
+            # SDK 在写锁内做嵌入（0.6.27 修）。
+            RecallBudget(8, 16_384, 2_048, 2_000),
         )
         if self.procedure_runtime is not None:
             from dataclasses import replace

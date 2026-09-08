@@ -89,19 +89,32 @@ async def test_worker_generation_failure_does_not_confirm_and_lost_ack_reuses(ge
         await gen.worker.step()
     assert not gen.worker._confirmed and gen.worker._generation_pending
     assert gen.worker._last_projection is None
+    # 2026-09-08 HM-TO-A6：失败后进入退避窗口，同一次注定失败的重建不再每个
+    # tick 全额重试（那正是 65% 写锁占空比的来源）。窗口内的 tick 只跳过。
+    assert gen.worker._maintenance_failures == 1
+    skipped = await gen.worker.step()
+    assert skipped.maintenance_skipped and skipped.generation is None
+    assert skipped.retry_after_seconds == pytest.approx(60.0)
+    assert gen.embedder.batches == 1  # 跳过的 tick 没有产生任何嵌入
     gen.embedder.mode = 'ok'
     def fail(point):
         if point == 'short.after_generation':
             raise RuntimeError('test-generation-lost-ack')
     gen.worker._fault_hook = fail
+    gen.clock[0] = 61.0  # 越过第一次退避
     with pytest.raises(RuntimeError, match='test-generation-lost-ack'):
         await gen.worker.step()
     assert not gen.worker._confirmed and gen.worker._generation_pending
     assert gen.embedder.batches == 2
+    # 连续第二次失败：退避指数增长（60 → 120），仍受上限约束。
+    assert gen.worker._maintenance_failures == 2
     gen.worker._fault_hook = None
+    gen.clock[0] = 182.0
     replay = await gen.worker.step()
     assert replay.generation.replayed and len(gen.worker._confirmed) == 11
     assert gen.embedder.batches == 2
+    # 成功即清零：下一次失败重新从基数开始，不带着历史惩罚。
+    assert gen.worker._maintenance_failures == 0 and gen.worker._retry_after is None
 
 
 @pytest.mark.asyncio
@@ -114,7 +127,7 @@ async def test_confirmed_cache_does_not_hide_generation_interruption(gen, interr
     gen.embedder.fingerprint = 'test-short-worker:revision-2:dim-2'
     gen.embedder.mode = 'wait'
     gen.embedder.entered.clear()
-    gen.worker.operation_timeout = 0.5
+    gen.worker.maintenance_timeout = 0.5
     task = asyncio.create_task(gen.worker.step())
     try:
         await asyncio.wait_for(gen.embedder.entered.wait(), 3)
@@ -127,8 +140,11 @@ async def test_confirmed_cache_does_not_hide_generation_interruption(gen, interr
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
     assert gen.worker._generation_pending and len(gen.worker._confirmed) == 11
+    # 超时算一次维护失败并进入退避；取消不算（取消不是"这次重建做不完"的证据）。
+    assert gen.worker._maintenance_failures == (0 if interrupt == 'cancel' else 1)
     gen.embedder.mode = 'ok'
-    gen.worker.operation_timeout = 5.0
+    gen.worker.maintenance_timeout = 60.0
+    gen.clock[0] = 200.0  # 越过退避窗口（timeout 分支）
     recovered = await gen.worker.step()
     assert recovered.generation.activated and not gen.worker._generation_pending
     # One committed old generation, one interrupted attempt, one successful retry.
@@ -145,7 +161,7 @@ async def test_cold_shared_load_survives_bounded_worker_timeouts_without_confirm
     await PrimaryShortIndexingService(gen.runtime.conversation_evidence_authority,
         manager=manager, principal=gen.runtime.principal()).reconcile()
     assert gen.worker.operation_timeout == 5.0
-    gen.worker.operation_timeout = 0.5  # scaled deadline; load waits past both attempts
+    gen.worker.maintenance_timeout = 0.5  # scaled deadline; the load waits past it
     release = asyncio.Event()
     load_task = None
     loads = active = peak = attempts = 0
@@ -171,16 +187,21 @@ async def test_cold_shared_load_survives_bounded_worker_timeouts_without_confirm
     gen.embedder.embed_batch = cold_batch
     tasks = [asyncio.create_task(gen.worker.step()) for _ in range(2)]
     try:
-        failures = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 5)
-        assert all(isinstance(failure, TimeoutError) for failure in failures)
-        assert attempts == 2 and loads == 1 and peak == 1
+        outcomes = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 5)
+        # 2026-09-08 HM-TO-A6：第一次超时后进入退避，第二个 tick 只跳过——
+        # 它比原来的「两次全额重试」更强：冷加载期间连第二次尝试都不发生。
+        assert sum(isinstance(outcome, TimeoutError) for outcome in outcomes) == 1
+        skipped = [outcome for outcome in outcomes if not isinstance(outcome, BaseException)]
+        assert len(skipped) == 1 and skipped[0].maintenance_skipped
+        assert attempts == 1 and loads == 1 and peak == 1
         assert load_task is not None and not load_task.done()
         assert not gen.worker._confirmed and gen.worker._last_projection is None
         assert gen.worker._generation_pending and gen.clock[0] == 0.0
         release.set()
         await load_task
-        gen.worker.operation_timeout = 5.0
-        recovered = await gen.worker.step()  # no 60-second maintenance advance
+        gen.worker.maintenance_timeout = 60.0
+        gen.clock[0] = 61.0  # 只越过退避窗口，不是 maintenance_seconds 到期
+        recovered = await gen.worker.step()
         assert recovered.generation.activated
         assert not gen.worker._generation_pending and gen.worker._confirmed
         assert loads == 1 and peak == 1 and gen.embedder.batches == 1

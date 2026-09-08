@@ -12,7 +12,7 @@ from deskpet.memory.wemm_embedder import WeMMEmbedder
 
 @pytest.fixture
 def fake_model(monkeypatch):
-    state = SimpleNamespace(loads=0, calls=[], active=0, peak=0, dim=2048,
+    state = SimpleNamespace(loads=0, calls=[], batches=[], active=0, peak=0, dim=2048,
                             fail=False, load_gate=threading.Event(), encode_gate=threading.Event(),
                             entered=threading.Event())
     state.load_gate.set()
@@ -37,7 +37,12 @@ def fake_model(monkeypatch):
             state.calls.extend(texts)
             try:
                 assert state.encode_gate.wait(3)
-                return [[1.0] + [0.0] * (state.dim - 1)]
+                state.batches.append(tuple(texts))
+                # Text-dependent output: batch/per-item equality and ordering
+                # assertions are meaningless against a constant vector.
+                return [[1.0] + [0.0] * (state.dim - 2) + [len(text) % 7 / 7]
+                        if state.dim >= 2 else [1.0] * state.dim
+                        for text in texts]
             finally:
                 state.active -= 1
 
