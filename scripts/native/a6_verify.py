@@ -1303,35 +1303,423 @@ def item_a6_8(ev: Evidence) -> Item:
     return it
 
 
-def item_a6_9(ev: Evidence) -> Item:
-    it = Item("A6-9", "ordinary projection policy 过滤")
-    directives = 0
-    targets = 0
-    if ev.hm.has("suppression_directives", "directive_id"):
-        directives = ev.hm.count("suppression_directives")
-    if ev.hm.has("suppression_targets", "directive_id"):
-        targets = ev.hm.count("suppression_targets")
-    contested = 0
-    if ev.hm.has("cognitive_memory_revisions", "conflict_status"):
-        contested = ev.hm.count(
-            "cognitive_memory_revisions", "lower(conflict_status)='contested'"
+# --- 普通(ordinary)展示投影口径 ------------------------------------------
+#
+# 契约来源(只读引用 memory-sdk plans/2026-08-29-human-memory-digital-twin):
+#   * `slices/S3-cognitive-systems-recall.md` Task 6:
+#     「twin_builder.py 从 canonical active/contested/inferred records 和
+#      relation rows 生成 node/edge DTO … superseded/suppressed/expired 按普通
+#      view policy 不展示」——contested record 是**展示素材**, 不是过滤对象;
+#      被过滤的是 superseded / suppressed / expired。
+#   * `acceptance.md` HM-S12 / HM-TO-A6:
+#     「普通图谱显示一条可追溯 edge; 纠正后只显示新 active edge, relation/端点
+#      遗忘、争议或 ordinary projection policy 判定不可展示后 edge 退出」——这一
+#      句的主语是 HM-S12 场景里的 **knowledge 关系边**(`applies_to`, 由一条
+#      relation memory 承载), 争议指的是它的端点进入争议。
+#
+# 因此普通投影分两层(与 SDK 0.6.31 实现一致):
+#   node 层  `twin_builder._record_visible` + head/冲突组过滤:
+#            展示 head revision; 未裁决冲突组额外展示 incumbent revision(两名
+#            成员原子出现或原子消失); suppressed / expired / 非活跃 lifecycle /
+#            relation memory 自身一律不展示; redacted 由 Host `graph` 丢弃。
+#   edge 层  evolution 边(amends/supersedes/contests/supports/relates_to)只按
+#            「两端 exact revision 都是可见 node」出现 —— 旧 revision 永不可见,
+#            所以 amends/supersedes 血缘边在普通图谱里结构性不可见, 争议期唯一
+#            能出现的 evolution 边就是 contests(它正是争议在图上的可读形式);
+#            knowledge 边(`applies_to`)另加严格资格
+#            `twin_builder.twin_graph_record_is_active_visible`: owner + 两端点
+#            都必须 head + active + uncontested + 不在冲突组 + 未被抑制。
+#
+# 所以「争议态下普通图谱 edge 必须降到 0」不是契约; 契约要求的是「争议态下
+# knowledge 边降到 0, 而 contests 边正常出现」。A6-9/A6-10 按上面这条口径判定。
+
+_TWIN_ACTIVE_LIFECYCLES: dict[str, set[str]] = {
+    "episode": {"active", "amended", "disputed"},
+    "semantic": {"active"},
+    "procedure": {"active", "reinforced"},
+    "prospective": {"pending", "triggered", "in_progress", "rescheduled"},
+}
+_TWIN_INFERRED_LIFECYCLES = {"candidate", "draft"}
+_TWIN_SENSITIVE_ATTRIBUTES = {
+    "identity", "relationship", "family", "health", "location", "financial",
+}
+_TWIN_EVOLUTION_KINDS = {"amends", "supersedes", "contests", "supports", "relates_to"}
+
+
+def _as_text_blob(value: Any) -> str:
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value).decode("utf-8", errors="replace")
+    return as_text(value)
+
+
+def _manual_ui_observations(ev: Evidence) -> list[dict[str, Any]]:
+    """从 a6-progress.jsonl 的 manual_ui note 里取回人工观测的 node/edge 计数。
+
+    driver (`scripts/native/a6_driver.sh:201`) 把人工输入原样写进 `note`。两种
+    已在用的书写形式都识别: `nodes=13 edges=1` 与 UI 原文「13条记忆，1条关系」。
+    """
+    out: list[dict[str, Any]] = []
+    ascii_re = re.compile(r"nodes\s*=\s*(\d+)\D{0,12}?edges\s*=\s*(\d+)", re.I)
+    cjk_re = re.compile(r"(\d+)\s*条记忆[^0-9]{0,8}?(\d+)\s*条关系")
+    for row in ev.progress:
+        if row.get("outcome") != "manual_ui":
+            continue
+        note = as_text(row.get("note") or "")
+        m = ascii_re.search(note) or cjk_re.search(note)
+        if m is None:
+            continue
+        out.append(
+            {
+                "turn": row.get("turn"),
+                "nodes": int(m.group(1)),
+                "edges": int(m.group(2)),
+                "note": note[:200],
+            }
         )
-    it.numbers = {
-        "suppression_directives": directives,
-        "suppression_targets": targets,
-        "revisions_contested": contested,
-        "graph_view_edge_counts_recorded": None,
+    return out
+
+
+def _ordinary_graph_expectation(ev: Evidence) -> dict[str, Any]:
+    """按上面的契约口径, 从 DB 复算普通图谱应有的 node/edge 集合。
+
+    抛 SchemaMissing 交给调用方降级为 INCONCLUSIVE。
+    """
+    ev.hm.require(
+        "cognitive_memory_heads", "memory_id", "current_revision", "memory_type"
+    )
+    ev.hm.require(
+        "cognitive_memory_revisions", "memory_id", "revision", "lifecycle_state",
+        "conflict_status", "epistemic_status", "effective_privacy_class",
+        "information_attributes_json", "content_json", "valid_from", "valid_to",
+        "created_at",
+    )
+    ev.hm.require(
+        "cognitive_relations", "relation_domain", "relation_kind",
+        "relation_memory_id", "relation_memory_revision",
+        "source_memory_id", "source_revision", "target_memory_id", "target_revision",
+    )
+    ev.hm.require("cognitive_evidence_spans", "memory_id", "evidence_id", "source_kind")
+    ev.hm.require(
+        "suppression_directives", "directive_id", "event_kind",
+        "supersedes_directive_id",
+    )
+    ev.hm.require("suppression_targets", "directive_id", "target_kind", "target_ref")
+
+    notes: list[str] = []
+    # 1) 生效的抑制指令(未被 revoke 覆盖)及其目标。
+    active_directives = {
+        as_text(r["directive_id"])
+        for r in ev.hm.rows(
+            "select directive_id from suppression_directives d"
+            " where d.event_kind='directive' and not exists("
+            "   select 1 from suppression_directives r where r.event_kind='revoke'"
+            "   and r.supersedes_directive_id=d.directive_id)"
+        )
     }
-    it.verdict = INCONCLUSIVE
+    direct_memories: set[str] = set()
+    other_scopes: set[str] = set()
+    if active_directives:
+        for r in ev.hm.rows(
+            "select directive_id, target_kind, target_ref from suppression_targets"
+        ):
+            if as_text(r["directive_id"]) not in active_directives:
+                continue
+            kind = as_text(r["target_kind"]).lower()
+            if kind == "memory":
+                direct_memories.add(as_text(r["target_ref"]))
+            else:
+                other_scopes.add(kind)
+    if other_scopes:
+        # subject/evidence/entity 作用域需要 SDK 的谱系推导, SQL 复算不到。
+        notes.append(f"存在非 memory 作用域的抑制目标 {sorted(other_scopes)}, 复算口径不完整")
+    # duplicate-source alias(SDK 2026-09-07 产品决定): 与被遗忘记忆共享同一条
+    # USER 证据的记忆按「重新学到的同源副本」一并抑制, 但证据本身不被隐藏。
+    alias_memories: set[str] = set()
+    if direct_memories:
+        marks = ",".join("?" for _ in direct_memories)
+        alias_memories = {
+            as_text(r[0])
+            for r in ev.hm.rows(
+                "select distinct b.memory_id from cognitive_evidence_spans a"
+                " join cognitive_evidence_spans b on b.evidence_id=a.evidence_id"
+                f" where a.memory_id in ({marks}) and a.source_kind='user_message'"
+                " and b.source_kind='user_message'",
+                tuple(sorted(direct_memories)),
+            )
+        } - direct_memories
+    suppressed = direct_memories | alias_memories
+
+    # 2) 每条 revision 的可展示性。
+    heads = {
+        as_text(r["memory_id"]): (int(r["current_revision"]), as_text(r["memory_type"]))
+        for r in ev.hm.rows(
+            "select memory_id, current_revision, memory_type from cognitive_memory_heads"
+        )
+    }
+    revisions: dict[tuple[str, int], dict[str, Any]] = {}
+    ref_now = 0.0
+    for r in ev.hm.rows(
+        "select memory_id, revision, lifecycle_state, conflict_status, epistemic_status,"
+        " effective_privacy_class, cast(information_attributes_json as text) as attrs,"
+        " cast(content_json as text) as content, valid_from, valid_to, created_at"
+        " from cognitive_memory_revisions"
+    ):
+        created = float(r["created_at"] or 0.0)
+        ref_now = max(ref_now, created)
+        revisions[(as_text(r["memory_id"]), int(r["revision"]))] = {
+            "lifecycle": as_text(r["lifecycle_state"]).lower(),
+            "conflict": as_text(r["conflict_status"]).lower(),
+            "epistemic": as_text(r["epistemic_status"]).lower(),
+            "privacy": as_text(r["effective_privacy_class"]).lower(),
+            "attrs": _as_text_blob(r["attrs"]),
+            "content": _as_text_blob(r["content"]),
+            "valid_from": None if r["valid_from"] is None else float(r["valid_from"]),
+            "valid_to": None if r["valid_to"] is None else float(r["valid_to"]),
+        }
+
+    redacted: set[tuple[str, int]] = set()
+    expired: set[tuple[str, int]] = set()
+    relation_memories: set[str] = set()
+
+    def displayable(mid: str, rev: int, *, ignore_suppression: bool = False) -> bool:
+        row = revisions.get((mid, rev))
+        head = heads.get(mid)
+        if row is None or head is None:
+            return False
+        memory_type = head[1].lower()
+        if memory_type == "semantic" and '"semantic_kind":"relation"' in row["content"].replace(" ", ""):
+            # relation memory 只画成边, 从不作为节点(sqlite_v5.py get_twin_graph_view)。
+            relation_memories.add(mid)
+            return False
+        if not ignore_suppression and mid in suppressed:
+            return False
+        if row["privacy"] == "restricted":
+            return False
+        if row["valid_to"] is not None and ref_now >= row["valid_to"]:
+            expired.add((mid, rev))
+            return False
+        if row["valid_from"] is not None and ref_now < row["valid_from"]:
+            expired.add((mid, rev))
+            return False
+        active = row["lifecycle"] in _TWIN_ACTIVE_LIFECYCLES.get(memory_type, set())
+        inferred = (
+            row["epistemic"] == "llm_inference"
+            and row["lifecycle"] in _TWIN_INFERRED_LIFECYCLES
+        )
+        if not (active or inferred):
+            return False
+        try:
+            attrs = json.loads(row["attrs"]) if row["attrs"] else []
+        except (TypeError, ValueError):
+            attrs = []
+        is_redacted = row["privacy"] in {"sensitive", "restricted"} or bool(
+            _TWIN_SENSITIVE_ATTRIBUTES.intersection(
+                {as_text(a).lower() for a in attrs if isinstance(a, str)}
+            )
+        )
+        if is_redacted:
+            # SDK 会发一个 label 打码的节点, Host `PrimaryCognitiveControls.graph`
+            # 再把 redacted 节点整条丢掉 —— 普通图谱里不含 redacted 项。
+            redacted.add((mid, rev))
+            return False
+        return True
+
+    # 3) node 集合: head revision + 未裁决冲突组的 incumbent revision(原子)。
+    node_revisions: set[tuple[str, int]] = set()
+    # 同一套口径再算一遍「假装没有任何抑制指令」的集合, 用来量化遗忘的实际效果。
+    node_revisions_unsuppressed: set[tuple[str, int]] = set()
+    for mid, (head_rev, _kind) in heads.items():
+        if displayable(mid, head_rev):
+            node_revisions.add((mid, head_rev))
+        if displayable(mid, head_rev, ignore_suppression=True):
+            node_revisions_unsuppressed.add((mid, head_rev))
+
+    contested_pairs: list[tuple[str, int, int]] = []
+    if ev.hm.has(
+        "cognitive_conflict_groups", "group_id", "memory_id",
+        "incumbent_revision", "challenger_revision",
+    ):
+        resolved: set[str] = set()
+        if ev.hm.has("cognitive_conflict_resolutions", "group_id"):
+            resolved = {
+                as_text(r[0])
+                for r in ev.hm.rows("select group_id from cognitive_conflict_resolutions")
+            }
+        for g in ev.hm.rows(
+            "select group_id, memory_id, incumbent_revision, challenger_revision"
+            " from cognitive_conflict_groups"
+        ):
+            if as_text(g["group_id"]) in resolved:
+                continue
+            mid = as_text(g["memory_id"])
+            incumbent = int(g["incumbent_revision"])
+            challenger = int(g["challenger_revision"])
+            head = heads.get(mid)
+            if head is None or head[0] != challenger:
+                continue
+            members = ((mid, incumbent), (mid, challenger))
+            if all(displayable(m, r) for m, r in members):
+                node_revisions.update(members)
+                contested_pairs.append((mid, incumbent, challenger))
+            else:
+                # 冲突组是原子的: 一名成员不可见, 两名都不出现。
+                node_revisions.difference_update(members)
+            if all(displayable(m, r, ignore_suppression=True) for m, r in members):
+                node_revisions_unsuppressed.update(members)
+            else:
+                node_revisions_unsuppressed.difference_update(members)
+
+    # 4) edge 集合。
+    visible_edges: list[dict[str, Any]] = []
+    hidden_edges: list[dict[str, Any]] = []
+    for r in ev.hm.rows(
+        "select relation_id, relation_domain, relation_kind, relation_memory_id,"
+        " relation_memory_revision, source_memory_id, source_revision,"
+        " target_memory_id, target_revision from cognitive_relations"
+    ):
+        domain = as_text(r["relation_domain"]).lower()
+        kind = as_text(r["relation_kind"]).lower()
+        src = (as_text(r["source_memory_id"]), int(r["source_revision"]))
+        tgt = (as_text(r["target_memory_id"]), int(r["target_revision"]))
+        entry = {
+            "relation_id": as_text(r["relation_id"])[:24],
+            "domain": domain,
+            "kind": kind,
+            "source_revision": src[1],
+            "target_revision": tgt[1],
+        }
+        if domain == "knowledge":
+            owner = (
+                as_text(r["relation_memory_id"] or ""),
+                int(r["relation_memory_revision"] or 0),
+            )
+
+            def strict(mid: str, rev: int) -> bool:
+                head = heads.get(mid)
+                row = revisions.get((mid, rev))
+                if head is None or row is None or head[0] != rev:
+                    return False
+                if mid in suppressed or row["privacy"] == "restricted":
+                    return False
+                if row["conflict"] == "contested":
+                    return False
+                if any(mid == m and rev in (i, c) for m, i, c in contested_pairs):
+                    return False
+                if row["valid_to"] is not None and ref_now >= row["valid_to"]:
+                    return False
+                return row["lifecycle"] in _TWIN_ACTIVE_LIFECYCLES.get(
+                    head[1].lower(), set()
+                )
+
+            ok = all(strict(m, v) for m, v in (owner, src, tgt))
+            entry["reason"] = "knowledge 边严格资格" + ("通过" if ok else "未通过")
+        elif domain == "evolution" and kind in _TWIN_EVOLUTION_KINDS:
+            ok = src in node_revisions and tgt in node_revisions
+            entry["reason"] = (
+                "两端 exact revision 都是可见 node" if ok
+                else "至少一端 exact revision 不是可见 node(旧 revision/被抑制/已裁决)"
+            )
+        else:
+            ok = False
+            entry["reason"] = f"未知 relation_domain/kind({domain}/{kind})"
+        (visible_edges if ok else hidden_edges).append(entry)
+
+    return {
+        "ref_now": ref_now,
+        "heads": len(heads),
+        "expected_nodes": len(node_revisions),
+        "expected_edges": len(visible_edges),
+        "expected_nodes_without_suppression": len(node_revisions_unsuppressed),
+        "suppressed_direct": sorted(m[-12:] for m in direct_memories),
+        "suppressed_alias_same_source": sorted(m[-12:] for m in alias_memories),
+        "redacted_excluded": sorted((m[-12:], r) for m, r in redacted),
+        "expired_excluded": sorted((m[-12:], r) for m, r in expired),
+        "relation_memory_nodes_excluded": sorted(m[-12:] for m in relation_memories),
+        "contested_pairs": [(m[-12:], i, c) for m, i, c in contested_pairs],
+        "visible_edges": visible_edges,
+        "hidden_edges": hidden_edges,
+        "notes": notes,
+    }
+
+
+def item_a6_9(ev: Evidence) -> Item:
+    """A6-9: 普通投影口径。
+
+    2026-09-08 判据修正: 本项原先照抄 A6 计划里的「争议/遗忘态下普通图谱 edge
+    数按预期降到 0」并因证据目录无边数记录而恒 INCONCLUSIVE。契约(见本文件
+    `_ordinary_graph_expectation` 上方注释)要求的不是「edge 归零」, 而是:
+    knowledge(`applies_to`)边在端点争议/遗忘后退出; evolution 边只在两端 exact
+    revision 都可见时出现 —— 争议期 contests 边**应当**出现, 它就是争议在普通
+    图谱上的可读形式。本项改为「从 DB 复算应有 node/edge 集合, 与 driver 记录
+    的人工 UI 观测逐一对齐」。
+    """
+    it = Item("A6-9", "ordinary projection policy 过滤")
+    observations = _manual_ui_observations(ev)
+    try:
+        exp = _ordinary_graph_expectation(ev)
+    except SchemaMissing as exc:
+        it.verdict = INCONCLUSIVE
+        it.reason = f"复算普通投影所需的表/列缺失: {exc}"
+        it.numbers = {"manual_ui_observations": observations}
+        return it
+    it.numbers = {
+        "expected_nodes": exp["expected_nodes"],
+        "expected_edges": exp["expected_edges"],
+        "heads": exp["heads"],
+        "suppressed_direct": exp["suppressed_direct"],
+        "suppressed_alias_same_source": exp["suppressed_alias_same_source"],
+        "redacted_excluded": exp["redacted_excluded"],
+        "expired_excluded": exp["expired_excluded"],
+        "relation_memory_nodes_excluded": exp["relation_memory_nodes_excluded"],
+        "contested_pairs": exp["contested_pairs"],
+        "visible_edges": exp["visible_edges"],
+        "hidden_edges": exp["hidden_edges"],
+        "manual_ui_observations": observations,
+        "expectation_notes": exp["notes"],
+    }
+    if exp["notes"]:
+        it.verdict = INCONCLUSIVE
+        it.reason = "; ".join(exp["notes"]) + " —— 无法给出确定判定。"
+        return it
+    if not observations:
+        it.verdict = INCONCLUSIVE
+        it.reason = (
+            f"DB 复算得普通图谱应为 nodes={exp['expected_nodes']} edges={exp['expected_edges']}, "
+            "但 a6-progress.jsonl 的 manual_ui note 里没有可解析的 node/edge 观测"
+            "(需写成 `nodes=N edges=M` 或 UI 原文「N条记忆，M条关系」)。"
+        )
+        return it
+    last = observations[-1]
+    if last["nodes"] != exp["expected_nodes"] or last["edges"] != exp["expected_edges"]:
+        it.verdict = FAIL
+        it.reason = (
+            f"T{last['turn']} 人工观测 nodes={last['nodes']} edges={last['edges']}, "
+            f"与按契约从 DB 复算的 nodes={exp['expected_nodes']} edges={exp['expected_edges']} 不符。"
+        )
+        return it
+    kinds = sorted({e["kind"] for e in exp["visible_edges"]})
+    hidden_kinds = sorted({e["kind"] for e in exp["hidden_edges"]})
+    it.verdict = PASS
     it.reason = (
-        "twin graph view 是 UI 侧 PrimaryCognitiveControls.list 的返回, 证据目录(DB/日志)"
-        f"未记录 node/edge 计数; 仅能证明 suppression_directives={directives}/targets={targets}、"
-        f"contested revision={contested}。edge 数需 T16/T24 的人工 UI 观测补录。"
+        f"T{last['turn']} 人工观测 nodes={last['nodes']} edges={last['edges']}, 与 DB 复算一致; "
+        f"被抑制 {len(exp['suppressed_direct'])} 条(含同源副本 "
+        f"{len(exp['suppressed_alias_same_source'])} 条)、redacted {len(exp['redacted_excluded'])} 条、"
+        f"expired {len(exp['expired_excluded'])} 条、relation memory "
+        f"{len(exp['relation_memory_nodes_excluded'])} 条都不在图上; "
+        f"可见边 kind={kinds}(争议期 contests 边按契约应当出现), 被过滤边 kind={hidden_kinds}"
+        "(旧 revision 血缘边/端点不可见)。"
     )
     return it
 
 
 def item_a6_10(ev: Evidence) -> Item:
+    """A6-10: relation/endpoint 遗忘 + close/reopen。
+
+    2026-09-08 判据修正: 原实现只能证明「关系行 append-only」并停在
+    INCONCLUSIVE。改为把三条契约要求都算出来: (a) 关系行不得物理减少;
+    (b) 遗忘后普通图谱恰好等于按契约复算的 post-suppression 集合(被遗忘项及其
+    同源副本离图); (c) 关表重开的观测与遗忘后的观测逐字相同(不复活)。
+    """
     it = Item("A6-10", "relation/endpoint 遗忘 + close/reopen")
     ev.hm.require("cognitive_relations", "relation_id")
     final_rows = ev.hm.count("cognitive_relations")
@@ -1346,11 +1734,13 @@ def item_a6_10(ev: Evidence) -> Item:
     targets = 0
     if ev.hm.has("suppression_targets", "target_ref"):
         targets = ev.hm.count("suppression_targets")
+    observations = _manual_ui_observations(ev)
     it.numbers = {
         "cognitive_relations_final": final_rows,
         "cognitive_relations_peak_in_progress": peak,
         "suppression_directives": directives,
         "suppression_targets": targets,
+        "manual_ui_observations": observations,
     }
     if final_rows < peak:
         it.verdict = FAIL
@@ -1367,10 +1757,81 @@ def item_a6_10(ev: Evidence) -> Item:
             "T23 的逻辑遗忘未落库, 无法判定。"
         )
         return it
-    it.verdict = INCONCLUSIVE
+    try:
+        exp = _ordinary_graph_expectation(ev)
+    except SchemaMissing as exc:
+        it.verdict = INCONCLUSIVE
+        it.reason = f"关系行 append-only 成立, 但复算普通投影所需的表/列缺失: {exc}"
+        return it
+    knowledge_rows = 0
+    if ev.hm.has("cognitive_relations", "relation_domain"):
+        knowledge_rows = ev.hm.count(
+            "cognitive_relations", "lower(relation_domain)='knowledge'"
+        )
+    removed = exp["expected_nodes_without_suppression"] - exp["expected_nodes"]
+    it.numbers.update(
+        {
+            "expected_nodes": exp["expected_nodes"],
+            "expected_edges": exp["expected_edges"],
+            "nodes_removed_by_suppression": removed,
+            "suppressed_direct": exp["suppressed_direct"],
+            "suppressed_alias_same_source": exp["suppressed_alias_same_source"],
+            "knowledge_relation_rows": knowledge_rows,
+            "expectation_notes": exp["notes"],
+        }
+    )
+    if exp["notes"]:
+        it.verdict = INCONCLUSIVE
+        it.reason = "关系行 append-only 成立, 但 " + "; ".join(exp["notes"]) + "。"
+        return it
+    after = [o for o in observations if o["turn"] is not None and int(o["turn"]) >= 23]
+    if len(after) < 2:
+        it.verdict = INCONCLUSIVE
+        it.reason = (
+            f"关系行 {final_rows} 未减少、suppression_directives={directives} 已写入, "
+            "但 manual_ui note 里遗忘后+关表重开的可解析观测不足两条, 无法判定不复活。"
+        )
+        return it
+    forget_obs, reopen_obs = after[-2], after[-1]
+    if (forget_obs["nodes"], forget_obs["edges"]) != (
+        exp["expected_nodes"], exp["expected_edges"]
+    ):
+        it.verdict = FAIL
+        it.reason = (
+            f"遗忘后 T{forget_obs['turn']} 观测 nodes={forget_obs['nodes']} "
+            f"edges={forget_obs['edges']}, 与复算的 nodes={exp['expected_nodes']} "
+            f"edges={exp['expected_edges']} 不符 —— 被遗忘项没有按 ordinary policy 离图。"
+        )
+        return it
+    if removed <= 0:
+        it.verdict = FAIL
+        it.reason = (
+            f"suppression_directives={directives} 已写入, 但复算显示没有任何节点因抑制离图"
+            f"(removed={removed}) —— 遗忘对普通图谱无效。"
+        )
+        return it
+    if (reopen_obs["nodes"], reopen_obs["edges"]) != (
+        forget_obs["nodes"], forget_obs["edges"]
+    ):
+        it.verdict = FAIL
+        it.reason = (
+            f"关表重开 T{reopen_obs['turn']} 观测 nodes={reopen_obs['nodes']} "
+            f"edges={reopen_obs['edges']}, 与遗忘后 T{forget_obs['turn']} 的 "
+            f"nodes={forget_obs['nodes']} edges={forget_obs['edges']} 不同 —— 边/节点复活。"
+        )
+        return it
+    scope = (
+        "本次无 knowledge(applies_to)关系行, 「relation memory 自身被遗忘」子例由 A6-6 承载"
+        if knowledge_rows == 0
+        else f"含 knowledge 关系行 {knowledge_rows} 条"
+    )
+    it.verdict = PASS
     it.reason = (
-        f"DB 半边已验证: 关系行 {final_rows} 未减少(峰值 {peak}), suppression_directives={directives}/"
-        f"targets={targets} 已写入; 但「关表重开边数不复活」是纯 UI 观测, 证据目录无边数记录。"
+        f"关系行 {final_rows} 未减少(峰值 {peak}, append-only 成立); 遗忘使 {removed} 个节点离图"
+        f"(直接目标 {len(exp['suppressed_direct'])} 条 + 同源副本 "
+        f"{len(exp['suppressed_alias_same_source'])} 条), T{forget_obs['turn']} 观测 "
+        f"nodes={forget_obs['nodes']} edges={forget_obs['edges']} 与复算一致; "
+        f"T{reopen_obs['turn']} 关表重开观测逐字相同, 未复活。{scope}。"
     )
     return it
 
