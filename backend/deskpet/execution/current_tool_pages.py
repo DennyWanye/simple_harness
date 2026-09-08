@@ -8,7 +8,7 @@ from types import MappingProxyType
 import aiosqlite
 
 from deskpet.execution.primary_context_pages import (
-    PrimaryContextPageUnavailable, _excerpt, _sha,
+    PAGE_BYTES, PrimaryContextPageUnavailable, _excerpt, _sha,
 )
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, redact_credential_shapes
@@ -30,6 +30,57 @@ CONTROL_TOOLS = frozenset({"context_route", "context_page_in", "task_scope_searc
 # primary_settled_effect_v1 summary + context_page_in reference the >16 KiB rule
 # already produces, so the model can page any of them back byte-exactly.
 CURRENT_TOOL_BUDGET_DIVISOR = 4
+
+# --- F-E3: the paged descriptor's own cost -------------------------------
+# Incident E left the summary itself unbounded in the only direction that
+# mattered: its cost is *fixed* (~1 990 B / ~500 token) whatever the body is,
+# because it carried a full 1 KiB ``_excerpt`` plus ten descriptor fields.
+# Native HM-TO-A6 attempt 9 (`.local-test-evidence/2026-09-09/native-a6-run9/`,
+# deepseek-v4-flash, window 32000 -> effective_input_budget 26752) shows the
+# consequence directly — four Runs died with ``sdk_context_budget_exceeded``
+# while their open group was already almost entirely paged:
+#
+#   run         planned   paged msgs   descriptor B   original B   desc tokens
+#   fd4b0849e7   27 982      13          26 060        72 035        6 550
+#   539ca5f03b   27 932      14          28 076        79 175        7 073
+#   5c893a4459   27 007      16          32 098        98 817        8 036
+#   4996b84db6   26 862       6          12 014        30 737        3 065
+#
+# 16 descriptors alone are 8 036 token of a 26 752 budget.  The model (flash)
+# legitimately issues 13-16 ``tool_search`` calls per Run while hunting for file
+# tools, so "13+ paged results" is the normal shape, not an exotic one.
+#
+# Measured on the same 47 real descriptors, the 1 KiB excerpt buys almost
+# nothing: truncated to 128 B it still gives 33 of the 45 distinct bodies a
+# distinct prefix; the full 1 024 B reaches only 34.  896 extra bytes per
+# message for 1 body in 45.  The first 73 B are the constant
+# ``{"error_code":null,"outcome":"succeeded","public_message":null,"value":{"``
+# wrapper, so 128 B leaves ~55 B of real payload — in the observed shape that is
+# ``{"count":7,"matches":[{"capability_id":"builtin:memory_re``, i.e. enough to
+# say which search this was.  The rest is what ``context_page_in`` is for.
+SUMMARY_EXCERPT_BYTES = 128
+# A summary must be at most this fraction of the body it replaces, or the body
+# keeps its bytes.  Evidence: attempt 9 paged a 2 098 B ``tool_describe`` into a
+# 2 011 B descriptor (4 % saved) and a 2 338 B ``tool_search`` into 2 010 B
+# (14 %) — real losses of readable content for no budget gain.
+PAGE_SAVING_DIVISOR = 2
+# The *smallest* a bounded summary can be: the fixed part (kind + reference_id
+# + source_hash + page_tool + effect_id + tool_name + content_bytes + pages —
+# ~415 B for production id lengths, ~339 B + the two ids in general) plus the
+# excerpt, which is ``min(SUMMARY_EXCERPT_BYTES, body)`` and therefore never
+# empty for a body this small.  Review N2 (2026-09-09): the lower bound does not
+# rest on the ~415 B measurement, which a shorter ``effect_id`` would break — it
+# rests on that "excerpt is never empty" term, and
+# ``test_no_body_below_the_paging_floor_can_ever_be_paged`` proves the property
+# directly, across id lengths, instead of pinning one measurement.
+SUMMARY_MIN_BYTES = 400
+# Below this many bytes ``worth_paging`` can never be satisfied, so a verbatim
+# non-control body this small never lost anything to the bound.  Purely
+# descriptive in receipts: the rule itself always compares the real summary
+# against the real body, and on a ``force_all`` turn the margin is dropped
+# entirely, so this number says "below the paging floor", NOT "the margin rule
+# is why this one is verbatim" (review S1).
+PAGE_WORTH_MIN_BYTES = SUMMARY_MIN_BYTES * PAGE_SAVING_DIVISOR
 
 # --- F-E2: the same-Run bound for CONTROL results ------------------------
 CONTROL_MARKER = "primary_control_result_elided_v1"
@@ -183,9 +234,104 @@ def reference(descriptor, offset=0):
     return PREFIX + canonical_hash(descriptor) + ":" + str(offset)
 
 
+def _summary_excerpt(content):
+    """The wire excerpt: a hard-capped, deterministic prefix of the exact body.
+
+    Deliberately *not* ``_excerpt`` (that is the 1 KiB **page** unit used by
+    ``admitted_current_page`` and must not shrink — a page is what the model
+    reads back, and its size is part of the paging contract).  This is the much
+    smaller "which result was this" hint that rides in the retained summary.
+    Same shape as ``_excerpt``: a byte prefix, truncated at a UTF-8 boundary by
+    ``errors="ignore"``, so it stays a pure deterministic function of
+    ``content`` and ``summary(descriptor, content)`` remains byte-reproducible
+    by ``verify_request``.
+    """
+    return content.encode("utf-8")[:SUMMARY_EXCERPT_BYTES].decode("utf-8", errors="ignore")
+
+
 def summary(descriptor, content):
+    """The retained wire form of one paged settled body (F-E3 bounded shape).
+
+    A *projection* of ``descriptor``, not ``descriptor`` itself.  The full
+    descriptor stays exactly what it was — it is still the preimage of
+    ``reference()`` and still what ``admitted_current_page`` returns as
+    ``source`` — so admission identity, the durable page result and its replay
+    check are untouched.  What shrinks is only what travels in the request.
+
+    Every dropped field is *re-derived*, never trusted: ``verify_request``
+    rebuilds the whole descriptor from public audit/effect facts and compares
+    ``message.content`` to this function's output byte for byte, and the
+    comparison covers ``reference_id`` = ``canonical_hash(full descriptor)``.
+    So ``effect_version`` / ``result_hash`` / ``provider_invocation_id`` /
+    ``provider_response_hash`` / ``run_id`` are still bound just as tightly as
+    when they were printed — a mismatch in any of them changes the digest
+    inside ``reference_id`` and fails ``summary_mismatch``.
+
+    What is kept is what has a *reader*: ``reference_id`` + ``source_hash`` +
+    ``page_tool`` are the three fields ``context_page_in``'s own tool
+    description tells the model to copy verbatim; ``effect_id`` is the lookup
+    key ``verify_request`` needs; ``tool_name`` / ``content_bytes`` / ``pages``
+    / ``excerpt`` are what makes the placeholder legible to the model.
+    ``content_hash`` is not repeated inside ``source`` — ``source_hash`` is the
+    same value and is the name the tool schema uses.
+    """
+    return canonical_json(dict(kind=MARKER,
+        source=dict(effect_id=descriptor["effect_id"], tool_name=descriptor["tool_name"],
+                    content_bytes=descriptor["content_bytes"]),
+        excerpt=_summary_excerpt(content),
+        # At least this many ``context_page_in`` reads to see the whole body.
+        # A floor, not an exact count: ``_excerpt`` shortens a page to a UTF-8
+        # boundary, so a multibyte body takes marginally more.
+        pages=-(-int(descriptor["content_bytes"]) // PAGE_BYTES),
+        reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
+        page_tool="context_page_in"))
+
+
+def legacy_summary(descriptor, content):
+    """The pre-F-E3 wire form: accepted on read, never produced (review M1).
+
+    ``MARKER`` did not change with the bounded shape, and it must not: a page
+    reference recorded *before* the upgrade is still a reference to the same
+    descriptor and the same body, and ``reference_id`` — the admission digest —
+    is byte-identical in both forms.  What changed is only how much of the
+    descriptor is printed.
+
+    Without this, an upgrade closes any in-flight Run that had already paged a
+    body and paged it back: ``admitted_current_page`` re-verifies the *persisted*
+    parent request (``read_effect_facts`` rebuilds it from
+    ``provider_invocations.request_json``), and
+    ``primary_dependencies.check_runtime_dependencies`` re-runs that for every
+    prior ``context_page_in`` effect on every later turn.  A stored old-shape
+    summary would stop equalling ``summary(descriptor, content)`` and the Run
+    would fail closed on a formatting change, permanently.
+
+    Accepting it admits nothing new.  Both forms are deterministic functions of
+    the same re-derived ``(descriptor, content)``; the comparison is still an
+    exact byte equality against authority, and both yield the same
+    ``canonical_hash(descriptor)`` admission key.
+    """
     return canonical_json(dict(kind=MARKER, source=descriptor, excerpt=_excerpt(content),
-        reference_id=reference(descriptor), source_hash=descriptor["content_hash"], page_tool="context_page_in"))
+        reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
+        page_tool="context_page_in"))
+
+
+def worth_paging(body_bytes, content_bytes, *, margin=True):
+    """Is turning ``content_bytes`` of body into ``body_bytes`` of summary a win?
+
+    F-E3.  The old rule was only ``summary < body``, which passes for a body
+    that is one byte larger than its own summary.  Native HM-TO-A6 attempt 9
+    shows what that costs: a 2 098 B ``tool_describe`` result was paged into a
+    2 011 B descriptor — 4 % saved, and the model lost the body.  With ``margin``
+    a body must be at least ``PAGE_SAVING_DIVISOR`` times its summary before it
+    is worth paging at all; below that it keeps its bytes.
+
+    ``margin=False`` is the ordered-degradation form (Incident O ``force_all``):
+    once the Host has already decided this turn does not fit, *any* shrink beats
+    closing the Run, so it falls back to "smallest form wins".
+    """
+    if margin:
+        return int(body_bytes) * PAGE_SAVING_DIVISOR <= int(content_bytes)
+    return int(body_bytes) < int(content_bytes)
 
 
 def control_stub_content(facts, *, min_bytes=0):
@@ -242,6 +388,13 @@ def verify_control_stubs(stack, run_id, messages):
     way.  This only proves that each notice really describes a settled control
     effect of this Run and carries that effect's own public content address —
     i.e. that the Host elided something it may elide, and said so truthfully.
+
+    Note the deliberate asymmetry with :func:`verify_request` (review N5): the
+    notice keeps ``run_id`` on the wire and checks it here, while the F-E3
+    bounded page summary drops it and checks the *re-derived* one instead.  Both
+    are safe; the difference is a size decision (a notice is emitted a handful
+    of times per Run, a summary once per settled result) and F-E2's shape is
+    frozen.  Do not "harmonize" this by removing the check below.
     """
     stubs = 0
     for message in messages:
@@ -270,10 +423,26 @@ def verify_request(stack, run_id, messages):
         _require(message.role.value == "tool" and isinstance(message.content, str), "summary_shape")
         body = json.loads(message.content)
         claimed = body.get("source", {})
-        _require(claimed.get("run_id") == run_id, "foreign_source")
+        if isinstance(claimed, Mapping) and "run_id" in claimed:
+            # Pre-F-E3 wire shape: keep main's check *and its position*, so a
+            # rejection recorded before the upgrade replays with the same
+            # error code.  ``primary_dependencies`` re-derives a recorded
+            # deterministic ``context_page_in`` failure and raises
+            # ``primary_page_rejection_mismatch`` when the code differs.
+            _require(claimed.get("run_id") == run_id, "foreign_source")
+        # F-E3: the bounded wire no longer repeats ``run_id`` (88 B per message,
+        # and the only Run identity that may be trusted here is the caller's
+        # anyway), so the foreignness check moves onto the *re-derived* facts.
+        # It is the same check made stronger: ``read_primary_effect_page_facts``
+        # is given the trusted ``run_id``, ``read_effect_facts`` already refuses
+        # an effect belonging to another Run, and the assertion below re-states
+        # it against authority instead of against model-visible text.
         descriptor, content = source_content(
-            stack.read_primary_effect_page_facts(run_id, claimed.get("effect_id")), min_bytes=0)
-        _require(message.content == summary(descriptor, content)
+            stack.read_primary_effect_page_facts(run_id, claimed.get("effect_id")
+                                                 if isinstance(claimed, Mapping) else None), min_bytes=0)
+        _require(descriptor["run_id"] == run_id, "foreign_source")
+        _require(message.content in (summary(descriptor, content),
+                                     legacy_summary(descriptor, content))
                  and message.name == descriptor["tool_name"]
                  and message.call_id.value == descriptor["raw_call_id"], "summary_mismatch")
         found[canonical_hash(descriptor)] = descriptor, content
@@ -499,18 +668,31 @@ class CurrentToolProjector:
         indices = [i for i in range(anchor, len(messages)) if messages[i].role.value != "system"]
         output = list(messages)
 
-        def replace(index, source, *, min_bytes):
+        def replace(index, source, *, min_bytes, margin=True):
             """Swap one settled body for its content-addressed page summary."""
             message = messages[index]
             descriptor, content = source_content(
                 stack.read_primary_effect_page_facts(run_id, source["effect_id"]), min_bytes=min_bytes)
             _require(transcript[source["item_ordinal"] - 1]["content"] == content, "transcript_mismatch")
             body = summary(descriptor, content)
-            if len(body.encode()) >= len(content.encode()):
-                return 0  # a body smaller than its own summary saves nothing
+            saved = text_tokens(content) - text_tokens(body)
+            if saved <= 0 or not worth_paging(len(body.encode()), len(content.encode()), margin=margin):
+                # F-E3: not merely "not smaller" — not smaller *by a margin*.
+                # Paging a body into a summary of comparable size trades readable
+                # content for no budget, so the body stays.  Under ``force_all``
+                # the caller drops the margin and only "smaller" is required.
+                #
+                # Review N1 (2026-09-09): the margin is a *byte* rule while the
+                # bound it feeds is a *token* one, and ``text_tokens`` prices CJK
+                # at one token per character.  A body of multibyte codepoints can
+                # therefore be smaller in bytes and larger in tokens once paged,
+                # which would make ``carried`` grow instead of shrink.  Requiring
+                # a positive token saving as well makes that impossible: the
+                # accumulation loop is now monotone by construction.
+                return 0
             output[index] = Message(message.role, body, name=message.name,
                 call_id=message.call_id, metadata={"source": MARKER})
-            return text_tokens(content) - text_tokens(body)
+            return saved
 
         def elide(index, source):
             """Swap one settled CONTROL body for its public elision notice."""
@@ -562,7 +744,9 @@ class CurrentToolProjector:
             if carried <= allowance and not force_all:
                 break
             try:
-                carried -= replace(index, source, min_bytes=0)
+                # F-E3: the margin holds for the ordinary bound; only the
+                # already-declared "this turn does not fit" pass gives it up.
+                carried -= replace(index, source, min_bytes=0, margin=not force_all)
             except PrimaryContextPageUnavailable:
                 continue  # this body is not pageable; it keeps its own bytes
         # F-E2: the same bound for CONTROL results, with three differences.

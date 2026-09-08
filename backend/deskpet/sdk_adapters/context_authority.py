@@ -1185,30 +1185,70 @@ def _current_tool_page_facts(messages: tuple[Any, ...]) -> dict[str, int]:
     — they are not elidable — so a receipt where the two numbers stop moving
     together is exactly the case where the un-elidable part alone fills the
     control share.
+
+    F-E3 adds two more, for the question Incident E could not answer from a
+    receipt: was paging worth it?  ``descriptor_bytes_saved`` is the sum over
+    retained summaries of ``source.content_bytes`` minus the summary's own
+    bytes — on attempt 9's shape this was ~46-67 KB of body traded for ~26-32 KB
+    of descriptor, i.e. a real but poor bargain; with the bounded descriptor the
+    same trade is ~46-67 KB for ~7-9 KB.  ``results_kept_verbatim_small`` is how
+    many non-control bodies travel verbatim while being below
+    ``PAGE_WORTH_MIN_BYTES`` — small enough that paging cannot help them — so a
+    reader can separate "the bound left these alone because they are tiny" from
+    "the bound could not reach them".  It is descriptive, not causal: see the
+    note beside the counter.
     """
 
-    from deskpet.execution.current_tool_pages import CONTROL_MARKER, CONTROL_TOOLS, MARKER
+    from deskpet.execution.current_tool_pages import (
+        CONTROL_MARKER, CONTROL_TOOLS, MARKER, PAGE_WORTH_MIN_BYTES,
+    )
 
     paged = 0
     carried = 0
     stubbed = 0
     control_carried = 0
+    saved = 0
+    kept_small = 0
     for message in messages:
         role = str(getattr(getattr(message, "role", ""), "value", getattr(message, "role", "")))
         content = getattr(message, "content", None)
         if role != "tool" or not isinstance(content, str):
             continue
         metadata = getattr(message, "metadata", None)
-        if isinstance(metadata, Mapping) and metadata.get("source") == MARKER:
+        marker = metadata.get("source") if isinstance(metadata, Mapping) else None
+        if marker == MARKER:
             paged += 1
-        if isinstance(metadata, Mapping) and metadata.get("source") == CONTROL_MARKER:
+            # F-E3 attribution, read out of the retained summary itself: what
+            # the body would have cost minus what the summary really costs.  A
+            # tampered ``content_bytes`` cannot inflate this quietly —
+            # ``verify_request`` rebuilds the whole summary before the request
+            # may leave — and a summary the projector did not write is not
+            # counted at all, because it would not carry the marker.
+            try:
+                declared = int(json.loads(content).get("source", {}).get("content_bytes", 0))
+            except (ValueError, TypeError, AttributeError):
+                declared = 0
+            saved += max(0, declared - len(content.encode("utf-8")))
+        if marker == CONTROL_MARKER:
             stubbed += 1
         if getattr(message, "name", None) not in CONTROL_TOOLS:
             carried += _context_text_tokens(content)
+            if marker != MARKER and len(content.encode("utf-8")) < PAGE_WORTH_MIN_BYTES:
+                # Verbatim and below the F-E3 paging floor.  Deliberately a
+                # descriptive statement about the request, not a causal one
+                # (review S1): on an ordinary turn these are the bodies the
+                # margin rule declined, but a ``force_all`` turn drops the margin,
+                # and a non-succeeded or newest-turn body never reaches the rule
+                # at all.  What the number always means is "this much of the
+                # request is tool bodies too small for paging to help".
+                kept_small += 1
         else:
             control_carried += _context_text_tokens(content)
     return {"current_tool_pages": paged, "current_tool_tokens": carried,
-            "control_results_stubbed": stubbed, "control_result_tokens": control_carried}
+            "control_results_stubbed": stubbed, "control_result_tokens": control_carried,
+            # F-E3: the two numbers that say the descriptor is now a saving
+            # rather than a fixed ~500-token tax.
+            "descriptor_bytes_saved": saved, "results_kept_verbatim_small": kept_small}
 
 
 def _visible_provider_specs(
