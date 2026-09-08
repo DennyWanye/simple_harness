@@ -457,9 +457,17 @@ class HumanMemoryV7Runtime:
             f"context-route:{run_id}:{turn_ordinal}",
             (RecallReasonCode.USER_FACT_DEPENDENCY,),
         )
-        execution = await self.operation_audit.execute_typed_recall(
-            manager, principal=principal, context=context, plan=plan, now=moment,
-            caller="foreground_recall",
+        from deskpet.memory.recall_authority import execute_typed_recall_recollecting
+
+        # A concurrent memory apply / index rebuild that advances the recall
+        # authority between collection and execution is a benign race: collect
+        # again under the new authority (bounded, one journalled attempt each,
+        # one durable SDK request). An exhausted budget raises
+        # ``RecallAuthorityStale``, which the tool boundary settles as a
+        # rejection — never as a Run failure.
+        execution = await execute_typed_recall_recollecting(
+            self.operation_audit, manager, principal=principal, context=context,
+            plan=plan, now=moment, caller="foreground_recall",
         )
         if explicit_selection:
             # A single public typed result owns ranking, budget and durable

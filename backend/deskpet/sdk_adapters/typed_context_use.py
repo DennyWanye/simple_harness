@@ -7,6 +7,7 @@ AFTER projection; a history occurrence of the same item is never exempted.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ from deskpet.sdk_adapters.context_authority import canonical_sha256
 from deskpet.memory.history_source_authority import history_namespace_tx
 from deskpet.memory.primary_visibility import read_evidence_pair
 from deskpet.memory.trusted_disclosure import resolve_current_disclosure
+
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -256,9 +259,26 @@ class ProductTypedContextUseAuthority:
         # Only Memory signs the durable use receipt. Its current policy/epoch,
         # source ownership and replay rules remain the authority.
         manager = await self._memory.manager()
-        return await manager.authorize_recall_context_use(
-            principal=self._memory.principal(), request=request, now=self.clock(),
+        from deskpet.memory.recall_authority import (
+            RecallContextUseAuthorityStale, is_recall_authority_stale,
         )
+        try:
+            return await manager.authorize_recall_context_use(
+                principal=self._memory.principal(), request=request, now=self.clock(),
+            )
+        except Exception as error:  # noqa: BLE001 - only the exact stale fence is renamed
+            if not is_recall_authority_stale(error):
+                raise
+            # The recall already reached the model as a tool receipt, so its
+            # result identity is frozen in this conversation and the authority
+            # epoch only moves forward: there is nothing to re-collect here and
+            # a retry could never succeed. Re-collection happens where it can
+            # (deskpet.memory.recall_authority, at execution time); here the
+            # Host only replaces the bare SDK string with a stable, payload-free
+            # Host code so the outcome is attributable.
+            _LOG.warning("recall_context_use_authority_stale run_id=%s turn_id=%s",
+                         request.run_id, request.turn_id)
+            raise RecallContextUseAuthorityStale() from error
 
     async def consumed_occurrences(self, *, db, run_id, request):
         """Return exact (effect,item) grants, never a global binding exemption."""
