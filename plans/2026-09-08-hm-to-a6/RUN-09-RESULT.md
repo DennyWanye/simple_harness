@@ -37,3 +37,10 @@
 | 事件 V | T22 争议期召回无 `conflict_notice` | A6-8/NC-4 |
 | 事件 W | 76 K token 请求绕过预算；调用/回执计数差 1 | A6-3/A6-12 |
 | F-S1b | Procedure 端点在 `check_history_visibility` 恒 stale（SDK 0.6.36 + Host） | A6-6 Procedure 形态 |
+
+## 合入进度（2026-09-09 07:05）
+
+- 已合入 main：事件 U（`db587430`）、F-E3（`1314a6bd`，四个失败 Run 离线复算全部回到预算内，摘要 2.0 KB → 566 B）。
+- 事件 T：实现完成，评审 3 条 MUST-FIX（验证器 A6-6 须要求 target 端点为本 plan 新建的流程节点；A6-6 验证器补测试；备忘录如实引用 HM-S12/HM-TO-A2 的「两个 canonical node」原文并记 F-T6）→ 收尾子代理处理中。
+- 事件 V：评审 4 条 MUST-FIX（争议记忆槽位文本无中文且无向量世代，纯中文提问在 SDK 词法门不可达 → Host 只能保证「一定会问」，SDK 侧 F-V-2 升为阻塞项；同轮两次 `context_route` 的幂等键冲突；被拒路由丢弃探测结果；非记忆路由的通知无结果哈希）→ 收尾子代理处理中；F-V-2 已派 SDK 子代理（分支 `m0637`）。
+- 事件 W、F-S1b（SDK 0.6.36）进行中。
