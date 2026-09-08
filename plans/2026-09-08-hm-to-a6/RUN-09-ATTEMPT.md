@@ -24,3 +24,7 @@
 1. **F-E3（分页摘要固定成本）**：`primary_settled_effect_v1` 摘要每条约 2.0 KB（≈456 token）且与原文大小无关；flash 在一个 Run 内为找文件工具连发 13–16 次 `tool_search`（原文各 1.7–6 KB），摘要反而比原文大，16 条即 32 KB，把 26752 的预算（受保护 8.6 K）挤爆。F-E2 压桩已生效（`control_results_stubbed` 5–6、`control_stubs_forced` 3–4）但控制类只占小头；`context_route` 原文不可省略（F-E2b）。→ 已派 Opus 子代理：摘要缩到约 100–150 token、摘要不比原文小则不分页、回执记账。
 2. **A6-6 设计前提**：旅程从不产生/使用 Procedure 记忆，v8 有序策略在「无流程候选」时把 T15 解析成语义声明（分支 ②），关系永远不会被提出；关系候选通道只报 `relation_procedure_applicability_absent`。→ 已派 Opus 子代理（事件 T）：让「点名流程 + 绑定已下发事实候选」的陈述走「新建流程节点 + applies_to 指向事实端点」的关系形态，真实模型复测后再定，必要时改 00-PLAN 的 A6-6 行。
 3. F-S1b（Procedure 端点在 `check_history_visibility` 里恒 stale）由另一子代理跨仓库处理（SDK 0.6.36 + Host 解除扣留）。
+
+## T17（事件 U，已派独立子代理）
+
+T17 要求逐字记 18 KB 目标；模型在 Run 内 7 次调用 `task_scope_update`（`goal.set`，`base_revision=1`），全部被 `task_scope_update_refs_outside_scope` 拒绝——每次猜不同的 `evidence_refs`（记忆 id、审计 key、call id、run id、`foreground-execution-…`、再加 `binding:/effect:/envelope:/evidence:/task_scope:/receipt:/run:` 前缀），期间穿插 `tool_search`/`todo_write`/`context_route` 找 id。拒绝回执只回显违规 ref，不披露范围内已链接的 evidence id，也不给下一步；工具描述只说「引用 closure instruction 的 allowed_evidence_refs」，而 Run 中途没有 closure instruction。本次之前的 T7 目标走的是 `context_route create_new` 的 `goal=`，T10 决定走 `direct_standalone` 未记录。A6-5 因此阻塞。修复方向：拒绝回执披露有界的已链接 evidence id（仅 id/哈希，不带载荷）与可执行下一步，当前轮 USER evidence id 可预先发现，同类拒绝达到上限时有界升级提示；对照第 5 次 T17 成功时 ref 的来源。
