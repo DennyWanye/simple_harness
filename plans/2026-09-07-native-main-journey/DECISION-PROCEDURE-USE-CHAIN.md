@@ -113,3 +113,91 @@ PASS 判定：步 4 与步 5/6 全部证据齐备，且 `procedure_discover` 两
 - 词项匹配会让候选变多；页预算/`omitted_oversize` 逻辑不变，`limit≤8`。
 - 不改 typed recall 指纹门，因此「memory_standalone 路由下问'我有什么流程'」仍只能靠模型改调 `procedure_discover`（PERSONA 已引导）；这是设计口径，不是缺陷。
 - 本分析未拿到 r24/r25 的原始库（`.local-test-evidence/2026-09-07/native079619` 本机不存在），r24 "只有 episode" 依据 CONTRACT/REMAINING 的公开响应审计记录；r8/r9 库为本机只读实查。
+
+## 追加（2026-09-08 r14 后）
+
+> 本节由独立子代理在工作树 `worktree-agent-a7db10b24f7c197f6`（基线 Host main `7cec5249`）执行并自审。只改 Host 后端，未改 Memory SDK，未 pin 新 wheel，未运行原生应用与真实模型。
+
+### 1. 问题（native r14，真实 DeepSeek）
+
+记录见 `NATIVE-R14-PROCEDURE-CHAIN.md`。步 1–4 全绿，步 5 FAIL：
+
+1. `procedure_use` 绑定成功，返回体只有 `{procedure_use_id, memory_id, revision, steps, execution_authorized:false}`——**没有回显模型自己刚绑定的两步调用**。
+2. 模型随后调 `file_write` 时把 `content` 改了 → `procedure_call_not_bound_step`；但 `sdk_adapters/tools.py` 把 `before_call` 里**所有** `ProcedureUseRejected` 一律映射成同一句 "Procedure use was rejected before execution."，模型无从知道期望的是第几步、什么工具、什么参数。
+3. 模型自述"没匹配上，我重新绑定" → `procedure_same_run_changed_use`（同 Run 绑定不可变，设计如此）。
+4. 循环至 `react_max_turns_exceeded`；期间 DeepSeek 另发 9 次空参数 `{}` 调用（模型行为，只能靠更短更可执行的纠错文案降低概率）。
+
+根因归类：**契约正确，工效学缺失**。三层拒绝都按设计生效、审计完整、无越权执行；失败点是"模型拿不到照做所需的事实"。
+
+### 2. 决策：契约不动，只改工效学
+
+**不变（明确重申，任何后续 Agent 不得放宽）**
+
+- 同一 Run 内绑定不可变：`procedure_use_store.bind` 仍以 `existing != body` 判定并抛 `procedure_same_run_changed_use`。
+- 步调用逐字精确匹配：`reserve` 仍只比 `{tool, arguments_hash}`，仍按序、前一步必须成功。
+- 不新增任何执行路径：`before_call` 拒绝仍返回 `EffectExecution(effect=None, …)`，物理动作零发生。
+- 全部 `error_code` 字面值不变（测试与语料在断言它们）。
+- 操作审计（`operation-audit.db`）调用序列、观察/恢复链、指纹门一律未动。
+
+**改动（Host 后端）**
+
+| # | 文件 | 内容 |
+|---|---|---|
+| 1 | `backend/deskpet/memory/procedure_guidance.py`（新增） | 唯一的模型可读文案层：`bound_step_calls` / `bind_next_action` / `call_rejection_public_message` / `bind_rejection_next_action`。纯函数、无 I/O、不做任何判定 |
+| 2 | `backend/deskpet/memory/procedure_runtime.py` `bind_use` | 返回体新增 `bound_steps:[{ordinal, tool, arguments}]`（`arguments` 为解码后的 JSON 对象，逐字等于绑定值）、`binding_frozen:true`、`next_action` 字符串；`execution_authorized` **保留**（消费方兼容），并由 `next_action` 首句显式说明它不等于"不许执行" |
+| 3 | `backend/deskpet/memory/procedure_use_store.py` `bind` | 持久化 body 的每一步增加 `arguments` 字段（**仅供回显**；匹配仍只用 `arguments_hash`），使拒绝文案在重启/重放后仍能逐字回显 |
+| 4 | 同上 `bind`/`reserve` | 四个拒绝带上 `detail`：`procedure_same_run_changed_use`（已生效的全部绑定步）、`procedure_call_not_bound_step`（期望的序号/工具/参数 + 实际发出的工具）、`procedure_previous_step_not_successful`（失败的序号/总步数）、`procedure_use_already_complete`（总步数） |
+| 5 | `backend/deskpet/memory/procedure_applicability.py` | `ProcedureUseRejected` 增加**关键字参数** `detail`；`str(exc)` 仍是稳定码 |
+| 6 | `backend/deskpet/sdk_adapters/tools.py` | 那句唯一的不可操作文案改为 `call_rejection_public_message(error)`；`error_code` 仍是 `str(error)` |
+| 7 | `backend/deskpet/sdk_adapters/procedure_use.py` | `_rejection` 在有 `detail` 时用具体文案覆盖静态 guidance（retriable 判定不变）；补 `procedure_same_run_changed_use` 静态兜底；工具描述与 `arguments_json` schema 描述加入"必须逐字重发、同 Run 不可改绑" |
+
+**新公开文案（逐字）**
+
+- 绑定成功 `next_action`：
+  `Binding is frozen for this run. \`execution_authorized: false\` only means this record grants no extra permission by itself - you must now issue the bound calls yourself, in order: step 1 \`file_write\`; step 2 \`file_write\`, each with exactly the arguments echoed in bound_steps, copied verbatim (one changed character is rejected). Do not call procedure_use again in this run. After the last bound step this run accepts no further tool call under the binding, so answer the user directly then.`
+- `procedure_call_not_bound_step`：
+  `The Procedure binding for this run is frozen and cannot be re-bound. Expected next: step 1 of 2, tool \`file_write\`, with exactly these arguments: {"content": "…", "path": "record.txt"}. You sent that tool with different arguments. Re-send the expected call verbatim - calling procedure_use again in this run is rejected.`
+- `procedure_same_run_changed_use`：
+  `The Procedure binding for this run is immutable and is already set to: step 1 \`file_write\` with arguments {…}; step 2 \`file_write\` with arguments {…}. Issue those bound calls verbatim instead of binding again.`
+- `procedure_previous_step_not_successful`：
+  `Step 1 of the 2 bound Procedure steps did not succeed, so no later step can run. The Procedure binding for this run is frozen and cannot be re-bound. Report the failure to the user instead of retrying or re-binding.`
+- `procedure_use_already_complete`：
+  `All 2 bound Procedure steps are already done in this run, so no further tool call is accepted under this binding. The Procedure binding for this run is frozen and cannot be re-bound. Answer the user with the result.`
+- 未映射码兜底：
+  `Procedure use was rejected before execution (<code>). Do not retry the identical call. The Procedure binding for this run is frozen and cannot be re-bound.`
+
+### 3. 披露口径（为什么回显参数是安全的）
+
+回显的 `arguments` 是**模型本 Run 自己通过 `steps[].arguments_json` 送进来的字节**，不是记忆内容、不是他人主体数据、不是本 Run 尚未产生的任何事实；`_use` 仍校验 `subject == principal.actor_id`，`bind` 的 `existing` 只可能是同一 `sdk_run_id` 的先前绑定。本决策 §1.1 里带披露不变式的是**发现面** `procedure_discover`（读取前后重解析 disclosure），绑定回显不经过任何记忆读取，故不适用该不变式。结论：可以逐字回显。超过 1200 字符的参数不回显，改为"从 procedure_use 结果逐字复制"，理由是文案可读性与回执体积，不是披露。
+
+### 4. 独立复核裁决
+
+以严格复核者身份重读整份 diff，对照四条不变量：
+
+| 检查项 | 结论 |
+|---|---|
+| 绑定不可变 | **通过**。`existing != body` 判定未动；新增的 `arguments` 字段在比较两侧对称出现 |
+| 逐字精确匹配 | **通过**。`reserve` 的 `signature != {tool, arguments_hash}` 一字未改；`arguments` 只被文案层读，不参与任何判定 |
+| 无新执行路径 | **通过**。`tools.py` 只替换 `public_message` 实参；仍是 `ToolResult.rejected` + `effect=None` |
+| 无秘密披露 | **通过**，见 §3 |
+| 审计不变 | **通过**。`operation_audit.invoke` 调用点、参数、顺序未动；`procedure_observation_*` 全链未动 |
+| 稳定码不变 | **通过**。`str(exc)` 仍是原码；`_rejection` 只覆盖 `next_action`/`public_message`，不改 `retriable`/`replan_required` |
+| 消费方 | **通过**。`execution_authorized` 的唯一生产代码消费者 `execution/primary_dependencies.py:331` 只校验 `procedure_discover` 的返回形（索引表只含 `task_scope_search`/`context_page_in`/`procedure_discover`），`procedure_use` 返回体不被校验，扩字段安全 |
+
+复核中自查并已修的一点：`bind_next_action` 原稿没有说明"最后一步之后本 Run 不再接受任何工具调用"，模型会照旧计划一次核验读取再撞 `procedure_use_already_complete`；已补入该句。
+
+**裁决：ACCEPT。**
+
+### 5. 复核发现但本轮**不做**的事（r15 前需另行裁决）
+
+1. **同 Run 无法在流程之后做核验读取。** `before_call` 对绑定 Run 内的**每一个**非控制工具都要求它是下一个绑定步，因此步 5 用户要求的"做完把两个文件读出来核对"在契约下不可能完成——两步做完后 `file_read` 必然 `procedure_use_already_complete`。本轮只在文案里如实告知，没有改契约。**这是 r15 步 5 的下一个阻塞项**，需要产品决定（例如：只读工具不计入绑定；或绑定完成后自动解除；或把核验写进流程步骤）。
+2. **含拒绝调用的 Run 无法登记终态组。** 实测：一旦 Run 里出现"绑定前拒绝"的工具调用，该 tool 消息没有对应的 `primary_effect_identities` 行 → `primary_message_v2.representable` 为假 → `record_terminal_observation` 静默降级为 `primary-message-v1` → `registrations_for_run` 抛 `terminal_multiple_items_not_representable`，于是**该 Run 的 Procedure 观察与短索引全部拿不到**。这属于证据/因果层，不在本次工效学范围，但会让"模型第一次犯错、随后自行纠正成功"的 Run 拿不到成功计数。已在新测试里绕开（改为直接读 `procedure_uses` 表断言）。
+3. **回执 JSON 直出聊天区**（既有 F02）：`bound_steps` 会把绑定参数（可能是整段文件内容）原样渲染进聊天。属既有 followup，本轮不处理。
+4. **持久体积**：每步最多 16 KiB × 16 步，`procedure_uses` 单行最多多出约 256 KiB。输入侧早已有同样上限，判定可接受，未加新上限。
+
+### 6. 控制（本工作树）
+
+- 新增 `backend/tests/memory/test_procedure_binding_ergonomics.py`：11 项文案单测 + 1 项真实运行时集成测试，后者用真 Provider 复刻 r14 序列（绑定 → 改参数发 `file_write` → 重绑定 → 依回执逐字重放两步），断言两次拒绝仍是原码、文案可操作、两个真实文件写成、`procedure_uses` 只有 1 行、预留恰好 1/2 两步。
+- 扩充 `backend/tests/sdk_adapters/test_procedure_use_rejection_surface.py`（+3 项）。
+- 定向套件（15 个既有 procedure 文件 + 新文件）：末次 **88 passed / 1 skipped / 0 failed**。前两轮 `test_procedure_scope_runtime.py::test_three_real_scopes_whole_groups_qualify_and_replay_does_not_increment` 以 `asyncio.wait_for(…, 30)` 超时（`CancelledError`）失败，改动前的同一基线以完全相同方式失败，末轮同一命令通过——判定为本机计时不稳定项，非本次改动引入。
+- `sdk_adapters/tools.py` 的 17 个导入方文件：**231 passed / 8 failed**，8 项经 stash 回基线逐一复验全部为既有红（`test_foreground_runtime.py` 5 项、`test_provider_runtime_refresh.py` 2 项、`test_primary_create_new_runtime.py` 1 项，均为计时类 `CancelledError`）。
