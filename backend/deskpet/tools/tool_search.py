@@ -109,9 +109,18 @@ def _activation_rejection(
             f"Do not retry tool_activate for it. {next_action}"
         )
     else:
-        next_action = _ACTIVATION_NEXT_ACTIONS.get(
-            code, _DEFAULT_ACTIVATION_NEXT_ACTION
+        from deskpet.sdk_adapters.tool_authority import (
+            PROJECT_EFFECT_ROUTE_NEXT_ACTION,
+            PROJECT_EFFECT_ROUTE_REASON,
         )
+
+        # HM-TO-A6 incident A: a PROJECT_EFFECT capability refused because this
+        # Run is not routed to a task is retriable *after* context_route, so it
+        # must not inherit the "never retry" wording of ``tool_unavailable``.
+        next_action = {
+            PROJECT_EFFECT_ROUTE_REASON: PROJECT_EFFECT_ROUTE_NEXT_ACTION,
+            **_ACTIVATION_NEXT_ACTIONS,
+        }.get(code, _DEFAULT_ACTIVATION_NEXT_ACTION)
         message = f"tool_activate rejected for {capability_id}: {code}. {next_action}"
     # 字段拼进 message（structlog foreign_pre_chain 无 ExtraAdder，extra= 会被丢弃）。
     logger.warning(

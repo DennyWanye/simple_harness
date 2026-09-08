@@ -1,3 +1,5 @@
+2026-09-08 HM-TO-A6 事故 A/B：standalone 路由下 `tool_activate` 一个 PROJECT_EFFECT 工具，后续调用在冻结 SDK 的 `tool.envelope` 一跳被 `TaskExecutionAuthorityError` 打掉**整个 Run**（无任何工具回执可言）。修复把「本轮 ContextRouteState」从 provider 快照收窄面发布到能力披露面（`RunRouteStateMemo`）：`tool_search`/`tool_describe`/`tool_activate` 现在以稳定码 `project_effect_requires_task_route` 提前拒绝并给出 `context_route` 的可执行下一步，Run 继续；`ProductTaskExecutionAuthority` 与 `EffectGate` 的 deny 语义一字未改。事故 B：缺参回执现在回显已发布 schema 的参数形状，`task_scope_search` 零命中给出唯一下一步（有活跃任务时点名 `continue_active`）。[裁决备忘](../plans/2026-09-08-hm-to-a6/DECISION-STANDALONE-ROUTE-TOOL-AUTHORITY.md)。
+
 2026-09-06 原生r19独立长旅程仅前5轮：真实任务/docx创建但漏readback；原任务被模型收尾为complete，后续resume路由成功但编辑被生命周期门拒绝，第4轮FAIL并原生停止；随后43正常。完整两组旅程未完成，PG29074正常退出清空，非内存阻塞。[现场与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R19.md)。
 
 # simple_harness Agent Harness 架构
