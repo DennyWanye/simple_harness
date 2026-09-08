@@ -12,6 +12,7 @@ from collections.abc import Mapping
 import aiosqlite
 
 from deskpet.execution.primary_history import transcript_matches
+from deskpet.execution.primary_tool_calls import GROUP_KEY as TOOL_CALLS_KEY, read_assistant_tool_calls_tx
 from deskpet.sdk_adapters.causal_groups import DEFAULT_LARGE_RESULT_BYTES
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
@@ -28,6 +29,10 @@ HISTORY_SUFFIX = (
 )
 PAGE_BYTES = 1024
 PROJECTION_SOURCE = "primary_tool_history_v1"
+# F-K1: a past tool call's arguments are quoted verbatim up to this size; a
+# larger one becomes a deterministic excerpt + hash (like a large tool result),
+# so one oversized write never dominates every later request.
+ARGUMENTS_SUMMARY_BYTES = DEFAULT_LARGE_RESULT_BYTES
 
 
 class PrimaryContextPageUnavailable(ValueError):
@@ -62,15 +67,35 @@ def _reference(descriptor, offset=0):
     return PREFIX + canonical_hash(descriptor) + ":" + str(offset)
 
 
+def _rendered_tool_call(call):
+    arguments = call["arguments"]
+    if len(arguments.encode("utf-8")) > ARGUMENTS_SUMMARY_BYTES:
+        arguments = canonical_json(dict(kind="primary_tool_arguments_summary_v1",
+            excerpt=_excerpt(arguments), source_hash=_sha(arguments),
+            content_bytes=len(arguments.encode("utf-8"))))
+    return dict(call_id=call["call_id"], name=call["name"], arguments=arguments)
+
+
 def project_history_group(group, *, run_id):
-    """Pure projection of a group already verified by PrimaryHistoryStore."""
+    """Pure projection of a group already verified by PrimaryHistoryStore.
+
+    2026-09-08 HM-TO-A6 F-K1: when the group carries the Host side record of
+    assistant tool calls (``assistant_tool_calls``, keyed by 1-based transcript
+    ordinal), the quoted assistant item gains ``tool_calls: [{call_id, name,
+    arguments}]`` so a past turn reads as "assistant called X with these
+    arguments, then this result appeared". The archived ``messages`` are not
+    modified; a group without the record renders exactly as before.
+    """
     messages = group["messages"]
     if not any(m["role"] == "tool" for m in messages):
         return messages
+    tool_calls = group.get(TOOL_CALLS_KEY) or {}
     projected = []
     summarized = False
     for ordinal, message in enumerate(messages):
         content = message["content"]
+        if message["role"] == "assistant" and (ordinal + 1) in tool_calls:
+            message = {**message, "tool_calls": [_rendered_tool_call(c) for c in tool_calls[ordinal + 1]]}
         if (group["terminal_state"] == "COMPLETED"
                 and not group["source_ref"].startswith("primary-terminal:")
                 and message["role"] == "tool" and isinstance(content, str)
@@ -118,8 +143,15 @@ async def _source_group(db, stack, run, evidence_id, envelope_hash):
     # 这一种差异——标记本身可复算，所以不放松任何完整性。
     if not transcript_matches(messages, payload["messages"]):
         raise PrimaryContextPageUnavailable("primary_page_transcript_mismatch")
-    return dict(source_ref=evidence_id, source_hash=envelope_hash,
-                terminal_state="COMPLETED", messages=payload["messages"])
+    group = dict(source_ref=evidence_id, source_hash=envelope_hash,
+                 terminal_state="COMPLETED", messages=payload["messages"])
+    # F-K1: the same side-record join PrimaryHistoryStore.read performs, so the
+    # start-snapshot projection is rebuilt from the actual source shape.
+    calls = await read_assistant_tool_calls_tx(db, sdk_run_id=envelope.run_id, evidence_id=evidence_id,
+                                               envelope_hash=envelope_hash, messages=payload["messages"])
+    if calls:
+        group[TOOL_CALLS_KEY] = calls
+    return group
 
 
 async def admitted_page(*, db, stack, run, sdk_run_id, start, arguments):

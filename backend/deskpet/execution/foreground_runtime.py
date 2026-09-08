@@ -1870,25 +1870,34 @@ class SqliteSdkTerminalObserver:
                     # longer available. A7 physical preflight already rejects a
                     # missing source, and ordinary history requires this proof.
                     proof, occurrence_sources = None, None
-            tool_sources = None
+            tool_sources, assistant_tool_calls = None, None
+            # 2026-09-08 HM-TO-A6 F-K1: the combined reader also yields the
+            # assistant's own tool calls (name + arguments) from the same
+            # verified provider records; an older stack without it keeps the
+            # sources-only path and archives no side record.
+            read_tool_causality = getattr(self._runtime_stack, "read_primary_tool_causality", None)
             read_tool_sources = getattr(self._runtime_stack, "read_primary_tool_causal_sources", None)
             if terminal is RunState.COMPLETED and any(message.get("role") == "tool" for message in messages):
                 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
-                if callable(read_tool_sources):
-                    try:
+                try:
+                    if callable(read_tool_causality):
+                        tool_sources, assistant_tool_calls = await read_tool_causality(db_path=self._db_path,
+                            host_run_id=host_run_id, run_id=sdk_run_id, subject=subject,
+                            current_text=text, messages=messages)
+                    elif callable(read_tool_sources):
                         tool_sources = await read_tool_sources(db_path=self._db_path,
                             host_run_id=host_run_id, run_id=sdk_run_id, subject=subject,
                             current_text=text, messages=messages)
-                    except PrimaryToolCausalityUnavailable:
-                        # Archive the complete original terminal. A missing or
-                        # incomplete tool source never permits partial indexing.
-                        tool_sources = None
+                except PrimaryToolCausalityUnavailable:
+                    # Archive the complete original terminal. A missing or
+                    # incomplete tool source never permits partial indexing.
+                    tool_sources, assistant_tool_calls = None, None
             primary_event_id, primary_event_hash = await record_terminal_observation(
                 self._db_path, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
                 owner_id=owner_id, generation=generation, terminal=terminal,
                 sdk_evidence=sdk_evidence, messages=messages, visibility_dependencies=proof,
                 occurrence_sources=occurrence_sources,
-                tool_causal_sources=tool_sources,
+                tool_causal_sources=tool_sources, assistant_tool_calls=assistant_tool_calls,
                 error_code=self._terminal_error_code(sdk_run_id, sdk_evidence) if terminal is RunState.FAILED else None,
             )
             if effective_scope is None:
