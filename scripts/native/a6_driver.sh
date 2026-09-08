@@ -139,19 +139,33 @@ counters() {
   BOUNDED=$(q "$STATE" "select count(*) from task_scope_read_view_revisions where view_kind in ('README','STATUS') and (instr(cast(content as text),'\"bounded\":true')>0 or instr(cast(content as text),'content-addressed in EVIDENCE')>0);")
 }
 
-terminal_reached() { # $1 baseline env count, $2 baseline run count, $3 baseline max updated_at
+terminal_reached() { # $1 baseline env count (unused), $2 baseline run count, $3 baseline max updated_at
+  # r-A6 lesson (2026-09-08): the envelope-count shortcut settled a turn before
+  # its Run finished and the next send landed while 发送 was disabled, so only
+  # the newest Run head's terminal state counts now.
   counters
-  case "$RUNSTATE" in
-    COMPLETED|FAILED|STOPPED|CANCELLED)
-      if [ "$RUN_N" -gt "$2" ] && awk "BEGIN{exit !($RUNTS > $3)}"; then return 0; fi ;;
+  [ "$RUN_N" -gt "$2" ] || return 1
+  NEWEST=$(q "$STATE" "select current_state from foreground_run_heads order by updated_at desc limit 1;")
+  case "$NEWEST" in
+    COMPLETED|FAILED|STOPPED|CANCELLED) return 0 ;;
   esac
-  [ "$ENV_N" -ge $(( $1 + 2 )) ] && return 0
   return 1
 }
 
-record() { # record <turn> <outcome> <elapsed>
+# send_confirmed <bid> <msg> <baseline run count>: send, then require a new
+# Run head within 30 s; retry the send once. Echoes ok|retried|send_failed.
+send_confirmed() {
+  local bid="$1" msg="$2" base="$3" i n
+  "$SEND" "$bid" "$msg" >/dev/null 2>&1 || true
+  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo ok; return 0; }; done
+  "$SEND" "$bid" "$msg" >/dev/null 2>&1 || true
+  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo retried; return 0; }; done
+  echo send_failed; return 1
+}
+
+record() { # record <turn> <outcome> <elapsed> [note]
   counters
-  python3 - "$PROGRESS" "$1" "$2" "$3" "$ENV_N" "$HEADS_N" "$REV_N" "$REL_N" "$CONF_N" \
+  A6_NOTE="${4:-}" python3 - "$PROGRESS" "$1" "$2" "$3" "$ENV_N" "$HEADS_N" "$REV_N" "$REL_N" "$CONF_N" \
       "$LLM_N" "$RUN_N" "$SNAP_N" "$ATT_N" "$ROUTE_N" "$VIEW_N" "$INV_N" "$MAXTOK" \
       "$PAGEIN_N" "$EFFECT_N" "$AUDIT_N" "$BOUNDED" "$RUNSTATE" <<'PY'
 import json, sys, time
@@ -162,9 +176,10 @@ keys = ["evidence_envelopes","cognitive_memory_heads","cognitive_memory_revision
         "context_route_decisions","task_scope_read_view_revisions","provider_invocations",
         "max_input_tokens","effects_context_page_in","execution_effects",
         "audit_attempts","bounded_readme_status"]
+import os
 row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "turn": int(turn),
        "outcome": outcome, "elapsed_s": float(elapsed),
-       "last_run_state": rest[len(keys)]}
+       "last_run_state": rest[len(keys)], "note": os.environ.get("A6_NOTE", "")}
 row.update({k: int(v) for k, v in zip(keys, rest[:len(keys)])})
 with open(p, "a", encoding="utf-8") as fh:
     fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -181,9 +196,9 @@ for (( T=START; T<=LAST; T++ )); do
   MSG="${TURNS[$T]}"
   if [[ "$MSG" == @UI@* ]]; then
     echo "=== T$T [MANUAL UI] ${MSG#@UI@}"
-    echo "    执行该 UI 步骤后按 Enter 继续（不发送消息）..."
-    read -r _ || true
-    record "$T" manual_ui 0
+    echo "    执行该 UI 步骤后输入观察结果（如 nodes=2 edges=1）并按 Enter 继续（不发送消息）..."
+    UI_NOTE=""; read -r UI_NOTE || true
+    record "$T" manual_ui 0 "$UI_NOTE"
     continue
   fi
 
@@ -191,7 +206,13 @@ for (( T=START; T<=LAST; T++ )); do
   BASE_ENV=$ENV_N; BASE_RUN=$RUN_N; BASE_TS=$RUNTS
   echo "=== T$T send (${#MSG} chars)"
   START_TS=$(date +%s)
-  "$SEND" "$BID" "$MSG" >/dev/null 2>&1 || echo "    warn: send helper returned non-zero"
+  SENT=$(send_confirmed "$BID" "$MSG" "$BASE_RUN")
+  if [ "$SENT" = send_failed ]; then
+    echo "    !! T$T send_failed: no new Run head after two sends (recorded, continuing)"
+    record "$T" send_failed $(( $(date +%s) - START_TS ))
+    continue
+  fi
+  [ "$SENT" = retried ] && echo "    warn: T$T needed a second send"
 
   OUTCOME=timeout
   while :; do
@@ -202,7 +223,7 @@ for (( T=START; T<=LAST; T++ )); do
   done
   NOW=$(date +%s); ELAPSED=$(( NOW - START_TS ))
   [ "$OUTCOME" = timeout ] && echo "    !! T$T timed out after ${ELAPSED}s (recorded, continuing)"
-  record "$T" "$OUTCOME" "$ELAPSED"
+  record "$T" "$OUTCOME" "$ELAPSED" "$SENT"
 done
 
 echo "a6_driver: done -> $PROGRESS"
