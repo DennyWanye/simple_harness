@@ -62,6 +62,34 @@ DEFAULT_WINDOW_ASSUMPTION = 32000  # gpt-5.6-luna, plan 第 0 节
 ANCHOR_ALPHA = "QF-2026-0908-ALPHA-7731"
 ANCHOR_BETA = "QF-2026-0908-BETA-4419"
 
+# --- 同 Run 有界化标记 (Incident E / followup F-E2) ---
+# backend/deskpet/execution/current_tool_pages.py::CONTROL_MARKER 的逐字副本:
+# 被省略的 CONTROL 工具结果以 role=tool + metadata.source == 该值的省略回执出场。
+CONTROL_ELISION_MARKER = "primary_control_result_elided_v1"
+# DECISION-F-E2-CONTROL-RESULT-BOUND.md §5.4 冻结的回执字段(全部 int, 可缺失)。
+RECEIPT_BOUND_FIELDS = (
+    "current_tool_pages",
+    "pages_forced",
+    "groups_trimmed_for_budget",
+    "budget_headroom",
+    "control_results_stubbed",
+    "control_result_tokens",
+    "control_stubs_forced",
+)
+RECEIPT_CONTROL_FIELDS = (
+    "control_results_stubbed",
+    "control_result_tokens",
+    "control_stubs_forced",
+)
+# context_authority.py:1101 的 warning 形状; 同名的 kernel error 行没有 planned=,
+# 用 planned= 把两者分开, 避免同一次溢出被数两遍。
+BUDGET_EXCEEDED_RE = re.compile(
+    r"sdk_context_budget_exceeded planned=(\d+) effective=(\d+)"
+)
+SDK_RUN_ID_RE = re.compile(r'"sdk_run_id":\s*"([^"]+)"|sdk_run_id=([^\s",\]]+)')
+# 溢出行本身不带 run id, 向后找最近一条带 sdk_run_id 的记录做归属。
+BUDGET_EXCEEDED_LOOKAHEAD = 40
+
 HISTORY_PAGE_PREFIX = "primary-tool-page:v1:"
 EFFECT_PAGE_PREFIX = "primary-effect-page:v1:"
 HISTORY_SUMMARY_KIND = "primary_tool_result_summary_v1"
@@ -575,6 +603,179 @@ class Evidence:
             "max_causal_groups": groups_max,
         }
 
+    # -------- 同 Run 有界化取证 (Incident E followup F-E1 / F-E2) --------
+
+    def receipt_bound_stats(self) -> dict[str, Any]:
+        """按 Run 汇总 `source_revisions` 里的同 Run 有界化字段。
+
+        字段契约见 `DECISION-F-E2-CONTROL-RESULT-BOUND.md` §5.4 与 Incident E §4.3。
+        早于 F-E2 的 Host 构建不写 `control_*` 三个字段 —— 缺字段一律**不计**
+        (不是记 0), 并用 `receipts_with_control_fields` 把「Host 还没有这个能力」
+        与「有能力但本轮没触发」区分开; `budget_headroom` 无样本时记 None。
+        """
+        per_run: dict[str, dict[str, list[int]]] = {}
+        rows_seen = with_rev = with_control = with_forced = 0
+        if self.state.has("run_context_snapshot_receipts", "source_revisions_json"):
+            with contextlib.suppress(SchemaMissing):
+                for r in self.state.rows(
+                    "select sdk_run_id, source_revisions_json"
+                    " from run_context_snapshot_receipts"
+                ):
+                    rows_seen += 1
+                    obj = maybe_json(as_text(r[1])) or {}
+                    rev = obj.get("source_revisions") if isinstance(obj, dict) else None
+                    if not isinstance(rev, dict):
+                        continue
+                    with_rev += 1
+                    if any(k in rev for k in RECEIPT_CONTROL_FIELDS):
+                        with_control += 1
+                    if "pages_forced" in rev:
+                        with_forced += 1
+                    acc = per_run.setdefault(
+                        as_text(r[0]), {k: [] for k in RECEIPT_BOUND_FIELDS}
+                    )
+                    for key in RECEIPT_BOUND_FIELDS:
+                        value = rev.get(key)
+                        if isinstance(value, bool) or not isinstance(value, int):
+                            continue
+                        acc[key].append(value)
+
+        def _samples(key: str) -> list[list[int]]:
+            return [acc[key] for acc in per_run.values() if acc[key]]
+
+        def _max(key: str) -> int:
+            return max((max(s) for s in _samples(key)), default=0)
+
+        def _sum(key: str) -> int:
+            return sum(sum(s) for s in _samples(key))
+
+        def _runs_hitting(key: str) -> int:
+            return sum(1 for s in _samples(key) if max(s) > 0)
+
+        headroom = _samples("budget_headroom")
+        return {
+            "receipt_runs": len(per_run),
+            "receipts_with_source_revisions": with_rev,
+            "receipts_with_pages_forced_field": with_forced,
+            "receipts_with_control_fields": with_control,
+            "current_tool_pages_max_per_run": _max("current_tool_pages"),
+            "pages_forced_max_per_run": _max("pages_forced"),
+            "pages_forced_sum": _sum("pages_forced"),
+            "runs_with_pages_forced": _runs_hitting("pages_forced"),
+            "groups_trimmed_for_budget_max_per_run": _max("groups_trimmed_for_budget"),
+            "groups_trimmed_for_budget_sum": _sum("groups_trimmed_for_budget"),
+            "budget_headroom_min": min((min(s) for s in headroom), default=None),
+            "control_results_stubbed_sum": _sum("control_results_stubbed"),
+            "control_result_tokens_max": _max("control_result_tokens"),
+            "control_stubs_forced_sum": _sum("control_stubs_forced"),
+            "runs_with_control_stubs": _runs_hitting("control_results_stubbed"),
+        }
+
+    def control_elision_stats(self) -> dict[str, int]:
+        """真实发出的请求里有多少条 CONTROL 省略回执(按 metadata.source 判定)。"""
+        requests = notices = 0
+        runs: set[str] = set()
+        for inv in self.invocations():
+            if CONTROL_ELISION_MARKER not in inv.request_json_text:
+                continue
+            hit = 0
+            for msg in (inv.request or {}).get("messages") or []:
+                if not isinstance(msg, dict) or msg.get("role") != "tool":
+                    continue
+                meta = msg.get("metadata")
+                if isinstance(meta, dict) and meta.get("source") == CONTROL_ELISION_MARKER:
+                    hit += 1
+            if hit:
+                requests += 1
+                notices += hit
+                runs.add(inv.run_id)
+        return {
+            "requests_with_control_elision_notice": requests,
+            "control_elision_notices_in_requests": notices,
+            "runs_with_control_elision_notice": len(runs),
+        }
+
+    def budget_exceeded_events(self) -> dict[str, Any]:
+        """native.log 里的 `sdk_context_budget_exceeded`, 并归属到前台/其他 Run。
+
+        该行不带 run id, 因此向后最多 40 行找最近一条带 `sdk_run_id` 的记录
+        (事故当场是 `run.fail` 之后的 `primary_terminal_observation_degraded` /
+        `foreground.runtime.closure_settled`)。归属不到时**不**算作其他泳道:
+        A6-3 的判据把「归属不到」与「归属到前台」一起记 FAIL(fail closed),
+        两个计数分开给出, 读者能自己看到证据强度。
+        """
+        foreground: set[str] = set()
+        if self.state.has("foreground_run_heads", "sdk_run_id"):
+            with contextlib.suppress(SchemaMissing):
+                for r in self.state.rows("select sdk_run_id from foreground_run_heads"):
+                    sdk_run_id = as_text(r[0])
+                    if sdk_run_id:
+                        foreground.add(sdk_run_id)
+        lines = self.native_log.splitlines()
+        total = fg = other = unknown = 0
+        samples: list[dict[str, Any]] = []
+        for index, line in enumerate(lines):
+            m = BUDGET_EXCEEDED_RE.search(line)
+            if m is None:
+                continue
+            total += 1
+            run_id: str | None = None
+            for nxt in lines[index : index + BUDGET_EXCEEDED_LOOKAHEAD]:
+                hit = SDK_RUN_ID_RE.search(nxt)
+                if hit:
+                    run_id = hit.group(1) or hit.group(2)
+                    break
+            if run_id is not None and run_id in foreground:
+                fg += 1
+                lane = "foreground"
+            elif run_id is not None and foreground:
+                other += 1
+                lane = "other_lane"
+            else:
+                unknown += 1
+                lane = "unattributed"
+            if len(samples) < 3:
+                samples.append(
+                    {
+                        "planned": int(m.group(1)),
+                        "effective": int(m.group(2)),
+                        "sdk_run_id": (run_id or "")[-8:],
+                        "lane": lane,
+                    }
+                )
+        return {
+            "sdk_context_budget_exceeded_total": total,
+            "sdk_context_budget_exceeded_foreground": fg,
+            "sdk_context_budget_exceeded_other_lane": other,
+            "sdk_context_budget_exceeded_unattributed": unknown,
+            "sdk_context_budget_exceeded_samples": samples,
+        }
+
+    def same_run_bound_numbers(self) -> dict[str, Any]:
+        """A6-2 / A6-3 共用的同 Run 有界化取证块(附加在既有 numbers 之后)。"""
+        out: dict[str, Any] = dict(self.receipt_bound_stats())
+        out.update(self.control_elision_stats())
+        out.update(self.budget_exceeded_events())
+        return out
+
+
+def bound_note(bound: dict[str, Any]) -> str:
+    """A6-3 说明里固定追加的一句: 这一轮到底强推了多少页 / 省略了多少控制结果。"""
+    headroom = bound.get("budget_headroom_min")
+    parts = [
+        f"同 Run 有界化: pages_forced 合计 {bound.get('pages_forced_sum', 0)}"
+        f"(单 Run 峰值 {bound.get('pages_forced_max_per_run', 0)})",
+        f"control_results_stubbed 合计 {bound.get('control_results_stubbed_sum', 0)}",
+        f"control_stubs_forced 合计 {bound.get('control_stubs_forced_sum', 0)}",
+        f"control_result_tokens 峰值 {bound.get('control_result_tokens_max', 0)}",
+        f"budget_headroom 最小 {headroom if headroom is not None else '无记录'}",
+        f"请求内省略通知 {bound.get('requests_with_control_elision_notice', 0)} 次",
+    ]
+    tail = ""
+    if not bound.get("receipts_with_control_fields"):
+        tail = "(该 Host 构建早于 F-E2, 回执无 control_* 字段, 三个 control 计数按缺失记 0)"
+    return "; ".join(parts) + "。" + tail
+
 
 # ---------------------------------------------------------------- 请求解析
 
@@ -762,6 +963,9 @@ def item_a6_2(ev: Evidence) -> Item:
         "anchor_beta_in_response": beta_hit,
         "tool_messages_over_16KiB": big_tool_msgs,
     }
+    # 同 Run 有界化取证(F-E1 / F-E2)。判据不变, 只补数字; 追加在末尾, 因此
+    # Markdown 表里 _numbers_brief 取的前 4 个键与旧报告逐字一致。
+    it.numbers.update(ev.same_run_bound_numbers())
     if big_tool_msgs == 0 and len(effects) == 0:
         max_turn = ev.max_turn_recorded()
         if max_turn < 13:
@@ -797,6 +1001,14 @@ def item_a6_2(ev: Evidence) -> Item:
 
 
 def item_a6_3(ev: Evidence, budget: dict[str, Any]) -> Item:
+    """A6-3 = `_item_a6_3_core` 的判定 + 固定追加的同 Run 有界化说明。"""
+    bound = ev.same_run_bound_numbers()
+    it = _item_a6_3_core(ev, budget, bound)
+    it.reason = (it.reason.rstrip() + " " + bound_note(bound)).strip()
+    return it
+
+
+def _item_a6_3_core(ev: Evidence, budget: dict[str, Any], bound: dict[str, Any]) -> Item:
     it = Item("A6-3", "预算内有界")
     ev.state.require("sdk_provider_attempt_audit", "input_tokens", "settled_at")
     rows = ev.state.rows(
@@ -840,6 +1052,24 @@ def item_a6_3(ev: Evidence, budget: dict[str, Any]) -> Item:
         "trimmed_groups_total": trim.get("trimmed_groups_total", 0),
         "max_causal_groups_recorded": trim.get("max_causal_groups", 0),
     }
+    # 同 Run 有界化取证(F-E1 / F-E2), 追加在末尾: 既有键的顺序与取值不变。
+    it.numbers.update(bound)
+    # 新增判据: 只要前台 Run 真的把 context 预算撑爆过, 有界性就是伪的 ——
+    # 这是**直接观测**, 不因样本不全(timeout / 未观测到整组丢弃)而降级,
+    # 所以排在所有 INCONCLUSIVE 分支之前。归属不到 Run 的溢出一并记 FAIL。
+    exceeded = int(bound.get("sdk_context_budget_exceeded_foreground") or 0) + int(
+        bound.get("sdk_context_budget_exceeded_unattributed") or 0
+    )
+    if exceeded:
+        it.verdict = FAIL
+        it.reason = (
+            f"native.log 记录了 {exceeded} 次前台 Run 的 sdk_context_budget_exceeded"
+            f"(总计 {bound.get('sdk_context_budget_exceeded_total', 0)} 次, 其中归属不到 Run 的 "
+            f"{bound.get('sdk_context_budget_exceeded_unattributed', 0)} 次也计入), "
+            f"样本 {json.dumps(bound.get('sdk_context_budget_exceeded_samples') or [], ensure_ascii=False)} "
+            "—— 请求装配越过 effective_input_budget 并抛 ContextBudgetExceeded, 有界性不成立。"
+        )
+        return it
     if ev.timeout_turns():
         it.verdict = INCONCLUSIVE
         it.reason = f"存在 timeout 轮 {ev.timeout_turns()}, 有界性样本不完整(plan 第 4 节)。"
