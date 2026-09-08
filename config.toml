@@ -418,6 +418,12 @@ model_override = ""          # 留空 = 用主 LLM
 #   后续应改成 per-model map（参考 codex-rs/models-manager/src/model_info.rs）。
 [agent]
 max_iterations = 20
+# 单次 SDK Run 的墙钟上限（秒）。前台 ReAct driver 的 TerminationLimits 用它；
+# 到点由 driver 自己失败并写终态回执，**必须**严格早于任何外层看门狗
+# （批处理 SIGTERM / CI 超时），否则外层先杀就只剩 NO_PACKET，没有失败回执。
+# 层级不变式与取值理由见 backend/deskpet/execution/termination_budget.py。
+# 留空/写错 → 回落 600；有效范围 300–3600。
+max_wall_seconds = 600
 # code-session-model-params (Strangler-Fig): code-mode sessions with no
 # explicit per-session model use this; pet/companion/supervisor keep
 # their own model (deepseek-v4-pro via the relay). "" = revert to legacy

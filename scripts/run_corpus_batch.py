@@ -7,11 +7,39 @@ evidence root. Failures are recorded, never retried. Raw evidence stays local.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+_HOST_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _termination_budget(host: Path | None = None):
+    """Load the Host's termination-budget constants without importing deskpet.
+
+    ``deskpet.execution.__init__`` pulls the whole foreground runtime; this
+    script only needs four numbers, and it must read them from the Host it is
+    about to run rather than keeping a second hardcoded copy (that duplication
+    is exactly what let C10-13 die with no terminal receipt).
+    """
+    path = (host or _HOST_ROOT) / "backend/deskpet/execution/termination_budget.py"
+    spec = importlib.util.spec_from_file_location("_corpus_termination_budget", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _host_raw_config(host: Path) -> dict:
+    """The Host's own config.toml, so a configured wall budget is honoured."""
+    import tomllib
+    path = host / "config.toml"
+    if not path.is_file():
+        return {}
+    with path.open("rb") as handle:
+        return tomllib.load(handle)
 
 
 def _preflight_factory(host: Path, model: str | None, wait: int, max_wait: int, env_file: Path | None = None):
@@ -68,7 +96,10 @@ def main() -> int:
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--case-file", type=Path)
     parser.add_argument("--rss-mib", type=int, default=6144)
-    parser.add_argument("--seconds", type=int, default=900)
+    parser.add_argument("--seconds", type=int, default=_termination_budget().corpus_batch_deadline_seconds(),
+        help="external SIGTERM deadline for one case; must strictly exceed the Host driver's "
+             "own wall budget plus one in-flight provider call, or a timed-out Run is killed "
+             "before it can write its failed terminal receipt (C10-13 NO_PACKET)")
     parser.add_argument("--python", type=Path)
     parser.add_argument("--preflight-model", default=None,
         help="Model to probe before each case (default: config.toml [llm] model); 'none' disables")
@@ -86,6 +117,18 @@ def main() -> int:
         help="switch to the fallback provider after the primary stayed unavailable this long")
     args = parser.parse_args()
     host = args.host_root.resolve()
+    # Ordering invariant: the Host driver's wall budget (plus one in-flight
+    # provider call and settlement) must fit strictly inside our SIGTERM
+    # deadline, so every timeout still produces a failed terminal receipt.
+    budget = _termination_budget(host)
+    floor = budget.external_deadline_floor_seconds(
+        budget.resolve_max_wall_seconds(_host_raw_config(host))
+    )
+    if args.seconds <= floor:
+        raise SystemExit(
+            f"--seconds {args.seconds} must strictly exceed {floor:.0f}s "
+            "(host max_wall_seconds + provider transport timeout + settlement margin)"
+        )
     python = (args.python or host / "backend/.venv/bin/python").absolute()  # keep venv symlink
     cases = list(args.case)
     if args.case_file:
