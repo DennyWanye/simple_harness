@@ -14,9 +14,16 @@ import aiosqlite
 from simple_harness.runtime import ProspectiveSignalAuthority, ProspectiveSignalAuthorityRef
 from simple_harness_memory import MemoryPrincipal
 
+from deskpet.memory import schema_chain
+from deskpet.memory.procedure_schema import SCHEMA_VERSION as PROCEDURE_SCHEMA_VERSION
 from deskpet.memory.prospective_scheduler import PreparedTimer, TimerClaim
+from deskpet.memory.s5c_timer_schema import SCHEMA_VERSION as TIMER_SCHEMA_VERSION
 from deskpet.memory.s5c_timer_schema import validate_s5c_timer_runtime_state_db
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
+
+# Derived from the migration chain, never a literal tuple a later step forgets.
+_TIMER_VERSIONS = schema_chain.accepted_versions(TIMER_SCHEMA_VERSION)
+_PROCEDURE_VERSIONS = schema_chain.accepted_versions(PROCEDURE_SCHEMA_VERSION)
 
 
 class TimerConflict(ValueError):
@@ -39,9 +46,9 @@ class ProspectiveSignalStore:
             try:
                 # Never create implicit schema or mutate a schema50 installation.
                 version=await (await db.execute('PRAGMA user_version')).fetchone()
-                if version[0] not in (51, 52, 53, 54, 55):
+                if version[0] not in _TIMER_VERSIONS:
                     raise TimerConflict('prospective_timer_schema_required')
-                if version[0] in (53, 54, 55):
+                if version[0] in _PROCEDURE_VERSIONS:
                     # Explicit successor composition, not acceptance of any
                     # future integer. Include Procedure DDL/registry/fences.
                     validate_s5c_timer_runtime_state_db(self.path)

@@ -1907,6 +1907,25 @@ call_ordinal}` 一起哈希才得到内部 `CallId`（`react_loop.py::_internal_
 16 KiB 时为确定性摘要）。旧归档 / 无旁路表 / 无工具调用的 Run 渲染与线体逐字节不变；损坏或
 与归档 transcript 不一致的旁路行使整组退回旧渲染并记只含标识符的告警，不抛。裁决与表结构见
 [`plans/2026-09-08-hm-to-a6/DECISION-HISTORY-TOOL-CALL-ARGS.md`](../plans/2026-09-08-hm-to-a6/DECISION-HISTORY-TOOL-CALL-ARGS.md)。
+
+**域 schema 链的单一真源（2026-09-09）**：v49 以上每一步（`s5c/` `procedure/` `primary/`）的
+接受版本集合一律由 `deskpet/memory/schema_chain.py` 从迁移文件本身发现并派生
+（`DOMAIN_CHAIN` / `accepted_versions(introduced_at)` / `DOMAIN_SCHEMA_STEPS`），**不再有任何
+字面量版本白名单**。起因是 v55 落地时 `S5cStore` 的 `((52,),(53,),(54,))` 未同步，游标表退回
+被 v52 封死的 `prospective_outbox_cursor`，生产 `ProspectiveRuntimeLane` 的每一次预约登记都以
+`s5c_cursor_successor_required` 失败（语料 20 例 SETUP_BLOCKED）。`tests/memory/test_s5c_schema_chain.py`
+提供三层护栏：源码 AST 扫描禁止字面量版本集合、新迁移未登记进链即红、跑完整链到链首后用真
+`S5cStore` 落一条登记。`ProspectiveRuntimeLane` 的失败日志与语料结算回执现在带
+payload-free 的 `failure_identity`（`sqlite=` 结果码 + 仅当整条消息是蛇形 token 时的
+`constraint=`），失败路径也保留完整结算回执。裁决见
+[`plans/2026-09-08-hm-to-a6/DECISION-S5C-CURSOR-VERSION.md`](../plans/2026-09-08-hm-to-a6/DECISION-S5C-CURSOR-VERSION.md)。
+
+**`procedure_hint` 与 `memory_types` 解耦（F-ETR-5，2026-09-09）**：`context_route` 的
+memory_standalone 结果在召回无 procedure 片段时给出 `procedure_hint`，触发条件由
+「模型请求了 `procedure` 类型」改为「请求了该类型 **或** 查询呈工作流形态
+（`recall_selection.indicates_workflow_request`，纯函数闭集词表）**或** 该 Run 已绑定 TaskScope」。
+原条件与选择政策规则 R4（劝阻请求 `procedure`）自相矛盾，使 C06 `procedure_discover`
+调用率 18/19 → 14/19。提示 payload 与其不入 receipt 的边界未变。
 `provider_reasoning_content` 的同构跨轮丢失（F-K2）仍开放：durable 公共记录里没有「本轮有过
 推理」的事实（SDK 禁止 hidden reasoning 进入 durable response state），不能诚实地渲染标记。
 上游正解不变：SDK 把 assistant `tool_calls` 当一等公共 transcript 字段，届时删除本备忘、

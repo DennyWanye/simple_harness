@@ -150,3 +150,93 @@ async def test_case_without_a_reminder_never_wakes_the_closed_lane(tmp_path):
         assert silent.ticks == 0
     finally:
         await manager.close()
+
+
+# -- RUN-RERUN-FLASH-01 review §1: the blocked path must keep its receipt ------
+# The v55 cursor regression blocked 20 corpus cases; the scoring outcome kept
+# only the reason string, so what was seeded, how many ticks ran and which
+# SQLite constraint rejected the write had to be reconstructed by hand.
+
+
+class _FailingLane(_SilentLane):
+    """A lane whose registration consumer fails exactly like the v55 store did."""
+
+    def __init__(self, error=None):
+        super().__init__()
+        self._error = error
+
+    async def tick(self):
+        self.ticks += 1
+        self.last_registration_error = self._error or _cursor_sealed_error()
+        return 0
+
+
+def _cursor_sealed_error():
+    db = sqlite3.connect(":memory:")
+    db.executescript(
+        "CREATE TABLE t(a);"
+        "CREATE TRIGGER g BEFORE INSERT ON t "
+        "BEGIN SELECT RAISE(ABORT,'s5c_cursor_successor_required'); END;")
+    try:
+        db.execute("INSERT INTO t VALUES(1)")
+    except sqlite3.Error as error:
+        return error
+    raise AssertionError("trigger did not abort")
+
+
+@pytest.mark.asyncio
+async def test_blocked_settlement_carries_the_full_receipt_and_constraint(tmp_path):
+    host, memory_path, manager, principal, lane, reminder = await _seeded_case(tmp_path)
+    try:
+        failing = _FailingLane()
+        with pytest.raises(ProspectiveSetupNotReady) as failure:
+            await settle_prospective_registrations(lane=failing, manager=manager,
+                path=host.path, principal=principal, max_ticks=2)
+        receipt = failure.value.receipt
+        assert receipt is not None
+        assert receipt["missing"] == [reminder.memory_id]
+        assert receipt["registered"] == [] and receipt["ticks"] == 2
+        assert receipt["seeded_reminders"] == [{"memory_id": reminder.memory_id,
+            "revision": reminder.revision, "lifecycle_state": "pending"}]
+        # The identity the corpus run needed and did not have.
+        assert receipt["tick_errors"] == [
+            "type=IntegrityError sqlite=SQLITE_CONSTRAINT_TRIGGER sqlite_code=1811 "
+            "constraint=s5c_cursor_successor_required"] * 2
+        assert failure.value.code == str(failure.value)
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_a_raising_lane_persists_its_receipt_and_failure_identity(tmp_path):
+    host, memory_path, manager, principal, lane, reminder = await _seeded_case(tmp_path)
+
+    class _Raising(_SilentLane):
+        async def tick(self):
+            self.ticks += 1
+            raise _cursor_sealed_error()
+
+    try:
+        with pytest.raises(ProspectiveSetupNotReady) as failure:
+            await settle_prospective_registrations(lane=_Raising(), manager=manager,
+                path=host.path, principal=principal)
+        receipt = failure.value.receipt
+        assert receipt is not None and receipt["ticks"] == 0
+        assert receipt["seeded_reminders"][0]["memory_id"] == reminder.memory_id
+        assert "constraint=s5c_cursor_successor_required" in receipt["setup_error"]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_an_absent_lane_still_reports_what_was_seeded(tmp_path):
+    host, memory_path, manager, principal, lane, reminder = await _seeded_case(tmp_path)
+    try:
+        with pytest.raises(ProspectiveSetupNotReady) as failure:
+            await settle_prospective_registrations(lane=None, manager=manager,
+                path=host.path, principal=principal)
+        assert str(failure.value) == "corpus_prospective_runtime_lane_unavailable"
+        assert failure.value.receipt["seeded_reminders"][0]["memory_id"] == (
+            reminder.memory_id)
+    finally:
+        await manager.close()

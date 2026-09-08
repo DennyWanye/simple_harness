@@ -10,12 +10,13 @@ from pathlib import Path
 import aiosqlite
 from simple_harness.contracts import canonical_json
 
-from deskpet.memory import migrator, schema
+from deskpet.memory import migrator, schema, schema_chain
 from deskpet.memory.s5c_timer_schema import (
     initialize_s5c_timer_state_db, validate_s5c_timer_state_db,
 )
 
 TERMINAL_MIGRATION = "s5c/044_prospective_terminals_v52.sql"
+SCHEMA_VERSION = 52
 TERMINAL_TABLES = ("prospective_invalidation_terminals", "prospective_outbox_cursor_v52")
 
 
@@ -56,9 +57,9 @@ def _validate_old_cursor(db, *, copied: bool):
         previous[owner] = (sequence, (when, outbox), digest)
 
 
-def validate_s5c_terminal_state_db(path: str | Path, *, _expected_user_version=52) -> None:
+def validate_s5c_terminal_state_db(path: str | Path, *, _expected_user_version=SCHEMA_VERSION) -> None:
     path = Path(path)
-    if _expected_user_version not in (52, 53, 54, 55):
+    if _expected_user_version not in schema_chain.accepted_versions(SCHEMA_VERSION):
         raise schema.HumanMemoryProgramEpochError("s5c_terminal_schema_invalid")
     validate_s5c_timer_state_db(path, _expected_user_version=_expected_user_version)
     sql = _sql()
@@ -109,23 +110,15 @@ def validate_s5c_terminal_state_db(path: str | Path, *, _expected_user_version=5
 async def initialize_s5c_terminal_state_db(db_path: str | Path, *, fault_inject=None) -> None:
     path = Path(db_path)
     version = await migrator.read_user_version(path)
-    if version == 55:
-        from deskpet.memory.primary_tool_call_schema import validate_primary_tool_call_state_db
-        validate_primary_tool_call_state_db(path)
+    if version >= SCHEMA_VERSION:
+        # Already at this step or at a registered chain successor: validate that
+        # exact published schema. An unregistered integer is a future/unpublished
+        # database, never re-interpreted as this step.
+        validator = schema_chain.domain_validator(version)
+        if validator is None:
+            raise schema.HumanMemoryProgramEpochError("human_memory_program_future_database_unsupported")
+        validator(path)
         return
-    if version == 54:
-        from deskpet.memory.procedure_recovery_schema import validate_procedure_recovery_state_db
-        validate_procedure_recovery_state_db(path)
-        return
-    if version == 53:
-        from deskpet.memory.procedure_schema import validate_procedure_state_db
-        validate_procedure_state_db(path)
-        return
-    if version == 52:
-        validate_s5c_terminal_state_db(path)
-        return
-    if version > 52:
-        raise schema.HumanMemoryProgramEpochError("human_memory_program_future_database_unsupported")
     if path.exists():
         with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
             if db.execute("SELECT 1 FROM sqlite_master WHERE name IN (?,?) LIMIT 1", TERMINAL_TABLES).fetchone():

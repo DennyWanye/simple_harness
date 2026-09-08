@@ -21,6 +21,37 @@ MEMORY_TYPE_SELECTION_POLICY = (
 )
 
 
+# A request that reads as "how is this done?". Pure text markers only: no gold,
+# no per-case answer, no model call. Used to decide whether the Host points at
+# `procedure_discover` when typed recall returned no Procedure — which must not
+# depend on the model having requested the `procedure` type, because rule R4 of
+# the policy above tells it not to. (F-ETR-5: after R4 landed, C06's
+# `procedure_discover` call rate fell 18/19 → 14/19 purely because the hint had
+# been keyed on `memory_types`.)
+WORKFLOW_REQUEST_MARKERS = (
+    # Chinese, simplified and traditional.
+    "流程", "步骤", "步驟", "怎么做", "怎麼做", "怎样做", "怎樣做",
+    "如何做", "如何操作", "操作方法", "做法", "工序", "checklist",
+    # English, matched on lowercased text.
+    "workflow", "procedure", "runbook", "playbook", "sop",
+    "step by step", "steps", "how do i", "how to",
+)
+
+
+def indicates_workflow_request(text) -> bool:
+    """Deterministic "this asks how something is done" signal for one query.
+
+    Advisory only, exactly like :func:`selection_policy_departures`: no caller
+    may gate, reject or rewrite a recall on it. It decides only whether a
+    result that returned no Procedure also points at the discovery surface.
+    """
+
+    if type(text) is not str:
+        return False
+    lowered = text.lower()
+    return any(marker in lowered for marker in WORKFLOW_REQUEST_MARKERS)
+
+
 def selection_policy_departures(memory_types) -> tuple[str, ...]:
     """Deterministic, gold-free advisory codes for an already-parsed selection.
 

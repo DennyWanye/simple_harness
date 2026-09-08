@@ -70,6 +70,7 @@ from deskpet.memory.migrator import (
     ensure_v9,
     read_user_version,
 )
+from deskpet.memory import schema_chain
 from deskpet.memory.project_session_reset import (
     finalize_legacy_session_reset,
     run_legacy_session_reset,
@@ -519,22 +520,9 @@ def _validate_composed_extension(path: Path, version: int) -> None:
     This does not install extensions: the owning composition retains that
     responsibility, including resuming between its transactional migrations.
     """
-    from deskpet.memory.s5c_schema import validate_s5c_state_db
-    from deskpet.memory.s5c_timer_schema import validate_s5c_timer_state_db
-    from deskpet.memory.s5c_terminal_schema import validate_s5c_terminal_state_db
-    from deskpet.memory.procedure_schema import validate_procedure_state_db
-    from deskpet.memory.procedure_recovery_schema import validate_procedure_recovery_state_db
-    from deskpet.memory.primary_tool_call_schema import validate_primary_tool_call_state_db
-
-    validators = {
-        50: validate_s5c_state_db,
-        51: validate_s5c_timer_state_db,
-        52: validate_s5c_terminal_state_db,
-        53: validate_procedure_state_db,
-        54: validate_procedure_recovery_state_db,
-        55: validate_primary_tool_call_state_db,
-    }
-    validator = validators.get(version)
+    # The chain registry is the single source of truth; a second hand-kept map
+    # here is the same hazard that let v55 ship with a stale allow-list.
+    validator = schema_chain.domain_validator(version)
     if validator is None:
         raise HumanMemoryProgramEpochError(
             "human_memory_program_future_database_unsupported"
@@ -894,7 +882,7 @@ async def dispatch_startup_epoch(
         await _repair_chain_registration_before_inspect(path)
         decision = inspect_startup_epoch(
             path, approved_fresh_lane=approved_fresh_lane,
-            maximum_human_schema_version=55,
+            maximum_human_schema_version=schema_chain.HEAD_SCHEMA_VERSION,
         )
         if decision.epoch in {StartupEpoch.FRESH, StartupEpoch.HUMAN_RESUME}:
             await initialize_human_memory_program_state_db(
@@ -946,7 +934,7 @@ async def initialize_state_db(
         and bootstrap_version >= HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
     ):
         decision = inspect_startup_epoch(
-            db_path, approved_fresh_lane=False, maximum_human_schema_version=55,
+            db_path, approved_fresh_lane=False, maximum_human_schema_version=schema_chain.HEAD_SCHEMA_VERSION,
         )
         if decision.epoch is StartupEpoch.HUMAN_RESUME:
             if decision.user_version >= HUMAN_MEMORY_TARGET_SCHEMA_VERSION:

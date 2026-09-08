@@ -10,10 +10,18 @@ from pathlib import Path
 import aiosqlite
 from simple_harness.contracts import canonical_json, thaw_json
 from simple_harness.runtime import ProcedureObservationAuthority, ProcedureObservationAuthorityRef
+from deskpet.memory import schema_chain
+from deskpet.memory.procedure_recovery_schema import SCHEMA_VERSION as RECOVERY_SCHEMA_VERSION
+from deskpet.memory.procedure_schema import SCHEMA_VERSION as PROCEDURE_SCHEMA_VERSION
 from deskpet.memory.writer_fence import human_memory_connection
 from deskpet.memory.procedure_applicability import ProcedureUseRejected, current_snapshot, inferred_hazard
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_hash
+
+# The attempt lineage arrives with v54 and every later chain version keeps it.
+# Derived from the chain: an `== 54` literal here would reject the whole retry
+# lineage the moment a later migration bumps user_version (as v55 did).
+_ATTEMPT_LINEAGE_VERSIONS = schema_chain.accepted_versions(RECOVERY_SCHEMA_VERSION)
 
 
 def _checked(row):
@@ -232,9 +240,9 @@ class ProcedureUseStore:
             raise ProcedureUseRejected("procedure_initial_authority_identity_differs")
         async with db.execute("PRAGMA user_version") as cursor:
             version = (await cursor.fetchone())[0]
-        if version == 53:
-            return value  # Legacy prepared bytes remain an immutable first attempt.
-        if version != 54:
+        if version not in _ATTEMPT_LINEAGE_VERSIONS:
+            if version == PROCEDURE_SCHEMA_VERSION:
+                return value  # Legacy prepared bytes remain an immutable first attempt.
             raise ProcedureUseRejected("procedure_recovery_schema_required")
         async with db.execute("SELECT * FROM procedure_observation_attempts WHERE use_id=? ORDER BY attempt_ordinal LIMIT 129", (use_id,)) as cursor:
             attempts = await cursor.fetchall()
@@ -262,7 +270,7 @@ class ProcedureUseStore:
             try:
                 await assert_human_memory_ingress_open_tx(db)
                 async with db.execute("PRAGMA user_version") as cursor:
-                    if (await cursor.fetchone())[0] != 54:
+                    if (await cursor.fetchone())[0] not in _ATTEMPT_LINEAGE_VERSIONS:
                         raise ProcedureUseRejected("procedure_recovery_schema_required")
                 current = await self._prepared_tx(db, use_id)
                 if current is None:
@@ -297,7 +305,7 @@ class ProcedureUseStore:
                 row = await cursor.fetchone()
             if row is None:
                 async with db.execute("PRAGMA user_version") as cursor:
-                    if (await cursor.fetchone())[0] != 54:
+                    if (await cursor.fetchone())[0] not in _ATTEMPT_LINEAGE_VERSIONS:
                         raise ProcedureUseRejected("procedure_observation_source_missing")
                 async with db.execute("SELECT * FROM procedure_observation_attempts WHERE authority_id=?", (reference.authority_id,)) as cursor:
                     row = await cursor.fetchone()

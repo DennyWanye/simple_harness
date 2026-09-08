@@ -7,10 +7,51 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
+import sqlite3
 from pathlib import Path
 import uuid
 
 log = logging.getLogger(__name__)
+
+# Our own DDL raises bare snake_case tokens (`RAISE(ABORT,'s5c_cursor_successor_required')`).
+# Only a message that is entirely such a token is logged; every other SQLite
+# message (which can quote schema text) is reduced to its result code, so the
+# log line stays payload-free by construction.
+_CONSTRAINT_TOKEN = re.compile(r"^[a-z][a-z0-9_]{0,63}\Z")
+_CAUSE_DEPTH = 8
+
+
+def failure_identity(exc: BaseException) -> str:
+    """Stable, payload-free failure identity for an otherwise silent lane error.
+
+    `type=...` alone cost the v55 cursor regression a full corpus rerun: every
+    registration failed with a bare `IntegrityError` and the constraint that
+    actually fired (`s5c_cursor_successor_required`) only surfaced from a
+    hand-run traceback.
+    """
+
+    identity = [f"type={type(exc).__name__}"]
+    seen: list[int] = []
+    current: BaseException | None = exc
+    while current is not None and len(seen) < _CAUSE_DEPTH:
+        if id(current) in seen:
+            break
+        seen.append(id(current))
+        if isinstance(current, sqlite3.Error):
+            name = getattr(current, "sqlite_errorname", None)
+            code = getattr(current, "sqlite_errorcode", None)
+            if name:
+                identity.append(f"sqlite={name}")
+            if code is not None:
+                identity.append(f"sqlite_code={code}")
+            message = str(current).strip()
+            if _CONSTRAINT_TOKEN.match(message):
+                identity.append(f"constraint={message}")
+            break
+        current = current.__cause__ or current.__context__
+    return " ".join(identity)
+
 
 REMINDER_CAPABILITY = (
     "One-shot time reminders can be processed by the background memory workflow after this turn. "
@@ -85,14 +126,14 @@ class ProspectiveRuntimeLane:
             raise
         except Exception as exc:
             self.last_registration_error = exc
-            log.warning("prospective_runtime_registration_failed type=%s", type(exc).__name__)
+            log.warning("prospective_runtime_registration_failed %s", failure_identity(exc))
         try:
             self.last_applied_count = await self._timer.tick(claim_owner=self.owner, limit=self.batch_size)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             self.last_timer_error = exc
-            log.warning("prospective_runtime_timer_failed type=%s", type(exc).__name__)
+            log.warning("prospective_runtime_timer_failed %s", failure_identity(exc))
         self.completed_ticks += 1
         if self.last_applied_count:
             log.info("prospective_runtime_time_applied count=%s", self.last_applied_count)
@@ -116,7 +157,7 @@ class ProspectiveRuntimeLane:
                 raise
             except Exception as exc:
                 self.last_registration_error = exc
-                log.warning("prospective_runtime_unavailable type=%s", type(exc).__name__)
+                log.warning("prospective_runtime_unavailable %s", failure_identity(exc))
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=self.poll_seconds)
             except TimeoutError:

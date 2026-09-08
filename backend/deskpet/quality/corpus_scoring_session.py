@@ -536,6 +536,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         except ProspectiveSetupNotReady as exc:
             outcome["execution_status"] = "SETUP_NOT_READY"
             outcome["prospective_registration_error"] = str(exc)
+            # Keep the settlement receipt on the blocked path too: the reason
+            # string alone hid which reminders were seeded, how many lane ticks
+            # ran and which SQLite constraint actually rejected the write.
+            if exc.receipt is not None:
+                outcome["prospective_registration"] = exc.receipt
             raise
         outcome["execution_status"] = "DISPATCH_STARTED"
         outcome["stage"] = "original_scoring_turn"

@@ -727,3 +727,123 @@ def test_persona_tells_the_model_what_conflict_notice_means() -> None:
 
     assert "conflict_notice" in PERSONA
     assert "contested" in PERSONA and "ask the user which one applies" in PERSONA
+
+
+# -- F-ETR-5: the hint must not depend on the model's `memory_types` -----------
+# Oracle source: RUN-RERUN-FLASH-01 review §2 — after MEMORY_TYPE_SELECTION_POLICY
+# rule R4 correctly stopped the model requesting a type typed recall cannot
+# serve, the hint keyed on that selection stopped firing and C06's
+# `procedure_discover` call rate fell 18/19 → 14/19 (in-batch A/B: with the hint
+# 4/4 called discover, without it 10/15). The trigger is the request, not the
+# selection.
+
+
+def _mutable_context(effect="effect-1", raw="raw-1", turn=1):
+    state = {"context": _tool_context(effect=effect, raw=raw, turn=turn)}
+    state["advance"] = lambda effect, raw, turn: state.__setitem__(
+        "context", _tool_context(effect=effect, raw=raw, turn=turn))
+    return state
+
+
+def _hint_tool(state_db: Path, fragments, monkeypatch, *, context_state=None, **kwargs):
+    from deskpet.memory import human_memory_v7
+
+    tool = _service(state_db, **kwargs)
+    if context_state is not None:
+        # A second call of the same Run needs its own effect/raw/turn identity.
+        tool._tool_context_getter = lambda: context_state["context"]
+
+    async def recall(**call):
+        return SimpleNamespace(
+            result=SimpleNamespace(items=(), truncated=False), degradation_codes=())
+
+    tool._recall_executor = recall
+    monkeypatch.setattr(human_memory_v7, "project_recall_fragments",
+                        lambda execution: tuple(fragments))
+    return tool
+
+
+@pytest.mark.asyncio
+async def test_workflow_query_gets_the_hint_without_requesting_procedure(
+    state_db: Path, monkeypatch
+) -> None:
+    """R4-compliant selection, workflow-shaped request: the hint still fires."""
+
+    tool = _hint_tool(state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch)
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "发版流程是怎么走的",
+         "memory_types": ["semantic"]}
+    )
+    assert result["procedure_hint"]["next"] == "procedure_discover"
+    # The payload is byte-identical to the one the receipt/PERSONA describe.
+    from deskpet.sdk_adapters.context_route import _PROCEDURE_HINT
+
+    assert result["procedure_hint"] == dict(_PROCEDURE_HINT)
+    assert "procedure_hint" not in result["context_route_receipt"]
+
+
+@pytest.mark.asyncio
+async def test_run_inside_a_task_scope_gets_the_hint_for_any_query(
+    state_db: Path, monkeypatch
+) -> None:
+    binding_store = _FakeBindingStore()
+    binding_store.receipts["scope-new-1"] = SimpleNamespace(
+        binding_set_revision=1, receipt_id="bind-new", receipt_hash="a" * 64
+    )
+    state = _mutable_context()
+    tool = _hint_tool(
+        state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch,
+        context_state=state, binding_store=binding_store,
+        binding_append=_FakeBindingAppend(),
+    )
+    await tool.handle_context_route({"route": "create_new", "title": "季度复盘"})
+    state["advance"]("effect-2", "raw-2", 2)
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "上周做了什么", "memory_types": ["episode"]}
+    )
+    assert result["procedure_hint"]["next"] == "procedure_discover"
+
+
+@pytest.mark.asyncio
+async def test_plain_question_outside_any_task_scope_still_gets_no_hint(
+    state_db: Path, monkeypatch
+) -> None:
+    """The decoupling widens the trigger; it does not make the hint unsolicited."""
+
+    tool = _hint_tool(state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch)
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "我常用的日期格式", "memory_types": ["semantic"]}
+    )
+    assert "procedure_hint" not in result
+
+
+@pytest.mark.asyncio
+async def test_a_returned_procedure_still_suppresses_every_trigger(
+    state_db: Path, monkeypatch
+) -> None:
+    tool = _hint_tool(
+        state_db,
+        [_fragment("recall-item:s:1", "semantic"), _fragment("recall-item:p:1", "procedure")],
+        monkeypatch,
+    )
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "发版流程", "memory_types": ["semantic"]}
+    )
+    assert "procedure_hint" not in result
+
+
+@pytest.mark.asyncio
+async def test_task_scope_read_failure_never_fails_an_already_successful_recall(
+    state_db: Path, monkeypatch
+) -> None:
+    tool = _hint_tool(state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch)
+
+    async def unavailable(*args, **kwargs):
+        raise RuntimeError("ledger unavailable")
+
+    monkeypatch.setattr(tool._ledger, "latest_route_decision_for_run", unavailable)
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "我常用的日期格式", "memory_types": ["semantic"]}
+    )
+    assert "error" not in result and "procedure_hint" not in result
+    assert _decision_rows(state_db) == [("memory_standalone", "context_tool", "effect-1")]
