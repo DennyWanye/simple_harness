@@ -19,7 +19,7 @@ from typing import Any, Protocol
 
 import httpx
 from simple_harness.contracts import ContractValidationError
-from simple_harness.contracts.json import thaw_json
+from simple_harness.contracts.json import thaw_json, validate_json_value
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.dispatch import (
     ProviderInvocationCoordinator,
@@ -35,6 +35,7 @@ from simple_harness.providers import (
     ProviderResponse,
     ProviderTarget,
     ProviderToolCall,
+    ProviderUsage,
     Secret,
 )
 
@@ -116,6 +117,225 @@ def _safe_finish_reason(value: object) -> str:
     if reason in {"stop", "tool_calls", "length", "content_filter", "function_call"}:
         return reason
     return "other" if reason else "missing"
+
+
+_ARGUMENTS_TRAILING_DELIMITERS = frozenset("}] \t\r\n")
+# ``CallId`` (simple_harness.contracts.identity): 1-255 printable ASCII.
+_CALL_ID_IDENTIFIER = re.compile(r"[!-~]{1,255}\Z")
+
+
+def _sdk_provider_usage(raw_usage: Mapping[str, object]) -> ProviderUsage:
+    """Build ``ProviderUsage`` exactly as the SDK's ``_parse_usage`` does."""
+
+    prompt_details = raw_usage.get("prompt_tokens_details")
+    completion_details = raw_usage.get("completion_tokens_details")
+    return ProviderUsage(
+        raw_usage.get("prompt_tokens"),  # type: ignore[arg-type]
+        raw_usage.get("completion_tokens"),  # type: ignore[arg-type]
+        raw_usage.get("total_tokens"),  # type: ignore[arg-type]
+        cache_tokens=(
+            prompt_details.get("cached_tokens") if isinstance(prompt_details, Mapping) else None
+        ),  # type: ignore[arg-type]
+        reasoning_tokens=(
+            completion_details.get("reasoning_tokens")
+            if isinstance(completion_details, Mapping)
+            else None
+        ),  # type: ignore[arg-type]
+    )
+
+
+def _repaired_tool_arguments(raw: str) -> tuple[str, str] | None:
+    """Undo a spurious ``}`` that made a tool-call ``arguments`` string unparseable.
+
+    Returns ``(repaired_text, reason)`` or ``None``.  Two — and only two —
+    deterministic candidates are tried, both derived from the JSON prefix the
+    string actually decodes to, and both **information preserving**:
+
+    ``trailing_delimiter``
+        the string decodes to a complete JSON **object** and everything after
+        it is nothing but repeated closing delimiters / whitespace — that tail
+        cannot encode any value (every character that could start one is
+        excluded), so dropping it loses nothing;
+    ``early_object_close``
+        the object was closed one brace too early and the ``arguments`` then
+        continue — deleting exactly that brace must make the **whole** string
+        parse as one JSON object **and** every key of the already-decoded
+        prefix must survive with an identical value.  Without that second
+        guard a duplicate key in the tail would silently override the prefix
+        (JSON keeps the last one), turning a loud failure into a wrong
+        proposal — strictly worse than failing closed.
+
+    Everything else (truncated JSON, a second independent value, trailing
+    prose, a non-object top level) returns ``None`` and keeps failing closed.
+
+    2026-09-08 native HM-TO-A6 run (DeepSeek ``deepseek-v4-pro``, real API):
+    the analysis lane's ``memory_analysis_proposal`` tool call intermittently
+    carries one extra ``}`` (39 live replays of the identical durable request:
+    12 malformed — 11 trailing, 1 early close; ``finish_reason=tool_calls`` and
+    ``completion_tokens`` ≈ 540–1250 against a 6144 budget, so it is a
+    serialization defect, not truncation).  The SDK parser rejects the whole
+    200 response with ``ProviderProtocolError`` (non-retryable), the analysis
+    attempt fails, and the turn's user facts never become memory heads.
+    """
+
+    try:
+        value, end = json.JSONDecoder().raw_decode(raw)
+    except ValueError:
+        return None
+    if not isinstance(value, dict):
+        return None
+    remainder = raw[end:]
+    if not remainder.strip():
+        # Nothing to repair — plain ``json.loads`` already accepts this string.
+        return None
+    if not (set(remainder) - _ARGUMENTS_TRAILING_DELIMITERS):
+        return raw[:end], "trailing_delimiter"
+    if end >= 1 and raw[end - 1] == "}":
+        candidate = raw[: end - 1] + remainder
+        try:
+            spliced = json.loads(candidate)
+        except ValueError:
+            return None
+        if isinstance(spliced, dict) and all(
+            key in spliced and spliced[key] == item for key, item in value.items()
+        ):
+            return candidate, "early_object_close"
+    return None
+
+
+def _json_error_kind(exc: BaseException) -> str:
+    """Bounded slug of a ``json`` decode failure.
+
+    ``JSONDecodeError.msg`` is a library template ("Extra data", "Unterminated
+    string starting at", …).  Every template reachable through CPython's C
+    scanner is payload-free; the pure-Python fallback (``json/decoder.py``,
+    used only when ``_json`` is unavailable) embeds one ``repr``-ed character
+    in two of them.  The slug is therefore stripped of everything but
+    ``a-z``/``_`` and clipped, which removes any such character and also makes
+    log injection impossible.
+    """
+
+    return re.sub(r"[^a-z]+", "_", str(getattr(exc, "msg", "") or "").lower()).strip("_")[:48] or "unknown"
+
+
+def _parse_failure_diagnostic(
+    payload: object, *, provider_request_id_header: bool = False
+) -> dict[str, object]:
+    """Name the SDK parser check that rejected a 200 response — payload-free.
+
+    Mirrors ``OpenAICompatibleProvider._parse_response`` / ``_parse_tool_calls``
+    in their own order, including the checks that live inside the SDK's
+    constructors (``CallId``, ``validate_json_value``, ``ProviderUsage``), and
+    reports only shapes, bounded slugs and integer lengths/offsets/counters.
+    No content, no arguments text, no identifiers.
+
+    ``provider_request_id_header`` says whether the response carried an
+    ``x-request-id`` header: the SDK only falls back to ``payload["id"]`` when
+    it did not, so a non-string ``id`` is not a failure when it is set.
+    """
+
+    if not isinstance(payload, Mapping):
+        return {"check": "payload_not_mapping"}
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return {"check": "choices_not_list_or_empty"}
+    choice = choices[0]
+    if not isinstance(choice, Mapping):
+        return {"check": "choice_not_mapping"}
+    detail: dict[str, object] = {
+        "check": "unclassified",
+        "finish_reason": _safe_finish_reason(choice.get("finish_reason")),
+    }
+    usage = payload.get("usage")
+    if isinstance(usage, Mapping):
+        completion = usage.get("completion_tokens")
+        if isinstance(completion, int) and not isinstance(completion, bool):
+            detail["completion_tokens"] = completion
+    raw_message = choice.get("message")
+    if not isinstance(raw_message, Mapping):
+        detail["check"] = "message_not_mapping"
+        return detail
+    content = raw_message.get("content")
+    if content is not None and not isinstance(content, str):
+        detail["check"] = "content_not_string"
+        return detail
+    raw_calls = raw_message.get("tool_calls")
+    if raw_calls is not None and not isinstance(raw_calls, list):
+        detail["check"] = "tool_calls_not_list"
+        return detail
+    for index, raw_call in enumerate(raw_calls or ()):
+        detail["call_index"] = index
+        if not isinstance(raw_call, Mapping) or raw_call.get("type") != "function":
+            detail["check"] = "tool_call_type_not_function"
+            return detail
+        raw_id = raw_call.get("id")
+        if not isinstance(raw_id, str) or not raw_id:
+            detail["check"] = "tool_call_id_not_string"
+            return detail
+        if not _CALL_ID_IDENTIFIER.fullmatch(raw_id):
+            # ``CallId`` requires 1-255 printable ASCII (contracts/identity.py).
+            detail["check"] = "tool_call_id_not_identifier"
+            return detail
+        function = raw_call.get("function")
+        if not isinstance(function, Mapping):
+            detail["check"] = "tool_call_function_not_mapping"
+            return detail
+        name = function.get("name")
+        if not isinstance(name, str) or not name:
+            detail["check"] = "tool_call_name_not_string"
+            return detail
+        arguments = function.get("arguments")
+        if isinstance(arguments, str):
+            detail["arguments_length"] = len(arguments)
+            try:
+                arguments = json.loads(arguments)
+            except ValueError as exc:
+                detail["check"] = "tool_call_arguments_not_json"
+                detail["json_error_kind"] = _json_error_kind(exc)
+                position = getattr(exc, "pos", None)
+                detail["json_error_position"] = (
+                    position if isinstance(position, int) and not isinstance(position, bool) else -1
+                )
+                return detail
+        if not isinstance(arguments, Mapping):
+            detail["check"] = "tool_call_arguments_not_object"
+            return detail
+        try:
+            # ``_plain_mapping`` + ``validate_json_value``: ``json.loads``
+            # accepts NaN/Infinity, the SDK's JSON contract does not.
+            validate_json_value(thaw_json(arguments))
+        except Exception:
+            detail["check"] = "tool_call_arguments_json_value_invalid"
+            return detail
+    detail.pop("call_index", None)
+    if usage is not None and not isinstance(usage, Mapping):
+        detail["check"] = "usage_not_mapping"
+        return detail
+    if isinstance(usage, Mapping):
+        if any(
+            isinstance(usage.get(field), bool) or not isinstance(usage.get(field), int)
+            for field in ("prompt_tokens", "completion_tokens", "total_tokens")
+        ):
+            detail["check"] = "usage_token_counts_not_int"
+            return detail
+        try:
+            # ``ProviderUsage.__post_init__`` also rejects negatives, a total
+            # below prompt+completion, and non-int cache/reasoning details.
+            _sdk_provider_usage(usage)
+        except Exception:
+            detail["check"] = "usage_values_rejected"
+            return detail
+    fields: list[tuple[str, object]] = [("model", payload.get("model"))]
+    if not provider_request_id_header:
+        fields.append(("id", payload.get("id")))
+    for field, value in fields:
+        if value is not None and not isinstance(value, str):
+            detail["check"] = f"{field}_not_string"
+            return detail
+    if choice.get("finish_reason") is not None and not isinstance(choice.get("finish_reason"), str):
+        detail["check"] = "finish_reason_not_string"
+        return detail
+    return detail
 
 
 def _provider_error_code(exc: BaseException) -> str:
@@ -365,6 +585,77 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
             payload["tool_calls"] = calls
         return payload
 
+    @staticmethod
+    def _normalized_tool_arguments(payload: Any, request_ref: str) -> Any:
+        """Repair the DeepSeek spurious-``}`` ``arguments`` defect, nothing else.
+
+        A well-formed response is returned unchanged (identity), because a
+        repair is attempted only for an ``arguments`` string that ``json.loads``
+        already rejects.  Only ``choices[0]`` is inspected — the SDK parser
+        consumes no other choice.
+        """
+
+        if not isinstance(payload, Mapping):
+            return payload
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or not choices:
+            return payload
+        choice = choices[0]
+        if not isinstance(choice, Mapping):
+            return payload
+        raw_message = choice.get("message")
+        if not isinstance(raw_message, Mapping):
+            return payload
+        raw_calls = raw_message.get("tool_calls")
+        if not isinstance(raw_calls, list):
+            return payload
+
+        repaired_calls = list(raw_calls)
+        repaired = False
+        for index, raw_call in enumerate(raw_calls):
+            if not isinstance(raw_call, Mapping):
+                continue
+            function = raw_call.get("function")
+            if not isinstance(function, Mapping):
+                continue
+            arguments = function.get("arguments")
+            if not isinstance(arguments, str):
+                continue
+            try:
+                json.loads(arguments)
+                continue
+            except ValueError:
+                pass
+            outcome = _repaired_tool_arguments(arguments)
+            if outcome is None:
+                continue
+            candidate, reason = outcome
+            repaired_function = dict(function)
+            repaired_function["arguments"] = candidate
+            repaired_call = dict(raw_call)
+            repaired_call["function"] = repaired_function
+            repaired_calls[index] = repaired_call
+            repaired = True
+            logger.warning(
+                "product_provider_tool_arguments_repaired "
+                "request_ref=%s call_index=%s arguments_length=%s repaired_length=%s "
+                "reason=%s",
+                request_ref,
+                index,
+                len(arguments),
+                len(candidate),
+                reason,
+            )
+        if not repaired:
+            return payload
+        repaired_message = dict(raw_message)
+        repaired_message["tool_calls"] = repaired_calls
+        repaired_choice = dict(choice)
+        repaired_choice["message"] = repaired_message
+        repaired_payload = dict(payload)
+        repaired_payload["choices"] = [repaired_choice, *choices[1:]]
+        return repaired_payload
+
     def _parse_response(
         self,
         request: ProviderRequest,
@@ -396,15 +687,38 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
             shape["usage_mapping"],
         )
         try:
+            payload = self._normalized_tool_arguments(payload, request_ref)
+        except Exception:
+            # Normalization is best effort; it must never pre-empt the SDK's
+            # own taxonomy (or escape unlogged, ahead of the try below).
+            logger.warning(
+                "product_provider_tool_arguments_normalization_unavailable request_ref=%s",
+                request_ref,
+            )
+        try:
             parsed = super()._parse_response(request, payload, response)
         except Exception as exc:
+            try:
+                diagnostic = json.dumps(
+                    _parse_failure_diagnostic(
+                        payload,
+                        provider_request_id_header=bool(response.headers.get("x-request-id")),
+                    ),
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            except Exception:
+                # Diagnostics must never replace the original Provider error.
+                diagnostic = '{"check":"diagnostic_unavailable"}'
             logger.warning(
                 "product_provider_response_parse_failed "
-                "request_ref=%s status_code=%s error_type=%s error_code=%s",
+                "request_ref=%s status_code=%s error_type=%s error_code=%s diagnostic=%s",
                 request_ref,
                 response.status_code,
                 type(exc).__name__,
                 _provider_error_code(exc),
+                diagnostic,
             )
             raise
         if not isinstance(payload, Mapping):
