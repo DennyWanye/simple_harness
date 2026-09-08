@@ -417,7 +417,10 @@ class PrimaryHistoryStore:
                     terminal, messages = self._settled_run_reader(
                         run["sdk_run_id"], current_text=json.loads(run["turn_json"])["payload"]["text"])
                     identity.verify_sdk_terminal(terminal)
-                    if list(messages) != payload["messages"]:
+                    # A6 r3 (2026-09-08): the archived observation may carry
+                    # elided tool bodies (content-addressed markers); compare
+                    # through transcript_matches like the other two checkpoints.
+                    if not transcript_matches(messages, payload["messages"]):
                         raise RuntimeError("primary_history_transcript_mismatch")
                 if (receipt.get("primary_observation_ref") != row["evidence_id"]
                         or receipt.get("primary_observation_hash") != row["envelope_sha256"]):
