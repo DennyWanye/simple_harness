@@ -30,13 +30,21 @@ import httpx
 import pytest
 from simple_harness.contracts.identity import RequestId
 from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.providers import ProviderProtocolError, ProviderRequest, Secret
+from simple_harness.providers import (
+    CancelToken,
+    ProviderProtocolError,
+    ProviderRequest,
+    Secret,
+)
 
 from deskpet.sdk_adapters.provider import (
+    ProductProviderAdapter,
     _ProductOpenAICompatibleProvider,
     _parse_failure_diagnostic,
     _repaired_tool_arguments,
+    _ToolArgumentsProtocolError,
 )
+from tests.sdk_adapters.test_product_host_ports import Registry
 
 # 实测捕获的 arguments（A6 第 2 轮证据），末尾多一个 `}`。
 _QUOTE = "我的校对结果一律存到「外接硬盘 / 校对归档」这个目录"
@@ -381,3 +389,186 @@ def test_deeply_nested_arguments_still_fail_with_the_sdk_error(caplog) -> None:
         "product_provider_tool_arguments_normalization_unavailable" in message
         for message in messages
     )
+
+
+# --- 重采样：不可修复的畸形工具调用不再一次就判死整个 Run ---------------------------
+#
+# 2026-09-08 HM-TO-A6 事件 D（同一次原生实跑，Run `product-sdk-26c66feb…` 第 10 轮）：
+# `product_provider_response_parse_failed … diagnostic={"arguments_length":42,
+# "check":"tool_call_arguments_not_json","json_error_kind":"expecting_delimiter",
+# "json_error_position":10,"finish_reason":"tool_calls"}` → SDK
+# `sdk_run_driver_failed ProviderProtocolError` → `run.fail`。
+# `_repaired_tool_arguments` 只救得了多吐 `}` 那一种；救不回来的那一种是采样偶发，
+# 却因为 `ProviderProtocolError` 属于 SDK 的 *definite* 失败而直接判 Run 死。
+# 修法：Host 在 `ProductProviderAdapter`（SDK coordinator 之前的最后一帧）对且仅对
+# `check=tool_call_arguments_not_json` 就地重采一次同一请求；第二次仍失败原样上抛。
+
+
+_UNREPAIRABLE_ARGUMENTS = '{"a": 12345 "b": "c", "ddd": "eeeeeeeeee"}'  # 42 字节，与实测同形
+
+
+def _good_analysis_payload(request_id: str = "resample-2") -> dict:
+    payload = _payload(_GOOD_ARGUMENTS)
+    payload["id"] = request_id
+    return payload
+
+
+def test_unrepairable_arguments_raise_the_resampleable_protocol_error() -> None:
+    """诊断命中 tool_call_arguments_not_json 时改抛可重采子类，公开分类学一字不变。"""
+
+    assert _repaired_tool_arguments(_UNREPAIRABLE_ARGUMENTS) is None
+    with pytest.raises(_ToolArgumentsProtocolError) as raised:
+        _parse(_payload(_UNREPAIRABLE_ARGUMENTS))
+    assert isinstance(raised.value, ProviderProtocolError)
+    assert raised.value.error_code == "provider_protocol_error"
+    assert raised.value.retryable is False
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"choices": []},
+        _payload(_GOOD_ARGUMENTS, usage={"prompt_tokens": "x", "completion_tokens": 1, "total_tokens": 2}),
+        _payload({"outcome": "mutate"}, model=7),
+    ],
+)
+def test_other_protocol_failures_are_not_resampleable(payload: dict) -> None:
+    """只有那一种畸形可重采：其它 200 响应缺陷仍是一次性的确定失败。"""
+
+    with pytest.raises(ProviderProtocolError) as raised:
+        _parse(payload)
+    assert not isinstance(raised.value, _ToolArgumentsProtocolError)
+
+
+def _adapter(transport, client_holder: list) -> ProductProviderAdapter:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(transport))
+    client_holder.append(client)
+    return ProductProviderAdapter(
+        Registry("resample-secret-never-logged"),
+        provider_id="relay",
+        client=client,
+        price_resolver=lambda *_: (1, 1, "price-v1"),
+    )
+
+
+async def _invoke(transport, *, cancel: CancelToken | None = None):
+    holder: list = []
+    adapter = _adapter(transport, holder)
+    try:
+        return await adapter.invoke(_request(), cancel=cancel or CancelToken())
+    finally:
+        await holder[0].aclose()
+
+
+@pytest.mark.asyncio
+async def test_one_malformed_tool_call_is_resampled_once_and_the_run_survives(caplog) -> None:
+    sent: list[httpx.Request] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        body = _payload(_UNREPAIRABLE_ARGUMENTS) if len(sent) == 1 else _good_analysis_payload()
+        return httpx.Response(200, json=body)
+
+    with caplog.at_level(logging.WARNING, logger="deskpet.sdk_adapters.provider"):
+        response = await _invoke(transport)
+
+    # 第二次采样的结果被正常返回，模型意图逐字保留。
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].arguments["operations"][0]["exact_quote"] == _QUOTE
+    # 恰好两次物理请求，且是**同一个**请求（同 request_id、同请求体）。
+    assert len(sent) == 2
+    assert sent[0].content == sent[1].content
+    assert json.loads(sent[0].content)["messages"] == json.loads(sent[1].content)["messages"]
+
+    lines = [r.getMessage() for r in caplog.records]
+    resampled = [line for line in lines if "product_provider_protocol_resampled" in line]
+    assert len(resampled) == 1
+    assert "attempt=1" in resampled[0] and "max_attempts=2" in resampled[0]
+    assert "check=tool_call_arguments_not_json" in resampled[0]
+    # 审计行不得带任何载荷 / 密钥。
+    for secret in (_QUOTE, "外接硬盘", "resample-secret-never-logged", _UNREPAIRABLE_ARGUMENTS):
+        assert secret not in resampled[0]
+    # 未被判定为整 Run 失败。
+    assert not [line for line in lines if "product_provider_attempt_failed" in line]
+
+
+@pytest.mark.asyncio
+async def test_second_malformed_sample_still_fails_the_run_and_never_sends_a_third(caplog) -> None:
+    sent: list[httpx.Request] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json=_payload(_UNREPAIRABLE_ARGUMENTS))
+
+    with caplog.at_level(logging.WARNING, logger="deskpet.sdk_adapters.provider"):
+        with pytest.raises(ProviderProtocolError) as raised:
+            await _invoke(transport)
+
+    assert raised.value.error_code == "provider_protocol_error"
+    assert raised.value.retryable is False
+    assert len(sent) == 2  # 一次重采，绝不第三次
+    lines = [r.getMessage() for r in caplog.records]
+    assert len([line for line in lines if "product_provider_protocol_resampled" in line]) == 1
+    failed = [line for line in lines if "product_provider_attempt_failed" in line]
+    assert len(failed) == 1 and "stage=response_protocol" in failed[0]
+
+
+@pytest.mark.asyncio
+async def test_wellformed_response_is_never_resampled(caplog) -> None:
+    sent: list[httpx.Request] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json=_good_analysis_payload())
+
+    with caplog.at_level(logging.WARNING, logger="deskpet.sdk_adapters.provider"):
+        response = await _invoke(transport)
+
+    assert len(sent) == 1
+    assert response.tool_calls[0].arguments["outcome"] == "mutate"
+    assert not [r.getMessage() for r in caplog.records if "protocol_resampled" in r.getMessage()]
+
+
+@pytest.mark.asyncio
+async def test_repairable_defect_is_repaired_in_place_without_a_second_call() -> None:
+    """多吐 `}` 那一种仍由确定性修复就地救回：不多花一次采样。"""
+
+    sent: list[httpx.Request] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json=_payload(_DEFECTIVE_ARGUMENTS))
+
+    response = await _invoke(transport)
+    assert len(sent) == 1
+    assert response.tool_calls[0].arguments["operations"][0]["exact_quote"] == _QUOTE
+
+
+@pytest.mark.asyncio
+async def test_other_protocol_failure_is_not_resampled_end_to_end() -> None:
+    sent: list[httpx.Request] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json=_payload(_GOOD_ARGUMENTS, model=7))
+
+    with pytest.raises(ProviderProtocolError):
+        await _invoke(transport)
+    assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancelled_turn_is_not_resampled() -> None:
+    """用户已停止：畸形样本不再补采，取消语义优先。"""
+
+    sent: list[httpx.Request] = []
+    cancel = CancelToken()
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        cancel.cancel()
+        return httpx.Response(200, json=_payload(_UNREPAIRABLE_ARGUMENTS))
+
+    with pytest.raises(ProviderProtocolError):
+        await _invoke(transport, cancel=cancel)
+    assert len(sent) == 1

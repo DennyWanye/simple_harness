@@ -161,8 +161,9 @@ async def test_handler_rejection_codes_and_audit_rows(tmp_path: Path) -> None:
     assert replay["closure_receipt"]["receipt_id"] == ok["closure_receipt"]["receipt_id"]
     assert h.rows(env.db_path, "SELECT COUNT(*) FROM task_scope_closure_receipts WHERE task_scope_id=?", scope) == [(1,)]
 
-    # 无脏无 pending → nothing_to_close（不递增 revision）。
-    nothing = await _call(env, "nothing", _arguments(env, scope, "nothing"))
+    # 无脏无 pending 的 no_mutation → nothing_to_close（不递增 revision）。
+    # （mutate 不再受脏闸限制，见 test_task_scope_update_clean_scope.py。）
+    nothing = await _call(env, "nothing", _arguments(env, scope, "nothing", outcome="no_mutation"))
     assert nothing.outcome.value == "rejected" and nothing.error_code == "task_scope_update_nothing_to_close"
     assert _revision(env, scope) == revision + 1
 
