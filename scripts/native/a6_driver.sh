@@ -223,6 +223,14 @@ for (( T=START; T<=LAST; T++ )); do
   done
   NOW=$(date +%s); ELAPSED=$(( NOW - START_TS ))
   [ "$OUTCOME" = timeout ] && echo "    !! T$T timed out after ${ELAPSED}s (recorded, continuing)"
+  # F-O-2 (2026-09-08): the analysis lane settles 10–60 s after the turn; the next
+  # turn must not race it (turn 22 read a not-yet-contested head). Wait until no
+  # analysis batch is in flight (max 90 s), so memory state is durable before T+1.
+  for i in $(seq 1 18); do
+    INFLIGHT=$(q "$HM" "select count(*) from analysis_batches where state not in ('applied','failed','dead_letter');")
+    [ "$INFLIGHT" = 0 ] && break
+    sleep 5
+  done
   record "$T" "$OUTCOME" "$ELAPSED" "$SENT"
 done
 
