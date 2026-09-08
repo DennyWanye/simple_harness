@@ -448,3 +448,126 @@ def test_residual_unadmissible_observation_is_reported_at_its_source(caplog):
     assert "reason=evidence_credential_boundary_rejected" in messages[0]
     assert "message_count=1" in messages[0]
     assert "SECRET_TRANSCRIPT_CANARY" not in messages[0]
+
+
+# --------------------------------------------------------------------------
+# 2026-09-08 HM-TO-A6 读侧：省略过的终态观察必须仍然可读。
+#
+# b3682fe1 把写侧降级和 `transcript_matches` 一起引入，但只把两个校验点
+# （primary_history.py 幂等分支、primary_context_pages）切了过去，历史读取器
+# 里「从结算 Run 重建分组」的那一处仍然逐字节相等。真实 HM-TO-A6 native 跑里，
+# 第一轮读了一个 40 KB 文件、终态观察被省略，下一轮历史读取就抛
+# primary_history_transcript_mismatch 四次、前台驱动停摆
+# （.local-test-evidence/2026-09-08/native-a6-b3682fe1/primary-ui-xmqudtzt/native.log
+#  05:19:50Z 前后）。933df61e 修的就是那一处。
+#
+# 关键：测试 build() 里的 PrimaryForegroundContextPort **没有**接
+# settled_run_reader，而 main.py 的产线装配接了——所以 b3682fe1 自带的端到端
+# 用例读历史时根本没走到那个校验点。本用例按产线装配显式接上。
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_elided_tool_result_history_still_reads_against_settled_sdk_run(tmp_path, monkeypatch):
+    """The production history read (with a settled-run reader) survives elision.
+
+    A real turn calls a real tool and then answers past the SDK inline
+    ceiling, so `record_terminal_observation` elides the transcript bodies.
+    Reading that turn back the way `main.py` wires it — `PrimaryHistoryStore`
+    with `settled_run_reader`, which re-reads the live SDK transcript and
+    compares it against the archived `payload["messages"]` — must succeed and
+    hand back the recorded markers, not raise
+    `primary_history_transcript_mismatch`.
+    """
+    from simple_harness import CallId
+    from simple_harness.contracts.messages import Message, MessageRole
+    from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
+
+    from deskpet.execution import primary_history as primary_history_module
+    from deskpet.execution.primary_history import (
+        ELISION_PREFIX,
+        PrimaryHistoryStore,
+        elided_content,
+        terminal_observation_tx,
+        transcript_matches,
+    )
+    from deskpet.memory.primary_visibility import inline_evidence_limit
+    from tests.execution.test_primary_foreground_runtime import Provider, history_disclosure
+
+    limit = inline_evidence_limit()
+    body = "z" * (limit + 4096)  # the answer alone busts the whole budget
+
+    class ToolThenHugeProvider(Provider):
+        async def invoke(self, request, *, cancel):
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                return ProviderResponse(
+                    request.request_id, Message(MessageRole.ASSISTANT, "Reading the actual file"),
+                    tool_calls=(ProviderToolCall(CallId("actual-a6-search"), "tool_search", {}),),
+                    model="model", usage=ProviderUsage(10, 10, 20),
+                    opaque_continuation_ref="fixture-opaque")
+            return ProviderResponse(
+                request.request_id, Message(MessageRole.ASSISTANT, body),
+                model="model", usage=ProviderUsage(10, 10, 20),
+                opaque_continuation_ref="fixture-opaque")
+
+    state = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
+    service = HumanMemoryHostServiceFactory(state, startup).bind(local_owner_auth())
+    primary = (await service.open_primary())["primary_ref"]
+    subject = local_owner_auth().subject
+    runtime, stack, _ = await build(
+        tmp_path, state, ToolThenHugeProvider(), provider_context_window=1_000_000)
+    try:
+        await service.enqueue_turn(QueueTurnRequest(None, "a6", "Actual oversized tool turn"))
+        assert await asyncio.wait_for(runtime._drive_once(), 30)
+
+        host_run_id, sdk_run_id = _run_ids(state)
+        _, settled = stack.read_settled_primary_run(
+            sdk_run_id, current_text="Actual oversized tool turn")
+        settled = list(settled)
+        assert [m["role"] for m in settled] == ["user", "assistant", "tool", "assistant"]
+        assert settled[2]["name"] == "tool_search"
+        assert settled[3]["content"] == body  # the live SDK transcript is intact
+
+        async with aiosqlite.connect(state) as db:
+            db.row_factory = aiosqlite.Row
+            _, payload = await terminal_observation_tx(
+                db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject)
+        stored = payload["messages"]
+        # The archive really did lose bodies: strict equality is false here,
+        # which is exactly what stalled the A6 driver.
+        assert stored != settled
+        assert transcript_matches(settled, stored)
+        assert stored[0] == settled[0] and stored[1] == settled[1]
+        assert stored[2]["content"] == elided_content(settled[2]["content"])
+        assert stored[2]["name"] == "tool_search" and stored[2]["call_id"] == settled[2]["call_id"]
+        assert stored[3]["content"] == elided_content(body)
+
+        # The production wiring (main.py passes settled_run_reader; the test
+        # `build()` does not, which is why this path had no coverage).
+        history = await PrimaryHistoryStore(
+            state, policy=runtime.history_policy,
+            settled_run_reader=stack.read_settled_primary_run,
+        ).read(subject=subject, primary_ref=primary,
+               disclosure_context=history_disclosure(), before_sequence=2)
+        assert len(history) == 1
+        assert history[0]["messages"] == stored
+        assert history[0]["terminal_state"] == "COMPLETED"
+        markers = [m["content"] for m in history[0]["messages"]
+                   if str(m["content"]).startswith(ELISION_PREFIX)]
+        assert len(markers) == 2 and f"bytes={len(body.encode())}" in markers[1]
+
+        # Load-bearing: with the pre-933df61e strict comparison back in place,
+        # this same read raises the code that stalled the foreground driver.
+        monkeypatch.setattr(primary_history_module, "transcript_matches",
+                            lambda settled, stored: list(settled) == list(stored))
+        with pytest.raises(RuntimeError, match="primary_history_transcript_mismatch"):
+            await PrimaryHistoryStore(
+                state, policy=runtime.history_policy,
+                settled_run_reader=stack.read_settled_primary_run,
+            ).read(subject=subject, primary_ref=primary,
+                   disclosure_context=history_disclosure(), before_sequence=2)
+    finally:
+        await runtime.close()
+        await stack.close()
