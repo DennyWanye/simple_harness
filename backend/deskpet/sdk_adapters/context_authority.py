@@ -1175,12 +1175,24 @@ def _current_tool_page_facts(messages: tuple[Any, ...]) -> dict[str, int]:
     A6-4 attribution for the same-Run bound.  On other lanes it degrades to a
     whole-request tool-token count, which is still a true statement about the
     request.
+
+    F-E2 adds the same pair for the CONTROL families:
+    ``control_results_stubbed`` is how many ``role=tool`` control messages
+    travel as a ``primary_control_result_elided_v1`` notice instead of their
+    body, and ``control_result_tokens`` is what the control bodies still occupy
+    (the quantity ``control_result_allowance`` bounds).  ``context_route``
+    carriers are counted in the second number and can never appear in the first
+    — they are not elidable — so a receipt where the two numbers stop moving
+    together is exactly the case where the un-elidable part alone fills the
+    control share.
     """
 
-    from deskpet.execution.current_tool_pages import CONTROL_TOOLS, MARKER
+    from deskpet.execution.current_tool_pages import CONTROL_MARKER, CONTROL_TOOLS, MARKER
 
     paged = 0
     carried = 0
+    stubbed = 0
+    control_carried = 0
     for message in messages:
         role = str(getattr(getattr(message, "role", ""), "value", getattr(message, "role", "")))
         content = getattr(message, "content", None)
@@ -1189,9 +1201,14 @@ def _current_tool_page_facts(messages: tuple[Any, ...]) -> dict[str, int]:
         metadata = getattr(message, "metadata", None)
         if isinstance(metadata, Mapping) and metadata.get("source") == MARKER:
             paged += 1
+        if isinstance(metadata, Mapping) and metadata.get("source") == CONTROL_MARKER:
+            stubbed += 1
         if getattr(message, "name", None) not in CONTROL_TOOLS:
             carried += _context_text_tokens(content)
-    return {"current_tool_pages": paged, "current_tool_tokens": carried}
+        else:
+            control_carried += _context_text_tokens(content)
+    return {"current_tool_pages": paged, "current_tool_tokens": carried,
+            "control_results_stubbed": stubbed, "control_result_tokens": control_carried}
 
 
 def _visible_provider_specs(
@@ -1417,8 +1434,9 @@ class ProductRunContextAuthority:
         messages, assembly_facts = _plan(
             source_messages, exact_sources, full_trim=False, probe_only=True
         )
+        control_stubs_forced = 0
         if assembly_facts.get("budget_headroom", 0) < 0:
-            before = _current_tool_page_facts(source_messages)["current_tool_pages"]
+            before = _current_tool_page_facts(source_messages)
             try:
                 forced, forced_exact = await _projected(force_all=True)
             except (PrimaryContextPageUnavailable, PrimaryToolCausalityUnavailable):
@@ -1427,10 +1445,17 @@ class ProductRunContextAuthority:
                 # history step rather than replacing a budget failure with a
                 # paging one.
                 forced, forced_exact = source_messages, exact_sources
-            after = _current_tool_page_facts(forced)["current_tool_pages"]
-            if after >= before:
+            after = _current_tool_page_facts(forced)
+            # F-E2: progress is now two-dimensional (paged settled bodies and
+            # elided control notices).  Accept the forced pass only when it
+            # moved backwards on neither axis — a pass that un-paged or
+            # un-elided anything the bounded pass achieved is not a degradation.
+            if (after["current_tool_pages"] >= before["current_tool_pages"]
+                    and after["control_results_stubbed"] >= before["control_results_stubbed"]):
                 source_messages, exact_sources = forced, forced_exact
-                pages_forced = after - before
+                pages_forced = after["current_tool_pages"] - before["current_tool_pages"]
+                control_stubs_forced = (after["control_results_stubbed"]
+                                        - before["control_results_stubbed"])
             # …otherwise the forced pass declined to project at all (it is also
             # composed for non-primary callers) and would have *un*-paged what
             # the bounded pass achieved.  Degrading must never move backwards,
@@ -1456,6 +1481,8 @@ class ProductRunContextAuthority:
             # rather than assuming it fit comfortably.  ``groups_trimmed_for_
             # budget`` rides in with ``assembly_facts``.
             "pages_forced": pages_forced,
+            # F-E2: the same, for control carriers the forced pass elided.
+            "control_stubs_forced": control_stubs_forced,
         }
         if occurrences is not None:
             await occurrences.recheck(presentation)

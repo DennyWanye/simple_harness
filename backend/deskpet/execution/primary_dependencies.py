@@ -465,8 +465,14 @@ async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, pol
             if found is None:
                 return  # trusted Host lookup: this is not a foreground primary Run
             run, proof = found
-            from deskpet.execution.current_tool_pages import verify_request
+            from deskpet.execution.current_tool_pages import verify_control_stubs, verify_request
             verify_request(stack, sdk_run_id, request.messages)
+            # F-E2: an elided control carrier is re-derived against the same
+            # public audit/effect facts before the request may leave, in its own
+            # pass — a control notice must never enter the page-admission map
+            # ``verify_request`` returns, or eliding an attestation would make
+            # its body ``context_page_in``-readable.
+            verify_control_stubs(stack, sdk_run_id, request.messages)
             policy = policy_factory(run["subject"])
             disclosure = await resolve_current_disclosure(db_path=db_path, run_id=sdk_run_id,
                 subject=run["subject"], request_id=request.request_id.value)
