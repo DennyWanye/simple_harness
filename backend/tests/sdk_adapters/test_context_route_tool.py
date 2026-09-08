@@ -9,6 +9,7 @@ authorize) + s5a-context-route-verification-spec.json S5A-S1/S5 subsets.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -598,3 +599,108 @@ def test_task_scope_search_description_tells_the_model_to_skip_the_search() -> N
     description = block.group(1)
     assert "continue_active" in description
     assert "zero candidates" in description
+
+
+# ---- HM-TO-A6 incident O：争议值必须带着两个候选值和"先确认"指令进 Context ----
+# Oracle source: attempt 4 T22 「那你现在按哪个版本执行这套校对流程？」 得到
+# 「按 Python 3.13 执行」。SDK 对 contested head 返回 needs_user_confirmation +
+# 空 items + 一个原子 confirmation group（S3 §5.3），Host 只投影 items，模型看到
+# 的是"什么都没存过"。
+
+
+def _contested_notice(group_id: str = "cognitive-conflict-group-0d8eb9a7") -> dict:
+    return {
+        "reason": "recall_value_contested_requires_user_confirmation",
+        "conflict_status": "contested",
+        "next": "ask_user_to_confirm",
+        "message": "该值处于争议中 ... Ask the user to confirm which one applies",
+        "groups": [{
+            "conflict_group_id": group_id,
+            "memory_type": "semantic",
+            "candidates": [
+                {"role": "incumbent", "revision": 2, "value": {"object_value": "Python 3.13"},
+                 "payload_hash": "a" * 64, "privacy_class": "personal"},
+                {"role": "challenger", "revision": 3, "value": {"object_value": "3.12"},
+                 "payload_hash": "b" * 64, "privacy_class": "personal"},
+            ],
+        }],
+    }
+
+
+def _conflict_tool(state_db: Path, monkeypatch, notice):
+    from deskpet.memory import human_memory_v7
+
+    tool = _recall_tool(state_db, [], monkeypatch)
+    monkeypatch.setattr(human_memory_v7, "project_contested_confirmation",
+                        lambda execution: notice)
+    return tool
+
+
+def _invocation_detail(state_db: Path, effect_id: str = "effect-1") -> dict:
+    with sqlite3.connect(state_db) as db:
+        row = db.execute(
+            "SELECT detail_json FROM context_route_tool_invocations "
+            "WHERE sdk_run_id=? AND effect_id=?", (RUN, effect_id),
+        ).fetchone()
+    return json.loads(row[0])
+
+
+@pytest.mark.asyncio
+async def test_contested_recall_returns_both_candidates_and_a_confirmation_instruction(
+    state_db: Path, monkeypatch
+) -> None:
+    tool = _conflict_tool(state_db, monkeypatch, _contested_notice())
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "校对 Python 版本",
+         "memory_types": ["semantic"]}
+    )
+    # An empty fragments list alone is exactly what misled the model.
+    assert result["fragments"] == []
+    notice = result["conflict_notice"]
+    assert notice["reason"] == "recall_value_contested_requires_user_confirmation"
+    assert notice["next"] == "ask_user_to_confirm"
+    assert [c["value"]["object_value"] for c in notice["groups"][0]["candidates"]] == [
+        "Python 3.13", "3.12",
+    ]
+    # The notice is a top-level result field; the committed receipt is untouched.
+    assert "conflict_notice" not in result["context_route_receipt"]
+    assert _decision_rows(state_db) == [("memory_standalone", "context_tool", "effect-1")]
+
+
+@pytest.mark.asyncio
+async def test_contested_recall_records_a_stable_reason_code_without_the_values(
+    state_db: Path, monkeypatch
+) -> None:
+    tool = _conflict_tool(state_db, monkeypatch, _contested_notice())
+    await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "校对 Python 版本",
+         "memory_types": ["semantic"]}
+    )
+    conflict = _invocation_detail(state_db)["recall_conflict"]
+    assert conflict["reason"] == "recall_value_contested_requires_user_confirmation"
+    assert conflict["conflict_status"] == "contested"
+    assert conflict["groups"] == [{
+        "conflict_group_id": "cognitive-conflict-group-0d8eb9a7",
+        "memory_type": "semantic", "revisions": [2, 3],
+    }]
+    # Attribution, not a second copy of the user's contested values.
+    assert "Python 3.13" not in json.dumps(conflict, ensure_ascii=False)
+
+
+@pytest.mark.asyncio
+async def test_uncontested_recall_carries_no_conflict_notice_or_audit_row(
+    state_db: Path, monkeypatch
+) -> None:
+    tool = _conflict_tool(state_db, monkeypatch, None)
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "发版流程", "memory_types": ["semantic"]}
+    )
+    assert "conflict_notice" not in result
+    assert "recall_conflict" not in _invocation_detail(state_db)
+
+
+def test_persona_tells_the_model_what_conflict_notice_means() -> None:
+    from deskpet.execution.primary_context import PERSONA
+
+    assert "conflict_notice" in PERSONA
+    assert "contested" in PERSONA and "ask the user which one applies" in PERSONA

@@ -235,6 +235,7 @@ class ContextRouteToolService:
         recall_types: tuple[str, ...] = (),
         recall_short_horizon: bool | None = None,
         typed_carrier: Mapping[str, Any] | None = None,
+        recall_conflict: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         receipt = ContextRouteReceipt(
             receipt_id=str(
@@ -286,6 +287,19 @@ class ContextRouteToolService:
                     "requested_memory_types": list(recall_types),
                     "include_short_horizon": bool(recall_short_horizon),
                 }} if recall_types or recall_short_horizon is not None else {}),
+                # Stable Host reason code for the receipt/audit. Record only the
+                # bounded conflict identity (group id + exact revisions), never
+                # the candidate payloads: the audit needs attribution, not the
+                # user's contested values a second time.
+                **({"recall_conflict": {
+                    "reason": recall_conflict["reason"],
+                    "conflict_status": recall_conflict["conflict_status"],
+                    "groups": [{
+                        "conflict_group_id": group["conflict_group_id"],
+                        "memory_type": group["memory_type"],
+                        "revisions": [candidate["revision"] for candidate in group["candidates"]],
+                    } for group in recall_conflict["groups"]],
+                }} if recall_conflict is not None else {}),
             },
         )
         return result
@@ -418,7 +432,9 @@ class ContextRouteToolService:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal, str(exc),
             )
-        from deskpet.memory.human_memory_v7 import project_recall_fragments
+        from deskpet.memory.human_memory_v7 import (
+            project_contested_confirmation, project_recall_fragments,
+        )
 
         admitted = None
         if self._typed_use_authority is not None:
@@ -448,6 +464,10 @@ class ContextRouteToolService:
                              run_id, effect_id)
             raise
         fragments = project_recall_fragments(execution)
+        # HM-S3: a contested head never reaches ``result.items``; without this the
+        # whole recall reads to the model as "nothing was ever saved" and it
+        # answers a dependent execution question from the last value it saw.
+        conflict = project_contested_confirmation(execution)
         carrier = None
         if self._typed_use_authority is not None:
             carrier = await self._typed_use_authority.build_carrier(
@@ -465,10 +485,12 @@ class ContextRouteToolService:
             recall_types=memory_types,
             recall_short_horizon=include_short_horizon,
             typed_carrier=carrier,
+            recall_conflict=conflict,
             extras={
                 "fragments": list(fragments),
                 "degradation_codes": list(execution.degradation_codes),
                 "truncated": bool(execution.result.truncated),
+                **({"conflict_notice": conflict} if conflict is not None else {}),
                 # By design typed recall withholds unbound Procedures. Silence
                 # reads to the model as "nothing was ever saved", so point at
                 # the discovery surface instead. This rides in the same extras

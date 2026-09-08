@@ -1126,28 +1126,80 @@ def item_a6_6(ev: Evidence) -> Item:
 
 
 def item_a6_7(ev: Evidence) -> Item:
+    """A6-7: 纠正后 head 前进到新 revision, 旧 revision 只作为不可变历史留存。
+
+    2026-09-08 语义修正: 本项原先断言「旧 revision 的 lifecycle_state 必须退出
+    active」, 这个判据与 S3 契约不符, 该断言恒为 FAIL。
+
+    `cognitive_memory_revisions` 是 append-only 的每-revision 不可变快照:
+    schema 上挂着 `cognitive_memory_revisions_immutable_update` /
+    `_immutable_delete` 两个无条件 `RAISE(ABORT)` 触发器
+    (`simple_harness_memory/backends/schema_v5.py:572-577`), 所以 SDK 在物理上
+    不可能回头改写旧 revision 的 lifecycle_state; 全包 grep
+    `UPDATE/DELETE cognitive_memory_revisions` 零命中。「哪个 revision 生效」
+    只由 `cognitive_memory_heads.current_revision` 表达, 召回资格也一律按
+    `r.revision = h.current_revision` 连接 (`sqlite_v5.py:2915-2924` 等), 契约
+    `slices/S3-cognitive-systems-recall.md:152` 「所有长期普通候选先要求 exact
+    principal、exact current head」。`superseded` 这个 lifecycle 确实在用, 但它
+    是 SUPERSEDE 写入的**新** head revision 自身的状态
+    (`core/mutations.py:423-425`), 不是给旧 revision 补盖的章。
+
+    因此本项改判 head 前进 + head revision 的 lifecycle/conflict 合法 +
+    evolution 血缘边存在。图谱只显示新 revision 一条 active edge 由 A6-9 判定。
+    """
     it = Item("A6-7", "edge 更新/纠正(supersede)")
     ev.hm.require(
-        "cognitive_memory_revisions", "memory_id", "revision", "lifecycle_state"
+        "cognitive_memory_revisions", "memory_id", "revision", "lifecycle_state",
+        "conflict_status",
     )
     ev.hm.require("cognitive_memory_heads", "memory_id", "current_revision")
+    ev.hm.require(
+        "cognitive_relations", "relation_domain", "relation_kind",
+        "source_memory_id", "source_revision", "target_memory_id", "target_revision",
+    )
+    # head revision 自身的合法状态: revise 产出非终态(active 等),
+    # supersede 产出 superseded(`core/mutations.py:423-425`)。
+    _HEAD_LIFECYCLES = {"active", "amended", "reinforced", "superseded",
+                        "pending", "triggered", "in_progress", "rescheduled"}
     heads = ev.hm.rows("select memory_id, current_revision from cognitive_memory_heads")
-    multi = []
-    stale_active = []
+    multi: list[str] = []
+    head_not_latest: list[tuple[str, int, int]] = []
+    head_lifecycle_invalid: list[tuple[str, int, str]] = []
+    missing_lineage: list[tuple[str, int]] = []
     for h in heads:
         mid = as_text(h["memory_id"])
         revs = ev.hm.rows(
-            "select revision, lifecycle_state from cognitive_memory_revisions"
-            " where memory_id=? order by revision asc",
+            "select revision, lifecycle_state, conflict_status from"
+            " cognitive_memory_revisions where memory_id=? order by revision asc",
             (mid,),
         )
         if len(revs) < 2:
             continue
         multi.append(mid)
         cur = int(h["current_revision"])
+        latest = max(int(r["revision"]) for r in revs)
+        if cur != latest:
+            head_not_latest.append((mid, cur, latest))
+        head_row = next((r for r in revs if int(r["revision"]) == cur), None)
+        if head_row is None:
+            head_lifecycle_invalid.append((mid, cur, "<head revision 行缺失>"))
+        elif as_text(head_row["lifecycle_state"]).lower() not in _HEAD_LIFECYCLES:
+            head_lifecycle_invalid.append(
+                (mid, cur, as_text(head_row["lifecycle_state"]))
+            )
+        # 每一次 head 前进都必须留下一条 evolution 血缘边 rN -> rN-1。
         for r in revs:
-            if int(r["revision"]) < cur and as_text(r["lifecycle_state"]).lower() == "active":
-                stale_active.append((mid, int(r["revision"])))
+            revision = int(r["revision"])
+            if revision < 2:
+                continue
+            lineage = ev.hm.rows(
+                "select 1 from cognitive_relations where relation_domain='evolution'"
+                " and source_memory_id=? and source_revision=? and target_memory_id=?"
+                " and target_revision=?",
+                (mid, revision, mid, revision - 1),
+            )
+            if not lineage:
+                missing_lineage.append((mid, revision))
     states = sorted(
         {
             as_text(r[0])
@@ -1156,25 +1208,45 @@ def item_a6_7(ev: Evidence) -> Item:
             )
         }
     )
+    kinds = sorted(
+        {
+            as_text(r[0])
+            for r in ev.hm.rows(
+                "select distinct relation_kind from cognitive_relations"
+                " where relation_domain='evolution'"
+            )
+        }
+    )
     it.numbers = {
         "heads": len(heads),
         "memories_with_multiple_revisions": len(multi),
-        "older_revisions_still_active": len(stale_active),
-        "stale_sample": stale_active[:3],
+        "head_not_latest_revision": head_not_latest[:3],
+        "head_lifecycle_invalid": head_lifecycle_invalid[:3],
+        "missing_evolution_lineage": missing_lineage[:3],
         "lifecycle_states_observed": states,
+        "evolution_relation_kinds": kinds,
     }
     if not multi:
         it.verdict = INCONCLUSIVE
         it.reason = "没有任何记忆产生第 2 个 revision —— T20 的纠正未落成 supersede, 无法判定。"
         return it
-    if stale_active:
+    if head_not_latest:
         it.verdict = FAIL
-        it.reason = f"{len(stale_active)} 个旧 revision 在 current_revision 之前仍为 active, 未退出。"
+        it.reason = f"{len(head_not_latest)} 条记忆的 head 未指向最新 revision: {head_not_latest[:3]}。"
+        return it
+    if head_lifecycle_invalid:
+        it.verdict = FAIL
+        it.reason = f"{len(head_lifecycle_invalid)} 条记忆的 head revision lifecycle 非法: {head_lifecycle_invalid[:3]}。"
+        return it
+    if missing_lineage:
+        it.verdict = FAIL
+        it.reason = f"{len(missing_lineage)} 个新 revision 缺少 evolution 血缘边: {missing_lineage[:3]}。"
         return it
     it.verdict = PASS
     it.reason = (
-        f"{len(multi)} 条记忆出现新 revision, 旧 revision 全部退出 active"
-        f"(lifecycle_state 取值 {states}), head 指向最新 revision。"
+        f"{len(multi)} 条记忆出现新 revision, head 全部指向最新 revision 且其 lifecycle 合法"
+        f"(取值 {states}), 每次前进都有 evolution 血缘边(kind={kinds});"
+        f" 旧 revision 按 append-only 契约保持不可变快照, 不参与召回。"
     )
     return it
 

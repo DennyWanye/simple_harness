@@ -642,11 +642,120 @@ def _prospective_trigger_local(payload: Any, memory_type: str) -> str | None:
     return f"{moment.isoformat(timespec=spec)} {_CHINESE_WEEKDAYS[moment.weekday()]}"
 
 
+# HM-S3 「含糊冲突 contested」 disclosure (slice S3 §5.2/§5.3):
+#
+# - 「普通选择仅允许 `uncontested|resolved`；contested 只能走完整 group
+#   confirmation」 — a contested head never reaches ``result.items``; the SDK
+#   answers the whole typed recall with ``needs_user_confirmation`` and an
+#   atomic ``confirmation_groups`` carrier instead (``core/recall.py::
+#   build_host_confirmation_execution``). Projecting only ``result.items``
+#   therefore rendered a contested value as an EMPTY recall, which the model
+#   reads as "nothing was ever saved".
+# - 「任何一侧不可见、hash 漂移、被 suppression、过期、principal 不符或 group
+#   不 active 时，整组、双方、candidate count 与"存在冲突"均不泄露」 — the group
+#   is all-or-nothing: if the Host privacy re-check rejects any member, the
+#   whole group (and the very existence of a conflict) stays undisclosed.
+# - acceptance HM-S3 「含糊时不选边，依赖该值的任务要求确认」 — the Host picks
+#   no side and instructs the model to ask before executing on either value.
+#
+# The candidate values ride the Host-authored notice rather than
+# ``fragments[]`` because the installed Memory SDK cannot bind a confirmation
+# member into the history-visibility lane: ``simple_harness_memory/backends/
+# history_visibility.py::_recall`` resolves a ``HistoryRecallBinding`` only
+# against ``result.items`` and returns ``history_binding_mismatch`` for a
+# confirmation member id, so a bound confirmation fragment would fail the next
+# turn's ``check_history_visibility``. Content here is nonetheless already
+# SDK-authorized for this exact DisclosureContext: the confirmation execution
+# passes the SDK's complete eligibility/suppression/disclosure gate over every
+# member (``sqlite_v5.py::_validate_recall_context_use_sources_unlocked``) and
+# the Host re-checks privacy class again below.
+CONTESTED_DISCLOSURE_REASON = "recall_value_contested_requires_user_confirmation"
+CONTESTED_DISCLOSURE_MESSAGE = (
+    "该值处于争议中：现有值（incumbent）与挑战值（challenger）同时成立，系统不选边。"
+    "执行前必须先向用户确认按哪一个执行；不要直接采用任一值，也不要据此给出执行结论。"
+    " This value is contested: the incumbent and the challenger below both stand and the Host "
+    "picks no side. Ask the user to confirm which one applies before executing; never adopt "
+    "either value on your own and never state an execution conclusion based on either."
+)
+
+
+def project_contested_confirmation(lanes: Any) -> dict[str, Any] | None:
+    """Project the SDK's atomic confirmation groups into one Host notice.
+
+    Returns ``None`` when the typed recall carries no disclosable conflict, so
+    an uncontested recall is byte-identical to the pre-existing projection.
+    """
+
+    from simple_harness import thaw_json
+
+    execution = getattr(lanes, "execution", lanes)
+    groups: list[dict[str, Any]] = []
+    for group in getattr(execution.result, "confirmation_groups", ()) or ():
+        candidates: list[dict[str, Any]] = []
+        # S3 §5.2 「恰好两个有序 cognitive_conflict_members（incumbent=rN、
+        # challenger=rN+1）」: the incumbent is the older revision. Derive the
+        # role from the exact revision rather than from the member ordinal, so
+        # a mislabelled candidate can never tell the user the wrong side.
+        incumbent_revision = min(
+            (int(member.member.source_revision) for member in group.members), default=0
+        )
+        for member in group.members:
+            privacy = getattr(
+                member.effective_privacy_class, "value", str(member.effective_privacy_class)
+            )
+            if privacy not in _ELIGIBLE_PRIVACY_CLASSES:
+                candidates = []
+                break  # Never expose one side of an atomic confirmation group.
+            exact = member.member
+            candidates.append(
+                {
+                    "role": (
+                        "incumbent"
+                        if int(exact.source_revision) == incumbent_revision
+                        else "challenger"
+                    ),
+                    "revision": int(exact.source_revision),
+                    "value": thaw_json(member.public_payload),
+                    "payload_hash": exact.public_payload_hash,
+                    "privacy_class": privacy,
+                }
+            )
+        if len(candidates) < 2:
+            continue
+        groups.append(
+            {
+                "conflict_group_id": group.group.conflict_group_id,
+                "memory_type": getattr(
+                    group.members[0].member.memory_type,
+                    "value",
+                    str(group.members[0].member.memory_type),
+                ),
+                "candidates": candidates,
+            }
+        )
+    if not groups:
+        return None
+    return {
+        "reason": CONTESTED_DISCLOSURE_REASON,
+        "conflict_status": "contested",
+        "next": "ask_user_to_confirm",
+        "message": CONTESTED_DISCLOSURE_MESSAGE,
+        "groups": groups,
+    }
+
+
 def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
     """Host second-pass eligibility + dedup over typed recall items.
 
     The SDK already gated candidates; the Host re-checks privacy class before
     anything enters Context and deduplicates by public payload hash.
+
+    Every cognitive fragment here carries ``conflict_status="not_contested"``:
+    the SDK's ordinary gate (``sqlite_v5.py::_cognitive_recall_state_allowed``
+    with ``allow_contested=False``) admits only ``uncontested|resolved``, so the
+    Host can state that no open contest stands over the value but cannot claim
+    the head was never contested. A contested head never appears here at all —
+    see ``project_contested_confirmation``.
     """
 
     from simple_harness import thaw_json
@@ -694,6 +803,9 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
                 "ref": item.selected_item.item_id,
                 "memory_type": memory_type,
                 "privacy_class": privacy,
+                # Only the cognitive lane has conflict semantics; a short-horizon
+                # chunk is not a head and must not claim a conflict status.
+                **({} if typed_short else {"conflict_status": "not_contested"}),
                 "score": float(item.score),
                 "payload": public_payload,
                 "payload_hash": payload_hash,
@@ -760,11 +872,14 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
 
 
 __all__ = [
+    "CONTESTED_DISCLOSURE_MESSAGE",
+    "CONTESTED_DISCLOSURE_REASON",
     "HOST_SUPPORTED_FILTER_POLICIES",
     "HumanMemoryV7Runtime",
     "RecallLanes",
     "host_classification_policy",
     "local_memory_principal",
     "local_memory_scope",
+    "project_contested_confirmation",
     "project_recall_fragments",
 ]
