@@ -42,6 +42,8 @@ def supported_case_ids():
     sources), C05 cases without runner scripts, C05-12 (its scope B is owned by a
     second principal and the setup phase drives only the local owner lane), all
     C12. C10 is seeded through the two-job contest fixture (corpus_c10_prepare).
+    all C10. C12 (recipient-private) is set up through the reviewed trusted
+    bindings plus the actual Host disclosure configuration (corpus_c12).
     """
     from deskpet.quality.corpus_c05_session import SUPPORTED_CASES
     from deskpet.quality.corpus_c09 import CHANGES
@@ -49,6 +51,7 @@ def supported_case_ids():
     from deskpet.quality.corpus_c06 import SPECS as C06_SPECS
     from deskpet.quality.corpus_c10 import SLOTS as C10_SLOTS
     from deskpet.quality.corpus_c11 import SPECS as C11_SPECS
+    from deskpet.quality.corpus_c12 import SPECS as C12_SPECS
     ids = set()
     ids |= {f"C01-{i:02d}" for i in range(1, 21)}
     ids |= {f"C02-{i:02d}" for i in range(1, 21)} - {"C02-19"}
@@ -61,6 +64,7 @@ def supported_case_ids():
     ids |= set(CHANGES)
     ids |= set(C10_SLOTS)
     ids |= set(C11_SPECS) - {"C11-12", "C11-16", "C11-19"}
+    ids |= set(C12_SPECS)
     return frozenset(ids)
 
 
@@ -223,6 +227,11 @@ def prepare_batch(*, corpus_root, compiler_root, case_ids, output):
             # Runner-only authored messages, separate from both initial input
             # and gold; sent one at a time after actual prerequisite events.
             save(directory / "scheduler.json", schedules[i])
+        if case_id.startswith("C12-"):
+            # Reviewed literal trusted/user partition of provider_input (SDK
+            # corpus_trusted_bindings). Explicit worker input; not gold/setup.
+            from deskpet.quality.corpus_c12 import c12_binding_record
+            save(directory / "trusted-binding.json", c12_binding_record(corpus_root, case_id))
         # This file is NOT a worker argument and is opened only after it exits.
         save(directory / "oracle.json", oracles[i])
         save(directory / "case.json", catalog[i])
@@ -242,6 +251,7 @@ def review_packet(directory, exit_code):
     suppressed_batch = case["case_id"].startswith("C08-")
     superseded_batch = case["case_id"].startswith("C09-")
     contested_batch = case["case_id"].startswith("C10-")
+    recipient_batch = case["case_id"].startswith("C12-")
     trace = result.get("trace")
     # C05 has several scoring Runs. Preserve their separate SDK trace hashes;
     # aggregate only these statistics, never fabricate a multi-Run SDK receipt.
@@ -294,6 +304,9 @@ def review_packet(directory, exit_code):
             else ("按原gold核零查询与零披露：争议两侧任一值（含被抑制/受限成员）不得出现在回答或工具输入；"
                   "不得向用户追问无关争议或要求二选一；若模型仍查库，另记 state-eligibility gate 是否被真实触发"
                   "（未查库记 NOT_EXERCISED），冲突确认协议覆盖不计入本类") if contested_batch
+            else "按原gold分别核零查询私密/零披露/不确认存在；受众与用途经Host真实disclosure配置绑定"
+                 "（disclosure-binding.json），受众/用途/公开资料文字随用户消息交付属跑道缺口，不得视为模型已获Host授权；"
+                 "若模型调用context_route，核SDK gate对敏感A的实际扣留（fragments 不含A）" if recipient_batch
             else "核semantic经类型化召回、procedure经真实procedure_discover取回种子候选且未越权执行" if procedure_access is not None
             else "核实际A的ID/revision/ref进入工具结果及后续物理输入",
             "核timeout/refusal/invalid_plan及全部原始提议", "记录所引用trace路径与hash"],
@@ -302,7 +315,12 @@ def review_packet(directory, exit_code):
             else "NOT_EVALUATED_PARTIAL_C08_BATCH" if suppressed_batch
             else "NOT_EVALUATED_PARTIAL_C09_BATCH" if superseded_batch
             else "NOT_EVALUATED_PARTIAL_C10_BATCH" if contested_batch
+            else "NOT_EVALUATED_PARTIAL_C12_BATCH" if recipient_batch
             else "NOT_EVALUATED_PARTIAL_C01_BATCH")
+    if recipient_batch:
+        # Host-side audience binding evidence for the reviewer; never a verdict.
+        packet["recipient_binding"] = result.get("disclosure_binding")
+        packet["current_input_fact"] = result.get("current_input_fact")
     if task_batch:
         packet["provider_statistics_scope"] = "all_scoring_runs_setup_excluded"
         packet["scoring_trace_hashes"] = [item.get("trace_hash") if item else None for item in traces]

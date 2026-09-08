@@ -176,9 +176,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     authored = json.loads((directory / "input.json").read_text())
     setup = json.loads((directory / "setup.json").read_text())
     case_id = setup["case_id"]
-    c07 = c05 = c08_retained = c09 = None
+    c07 = c05 = c08_retained = c09 = c12 = None
     c05_schedule = None
-    c05_input = None
+    c05_input = c12_input = None
     if setup["scenario_clock"] != authored["scenario_clock"]:
         raise ValueError("corpus_input_setup_clock_mismatch")
     if type(case_id) is str and case_id.startswith("C07-"):
@@ -207,9 +207,18 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         from deskpet.quality.corpus_c09 import compile_c09_setup
         c09 = compile_c09_setup(case_id, setup["setup_source_text"],
             scenario_clock=setup["scenario_clock"]["instant"])
-    if c05_input is None and ((authored["recent_messages"] and c07 is None) or authored["unresolved_source_text"] is not None):
+    if type(case_id) is str and case_id.startswith("C12-"):
+        # Reviewed trusted/user partition (parent-saved explicit input file);
+        # audience/purpose become real Host disclosure configuration below.
+        from deskpet.quality.corpus_c12 import compile_c12_setup, compile_c12_input
+        c12 = compile_c12_setup(case_id, setup["setup_source_text"],
+            scenario_clock=setup["scenario_clock"]["instant"])
+        c12_input = compile_c12_input(c12, authored, json.loads((directory / "trusted-binding.json").read_text()))
+    if c05_input is None and c12_input is None and ((authored["recent_messages"] and c07 is None)
+            or authored["unresolved_source_text"] is not None):
         raise ValueError("corpus_first_batch_scalar_input_required")
-    text = authored["current_user_message"] if c05_input is None else c05_input['current_user_message']
+    text = (authored["current_user_message"] if c05_input is None else c05_input['current_user_message']) \
+        if c12_input is None else c12_input['current_user_message']
     if type(text) is not str or not text:
         raise ValueError("corpus_original_user_message_required")
     scenario_time = datetime.fromisoformat(authored["scenario_clock"]["instant"]).timestamp()
@@ -248,6 +257,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     elif case_id.startswith("C11-"):
         from deskpet.quality.corpus_c11 import compile_c11_setup as compile_setup
         from deskpet.quality.corpus_c11_prepare import open_c11_fixture as open_fixture
+    elif case_id.startswith("C12-"):
+        from deskpet.quality.corpus_c12 import compile_c12_setup as compile_setup
+        from deskpet.quality.corpus_c12_prepare import open_c12_fixture as open_fixture
     from deskpet.memory.human_memory_v7 import local_memory_principal, host_classification_policy, HOST_SUPPORTED_FILTER_POLICIES
     from deskpet.memory.evidence_authority import HostEvidenceAuthority
     from deskpet.memory.memory_ingestion_outbox import MemoryIngestionOutboxWorker
@@ -268,6 +280,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     service = None
     recent_provider = task_provider = retained_provider = None
     task_history = None
+    fixture_control = None
     task_workspace = directory / "runtime" / "task-workspace" if c05 is not None else None
     try:
         outcome["stage"] = "host_schema_session"
@@ -393,7 +406,8 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                 outcome["setup_receipt"] = wire({name: seed[name] for name in
                     ("source_pair", "labels", "setup_hash", "outcome", "fixture_executions",
                      "manifest_hash", "plan", "ingestion_receipt", "application", "request",
-                     "source_limits", "lifecycle", "graph_before", "graph_after")
+                     "source_limits", "lifecycle", "graph_before", "graph_after",
+                     "classification", "fixture_defaults")
                     if name in seed})
                 if case_id.startswith("C07-"):
                     outcome["setup_receipt"].update(wire({name: seed[name] for name in
@@ -534,13 +548,49 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             from deskpet.quality.corpus_approval import ReadOnlyMemoryApproval
             approval = ReadOnlyMemoryApproval(ingress=main._sdk_ingress,
                 persist=lambda name, value: write_result(directory / (name + ".json"), value))
+            turn_options = {}
+            if c12_input is not None:
+                # Real signed-control configuration of the bound audience/purpose,
+                # then the one declared USER item. Chat text grants nothing.
+                from deskpet.memory.human_memory_service import QueueTurnRequest
+                from deskpet.quality.corpus_c12_control import FixtureSignedControl
+                outcome["stage"] = "recipient_disclosure_binding"
+                fixture_control = await FixtureSignedControl(root=directory / "runtime" / "corpus-control").start()
+                if fixture_control.auth() != auth:
+                    raise ValueError("c12_control_owner_differs")
+                configuration = await fixture_control.configure_disclosure(service,
+                    request_id="corpus-c12:" + case_id + ":" + c12_input["binding_hash"],
+                    selection=c12_input["selection"])
+                if {key: configuration[key] for key in c12_input["selection"]} != c12_input["selection"]:
+                    raise ValueError("c12_disclosure_configuration_differs")
+                outcome["disclosure_binding"] = wire(dict(configuration=configuration,
+                    selection=c12_input["selection"], declaration=c12_input["declaration"],
+                    user_span=c12_input["user_span"], trusted_fields=c12_input["trusted_fields"],
+                    explicit_forwarding=c12_input["explicit_forwarding"], delivery_gap=c12_input["delivery_gap"],
+                    source_missing_requirements=c12_input["source_missing_requirements"],
+                    binding_hash=c12_input["binding_hash"], control=fixture_control.receipt()))
+                write_result(directory / "disclosure-binding.json", outcome["disclosure_binding"])
+                turn_options = dict(queue_request=QueueTurnRequest(None, "scoring-turn-1", text,
+                    disclosure_binding_ref=configuration["binding_ref"], input_declaration=c12_input["declaration"]),
+                    enqueue_scope=fixture_control.request_scope)
+                outcome["stage"] = "original_scoring_turn"
             try:
                 executed = await execute_scoring_turn(service=service, runtime=runtime,
                     scoring_path=main._state_db_path, subject=auth.subject, text=text,
                     delivery_key="scoring-turn-1", ingestion_worker=worker,
-                    approval_driver=approval)
+                    approval_driver=approval, **turn_options)
                 outcome["queue_receipt"] = wire(executed.queue_receipt)
                 outcome["completed_group"] = wire(executed.completed_group)
+                if c12_input is not None:
+                    from deskpet.memory.current_input_source import read_current_input_source
+                    fact = await read_current_input_source(db_path=main._state_db_path, subject=auth.subject,
+                        turn_id=executed.queue_receipt["turn_ref"])
+                    use = fact["input_use"]
+                    if (use["declaration"] != c12_input["declaration"] or use["selection"] != c12_input["selection"]
+                            or use["disclosure_binding"]["binding_ref"] != configuration["binding_ref"]):
+                        raise ValueError("c12_admitted_input_fact_differs")
+                    outcome["current_input_fact"] = wire(dict(fact_hash=fact["fact_hash"], turn_hash=fact["turn_hash"],
+                        input_use=use, evidence_id=fact["envelope"].evidence_id))
                 outcome["stage"] = "post_terminal_public_trace"
                 outcome["actual_completed_group_available"] = True
                 outcome.update(await collect_turn(main, service, auth.subject, executed.queue_receipt,
@@ -613,6 +663,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                 await task_provider.close()
             except Exception as exc:
                 outcome["cleanup_errors"].append("task_provider:" + type(exc).__name__)
+        if fixture_control is not None:
+            try:
+                fixture_control.close()
+            except Exception as exc:
+                outcome["cleanup_errors"].append("fixture_control:" + type(exc).__name__)
         if retained_provider is not None:
             try:
                 await retained_provider.close()

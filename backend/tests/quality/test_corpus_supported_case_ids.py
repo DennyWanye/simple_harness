@@ -9,16 +9,16 @@ from deskpet.quality.corpus_scoring import (
 
 def test_supported_case_ids_are_exact_and_disjoint_from_known_gaps():
     ids = supported_case_ids()
-    assert len(ids) == 200
+    assert len(ids) == 220
     by_category = {}
     for case_id in ids:
         by_category.setdefault(case_id[:3], set()).add(case_id)
     assert {k: len(v) for k, v in sorted(by_category.items())} == {
         "C01": 20, "C02": 19, "C03": 19, "C04": 20, "C05": 8, "C06": 19, "C07": 20,
-        "C08": 19, "C09": 19, "C10": 20, "C11": 17,
+        "C08": 19, "C09": 19, "C10": 20, "C11": 17, "C12": 20,
     }
     for gap in ("C02-19", "C03-20", "C05-12", "C06-01", "C08-20", "C09-13", "C11-12", "C11-16",
-                "C11-19", "C12-01"):
+                "C11-19"):
         assert gap not in ids
     assert not (c08_retained_case_ids() & c08_scalar_case_ids())
     assert c08_retained_case_ids() | c08_scalar_case_ids() == {c for c in ids if c.startswith("C08-")}
