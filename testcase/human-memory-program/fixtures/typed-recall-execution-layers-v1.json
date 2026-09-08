@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "fixture_id": "typed-recall-execution-layers-v1",
-  "fixture_revision": 14,
+  "fixture_revision": 15,
   "typed_recall_fixture": "typed-recall-v3.json",
-  "typed_recall_fixture_revision": 16,
-  "typed_recall_fixture_sha256": "31fbb8bc8186143f5a06e77af42b36b56de8bb36e40ffa65edb5f60c013225c9",
+  "typed_recall_fixture_revision": 17,
+  "typed_recall_fixture_sha256": "d63b0bb6dbd19874de86aa96622d0b327adbc4e34502970d1de093a49aef5d09",
   "quality_gate": "NOT_RUN/BLOCKED",
   "all_cells": {
     "count": 401,
@@ -147,5 +147,19 @@
     "21be7cffe85a82b4a6c4c04b7444a8e957353086465a8cd32ede4d95c3fa245d",
     "db7a68a48afdf12f931ff59b1a6c9261e6ff9e4a137193b2d8d8ae37e3df16f1",
     "2f483112ffd4ca3478f979f5a2bacb436d215b465576b9a1d911cc2374cfe97d"
+  ],
+  "layers_change_lineage": [
+    {
+      "entry_id": "LCL-001",
+      "date": "2026-09-09",
+      "layers_revision_from": 14,
+      "layers_revision_to": 15,
+      "previous_layers_sha256": "83238bc6691ba6b1c70a2aa7e0b89a2316f38475f2901b0f35524914389a42aa",
+      "typed_recall_fixture_revision_from": 16,
+      "typed_recall_fixture_revision_to": 17,
+      "previous_typed_recall_fixture_sha256": "31fbb8bc8186143f5a06e77af42b36b56de8bb36e40ffa65edb5f60c013225c9",
+      "scope": "Pin refresh only: follows typed-recall-v3.json fixture_change_lineage FCL-001/FCL-002. all_cells, clean_wheel_public_manager, source_exact_commit_integration and combined_gate are unchanged.",
+      "rationale_zh": "本文件只承载 401 格分层与候选身份 pin。fixture 按封存修订规则改了两处（FCL-001/FCL-002），故此处同步 typed_recall_fixture_revision 与 sha256 并 bump 自身 revision；格集合、格哈希、层划分与 combined_gate 一字未动。"
+    }
   ]
 }

@@ -83,7 +83,13 @@ class AdmissionOracleTests(unittest.IsolatedAsyncioTestCase):
         for name in ('protocol/naked-source-ref', 'protocol/page-wrong-result-hash', 'protocol/page-wrong-coordinate', 'protocol/page-expired-result'):
             self.assertEqual(verdicts[name][1]['status'], 'BLOCKED', name)
             self.assertTrue(verdicts[name][1]['reason'].startswith('PUBLIC_WITNESS_UNAVAILABLE:'))
-        self.assertEqual(verdicts['protocol/page-correct-binding'][1]['reason'], 'FROZEN_128_BYTE_PAGE_BOUND_CANNOT_FIT_PUBLIC_BINDING')
+        # fixture_change_lineage FCL-001 re-sealed the minimal page budget at the exact public
+        # binding size, so the page now succeeds; the remaining blocker is the shared paging
+        # zero-candidate-read witness gap, identical to the three page-rejection cells.
+        page = verdicts['protocol/page-correct-binding']
+        self.assertTrue(page[1]['reason'].startswith('PUBLIC_WITNESS_UNAVAILABLE:'), page[1])
+        self.assertEqual(page[0]['observations']['under_bound']['exception'],
+                         {'type': 'MemoryLimitError', 'reason': 'typed_recall_page_budget_too_small'})
         strict = verdicts['protocol/strict-v3-rejected'][0]
         for attack in ('memory_called', 'extra_call', 'parser_input', 'reason', 'state'):
             row = copy.deepcopy(strict); o = row['observations']
@@ -107,8 +113,10 @@ class AdmissionOracleTests(unittest.IsolatedAsyncioTestCase):
         verdicts = {r['cell_id']: (r, oracle.assess_cell(fx, r)) for r in rows}
         expected = {'contest-no-evidence': 'PASS', 'contest-stale-target': 'PASS', 'contest-cross-principal': 'PASS', 'contest-cross-memory': 'PASS',
                     'contest-same-content': 'PUBLIC_WITNESS_UNAVAILABLE:', 'contest-evidence-not-distinct': 'PUBLIC_WITNESS_UNAVAILABLE:',
-                    'contest-active-group-exists': 'PUBLIC_WITNESS_UNAVAILABLE:', 'contest-nested': 'PUBLIC_CONTRACT_CONFLICT:',
-                    'contest-one-member': 'PUBLIC_CONTRACT_CONFLICT:', 'contest-three-members': 'PUBLIC_CONTRACT_CONFLICT:'}
+                    'contest-active-group-exists': 'PUBLIC_WITNESS_UNAVAILABLE:',
+                    'contest-nested': 'DUPLICATE_OF_POSITIVE_INVARIANT_WITNESS:',
+                    'contest-one-member': 'DUPLICATE_OF_POSITIVE_INVARIANT_WITNESS:',
+                    'contest-three-members': 'DUPLICATE_OF_POSITIVE_INVARIANT_WITNESS:'}
         for name, want in expected.items():
             row, verdict = verdicts['conflict-state/' + name]
             if want == 'PASS':
@@ -151,7 +159,17 @@ class AdmissionOracleTests(unittest.IsolatedAsyncioTestCase):
             if name.endswith('observed_behavior:repeated_observation'):
                 self.assertEqual(verdict['status'], 'BLOCKED'); self.assertIn('PROMOTION_PATH', verdict['reason'])
             elif name.endswith('semantic:unknown:user_confirmed'):
-                self.assertEqual(verdict['reason'], 'PUBLIC_CASE_PRECONDITION_REJECTED:MemoryValidationError:mutation_unknown_must_be_unverified')
+                # The public contract refuses the pair at ingress; the cell is proved by the
+                # exact refusal plus its paired permitted control (forbidden oracle).
+                self.assertEqual(verdict['status'], 'PASS', (name, verdict))
+                witness = row['observations']['forbidden']
+                self.assertEqual(row['observations']['exception'],
+                                 {'type': 'MemoryValidationError', 'reason': 'mutation_unknown_must_be_unverified'})
+                self.assertEqual(len(witness['zero_recall']['execution']['result']['items']), 0)
+                self.assertEqual(len(witness['control_recall']['execution']['result']['items']), 1)
+                broken = copy.deepcopy(row)
+                broken['observations']['exception']['reason'] = 'something_else'
+                self.assertEqual(oracle.assess_normal(fx, broken)['status'], 'FAIL')
             else:
                 self.assertEqual(verdict['status'], 'PASS', (name, verdict))
                 recall = row['observations']['recalls'][0]['execution']

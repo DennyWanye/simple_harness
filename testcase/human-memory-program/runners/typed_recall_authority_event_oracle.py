@@ -17,6 +17,9 @@ from datetime import datetime
 
 VERSION = 1
 STALE = {'type': 'MemoryValidationError', 'reason': 'RECALL_AUTHORITY_STALE'}
+# fixture_change_lineage FCL-002: a revoke restores the exact bound source set, so the
+# 0.6.29 use fence admits the fresh use with an advanced authority epoch.
+ADVANCED = 'AUTHORIZED_WITH_ADVANCED_AUTHORITY_EPOCH'
 # Events whose net effect on the bound source set is the identity: since M0.6.29 the use fence
 # revalidates every bound source, so these can no longer produce the sealed stale rejection.
 RESTORING_EVENTS = {'revoke'}
@@ -167,7 +170,8 @@ def assess(fixture, cell, shared):
             # M0.6.29 replaced the authority-epoch equality test with a non-regression test: an advanced
             # epoch is admitted when every bound source revalidates inside the same write lock. A revoke
             # restores exactly the sources the old result was bound to, so no revoke can make that result
-            # stale any more. Witness the admission precisely, then report the sealed row as conflicting.
+            # stale any more. The sealed row was amended to the admitted outcome (FCL-002); the
+            # obligation is stronger, not weaker, and reverts to FAIL if the candidate rejects again.
             receipt = after_use.get('receipt')
             require(receipt is not None and 'exception' not in after_use,
                     'restoring event: fresh attempt was neither admitted nor a witnessed rejection')
@@ -178,14 +182,12 @@ def assess(fixture, cell, shared):
                     and receipt['result_hash'] == first['receipt']['result_hash']
                     and receipt['receipt_id'] != first['receipt']['receipt_id'],
                     'admitted receipt is not a distinct receipt over the identical bound source set')
-            conflict.append('PUBLIC_CONTRACT_CONFLICT:authority_event_cases[' + event + '].expected_old_result_use is '
-                            + STALE['reason'] + ', but M0.6.29 admits a fresh use whose authority epoch advanced '
-                            'when every bound source revalidates; a revoke restores exactly the bound sources, so the '
-                            'sealed rejection is not producible by any public construction on this candidate '
-                            '(witnessed: receipt authority_epoch ' + str(receipt['authority_epoch']) + ' > bound '
-                            + str(epoch0) + ', identical item_bindings, unchanged policy_hash)')
+            require(row['expected_old_result_use'] == ADVANCED,
+                    'restoring event row is not sealed as the admitted advanced-epoch use')
             checks.append('first use receipt, then a second receipt over the identical bound set at the advanced epoch (M0.6.29 use fence)')
         else:
+            require(row['expected_old_result_use'] in {STALE['reason'], 'RECALL_RESULT_EXPIRED', 'RECALL_CONTEXT_EXPIRED'},
+                    'non-restoring event row is not sealed as a rejection')
             require(after_use.get('exception') == STALE and 'receipt' not in after_use, 'old result use after the event was not rejected with the public stale code')
             checks.append('first use receipt then exact stale rejection of a fresh attempt on the same result')
         post = o['after']; shared['check_execution_wire'](post['execution'], post['context'], post['plan'])

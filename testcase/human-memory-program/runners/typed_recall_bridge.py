@@ -20,8 +20,8 @@ from email.parser import BytesParser
 from pathlib import Path
 
 SCHEMA = "typed-recall-execution-bridge/v1"
-FIXTURE_SHA = "31fbb8bc8186143f5a06e77af42b36b56de8bb36e40ffa65edb5f60c013225c9"
-LAYERS_SHA = "83238bc6691ba6b1c70a2aa7e0b89a2316f38475f2901b0f35524914389a42aa"
+FIXTURE_SHA = "d63b0bb6dbd19874de86aa96622d0b327adbc4e34502970d1de093a49aef5d09"
+LAYERS_SHA = "101c14ba058dce423a1c59b682e28c1b508ba6011f534fa7382d0dfa9dfecc0a"
 ORACLE_BLOCKERS = []
 
 
@@ -308,7 +308,8 @@ def _execute(args, layers, expected):
         runner_dir / "typed_recall_procedure_oracle.py", runner_dir / "typed_recall_prospective_oracle.py",
         runner_dir / "typed_recall_prospective_lifecycle_oracle.py",
         runner_dir / "typed_recall_trigger_oracle.py", runner_dir / "typed_recall_authority_event_oracle.py",
-        runner_dir / "typed_recall_selection_oracle.py"]}
+        runner_dir / "typed_recall_selection_oracle.py",
+        runner_dir / "typed_recall_forbidden_oracle.py"]}
     if args.source_adapter:
         execution_code[str(Path(args.source_adapter).resolve())]=file_sha(args.source_adapter)
     python = args.consumer_python
@@ -491,9 +492,11 @@ def _execute(args, layers, expected):
                 row.update(assessment_scope='NOT_SELECTED',blocker_categories=[])
             elif reason=='CANDIDATE_OBSERVATION_ONLY':
                 row.update(assessment_scope='OBSERVATION_ONLY',blocker_categories=[])
-            elif reason=='CELL_EXECUTOR_NOT_IMPLEMENTED' or 'PROMOTION_PATH_NOT_EXECUTED' in reason:row['blocker_categories']=['EXECUTOR_UNIMPLEMENTED']
-            elif reason.startswith(('PUBLIC_CASE_PRECONDITION_REJECTED','STATE_PUBLIC_PRECONDITION:','PUBLIC_CONTRACT_CONFLICT:')) or any(v in reason for v in (
-                    'APPLICABILITY_OR_SIGNAL','CANARY_AND_CROSS_SCOPE','128_BYTE','SHORT_PUBLIC_PRECONDITION','CONSTRUCTION_CONFLICT')):
+            elif reason.startswith('SDK_INCREMENT_REQUIRED:'):row['blocker_categories']=['SDK_INCREMENT_REQUIRED']
+            elif reason.startswith('DUPLICATE_OF_POSITIVE_INVARIANT_WITNESS:'):row['blocker_categories']=['DUPLICATE_UNTESTABLE']
+            elif reason.startswith('CELL_EXECUTOR_NOT_IMPLEMENTED') or 'PROMOTION_PATH_NOT_EXECUTED' in reason:row['blocker_categories']=['EXECUTOR_UNIMPLEMENTED']
+            elif reason.startswith(('PUBLIC_CASE_PRECONDITION_REJECTED','STATE_PUBLIC_PRECONDITION:','PUBLIC_CONTRACT_CONFLICT:','SEALED_PAGE_BOUND')) or any(v in reason for v in (
+                    'APPLICABILITY_OR_SIGNAL','CANARY_AND_CROSS_SCOPE','SHORT_PUBLIC_PRECONDITION','CONSTRUCTION_CONFLICT')):
                 row['blocker_categories']=['FIXTURE_INVALID_OR_INSUFFICIENT']
             elif any(v in reason for v in ('CANDIDATE_PIN','SOURCE_EXECUTOR_NOT_CONFIGURED','environment','wheel')):
                 row['blocker_categories']=['EXTERNAL_DEPENDENCY']
