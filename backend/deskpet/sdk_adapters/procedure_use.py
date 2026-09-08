@@ -53,9 +53,6 @@ _GUIDANCE = {
         "the integer revision returned beside it.", False),
     "procedure_use_arguments_invalid": (
         "Pass exactly memory_id, revision and steps; no other fields.", False),
-    "procedure_use_already_complete": (
-        "This Procedure use is already complete in this Run; do not bind it "
-        "again. Continue with the remaining work.", False),
     "procedure_same_run_changed_use": (
         "The Procedure binding for this Run is immutable and was already set "
         "by your first procedure_use call. Call the steps you already bound, "

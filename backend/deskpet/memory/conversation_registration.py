@@ -238,19 +238,31 @@ class PrimaryConversationAuthority:
             children = (assistant,)
         sources = ((user, user_receipt, "/text"),
                    *((envelope, receipt, "/source/message/content") for envelope, receipt in children))
+        # A tool call denied before dispatch is archived in ``messages`` but is
+        # not one of the group's evidence items, so the group's item ordinals
+        # can be shorter than the transcript. Roles and Scope sources must still
+        # be read at each item's own transcript ordinal.
+        transcript = (1, 2)
+        if v2:
+            from deskpet.memory.primary_message_v2 import item_ordinals
+            transcript = item_ordinals(messages, payload["tool_causal_sources"])
+            if len(transcript) != len(sources):
+                raise RuntimeError("primary_message_v2_source_mismatch")
         manifest = canonical_hash({"domain": ISSUER + "/group", "payload": {
             "host_run_id": host_run_id, "terminal_receipt_hash": identity.host_receipt_hash,
             "sdk_event_hash": identity.raw_sdk_event_hash,
             "items": [{"evidence_id": env.evidence_id, "envelope_hash": env.envelope_hash,
-                       "pointer": pointer, "role": messages[i]["role"], "ordinal": i + 1}
+                       "pointer": pointer, "role": messages[transcript[i] - 1]["role"], "ordinal": i + 1}
                       for i, (env, _, pointer) in enumerate(sources)],
         }})
         scope_map = {item["item_ordinal"]: item["task_scope_id"] for item in payload.get("tool_scope_sources", ())} if v3 else {}
+        group_ordinals = {ordinal: index + 1 for index, ordinal in enumerate(transcript)}
         return ConversationGroup(host_run_id, tuple(self._registration(run, source, i + 1, manifest, len(sources),
-            task_scope_id=scope_map.get(i + 1, run["task_scope_id"]))
+            task_scope_id=scope_map.get(transcript[i], run["task_scope_id"]), group_ordinals=group_ordinals)
             for i, source in enumerate(sources)), user_lineage, (terminal, terminal_receipt))
 
-    def _registration(self, run, source, ordinal, manifest, group_count=2, *, task_scope_id=None):
+    def _registration(self, run, source, ordinal, manifest, group_count=2, *, task_scope_id=None,
+                      group_ordinals=None):
         envelope, receipt, pointer = source
         kind = envelope.source_kind.value
         role, actor, provenance = {
@@ -261,7 +273,7 @@ class PrimaryConversationAuthority:
         link = None
         if kind == "tool_result":
             from deskpet.memory.primary_message_v2 import tool_link
-            link = tool_link(envelope)
+            link = tool_link(envelope, group_ordinals)
         item = h.EvidenceItemAuthority(
             schema_version=h.EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
             authority_id=_stable("item", [envelope.envelope_hash, pointer]),

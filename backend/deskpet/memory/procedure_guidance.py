@@ -76,8 +76,9 @@ def bind_next_action(calls):
         "grants no extra permission by itself - you must now issue the bound calls yourself, in "
         f"order: {_step_listing(calls, with_arguments=False)}, each with exactly the arguments "
         "echoed in bound_steps, copied verbatim (one changed character is rejected). "
-        "Do not call procedure_use again in this run. After the last bound step this run accepts "
-        "no further tool call under the binding, so answer the user directly then."
+        "Do not call procedure_use again in this run. Once the last bound step has succeeded the "
+        "binding is complete and ordinary tool calls are available again, so you can verify the "
+        "result before answering."
     )
 
 
@@ -137,19 +138,13 @@ def _previous_step_not_successful(detail):
     )
 
 
-def _use_already_complete(detail):
-    total = detail["total"]
-    return (
-        f"All {total} bound Procedure steps are already done in this run, so no further tool call "
-        f"is accepted under this binding. {_FROZEN} Answer the user with the result."
-    )
-
-
+# ``procedure_use_already_complete`` used to live here. Since r15 a binding whose
+# last step settled ``succeeded`` simply stops governing the Run, so the code has
+# no reachable raise site and the model is never told to stop calling tools.
 _DETAILED = {
     "procedure_call_not_bound_step": _call_not_bound_step,
     "procedure_same_run_changed_use": _same_run_changed_use,
     "procedure_previous_step_not_successful": _previous_step_not_successful,
-    "procedure_use_already_complete": _use_already_complete,
 }
 
 # Codes reachable from ``before_call`` that carry no per-step detail.

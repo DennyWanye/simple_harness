@@ -29,13 +29,16 @@ from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 
 from deskpet.memory.human_memory_service import CreateTaskScopeRequest, QueueTurnRequest
+from deskpet.memory.memory_ingestion_outbox import MemoryIngestionOutboxWorker
 from deskpet.memory.procedure_applicability import ProcedureUseRejected
 from deskpet.memory.procedure_guidance import (
     bind_next_action,
     bound_step_calls,
     call_rejection_public_message,
 )
+from deskpet.memory.short_indexing import PrimaryShortIndexingService
 from deskpet.sdk_adapters.context_route import local_owner_auth
+from deskpet.sdk_adapters.tools import ProductToolRegistration
 from tests.memory.test_procedure_recovery_runtime import session
 from tests.memory.test_procedure_scope_runtime import STEPS, UseProvider
 from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
@@ -58,7 +61,7 @@ def test_the_rejection_keeps_its_stable_code_while_carrying_actionable_detail():
     assert str(error) == "procedure_call_not_bound_step"
     assert error.detail == {"total": 2}
     # Every existing raise site passes no detail and must stay unchanged.
-    assert ProcedureUseRejected("procedure_use_already_complete").detail is None
+    assert ProcedureUseRejected("procedure_persisted_body_corrupt").detail is None
 
 
 def test_bound_steps_echo_the_exact_calls_in_order():
@@ -81,9 +84,9 @@ def test_next_action_says_the_binding_is_frozen_and_names_the_calls_to_issue():
     assert "step 1 `write_file`" in text and "step 2 `write_file`" in text
     assert "verbatim" in text
     assert "Do not call procedure_use again in this run." in text
-    # The binding blocks every later tool call in the Run, so say so up front
-    # instead of letting the model plan a verification read it cannot make.
-    assert "no further tool call under the binding" in text
+    # r15: the binding stops governing the Run once its last step succeeds, so
+    # the model is told it may verify the result instead of stopping there.
+    assert "the binding is complete and ordinary tool calls are available again" in text
 
 
 def test_not_bound_step_names_the_ordinal_tool_and_exact_expected_arguments():
@@ -123,15 +126,18 @@ def test_same_run_rebinding_is_answered_with_the_binding_that_already_stands():
     assert "instead of binding again" in message
 
 
-def test_a_failed_prefix_and_a_finished_use_both_say_what_to_do_next():
+def test_a_failed_prefix_says_what_to_do_next_and_a_finished_use_has_no_denial():
     failed = call_rejection_public_message(ProcedureUseRejected(
         "procedure_previous_step_not_successful", detail={"failed_ordinal": 1, "total": 2}))
     assert "Step 1 of the 2 bound Procedure steps did not succeed" in failed
     assert "Report the failure to the user" in failed
-    complete = call_rejection_public_message(ProcedureUseRejected(
-        "procedure_use_already_complete", detail={"total": 2}))
-    assert "All 2 bound Procedure steps are already done" in complete
-    assert "Answer the user with the result." in complete
+    # r15 retired procedure_use_already_complete: a completed binding stops
+    # governing the Run instead of refusing every later call.
+    from deskpet.memory import procedure_guidance
+    from deskpet.sdk_adapters import procedure_use as procedure_use_adapter
+    assert "procedure_use_already_complete" not in procedure_guidance._DETAILED
+    assert "procedure_use_already_complete" not in procedure_guidance._STATIC
+    assert "procedure_use_already_complete" not in procedure_use_adapter._GUIDANCE
 
 
 def test_an_unmapped_pre_call_denial_still_names_its_code_and_stops_the_loop():
@@ -275,3 +281,201 @@ async def test_the_r14_loop_now_recovers_from_the_tool_answers_without_loosening
         reservations = await ctx.memory.procedure_runtime.store.reservations(rows[0]["use_id"])
         assert [item["step_ordinal"] for item in reservations] == [1, 2]
         assert [item["call"]["tool"] for item in reservations] == ["write_file", "write_file"]
+
+
+# --------------------------------------------------------------------------
+# r15 blocker 1: verifying the result after the bound steps.
+# --------------------------------------------------------------------------
+
+
+def read_file_registration(root):
+    """A real non-control read tool, so the journey's step 5 can be replayed."""
+    async def handler(arguments, _context):
+        return {"path": arguments["path"], "content": (root / arguments["path"]).read_text()}
+    return ProductToolRegistration(name="read_file", description="Read one file from the task workspace",
+        input_schema={"type": "object", "required": ["path"], "additionalProperties": False,
+                      "properties": {"path": {"type": "string", "maxLength": 512}}},
+        handler=handler, dispatch_kind="async", permission_category="read_file",
+        projectless_admission="safe", metadata={"source": "test-read-file", "version": "1",
+            "stable_handler_id": "test.read_file.v1"})
+
+
+class VerifyingProvider(UseProvider):
+    """The native journey's step 5: run the Procedure, then read both files back."""
+
+    def configure(self, scope_id, memory_id, revision, index):
+        super().configure(scope_id, memory_id, revision, index)
+        self.read_values: list[dict] = []
+        self.rejections: list[str] = []
+
+    async def invoke(self, request, *, cancel):
+        n = self.stage
+        self.stage += 1
+        self.requests.append(request)
+        texts = [m.content for m in request.messages
+                 if m.role.value == "tool" and isinstance(m.content, str)]
+        results = [_json_or_none(text) for text in texts]
+        self.rejections = [value["error_code"] for value in results
+                           if isinstance(value, dict) and value.get("error_code")]
+        bound = [{"path": f"record-{self.index}.txt", "content": "actual record"},
+                 {"path": f"backup-{self.index}.txt", "content": "actual record"}]
+        # Both step tools and the verification tool are activated before the
+        # binding: tool_search/describe/activate are controls, but keeping them
+        # ahead of procedure_use is what a real Run does anyway.
+        if n == 0:
+            name, args = "context_route", {"route": "resume_existing", "task_scope_id": self.scope_id}
+        elif n in (1, 4):
+            name, args = "tool_search", {"query": "write_file" if n == 1 else "read_file"}
+        elif n in (2, 5):
+            matches = results[-1]["value"]["matches"]
+            wanted = "write_file" if n == 2 else "read_file"
+            name, args = "tool_describe", {"capability_id": next(
+                m["capability_id"] for m in matches if m["capability_id"].endswith(wanted))}
+        elif n in (3, 6):
+            name, args = "tool_activate", {key: results[-1]["value"][key]
+                                           for key in ("capability_id", "schema_hash", "describe_nonce")}
+        elif n == 7:
+            name, args = "procedure_use", {"memory_id": self.memory_id, "revision": self.revision,
+                "steps": [dict(text=text, tool="write_file", arguments_json=json.dumps(value))
+                          for text, value in zip(STEPS, bound, strict=True)]}
+        elif n in (8, 9):
+            self.bind_answer = results[-1]["value"] if n == 8 else self.bind_answer
+            echoed = self.bind_answer["bound_steps"][n - 8]
+            name, args = echoed["tool"], echoed["arguments"]
+        elif n in (10, 11):
+            # The user asked to read both files back and compare. Under the old
+            # barrier this was procedure_use_already_complete.
+            name, args = "read_file", {"path": bound[n - 10]["path"]}
+        elif n == 12:
+            self.read_values = [value["value"] for value in results[-2:]]
+            instruction = next(json.loads(m.content) for m in request.messages if m.role.value == "system"
+                and isinstance(m.content, str) and '"task_scope_closure_required"' in m.content)
+            name, args = "task_scope_update", {"outcome": "no_mutation",
+                "base_revision": instruction["current_revision"],
+                "closure_reason": "Both actual files were written and read back identical.",
+                "evidence_refs": instruction["allowed_evidence_refs"],
+                "idempotency_key": f"verify-close-{self.index}"}
+        else:
+            return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "两份文件内容一致。"),
+                model="model", usage=ProviderUsage(10, 10, 20))
+        return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "执行 " + name),
+            tool_calls=(ProviderToolCall(h.CallId(f"verify-{self.index}-{n}"), name, args),),
+            model="model", usage=ProviderUsage(10, 10, 20))
+
+
+@pytest.mark.asyncio
+async def test_after_the_last_bound_step_succeeds_ordinary_calls_verify_the_result(tmp_path):
+    provider = VerifyingProvider()
+    async with session(tmp_path, provider,
+                       extra_registrations=(read_file_registration(tmp_path / "workspace"),)) as ctx:
+        scope = await ctx.service.create_task_scope(CreateTaskScopeRequest(
+            "verify-scope", "写记录和备份", "Write both files", "verify-create"))
+        await bind_scope_root(ctx.state, scope["scope_ref"], ctx.root, tag="verify-root")
+        provider.configure(scope["scope_ref"], ctx.memory_id, ctx.revision, 1)
+        await ctx.service.enqueue_turn(QueueTurnRequest(
+            None, "verify-turn", "按流程执行，做完把两个文件读出来核对内容一致。"))
+        await ctx.runtime.after_enqueue(subject=local_owner_auth().subject)
+        await asyncio.wait_for(ctx.runtime.drain(), 60)
+        assert ctx.runtime.last_error is None
+
+        # 1. Nothing in the Run was rejected: the two verification reads after
+        #    the last bound step were admitted, not procedure_use_already_complete.
+        assert provider.rejections == []
+        assert [value["content"] for value in provider.read_values] == ["actual record"] * 2
+        assert [value["path"] for value in provider.read_values] == ["record-1.txt", "backup-1.txt"]
+
+        # 2. The binding still governed exactly its own two steps, in order. The
+        #    verification reads reserved nothing and are attributed to no step.
+        with sqlite3.connect(ctx.state) as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute("SELECT use_id FROM procedure_uses").fetchall()
+        assert len(rows) == 1
+        reservations = await ctx.memory.procedure_runtime.store.reservations(rows[0]["use_id"])
+        assert [(item["step_ordinal"], item["call"]["tool"]) for item in reservations] == [
+            (1, "write_file"), (2, "write_file")]
+
+        # 3. The observation is exactly one success, unchanged by the reads.
+        manager = await ctx.memory.manager()
+        assert await MemoryIngestionOutboxWorker(
+            ctx.state, ctx.memory.manager, owner_id="verify-outbox").run_once() == "delivered"
+        authority = ctx.memory.conversation_evidence_authority
+        run_ids = await authority.completed_run_ids()
+        assert len(run_ids) == 1
+        group = await authority.registrations_for_run(run_ids[0])
+        await PrimaryShortIndexingService(authority, manager=manager,
+                                          principal=ctx.memory.principal()).register_group(group)
+        await ctx.memory.procedure_runtime.observe_group(group, manager)
+        applied = await ctx.memory.procedure_runtime.store.journal(rows[0]["use_id"], "applied")
+        assert applied["result"]["independent_successes"] == 1
+        assert applied["result"]["lifecycle_state"] == "draft"
+
+
+# --------------------------------------------------------------------------
+# r15 blocker 2: a Run that contains a pre-dispatch denial keeps its group.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_run_with_a_denied_call_still_registers_its_group_and_observation(tmp_path):
+    """The r14 recovery Run must still count. Regression oracle: before this
+    fix the denied ``write_file`` had no ``primary_effect_identities`` row, so
+    the terminal fell back to ``primary-message-v1`` and
+    ``registrations_for_run`` raised ``terminal_multiple_items_not_representable``
+    - the Run's Procedure observation and short indexing were both lost."""
+    provider = ReboundProvider()
+    async with session(tmp_path, provider) as ctx:
+        scope = await ctx.service.create_task_scope(CreateTaskScopeRequest(
+            "denied-scope", "写记录和备份", "Write both files", "denied-create"))
+        await bind_scope_root(ctx.state, scope["scope_ref"], ctx.root, tag="denied-root")
+        provider.configure(scope["scope_ref"], ctx.memory_id, ctx.revision, 1)
+        await ctx.service.enqueue_turn(QueueTurnRequest(None, "denied-turn", "执行记录和备份两步。"))
+        await ctx.runtime.after_enqueue(subject=local_owner_auth().subject)
+        await asyncio.wait_for(ctx.runtime.drain(), 60)
+        assert ctx.runtime.last_error is None
+
+        with sqlite3.connect(ctx.state) as db:
+            db.row_factory = sqlite3.Row
+            terminal = json.loads(db.execute(
+                "SELECT payload_json FROM human_memory_evidence WHERE source_kind='runtime_event'"
+            ).fetchone()["payload_json"])
+        # The whole transcript is archived, including the denial the model saw.
+        denials = [message for message in terminal["messages"] if message["role"] == "tool"
+                   and json.loads(message["content"])["error_code"] == "procedure_call_not_bound_step"]
+        assert len(denials) == 1
+        assert terminal["message_source_contract"] in {"primary-message-v2", "primary-message-v3"}
+        # One settled fact per tool item except the denied one.
+        tool_items = [ordinal for ordinal, message in enumerate(terminal["messages"], 1)
+                      if message["role"] == "tool"]
+        facts = [fact["item_ordinal"] for fact in terminal["tool_causal_sources"]]
+        assert len(facts) == len(tool_items) - 1
+        assert set(facts) < set(tool_items)
+
+        manager = await ctx.memory.manager()
+        assert await MemoryIngestionOutboxWorker(
+            ctx.state, ctx.memory.manager, owner_id="denied-outbox").run_once() == "delivered"
+        authority = ctx.memory.conversation_evidence_authority
+        run_ids = await authority.completed_run_ids()
+        assert len(run_ids) == 1
+        group = await authority.registrations_for_run(run_ids[0])
+        # The denial is archived but is not conversation evidence: it was
+        # written by a Host gate, not by a tool, so it is not TRUSTED_TOOL.
+        assert len(group.registrations) == len(terminal["messages"]) - 1
+        tools = [item for item in group.registrations
+                 if item.envelope.source_kind.value == "tool_result"]
+        assert len(tools) == len(tool_items) - 1
+        assert all(item.metadata.tool_causal_link is not None for item in tools)
+        assert all(item.metadata.item_ordinal == index + 1
+                   for index, item in enumerate(group.registrations))
+        assert all(item.metadata.group_item_count == len(group.registrations)
+                   for item in group.registrations)
+        assert not any(json.loads(item.envelope.sanitized_payload["source"]["message"]["content"]
+                                  )["error_code"] == "procedure_call_not_bound_step" for item in tools)
+
+        # Short indexing and the Procedure observation both run on this group.
+        await PrimaryShortIndexingService(authority, manager=manager,
+                                          principal=ctx.memory.principal()).register_group(group)
+        await ctx.memory.procedure_runtime.observe_group(group, manager)
+        use = await ctx.memory.procedure_runtime.store.use_for_run(group.terminal_source[0].run_id)
+        applied = await ctx.memory.procedure_runtime.store.journal(use["use_id"], "applied")
+        assert applied["result"]["independent_successes"] == 1
+        assert applied["result"]["lifecycle_state"] == "draft"

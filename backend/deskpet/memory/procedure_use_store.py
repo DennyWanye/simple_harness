@@ -159,8 +159,17 @@ class ProcedureUseStore:
                             detail={"failed_ordinal": len(reservations), "total": len(use["steps"])})
                 ordinal = len(reservations) + 1
                 if ordinal > len(use["steps"]):
-                    raise ProcedureUseRejected("procedure_use_already_complete",
-                        detail={"total": len(use["steps"])})
+                    # r15: every bound step is reserved and the last one settled
+                    # ``succeeded`` (the check above), so the binding is complete
+                    # and its observation is already determined -
+                    # ``_observed_outcome`` reads reservations only. The Run may
+                    # make ordinary calls again (the user asked to read both
+                    # files back and compare in the same turn). Nothing relaxes:
+                    # the binding stays immutable, this call reserves no step and
+                    # is attributed to no Procedure step, and a step that failed
+                    # still stops here with ``procedure_previous_step_not_successful``.
+                    await db.commit()
+                    return None
                 step = use["steps"][ordinal - 1]
                 if signature != {key: step[key] for key in ("tool", "arguments_hash")}:
                     from deskpet.memory.procedure_guidance import bound_step_calls
