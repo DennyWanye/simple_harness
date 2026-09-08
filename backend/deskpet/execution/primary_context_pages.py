@@ -11,6 +11,7 @@ from collections.abc import Mapping
 
 import aiosqlite
 
+from deskpet.execution.primary_history import transcript_matches
 from deskpet.sdk_adapters.causal_groups import DEFAULT_LARGE_RESULT_BYTES
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
@@ -111,7 +112,11 @@ async def _source_group(db, stack, run, evidence_id, envelope_hash):
     terminal, messages = stack.read_settled_primary_run(envelope.run_id,
         current_text=payload["messages"][0]["content"])
     identity.verify_sdk_terminal(terminal)
-    if list(messages) != payload["messages"]:
+    # 2026-09-08 HM-TO-A6：终态观察可能把超大的 tool_result 正文降级成内容寻址的
+    # 省略标记（见 primary_history.bound_terminal_messages）。这里仍然逐条比对
+    # 已结算的 SDK transcript，只是额外接受「标记恰好等于该条正文的 sha256 标记」
+    # 这一种差异——标记本身可复算，所以不放松任何完整性。
+    if not transcript_matches(messages, payload["messages"]):
         raise PrimaryContextPageUnavailable("primary_page_transcript_mismatch")
     return dict(source_ref=evidence_id, source_hash=envelope_hash,
                 terminal_state="COMPLETED", messages=payload["messages"])

@@ -28,6 +28,39 @@ class ShortIndexingResult:
         ], "recall": [], "short_horizon": []}
 
 
+# 2026-09-08 HM-TO-A6: a group whose terminal/message envelope exceeds Memory's
+# inline-payload ceiling can never be admitted.  Detecting it *before* the first
+# write turns an endless per-cycle re-registration (each cycle re-ingested the
+# same USER envelope — 28 `memory.evidence_ingestion_replayed` lines a minute in
+# `native-a6-7cec5249`) into one deterministic, permanently blocked group.
+SOURCE_UNADMISSIBLE = "short_group_source_unadmissible"
+
+
+def assert_group_admissible(group) -> None:
+    """Fail the whole group before its first write if any source is doomed.
+
+    Every pair here is handed to ``ingest_committed_evidence`` /
+    ``admit_evidence_source``, both of which run the SDK's own
+    ``validate_sanitized_evidence``.  Checking first turns "ingest the USER
+    envelope, then raise on the terminal" into one deterministic rejection.
+    """
+
+    from deskpet.memory.primary_visibility import (
+        PrimaryVisibilityError,
+        assert_source_admissible,
+    )
+
+    pairs = [(r.envelope, r.admission_receipt) for r in group.registrations]
+    terminal = getattr(group, "terminal_source", None)
+    if terminal:
+        pairs.append((terminal[0], terminal[1]))
+    for envelope, receipt in pairs:
+        try:
+            assert_source_admissible(envelope, receipt)
+        except PrimaryVisibilityError as exc:
+            raise ConversationRegistrationUnavailable(SOURCE_UNADMISSIBLE) from exc
+
+
 class PrimaryShortIndexingService:
     def __init__(self, authority: PrimaryConversationAuthority, *, manager, principal, fault_hook=None):
         if principal.actor_id != authority.subject:
@@ -44,6 +77,7 @@ class PrimaryShortIndexingService:
         admit_source = getattr(self.manager, "admit_evidence_source", None)
         if not callable(admit_source):
             raise ConversationRegistrationUnavailable("short_source_admission_unavailable")
+        assert_group_admissible(group)
         for index, registration in enumerate(group.registrations):
             # Preserve the actual USER lineage even if the Memory DB was
             # recreated while the Host's delivered outbox remained intact.
@@ -78,9 +112,16 @@ class PrimaryShortIndexingService:
         # scan; known source/representation gaps remain explicit blocked rows.
         for run_id in await self.authority.completed_run_ids():
             try:
-                groups.append(await self.authority.registrations_for_run(run_id))
+                group = await self.authority.registrations_for_run(run_id)
+                # Task 6 review F-7: a group Memory can never admit is a
+                # `blocked` row like any other source gap. Aborting the whole
+                # scan would let one doomed Run stop every later Run from
+                # being indexed.
+                assert_group_admissible(group)
             except ConversationRegistrationUnavailable as exc:
                 blocked.append((run_id, exc.code))
+                continue
+            groups.append(group)
         for group in groups:
             await self.register_group(group)
         self._fault("short.before_projection")

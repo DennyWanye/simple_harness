@@ -72,6 +72,15 @@ async def test_revoked_unclosed_scope_real_fallback(tmp_path, monkeypatch, crash
         return actual_runtime(**kwargs, closure_fallback=fallback)
     monkeypatch.setattr(runtime_fixture, "ForegroundRuntimeExecutionAuthority", with_fallback)
     failures = []
+    # 2026-09-08 HM-TO-A6：前台驱动改成了有界退避重试（原来一抛异常就永久退出）。
+    # 这个用例验的是「崩在终态提交之前，什么都没有半落库，之后靠重开重放」，
+    # 需要驱动在这一次注入之后就停下；把尝试数固定成 1 就精确保留了原语义，
+    # 而不必把注入改成对每次尝试都成立（那会让幂等的 closure fallback 结算
+    # 被重复观察到，与本用例要验的东西无关）。驱动的重试语义由
+    # test_primary_foreground_runtime 的专门用例覆盖。
+    from deskpet.execution import foreground_runtime as _fr
+    monkeypatch.setattr(_fr, "DRIVER_RETRY_ATTEMPTS", 1)
+
     def crash(point):
         if crash_before_terminal and point == "terminal.before_commit" and not failures:
             failures.append(point)

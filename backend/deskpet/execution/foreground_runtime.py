@@ -40,7 +40,7 @@ from deskpet.execution.foreground_queue import (
     RunState,
 )
 from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
-from deskpet.task_scope.protocol import canonical_hash
+from deskpet.task_scope.protocol import canonical_hash, redact_credential_shapes
 
 # S5b Task 6 (review F-9): the only shape a FAILED terminal's public
 # ``error_code`` may take; everything else degrades to the SDK public code.
@@ -49,6 +49,13 @@ TERMINAL_ERROR_CODE_FALLBACK = "driver_failed"
 # Task 4 review F-5: outbox dead-letter reason when the durable Run binding
 # cannot be read at Host terminal time.
 RUN_BINDING_UNAVAILABLE_REASON = "run_binding_unavailable"
+# 2026-09-08 HM-TO-A6: 驱动异常后的有界重试。一次异常就永久退出，会把已受理的
+# 回合永远留在 QUEUED（实测 native-a6-7cec5249：UI 永久「等待主对话就绪」）。
+DRIVER_RETRY_ATTEMPTS = 4
+DRIVER_RETRY_BASE_SECONDS = 0.5
+DRIVER_RETRY_MAX_SECONDS = 8.0
+# 距上次失败安静地跑满这么久，才把重试计数清零（见 _run_driver 的 F-4 注释）。
+DRIVER_RETRY_COOLDOWN_SECONDS = 30.0
 
 
 class ForegroundRuntimeError(RuntimeError):
@@ -395,6 +402,8 @@ class ForegroundRuntimeExecutionAuthority:
         self._driver_started = False
         self._driver_lock = asyncio.Lock()
         self._control_wake = asyncio.Event()
+        # close() 置位；驱动的退避等待观察它，关闭不必等满一次退避。
+        self._shutdown = asyncio.Event()
         self._lease_task: asyncio.Task[None] | None = None
         self._lease_identity: tuple[str, int] | None = None
         self._closed = False
@@ -491,6 +500,7 @@ class ForegroundRuntimeExecutionAuthority:
 
     async def close(self, *, timeout: float = 5.0) -> None:
         self._closed = True
+        self._shutdown.set()
         if self._notification_task is not None:
             self._notification_task.cancel()
             await asyncio.gather(self._notification_task, return_exceptions=True)
@@ -583,39 +593,127 @@ class ForegroundRuntimeExecutionAuthority:
                 "foreground_runtime_authority_identity_drift"
             )
 
+    @staticmethod
+    def _cause_audit_fields(exc: BaseException) -> dict[str, object]:
+        """Payload-free identity of the innermost wrapped cause, for Host logs.
+
+        2026-09-08 HM-TO-A6：``PrimaryVisibilityError`` 这类稳定码把真实异常
+        （SDK 的 ``MemoryLimitError``）整个吞掉，线上 ``foreground.runtime.failed``
+        只剩 ``primary_read_policy_unavailable``，无从下手。走一遍 ``__cause__``
+        链，只带类型与稳定消息，不带任何 envelope/payload 字节。
+        """
+
+        from deskpet.memory.primary_visibility import cause_fields
+
+        carried = getattr(exc, "cause_type", None)
+        if carried:
+            return {
+                "error_cause_type": str(carried),
+                "error_cause_detail": getattr(exc, "cause_detail", None),
+            }
+        seen: set[int] = set()
+        cause = exc.__cause__
+        depth = 0
+        while cause is not None and id(cause) not in seen and depth < 8:
+            seen.add(id(cause))
+            depth += 1
+            if cause.__cause__ is None:
+                break
+            cause = cause.__cause__
+        if cause is None:
+            return {"error_cause_type": None, "error_cause_detail": None}
+        fields = cause_fields(cause)
+        return {
+            "error_cause_type": fields["cause_type"],
+            "error_cause_detail": fields["cause_detail"],
+        }
+
     async def _run_driver(self) -> None:
         self._last_error = None
-        try:
-            while not self._closed:
-                progressed = await self._drive_once()
-                if progressed:
-                    continue
-                # 无进展就该退出——但退出前必须在锁内复查唤醒标记，并把 _driver
-                # 置空。置空是为了消除最后一点窗口：只复查标记的话，标记可能在
-                # 「复查为假」与「任务真正 done()」之间被设上，而那一瞬 after_enqueue
-                # 看到的 done() 仍是 False，于是既不新建任务、留下的痕迹也没人再看。
-                # 置空后 after_enqueue 判 `is None` 成立，必定新建。
-                async with self._driver_lock:
-                    if self._rewake_pending:
-                        self._rewake_pending = False
+        attempt = 0
+        # 上一次失败的时刻。attempt 只在「真正安静下来」之后才清零，见下。
+        last_failure: float | None = None
+        while not self._closed:
+            try:
+                while not self._closed:
+                    progressed = await self._drive_once()
+                    if progressed:
+                        # 2026-09-08 Task 6 评审 F-4：**不能**一有进展就清零。
+                        # 「推进一步 → 抛异常」交替出现时，attempt 永远回到 0，
+                        # 退避退不上去，驱动会以 ~0.5 秒一轮永久刷 failed 审计，
+                        # 正是我们要消灭的那种空转。只有距上次失败已经安静地
+                        # 跑满一个冷却窗口，才认为故障过去了。
+                        if last_failure is not None and (
+                            time.monotonic() - last_failure
+                            >= DRIVER_RETRY_COOLDOWN_SECONDS
+                        ):
+                            attempt, last_failure = 0, None
                         continue
-                    self._driver = None
-                    return
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - durable state remains recoverable
-            self._last_error = exc
-            self._notify_state_changed()
-            # 只记 error_code 时，SQLite IntegrityError 这类异常会退化成一个无从下手的
-            # 类名（实测 20260903T1700-wsentry 卡住时只看到 "IntegrityError"）。
-            # 追加异常类型与消息：这条日志只进 Host 日志、不对模型可见，且内容是
-            # 我们自己的约束名/表名，不含凭据。
-            self._record_audit(
-                "foreground.runtime.failed",
-                error_code=str(getattr(exc, "code", type(exc).__name__)),
-                error_type=type(exc).__name__,
-                error_detail=str(exc)[:500],
-            )
+                    # 无进展就该退出——但退出前必须在锁内复查唤醒标记，并把 _driver
+                    # 置空。置空是为了消除最后一点窗口：只复查标记的话，标记可能在
+                    # 「复查为假」与「任务真正 done()」之间被设上，而那一瞬 after_enqueue
+                    # 看到的 done() 仍是 False，于是既不新建任务、留下的痕迹也没人再看。
+                    # 置空后 after_enqueue 判 `is None` 成立，必定新建。
+                    async with self._driver_lock:
+                        if self._rewake_pending:
+                            self._rewake_pending = False
+                            # 走到这里说明本轮已经完整地无进展跑完一遍（真正安静），
+                            # 这才是重试计数可以清零的确定时刻。
+                            attempt, last_failure = 0, None
+                            continue
+                        self._driver = None
+                        return
+                break
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - durable state remains recoverable
+                self._last_error = exc
+                self._notify_state_changed()
+                attempt += 1
+                last_failure = time.monotonic()
+                # 只记 error_code 时，SQLite IntegrityError 这类异常会退化成一个无从下手的
+                # 类名（实测 20260903T1700-wsentry 卡住时只看到 "IntegrityError"）。
+                # 追加异常类型与消息：这条日志只进 Host 日志、不对模型可见，内容是
+                # 我们自己的约束名/表名，并再过一遍凭据形状红线后才落库。
+                detail, _ = redact_credential_shapes(str(exc))
+                self._record_audit(
+                    "foreground.runtime.failed",
+                    error_code=str(getattr(exc, "code", type(exc).__name__)),
+                    error_type=type(exc).__name__,
+                    error_detail=detail[:500],
+                    attempt=attempt,
+                    **self._cause_audit_fields(exc),
+                )
+                # 2026-09-08 HM-TO-A6：驱动此前一抛异常就永久退出，队列里已受理的
+                # 回合再没有任何东西去推进它，UI 只能一直显示「等待主对话就绪」。
+                # 有界重试（退避）覆盖真正的瞬时故障；重试用尽就记一条独立的
+                # stalled 事件退出，而不是无声消失。
+                if attempt >= DRIVER_RETRY_ATTEMPTS:
+                    self._record_audit(
+                        "foreground.runtime.stalled",
+                        error_code=str(getattr(exc, "code", type(exc).__name__)),
+                        error_type=type(exc).__name__,
+                        attempts=attempt,
+                        **self._cause_audit_fields(exc),
+                    )
+                    break
+                delay = min(
+                    DRIVER_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
+                    DRIVER_RETRY_MAX_SECONDS,
+                )
+                # 退避期间必须能被 close() 立刻叫醒，否则关闭要等满一次退避
+                # （最长 8 秒），close() 的 5 秒 timeout 只能靠 cancel 收场。
+                try:
+                    await asyncio.wait_for(self._shutdown.wait(), timeout=delay)
+                except TimeoutError:
+                    pass
+                if self._closed:
+                    break
+        # 无论是重试耗尽还是关闭退出，都必须把引用置空：留着一个尚未 done() 的
+        # 任务引用，会让 after_enqueue 既不新建任务也无人再看唤醒标记。
+        async with self._driver_lock:
+            if self._driver is asyncio.current_task():
+                self._driver = None
 
     async def _drive_once(self) -> bool:
         snapshot = await self._store.current_snapshot(self._subject)

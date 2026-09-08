@@ -621,7 +621,20 @@ async def test_primary_state_notification_cannot_block_terminal(tmp_path, mode):
 
 
 @pytest.mark.asyncio
-async def test_primary_driver_error_invalidates_without_publishing_exception(tmp_path):
+async def test_primary_driver_error_invalidates_without_publishing_exception(
+    tmp_path, monkeypatch
+):
+    """Bounded retry, then a distinct stalled record — and never the private text.
+
+    2026-09-08 HM-TO-A6：驱动此前一抛异常就永久退出，队列里已受理的回合再没有
+    任何东西推进（实测 native-a6-7cec5249：UI 永久「等待主对话就绪」）。现在是
+    有界退避重试 + 退出前置空 _driver，异常正文仍然只进 Host 审计。
+    """
+
+    from deskpet.execution import foreground_runtime as fr
+
+    monkeypatch.setattr(fr, "DRIVER_RETRY_BASE_SECONDS", 0.0)
+    monkeypatch.setattr(fr, "DRIVER_RETRY_MAX_SECONDS", 0.0)
     state = tmp_path / "state.db"
     startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
     service = HumanMemoryHostServiceFactory(state, startup).bind(local_owner_auth())
@@ -631,19 +644,177 @@ async def test_primary_driver_error_invalidates_without_publishing_exception(tmp
     async def changed():
         calls.append(())  # The callback has no identity, transcript, or error arguments.
 
-    runtime, stack, queue = await build(tmp_path, state, Provider(), state_changed=changed)
+    records = []
+
+    class Audit:
+        def record(self, event, payload):
+            records.append((event, dict(payload)))
+
+    runtime, stack, queue = await build(
+        tmp_path, state, Provider(), state_changed=changed, audit_sink=Audit()
+    )
+
+    from simple_harness_memory.core.errors import MemoryLimitError
+
     async def fail():
-        raise RuntimeError("PRIVATE_DRIVER_ERROR")
+        raise RuntimeError("PRIVATE_DRIVER_ERROR") from MemoryLimitError(
+            "evidence_payload_requires_controlled_blob_ref"
+        )
+
     runtime._drive_once = fail
     try:
         await runtime.after_enqueue(subject=local_owner_auth().subject)
         await runtime.drain()
         await asyncio.wait_for(asyncio.shield(runtime._notification_task), 1)
-        assert calls == [()]
+        # State notifications coalesce, so only the bound is meaningful; the
+        # audit record count below is the exact one.
+        assert 1 <= len(calls) <= fr.DRIVER_RETRY_ATTEMPTS
+        assert all(call == () for call in calls)
         assert str(runtime.last_error) == "PRIVATE_DRIVER_ERROR"
         assert await queue.current_snapshot(local_owner_auth().subject) is None
+        failed = [p for e, p in records if e == "foreground.runtime.failed"]
+        assert len(failed) == fr.DRIVER_RETRY_ATTEMPTS
+        # The wrapped cause is carried, payload-free, so the stable code is not lost.
+        assert failed[0]["error_cause_type"] == "MemoryLimitError"
+        assert (failed[0]["error_cause_detail"]
+                == "evidence_payload_requires_controlled_blob_ref")
+        assert [p["attempt"] for p in failed] == list(
+            range(1, fr.DRIVER_RETRY_ATTEMPTS + 1)
+        )
+        stalled = [p for e, p in records if e == "foreground.runtime.stalled"]
+        assert len(stalled) == 1
+        assert stalled[0]["attempts"] == fr.DRIVER_RETRY_ATTEMPTS
+        # A dead driver must never be permanent: the next wake starts a new one.
+        assert runtime._driver is None
     finally:
         await runtime.close()
+        await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_primary_driver_recovers_after_a_transient_error(tmp_path, monkeypatch):
+    """A transient failure must not strand an already admitted turn."""
+
+    from deskpet.execution import foreground_runtime as fr
+
+    monkeypatch.setattr(fr, "DRIVER_RETRY_BASE_SECONDS", 0.0)
+    monkeypatch.setattr(fr, "DRIVER_RETRY_MAX_SECONDS", 0.0)
+    state = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
+    service = HumanMemoryHostServiceFactory(state, startup).bind(local_owner_auth())
+    await service.open_primary()
+    records = []
+
+    class Audit:
+        def record(self, event, payload):
+            records.append((event, dict(payload)))
+
+    runtime, stack, _ = await build(tmp_path, state, Provider(), audit_sink=Audit())
+    attempts = []
+
+    async def flaky():
+        attempts.append(())
+        if len(attempts) == 1:
+            raise RuntimeError("TRANSIENT")
+        return False
+
+    runtime._drive_once = flaky
+    try:
+        await runtime.after_enqueue(subject=local_owner_auth().subject)
+        await runtime.drain()
+        assert len(attempts) == 2
+        assert [e for e, _ in records if e == "foreground.runtime.stalled"] == []
+        assert runtime._driver is None
+    finally:
+        await runtime.close()
+        await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_primary_driver_progress_then_raise_cycle_still_terminates(
+    tmp_path, monkeypatch
+):
+    """Task 6 review F-4: progress must not silently reset the retry budget.
+
+    A driver that alternates "made progress" with "raised" used to reset the
+    attempt counter on every progress, so the bounded retry never bounded
+    anything: it span at the base backoff forever, writing a `failed` audit
+    record each time — exactly the idle storm the bounded retry exists to
+    prevent. The counter now only clears after a genuinely quiescent pass (or a
+    wall-clock cooldown), so the cycle terminates in a stalled record.
+    """
+
+    from deskpet.execution import foreground_runtime as fr
+
+    monkeypatch.setattr(fr, "DRIVER_RETRY_BASE_SECONDS", 0.0)
+    monkeypatch.setattr(fr, "DRIVER_RETRY_MAX_SECONDS", 0.0)
+    # A cooldown far longer than this test: progress alone must not clear it.
+    monkeypatch.setattr(fr, "DRIVER_RETRY_COOLDOWN_SECONDS", 3600.0)
+    state = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
+    service = HumanMemoryHostServiceFactory(state, startup).bind(local_owner_auth())
+    await service.open_primary()
+    records = []
+
+    class Audit:
+        def record(self, event, payload):
+            records.append((event, dict(payload)))
+
+    runtime, stack, _ = await build(tmp_path, state, Provider(), audit_sink=Audit())
+    turns = []
+
+    async def flapping():
+        turns.append(())
+        if len(turns) % 2:
+            return True  # progressed
+        raise RuntimeError("FLAP")
+
+    runtime._drive_once = flapping
+    try:
+        await runtime.after_enqueue(subject=local_owner_auth().subject)
+        await asyncio.wait_for(runtime.drain(), 5)
+        failed = [p for e, p in records if e == "foreground.runtime.failed"]
+        assert [p["attempt"] for p in failed] == list(
+            range(1, fr.DRIVER_RETRY_ATTEMPTS + 1)
+        )
+        assert len([e for e, _ in records if e == "foreground.runtime.stalled"]) == 1
+        assert len(turns) == 2 * fr.DRIVER_RETRY_ATTEMPTS
+        assert runtime._driver is None
+    finally:
+        await runtime.close()
+        await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_primary_driver_backoff_does_not_delay_close(tmp_path, monkeypatch):
+    """The retry backoff waits on shutdown, so close() is not left to time out."""
+
+    from deskpet.execution import foreground_runtime as fr
+
+    monkeypatch.setattr(fr, "DRIVER_RETRY_BASE_SECONDS", 30.0)
+    monkeypatch.setattr(fr, "DRIVER_RETRY_MAX_SECONDS", 30.0)
+    state = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
+    service = HumanMemoryHostServiceFactory(state, startup).bind(local_owner_auth())
+    await service.open_primary()
+    runtime, stack, _ = await build(tmp_path, state, Provider())
+    entered = asyncio.Event()
+
+    async def fail():
+        entered.set()
+        raise RuntimeError("BACKOFF")
+
+    runtime._drive_once = fail
+    try:
+        await runtime.after_enqueue(subject=local_owner_auth().subject)
+        await asyncio.wait_for(entered.wait(), 5)
+        driver = runtime._driver
+        started = asyncio.get_running_loop().time()
+        await asyncio.wait_for(runtime.close(timeout=10.0), 10)
+        assert asyncio.get_running_loop().time() - started < 2.0
+        assert driver is not None and not driver.cancelled()
+        assert runtime._driver is None
+    finally:
         await stack.close()
 
 
