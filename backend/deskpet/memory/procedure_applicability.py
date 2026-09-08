@@ -42,13 +42,18 @@ def current_snapshot(authority, registry, *, tool_names: Sequence[str], route):
     authority.assert_workspace_current()
     snapshots = []
     for name in names:
+        # Order matters for the model. ``_validate_execution_identity`` folds a
+        # name this Run never froze (KeyError) into the same catalog error as a
+        # genuine mid-Run identity/schema change, and run-01j C06-14 then told
+        # the model "identity changed" six times for a tool it had simply never
+        # activated. Decide "absent" first so the two get distinct codes.
+        spec = authority.specs.get(name)
+        if spec is None:
+            raise ProcedureUseRejected("procedure_tool_unavailable")
         try:
             registry._validate_execution_identity(name, str(authority.run_id))
         except (RuntimeError, KeyError) as error:
             raise ProcedureUseRejected("procedure_current_tool_identity_changed") from error
-        spec = authority.specs.get(name)
-        if spec is None:
-            raise ProcedureUseRejected("procedure_tool_unavailable")
         snapshots.append(ProcedureToolSnapshot(
             name, spec.spec_version, spec.schema_hash, spec.execution_identity,
             # Capability.dangerous also defaults true for all staged/control

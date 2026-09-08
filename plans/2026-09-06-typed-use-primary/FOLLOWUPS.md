@@ -49,3 +49,29 @@ luna 一次请求 240s 传输超时后，SDK 将该 provider 调用 `settle_unkn
 **测试**：`tests/execution/test_scope_disclosure_runtime.py::test_recall_item_reference_page_in_failure_keeps_the_run_verifiable`（复现：模型传 recall-item id → page_in 失败 → 后续 provider 调用不再被拒、Run 正常 COMPLETED 并写出文件；只回滚 `primary_dependencies.py` 时该控为红）与 `::test_non_deterministic_page_in_failure_still_rejects_the_next_request`（负控：同一请求未打补丁时通过，把 `admitted_page` 换成必然成功的重放后仍抛 `PrimaryHistoryDisclosureRejected`，私有拒因 `scope_search_result_unverified`）。`tests/execution` + `tests/sdk_adapters/test_typed_context_use_primary.py` + `test_no_recall_gate.py` 的失败集与改动前完全一致（52 失败 / 10 错误，均为环境既有）。
 
 **待办**：语料 run-01e C04-16 与 run-01h C06-13 复跑确认现场消失。
+
+## F08 `procedure_discover` 词项匹配覆盖不足：模型换个说法就零候选（2026-09-08 语料 run-01j 发现，本轮只记录，不改 SDK）
+
+**现象**：run-01j 中 18/18 例 C06 都调用了 `procedure_discover`（`procedure_hint` 生效），但 C06-05/06/09/19 四例返回 **0 候选**，其中 C06-19 因此彻底判负。
+
+**已排除「种子未落库」**：同一批同一机制的 C06-03 / C06-13 命中非空，且四例的 setup 与通过例结构一致（`backend/deskpet/quality/corpus_c06.py` SPECS 均已映射）。
+
+**根因**：SDK 0.6.25 `simple_harness_memory/backends/procedure_discovery.py::match_score` 只做**字面词项命中**——把候选的 `name + applicability + steps` 拼成一段文本，用 `typed_recall_query_terms`（`\w` 词 + CJK 二元组）逐个做 `in text` 子串判断，再加一分整串命中。没有向量/同义/词干车道。于是命中与否完全取决于模型是否恰好复用了种子里的原词：
+
+| 用例 | 模型 discover 查询 | 种子 name / steps | 结果 |
+|---|---|---|---|
+| C06-03（PASS） | `预算 金额 检查` | `预算草表` / `先分固定/浮动`、`再核总额` | `预算` 命中 → 1 候选 |
+| C06-13（PASS） | `书签 标签 去重` | `书签重复候选检查` / `先按URL对照`… | `书签` 命中 → 1 候选 |
+| C06-09（FAIL） | `兴趣周 排程` | `排日程` / `先列固定项`、`再放可移动项` | **`排程` 与 `排日程` 二元组零交集**（查询出 `排程`，候选只含 `排日`、`日程`）→ 0 |
+| C06-05（FAIL） | `外出素材 摄影作业` | `压缩前检查描述` / `核原件副本`、`再核可读性` | 无共同词 → 0 |
+| C06-06（FAIL） | `可访问性 培训` | `文档检查` / `标题层级`、`阅读顺序`、`替代文本` | 无共同词（`可访问性` vs `替代文本`）→ 0 |
+| C06-19（FAIL） | `资料 整理 格式` | `通用手工清单核对` / `清单核对` | 无共同词 → 0 |
+
+C06-09 是最干净的证据：一个字的插入（排程 → 排日程）就让 CJK 二元组集合完全不相交，与既有 CJK typed-recall 缺陷同源。
+
+**给 SDK 侧的建议（本仓不改）**：
+1. 给 `discover_procedure_drafts` 接上与 typed recall 同源的向量召回车道，或至少在 `match_score` 里补 CJK 一元组/前后缀（子序列）匹配，使 `排程` 能召回 `排日程`；
+2. 若维持纯词法，则返回体应在零候选时带上「本主体确有 N 条已保存 Procedure，但无一条与查询词重合」的计数提示，让模型知道该换词重查而不是判定「没有保存过流程」——这与 Host 侧 `procedure_hint` 的思路一致；
+3. 候选文本目前是 `name + applicability + steps` 直接拼接，可考虑把 name 的权重与匹配面单列，避免长 steps 稀释。
+
+**Host 侧本轮不做**：`procedure_discover` 的查询词由模型决定，Host 无权改写；工具描述已写明「用名称/适用条件/步骤里的一两个特征词，不要整句」，run-01j 中模型基本遵守，问题不在提示。
