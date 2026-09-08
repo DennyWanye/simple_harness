@@ -17,6 +17,7 @@ import asyncio
 import logging
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,19 @@ from simple_harness_memory.embedders.base import Embedder, EmbeddingLineage
 log = logging.getLogger(__name__)
 # Fixed startup input: no conversation, query, identity, or memory content.
 _PRIMING_TEXT = "这是一条用于初始化文本编码器的固定测试句子。"
+# One physical ``encode`` pads every input in the call to the longest one, so its
+# cost tracks ``longest * count``, not the sum of the lengths.  Measured on this
+# machine (WeMM-Embedding-2B / mps, both paths warm):
+#   6 texts of 20-58 chars   batched 322 ms vs serial 1 430 ms  (4.4x faster)
+#   8 texts of 600 chars     batched 2 014 ms vs serial 2 192 ms (0.92x)
+#   54/108/1682 in one call  batched 2 084 ms vs serial 1 151 ms (1.8x SLOWER)
+# i.e. the win is the shared per-call fixed cost (~230 ms), and it is gone once
+# the longest member is big enough for compute to dominate — at which point the
+# padding of its shorter neighbours is pure loss.  So the padded work of one call
+# is capped in that fixed-cost-dominated region; anything longer is encoded alone
+# and therefore never costs more than the serial loop it replaces.
+_BATCH_MAX_PADDED_CHARS = 1_024
+_BATCH_MAX_ITEMS = 32
 
 
 class WeMMEmbedder(Embedder):
@@ -202,6 +216,91 @@ class WeMMEmbedder(Embedder):
             cancelled.set()
             raise
 
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """One physical model call per group instead of the base class's N calls.
+
+        The base ``Embedder.embed_batch`` is ``[await self.embed(t) for t in
+        texts]`` — N sequential encodes, each paying the model's fixed
+        per-invocation cost (~230 ms warm on this machine, and it dominates
+        anything short).  Generation rebuilds call this with every short-horizon
+        chunk at once, so that fixed cost was multiplied by the chunk count while
+        the SDK held its write lock.
+
+        Vectors are the model's own output for the same text, returned in input
+        order.  Grouping is only a call boundary chosen from measured cost (see
+        ``_encode_groups``); it never changes, truncates or reorders any input.
+        """
+        # The SDK contract passes a list; accept any concrete sequence but never
+        # a bare string, which would silently embed each character.
+        if (isinstance(texts, (str, bytes)) or not isinstance(texts, Sequence)
+                or any(not isinstance(text, str) for text in texts)):
+            raise TypeError("texts must be a sequence of strings")
+        if not texts:
+            return []
+        await self._ensure_loaded()
+        cancelled = threading.Event()
+        worker = asyncio.create_task(self._encode_many_owned(list(texts), cancelled))
+        worker.add_done_callback(self._observe_completion)
+        try:
+            vectors = await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        self.validate_vectors(vectors, expected_count=len(texts))
+        return vectors
+
+    @staticmethod
+    def _encode_groups(texts: list[str]) -> list[tuple[int, ...]]:
+        """Group input positions so one call's padded work stays bounded.
+
+        A naive "pack consecutive texts by total length" grouping measured 1.39x
+        *slower* than the serial loop on the observed field distribution
+        (54/108/1682/7798/19655/29778 chars): the short chunks were padded up to
+        the 7 798-char one and paid for four times over.
+
+        So the ceiling is on ``longest * count`` — the work the model actually
+        does — and positions are visited shortest-first so short chunks pack with
+        short chunks.  The sort is stable on ``(length, position)``, and results
+        are scattered back to input positions, so both grouping and output order
+        are deterministic and independent of the input's order.
+        """
+        groups: list[tuple[int, ...]] = []
+        current: list[int] = []
+        longest = 0
+        for index in sorted(range(len(texts)), key=lambda position: (len(texts[position]), position)):
+            padded = max(longest, len(texts[index]))
+            if current and (padded * (len(current) + 1) > _BATCH_MAX_PADDED_CHARS
+                            or len(current) >= _BATCH_MAX_ITEMS):
+                groups.append(tuple(current))
+                current, padded = [], len(texts[index])
+            current.append(index)
+            longest = padded
+        if current:
+            groups.append(tuple(current))
+        return groups
+
+    async def _encode_many_owned(
+        self, texts: list[str], cancelled: threading.Event
+    ) -> list[list[float]]:
+        # Same ownership discipline as ``_encode_owned``: the physical queue is
+        # held by this task across every group, so a cancelled caller cannot
+        # interleave another encode into the middle of one batch.
+        async with self._encode_queue:
+            if cancelled.is_set():
+                return []
+            vectors: list[list[float] | None] = [None] * len(texts)
+            for group in self._encode_groups(texts):
+                if cancelled.is_set():
+                    return []
+                encoded = await asyncio.to_thread(
+                    self._encode_group, [texts[index] for index in group], cancelled
+                )
+                if not encoded:
+                    return []  # cancelled while queued
+                for index, vector in zip(group, encoded):
+                    vectors[index] = vector
+            return _require_complete(vectors)
+
     async def _encode_owned(self, text: str, cancelled: threading.Event) -> list[float]:
         # The owned task, not its cancellable caller, holds this lock until the
         # thread finishes. Queued work consumes no default-executor threads.
@@ -211,18 +310,36 @@ class WeMMEmbedder(Embedder):
             return await asyncio.to_thread(self._encode, text, cancelled)
 
     def _encode(self, text: str, cancelled: threading.Event) -> list[float]:
+        vectors = self._encode_group([text], cancelled)
+        return vectors[0] if vectors else []
+
+    def _encode_group(
+        self, texts: list[str], cancelled: threading.Event
+    ) -> list[list[float]]:
         with self._physical_lock:
             # Requests cancelled while queued must not start a physical encode.
             if cancelled.is_set():
                 return []  # Only consumed by the detached completion observer.
             encode_document = getattr(self._model, "encode_document", None)
             if callable(encode_document):
-                vector = encode_document([text], normalize_embeddings=True)[0]
+                encoded = encode_document(texts, normalize_embeddings=True)
             else:
-                vector = self._model.encode([text], normalize_embeddings=True)[0]
-            if len(vector) != self.dim:
-                raise ValueError("WeMM output dimension must be 2048")
-            return [float(value) for value in vector]
+                encoded = self._model.encode(texts, normalize_embeddings=True)
+            if len(encoded) != len(texts):
+                raise ValueError("WeMM output count must match input count")
+            vectors = []
+            for vector in encoded:
+                if len(vector) != self.dim:
+                    raise ValueError("WeMM output dimension must be 2048")
+                vectors.append([float(value) for value in vector])
+            return vectors
+
+
+def _require_complete(vectors: list[list[float] | None]) -> list[list[float]]:
+    """Every input position must have been filled by exactly one group."""
+    if any(vector is None for vector in vectors):
+        raise ValueError("WeMM batch left an input unencoded")
+    return [vector for vector in vectors if vector is not None]
 
 
 __all__ = ["WeMMEmbedder"]

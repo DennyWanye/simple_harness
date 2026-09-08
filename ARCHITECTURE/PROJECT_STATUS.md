@@ -3788,3 +3788,5 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 4. 发现新的项目级已知问题 / 测试纪律 → 更新 §5
 
 每次更新都改顶部"最后更新"日期。生产链路和边界写对应模块架构；本文件只保留聚合状态、里程碑、已知问题和证据链接。`STATUS/` 兼容文件禁止新增正文。
+
+最后更新：2026-09-08（HM-TO-A6 typed recall 超时 Host 侧）。`wemm_embedder.py` 新增真正的 `embed_batch`：按「最长×条数 ≤ 1024 字符、条数 ≤ 32」分组、按长度升序装箱、结果回填输入位置；实测（mps，两路径均预热）6 条短 chunk 322ms vs 串行 1430ms（0.22），长 chunk 独占调用故不劣于串行（现场 6 条 0.93、短三条 0.82），真模型批量/逐条 cos ≥ 0.99988。`short_index_worker.py` 拆出 `maintenance_timeout=60s`（`operation_timeout` 仍 5s 只管扫描/注册），维护重建失败按 60→120→…→600s 指数退避、成功/换 manager 清零、跳过的 tick payload-free 审计；常量由一致性用例绑定生产装配值（实测 projection 600ms + 世代 embed 45690ms ≤ 60s，退避基数 ≥ 超时 → 写锁占空比 ≤ 50%）。`human_memory_v7.py` 前台 `RecallBudget` deadline 1000→2000ms（协议上限，S3 契约 `deadline_ms=1..2000` / hard deadline 2s）。短时域 chunk `public_text` 的长度上限**不在 Host**（Harness 派生 `public_text_hash` 绑定 + SDK 自己拼 chunk），记为需新增的 SDK 契约条款；`context_route.py` 的重试收口另有属主。控制：新增 `test_wemm_embed_batch.py` / `test_short_index_backoff.py` / `test_recall_budget_deadline.py`；`test_short_index_worker.py` 等短索引既有红（fixture 无生产 embedder）不变。[裁决](../plans/2026-09-08-hm-to-a6/DECISION-RECALL-TIMEOUT-HOST-SIDE.md)。
