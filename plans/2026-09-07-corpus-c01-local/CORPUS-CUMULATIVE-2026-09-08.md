@@ -106,3 +106,121 @@ HM-AC-8 三阈值（在已评分 177 例上）：required-type 召回率 ≈ 96%
 
 争议短路由「任一 lane 命中即扣住整条车道」收窄为**槽位级准入**（SDK 备忘 `DECISION-2026-09-08-conflict-short-circuit.md` §3.1）：只有与被争议那一格相关的查询才拿得到确认组，无关查询照常返回其它候选。
 因此 **空 fragments 不再等于「库里没有争议」**。C10 判据不受影响——查库本身即违反 `no_recall`，与是否拿到确认组无关。口径已回写 `RUNWAY-C10.md` §3、`backend/deskpet/quality/corpus_scoring.py` 的 C10 复核要求，并由 `backend/tests/quality/test_corpus_c10_prepare.py` 的两项新语义测试钉死（槽位相关查询→仅确认组；无关查询→照常返回 items 且不准入该组）。
+
+## 更新（2026-09-09 03:15，rerun-flash-01：C01/C02/C03/C04/C06 共 97 例，`deepseek-v4-flash`）
+
+性质：四个 Opus 子代理按类逐条语义审查 + 主代理复核裁定，**不是人工标注**。
+分批记录：`RUN-RERUN-FLASH-01-REVIEW.md`；裁定 JSON
+`.local-test-evidence/2026-09-09/corpus-rerun-flash/run-01.review-verdicts.json`；
+原始证据 `.local-test-evidence/2026-09-09/corpus-rerun-flash/run-01/`。
+
+**组合**：provider `deepseek-v4-flash`（97/97 primary，无回退、无中转 5xx、无超时）；
+installed `installed-h0710-m0631-s0313`（H0.7.10 / M0.6.31 / S0.3.13）；
+Host = main **`c4605f39`**（代码与 `c9384422` 逐字相同）。本工作树 HEAD 在批次期间只在
+03:13:39 动过一次（合入 `f161f5a4`），96/97 例在此之前启动，故**本轮测的不是当前 HEAD**——
+`e3ef4aed`(02:48) / `f161f5a4`(03:13) 又压缩了 PERSONA 与 `context_route` schema 措辞，属下一版。
+
+**本轮 97 例自身**：67 PASS / 10 FAIL / **20 NOT_SCORED**；隐私违规 0；
+97/97 `rc=0`、`stop_reason=None`；总耗时 39.7 min（中位 22.2 s/例）。
+
+### 总表（240 条中已执行 234 条；仍按"每例取最后一次**可评分**批次"）
+
+| 类别 | 已执行 | PASS | FAIL | NOT_SCORED | 本轮变化 |
+|---|---|---|---|---|---|
+| C01 精确召回 | 20 | 18 | 2 | 0 | **−2**：C01-08（召回成功却拒绝出稿）、C01-19（向量阈值边缘）转 FAIL；C01-17 本轮 SETUP_BLOCKED，沿用上一次可评分批次的 PASS |
+| C02 偏好复用 | 19 | 19 | 0 | 0 | — （历史 FAIL 例 C02-04 本轮亦 PASS） |
+| C03 冲突/多来源 | 19 | 19 | 0 | 0 | — |
+| C04 时间/提醒 | 20 | 17 | 3 | 0 | **本轮 19/20 被 Host 缺陷阻断，整类未重新计量**，沿用 09-08 旧批次 |
+| C05 任务恢复 | 16 | 9 | 5 | 2 | — |
+| C06 额外来源/流程 | 20 | 11 | 8 | 1 | **−2 PASS / +2 FAIL**：回收 C06-05/18，新增 5 例未转 `procedure_discover` + 2 例 semantic 零召回 |
+| C07 零召回 | 20 | 20 | 0 | 0 | — |
+| C08 保留/标量 | 20 | 20 | 0 | 0 | — |
+| C09 硬触发 | 20 | 16 | 4 | 0 | — |
+| C10 争议不需要 | 20 | 16 | 2 | 2 | — |
+| C11 过期资格 | 20 | 20 | 0 | 0 | — |
+| C12 受众私密 | 20 | 19 | 0 | 1 | — |
+| **合计** | **234** | **204** | **24** | **6** | PASS 208→204，FAIL 20→24 |
+
+### HM-AC-8 三阈值（同口径机械重算，取每例最后一次可评分批次）
+
+| 阈值 | 09-08 | **本轮** | 判定 |
+|---|---|---|---|
+| required-type 召回率 | 134/136 = 98.5% | **136/136 = 100%** | ✅ |
+| 隐私违规 | 0 / 234 | **0 / 234** | ✅ 100% |
+| 多提类型率 | 55/227 = **24.2%** | **26/228 = 11.4%** | ✅ **首次达标** |
+
+> 09-08 记录写 54/223 = 24.2%；用本轮同一脚本对同一批 packet 复算为 55/227 = 24.2%，比率一致，
+> 上表两列均取该脚本值以保证同口径。
+
+- **只看本轮 97 例**：可评分 77 例，多提 **18 例 = 23.4%**，required 召回 **97/97 = 100%**。
+  同一批用例在上一次可评分批次上是 **47/76 = 61.8%**。逐类：
+  C01 12/19→3/19、C02 15/19→5/19、C03 3/19→1/19、C06 17/18→8/19。
+- 残留多提的形态：P1 多加 `episode` **12 例**、P2 多加 `procedure` **4 例**、
+  P3 `prospective` 1 例、P4 兜底 `semantic` 1 例。**R2（episode 收窄）是剩下的主要缺口**；
+  R4 已把 `procedure` 多提从 17 例压到 4 例。
+- **重要限定**：required 召回 100% 里有 **40/136**（整个 C04）用的是 09-08 旧批次证据——
+  C04 本轮 19/20 被 Host 缺陷阻断，未能重新计量。
+
+### C06 `procedure_discover` 调用率（R4 的已知风险，前/后）
+
+| | 09-08（run-01i/j） | 本轮 |
+|---|---|---|
+| `procedure_discover` 被调用 | **18/19 = 94.7%** | **14/19 = 73.7%** |
+| `required_procedure_access = SATISFIED` | 14/19 | 13/19 |
+| 在 `memory_types` 里请求 `procedure` | 18/19 | **4/19** |
+
+批内 A/B：实际发出 `procedure_hint` 的 4 例（即请求了 `procedure` 的 C06-02/06/13/18）
+**4/4 调用 discover**；未发出提示的 15 例只有 10/15。未调用的 5 例（C06-04/09/15/16/20）
+终答全部落在 PERSONA 明令禁止的那句话上（"没有找到存档"/"存库里没有"），
+**0 例属于"判断这轮不需要流程"**。
+→ **裁定：保留 R4，按 `DECISION-EXTRA-TYPE-RATE.md` §3.4 把 `procedure_hint` 与 `memory_types` 解耦**
+（`backend/deskpet/sdk_adapters/context_route.py:510-513`），记 **F-ETR-5**。
+
+### 本轮新增/确认的缺陷
+
+1. **Host（新，最高优先）｜`state.db` 升到 `user_version=55` 后 prospective 注册全线失效。**
+   `backend/deskpet/memory/s5c_store.py:93-95` 用闭集合白名单 `((52,),(53,),(54,))` 选游标表；
+   `865bfe7a`（09-08 23:29）新增的 `migrations/primary/047_primary_assistant_tool_calls_v55.sql`
+   把 `user_version` 推到 55 → 静默回落到已被
+   `migrations/s5c/044_prospective_terminals_v52.sql:35-36` 的 `s5c_cursor_v50_sealed` 封存的 v50 表
+   → `backend/deskpet/memory/s5c_store.py:384` 的 INSERT 必抛
+   `sqlite3.IntegrityError: s5c_cursor_successor_required`。
+   **后果**：任何待注册提醒都注册不上；本轮 20 例 SETUP_BLOCKED（C04 19 + C01-17）。
+   **不限于语料跑道**——`ProspectiveRuntimeLane` 是生产车道
+   （`backend/deskpet/memory/runtime_composition.py:91`），产品数据目录的 `state.db` 实测同为 55。
+   上一次 C04 全绿批次（09-08 08:10）早于该迁移，故此前从未撞上。修法：白名单改下界判断。
+2. **SDK（新）｜`COGNITIVE_VECTOR_MIN_SCORE = 0.45` 对中文短 semantic 记忆没有余量。**
+   C01-19 / C06-06 / C06-08 三例 FAIL 同根：向量世代已激活（`activated=true`、`vector_count=2`），
+   语义等价但词面零重叠即零召回。离线复算同一条记忆的两次合理改写：
+   flash 本轮 **0.4354**（不过阈）vs luna run-02 **0.5839**（过阈）——召回成败押在措辞抖动上。
+   出处 `simple-harness-memory-sdk-0631-source/src/simple_harness_memory/features/cognitive_vector.py:23`。
+3. **Host（可观测性）｜`backend/deskpet/memory/prospective_runtime.py:88`** 只记
+   `type(exc).__name__`，`s5c_cursor_successor_required` 这个唯一能定位根因的字符串
+   在任何持久化证据里都不存在。
+4. **跑道（可观测性）｜`backend/deskpet/quality/corpus_prospective.py:90-92`** 抛异常时丢掉了
+   已攒好的 receipt（`ticks`/`tick_errors`/`missing`），20 例的 `prospective_registration` 全为 `null`。
+5. **gold｜C06-19** 发现面在"用户不给流程名"时结构性不可达
+   （`procedure_discovery.py:83` 按词命中，种子名"通用手工清单核对"零重叠）。记 **F-ETR-6**。
+6. **观察**：`NO_ACTIVE_GENERATION` 仍出现在 C06 17/19 例，
+   `DECISION-PROSPECTIVE-PROCEDURE-RECALL.md` §3.3 预期的归零未兑现，需单独立案。
+
+### flash 与 pro/luna 的行为差异
+
+- **更快更省**：中位 22.2 s/例（luna 的 C02 类曾 4–6 min）；**64/77 例只有 2 次 provider handoff**
+  （一次工具 + 一次作答），零空召回循环（F03 形态在本批消失），零 502、零超时。
+- **更守规**：77/77 正确走 `memory_standalone`，无 `create_new` 误升格；
+  四条类型选择规则的判别词逐条生效，多提率同批用例 61.8%→23.4%。
+- **弱点**：① 召回成功却拒绝出稿（C01-08，把用户问句里已有的内容当成"需另有存档才能用"）；
+  ② 不确定性声明偏少（C02-14 把 gold 的"需核查"弱化）；
+  ③ 把内部 predicate 字段名写给用户（C02 8 例）；
+  ④ **查询改写更口语更短，正好把召回逼到向量阈值边缘**——缺陷 2 之所以本轮才暴露，与换模型直接相关。
+
+### 未被本轮计量的部分（不得当成已验证）
+
+- **分析协议 v8**（`DECISION-RELATION-EXTRACTION.md`）：语料跑道在评分前关闭分析车道
+  （`backend/deskpet/quality/corpus_scoring_session.py:435`），97 例日志里
+  `host-analysis-prompt/*` 与 `analysis_operations_rejected` **零命中**。v8 需由 native 旅程或写侧专门度量验证。
+- **C04 的 3 例旧 FAIL（`trigger_local` 时刻换算）**：本轮既未证实也未证伪。
+- **当前 HEAD `f161f5a4` 的压缩版 PERSONA / `context_route` schema**：本轮测的是压缩前文本。
+  `DECISION-TERMINATION-AND-PERSONA-ROUTES.md` §3.3 已有先例——压缩时删两句话就让 C05-05 的修复整个失效，
+  因此压缩版必须另跑一次才能确认收益是否保住。记 **F-RERUN-1**。
