@@ -9,9 +9,10 @@ import asyncio
 import importlib
 import inspect
 import json
+import logging
 import re
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Mapping, cast
+from typing import Any, Callable, Mapping, Sequence, cast
 
 from simple_harness import FrozenJsonValue, JsonValue, thaw_json
 from simple_harness.tools import ToolContext
@@ -25,6 +26,8 @@ from deskpet.tools.capabilities import ToolExecutionContext
 
 from .manifest import MANIFEST_SHA256, load_tool_manifest, migrate_tool_schemas
 
+
+logger = logging.getLogger(__name__)
 
 _ENVIRONMENT_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _PROVIDER_TOOLS = frozenset(
@@ -255,6 +258,132 @@ def adapt_model_arguments(name: str, arguments: Mapping[str, JsonValue]) -> dict
     return adapted
 
 
+# 事故 J（HM-TO-A6 turn 23）：``memory_forget`` 的处理器直接 ``int(arguments["fact_id"])``，
+# 模型不带 ``fact_id`` 调用时抛 ``KeyError('fact_id')``，被 SDK 的处理器边界吞成
+# ``tool_handler_failed`` + "Tool execution failed."，模型看不到任何可行动信息，连打 18 次
+# 直到 ``react_repeated_tool_exceeded`` 打掉整个 Run。
+#
+# 这里的稳定码全部落在 ``deskpet/sdk_adapters/tools.py`` 的
+# ``_SAFE_HANDLER_ERROR_CODE``（``^[a-z][a-z0-9_]{0,63}$``）字母表内，
+# 因此会连同 ``public_message`` 一起原样呈现给模型；不含路径、栈帧、密钥。
+MEMORY_FORGET_TARGET_REQUIRED = "memory_forget_target_required"
+MEMORY_FORGET_INVALID_FACT_ID = "memory_forget_invalid_fact_id"
+MEMORY_FORGET_NATURAL_LANGUAGE_DISABLED = "memory_forget_natural_language_disabled"
+MEMORY_FORGET_UNKNOWN_FACT_ID = "memory_forget_unknown_fact_id"
+MEMORY_FORGET_STORE_UNAVAILABLE = "memory_forget_store_unavailable"
+MEMORY_FORGET_IDENTITY_UNAVAILABLE = "memory_forget_identity_unavailable"
+
+_MEMORY_FORGET_CANDIDATE_LIMIT = 20
+_MEMORY_FORGET_LABEL_LIMIT = 48
+# 与 ``deskpet/sdk_adapters/tools.py`` 的 ``_MAX_HANDLER_PUBLIC_MESSAGE`` 一致。
+_MEMORY_FORGET_MESSAGE_LIMIT = 2048
+
+# 冻结 manifest 里的描述指向 ``memory_facts_list`` —— 那是一条 UI WebSocket 路由，
+# **不是**工具，模型永远拿不到 ``fact_id``，于是只能空手调用或改用自然语言。
+# 照 ``tool_search``/``tool_describe`` 的既有做法在构建期投影正确的公开说明，
+# 不改写 manifest 的存档字节。
+_MEMORY_FORGET_DESCRIPTION = (
+    "Forget one memory this assistant previously stored with memory_write, "
+    "identified by the exact integer fact_id that memory_write returned. Use "
+    "ONLY when the user explicitly asks to forget something. Forgetting by "
+    "natural-language description is disabled. If you have no fact_id, call it "
+    "once to receive the list of forgettable ids, then either call it again "
+    "with one of them or tell the user to remove the memory in the app's "
+    "memory panel — do not retry the same call."
+)
+_MEMORY_FORGET_FACT_ID_DESCRIPTION = (
+    "Exact integer fact ID to forget, as returned by memory_write."
+)
+_MEMORY_FORGET_QUERY_DESCRIPTION = (
+    "Deprecated and always rejected: memory_forget never resolves a memory "
+    "from free text. Pass fact_id instead."
+)
+
+
+def _memory_forget_candidate_label(fact: Any) -> str:
+    key = str(getattr(fact, "key", "") or "").strip()
+    value = str(getattr(fact, "value", "") or "").strip()
+    label = f"{key}={value}" if key and value else key or value
+    label = " ".join(label.split())
+    if len(label) > _MEMORY_FORGET_LABEL_LIMIT:
+        label = label[: _MEMORY_FORGET_LABEL_LIMIT - 1] + "…"
+    return label
+
+
+async def _memory_forget_candidates(
+    memory_manager: Any, principal: Any
+) -> tuple[tuple[int, str], ...]:
+    """列出该 principal 名下可按 id 遗忘的记忆（与 UI facts 面板同一条只读面）。
+
+    这条列举只用来把拒绝变得**可行动**；它绝不放宽授权：读的是
+    ``list_facts``（identity-safe，personal scope），失败一律降级成空列表，
+    不把存储异常泄漏给模型。
+    """
+
+    lister = getattr(memory_manager, "list_facts", None)
+    if lister is None:
+        return ()
+    try:
+        facts = await lister(principal, limit=_MEMORY_FORGET_CANDIDATE_LIMIT)
+    except Exception as exc:  # noqa: BLE001 - 列举失败不得升级成工具崩溃
+        logger.warning(
+            "memory_forget.candidates_unavailable error_type=%s", type(exc).__name__
+        )
+        return ()
+    candidates: list[tuple[int, str]] = []
+    for fact in facts or ():
+        raw_id = getattr(fact, "id", None)
+        if isinstance(raw_id, bool) or not isinstance(raw_id, int):
+            continue
+        candidates.append((raw_id, _memory_forget_candidate_label(fact)))
+        if len(candidates) >= _MEMORY_FORGET_CANDIDATE_LIMIT:
+            break
+    return tuple(candidates)
+
+
+def _memory_forget_rejection(
+    code: str, reason: str, candidates: Sequence[tuple[int, str]]
+) -> dict[str, Any]:
+    if candidates:
+        listed = "; ".join(
+            f"{fact_id} ({label})" if label else str(fact_id)
+            for fact_id, label in candidates
+        )
+        action = (
+            f"Forgettable memory ids for this user: {listed}. Call memory_forget "
+            "again with fact_id set to exactly one of those integers."
+        )
+    else:
+        action = (
+            "This user currently has no memory that can be forgotten by id — only "
+            "a memory this assistant stored earlier with memory_write has one. Do "
+            "not call memory_forget again; tell the user you cannot remove it "
+            "yourself and that they can delete it in the app's memory panel."
+        )
+    message = f"memory_forget rejected: {reason} {action}"
+    return {
+        "ok": False,
+        "error_code": code,
+        "public_message": message[:_MEMORY_FORGET_MESSAGE_LIMIT],
+    }
+
+
+def _memory_forget_fact_id(value: Any) -> int | None:
+    """把模型给的 ``fact_id`` 收敛成整数；无法收敛返回 ``None``（由调用方拒绝）。"""
+
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if text.lstrip("-").isdigit():
+            return int(text)
+    return None
+
+
 def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable[..., Any], str]]:
     from deskpet.memory.recall_adapter import (
         build_memory_recall_handlers,
@@ -398,23 +527,98 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
             }
 
         async def memory_forget(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
-            if arguments.get("query") and arguments.get("fact_id") is None:
-                return {"ok": False, "error": "natural_language_forget_disabled"}
-            _, root_run_id, call_id = trusted_memory_execution(context)
+            # 任何模型可控的参数形状都必须收敛成**确定性、模型可见**的拒绝：
+            # 抛异常只会变成不可行动的 "Tool execution failed."（事故 J）。
+            raw_fact_id = arguments.get("fact_id")
+            fact_id = _memory_forget_fact_id(raw_fact_id)
+            if fact_id is None:
+                raw_query = arguments.get("query")
+                if raw_fact_id is not None:
+                    code = MEMORY_FORGET_INVALID_FACT_ID
+                    reason = "fact_id must be an integer memory id."
+                elif isinstance(raw_query, str) and raw_query.strip():
+                    # 自然语言遗忘保持禁用（提示注入面，见 plans/2026-05-23-memory-
+                    # system-stage2/03-architect-review-round1.md D-RISK-5）；
+                    # 只是把拒绝从静默失败改成可行动。
+                    code = MEMORY_FORGET_NATURAL_LANGUAGE_DISABLED
+                    reason = (
+                        "forgetting by natural-language description is disabled; "
+                        "memory_forget resolves an exact integer fact_id only."
+                    )
+                else:
+                    code = MEMORY_FORGET_TARGET_REQUIRED
+                    reason = "no fact_id was given."
+                # 拒绝路径必须永远返回，绝不改成第二种崩溃：身份解析失败时退化成
+                # 「没有可遗忘的 id」这条同样可行动的文案。
+                try:
+                    principal = await trusted_principal(context)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "memory_forget.principal_unavailable error_type=%s",
+                        type(exc).__name__,
+                    )
+                    return _memory_forget_rejection(code, reason, ())
+                return _memory_forget_rejection(
+                    code,
+                    reason,
+                    await _memory_forget_candidates(deps.memory_manager, principal),
+                )
+            # 授权/抑制路径与既有实现逐字一致：同一个 trusted principal、同一个
+            # 由 root_run_id/call_id 派生的 source_event_id、payload_hash=None。
+            # 身份/执行标识解析失败依然**不遗忘**（授权语义不变），只是不再以裸异常收场。
+            try:
+                _, root_run_id, call_id = trusted_memory_execution(context)
+                principal = await trusted_principal(context)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "memory_forget.identity_unavailable error_type=%s",
+                    type(exc).__name__,
+                )
+                return {
+                    "ok": False,
+                    "error_code": MEMORY_FORGET_IDENTITY_UNAVAILABLE,
+                    "public_message": (
+                        "memory_forget rejected: this Run cannot be tied to a "
+                        "memory owner, so nothing was forgotten. Do not retry in "
+                        "this turn; tell the user the memory is unchanged."
+                    ),
+                }
             source_event_id = (
                 f"explicit-memory-action/v1/{root_run_id}/{call_id}"
             )
-            forgotten = bool(await deps.memory_manager.forget_fact(
-                int(arguments["fact_id"]),
-                reason="",
-                principal=await trusted_principal(context),
-                source_event_id=source_event_id,
-                payload_hash=None,
-            ))
+            try:
+                forgotten = bool(await deps.memory_manager.forget_fact(
+                    fact_id,
+                    reason="",
+                    principal=principal,
+                    source_event_id=source_event_id,
+                    payload_hash=None,
+                ))
+            except Exception as exc:  # noqa: BLE001 - 存储异常不得外泄成裸异常
+                # 只记类型名：所有权/幂等冲突与存储故障的细节都是私有诊断。
+                logger.warning(
+                    "memory_forget.store_failed error_type=%s", type(exc).__name__
+                )
+                return {
+                    "ok": False,
+                    "error_code": MEMORY_FORGET_STORE_UNAVAILABLE,
+                    "public_message": (
+                        "memory_forget rejected: this memory could not be "
+                        "forgotten right now. Do not retry in this turn; tell the "
+                        "user the memory is unchanged and that they can remove it "
+                        "in the app's memory panel."
+                    ),
+                }
+            if not forgotten:
+                return _memory_forget_rejection(
+                    MEMORY_FORGET_UNKNOWN_FACT_ID,
+                    f"fact_id {fact_id} is not an active memory of this user.",
+                    await _memory_forget_candidates(deps.memory_manager, principal),
+                )
             return {
                 "ok": True,
-                "forgotten": forgotten,
-                "receipt": "forgotten" if forgotten else "already_forgotten",
+                "forgotten": True,
+                "receipt": "forgotten",
                 "source_event_id": source_event_id,
             }
 
@@ -537,6 +741,21 @@ def build_explicit_product_tool_catalog(
                     "Legacy compatibility field; the current SDK catalog ignores this filter."
                 )},
             }}}
+        elif name == "memory_forget":
+            properties = schema["parameters"].get("properties", {})
+            schema = {**schema, "description": _MEMORY_FORGET_DESCRIPTION, "parameters": {
+                **schema["parameters"], "properties": {
+                    **properties,
+                    "fact_id": {
+                        **properties.get("fact_id", {"type": "integer"}),
+                        "description": _MEMORY_FORGET_FACT_ID_DESCRIPTION,
+                    },
+                    "query": {
+                        **properties.get("query", {"type": "string"}),
+                        "description": _MEMORY_FORGET_QUERY_DESCRIPTION,
+                    },
+                },
+            }}
         elif name == "tool_describe":
             schema = {**schema, "description": schema["description"].replace(
                 "capability_search", "tool_search"), "parameters": {
