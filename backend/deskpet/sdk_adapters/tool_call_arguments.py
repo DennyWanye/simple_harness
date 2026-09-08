@@ -67,12 +67,34 @@ def canonical_tool_arguments_json(arguments: object) -> str:
 
 
 class ToolCallArgumentsMemo:
-    """Latest issued arguments per provider tool ``call_id`` (bounded, LRU).
+    """Arguments per provider tool ``call_id`` (bounded, LRU, poison on conflict).
 
-    Keyed by ``call_id`` *and* verified against ``tool_name`` on read: the memo
-    outlives a single Run on purpose (a durable Context replays earlier turns of
-    the same conversation), so a name mismatch must degrade to the fallback
-    rather than attach another call's arguments.
+    **A raw provider ``call_id`` is not globally unique.**  The SDK says so
+    itself: ``runtime/drivers/react_loop.py::_internal_effect_identity`` derives
+    the internal ``CallId`` by hashing ``{run_id, turn_ordinal,
+    raw_provider_call_id, call_ordinal}``, and ``execution_effects`` keeps
+    ``raw_call_id`` in its own column precisely because it cannot be the key.
+    DeepSeek emits long random ids, but plenty of OpenAI-compatible endpoints
+    reachable through the product registry (vLLM, llama.cpp, LM Studio, local
+    gateways) emit index-style ids — ``call_0``, ``call_1`` — restarting at every
+    turn.
+
+    Attaching turn 2's arguments to turn 1's assistant would be **worse** than
+    the ``"{}"`` it replaces: the model would be shown a coherent-looking but
+    false "I called ``read_file {"path":"B.md"}``" directly above A.md's
+    contents, which is the very imitation channel this memo exists to close.  So
+    the memo fails closed on any ambiguity:
+
+    * ``tool_name`` must match on read;
+    * re-recording a ``call_id`` with **different** arguments or a different tool
+      **poisons** that key — every later ``read`` returns ``None`` and the wire
+      degrades to the counted ``"{}"`` fallback.  Re-recording *identical*
+      arguments is a no-op, so a protocol resample of the same turn is idempotent
+      and stays readable.
+
+    ``_wire_messages`` adds the second half of the guard: a ``call_id`` that
+    appears more than once inside one request is ambiguous by construction and
+    falls back for every one of its occurrences.
     """
 
     def __init__(
@@ -91,7 +113,8 @@ class ToolCallArgumentsMemo:
                 raise ValueError(
                     f"tool call arguments memo {name} must be a positive integer"
                 )
-        self._entries: OrderedDict[str, tuple[str, str]] = OrderedDict()
+        # value: (tool_name, arguments_json) — arguments_json None == poisoned.
+        self._entries: OrderedDict[str, tuple[str, str | None]] = OrderedDict()
         self._capacity = capacity
         self._max_bytes = max_bytes
         self._entry_max_bytes = entry_max_bytes
@@ -116,32 +139,46 @@ class ToolCallArgumentsMemo:
             return self._bytes
 
     def record(self, call_id: object, tool_name: object, arguments: object) -> bool:
-        """Retain one issued call. Returns whether it is now readable."""
+        """Retain one issued call. Returns whether it is now readable.
 
-        key = _text(call_id)
-        name = _text(tool_name)
-        if not key or not name or not isinstance(arguments, dict):
-            return False
-        payload = canonical_tool_arguments_json(arguments)
-        size = len(payload.encode("utf-8")) + len(key.encode("utf-8"))
-        if size > self._entry_max_bytes or size > self._max_bytes:
-            # An oversized argument object is not worth evicting the whole memo
-            # for; the wire simply degrades to the counted fallback.
+        Advisory by contract: this never raises into the Provider path.  A
+        rejected or poisoned call simply becomes a counted ``"{}"`` fallback on
+        the wire.
+        """
+
+        try:
+            key = _text(call_id)
+            name = _text(tool_name)
+            if not key or not name or not isinstance(arguments, dict):
+                # Never leave a stale entry standing for a call we could not
+                # retain: a later read must not answer with an older turn's
+                # arguments. Same direction as the oversized branch below.
+                with self._lock:
+                    self._poison(key)
+                return False
+            payload = canonical_tool_arguments_json(arguments)
+            size = _entry_bytes(key, name, payload)
+            if size > self._entry_max_bytes or size > self._max_bytes:
+                # An oversized argument object is not worth evicting the whole
+                # memo for; the wire degrades to the counted fallback.
+                with self._lock:
+                    self._poison(key)
+                return False
             with self._lock:
+                existing = self._entries.get(key)
+                if existing is not None and existing != (name, payload):
+                    # Either a poisoned key, or the same raw id reused by a later
+                    # turn with different arguments. Both are unresolvable here —
+                    # fail closed rather than fabricate a call/result pairing.
+                    self._poison(key)
+                    return False
                 self._drop(key)
+                self._entries[key] = (name, payload)
+                self._bytes += size
+                self._evict_locked()
+                return key in self._entries
+        except Exception:  # noqa: BLE001 - the memo is advisory, never fatal
             return False
-        with self._lock:
-            self._drop(key)
-            self._entries[key] = (name, payload)
-            self._bytes += size
-            while self._entries and (
-                len(self._entries) > self._capacity or self._bytes > self._max_bytes
-            ):
-                oldest, (_, evicted) = self._entries.popitem(last=False)
-                self._bytes -= len(evicted.encode("utf-8")) + len(
-                    oldest.encode("utf-8")
-                )
-            return key in self._entries
 
     def read(self, call_id: object, tool_name: object) -> str | None:
         """The canonical ``arguments`` JSON for this call, or ``None``."""
@@ -152,10 +189,15 @@ class ToolCallArgumentsMemo:
             return None
         with self._lock:
             entry = self._entries.get(key)
-            if entry is None or entry[0] != name:
+            if entry is None or entry[0] != name or entry[1] is None:
                 return None
             self._entries.move_to_end(key)
             return entry[1]
+
+    def is_poisoned(self, call_id: object) -> bool:
+        with self._lock:
+            entry = self._entries.get(_text(call_id))
+            return entry is not None and entry[1] is None
 
     def release_call(self, call_id: object) -> None:
         with self._lock:
@@ -166,11 +208,34 @@ class ToolCallArgumentsMemo:
             self._entries.clear()
             self._bytes = 0
 
+    def _poison(self, key: str) -> None:
+        """Make an already-known ``call_id`` unreadable (until eviction).
+
+        Unknown keys are left alone: there is no stale answer to suppress, and a
+        rejected record must not spend a slot on a call the memo never held.
+        """
+
+        existing = self._entries.get(key) if key else None
+        if existing is None:
+            return
+        name = existing[0]
+        self._drop(key)
+        self._entries[key] = (name, None)
+        self._bytes += _entry_bytes(key, name, None)
+        self._evict_locked()
+
+    def _evict_locked(self) -> None:
+        while self._entries and (
+            len(self._entries) > self._capacity or self._bytes > self._max_bytes
+        ):
+            oldest, (name, payload) = self._entries.popitem(last=False)
+            self._bytes -= _entry_bytes(oldest, name, payload)
+
     def _drop(self, call_id: object) -> None:
         key = _text(call_id)
         existing = self._entries.pop(key, None)
         if existing is not None:
-            self._bytes -= len(existing[1].encode("utf-8")) + len(key.encode("utf-8"))
+            self._bytes -= _entry_bytes(key, existing[0], existing[1])
 
     def __len__(self) -> int:
         with self._lock:
@@ -184,6 +249,16 @@ def default_tool_call_arguments_memo() -> ToolCallArgumentsMemo:
     """The process-wide memo the provider adapter uses when none is injected."""
 
     return _DEFAULT_MEMO
+
+
+def _entry_bytes(key: str, name: str, payload: str | None) -> int:
+    """Every stored byte is accounted, including the tool name."""
+
+    return (
+        len(key.encode("utf-8"))
+        + len(name.encode("utf-8"))
+        + (0 if payload is None else len(payload.encode("utf-8")))
+    )
 
 
 def _text(value: object) -> str:

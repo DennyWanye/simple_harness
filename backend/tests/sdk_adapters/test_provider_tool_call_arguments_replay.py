@@ -232,6 +232,31 @@ def test_restored_bytes_equal_the_live_metadata_path() -> None:
     )
 
 
+def test_live_metadata_serialisation_is_byte_frozen() -> None:
+    """把内联 json.dumps 换成共享序列化，一个字节都不许变（黄金串）。
+
+    这是 §byte-stable 的真正承重面：无重建的请求根本走不到这段代码，只有带
+    ``tool_calls`` 的消息才走。黄金串按修复前的
+    ``json.dumps(obj, sort_keys=True, separators=(",", ":"))``（ensure_ascii 默认
+    True）写死，任何一处口径漂移都会在这里断。
+    """
+
+    live = Message(
+        MessageRole.ASSISTANT,
+        "",
+        metadata={"provider_tool_calls": [{
+            "id": "call_frozen", "name": "write_file",
+            "arguments": {"z": 1, "a": "中文", "n": None, "f": 1.5,
+                          "nested": {"b": [1, "二"], "a": True}},
+        }]},
+    )
+    payload = _ProductOpenAICompatibleProvider._message_payload(live)
+    assert payload["tool_calls"][0]["function"]["arguments"] == (
+        '{"a":"\\u4e2d\\u6587","f":1.5,"n":null,'
+        '"nested":{"a":true,"b":[1,"\\u4e8c"]},"z":1}'
+    )
+
+
 def test_requests_without_rebuilt_tool_calls_are_byte_stable() -> None:
     """无重建的请求必须与修复前逐字节相同（含空 memo 与满 memo 两种）。"""
 
@@ -286,8 +311,13 @@ def test_real_http_continuation_hop_sends_the_original_arguments() -> None:
                 "id": "hop-1", "model": "model-a",
                 "choices": [{"message": {"role": "assistant", "content": "", "tool_calls": [{
                     "id": "call_hop", "type": "function",
+                    # 带上 Host 内部叙述字段：它必须在留存前就被剥掉，
+                    # 从而锁定 invoke 里 _extract_public_progress 在
+                    # _retain_tool_calls_in_message **之前**这一顺序。
                     "function": {"name": "task_scope_search",
-                                 "arguments": json.dumps(SEARCH_ARGUMENTS)},
+                                 "arguments": json.dumps(
+                                     {**SEARCH_ARGUMENTS,
+                                      "deskpet_public_progress": "NARRATION_CANARY"})},
                 }]}, "finish_reason": "tool_calls"}],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
             })
@@ -335,9 +365,137 @@ def test_real_http_continuation_hop_sends_the_original_arguments() -> None:
     hop = sent[1]["messages"][1]
     assert json.loads(hop["tool_calls"][0]["function"]["arguments"]) == SEARCH_ARGUMENTS
     assert sent[1]["messages"][2]["tool_call_id"] == "call_hop"
+    # 叙述字段不得随备忘回到 tool_calls 的 arguments 里。（它出现在 assistant
+    # 的 content 上是 _extract_public_progress 的既定行为：把叙述提升为公开正文。）
+    assert "NARRATION_CANARY" not in json.dumps(hop["tool_calls"], ensure_ascii=False)
+    assert hop["content"] == "NARRATION_CANARY", "叙述必须被提升为公开正文，而不是丢弃"
+
+
+# --- 原始 call_id 复用（index 型 id 端点）：必须失败关闭 ------------------------
+
+
+def test_reused_call_id_never_staples_another_turns_arguments(caplog) -> None:
+    """审计 F1：``call_0``/``call_1`` 这类每轮重排的 id 不得张冠李戴。
+
+    原始 call_id 只在一个 ``(run, turn, ordinal)`` 内唯一——SDK 自己把这三者一起
+    哈希才得到内部 CallId（``react_loop.py::_internal_effect_identity``）。把第 2 轮
+    的入参贴到第 1 轮的 assistant 上比 ``"{}"`` 更坏：模型会看到自洽但虚假的
+    「调用 read_file {"path":"B.md"} → A.md 的内容」。
+    """
+
+    memo = ToolCallArgumentsMemo()
+    _retain_tool_calls_in_message(
+        _issued_response(("call_0", "read_file", {"path": "A.md"})), arguments_memo=memo
+    )
+    _retain_tool_calls_in_message(
+        _issued_response(("call_0", "read_file", {"path": "B.md"})), arguments_memo=memo
+    )
+    messages = (
+        Message(MessageRole.USER, "读两个文件"),
+        Message(MessageRole.ASSISTANT, ""),
+        Message(MessageRole.TOOL, "contents of A", name="read_file", call_id=CallId("call_0")),
+        Message(MessageRole.ASSISTANT, ""),
+        Message(MessageRole.TOOL, "contents of B", name="read_file", call_id=CallId("call_0")),
+    )
+    with caplog.at_level(logging.WARNING, logger="deskpet.sdk_adapters.provider"):
+        wire = _ProductOpenAICompatibleProvider._wire_messages(messages, arguments_memo=memo)
+    assert wire[1]["tool_calls"][0]["function"]["arguments"] == "{}"
+    assert wire[3]["tool_calls"][0]["function"]["arguments"] == "{}"
+    record = next(r.getMessage() for r in caplog.records
+                  if "tool_call_arguments_unavailable" in r.getMessage())
+    assert "rebuilt=2 restored=0 fallback_empty=2 ambiguous_call_ids=2" in record
+    for secret in ("call_0", "read_file", "A.md", "B.md"):
+        assert secret not in record
+
+
+def test_conflicting_record_poisons_the_key_for_later_requests() -> None:
+    """毒化跨请求生效：即使某一跳只看到一处出现，也不得给出另一轮的入参。"""
+
+    memo = ToolCallArgumentsMemo()
+    assert memo.record("call_0", "read_file", {"path": "A.md"}) is True
+    assert memo.record("call_0", "read_file", {"path": "B.md"}) is False
+    assert memo.is_poisoned("call_0")
+    assert memo.read("call_0", "read_file") is None
+    single = (
+        Message(MessageRole.USER, "u"),
+        Message(MessageRole.ASSISTANT, ""),
+        Message(MessageRole.TOOL, "{}", name="read_file", call_id=CallId("call_0")),
+    )
+    wire = _ProductOpenAICompatibleProvider._wire_messages(single, arguments_memo=memo)
+    assert wire[1]["tool_calls"][0]["function"]["arguments"] == "{}"
+
+
+def test_identical_re_record_is_idempotent_and_stays_readable() -> None:
+    """协议重采样会对同一轮再记一次：同参数不得被判为冲突。"""
+
+    memo = ToolCallArgumentsMemo()
+    assert memo.record("call_r", "read_file", {"path": "A.md"}) is True
+    assert memo.record("call_r", "read_file", {"path": "A.md"}) is True
+    assert not memo.is_poisoned("call_r")
+    assert json.loads(memo.read("call_r", "read_file")) == {"path": "A.md"}
+    assert len(memo) == 1
+
+
+def test_same_call_id_under_another_tool_also_poisons() -> None:
+    memo = ToolCallArgumentsMemo()
+    memo.record("call_0", "read_file", {"path": "A.md"})
+    assert memo.record("call_0", "write_file", {"path": "A.md"}) is False
+    assert memo.read("call_0", "read_file") is None
+    assert memo.read("call_0", "write_file") is None
+
+
+def test_unique_ids_still_get_their_arguments_across_turns() -> None:
+    """守卫不得误伤正常端点：不同 call_id 的两轮仍各自复原。"""
+
+    memo = ToolCallArgumentsMemo()
+    _retain_tool_calls_in_message(
+        _issued_response(("call_t1", "read_file", {"path": "A.md"})), arguments_memo=memo
+    )
+    _retain_tool_calls_in_message(
+        _issued_response(("call_t2", "read_file", {"path": "B.md"})), arguments_memo=memo
+    )
+    wire = _ProductOpenAICompatibleProvider._wire_messages(
+        (
+            Message(MessageRole.USER, "读两个文件"),
+            Message(MessageRole.ASSISTANT, ""),
+            Message(MessageRole.TOOL, "A", name="read_file", call_id=CallId("call_t1")),
+            Message(MessageRole.ASSISTANT, ""),
+            Message(MessageRole.TOOL, "B", name="read_file", call_id=CallId("call_t2")),
+        ),
+        arguments_memo=memo,
+    )
+    assert json.loads(wire[1]["tool_calls"][0]["function"]["arguments"]) == {"path": "A.md"}
+    assert json.loads(wire[3]["tool_calls"][0]["function"]["arguments"]) == {"path": "B.md"}
 
 
 # --- ToolCallArgumentsMemo 本体 -------------------------------------------------
+
+
+def test_rejected_record_never_leaves_a_stale_answer() -> None:
+    """非法/超大入参不得让旧值继续可读（失败方向必须是退化，不是旧答案）。"""
+
+    memo = ToolCallArgumentsMemo(entry_max_bytes=64)
+    memo.record("call_s", "t", {"v": "ok"})
+    assert memo.record("call_s", "t", "not-an-object") is False
+    assert memo.read("call_s", "t") is None
+    memo2 = ToolCallArgumentsMemo(entry_max_bytes=64)
+    memo2.record("call_o", "t", {"v": "ok"})
+    assert memo2.record("call_o", "t", {"v": "x" * 4096}) is False
+    assert memo2.read("call_o", "t") is None
+
+
+def test_record_never_raises_into_the_provider_path() -> None:
+    """备忘是 advisory：任何异常都必须被吞成 False，不得变成 Run 的未知结局。"""
+
+    class Exploding(dict):
+        def items(self):  # json.dumps walks items()
+            raise RuntimeError("boom")
+
+    memo = ToolCallArgumentsMemo()
+    assert memo.record("call_boom", "t", Exploding(a=1)) is False
+    assert memo.read("call_boom", "t") is None
+
+
 
 
 def test_memo_rejects_invalid_bounds() -> None:
@@ -392,14 +550,18 @@ def test_memo_rejects_malformed_input() -> None:
     assert memo.read("call", "") is None
 
 
-def test_memo_last_write_wins_and_release_drops() -> None:
+def test_memo_conflicting_write_poisons_instead_of_last_write_wins() -> None:
+    """入参不同的二次留存必须毒化，而不是「后写覆盖」——覆盖正是 F1 的成因。"""
+
     memo = ToolCallArgumentsMemo()
     memo.record("call_r", "t", {"v": 1})
     memo.record("call_r", "t", {"v": 2})
-    assert json.loads(memo.read("call_r", "t")) == {"v": 2}
+    assert memo.read("call_r", "t") is None
+    assert memo.is_poisoned("call_r")
     assert len(memo) == 1
     memo.release_call("call_r")
     assert memo.read("call_r", "t") is None
+    assert not memo.is_poisoned("call_r")
     assert len(memo) == 0 and memo.recorded_bytes == 0
 
 

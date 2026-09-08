@@ -532,7 +532,12 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
 
         A memo miss still degrades to ``"{}"`` — a valid wire shape beats a dead
         Run — but it is counted in a payload-free log line instead of passing
-        silently.
+        silently.  Ambiguity fails closed the same way: a raw provider
+        ``call_id`` is only unique within one ``(run, turn, ordinal)`` (see
+        ``react_loop.py::_internal_effect_identity``), so an id repeated inside
+        one request degrades for every occurrence.  Fabricating a plausible but
+        wrong call/result pairing would feed the very imitation channel this
+        repair closes.
 
         S5b upstream obligation (unchanged): the clean fix is upstream — treat an
         assistant's ``tool_calls`` as a first-class public transcript field (it is
@@ -547,9 +552,26 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
             if arguments_memo is not None
             else default_tool_call_arguments_memo()
         )
+        # A raw provider call_id is only unique within one (run, turn, ordinal)
+        # — the SDK hashes exactly those into its internal CallId
+        # (``react_loop.py::_internal_effect_identity``), and index-style ids
+        # (``call_0``, ``call_1``) restart every turn on several
+        # OpenAI-compatible endpoints. An id repeated inside one request is
+        # therefore unresolvable: fall back for every occurrence rather than
+        # staple one turn's arguments above another turn's result.
+        repeated = {
+            call_id
+            for call_id, count in Counter(
+                message.call_id.value
+                for message in messages
+                if message.role is MessageRole.TOOL and message.call_id is not None
+            ).items()
+            if count > 1
+        }
         payloads = [cls._message_payload(message) for message in messages]
         restored_total = 0
         fallback_total = 0
+        ambiguous_total = 0
         for index, message in enumerate(messages):
             if message.role is not MessageRole.ASSISTANT:
                 continue
@@ -562,11 +584,17 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                 # call_id 必然存在：Message 契约对 TOOL 角色强制要求它
                 # （contracts/messages.py "tool message requires call_id"）。
                 name = str(follower.name or "unknown")
-                restored = memo.read(follower.call_id.value, name)
-                if restored is None:
+                call_id = follower.call_id.value
+                if call_id in repeated:
+                    restored = None
+                    ambiguous_total += 1
                     fallback_total += 1
                 else:
-                    restored_total += 1
+                    restored = memo.read(call_id, name)
+                    if restored is None:
+                        fallback_total += 1
+                    else:
+                        restored_total += 1
                 followers.append(
                     {
                         "id": follower.call_id.value,
@@ -587,11 +615,13 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
             # Counts only — never a call id, tool name or argument value.
             logger.warning(
                 "product_provider_tool_call_arguments_unavailable "
-                "request_ref=%s rebuilt=%s restored=%s fallback_empty=%s",
+                "request_ref=%s rebuilt=%s restored=%s fallback_empty=%s "
+                "ambiguous_call_ids=%s",
                 _diagnostic_request_ref.get(),
                 restored_total + fallback_total,
                 restored_total,
                 fallback_total,
+                ambiguous_total,
             )
         return payloads
 
@@ -1063,8 +1093,11 @@ class ProductProviderAdapter:
             reasoning_wire=self.reasoning_wire,
             tool_call_arguments_memo=tool_call_arguments_memo,
         )
-        # One memo per adapter, shared with its delegate: the response parse
-        # writes it, the next turn's wire assembly reads it (HM-TO-A6 事件 K).
+        # The response parse writes this memo, the next turn's wire assembly
+        # reads it (HM-TO-A6 事件 K). Production injects nothing, so this is the
+        # module-level singleton shared by every adapter in the process — the
+        # poison-on-conflict and repeated-id guards, not the topology, are what
+        # keep a reused call_id from crossing Run or conversation boundaries.
         self._tool_call_arguments = self._delegate._tool_call_arguments
         self._pre_invoke_guard = pre_invoke_guard
         self._timeout_seconds = float(timeout)
