@@ -368,6 +368,7 @@ def _execute(args, layers, expected):
     selection_compiler = importlib.util.module_from_spec(selection_spec)
     selection_spec.loader.exec_module(selection_compiler)
     inputs["selection"] = {"version": selection_compiler.VERSION, "cases": selection_compiler.inputs(fixture)}
+    unpairable = dict(selection_compiler.UNPAIRABLE_TIE_CELLS)
     conflict = fixture["conflict_write_oracle"]
     inputs["conflict"] = {"payloads":{name:{**value,"qualifiers":[]} for name,value in conflict["canonical_payloads"].items()},
         "cases":[{"id":row["id"],"mutation":row.get("mutation",{})} for row in [conflict["create_case"],*conflict["reject_cases"],*conflict["resolution_cases"],conflict["recall_cases"][0]]]}
@@ -477,6 +478,15 @@ def _execute(args, layers, expected):
         summary.update(status="FAIL", reason="validation or oracle code changed during execution")
         for layer in summary["layers"]:
             invalidate_admissions(summary,layer,summary["reason"])
+    # Sealed tie-break rows adjudicated as unreachable on the frozen public contract (see the
+    # reachability note in typed_recall_selection_oracle). They only ever REPLACE the generic
+    # "no executor yet" reason on a cell that is already BLOCKED: never a PASS, never a FAIL,
+    # never a cell some executor actually observed.
+    for name, reason in unpairable.items():
+        row = summary["cell_results"].get(name)
+        if (row is not None and row["status"] == "BLOCKED"
+                and row.get("reason", "").startswith("CELL_EXECUTOR_NOT_IMPLEMENTED")):
+            row["reason"] = reason
     summary["passed_cells"] = sorted(name for name,row in summary["cell_results"].items() if row["status"]=="PASS")
     summary["acceptance_counts"] = {status: sum(row["status"] == status for row in summary["cell_results"].values())
                                     for status in ("PASS", "FAIL", "BLOCKED")}
@@ -494,6 +504,7 @@ def _execute(args, layers, expected):
                 row.update(assessment_scope='OBSERVATION_ONLY',blocker_categories=[])
             elif reason.startswith('SDK_INCREMENT_REQUIRED:'):row['blocker_categories']=['SDK_INCREMENT_REQUIRED']
             elif reason.startswith('DUPLICATE_OF_POSITIVE_INVARIANT_WITNESS:'):row['blocker_categories']=['DUPLICATE_UNTESTABLE']
+            elif reason.startswith('PUBLIC_TIE_NOT_CONSTRUCTIBLE:'):row['blocker_categories']=['CONTRACT_FACT_UNPAIRABLE']
             elif reason.startswith('CELL_EXECUTOR_NOT_IMPLEMENTED') or 'PROMOTION_PATH_NOT_EXECUTED' in reason:row['blocker_categories']=['EXECUTOR_UNIMPLEMENTED']
             elif reason.startswith(('PUBLIC_CASE_PRECONDITION_REJECTED','STATE_PUBLIC_PRECONDITION:','PUBLIC_CONTRACT_CONFLICT:','SEALED_PAGE_BOUND')) or any(v in reason for v in (
                     'APPLICABILITY_OR_SIGNAL','CANARY_AND_CROSS_SCOPE','SHORT_PUBLIC_PRECONDITION','CONSTRUCTION_CONFLICT')):

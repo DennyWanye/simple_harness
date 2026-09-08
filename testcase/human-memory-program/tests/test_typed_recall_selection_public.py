@@ -80,6 +80,25 @@ class SelectionPublicTests(unittest.IsolatedAsyncioTestCase):
                     o['variants']['short-newer']['variant']['episode_source_time']
             self.assertEqual(oracle.assess_cell(fixture, row)['status'], 'FAIL', attack)
 
+        score = verdicts['selection-budget/tie-score'][0]
+        for attack in ('order', 'equal_scores', 'lane_opened', 'equal_times', 'replay'):
+            row = copy.deepcopy(score)
+            o = row['observations']
+            variant = o['variants']['low-newer']
+            if attack == 'order':
+                # If the newer lower-scored candidate moved first, -typed_source_time would be
+                # outranking -rrf_score_12dp and the sealed precedence would be broken.
+                variant['recall']['execution']['result']['items'].reverse()
+            elif attack == 'equal_scores':
+                items_of(o, 'low-newer')[1]['score'] = items_of(o, 'low-newer')[0]['score']
+            elif attack == 'lane_opened':
+                variant['recall']['plan']['retrieval_modes'] = ['full_text', 'vector']
+            elif attack == 'equal_times':
+                variant['variant']['low_source_time'] = variant['variant']['high_source_time']
+            else:
+                variant['replay']['replayed'] = False
+            self.assertEqual(oracle.assess_cell(fixture, row)['status'], 'FAIL', attack)
+
         greedy = verdicts['selection-budget/budget:greedy'][0]
         for attack in ('both_selected', 'not_truncated', 'budget_widened', 'oversize_selected', 'probe_order'):
             row = copy.deepcopy(greedy)
@@ -110,10 +129,23 @@ class SelectionPublicTests(unittest.IsolatedAsyncioTestCase):
         times = {selection.seconds(c['typed_source_time']) for c in rows['tie-newer-source-time']['candidates']}
         for variant in compiled['tie-newer-source-time']['variants']:
             self.assertEqual({variant['episode_source_time'], variant['short_source_time']}, times)
+        # tie-score is the two-episode construction: the sealed row's own two source times, run in
+        # both directions, with the lower-scored title carrying the newer one first.
+        score = rows['tie-score']
+        score_times = {selection.seconds(c['typed_source_time']) for c in score['candidates']}
+        compiled_score = compiled['tie-score']
+        self.assertEqual(compiled_score['construction'], 'two-episode-lexical')
+        self.assertGreater(compiled_score['high_title'].count(selection.QUERY_TOKEN),
+                           compiled_score['low_title'].count(selection.QUERY_TOKEN))
+        for variant in compiled_score['variants']:
+            self.assertEqual({variant['high_source_time'], variant['low_source_time']}, score_times)
+        first = compiled_score['variants'][0]
+        self.assertGreater(first['low_source_time'], first['high_source_time'])
         # Every case is clocked strictly after the newest frozen source time.
         for spec in compiled.values():
             for variant in spec['variants']:
-                self.assertGreater(spec['now'], max(variant['episode_source_time'], variant['short_source_time']))
+                times = [value for key, value in variant.items() if key.endswith('_source_time')]
+                self.assertGreater(spec['now'], max(times))
 
 
 if __name__ == '__main__':

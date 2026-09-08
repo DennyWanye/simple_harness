@@ -28,9 +28,13 @@ class AuthorityEventPublicTests(unittest.IsolatedAsyncioTestCase):
         # Inputs carry no outcome/hash gold.
         for spec in compiled['events'].values():
             self.assertFalse({'expected', 'outcome', 'epoch', 'receipt_hash', 'expected_receipt_hash'} & set(spec))
+        # current-use/context:new-continuation left this adapter in RUN-09: it is executed by the
+        # context-use adapter now, and two adapters declaring one cell id is a duplicate-cell
+        # bridge failure. Only the two SDK-increment cells remain declared here.
         cells = ['current-use/authority:revoke', 'current-use/authority:contest', 'current-use/authority:result_expiry',
                  'current-use/authority:short_source_expiry', 'current-use/authority:policy_hash_change',
-                 'current-use/context:new-continuation']
+                 'current-use/authority:short_source_cleanup']
+        self.assertNotIn('current-use/context:new-continuation', adapter.CELLS)
         with tempfile.TemporaryDirectory() as directory:
             rows = await adapter.run_cases({'cells': cells, 'recipe': base, 'events': compiled['events']}, Path(directory))
         verdicts = {row['cell_id']: (row, oracle.assess_cell(fixture, row)) for row in rows}
@@ -55,7 +59,7 @@ class AuthorityEventPublicTests(unittest.IsolatedAsyncioTestCase):
         for name in cells[4:]:
             row, verdict = verdicts[name]
             self.assertEqual(row['status'], 'BLOCKED')
-            self.assertTrue(verdict['reason'].startswith(('SDK_INCREMENT_REQUIRED:', 'CELL_EXECUTOR_NOT_IMPLEMENTED')), verdict)
+            self.assertTrue(verdict['reason'].startswith('SDK_INCREMENT_REQUIRED:'), verdict)
         revoke = verdicts['current-use/authority:revoke'][0]
         for attack in ('epoch', 'stale_accepted', 'revoke_rejected', 'revoke_directive', 'mid_leak', 'replay', 'order', 'first_time', 'policy'):
             row = copy.deepcopy(revoke); o = row['observations']

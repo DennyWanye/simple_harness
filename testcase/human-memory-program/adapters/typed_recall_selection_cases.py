@@ -17,6 +17,7 @@ import simple_harness_memory as m
 CELLS = {
     'selection-budget/tie-source-kind',
     'selection-budget/tie-newer-source-time',
+    'selection-budget/tie-score',
     'selection-budget/budget:greedy',
 }
 
@@ -66,6 +67,31 @@ async def seed_variant(case, spec, variant, budget=None):
     return observed
 
 
+async def seed_two_episode_variant(case, spec, variant):
+    """One real database, two real cognitive episodes of the same memory type.
+
+    The two differ only in how many times the query token occurs in the title, so the cognitive
+    collector gives them full_text ranks 1 and 2 inside the SAME (memory_type, lane) namespace and
+    therefore two different RRF scores, while every other ordering input stays equal. The variant
+    decides which of the two carries the newer occurred_start. Nothing here asserts an outcome.
+    """
+    observed = {'variant': dict(variant), 'calls': case.events, 'sources': case.sources}
+    observed['registration'] = dc.asdict(await case.manager.register_principal_owner(
+        case.principal, m.MemoryScope.personal(case.principal.actor_id)))
+    for label, title in (('high', spec['high_title']), ('low', spec['low_title'])):
+        start = variant[label + '_source_time']
+        seed = {'memory_type': 'episode',
+                'payload': {'title': title, 'participants': ['user'], 'goals': ['recall'],
+                            'actions': ['store'], 'results': ['stored'], 'impacts': ['none'],
+                            'occurred_interval': {'start': start, 'end': start + spec['episode_duration']}}}
+        observed[label + '_seed'] = seed
+        await case.seed(seed, operation_id='selection-' + label, evidence_id='selection-user-' + label)
+    arguments = dict(query=spec['query'], memory_types=('episode',), key=variant['key'])
+    observed['recall'] = await case.recall(**arguments)
+    observed['replay'] = (await case.recall(**arguments))['execution']
+    return observed
+
+
 async def run_cases(request, workspace):
     helper = load('typed_recall_case_manager')
     rows = []
@@ -88,7 +114,10 @@ async def run_cases(request, workspace):
                         items = probe['recall']['execution']['result']['items']
                         budget = {**spec['budget_base'],
                                   'max_bytes': len(canonical_envelope(items[-1:]))}
-                    observed['variants'][variant['key']] = await seed_variant(case, spec, variant, budget)
+                    if spec.get('construction') == 'two-episode-lexical':
+                        observed['variants'][variant['key']] = await seed_two_episode_variant(case, spec, variant)
+                    else:
+                        observed['variants'][variant['key']] = await seed_variant(case, spec, variant, budget)
                 finally:
                     await case.close()
             observed['phase'] = 'complete'

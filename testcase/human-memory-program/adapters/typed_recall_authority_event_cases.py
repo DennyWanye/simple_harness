@@ -32,17 +32,10 @@ NO_PUBLIC_INPUT = {
         '(simple_harness_memory/core/manager.py:1245), so the sealed cleanup event has no public entry point. '
         'Required increment: MemoryManager.cleanup_short_horizon. short_source_expiry is a different event and is '
         'not accepted as a substitute. Sealed row kept unchanged',
-    # RUN-08 adjudication (a): the continuation axis IS expressible on the public contract - the
-    # Harness binds a user continuation's context-use turn to the continuation id itself
-    # (simple_harness/runtime/kernel.py:1284 turn_id=continuation_id, :1299 context_use_turn_id).
-    # The cell is therefore testable as "same run and provider attempt, different context-use
-    # turn -> NEW_AUTHORIZATION_REQUIRED"; the fixture is NOT amended and the executor is
-    # scheduled rather than declared impossible.
-    'current-use/context:new-continuation':
-        'CELL_EXECUTOR_NOT_IMPLEMENTED:the sealed continuation axis maps onto the public contract as the '
-        'RecallContextUseAuthorizationRequestV1.turn_id a user continuation carries '
-        '(simple_harness/runtime/kernel.py:1284/1299); wiring is the same-run same-attempt different-turn '
-        'authorization, expecting a distinct receipt and validate_request failure on the first one',
+    # RUN-09: current-use/context:new-continuation used to sit here as "executor not implemented".
+    # It is now executed by adapters/typed_recall_context_use_cases.py (same run and provider
+    # attempt, changed context-use turn), so it must NOT be declared here as well - two adapters
+    # emitting the same cell id is a duplicate-cell bridge failure.
 }
 CELLS = EVENT_CELLS | set(NO_PUBLIC_INPUT)
 

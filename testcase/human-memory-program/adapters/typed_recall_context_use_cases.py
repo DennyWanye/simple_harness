@@ -9,7 +9,8 @@ import simple_harness_memory as m
 
 CELLS = {
     'current-use/context:receipt-first', 'current-use/context:duplicate-same-provider-attempt',
-    'current-use/context:new-provider-attempt', 'current-use/context:suppression-first',
+    'current-use/context:new-provider-attempt', 'current-use/context:new-continuation',
+    'current-use/context:suppression-first',
     'current-use/context:wrong-snapshot', 'current-use/authority:suppression',
 }
 
@@ -58,14 +59,17 @@ async def context_bundle(case, recalled):
             selected['public_payload_hash'],size,size,h.DisclosureContext.from_json(recalled['context']['disclosure_context']),
             tuple(h.EvidenceRef.from_json(r) for r in recalled['context']['evidence_refs']),binding)
         fragments.append({'fragment':fragment.to_json(),'fragment_hash':fragment.fragment_hash})
-    return dict(executor_version=2,recall=recalled,pages=pages,fragments=fragments)
+    return dict(executor_version=3,recall=recalled,pages=pages,fragments=fragments)
 
 
-def use_request(case,bundle,attempt,at):
+def use_request(case,bundle,attempt,at,turn_id=None):
+    # turn_id is the public identity of the user continuation a recall result is used in
+    # (Harness runtime/kernel.py:1284/1299 enqueues continuation_id as exactly this turn id),
+    # so a changed continuation is expressed here and nowhere else.
     recalled=bundle['recall'];value=recalled['execution']
     fragments=tuple(h.ContextFragmentBindingV2(r['fragment']['fragment_id'],r['fragment_hash']) for r in bundle['fragments'])
     return h.RecallContextUseAuthorizationRequestV1(case.principal.actor_id,recalled['context']['run_id'],
-        recalled['context']['turn_id'],attempt,value['decision']['decision_id'],value['decision_hash'],
+        recalled['context']['turn_id'] if turn_id is None else turn_id,attempt,value['decision']['decision_id'],value['decision_hash'],
         value['result']['result_id'],value['result_hash'],tuple(h.RecallItemBindingV1(item['selected_item']['item_id'],ih)
             for item,ih in zip(value['result']['items'],value['result_item_hashes'],strict=True)),
         fragments,hashlib.sha256(canonical([f.to_json() for f in fragments])).hexdigest(),at)
@@ -100,7 +104,7 @@ async def run_cases(inputs,workspace):
     recipe=inputs['recipe'];rows=[]
     for index,name in enumerate(inputs['cells']):
         case=await module.CaseManager(workspace/f'context-use-{index}.sqlite',now=recipe['evaluated_at']).open()
-        o=dict(context_use_cell=name,executor_version=2,input=recipe,calls=case.events,sources=case.sources,
+        o=dict(context_use_cell=name,executor_version=3,input=recipe,calls=case.events,sources=case.sources,
             uses={},order=[],phase='register')
         try:
             o['registration']=dc.asdict(await case.manager.register_principal_owner(case.principal,m.MemoryScope.personal(case.principal.actor_id)))
@@ -126,6 +130,25 @@ async def run_cases(inputs,workspace):
                     case.now=recipe['next_use_at']
                     o['uses']['new_before_suppression']=await authorize(case,bundle,next_request)
                     o['order'].append('new_before_suppression')
+                if name.endswith('new-continuation'):
+                    # The sealed continuation axis is the use request's turn identity. Three real
+                    # public operations, all at the same clock: the sealed attempt under a changed
+                    # continuation, a never-used attempt under the same changed continuation, and
+                    # the paired control - the same never-used attempt family under the original
+                    # continuation. Nothing here asserts an outcome.
+                    case.now=recipe['next_use_at']
+                    changed=use_request(case,bundle,recipe['attempt'],recipe['next_use_at'],
+                        turn_id=recipe['next_continuation'])
+                    o['receipt_validation']['different_continuation']=validate(receipt,changed)
+                    o['continuation']={'same_attempt':await authorize(case,bundle,changed)}
+                    o['order'].append('continuation_same_attempt')
+                    o['continuation']['fresh_attempt']=await authorize(case,bundle,
+                        use_request(case,bundle,recipe['continuation_probe_attempt'],recipe['next_use_at'],
+                            turn_id=recipe['next_continuation']))
+                    o['order'].append('continuation_fresh_attempt')
+                    o['continuation']['control']=await authorize(case,bundle,
+                        use_request(case,bundle,recipe['continuation_control_attempt'],recipe['next_use_at']))
+                    o['order'].append('continuation_control')
                 if name.endswith('wrong-snapshot'):
                     attack={**original.to_json(),'snapshot_manifest_hash':'f'*64}
                     o['wrong_snapshot']={'input':attack}

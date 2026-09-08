@@ -18,7 +18,9 @@ def sha(value):
 
 def supported(recipe):
     seed=recipe['seed']
-    return (seed['memory_type']=='prospective' and recipe['family'] in {'lifecycle','epistemic'}
+    # 'projection' reuses the same binding: the minimal-projection cell needs a real registration
+    # acknowledgement before a pending Prospective head can be recalled at all.
+    return (seed['memory_type']=='prospective' and recipe['family'] in {'lifecycle','epistemic','projection'}
         and seed.get('state','pending') in {'pending','triggered'})
 
 

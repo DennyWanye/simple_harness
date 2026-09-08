@@ -80,16 +80,37 @@ class AdmissionOracleTests(unittest.IsolatedAsyncioTestCase):
         verdicts = {r['cell_id']: (r, oracle.assess_cell(fx, r)) for r in rows}
         for name in ('protocol/strict-v3-rejected', 'protocol/invalid-source-discriminant', 'protocol/cognitive-missing-revision', 'protocol/short-fake-revision'):
             self.assertEqual(verdicts[name][1]['status'], 'PASS', (name, verdicts[name][1]))
-        for name in ('protocol/naked-source-ref', 'protocol/page-wrong-result-hash', 'protocol/page-wrong-coordinate', 'protocol/page-expired-result'):
-            self.assertEqual(verdicts[name][1]['status'], 'BLOCKED', name)
-            self.assertTrue(verdicts[name][1]['reason'].startswith('PUBLIC_WITNESS_UNAVAILABLE:'))
-        # fixture_change_lineage FCL-001 re-sealed the minimal page budget at the exact public
-        # binding size, so the page now succeeds; the remaining blocker is the shared paging
-        # zero-candidate-read witness gap, identical to the three page-rejection cells.
+        # The paging zero-candidate-read obligation is now witnessed by invariance: the same page
+        # calls are replayed after the bound memory is really suppressed and the candidate layer's
+        # answer drops from 1 to 0, and not one byte of any page moves.
+        page_cells = ('protocol/naked-source-ref', 'protocol/page-wrong-result-hash', 'protocol/page-wrong-coordinate',
+                      'protocol/page-expired-result', 'protocol/page-correct-binding')
+        for name in page_cells:
+            self.assertEqual(verdicts[name][1]['status'], 'PASS', (name, verdicts[name][1]))
         page = verdicts['protocol/page-correct-binding']
-        self.assertTrue(page[1]['reason'].startswith('PUBLIC_WITNESS_UNAVAILABLE:'), page[1])
         self.assertEqual(page[0]['observations']['under_bound']['exception'],
                          {'type': 'MemoryLimitError', 'reason': 'typed_recall_page_budget_too_small'})
+        witness = page[0]['observations']['zero_read_witness']
+        self.assertEqual(len(witness['control_before']['execution']['result']['items']), 1)
+        self.assertEqual(len(witness['control_after']['execution']['result']['items']), 0)
+        for name in page_cells:
+            for attack in ('no_witness', 'page_moved', 'control_not_suppressed', 'control_never_read', 'wrong_target'):
+                row = copy.deepcopy(verdicts[name][0]); o = row['observations']
+                if attack == 'no_witness':
+                    o.pop('zero_read_witness')
+                elif attack == 'page_moved':
+                    replay = o['zero_read_witness']['replays'][name.split('/', 1)[1]]
+                    if 'returned' in replay: replay['returned']['byte_count'] += 1
+                    else: replay['exception']['reason'] = 'other'
+                elif attack == 'control_not_suppressed':
+                    after = o['zero_read_witness']['control_after']['execution']
+                    after['result']['items'] = copy.deepcopy(
+                        o['zero_read_witness']['control_before']['execution']['result']['items'])
+                elif attack == 'control_never_read':
+                    o['zero_read_witness']['control_after']['execution']['candidate_query_started'] = False
+                else:
+                    o['zero_read_witness']['suppression']['memory_id'] = 'other-memory'
+                self.assertEqual(oracle.assess_cell(fx, row)['status'], 'FAIL', (name, attack))
         strict = verdicts['protocol/strict-v3-rejected'][0]
         for attack in ('memory_called', 'extra_call', 'parser_input', 'reason', 'state'):
             row = copy.deepcopy(strict); o = row['observations']

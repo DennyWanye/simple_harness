@@ -4,10 +4,11 @@ import hashlib
 import json
 from datetime import datetime
 
-VERSION = 2
+VERSION = 3
 CELLS = {
     'current-use/context:receipt-first', 'current-use/context:duplicate-same-provider-attempt',
-    'current-use/context:new-provider-attempt', 'current-use/context:suppression-first',
+    'current-use/context:new-provider-attempt', 'current-use/context:new-continuation',
+    'current-use/context:suppression-first',
     'current-use/context:wrong-snapshot', 'current-use/authority:suppression',
 }
 
@@ -42,6 +43,11 @@ def inputs(fixture):
         'after_attempt': 'attempt-after-suppression',
         'next_use_at': seconds(next(r['receipt']['use_at'] for r in fixture['context_use_cases'] if r['id']=='new-provider-attempt')),
         'next_continuation': next(r['receipt']['continuation_id'] for r in fixture['context_use_cases'] if r['id']=='new-continuation'),
+        # Two fresh provider attempts used only by the continuation cell, so that the refusal of
+        # a changed continuation is attributable to the continuation axis and not to the
+        # (principal, provider_attempt) use reservation the sealed attempt already holds.
+        'continuation_control_attempt': common['provider_attempt'] + '-continuation-control',
+        'continuation_probe_attempt': common['provider_attempt'] + '-continuation-probe',
     }
 
 
@@ -50,10 +56,13 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def check_bundle(bundle, shared, allow_advanced_epoch=False):
+def check_bundle(bundle, shared, allow_advanced_epoch=False, use_turn_id=None):
     # allow_advanced_epoch is only set by the authority-event oracle for the M0.6.29 use fence
     # (an epoch that advanced past the bound one while every bound source revalidated). The four
     # context-use cells keep the strict equality; nothing below is relaxed for them.
+    # use_turn_id is only set by the new-continuation cell: the sealed continuation axis is the
+    # use request's turn identity, so exactly one bundle is allowed to carry a turn that differs
+    # from the recall context turn - and it must then be that exact value, never anything else.
     recall = bundle['recall']; wire = recall['execution']; result = wire['result']; request = bundle['request']
     shared['check_execution_wire'](wire, recall['context'], recall['plan'])
     require(len(result['items']) == 2 and len(bundle['pages']) == 2 and len(bundle['fragments']) == 2,
@@ -100,7 +109,9 @@ def check_bundle(bundle, shared, allow_advanced_epoch=False):
                 for item, ih in zip(result['items'], wire['result_item_hashes'], strict=True)]
             and request['decision_id'] == wire['decision']['decision_id'] and request['decision_hash'] == wire['decision_hash']
             and request['result_id'] == result['result_id'] and request['result_hash'] == wire['result_hash']
-            and all(request[k] == recall['context'][k] for k in ('subject', 'run_id', 'turn_id')),
+            and all(request[k] == recall['context'][k] for k in ('subject', 'run_id'))
+            and (request['turn_id'] == recall['context']['turn_id'] if use_turn_id is None
+                 else request['turn_id'] == use_turn_id != recall['context']['turn_id']),
             'request two-item snapshot/identity binding differs')
     if 'receipt' in bundle:
         receipt = bundle['receipt']
@@ -114,6 +125,77 @@ def check_bundle(bundle, shared, allow_advanced_epoch=False):
                 and receipt['policy_hash'] == result['policy_hash']
                     and request['requested_at'] == receipt['authorized_at'] < receipt['expires_at'] <= result['authority_expires_at'],
                 'receipt public hash/epoch/policy/request/time differs')
+
+
+def check_new_continuation(fixture, o, recipe, checks, shared):
+    """Sealed continuation axis, expressed on the public contract as the use-request turn id.
+
+    RUN-07 recorded the sealed row as "no corresponding public field". That is wrong: Harness
+    enqueues a user continuation with turn_id=continuation_id (runtime/kernel.py:1284) and
+    carries it as context_use_turn_id (kernel.py:1299), so "same run, same provider attempt,
+    different continuation" is exactly "same run, same provider attempt, different context-use
+    turn". The sealed obligation NEW_AUTHORIZATION_REQUIRED holds on this contract in a strictly
+    stronger form and is witnessed with a paired control, in one database at one clock:
+
+      * sealed attempt + changed continuation -> MemoryIdempotencyConflict; the reserved receipt
+        is not reusable and its own validate_request refuses the changed request;
+      * never-used attempt + changed continuation -> typed_recall_context_use_invocation_binding
+        _invalid: the old result cannot be used in another continuation at all, by any attempt
+        (Memory backends/sqlite_v5.py compares typed_request.turn_id with the stored recall
+        context turn before it ever reaches the epoch fence);
+      * never-used attempt + ORIGINAL continuation -> a real receipt. The refusal above is
+        therefore attributable to the continuation axis and to nothing else.
+
+    expected_receipt_hash stays untouched (legacy literal, never compared here).
+    """
+    sealed = next(r for r in fixture['context_use_cases'] if r['id'] == 'new-continuation')
+    common = fixture['authority_event_common_binding']
+    require(sealed['expect'] == 'NEW_AUTHORIZATION_REQUIRED'
+            and sealed['receipt']['outcome'] == 'NEW_AUTHORIZATION_REQUIRED'
+            and sealed['receipt']['run_id'] == common['run_id']
+            and sealed['receipt']['turn_id'] == common['turn_id']
+            and sealed['receipt']['provider_attempt'] == common['provider_attempt']
+            and sealed['receipt']['continuation_id'] == recipe['next_continuation'] != common['continuation_id'],
+            'sealed continuation row is not the same-run/same-attempt/changed-continuation pair')
+    first = o['uses']['first']
+    probes = o['continuation']
+    require(set(probes) == {'same_attempt', 'fresh_attempt', 'control'}, 'continuation probe coverage differs')
+    stable = lambda request: {k: v for k, v in request.items()
+                              if k not in {'turn_id', 'requested_at', 'provider_attempt_id'}}
+    for label, bundle in probes.items():
+        changed = label != 'control'
+        require(bundle['recall'] == o['initial'] and bundle['request']['requested_at'] == recipe['next_use_at'],
+                'continuation probe changed the original recall or clock')
+        check_bundle(bundle, shared, use_turn_id=recipe['next_continuation'] if changed else None)
+        require(stable(bundle['request']) == stable(first['request'])
+                and bundle['request']['run_id'] == recipe['run_id']
+                and bundle['request']['turn_id'] == (recipe['next_continuation'] if changed else recipe['turn_id']),
+                'continuation probe changed more than the continuation identity')
+    require(probes['same_attempt']['request']['provider_attempt_id'] == recipe['attempt']
+            and probes['fresh_attempt']['request']['provider_attempt_id'] == recipe['continuation_probe_attempt']
+            and probes['control']['request']['provider_attempt_id'] == recipe['continuation_control_attempt']
+            and len({recipe['attempt'], recipe['continuation_probe_attempt'],
+                     recipe['continuation_control_attempt']}) == 3,
+            'continuation probe attempts are not the three distinct frozen identities')
+    require('receipt' not in probes['same_attempt'] and probes['same_attempt'].get('exception') == {
+                'type': 'MemoryIdempotencyConflict', 'reason': 'RECALL_CONTEXT_USE_IDEMPOTENCY_CONFLICT'},
+            'the reserved attempt accepted a changed continuation instead of requiring a new authorization')
+    require('receipt' not in probes['fresh_attempt'] and probes['fresh_attempt'].get('exception') == {
+                'type': 'MemoryValidationError', 'reason': 'typed_recall_context_use_invocation_binding_invalid'},
+            'a never-used attempt authorized the old result inside a different continuation')
+    control = probes['control']
+    require('receipt' in control and not control.get('exception')
+            and control['receipt']['receipt_id'] != first['receipt']['receipt_id']
+            and control['receipt_hash'] != first['receipt_hash']
+            and control['receipt']['result_hash'] == first['receipt']['result_hash']
+            and control['receipt']['item_bindings'] == first['receipt']['item_bindings'],
+            'the paired control (same never-used attempt family, original continuation) was refused')
+    validation = o['receipt_validation']['different_continuation']
+    require(validation['request'] == probes['same_attempt']['request'] and validation['accepted'] is False
+            and validation['exception'] == {'type': 'ValueError', 'reason': 'receipt request_hash differs'},
+            'the first receipt accepted a request carrying a different continuation')
+    checks.append('changed context-use turn refused by both the reservation and the invocation binding, '
+                  'while the same never-used attempt under the original continuation is authorized')
 
 
 def assess(fixture, cell, shared):
@@ -171,6 +253,8 @@ def assess(fixture, cell, shared):
                 require(o['uses']['duplicate']['receipt'] == first['receipt'], 'same-attempt replay changed')
             if 'new_before_suppression' in o['uses']:
                 require(o['uses']['new_before_suppression']['receipt']['receipt_id'] != first['receipt']['receipt_id'], 'new attempt reused grant')
+            if 'continuation' in o:
+                check_new_continuation(fixture, o, recipe, checks, shared)
             validation = o['receipt_validation']
             require(validation['same_request']['request'] == first['request']
                     and validation['different_attempt']['request'] == {**first['request'],'provider_attempt_id':recipe['next_attempt']}
