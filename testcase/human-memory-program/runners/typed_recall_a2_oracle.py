@@ -546,6 +546,11 @@ def assess_normal(fixture, cell):
             ts=importlib.util.spec_from_file_location('trigger_oracle',Path(__file__).with_name('typed_recall_trigger_oracle.py'))
             tm=importlib.util.module_from_spec(ts);ts.loader.exec_module(tm)
             return tm.assess(fixture,observed,globals())
+        if 'forbidden' in observed:
+            # A combination the public contract refuses before recall, proved with its
+            # paired permitted control (runners/typed_recall_forbidden_oracle.py).
+            return _forbidden_oracle().assess(fixture, cell, globals(), recipe,
+                normal_expected(fixture, recipe, applicability=True, trigger_signal=True))
         if observed.get('exception'):
             # Seed/DTO refusal is a real observation, never a recall PASS.
             return dict(status='BLOCKED',reason='PUBLIC_CASE_PRECONDITION_REJECTED:'+observed['exception']['type']+':'+observed['exception']['reason'],
@@ -908,8 +913,18 @@ def assess_conflict_rejection(fixture,o,checks):
     checks.append('independent protected mutation/final state unchanged across the rejected contest')
     if name in UNCONSTRUCTIBLE_REJECTIONS:
         if rejection['type']!='NotImplementedError':raise ValueError('unconstructible attack unexpectedly executed')
-        return dict(status='BLOCKED',reason='PUBLIC_CONTRACT_CONFLICT:conflict group membership/nesting is Memory-internal; the public contest '
-            'mutation always forms exactly one incumbent/challenger pair, so the original member-cardinality/nested attacks have no public input',
+        # RUN-08 adjudication (c): a genuine duplicate/untestable cell. The sealed invariant
+        # (exactly two members, never nested) is not violated by the contract - it is structurally
+        # unviolatable, because the public contest mutation carries no members and no
+        # nested_group_ref input and always forms exactly one incumbent/challenger pair
+        # (simple_harness_memory/backends/sqlite_v5.py:11624-11640). The same invariant is already
+        # proved positively by conflict_write_oracle.create_case (expected_member_count 2) and by
+        # the durable group/member/resolution witnesses. Neither the sealed row nor the contract
+        # is wrong, so the fixture is NOT amended and no SDK increment is requested; the cell
+        # becomes live again only if a future contract admits multi-member or nested groups.
+        return dict(status='BLOCKED',reason='DUPLICATE_OF_POSITIVE_INVARIANT_WITNESS:conflict group membership/nesting is Memory-internal; '
+            'the public contest mutation always forms exactly one incumbent/challenger pair and has no members/nested_group_ref input, so the '
+            'sealed member-cardinality/nesting rejection cannot be attempted; the same invariant is already witnessed positively by the create case',
             business_assertions=checks)
     # The attacked contest is always the last contest apply (active-group-exists first commits one).
     contests=[e for e in o['calls'] if e['call']=='apply_memory_mutation_plan' and e['plan']['operations'][0]['kind']=='contest']
@@ -1039,11 +1054,23 @@ def assess_return(fixture,cell):
             'page-wrong-coordinate':('MemoryValidationError','typed_recall_page_offset_invalid'),
             'page-expired-result':('MemoryValidationError','typed_recall_result_expired')}
         if name=='page-correct-binding':
+            # fixture_change_lineage FCL-001: the sealed minimal page budget is the canonical
+            # byte size of exactly one public RecallResultPageBindingV1. The bound is verified
+            # in both directions: it admits exactly one binding, one byte less is refused.
+            sealed=next(r for r in fixture['result_page_cases'] if r['id']==name)['bounds']['length']
             if o.get('exception')=={'type':'MemoryLimitError','reason':'typed_recall_page_budget_too_small'}:
-                if o['page_input']['max_bytes']!=128:raise ValueError('original page bound changed')
-                return dict(status='BLOCKED',reason='FROZEN_128_BYTE_PAGE_BOUND_CANNOT_FIT_PUBLIC_BINDING',
-                    business_assertions=['actual result-bound page attempted at unchanged 128-byte bound'])
+                return dict(status='BLOCKED',reason='SEALED_PAGE_BOUND_CANNOT_FIT_PUBLIC_BINDING:'+str(sealed),
+                    business_assertions=['actual result-bound page attempted at the sealed byte bound'])
+            if o['page_input']['max_bytes']!=sealed:raise ValueError('sealed page bound changed')
+            under=o.get('under_bound') or {}
+            if (under.get('returned') is not False or under['request']['max_bytes']!=sealed-1
+                    or under['exception']!={'type':'MemoryLimitError','reason':'typed_recall_page_budget_too_small'}):
+                raise ValueError('sealed page bound is not a boundary: one byte less was not refused')
             check_page(o['returned'],value['result'],value['result_hash'],value['result_item_hashes'])
+            if (len(o['returned']['bindings'])!=next(r for r in fixture['result_page_cases'] if r['id']==name)['payload_count']
+                    or o['returned']['byte_count']!=sealed):
+                raise ValueError('sealed page bound did not admit exactly the sealed payload count')
+            checks.append('sealed minimal page budget verified in both directions at the exact public binding size')
         else:
             if o.get('exception')!={'type':expected[name][0],'reason':expected[name][1]} or 'returned' in o:
                 raise ValueError('public parser/page did not reject at exact contract reason')
@@ -1388,6 +1415,16 @@ def check_context_use_bundle(bundle):
                 or not request['requested_at']<=receipt['authorized_at']<receipt['expires_at']
                 or receipt['expires_at']>result['authority_expires_at']):
             raise ValueError('current-use receipt request/hash/time binding differs')
+
+
+def _forbidden_oracle():
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).with_name('typed_recall_forbidden_oracle.py')
+    spec = importlib.util.spec_from_file_location('typed_recall_forbidden_oracle', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _selection_oracle():

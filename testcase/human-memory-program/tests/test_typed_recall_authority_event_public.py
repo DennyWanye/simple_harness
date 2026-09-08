@@ -40,25 +40,30 @@ class AuthorityEventPublicTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(verdict['status'], 'PASS', (name, verdict))
             self.assertGreaterEqual(len(verdict['business_assertions']), 4)
         # M0.6.29 use fence: a revoke restores exactly the bound sources, so the sealed
-        # RECALL_AUTHORITY_STALE is no longer producible. The cell is executed and fully
-        # witnessed (four business assertions) but reported as a public-contract conflict.
+        # RECALL_AUTHORITY_STALE was amended (fixture_change_lineage FCL-002) to the admitted
+        # advanced-epoch use. The cell now passes on a strictly stronger obligation.
         row, verdict = verdicts['current-use/authority:revoke']
         self.assertEqual(row['status'], 'OBSERVED')
-        self.assertEqual(verdict['status'], 'BLOCKED', verdict)
-        self.assertTrue(verdict['reason'].startswith('PUBLIC_CONTRACT_CONFLICT:authority_event_cases[revoke]'), verdict)
+        self.assertEqual(verdict['status'], 'PASS', verdict)
         self.assertGreaterEqual(len(verdict['business_assertions']), 4)
+        sealed = next(r for r in fixture['authority_event_cases'] if r['event'] == 'revoke')
+        self.assertEqual(sealed['expected_old_result_use'], 'AUTHORIZED_WITH_ADVANCED_AUTHORITY_EPOCH')
+        reverted = copy.deepcopy(fixture)
+        next(r for r in reverted['authority_event_cases']
+             if r['event'] == 'revoke')['expected_old_result_use'] = 'RECALL_AUTHORITY_STALE'
+        self.assertEqual(oracle.assess_cell(reverted, verdicts['current-use/authority:revoke'][0])['status'], 'FAIL')
         for name in cells[4:]:
             row, verdict = verdicts[name]
             self.assertEqual(row['status'], 'BLOCKED')
-            self.assertTrue(verdict['reason'].startswith('PUBLIC_CONTRACT_CONFLICT:'), verdict)
+            self.assertTrue(verdict['reason'].startswith(('SDK_INCREMENT_REQUIRED:', 'CELL_EXECUTOR_NOT_IMPLEMENTED')), verdict)
         revoke = verdicts['current-use/authority:revoke'][0]
         for attack in ('epoch', 'stale_accepted', 'revoke_rejected', 'revoke_directive', 'mid_leak', 'replay', 'order', 'first_time', 'policy'):
             row = copy.deepcopy(revoke); o = row['observations']
             if attack == 'epoch': o['after']['execution']['result']['authority_epoch'] += 1
             # The admitted receipt must be a distinct receipt at the advanced epoch; replaying the first one is not it.
             elif attack == 'stale_accepted': o['uses']['after_event']['receipt'] = o['uses']['first']['receipt']
-            # If the candidate ever rejects here again, the sealed row becomes producible and the cell must stop
-            # being reported as a contract conflict - the oracle fails rather than silently keeping it BLOCKED.
+            # If the candidate ever rejects here again, the amended sealed row stops holding and the
+            # cell must fail rather than silently keep passing.
             elif attack == 'revoke_rejected':
                 o['uses']['after_event'].pop('receipt'); o['uses']['after_event'].pop('receipt_hash', None)
                 o['uses']['after_event']['exception'] = {'type': 'MemoryValidationError', 'reason': 'RECALL_AUTHORITY_STALE'}

@@ -43,6 +43,19 @@ async def run_cases(inputs,workspace):
                         recipe['result_hash'] if name=='page-wrong-result-hash' else first.result.result_hash,
                         1,recipe['coordinate']-1,1,recipe.get('bounds',{}).get('length',16384),use_at)
                     o.update(page_input=page.to_json(),calls=['page_typed_recall_result'],memory_called=True)
+                    if 'bounds' in recipe:
+                        # Boundary counter-test for the sealed minimal page budget: one byte
+                        # under the bound must be refused, so the bound is a real boundary and
+                        # not a threshold migrated to whatever the implementation returns.
+                        under=h.RecallResultPageRequestV1(first.result.result_id,first.result.result_hash,
+                            1,recipe['coordinate']-1,1,recipe['bounds']['length']-1,use_at)
+                        try:
+                            await case.manager.page_typed_recall_result(principal=case.principal,request=under)
+                            o['under_bound']={'returned':True}
+                        except Exception as exc:
+                            o['under_bound']={'returned':False,'request':under.to_json(),
+                                'exception':dict(type=type(exc).__name__,reason=str(exc))}
+                        o['calls'].append('page_typed_recall_result')
                     o['returned']=(await case.manager.page_typed_recall_result(principal=case.principal,request=page)).to_json()
             except Exception as exc:o['exception']=dict(type=type(exc).__name__,reason=str(exc))
             finally:case.now=1788170400.0

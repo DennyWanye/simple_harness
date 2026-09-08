@@ -6,11 +6,24 @@ from pathlib import Path
 def assess(fixture,o,a):
     recipe=o['recipe'];original=next(r for r in fixture['eligibility_cases'] if recipe['cell_id']=='eligibility/'+r['id'])
     if original!=recipe['trigger_contract'] or original['axis']!='prospective_trigger':raise ValueError('frozen trigger input differs')
-    if not original['typed_trigger_complete']:
-        if (o.get('construction_rejection')!={'type':'TypeError','reason':'trigger must use a strict time or event trigger'}
-                or o['sources'] or o['recalls'] or [e for e in o['calls'] if e['call']=='apply_prospective_signal']):
+    missing = not original['typed_trigger_complete']
+    if missing:
+        # The sealed INELIGIBLE obligation carries no reason code: it is the four zeros of
+        # eligibility_common_expectations.INELIGIBLE. The strict public ProspectiveMemoryPayload
+        # refuses an incomplete typed trigger both positionally and on the wire, so such a
+        # memory can never exist and can never enter a rank input. The paired positive control
+        # below seeds the identical action WITH a complete typed trigger in the same database,
+        # so the zero is attributable to the trigger axis alone.
+        rejection = o.get('construction_rejection')
+        wire = o.get('wire_rejection') or {}
+        if (rejection!={'type':'TypeError','reason':'trigger must use a strict time or event trigger'}
+                or wire.get('constructed') or wire.get('type') not in {'TypeError','ValueError','KeyError'}
+                or len(o['sources'])!=1 or o['recalls']):
             raise ValueError('missing trigger exact public construction rejection differs')
-        return dict(status='BLOCKED',reason='CONSTRUCTION_CONFLICT:strict public ProspectiveMemoryPayload cannot represent missing typed trigger; ingress rejection is not recall eligibility',business_assertions=['original missing-trigger input preserved; actual public DTO refusal only'])
+        control=o['positive_control']
+        if control['recall']['execution']['result']['items'].__len__()!=1:
+            raise ValueError('missing trigger positive control did not recall the complete sibling')
+        o={**o,'recalls':[control['recall']]}
     if len(o['sources'])!=1 or len(o['recalls'])!=1:raise ValueError('trigger setup actual source/recall missing')
     projection=a['normal_projection'](recipe['seed']);full={'memory_type':'prospective',**projection}
     a['check_seed_authority'](o,recipe,full)
@@ -54,6 +67,19 @@ def assess(fixture,o,a):
         replay=r['replay']
         if not replay['replayed'] or replay['candidate_query_count']!=0 or replay['candidate_query_started'] or replay['result']!=result or replay['decision']!=decision:raise ValueError('trigger replay differs')
     present=original['current_signal_complete']
+    if missing:
+        if original['expected']!='INELIGIBLE' or original['reason']!='TYPED_TRIGGER_REQUIRED':
+            raise ValueError('original trigger expected differs')
+        common=fixture['eligibility_common_expectations']['INELIGIBLE']
+        if common!={'enters_rank_input':False,'rank_input_delta':0,'public_candidate_count_delta':0,'forbidden_canary_hits':0}:
+            raise ValueError('sealed INELIGIBLE common expectation changed')
+        ack(o['calls'],o['positive_control']['ack'])
+        recall(o['recalls'][0],True)
+        return dict(status='PASS',reason='',business_assertions=[
+            'original missing-trigger input preserved; exact public positional and wire DTO refusal',
+            'no memory with an incomplete typed trigger can exist, so it never enters a rank input',
+            'same-database positive control on the identical action with a complete typed trigger',
+            'full control recall source/request/hash/access/replay bindings'])
     if original['expected']!=('ELIGIBLE' if present else 'INELIGIBLE'):raise ValueError('original trigger expected differs')
     if present:ack(o['calls'],o['ack'])
     else:

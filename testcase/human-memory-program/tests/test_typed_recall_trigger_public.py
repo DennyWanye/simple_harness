@@ -21,8 +21,16 @@ class TriggerExecutorTests(unittest.IsolatedAsyncioTestCase):
         oracle=load('runners','typed_recall_a2_oracle')
         for row in rows:
             verdict=oracle.assess_normal(fixture,row)
-            self.assertEqual(verdict['status'],'BLOCKED' if row['cell_id'].endswith('trigger-missing') else 'PASS',verdict)
-            if row['cell_id'].endswith('trigger-missing'):self.assertTrue(verdict['reason'].startswith('CONSTRUCTION_CONFLICT:'))
+            self.assertEqual(verdict['status'],'PASS',verdict)
+            if row['cell_id'].endswith('trigger-missing'):
+                o=row['observations']
+                self.assertEqual(o['construction_rejection'],
+                    {'type':'TypeError','reason':'trigger must use a strict time or event trigger'})
+                self.assertFalse(o['wire_rejection'].get('constructed'))
+                self.assertEqual(len(o['positive_control']['recall']['execution']['result']['items']),1)
+                broken=copy.deepcopy(row)
+                broken['observations']['construction_rejection']={'type':'TypeError','reason':'other'}
+                self.assertEqual(oracle.assess_normal(fixture,broken)['status'],'FAIL')
         complete=next(r for r in rows if r['cell_id'].endswith('signal-complete'))
         tampered=copy.deepcopy(complete)
         event=next(e for e in tampered['observations']['calls'] if e['call']=='synthetic_scheduler_input')

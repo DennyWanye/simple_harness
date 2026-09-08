@@ -19,15 +19,30 @@ EVENT_CELLS = {
     'current-use/authority:short_source_expiry',
 }
 NO_PUBLIC_INPUT = {
+    # RUN-08 adjudication (b): the sealed obligation stands and the SDK is missing the capability
+    # that would make it testable. The fixture is NOT amended; the required increment is named.
     'current-use/authority:policy_hash_change':
-        'PUBLIC_CONTRACT_CONFLICT:recall policy_hash is a Memory constant (typed-recall-eligibility/v1); '
-        'no public policy-version input exists, so the original policy change cannot be produced on this candidate',
+        'SDK_INCREMENT_REQUIRED:recall policy_hash is a Memory constant derived from the frozen eligibility policy '
+        '(simple_harness_memory/backends/sqlite_v5.py:300-315) and no public input can version it, so the sealed '
+        '"a policy change stales every prior authorization" obligation is untestable; required increment: a public '
+        'recall-policy version input or a policy-record API on MemoryManager. Sealed row kept unchanged',
     'current-use/authority:short_source_cleanup':
-        'PUBLIC_CONTRACT_CONFLICT:MemoryManager exposes no short-horizon cleanup entry (cleanup_short_horizon is a '
-        'backend-port operation only); public expiry removal is witnessed by short_source_expiry',
+        'SDK_INCREMENT_REQUIRED:cleanup_short_horizon exists only on the backend port '
+        '(simple_harness_memory/core/port.py:465-467); MemoryManager exposes only cleanup_recall_results '
+        '(simple_harness_memory/core/manager.py:1245), so the sealed cleanup event has no public entry point. '
+        'Required increment: MemoryManager.cleanup_short_horizon. short_source_expiry is a different event and is '
+        'not accepted as a substitute. Sealed row kept unchanged',
+    # RUN-08 adjudication (a): the continuation axis IS expressible on the public contract - the
+    # Harness binds a user continuation's context-use turn to the continuation id itself
+    # (simple_harness/runtime/kernel.py:1284 turn_id=continuation_id, :1299 context_use_turn_id).
+    # The cell is therefore testable as "same run and provider attempt, different context-use
+    # turn -> NEW_AUTHORIZATION_REQUIRED"; the fixture is NOT amended and the executor is
+    # scheduled rather than declared impossible.
     'current-use/context:new-continuation':
-        'PUBLIC_CONTRACT_CONFLICT:RecallContextUseAuthorizationRequestV1 carries no continuation_id; the original '
-        'continuation axis has no public request field and cannot be attempted without inventing one',
+        'CELL_EXECUTOR_NOT_IMPLEMENTED:the sealed continuation axis maps onto the public contract as the '
+        'RecallContextUseAuthorizationRequestV1.turn_id a user continuation carries '
+        '(simple_harness/runtime/kernel.py:1284/1299); wiring is the same-run same-attempt different-turn '
+        'authorization, expecting a distinct receipt and validate_request failure on the first one',
 }
 CELLS = EVENT_CELLS | set(NO_PUBLIC_INPUT)
 

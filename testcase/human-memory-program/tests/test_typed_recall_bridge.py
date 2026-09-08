@@ -2,11 +2,18 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
 
 import pytest
+
+
+def oracle_hash(value):
+    """Same canonical digest the approved oracle seals sections with."""
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False, allow_nan=False).encode()).hexdigest()
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -357,15 +364,67 @@ def test_0613_successor_retains_original_obligations_and_candidate_lineage():
     old = prior("fixtures/typed-recall-v3.json")
     old_layers = prior("fixtures/typed-recall-execution-layers-v1.json")
     # Exact equality of every original business section, not only total cell count.
+    # A sealed section may differ from the base ONLY where fixture_change_lineage says so:
+    # every entry must name the section, case, field path, previous and new value, the
+    # authority, the public contract citation and a Chinese rationale, and the amended
+    # section must equal the base section with exactly those substitutions applied.
+    amended: dict[str, list] = {}
+    for entry in fixture.get("fixture_change_lineage", []):
+        for field in ("entry_id", "date", "section", "case_id", "field_path", "authority",
+                      "contract_citation", "rationale_zh", "previous_fixture_sha256",
+                      "previous_section_sha256", "new_section_sha256"):
+            assert entry.get(field), (entry.get("entry_id"), field)
+        assert entry["fixture_revision_to"] == fixture["fixture_revision"]
+        assert entry["fixture_revision_from"] == fixture["fixture_revision"] - 1
+        assert entry["previous_fixture_sha256"] != bridge.FIXTURE_SHA
+        assert entry["previous_value"] != entry["new_value"]
+        amended.setdefault(entry["section"], []).append(entry)
     for key, value in old.items():
-        if key not in {"fixture_revision", "public_consumer", "approved_oracle", "candidate_pin_lineage", "candidate_pin_change"}:
-            assert fixture[key] == value, key
+        if key in {"fixture_revision", "public_consumer", "approved_oracle", "candidate_pin_lineage", "candidate_pin_change"}:
+            continue
+        if key in amended:
+            continue
+        assert fixture[key] == value, key
+    seals = fixture["approved_oracle"]["unchanged_sections_sha256"]
+    for section, entries in amended.items():
+        identity = lambda row: row.get("id") or row.get("event")
+        old_rows = {identity(row): row for row in old[section]}
+        new_rows = {identity(row): row for row in fixture[section]}
+        assert set(old_rows) == set(new_rows) and len(old_rows) == len(old[section]), section
+        for name, base_row in old_rows.items():
+            expected = copy.deepcopy(base_row)
+            for entry in entries:
+                if entry["case_id"] != name:
+                    continue
+                node = expected
+                for step in entry["field_path"][:-1]:
+                    node = node[step]
+                assert node[entry["field_path"][-1]] == entry["previous_value"], (section, name)
+                node[entry["field_path"][-1]] = entry["new_value"]
+            assert new_rows[name] == expected, (section, name)
+        assert {entry["previous_section_sha256"] for entry in entries} == {oracle_hash(old[section])}
+        assert {entry["new_section_sha256"] for entry in entries} == {oracle_hash(fixture[section])}
+        assert seals[section] == oracle_hash(fixture[section]), section
     for section, allowed in (("public_consumer", {"candidate_identity_pins"}),
-                             ("approved_oracle", {"candidate_identity", "candidate_approval"})):
+                             ("approved_oracle", {"candidate_identity", "candidate_approval",
+                                                  "unchanged_sections_sha256"})):
         for key, value in old[section].items():
             if key not in allowed:
                 assert fixture[section][key] == value, (section, key)
+    # The approved-oracle section seals may move only for sections fixture_change_lineage names.
+    for key, value in old["approved_oracle"]["unchanged_sections_sha256"].items():
+        current = fixture["approved_oracle"]["unchanged_sections_sha256"][key]
+        if key in amended:
+            assert value != current and current == oracle_hash(fixture[key]), key
+        else:
+            assert current == value, key
     assert fixture["candidate_successor_lineage"]["previous_candidate_identity"] == old["public_consumer"]["candidate_identity_pins"]
+    assert fixture["fixture_revision"] == layers["typed_recall_fixture_revision"]
+    for entry in layers.get("layers_change_lineage", []):
+        for field in ("entry_id", "date", "previous_layers_sha256", "scope", "rationale_zh"):
+            assert entry.get(field), (entry.get("entry_id"), field)
+        assert entry["layers_revision_to"] == layers["fixture_revision"]
+        assert entry["typed_recall_fixture_revision_to"] == fixture["fixture_revision"]
     assert layers["all_cells"] == old_layers["all_cells"]
     assert layers["source_exact_commit_integration"] == old_layers["source_exact_commit_integration"]
     assert layers["combined_gate"] == old_layers["combined_gate"]
