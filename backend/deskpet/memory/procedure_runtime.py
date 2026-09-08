@@ -6,11 +6,15 @@ import hashlib
 import json
 from collections.abc import Mapping
 
+import logging
+
 import simple_harness as h
 from simple_harness_memory import MemoryScope
 from deskpet.memory.procedure_applicability import ProcedureUseRejected, current_snapshot
 from deskpet.memory.procedure_use_store import ProcedureUseStore, _checked
 from deskpet.task_scope.protocol import canonical_hash
+
+log = logging.getLogger(__name__)
 
 
 class ProcedureRuntime:
@@ -102,9 +106,25 @@ class ProcedureRuntime:
             registry=self.registry, call=call, context=context)
 
     async def current_fingerprints(self, run_id):
+        """Applicability proven by a Run that is executing *right now*.
+
+        HM-TO-A6 事件 S: ``SdkRunToolAuthorityRegistry.resolve`` only knows live
+        foreground Runs and drops each record at that Run's terminal, so it raises
+        ``KeyError(<run id>)`` for every background lane and for every already
+        finished turn.  Answering ``()`` fails closed (a Procedure disappears from
+        recall; nothing is granted), but on the foreground path the Run is supposed
+        to be live, so that case is logged rather than left anonymous — a
+        registration/terminal ordering bug must not present as "Procedure memories
+        quietly stopped being recalled".  For the off-Run question see
+        ``applied_use_fingerprints``.
+        """
         if self.authorities is None or self.registry is None:
             return ()
-        authority = self.authorities.resolve(run_id)
+        try:
+            authority = self.authorities.resolve(run_id)
+        except KeyError:
+            log.warning("memory.procedure_applicability_run_not_live run_id=%s", run_id)
+            return ()
         async with self.store.connection() as db:
             await db.execute("BEGIN")
             from deskpet.memory.procedure_route import resolve_procedure_route
@@ -125,6 +145,48 @@ class ProcedureRuntime:
                     values.add(current.fingerprint)
             except (ProcedureUseRejected, KeyError, RuntimeError):
                 continue
+        return tuple(sorted(values))
+
+    async def applied_use_fingerprints(self):
+        """Applicability of Procedures with a *consumed* observation, for lanes with no live Run.
+
+        The post-turn analysis lane has no Tool authority of its own and runs after the
+        foreground terminal has already dropped that Run's record (native run 8:
+        COMPLETED at t, analysis reserved at t+0.5 s), so ``current_fingerprints`` can
+        never answer for it.  These rows are the Host's honest off-Run answer, and the
+        difference from the live path must be stated plainly:
+
+        * kept — "a never-used Procedure stays invisible".  ``ProcedureUseStore.bind``
+          is the only writer of ``procedure_uses``, and only a use whose observation
+          reached the SDK (journal phase ``applied``) is counted here, so neither a
+          merely bound nor a rejected use qualifies.
+        * **dropped** — "and it is still applicable *now*".  ``current_fingerprints``
+          re-derives ``current_snapshot`` against the live tool set and route and admits
+          a fingerprint only if it still matches; off-Run there is no current tool set to
+          re-derive against.  A Procedure whose tool was since renamed, re-signed or
+          revoked therefore leaves foreground recall but stays an analysis-lane endpoint.
+          It is only ever a *candidate*: the SDK re-resolves every relation endpoint at
+          apply time, and ``SemanticCorrectionAuthority.check`` re-verifies disclosure.
+
+        Ordering is not what makes a replayed batch stable — ``prepare`` returns the
+        persisted candidate snapshot and ``snapshot_for_attempt`` re-checks its hash.
+        A corrupt ``procedure_uses`` body propagates (``_checked``): the analysis lane
+        records it as ``relation_procedure_applicability_unavailable`` rather than
+        losing one row in silence.
+        """
+        async with self.store.connection() as db:
+            await db.execute("BEGIN")
+            async with db.execute(
+                "SELECT * FROM procedure_uses WHERE subject=? ORDER BY created_at DESC LIMIT 128",
+                (self.store.principal.actor_id,)) as cursor:
+                uses = tuple(_checked(row) for row in await cursor.fetchall())
+        values = set()
+        for use in uses:
+            if await self.store.journal(use["use_id"], "applied") is None:
+                continue
+            fingerprint = use.get("applicability_fingerprint")
+            if type(fingerprint) is str and fingerprint:
+                values.add(fingerprint)
         return tuple(sorted(values))
 
     async def observe_group(self, group, manager):

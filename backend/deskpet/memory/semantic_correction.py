@@ -20,6 +20,30 @@ logger = logging.getLogger(__name__)
 POLICY = 'host-analysis-observation/v2'
 ISSUER = 'host:semantic-correction/v2'
 
+# ---------------------------------------------------------------- relation audit
+#
+# Incident S (HM-TO-A6 attempt 8): the relation-endpoint channel had exactly one
+# durable outcome — ``relation_candidates_unavailable: true`` — and one log line
+# carrying only ``KeyError('<uuid>')``.  Every batch of that run degraded to "no
+# relation candidates" and nothing recorded *why*.  These codes are the Host's
+# stable vocabulary for that question; every one of them lands in the batch's
+# candidate snapshot (``relation_candidate_reasons``), which ``bind_attempt``
+# hashes into the attempt, so a missing endpoint is always attributable.
+RELATION_APPLICABILITY_UNAVAILABLE = 'relation_procedure_applicability_unavailable'
+RELATION_APPLICABILITY_ABSENT = 'relation_procedure_applicability_absent'
+RELATION_RECALL_UNAVAILABLE = 'relation_candidate_recall_unavailable'
+RELATION_RESULT_TRUNCATED = 'relation_candidate_result_truncated'
+RELATION_CONFIRMATION_REQUIRED = 'relation_candidate_confirmation_required'
+RELATION_MEMBER_SOURCE_KIND_UNSUPPORTED = 'relation_candidate_source_kind_unsupported'
+RELATION_MEMBER_TYPE_UNSUPPORTED = 'relation_candidate_memory_type_unsupported'
+RELATION_MEMBER_PAYLOAD_UNREADABLE = 'relation_candidate_payload_unreadable'
+RELATION_MEMBER_ENDPOINT_UNVERIFIABLE = 'relation_candidate_endpoint_unverifiable'
+
+
+def _relation_reason(reason, *, memory_id=None, revision=None, detail=None):
+    """One audit row. Fixed key set so the snapshot hash stays canonical."""
+    return {'reason': reason, 'memory_id': memory_id, 'revision': revision, 'detail': detail}
+
 # Host vocabulary, not model-supplied aliases or a caller-selected target ID.
 # Unknown predicates remain readable candidates but cannot grant Chinese intent.
 _CHINESE_SLOT_ALIASES = {
@@ -290,6 +314,7 @@ class SemanticCorrectionAuthority:
         if not query:
             snapshot = {'evidence_set_key':key, 'subject':request.subject, 'candidates':[],
                 'relation_candidates':[], 'relation_candidates_unavailable':False,
+                'relation_candidate_reasons':[],
                 'result':None, 'prepared_at':float(self._clock())}
             await self._save(identity, request, snapshot)
             return snapshot
@@ -338,13 +363,14 @@ class SemanticCorrectionAuthority:
         for body in issued:
             body['correction_intent'] = explicit_correction_intent(body, items, issued)
             candidates.append({'candidate_key':stable_id('semantic-candidate', key, canonical_hash(body)), **body})
-        relation_candidates, relation_unavailable = await self._relation_candidates(
+        relation_candidates, relation_unavailable, relation_reasons = await self._relation_candidates(
             request, key, principal, manager, journal, now, query)
         snapshot = dict(evidence_set_key=key, subject=request.subject, prepared_at=now, context=context.to_json(),
             plan=plan.to_json(), decision=execution.decision.to_json(), result=result.to_json(),
             result_hash=result.result_hash, candidates=candidates,
             relation_candidates=relation_candidates,
-            relation_candidates_unavailable=relation_unavailable)
+            relation_candidates_unavailable=relation_unavailable,
+            relation_candidate_reasons=relation_reasons)
         await self._save(identity, request, snapshot)
         return snapshot
 
@@ -357,15 +383,44 @@ class SemanticCorrectionAuthority:
         literal claim.  This is an *additive* channel: it never grants a mutation by itself
         (the SDK re-resolves every endpoint at apply time), so a failure here degrades to an
         empty list and is recorded, rather than failing a turn that used to work.
+
+        Incident S: "recorded" used to mean one boolean.  Resolving the Procedure
+        applicability fingerprints raised ``KeyError(<analysis run id>)`` (see
+        ``ProcedureRuntime.applied_use_fingerprints``) and the single ``except`` around
+        the whole method threw away the *recall as well* — including the Prospective
+        endpoints, which do not depend on applicability at all.  The two phases are
+        separated below, and every endpoint that cannot be offered leaves a named reason
+        in the returned audit rows instead of vanishing.  Returns
+        ``(rows, recall_unavailable, reasons)``.
         """
         from simple_harness import (RecallContext, RecallPlan, RecallBudget, LongTermMemoryType,
             RecallSelectorDomain, RecallRetrievalMode, RecallReasonCode)
         from deskpet.memory.recall_authority import execute_typed_recall_recollecting
 
         types = (LongTermMemoryType.PROCEDURE, LongTermMemoryType.PROSPECTIVE)
+        reasons = []
+        # Phase 1 — applicability. Its failure only costs the Procedure endpoints:
+        # an empty set is exactly what the SDK gate reads as "no Procedure qualifies",
+        # so the recall below still runs and the Prospective lane is unaffected.
+        fingerprints = ()
+        answered = self._procedure_fingerprints is None
+        if self._procedure_fingerprints is not None:
+            try:
+                fingerprints = tuple(await self._procedure_fingerprints())
+                answered = True
+            except Exception as exc:  # noqa: BLE001 - additive channel, never fails the turn
+                reasons.append(_relation_reason(RELATION_APPLICABILITY_UNAVAILABLE,
+                                                detail=type(exc).__name__))
+                logger.warning("memory.analysis_relation_applicability_unavailable key=%s", key,
+                               exc_info=True)
+        if answered and not fingerprints:
+            # F-L1 is now explicit rather than silent: no Procedure use with a consumed
+            # observation exists, so the SDK gate cannot let any Procedure surface this
+            # batch.  A getter that *raised* is a different fact and already has its own
+            # code above; the two are never both recorded.
+            reasons.append(_relation_reason(RELATION_APPLICABILITY_ABSENT))
+        # Phase 2 — the public typed recall itself. Only this one degrades the channel.
         try:
-            fingerprints = () if self._procedure_fingerprints is None else tuple(
-                await self._procedure_fingerprints(request.run_id))
             context = RecallContext(request.run_id, request.subject,
                 stable_id('analysis-relation-query', key), 1, now + 60, query, None, types, False,
                 (RecallSelectorDomain.MEMORY_TYPE,), (RecallRetrievalMode.FULL_TEXT,),
@@ -381,27 +436,97 @@ class SemanticCorrectionAuthority:
                 context=context, plan=plan, now=now, caller="analysis_relation_candidates")
             result = execution.result
             result.validate_decision(execution.decision)
-        except Exception:  # noqa: BLE001 - additive channel, never fails the analysis turn
-            logger.warning("memory.analysis_relation_candidates_unavailable key=%s", key, exc_info=True)
-            return [], True
+        except Exception as exc:  # noqa: BLE001 - additive channel, never fails the analysis turn
+            logger.warning("memory.analysis_relation_candidates_unavailable key=%s reason=%s", key,
+                           RELATION_RECALL_UNAVAILABLE, exc_info=True)
+            reasons.append(_relation_reason(RELATION_RECALL_UNAVAILABLE, detail=type(exc).__name__))
+            return [], True, reasons
         rows = []
+        if result.truncated:
+            reasons.append(_relation_reason(RELATION_RESULT_TRUNCATED))
+        if result.confirmation_groups:
+            reasons.append(_relation_reason(RELATION_CONFIRMATION_REQUIRED))
         if not result.truncated and not result.confirmation_groups:
             for item in result.items:
                 selected = item.selected_item
-                payload = thaw_json(item.public_payload)
-                if selected.source_kind.value != 'cognitive_memory' or selected.memory_type not in types:
+                # Per-member skips are audited one by one: a single unusable member
+                # never costs the other endpoints of the same batch — and rendering a
+                # member is itself inside the guard, so a malformed payload/class is a
+                # named reason rather than a raise that ends the analysis turn.
+                try:
+                    payload = thaw_json(item.public_payload)
+                    if selected.source_kind.value != 'cognitive_memory':
+                        reasons.append(_relation_reason(RELATION_MEMBER_SOURCE_KIND_UNSUPPORTED,
+                            memory_id=selected.source_ref, revision=selected.source_revision,
+                            detail=selected.source_kind.value))
+                        continue
+                    if selected.memory_type not in types:
+                        reasons.append(_relation_reason(RELATION_MEMBER_TYPE_UNSUPPORTED,
+                            memory_id=selected.source_ref, revision=selected.source_revision,
+                            detail=selected.memory_type.value))
+                        continue
+                    if not isinstance(payload, dict):
+                        reasons.append(_relation_reason(RELATION_MEMBER_PAYLOAD_UNREADABLE,
+                            memory_id=selected.source_ref, revision=selected.source_revision))
+                        continue
+                    body = {'memory_id': selected.source_ref, 'revision': selected.source_revision,
+                        'memory_type': selected.memory_type.value,
+                        'source_content_hash': selected.source_content_hash, 'payload': payload,
+                        'result_id': result.result_id, 'result_hash': result.result_hash,
+                        'item_id': selected.item_id, 'item_hash': item.result_item_hash,
+                        'privacy_class': item.effective_privacy_class.value,
+                        'information_attributes': [a.value for a in item.information_attributes]}
+                    candidate_key = stable_id('relation-candidate', key, canonical_hash(body))
+                except Exception as exc:  # noqa: BLE001 - additive channel, per-member
+                    reasons.append(_relation_reason(RELATION_MEMBER_PAYLOAD_UNREADABLE,
+                        memory_id=getattr(selected, 'source_ref', None),
+                        revision=getattr(selected, 'source_revision', None),
+                        detail=type(exc).__name__))
                     continue
-                if not isinstance(payload, dict):
+                unverifiable = self._endpoint_unverifiable(body)
+                if unverifiable is not None:
+                    reasons.append(_relation_reason(RELATION_MEMBER_ENDPOINT_UNVERIFIABLE,
+                        memory_id=selected.source_ref, revision=selected.source_revision,
+                        detail=unverifiable))
                     continue
-                body = {'memory_id': selected.source_ref, 'revision': selected.source_revision,
-                    'memory_type': selected.memory_type.value,
-                    'source_content_hash': selected.source_content_hash, 'payload': payload,
-                    'result_id': result.result_id, 'result_hash': result.result_hash,
-                    'item_id': selected.item_id, 'item_hash': item.result_item_hash,
-                    'privacy_class': item.effective_privacy_class.value,
-                    'information_attributes': [a.value for a in item.information_attributes]}
-                rows.append({'candidate_key': stable_id('relation-candidate', key, canonical_hash(body)), **body})
-        return rows, False
+                rows.append({'candidate_key': candidate_key, **body})
+        if reasons:
+            logger.info("memory.analysis_relation_candidate_reasons key=%s codes=%s", key,
+                        ','.join(sorted({str(row['reason']) for row in reasons})))
+        return rows, False, reasons
+
+    @staticmethod
+    def _endpoint_unverifiable(body):
+        """Whether one existing relation endpoint can be offered at all. ``None`` = it can.
+
+        Incident S, second half.  Two SDK facts, both measured, both of which used to be
+        invisible because incident L only ever exercised an **empty**
+        ``relation_candidates`` list:
+
+        1. ``check_history_visibility`` is the right gate for a semantic candidate, but
+           the SDK deliberately hands its source re-validation *no* procedure
+           applicability ("never reuse old runtime fingerprints",
+           ``backends/history_visibility.py``), so a Procedure item is always reported
+           stale there and ``check()`` failed the **whole batch** with
+           ``analysis_candidate_no_longer_visible``.
+        2. Even past that gate, SDK 0.6.31 cannot resolve any Procedure relation
+           endpoint.  A Procedure is recallable only at ``active``/``reinforced``
+           (``_cognitive_recall_state_allowed``), which takes three independent
+           observations, and an observation commits a revision that carries evidence
+           spans but **no** ``cognitive_classification_decisions`` row — so
+           ``_resolve_semantic_relation_payload_unlocked`` raises
+           ``MemoryCorruptionError('relation endpoint classification is missing')`` on
+           the current head and kills the batch, losing every memory of that turn.
+           ``test_analysis_relation_applied`` measures it: head revision 4,
+           classification rows only for revision 1.
+
+        So Procedure endpoints are withheld with a named reason until the SDK can
+        resolve them (F-S1); Prospective endpoints are unaffected by both facts and
+        keep the ordinary history gate.
+        """
+        if body.get('memory_type') != 'procedure':
+            return None
+        return 'sdk_procedure_endpoint_unresolvable'
 
     async def bind_attempt(self, request, row, snapshot, provider_request, *, db):
         # This observation and the real attempt reserve commit together. It is
@@ -462,6 +587,14 @@ class SemanticCorrectionAuthority:
                 raise ValueError('analysis_candidate_evidence_mismatch')
             bindings.append(HistoryEvidenceBinding(envelope, receipt))
         for row in (*snapshot['candidates'], *snapshot.get('relation_candidates', ())):
+            if row.get('memory_type') == 'procedure':
+                # ``prepare`` withholds every Procedure endpoint (see
+                # ``_endpoint_unverifiable``), so one reaching this gate means the
+                # withholding rule and this check have drifted apart.  Fail, rather
+                # than invent a substitute gate: whoever lifts F-S1 has to design the
+                # real re-validation here, because ``check_history_visibility``
+                # structurally cannot pass a Procedure item.
+                raise ValueError('analysis_candidate_no_longer_visible')
             bindings.append(HistoryRecallBinding(row['result_id'], row['result_hash'], row['item_id'], row['item_hash']))
         observed = await manager.check_history_visibility(principal=principal,
             disclosure_context=request.disclosure_context, bindings=tuple(bindings))
