@@ -16,14 +16,23 @@ class ExecutedCorpusTurn:
 
 async def execute_scoring_turn(*, service, runtime, scoring_path, subject,
                                text: str, delivery_key: str, ingestion_worker=None,
-                               approval_driver=None, initial_scope_ref=None):
+                               approval_driver=None, initial_scope_ref=None,
+                               queue_request=None, enqueue_scope=None):
+    from contextlib import nullcontext
     if type(text) is not str or type(delivery_key) is not str:
         raise TypeError('corpus_runtime_requires_isolated_turn_text')
     if runtime.subject != subject:
         raise ValueError('corpus_runtime_subject_differs')
     # Optional exact existing scope uses the ordinary owned admission path.
     # It is never inferred from USER text or a model-supplied setup label.
-    queued = await service.enqueue_turn(QueueTurnRequest(initial_scope_ref,delivery_key,text))
+    # A caller-built request may only add the Host disclosure binding and the
+    # explicit input declaration of this same text (C12); text/key/scope are fixed.
+    request = QueueTurnRequest(initial_scope_ref,delivery_key,text) if queue_request is None else queue_request
+    if (type(request) is not QueueTurnRequest or request.text != text
+            or request.delivery_key != delivery_key or request.scope_ref != initial_scope_ref):
+        raise ValueError('corpus_runtime_queue_request_differs')
+    with (nullcontext() if enqueue_scope is None else enqueue_scope()):
+        queued = await service.enqueue_turn(request)
     if initial_scope_ref is not None and queued['scope_ref'] != initial_scope_ref:
         raise ValueError('corpus_runtime_scope_admission_differs')
     await runtime.after_enqueue(subject=subject)

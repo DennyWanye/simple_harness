@@ -25,10 +25,43 @@ class PublicOccurrenceCurrentReader:
             raise S5cConflict('s5c_occurrence_run_owner_differs')
         return True
 
+    async def _non_self_head(self, sdk_run_id):
+        """The owner's reminders are never presented into a non-self audience turn.
+
+        A declared non-self input turn (`input_use`, nonself-input contract) is
+        bound to the current Host disclosure head. That head is a Host fact read
+        here directly: when it names a non-self recipient this run presents no
+        occurrence, instead of rejecting the whole run. The self lane below is
+        byte-for-byte unchanged, and no `:input-v1:` reference is built from
+        this reader's long request id (it would exceed the SDK 256-byte bound).
+        """
+        import sqlite3
+        from pathlib import Path
+        import aiosqlite
+        from deskpet.memory.trusted_disclosure import current_record_tx, binding_token
+        if not Path(self.store.path).is_file():
+            return None
+        try:
+            async with aiosqlite.connect(f'file:{self.store.path}?mode=ro',uri=True) as db:
+                db.row_factory=aiosqlite.Row
+                head=await current_record_tx(db,self.store.principal.actor_id)
+        except (sqlite3.Error, aiosqlite.Error):
+            # No Host disclosure schema/head in this store: the self lane below
+            # resolves the turn's disclosure authoritatively, exactly as before.
+            return None
+        if head is None or head['recipient']=='user_self':
+            return None
+        return CurrentOccurrenceRead(self.store.owner,sdk_run_id,_hash(dict(
+            domain='host.prospective-current.non-self-audience.v1',binding=binding_token(head),
+            run_id=sdk_run_id,presentation='no_occurrence_for_non_self_audience')),(),(),())
+
     async def __call__(self, *, principal, sdk_run_id, requested_keys=()):
         runtime=self.runtime_getter()
         if runtime is None or principal!=self.store.principal or principal!=runtime.principal():
             raise S5cConflict('s5c_occurrence_current_principal_differs')
+        non_self=await self._non_self_head(sdk_run_id)
+        if non_self is not None:
+            return non_self
         context=await resolve_current_disclosure(db_path=self.store.path,subject=principal.actor_id,
             run_id=sdk_run_id,request_id='host:prospective-current:'+sdk_run_id)
         # Match the currently implemented Host disclosure lane, not a new

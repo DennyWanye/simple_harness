@@ -72,6 +72,11 @@ def main() -> int:
     parser.add_argument("--python", type=Path)
     parser.add_argument("--preflight-model", default=None,
         help="Model to probe before each case (default: config.toml [llm] model); 'none' disables")
+    parser.add_argument("--primary-env-file", type=Path, default=None,
+        help="BASEURL/APIKEY file for the primary provider (default: <host>/../simple_harness/.env); "
+             "also passed to the worker as CORPUS_CREDENTIAL_ENV_FILE when given")
+    parser.add_argument("--primary-model", default=None,
+        help="Model override for the primary provider (recorded per case; sets CORPUS_MODEL_OVERRIDE)")
     parser.add_argument("--preflight-wait-seconds", type=int, default=60)
     parser.add_argument("--preflight-max-wait-seconds", type=int, default=1800)
     parser.add_argument("--fallback-env-file", type=Path, default=None,
@@ -96,8 +101,9 @@ def main() -> int:
               "recall-corpus-candidate/review-zh/successor-12x20").resolve()
     compiler = (args.memory_sdk_root / "scripts").resolve()
     summary_path = evidence / "batch-summary.jsonl"
-    preflight = _preflight_factory(host, args.preflight_model, args.preflight_wait_seconds,
-                                   args.fallback_after_seconds if args.fallback_env_file else args.preflight_max_wait_seconds)
+    preflight = _preflight_factory(host, args.primary_model or args.preflight_model, args.preflight_wait_seconds,
+                                   args.fallback_after_seconds if args.fallback_env_file else args.preflight_max_wait_seconds,
+                                   env_file=args.primary_env_file)
     fallback = None
     if args.fallback_env_file:
         fallback = _preflight_factory(host, args.fallback_model, args.preflight_wait_seconds,
@@ -110,6 +116,10 @@ def main() -> int:
         case_dir.mkdir()
         gate = preflight()
         provider = {"kind": "primary"}
+        if args.primary_env_file is not None:
+            provider["env_file"] = str(args.primary_env_file.resolve())
+        if args.primary_model:
+            provider["model"] = args.primary_model
         if not gate["ready"] and fallback is not None:
             fb = fallback()
             gate = {"primary": gate, "fallback": fb, "ready": fb["ready"], "waited_seconds": gate["waited_seconds"] + fb["waited_seconds"]}
@@ -132,10 +142,10 @@ def main() -> int:
         env = {"PYTHONDONTWRITEBYTECODE": "1",
                "PYTHONPATH": f"{args.installed_target.resolve()}:{host / 'backend'}",
                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(Path.home())}
-        if provider["kind"] == "fallback":
+        if provider.get("env_file"):
             env["CORPUS_CREDENTIAL_ENV_FILE"] = str(Path(provider["env_file"]).resolve())
-            if provider.get("model"):
-                env["CORPUS_MODEL_OVERRIDE"] = provider["model"]
+        if provider.get("model"):
+            env["CORPUS_MODEL_OVERRIDE"] = provider["model"]
         with (case_dir / "driver.log").open("wb") as log:
             completed = subprocess.run(command, cwd=host, env=env, stdout=log,
                                        stderr=subprocess.STDOUT, check=False)
