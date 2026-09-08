@@ -92,6 +92,15 @@ class ModelContextInfo:
     input_estimate_ratio: float = 1.0
     input_estimate_ratio_per_turn: float = 0.0
     input_estimate_ratio_max: float = 1.0
+    # ── tools 数组单独计价(Incident P, 2026-09-09)───────────────────────────
+    # 上面的三元组是拟合「Host 看不见的隐藏注入」的,而隐藏注入(relay 回灌的
+    # reasoning_content)只加在 **messages** 上——tools 数组是 Host 自己写的、
+    # 每轮逐字节相同的定长负载,它唯一的残差是 tokenizer 密度(JSON 比散文密)。
+    # 把一个我们几乎量得准的东西乘以为未知质量拟合出来的倍率是量纲错误:
+    # pro 在深轮次要乘到 7.1,3.4K 的 schema 会被记成 24K。
+    # 0.0 = 未单独配置,tools 沿用 messages 的 ratio(ordinal),即旧行为;
+    # 未校准型号与 deepseek-v4-flash 都走这条,行为逐 token 不变。
+    input_estimate_schema_ratio: float = 0.0
 
 
 # ─────────────────────────── 内置表（design.md D1）───────────────────────────
@@ -111,13 +120,36 @@ BUILTIN: dict[str, ModelContextInfo] = {
         recall_sweet_tokens=160_000,
         supported_windows=(128_000, 400_000, 1_000_000),
     ),
-    # 2026-09-08 Incident N: HM-TO-A6 attempt 4 的 306 组 request/usage 实测。
-    # 未校准时 Host 估算中位低估 1.98×、最高 4.88×;wire 口径修好后中位已经
-    # 补齐 tool schema + wire 框架后仍中位低估 1.27×、最高 2.12×——残差有两块:
-    # relay 每轮把上一轮的 reasoning_content 加回 prompt(随 provider turn 增长),
-    # 以及 JSON 工具结果比散文更密(实测 ~3.1 char/token)。
-    # min(1.35+0.11*ordinal, 2.5) 是 306 组证据上「零低估」里中位余量近乎最小的
-    # 一组(中位多估 1.52×,最大 2.09×)。
+    # 2026-09-08 Incident N: HM-TO-A6 attempt 4 的 306 组 request/usage 实测,
+    # 当时取 min(1.35+0.11*ordinal, 2.5),在那 306 组上零低估。
+    #
+    # 2026-09-09 Incident P(F-TOK-6)重新拟合。把 attempt 5(run5,117 组)并进来后
+    # 合池 **423 组**(run5 117 + run4 124 + b3682fe1 182,68 个 Run),旧三元组
+    # **低估 25 组**,最差 `估算 22267 对真实 54683`(0.407×);其中 **5 组**真实
+    # 超 effective_input_budget(26752)却被判为「装得下」——即真的把超窗请求发了出去,
+    # 方向与 Incident O 的 fail-close 相反、也更危险。
+    # 根因:旧的 0.11/turn 是在「累计 reasoning 最多 ~14.7K」的证据上拟的,而 run5 有
+    # 一条 Run 累计 reasoning 到 **57 423**(单轮最高 19 579),隐藏注入的量级翻了 4 倍。
+    #
+    # 取值方法(与 flash 同一口径:对每个 ordinal 的实测上界留 ≥10% 工程余量):
+    #   * schema 单独按 **1.30** 计价(≈4/3.1,即 JSON 相对散文的 tokenizer 密度)。
+    #     relay 回灌的是上一轮 assistant 的 reasoning_content,只落在 messages 上;
+    #     tools 数组是 Host 自己写的定长负载,`tool_schema_tokens` 实测只比真正发出的
+    #     wire 文本低 7.2%,没有理由陪着 messages 一起乘到 7.1。
+    #   * messages 的 per-ordinal 实测上界(合池 423 组,schema 已按 1.30 扣除):
+    #       ord0 1.235  ord1 1.751  ord2 3.453  ord3 4.586  ord4 5.827
+    #       ord5 6.081  ord6 6.109  ord7 5.937  ord8 6.335  … ord21 6.139  ord22 6.158
+    #     两条最深的 Run(6154747d49 / d34ea7dbb5)彼此独立,却都在 **6.1~6.3** 处走平:
+    #     隐藏 reasoning 随轮次线性增长,但 wire 本身也在增长,比值收敛而不发散。
+    #     所以「饱和曲线」不是权宜,是实测形态;取 max=7.10 ≈ 观测平台 ×1.12。
+    #   → min(1.50 + 1.25*ordinal, 7.10),schema 1.30。
+    # 合池 423 组效果:低估 0(最紧一条余量 +10.4%),估算/实测 中位 2.72×、p95 4.50×、
+    # 最大 4.94×;65 条真实超预算的请求全部被判为超预算(旧口径漏判 5 条)。
+    # **代价说清楚**:中位多估 2.72×(旧 1.35×)。生产窗口 1M 时 effective≈895K,
+    # 20K 的 wire 乘 7.1 也只有 142K,没有实际影响;只有把窗口钉到 32000 做实验时
+    # 才会明显更早分页/裁史——而 Incident O 之后那是有序降级,不再打死 Run。
+    # 真正的解仍是 F-TOK-1(用上一轮真实 usage.input_tokens 做 floor,实测中位
+    # 比值 0.993),它能把这 2.72× 压回 ~1.05×;本轮先把「不低估」这条守住。
     "deepseek-v4-pro": ModelContextInfo(
         model="deepseek-v4-pro",
         context_window=1_000_000,
@@ -125,9 +157,10 @@ BUILTIN: dict[str, ModelContextInfo] = {
         compact_at_pct=0.75,
         recall_sweet_tokens=384_000,
         supported_windows=(128_000, 400_000, 1_000_000),
-        input_estimate_ratio=1.35,
-        input_estimate_ratio_per_turn=0.11,
-        input_estimate_ratio_max=2.5,
+        input_estimate_ratio=1.50,
+        input_estimate_ratio_per_turn=1.25,
+        input_estimate_ratio_max=7.10,
+        input_estimate_schema_ratio=1.30,
     ),
     # 2026-09-09 Incident O: flash 之前直接沿用 pro 的三元组,但两者的残差成分
     # 完全不同。pro 是 thinking 模型,残差主体是中转站把上一轮 reasoning_content
@@ -238,10 +271,11 @@ _OVERRIDABLE_FIELDS = frozenset(
         "compact_at_pct",
         "recall_sweet_tokens",
         # 中转站/自建 endpoint 的隐藏注入行为各不相同,允许用户按实际
-        # usage.input_tokens 反馈调这三个校准量(见 Incident N 备忘录)。
+        # usage.input_tokens 反馈调这几个校准量(见 Incident N / P 备忘录)。
         "input_estimate_ratio",
         "input_estimate_ratio_per_turn",
         "input_estimate_ratio_max",
+        "input_estimate_schema_ratio",
     }
 )
 

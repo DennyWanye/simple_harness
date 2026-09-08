@@ -193,8 +193,11 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         # silently become zero.
         schema_tokens = (tool_schema_tokens(tools.catalog.get("specs", ()))
                          or int(tools.catalog.get("schema_token_count", 0)))
-        protected_tokens = (estimate(canonical_json(protected))
-                            + calibration.apply(schema_tokens))
+        # Incident P: the tools array carries its own multiplier where the model
+        # configures one, because the hidden mass the ratio stands for is
+        # re-injected assistant reasoning and that never lands in ``tools``.
+        charged_schema_tokens = calibration.apply_tool_schema(schema_tokens)
+        protected_tokens = estimate(canonical_json(protected)) + charged_schema_tokens
         budget = effective_input_budget(provider.context_window)
         if protected_tokens > budget:
             # Incident O: this lane already degrades in the right order — it has
@@ -207,8 +210,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                 planned=protected_tokens,
                 effective=budget,
                 protected=protected_tokens,
-                protected_messages=protected_tokens - calibration.apply(schema_tokens),
-                tool_schemas=calibration.apply(schema_tokens),
+                protected_messages=protected_tokens - charged_schema_tokens,
+                tool_schemas=charged_schema_tokens,
                 open_group=0,
                 groups=0,
             )

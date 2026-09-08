@@ -57,7 +57,10 @@ def _sample_estimate(sample: dict, calibration: ProviderTokenCalibration) -> int
         text_tokens(_text(t["cjk_chars"], t["other_chars"])) + WIRE_TOOL_SPEC_OVERHEAD_TOKENS
         for t in sample["tools"]
     )
-    return total + calibration.apply(schema, provider_turn_ordinal=ordinal)
+    # Incident P: the tools array is priced by its own ratio where one is
+    # configured; without one this is exactly ``apply``, so flash and every
+    # uncalibrated model land on the same number as before.
+    return total + calibration.apply_tool_schema(schema, provider_turn_ordinal=ordinal)
 
 
 def _pre_fix_estimate(sample: dict) -> int:
@@ -181,7 +184,7 @@ def test_unknown_model_keeps_the_identity_calibration() -> None:
 
 def test_global_override_reaches_the_context_lane(tmp_path, monkeypatch) -> None:
     """A relay's hidden injection differs per endpoint, so the user must be able
-    to retune these three numbers without a code change."""
+    to retune these numbers without a code change."""
 
     monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(tmp_path))
     (tmp_path / "model_overrides.toml").write_text(
@@ -792,3 +795,364 @@ def test_probe_reports_the_overflow_instead_of_raising_it() -> None:
     assert facts["budget_headroom"] < 0
     assert (facts["planned_input_tokens"] + facts["budget_headroom"]
             == effective_input_budget(32768))
+
+
+# ── Incident P (F-TOK-6): pro re-fitted on the pooled evidence ───────────────
+#
+# Incident N fitted ``deepseek-v4-pro`` to ``min(1.35 + 0.11·ordinal, 2.5)`` on
+# 306 pairs whose largest cumulative ``reasoning_tokens`` was ~14.7 K.  HM-TO-A6
+# attempt 5 produced a Run that reached **57 423**, four times that mass, and the
+# fitted ladder under-counted it badly — the failure mode this whole incident
+# family exists to prevent, and the one direction the frozen oracle calls a bug
+# (``token_underestimate_allowed: false``): an oversized request that the Host
+# believes fits reaches the provider and is rejected there.
+#
+# The fixture below carries the pooled evidence (attempt 5 + attempt 4 +
+# b3682fe1 = 423 pairs over 68 Runs) as character-class counts, selected so the
+# tightest pair at every ordinal is present.
+PRO_FIXTURE = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "hm_to_a6_pro_pool_samples.json"
+)
+
+
+@pytest.fixture(scope="module")
+def pro_evidence() -> dict:
+    return json.loads(PRO_FIXTURE.read_text(encoding="utf-8"))
+
+
+def _pro_calibration() -> ProviderTokenCalibration:
+    return calibration_for_model("deepseek-v4-pro")
+
+
+def _replaced_calibration(evidence: dict) -> ProviderTokenCalibration:
+    replaced = evidence["replaced_calibration"]
+    return ProviderTokenCalibration(
+        replaced["base_ratio"], replaced["per_turn_ratio"], replaced["max_ratio"]
+    )
+
+
+def test_pro_fixture_describes_the_pooled_population(pro_evidence: dict) -> None:
+    population = pro_evidence["population"]
+    assert population["pairs"] == 423
+    assert sum(population["pairs_by_evidence"].values()) == 423
+    assert population["runs"] == 68
+    # The mass the replaced ladder was never fitted against.
+    assert population["cumulative_reasoning_tokens_max"] == 57423
+    assert population["under_counted_by_the_replaced_calibration"] == 25
+    assert population["over_budget_hidden_by_the_replaced_calibration"] == 5
+    assert population["requests_over_effective_budget"] == 65
+    assert pro_evidence["samples"]
+
+
+def test_pro_prices_the_tools_array_apart_from_the_messages() -> None:
+    """The ratio stands for hidden reasoning, and that never lands in ``tools``.
+
+    ``tool_schema_tokens`` measures a payload the Host writes itself to within
+    ~7% of its wire form.  Multiplying that by a factor fitted to content nobody
+    can see is a category error — at pro's deep-turn ratio a 3.4 K-token catalog
+    would be charged 24 K, a quarter of the window spent on arithmetic.
+    """
+
+    pro = _pro_calibration()
+    assert pro.schema_ratio > 1.0
+    assert pro.tool_schema_ratio(0) == pytest.approx(pro.schema_ratio)
+    # It does not grow with the turn: the catalog is the same bytes every turn.
+    assert pro.tool_schema_ratio(0) == pro.tool_schema_ratio(50)
+    assert pro.tool_schema_ratio(9) < pro.ratio(9)
+    assert pro.apply_tool_schema(10_000) < pro.apply(10_000, provider_turn_ordinal=9)
+
+
+def test_an_unconfigured_schema_ratio_follows_the_message_ratio() -> None:
+    """Only pro opts in; everything else keeps its pre-Incident-P arithmetic."""
+
+    flash = calibration_for_model("deepseek-v4-flash")
+    assert flash.schema_ratio == 0.0
+    for ordinal in (0, 3, 6, 60):
+        assert flash.tool_schema_ratio(ordinal) == flash.ratio(ordinal)
+        assert flash.apply_tool_schema(4321, provider_turn_ordinal=ordinal) == flash.apply(
+            4321, provider_turn_ordinal=ordinal
+        )
+    assert DEFAULT_CALIBRATION.tool_schema_ratio(9) == 1.0
+    assert DEFAULT_CALIBRATION.apply_tool_schema(4321) == 4321
+
+
+def test_a_schema_ratio_below_one_can_never_shrink_a_measured_payload() -> None:
+    calibration = ProviderTokenCalibration(2.0, 0.0, 2.0, schema_ratio=0.4)
+    assert calibration.apply_tool_schema(1000) >= 1000
+
+
+def test_the_replaced_pro_calibration_under_counted_this_evidence(pro_evidence: dict) -> None:
+    """The defect, stated as evidence rather than as a story.
+
+    Every sample kept here is one the new ladder is tight on, so most of them
+    were fine before too; what matters is that the ones the old ladder missed
+    are present and that it really missed them.
+    """
+
+    replaced = _replaced_calibration(pro_evidence)
+    under = [
+        s for s in pro_evidence["samples"]
+        if _sample_estimate(s, replaced) < s["provider_input_tokens"]
+    ]
+    assert under, "the fixture must retain requests the replaced ladder under-counted"
+    worst = min(
+        _sample_estimate(s, replaced) / s["provider_input_tokens"]
+        for s in pro_evidence["samples"]
+    )
+    assert worst == pytest.approx(
+        pro_evidence["population"]["worst_ratio_of_the_replaced_calibration"], abs=1e-3
+    )
+    # 0.407×: a 54 683-token prompt estimated at 22 267.
+    assert worst < 0.45
+
+
+def test_pro_never_under_counts_the_pooled_evidence(pro_evidence: dict) -> None:
+    """The invariant itself: no sample may be estimated below its real prompt."""
+
+    pro = _pro_calibration()
+    for sample in pro_evidence["samples"]:
+        estimate = _sample_estimate(sample, pro)
+        assert estimate >= sample["provider_input_tokens"], (
+            f"{sample['id']}: estimated {estimate} for a real "
+            f"{sample['provider_input_tokens']}-token prompt"
+        )
+
+
+def test_pro_keeps_a_ten_percent_margin_at_every_ordinal(pro_evidence: dict) -> None:
+    """Per ordinal, not in aggregate — that distinction is the whole incident.
+
+    The replaced ladder cleared the aggregate on its own 306 pairs and still
+    under-counted ordinal 2 through 8 of a Run that reasoned four times harder.
+    ``measured_max_needed_message_ratio_by_ordinal`` is the population-wide
+    maximum over all 423 pairs (not just the samples kept here), computed with
+    the schemas already charged at ``measured_with_schema_ratio`` — so the table
+    goes stale the moment that ratio changes, and the assertion below says so.
+    """
+
+    pro = _pro_calibration()
+    assert pro.schema_ratio == pytest.approx(pro_evidence["measured_with_schema_ratio"])
+    needed = pro_evidence["measured_max_needed_message_ratio_by_ordinal"]
+    assert len(needed) == pro_evidence["population"]["max_provider_turn_ordinal"] + 1
+    for ordinal_text, required in sorted(needed.items(), key=lambda kv: int(kv[0])):
+        ordinal = int(ordinal_text)
+        assert pro.ratio(ordinal) >= 1.10 * required, f"ordinal {ordinal} under-charged"
+    # And the tightest sample really is tight: this is a fit, not a blank cheque.
+    tightest = min(
+        _sample_estimate(s, pro) / s["provider_input_tokens"] for s in pro_evidence["samples"]
+    )
+    assert 1.10 <= tightest < 1.15
+
+
+def test_pro_saturates_instead_of_growing_without_bound(pro_evidence: dict) -> None:
+    """"Cap the growth sensibly" has to be an observation, not a hope.
+
+    The needed ratio is ``density + cumulative_reasoning / wire``.  Reasoning
+    mass grows every turn — but so does the wire, because each turn adds its own
+    messages, so the quotient converges instead of diverging.  The evidence shows
+    it: the two deepest Runs are independent of each other and both level off at
+    ~6.1–6.3, one at ordinal 8 and the other at ordinal 22.  The plateau is
+    therefore a measured shape, and the cap sits just above it.
+    """
+
+    pro = _pro_calibration()
+    needed = pro_evidence["measured_max_needed_message_ratio_by_ordinal"]
+    plateau = max(needed.values())
+    assert pro.ratio(9) == pro.ratio(90) == pro.max_ratio
+    assert plateau < pro.max_ratio <= 1.20 * plateau
+    # Deep ordinals beyond the evidence inherit the plateau rather than a ramp.
+    assert pro.ratio(int(max(needed, key=int))) == pro.max_ratio
+
+
+def test_pro_over_estimate_stays_inside_its_recorded_price(pro_evidence: dict) -> None:
+    """Worst-casing hidden mass is not free, and the number is written down.
+
+    The replaced ladder over-estimated by a median 1.35×; this one costs more,
+    and that cost is the reason F-TOK-1 (a floor taken from the previous turn's
+    real ``usage.input_tokens``) is the actual answer.  Pinning it here means a
+    future refit has to argue with a number instead of a feeling.
+    """
+
+    pro = _pro_calibration()
+    ratios = sorted(
+        _sample_estimate(s, pro) / s["provider_input_tokens"] for s in pro_evidence["samples"]
+    )
+    assert ratios[-1] < 5.0
+    # These samples are deliberately the tight ones, so their median sits below
+    # the population's 2.72×; the bound is a ceiling, not a measurement.
+    assert ratios[len(ratios) // 2] < 3.0
+
+
+def test_every_over_budget_pro_request_the_old_ladder_hid_is_now_visible(
+    pro_evidence: dict,
+) -> None:
+    """Incident replay: the five requests that were shipped over the ceiling.
+
+    Assembly guarantees ``estimate <= effective_input_budget``.  With
+    ``estimate >= provider_input_tokens`` that composes into the frozen oracle's
+    ``provider_input_tokens <= effective_input_budget``.  These five broke the
+    second half: the Host judged them to fit, so nothing was paged or trimmed,
+    and a request over the ceiling went out.  Each one must now be over budget in
+    the Host's own arithmetic — that is what puts the ordered degradation of
+    Incident O in front of them instead of the provider's rejection.
+    """
+
+    budget = effective_input_budget(int(pro_evidence["context_window"]))
+    assert budget == 26752
+    replaced = _replaced_calibration(pro_evidence)
+    pro = _pro_calibration()
+    hidden = [s for s in pro_evidence["samples"]
+              if "hidden_over_budget_before" in s["selected_for"]]
+    assert len(hidden) == pro_evidence["population"][
+        "over_budget_hidden_by_the_replaced_calibration"] == 5
+    for sample in hidden:
+        assert sample["provider_input_tokens"] > budget, sample["id"]
+        assert _sample_estimate(sample, replaced) <= budget, sample["id"]
+        assert _sample_estimate(sample, pro) > budget, sample["id"]
+
+
+def _worst_pro_sample(evidence: dict) -> dict:
+    """The pair the replaced ladder missed by the widest margin (0.407×)."""
+
+    replaced = _replaced_calibration(evidence)
+    return min(
+        evidence["samples"],
+        key=lambda s: _sample_estimate(s, replaced) / s["provider_input_tokens"],
+    )
+
+
+def test_the_worst_pro_assembly_is_now_planned_as_over_budget(pro_evidence: dict) -> None:
+    """Replay it through the assembler, not just through the arithmetic.
+
+    ``_plan_turn_messages`` is what decides whether a turn is shipped as-is, and
+    on this turn it decided "fits" for a prompt that was 54 683 tokens against a
+    26 752 ceiling.  Replayed with the shipped calibration it must come back with
+    negative headroom instead — the probe form, so the answer is a number the
+    caller can act on rather than an exception it has to catch to decide to try
+    harder.
+    """
+
+    from deskpet.sdk_adapters.context_authority import _plan_turn_messages
+
+    sample = _worst_pro_sample(pro_evidence)
+    window = int(pro_evidence["context_window"])
+    effective = effective_input_budget(window)
+    assert sample["provider_input_tokens"] > effective
+
+    messages = _sample_messages(sample)
+    specs = _sample_specs(sample)
+    ordinal = int(sample["provider_turn_ordinal"])
+
+    _, before = _plan_turn_messages(
+        messages, window, tools=specs, provider_turn_ordinal=ordinal,
+        model_id="an-uncalibrated-model", raise_on_overflow=False,
+    )
+    # The wire-shaped figure alone — no hidden-mass correction at all — is what
+    # the pre-Incident-N lane could see, and it fits comfortably.
+    assert before["budget_headroom"] > 0
+
+    _, after = _plan_turn_messages(
+        messages, window, tools=specs, provider_turn_ordinal=ordinal,
+        model_id=pro_evidence["model_id"], raise_on_overflow=False,
+    )
+    assert after["budget_headroom"] < 0
+    assert after["planned_input_tokens"] >= sample["provider_input_tokens"]
+    # The schemas are charged at their own ratio, not the deep-turn one.
+    pro = _pro_calibration()
+    assert after["tool_schema_tokens"] == pro.apply_tool_schema(tool_schema_tokens(specs))
+    assert after["tool_schema_tokens"] < pro.apply(
+        tool_schema_tokens(specs), provider_turn_ordinal=ordinal
+    )
+
+
+def test_the_worst_pro_turn_needs_force_paging_not_only_history(
+    pro_evidence: dict,
+) -> None:
+    """Which degradation step actually rescues this turn — and which cannot.
+
+    Incident O's order is assemble → force-page → trim history to zero → raise.
+    On this turn history is not the problem: the tail is one open causal group of
+    the Run's own settled tool results, so trimming closed groups to zero still
+    leaves it over budget.  That is not a gap in the order, it is the order
+    working — step 1 (force-paging every pageable settled body onto a
+    ``primary_settled_effect_v1`` summary) is what this turn needs, and the
+    breakdown on the raise says so by putting almost all of the mass in
+    ``open_group`` rather than in the protected prefix.
+    """
+
+    from deskpet.sdk_adapters.context_authority import _plan_turn_messages
+    from deskpet.sdk_adapters.context_partitions import ContextBudgetExceeded
+
+    sample = _worst_pro_sample(pro_evidence)
+    window = int(pro_evidence["context_window"])
+    plan = dict(tools=_sample_specs(sample),
+                provider_turn_ordinal=int(sample["provider_turn_ordinal"]),
+                model_id=pro_evidence["model_id"])
+    messages = _sample_messages(sample)
+
+    with pytest.raises(ContextBudgetExceeded) as raised:
+        _plan_turn_messages(messages, window, allow_full_group_trim=True, **plan)
+    diagnostics = raised.value.diagnostics
+    assert str(raised.value) == "sdk_context_budget_exceeded"
+    assert diagnostics["planned"] > diagnostics["effective"]
+    # The pageable bodies, not the persona and not the catalog.
+    assert diagnostics["open_group"] > diagnostics["protected"]
+    assert (diagnostics["protected_messages"] + diagnostics["tool_schemas"]
+            == diagnostics["protected"])
+    # And the catalog inside that breakdown is priced at the schema ratio.
+    pro = _pro_calibration()
+    assert diagnostics["tool_schemas"] == pro.apply_tool_schema(
+        tool_schema_tokens(_sample_specs(sample))
+    )
+
+
+def test_pro_overflow_walks_the_degrade_order_before_it_fails_closed() -> None:
+    """The ordering invariant, now that pro's ratio makes overflow ordinary.
+
+    Charging pro honestly means the first assembly fails far more often, so the
+    property that matters is that the extra failures land in the *degradation*
+    rather than on ``ContextBudgetExceeded``.  Same messages, three questions:
+
+      1. probe → a negative headroom and no exception, so one failing turn is
+         not observed as a Run failing twice;
+      2. trim  → closed history is spent and the turn fits, still no exception;
+      3. raise → only once nothing but the protected mass is left, and then the
+         breakdown names which piece is irreducible.
+    """
+
+    from deskpet.sdk_adapters.context_authority import _plan_turn_messages
+    from deskpet.sdk_adapters.context_partitions import ContextBudgetExceeded
+
+    history = []
+    for index in range(4):
+        history.extend([("user", f"q{index} " + "x" * 8000),
+                        ("assistant", f"a{index} " + "x" * 8000)])
+    messages = _messages(("system", "rules" * 40), *history, ("user", "the current turn"))
+    plan = dict(tools=_tool_specs(4, 400), provider_turn_ordinal=9,
+                model_id="deepseek-v4-pro")
+    effective = effective_input_budget(32768)
+
+    _, probe = _plan_turn_messages(messages, 32768, raise_on_overflow=False, **plan)
+    assert probe["budget_headroom"] < 0
+
+    kept, degraded = _plan_turn_messages(messages, 32768, allow_full_group_trim=True, **plan)
+    assert degraded["planned_input_tokens"] <= effective
+    assert degraded["budget_headroom"] >= 0
+    # History paid for it — and the receipt tells that apart from a planner cap
+    # drop, which is exactly what ``groups_trimmed_for_budget`` is for.
+    assert degraded["groups_trimmed_for_budget"] > 0
+    assert degraded["groups_trimmed_for_budget"] <= degraded["trimmed_groups"]
+    # The turn the user is waiting on survives the degradation.
+    assert kept[-1].content == "the current turn"
+
+    # Nothing left to give: no history at all, and a catalog that alone overflows.
+    with pytest.raises(ContextBudgetExceeded) as raised:
+        _plan_turn_messages(
+            _messages(("system", "rules"), ("user", "the current turn")), 32768,
+            tools=_tool_specs(40, 4000), provider_turn_ordinal=9,
+            model_id="deepseek-v4-pro", allow_full_group_trim=True,
+        )
+    assert str(raised.value) == "sdk_context_budget_exceeded"
+    diagnostics = raised.value.diagnostics
+    assert diagnostics["planned"] > diagnostics["effective"]
+    assert diagnostics["tool_schemas"] > diagnostics["protected_messages"]
+    assert diagnostics["groups"] <= 1

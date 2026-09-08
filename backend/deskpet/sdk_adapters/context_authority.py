@@ -14,7 +14,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -1017,7 +1016,13 @@ def _plan_turn_messages(
         extras = extra_protected if isinstance(extra_protected, (list, tuple)) else (extra_protected,)
         protected = (*protected, *[item for item in extras if item is not None])
     tail = messages[split:]
-    schema_tokens = int(math.ceil(tool_schema_tokens(tools) * ratio))
+    # Incident P: the tools array carries its own multiplier where a model
+    # configures one — the relay's hidden re-injection lands in the messages,
+    # not in a payload the Host writes itself and can measure.  Uncalibrated
+    # models and models without a schema ratio still get ``ratio``.
+    schema_tokens = calibration.apply_tool_schema(
+        tool_schema_tokens(tools), provider_turn_ordinal=provider_turn_ordinal
+    )
     if not tail:
         return tuple(protected), {"causal_groups": 0, "trimmed_groups": 0,
                                   "groups_trimmed_for_budget": 0,

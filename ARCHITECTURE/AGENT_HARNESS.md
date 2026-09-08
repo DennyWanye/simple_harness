@@ -2178,8 +2178,9 @@ Harness 已吸收该 FailureSet 并从 Plan v1 重规划到 v2。
    看不见的三件事：tokenizer 密度（JSON 回执实测 ~3.1 char/token 而非 4）、
    每条消息的 chat-template 框架、以及**中转站每轮把上一轮 `reasoning_content`
    重新塞回 prompt**（HM-TO-A6 306 组真机配对里最高占 provider `input_tokens` 的
-   约 40%，任何基于文本的估算都看不见）。`deepseek-v4-pro` / `deepseek-v4-flash`
-   取 `min(1.35 + 0.11·ordinal, 2.5)`。
+   约 40%，任何基于文本的估算都看不见）。当时 `deepseek-v4-pro` / `deepseek-v4-flash`
+   同取 `min(1.35 + 0.11·ordinal, 2.5)`；**现值见下面的 Incident O（flash）与
+   Incident P（pro）两节**。
 
 配套的两条一致性口径：①`context_partitions.window_tokens_for` —— `context_metadata`
 缺 `context_window` 时，先回落到 `llm.model_info.resolve()` 里**该型号自己的窗口**
@@ -2268,6 +2269,37 @@ tool_schemas / open_group / groups`），`str()` 仍为稳定码
 `foreground.runtime.failed` / `stalled` 两条审计线新增
 `error_reason_code` / `error_reason_ordinal`，不含任何 envelope / 工具入参 / 结果字节。
 详见 [DECISION-SCOPE-SOURCE-MISMATCH](../plans/2026-09-08-hm-to-a6/DECISION-SCOPE-SOURCE-MISMATCH.md)。
+
+### pro 校准重拟与 tools 数组单独计价（2026-09-09，Incident P / F-TOK-6）
+
+生产事实：`deepseek-v4-pro` 现取 **`min(1.50 + 1.25·ordinal, 7.10)`**，且
+**`tools` 数组不再随 messages 一起乘这个倍率**，改按 `input_estimate_schema_ratio = 1.30`
+单独计价（`ProviderTokenCalibration.apply_tool_schema()`）。
+
+- **为什么重拟**：Incident N 的三元组是在「累计 `reasoning_tokens` ≤ 14 716」的 306 组上
+  拟的；把 attempt 5 并进来后合池 **423 组**（run5 117 + run4 124 + b3682fe1 182，
+  68 个 Run，窗口钉 32000 → `effective=26752`）里有一条 Run 累计到 **57 423**，
+  旧口径 **低估 25/423**、最差 **0.407×**（估算 22267 对真实 54683），其中 **5 条**
+  真实超预算却被判为「装得下」——请求真的发了出去，方向与 Incident O 的 fail-close
+  相反，Host 侧没有任何一层会拦。新口径 **0/423 低估**（最紧一条仍留 +10.4%），
+  真实超预算的 65 条**全部**判出（旧口径漏判 5 条）。
+- **为什么 tools 拆出来**：倍率代表的是中转站回灌的 `reasoning_content`，它只落在
+  messages 流；`tools` 是 Host 自己写的定长负载，`tool_schema_tokens` 实测只比真正
+  发出的 wire 文本低 7.2%。乘上深轮次倍率等于把 3.4K 的目录记成 24K。
+  1.30 ≈ `4÷3.1`（JSON 相对散文的 tokenizer 密度）。**未配置该字段的型号
+  （含 `_default` 与 `deepseek-v4-flash`）行为逐 token 不变**，`tools` 仍沿用
+  `ratio(ordinal)`。拆开后中位多估从 3.23× 降到 2.72×。
+- **封顶依据**：所需倍率 = 密度 + 累计 reasoning ÷ wire；reasoning 与 wire 同步增长，
+  商收敛而非发散。两条彼此独立的最深 Run（`6154747d49` 在 ordinal 8、
+  `d34ea7dbb5` 在 ordinal 22）都走平在 **6.1~6.3**，故 `max=7.10 ≈ 平台×1.12`。
+- **代价**：估算/实测 中位 1.35× → **2.72×**（p95 4.50×、最大 4.94×）。生产 1M 窗口下
+  `effective≈895 904`，20K wire 乘 7.1 也只 142K，无实际影响；只有把窗口钉到 32000
+  做实验时才会更多走进 Incident O 的有序降级。真正的解仍是 **F-TOK-1**（用上一轮
+  真实 `usage.input_tokens` 做下界，实测中位 0.993），可把多估压回 ~1.05×。
+- 证据夹具 `backend/tests/fixtures/hm_to_a6_pro_pool_samples.json` 只落**字符类计数**
+  （生成时对全部 423 组做过 round-trip 断言）；
+  `test_token_estimator_calibration.py` 新增 13 例共 **54 绿**。
+  详见 [DECISION-TOKEN-ESTIMATOR §Incident P](../plans/2026-09-08-hm-to-a6/DECISION-TOKEN-ESTIMATOR.md)。
 
 ## 历史阶段索引
 
