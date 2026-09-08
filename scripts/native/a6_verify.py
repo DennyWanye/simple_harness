@@ -1291,33 +1291,72 @@ def item_a6_6(ev: Evidence) -> Item:
         "created_at",
     )
     ev.hm.require("cognitive_memory_revisions", "memory_id", "revision", "plan_id", "plan_hash")
-    ev.hm.require("cognitive_memory_heads", "memory_id")
+    ev.hm.require("cognitive_memory_heads", "memory_id", "memory_type")
+    # `relation_memory_revision` 只在真实 SDK schema 上存在(自检夹具没有它), 有则一起校验。
+    has_rel_rev = ev.hm.has("cognitive_relations", "relation_memory_revision")
     rels = ev.hm.rows(
         "select relation_id, plan_id, plan_hash, relation_kind, relation_memory_id,"
-        " source_memory_id, source_revision, target_memory_id, target_revision"
+        + (" relation_memory_revision," if has_rel_rev else "")
+        + " source_memory_id, source_revision, target_memory_id, target_revision"
         " from cognitive_relations order by created_at asc"
     )
+    # 2026-09-09 口径修正(事件 T, plans/2026-09-08-hm-to-a6/DECISION-T-RELATION-FORM.md §1):
+    # 本项原先要求「两个端点都是本 plan 的 exact revision」。按 SDK 0.6.34 的契约那等于要求
+    # T15 这一轮再造一条与 T1 同值的 semantic 当 source —— 第二个槽位, 正是事件 L 要消灭的
+    # 东西, 而且 T20 的纠正只会 supersede 其中一条。
+    # 义务原文在 SDK 仓 simple-harness-memory-sdk 的
+    # plans/2026-08-29-human-memory-digital-twin/acceptance.md「测试义务矩阵」HM-TO-A6 行,
+    # 它对本项的要求逐字只有一句:
+    #     「clean-wheel public API 在同一 plan 创建节点与 relation memory」
+    # 同一文件里另有两处更紧的措辞, 但都不由本原生跑承担:
+    #     HM-S12 场景行: 「clean-wheel public API 创建两个 canonical nodes + 一条 relation memory」
+    #     HM-TO-A2 行:   「clean-wheel public API 在同一原子 plan 正向创建两个端点及一条
+    #                      applies_to Semantic relation」
+    # 那条「两个 canonical node」义务由 HM-TO-A2 的 clean-wheel oracle 履行(SDK 公共 API 直接
+    # 造两个端点, 不经分析车道), 本项不重复证明; 追踪项 F-T6。
+    # 因此本项判据改为:
+    #   (a) 只看 relation_kind='applies_to' 的知识边(evolution 血缘边不算);
+    #   (b) relation memory 自身是本 plan 新建的(revision 行的 plan_id/plan_hash 与关系行一致,
+    #       且 relation_memory_id 在 heads 中存在);
+    #   (c) **target 端点**是本 plan 新建的节点, 且它是流程节点
+    #       (cognitive_memory_heads.memory_type='procedure') —— 即 §1 选定的形态 A:
+    #       新建流程节点(target) <- T1 旧事实的 current revision(source)。
+    #       只新建 source(本轮再造一条语义声明, 再连一条旧流程)正是 §1 判掉的重复槽位
+    #       形状, 不能因为「也建了节点」就 PASS;
+    #   (d) 两个端点都能在 cognitive_memory_revisions 里按 exact revision 找到(无悬空端点)。
+    # 与 A6-9/A6-10 一样, 改的是本脚本的转录, 不是产品代码。
     matches = []
     for r in rels:
+        # (a) evolution 血缘边(amends/supersedes/contests)不是本项要的知识边, 直接跳过。
+        if as_text(r["relation_kind"]) != "applies_to":
+            continue
         endpoints = [
-            (as_text(r["source_memory_id"]), r["source_revision"]),
-            (as_text(r["target_memory_id"]), r["target_revision"]),
+            ("source", as_text(r["source_memory_id"]), r["source_revision"]),
+            ("target", as_text(r["target_memory_id"]), r["target_revision"]),
         ]
-        same_plan = True
-        for mid, rev in endpoints:
+        resolved = True
+        created_here = []
+        for role, mid, rev in endpoints:
             row = ev.hm.rows(
                 "select plan_id, plan_hash from cognitive_memory_revisions"
                 " where memory_id=? and revision=?",
                 (mid, rev),
             )
             if not row:
-                same_plan = False
+                resolved = False
                 break
-            if as_text(row[0]["plan_id"]) != as_text(r["plan_id"]) or as_text(
+            if as_text(row[0]["plan_id"]) == as_text(r["plan_id"]) and as_text(
                 row[0]["plan_hash"]
-            ) != as_text(r["plan_hash"]):
-                same_plan = False
-                break
+            ) == as_text(r["plan_hash"]):
+                created_here.append(role)
+        # (c) target 必须是本 plan 新建的**流程**节点。heads 里没有这条 memory_id, 或它不是
+        # procedure, 都说明这不是形态 A 的那条边。
+        target_head = ev.hm.rows(
+            "select memory_type from cognitive_memory_heads where memory_id=?",
+            (as_text(r["target_memory_id"]),),
+        )
+        target_type = as_text(target_head[0]["memory_type"]) if target_head else ""
+        target_is_workflow = target_type == "procedure"
         rel_mid = as_text(r["relation_memory_id"])
         head_ok = bool(
             rel_mid
@@ -1325,14 +1364,36 @@ def item_a6_6(ev: Evidence) -> Item:
                 "select 1 from cognitive_memory_heads where memory_id=?", (rel_mid,)
             )
         )
-        if same_plan and head_ok:
-            matches.append(
-                {"relation_id": as_text(r["relation_id"]), "relation_kind": as_text(r["relation_kind"])}
+        rel_rev = r["relation_memory_revision"] if has_rel_rev else None
+        rel_plan_ok = True
+        if rel_mid and rel_rev is not None:
+            row = ev.hm.rows(
+                "select plan_id, plan_hash from cognitive_memory_revisions"
+                " where memory_id=? and revision=?",
+                (rel_mid, rel_rev),
             )
+            rel_plan_ok = bool(row) and as_text(row[0]["plan_id"]) == as_text(
+                r["plan_id"]
+            ) and as_text(row[0]["plan_hash"]) == as_text(r["plan_hash"])
+        if (
+            resolved
+            and head_ok
+            and rel_plan_ok
+            and "target" in created_here
+            and target_is_workflow
+        ):
+            matches.append({
+                "relation_id": as_text(r["relation_id"]),
+                "relation_kind": as_text(r["relation_kind"]),
+                "endpoints_created_in_this_plan": created_here,
+                "target_memory_type": target_type,
+            })
     kinds = sorted({as_text(r["relation_kind"]) for r in rels})
+    applies_to_rows = [r for r in rels if as_text(r["relation_kind"]) == "applies_to"]
     it.numbers = {
         "cognitive_relations_rows": len(rels),
-        "relations_same_plan_and_head_present": len(matches),
+        "applies_to_rows": len(applies_to_rows),
+        "relations_new_workflow_target_plus_relation_in_same_plan": len(matches),
         "relation_kinds": kinds,
         "matched_sample": matches[:3],
     }
@@ -1343,14 +1404,19 @@ def item_a6_6(ev: Evidence) -> Item:
     if not matches:
         it.verdict = FAIL
         it.reason = (
-            f"{len(rels)} 条关系中没有一条满足「plan_id/plan_hash 与两端点 revision 相同 "
-            "且 relation_memory_id 在 cognitive_memory_heads 中存在」。"
+            f"{len(rels)} 条关系(其中 applies_to {len(applies_to_rows)} 条)中没有一条满足"
+            "「relation_kind='applies_to', relation memory 与 **target 流程节点** 由同一个 plan "
+            "新建(heads.memory_type='procedure'), 两端 exact revision 均可解析, 且 "
+            "relation_memory_id 在 cognitive_memory_heads 中存在」。只新建 source 的形状"
+            "(本轮再造一条同值语义再连旧流程)按 DECISION-T-RELATION-FORM.md §1 同样判 FAIL。"
         )
         return it
     it.verdict = PASS
     it.reason = (
-        f"{len(matches)}/{len(rels)} 条关系的 plan_id/plan_hash 与两端点 exact revision 一致, "
-        f"relation_memory_id 在 heads 中存在; relation_kind={kinds}。"
+        f"{len(matches)}/{len(rels)} 条关系是 applies_to 知识边, 且其 **target 流程节点**"
+        f"(heads.memory_type=procedure)与 relation memory 由同一个 plan 新建"
+        f"(本 plan 新建的端点角色 {[m['endpoints_created_in_this_plan'] for m in matches][:3]}), "
+        f"两端 revision 均可解析, relation_memory_id 在 heads 中存在; relation_kind={kinds}。"
     )
     return it
 
@@ -2855,7 +2921,9 @@ def selftest() -> int:
             " plan_hash text, relation_kind text, relation_memory_id text,"
             " source_memory_id text, source_revision integer, target_memory_id text,"
             " target_revision integer, relation_hash text, created_at real)",
-            "create table cognitive_memory_heads(memory_id text primary key, current_revision integer)",
+            # memory_type: A6-6(事件 T)按它区分「本 plan 新建的 target 是不是流程节点」。
+            "create table cognitive_memory_heads(memory_id text primary key,"
+            " current_revision integer, memory_type text)",
             "create table cognitive_memory_revisions(memory_id text, revision integer,"
             " plan_id text, plan_hash text, lifecycle_state text, conflict_status text)",
             "create table cognitive_conflict_groups(group_id text primary key, memory_id text,"

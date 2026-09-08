@@ -85,13 +85,13 @@ def _bind(case, operations):
 
 
 # ------------------------------------------------------------------ wire / versioning
-def test_v8_is_current_and_every_persisted_protocol_still_resolves():
+def test_v8_stays_resolvable_after_the_v9_bump():
+    """v9 (事件 T) is current now; v8's own wire must still resolve, byte for byte."""
+    from deskpet.memory import analysis_proposal_v9 as v9
     case = compilation()
-    assert analysis_protocol.PROMPT_VERSION == v8.PROMPT_VERSION
-    assert analysis_protocol.RESULT_SCHEMA_VERSION == v8.RESULT_SCHEMA_VERSION
-    assert analysis_protocol.POLICY_VERSION == v8.POLICY_VERSION
-    assert analysis_protocol.VALIDATOR_VERSION == v8.VALIDATOR_VERSION != v7.VALIDATOR_VERSION
-    for protocol in (v3, v4, v5, v5_1, v6, v7, v8):
+    assert analysis_protocol.PROMPT_VERSION == v9.PROMPT_VERSION != v8.PROMPT_VERSION
+    assert v8.VALIDATOR_VERSION != v7.VALIDATOR_VERSION
+    for protocol in (v3, v4, v5, v5_1, v6, v7, v8, v9):
         assert analysis_protocol.protocol_for_request(_request(case, protocol)) is protocol
 
 
