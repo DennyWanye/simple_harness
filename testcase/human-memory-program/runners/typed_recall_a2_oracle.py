@@ -666,9 +666,9 @@ def assess_normal(fixture, cell):
             blockers.append('REQUIRED_APPLICABILITY_OR_SIGNAL_AUTHORITY_NOT_ESTABLISHED')
         seed_spec=recipe['seed']
         if (recipe['family']=='epistemic' and seed_spec['memory_type']=='procedure' and seed_spec.get('epistemic')=='observed_behavior'
-                and seed_spec.get('verification')=='repeated_observation'):
-            # ELIGIBLE_WITH_APPLICABILITY needs the real observation promotion draft->active; only
-            # the legal draft creation plus applicability snapshot is executed here.
+                and seed_spec.get('verification')=='repeated_observation'
+                and 'promotion' not in observed.get('procedure_binding',{})):
+            # ELIGIBLE_WITH_APPLICABILITY needs the real observation promotion draft->active.
             blockers.append('OBSERVED_PROCEDURE_ACTIVATION_PROMOTION_PATH_NOT_EXECUTED')
         if not observed['sources'] or len(observed['recalls']) != (2 if recipe['family']=='budget' else 1):
             raise ValueError('missing actual source or recall')
@@ -713,8 +713,8 @@ def assess_normal(fixture, cell):
             for span in operation['evidence_spans']:
                 evidence_refs.append({'evidence_id':span['evidence_id'],
                     'content_hash':span['envelope_hash'],'ordinal':len(evidence_refs)+1})
-        if procedure_ref is not None:
-            evidence_refs.append({**procedure_ref,'ordinal':len(evidence_refs)+1})
+        for ref in (procedure_ref or []):
+            evidence_refs.append({**ref,'ordinal':len(evidence_refs)+1})
         if any(r['context']['evidence_refs']!=evidence_refs or r['plan']['evidence_refs']!=evidence_refs for r in observed['recalls']):
             raise ValueError('recall does not bind complete lifecycle evidence history')
         for index, recall in enumerate(observed['recalls']):
@@ -1358,13 +1358,195 @@ def check_rejection_witness(row,observed):
     return True
 
 
+SHORT_RETENTION_SECONDS=5*24*60*60
+
+
+def short_projection(record):
+    """The declared abstract -> public short-horizon projection.
+
+    A projected chunk renders every registration item as ``render_short_horizon_line`` -
+    ``"<role>: <public_text>"`` - and reports the group's occurred_at as an epoch float. The
+    sealed short row stores the pre-render text and an ISO timestamp, so this map (and only
+    this map) turns the sealed payload into the public one; it is asserted in both directions
+    below and no sealed byte is rewritten.
+    """
+    return {'content':'user: '+record['content'],'occurred_at':seconds(record['occurred_at'])}
+
+
+def seconds(value):
+    from datetime import datetime
+    return datetime.fromisoformat(value.replace('Z','+00:00')).timestamp() if isinstance(value,str) else value
+
+
+def short_registration_event(o,evidence_id):
+    return next(e for e in o['calls'] if e['call']=='register_conversation_evidence'
+                and e['registration']['evidence_id']==evidence_id)
+
+
+def check_short_source_bindings(o,item,evidence_id,bundle_key='typed_sources'):
+    """The selected short item resolves to exactly the Host registration that produced it.
+
+    ``resolve_typed_short_horizon_sources`` is the public expansion of a durable selected
+    typed-short item. Every hash it reports is compared against the registration objects the
+    Host built before Memory ever saw them, so registration identity and the four original
+    content hashes (envelope / source / sanitized / admission receipt) are pinned, not assumed.
+    """
+    bundle=o.get(bundle_key)
+    if bundle is None:
+        raise ValueError('typed short source expansion missing')
+    snapshot=bundle['snapshot']
+    if (snapshot['schema_version']!=1 or snapshot['subject']!='principal-1'
+            or len(snapshot['items'])!=len(bundle['bindings'])):
+        raise ValueError('typed short source snapshot header differs')
+    ordinal=next(index for index,binding in enumerate(bundle['bindings'])
+                 if binding['item_id']==item['selected_item']['item_id'])
+    entry=snapshot['items'][ordinal]
+    if not (entry['visible'] and entry['complete'] and entry['reason']=='history_visible'):
+        raise ValueError('selected short item is not a complete visible source')
+    event=short_registration_event(o,evidence_id)
+    registration=event['registration']
+    metadata=registration['metadata']
+    expected={'evidence_id':evidence_id,'envelope_hash':registration['envelope_hash'],
+        'source_ref':evidence_id+'/user','source_hash':metadata['source_hash'],
+        'sanitized_hash':metadata['sanitized_hash'],
+        'admission_receipt_id':registration['admission_receipt_id'],
+        'admission_receipt_hash':registration['admission_receipt_hash'],
+        'registration_id':registration['registration_id'],
+        'registration_hash':event['reference']['registration_hash'],
+        'item_ordinal':1,'role':'user'}
+    if entry['source_refs']!=[expected]:
+        raise ValueError('short item source refs differ from the exact Host registration')
+    tampered=o.get('tampered_sources')
+    if tampered is not None:
+        probe=tampered.get('snapshot',{}).get('items',[{}])[ordinal] if 'snapshot' in tampered else {}
+        if (probe.get('visible') is not False or probe.get('complete') is not False
+                or probe.get('reason')!='history_binding_mismatch' or probe.get('source_refs')!=[]):
+            raise ValueError('a tampered result item hash did not fail closed on the source expansion')
+    return snapshot,event
+
+
+def check_short_classification_and_time(o,item,event,snapshot,*,now):
+    """Classification, occurred_at and the chunk TTL are the Host's, not the runner's."""
+    privacy=o.get('privacy','personal')
+    if (event['effective_privacy_class']!=privacy or event['has_authorized_public_text'] is not True
+            or event['short_horizon_eligible'] is not True):
+        raise ValueError('registration classification authority differs from the requested class')
+    if item['effective_privacy_class']!=privacy or item['information_attributes']!=[]:
+        raise ValueError('recalled short item classification differs from its registration')
+    if item['public_payload']['occurred_at']!=event['occurred_at']:
+        raise ValueError('short occurred_at differs from the registered conversation time')
+    if item['selected_item']['source_content_hash']!=hashlib.sha256(
+            item['public_payload']['content'].encode('utf-8')).hexdigest():
+        raise ValueError('short content hash is not the hash of the rendered public content')
+    expiry=snapshot['valid_until']
+    if expiry!=event['occurred_at']+SHORT_RETENTION_SECONDS:
+        raise ValueError('chunk expiry is not the registered occurred_at plus the retention window')
+    if not now<expiry:
+        raise ValueError('a chunk was recalled at or after its own expiry')
+    return expiry
+
+
+def check_short_projection_canary(fixture,o,item,recipe):
+    """Sealed short minimal projection: the allowed two fields, and nothing else, in public."""
+    row=next(r for r in fixture['minimal_projection_oracle'] if r['memory_type']=='short_horizon')
+    canary=recipe['projection_canary']
+    if (hash_json(row['payload'])!=row['payload_hash']
+            or set(row['payload'])!=set(row['allowed_payload_fields'])
+            or recipe['allowed_payload_fields']!=list(row['allowed_payload_fields'])):
+        raise ValueError('sealed short projection row is not self consistent')
+    if canary!={k:v for k,v in row['source_record'].items() if k not in row['allowed_payload_fields']}:
+        raise ValueError('construction canary differs from the sealed source record remainder')
+    payload=item['public_payload']
+    if payload!=short_projection(row['payload']):
+        raise ValueError('public short payload differs from the declared minimal projection')
+    if set(payload)!=set(row['allowed_payload_fields']):
+        raise ValueError('public short payload key set differs from allowed_payload_fields')
+    encoded=canonical(payload).decode()
+    for leaf in _string_leaves(canary):
+        if leaf in encoded:
+            raise ValueError('sealed canary value leaked into the public short payload')
+    selected=item['selected_item']
+    if (selected['chunk_ref']!=selected['source_ref'] or not selected['source_ref'].startswith('short:')
+            or 'chunk_ref' in payload or 'source_ref' in payload):
+        raise ValueError('chunk_ref is a public item field and must never enter the payload')
+    if item['evidence_manifest_hash']!=hash_json(sorted(canary['evidence_ids'])):
+        raise ValueError('forbidden evidence ids are not reachable only as a manifest hash')
+    if item['cross_scope'] is not False or item['source_task_scope_ids']!=[]:
+        raise ValueError('cross scope is an item-level binding and must stay false')
+    if item['effective_privacy_class']!=canary['classification'].lower():
+        raise ValueError('effective privacy class differs from the sealed classification')
+    return ['sealed short payload/payload_hash self consistency and the exact declared projection',
+            'every sealed canary value absent from the public payload; evidence ids only as a hash',
+            'chunk_ref/cross_scope/classification pinned at the item level, never in the payload']
+
+
+def check_short_invalid_chain(o,recipe,checks):
+    """The two broken-chain rows: refused registration, and a registration with no classification."""
+    name=recipe['cell_id']
+    build=o['projection_build'];control_build=o['control_projection_build']
+    control_items=o['control_recall']['execution']['result']['items']
+    if build['projected_chunk_count']!=0 or o['recall']['execution']['result']['items']:
+        raise ValueError('the broken chain still produced a projected chunk or a recalled item')
+    if o['recall']['execution']['decision']['outcome']!='no_recall':
+        raise ValueError('the broken chain did not end in no_recall')
+    if control_build['projected_chunk_count']!=1 or len(control_items)!=1:
+        raise ValueError('the paired control did not project and recall exactly the same group')
+    if name.endswith('short-registration-invalid'):
+        if recipe['registration_valid'] is not False or recipe['classification_valid'] is not True:
+            raise ValueError('sealed row does not isolate the registration half of the chain')
+        rejection=o.get('registration_rejection')
+        if (o.get('registration_result')=='accepted' or rejection is None
+                or rejection['type']!='MemoryValidationError'
+                or rejection['reason']!='conversation_registration_authority_rejected'):
+            raise ValueError('a registry answering with a different registration was not refused')
+        if o['misbound_registration_id']==o['answered_registration_id']:
+            raise ValueError('the registry probe did not actually answer with another registration')
+        checks+=['a Host registry answering one registration id with another durable registration is '
+                 'refused by Memory itself (conversation_registration_authority_rejected)',
+                 'the refused registration is never projected and never recalled, while the identical '
+                 'group registered through the honest binding is projected and recalled']
+    else:
+        if recipe['classification_valid'] is not False or recipe['registration_valid'] is not True:
+            raise ValueError('sealed row does not isolate the classification half of the chain')
+        event=short_registration_event(o,'conversation-evidence-1')
+        if (event['has_authorized_public_text'] is not False or event['short_horizon_eligible'] is not False
+                or event['effective_privacy_class'] is not None or 'result' not in event):
+            raise ValueError('the unclassified registration was not accepted as a durable registration')
+        control_event=next(e for e in o['control_calls'] if e['call']=='register_conversation_evidence'
+                           and e['registration']['evidence_id']=='conversation-evidence-1')
+        if control_event['has_authorized_public_text'] is not True or control_event['effective_privacy_class'] is None:
+            raise ValueError('the paired control was not the classified half of the same registration')
+        checks+=['a registration without an authorized public_text/classification is still durably '
+                 'accepted, but carries no classification and is never projected',
+                 'the identical group with the Host classification is projected and recalled: the '
+                 'refusal is attributable to the classification half alone']
+
+
 def assess_short(fixture,cell):
-    o=cell['observations'];name=cell['cell_id'];checks=[]
+    o=cell['observations'];name=cell['cell_id'];recipe=o['short_recipe'];checks=[]
     try:
         if o.get('exception'):
             return dict(status='BLOCKED',reason='SHORT_PUBLIC_PRECONDITION:'+o['exception']['reason'],
                 business_assertions=['actual public registration/projection/recall calls recorded'])
+        text=next(r for r in fixture['minimal_projection_oracle'] if r['memory_type']=='short_horizon')['source_record']['content']
+        expected='user: '+text
+        evidence_id=recipe.get('evidence_id','conversation-evidence-1')
         registrations=[e for e in o['calls'] if e['call']=='register_conversation_evidence']
+        if name.endswith('short-registration-invalid') or name.endswith('short-classification-invalid'):
+            # The refused registration never becomes an event, so the broken-registration case
+            # records ten accepted filler groups plus one refused target.
+            if len(registrations)!=(10 if name.endswith('short-registration-invalid') else 11):
+                raise ValueError('short history does not leave target outside recent10')
+            check_short_invalid_chain(o,recipe,checks)
+            value=o['recall']['execution']
+            check_execution_wire(value,o['recall']['context'],o['recall']['plan'])
+            control=o['control_recall']
+            check_execution_wire(control['execution'],control['context'],control['plan'])
+            if control['execution']['result']['items'][0]['public_payload']['content']!=expected:
+                raise ValueError('control item is not the frozen projected content')
+            checks.append('11 genuine public registration groups and oldest target projection')
+            return dict(status='PASS',reason='original short-horizon chain obligation verified through public operations',
+                        business_assertions=checks)
         if len(registrations)!=11:raise ValueError('short history does not leave target outside recent10')
         value=o['recall']['execution'];context=o['recall']['context'];plan=o['recall']['plan']
         check_execution_wire(value,context,plan)
@@ -1373,10 +1555,9 @@ def assess_short(fixture,cell):
             raise ValueError('short exact replay differs')
         if not context['short_horizon_allowed'] or not plan['include_short_horizon']:
             raise ValueError('short selector not invoked')
-        text=next(r for r in fixture['minimal_projection_oracle'] if r['memory_type']=='short_horizon')['source_record']['content']
-        expected='user: '+text
         items=value['result']['items'];short=[r for r in items if r['selected_item']['source_kind']=='short_horizon']
-        excluded=name in {'eligibility/short-future','eligibility/short-source-suppressed'}
+        excluded=name in {'eligibility/short-future','eligibility/short-source-suppressed',
+                          'eligibility/short-expiry-equals-now'}
         if len(short)!=int(not excluded):raise ValueError('short independent inclusion/suppression assertion differs')
         for item in short:
             selected=item['selected_item']
@@ -1384,6 +1565,8 @@ def assess_short(fixture,cell):
                     or selected['memory_type'] is not None or selected['source_revision'] is not None
                     or selected['public_payload_hash']!=hash_json(item['public_payload'])):
                 raise ValueError('short source discriminant/minimal payload binding differs')
+            snapshot,event=check_short_source_bindings(o,item,evidence_id)
+            check_short_classification_and_time(o,item,event,snapshot,now=o['recall_now'])
         if name=='protocol/mixed-long-short':
             cognitive=[r for r in items if r['selected_item']['source_kind']=='cognitive_memory']
             source=next(v for v in fixture['approved_oracle']['semantic_source_vectors'] if v['id']=='incumbent')
@@ -1394,9 +1577,53 @@ def assess_short(fixture,cell):
             before=o['before'];check_execution_wire(before['execution'],before['context'],before['plan'])
             if len(before['execution']['result']['items'])!=1 or o['suppression']['request']['scope_ref']!='conversation-evidence-1':
                 raise ValueError('suppression has no successful independent source control')
+            item=before['execution']['result']['items'][0]
+            snapshot,event=check_short_source_bindings(o,item,evidence_id,bundle_key='before_typed_sources')
+            check_short_classification_and_time(o,item,event,snapshot,now=o['before']['now'])
+            checks.append('the suppressed source was, before suppression, a complete visible Host '
+                          'registration with the same exact hashes')
+        if name=='eligibility/short-future':
+            registered=short_registration_event(o,evidence_id)['occurred_at']
+            if not registered>o['recall_now']:
+                raise ValueError('the future row was not registered strictly after the recall clock')
+            if o['before']['execution']['result']['items']:
+                raise ValueError('a not-yet-occurred chunk was recalled')
+            checks.append('a registration occurring strictly after the recall clock never enters the result')
+        if name=='eligibility/short-chain-complete':
+            if not seconds(recipe['expires_at'])>seconds(recipe['now']):
+                raise ValueError('sealed chain-complete row is not "not yet expired"')
+            checks.append('sealed chain-complete relation (expiry strictly after now) realised on a '
+                          'real chunk whose product-derived expiry is still ahead of the recall clock')
+        if name=='eligibility/short-expiry-equals-now':
+            if seconds(recipe['expires_at'])!=seconds(recipe['now']):
+                raise ValueError('sealed expiry-equals-now row does not equalise expiry and now')
+            before=o['before'];just=o['just_before']
+            check_execution_wire(before['execution'],before['context'],before['plan'])
+            check_execution_wire(just['execution'],just['context'],just['plan'])
+            expiry=o['chunk_expiry']
+            item=before['execution']['result']['items'][0]
+            snapshot,event=check_short_source_bindings(o,item,evidence_id,bundle_key='before_typed_sources')
+            if snapshot['valid_until']!=expiry or expiry!=event['occurred_at']+SHORT_RETENTION_SECONDS:
+                raise ValueError('the replayed expiry is not the product-derived chunk expiry')
+            if not (o['before_now']<expiry and just['now']==expiry-1.0 and o['recall_now']==expiry):
+                raise ValueError('the boundary was not replayed at exactly the chunk expiry')
+            if len(just['execution']['result']['items'])!=1:
+                raise ValueError('the chunk was already gone one second before its expiry')
+            if just['execution']['result']['items'][0]['public_payload']!=item['public_payload']:
+                raise ValueError('the one-second-before control is not the same chunk')
+            if value['decision']['outcome']!='no_recall' or value['decision']['filtered_candidate_count']!=0:
+                raise ValueError('expiry-equals-now did not end as an empty no_recall')
+            checks.append('the chunk expiry is read back from the public source snapshot and the '
+                          'boundary is replayed at exactly that clock: visible at expiry-1s, gone at expiry')
+        if 'projection_canary' in recipe:
+            if len(short)!=1:raise ValueError('the short projection cell needs exactly one short item')
+            checks+=check_short_projection_canary(fixture,o,short[0],recipe)
         checks+=['11 genuine public registration groups and oldest target projection',
-            'actual short/mixed source discriminants and independent input content','exact durable replay and zero candidate reads']
-        return dict(status='BLOCKED',reason='SHORT_COMPLETE_REGISTRATION_CLASSIFICATION_TIME_AND_ORIGINAL_HASH_BINDINGS_PENDING',business_assertions=checks)
+            'actual short/mixed source discriminants and independent input content','exact durable replay and zero candidate reads',
+            'exact Host registration identity and original envelope/source/sanitized/admission hashes',
+            'Host-authorized classification and registered occurred_at carried into the recalled item']
+        return dict(status='PASS',reason='original short-horizon obligation verified through public operations',
+                    business_assertions=checks)
     except (ValueError,KeyError,TypeError,IndexError,StopIteration) as exc:
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
 

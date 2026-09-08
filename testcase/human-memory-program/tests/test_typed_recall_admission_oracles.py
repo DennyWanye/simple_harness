@@ -178,7 +178,31 @@ class AdmissionOracleTests(unittest.IsolatedAsyncioTestCase):
         for row in rows:
             verdict = oracle.assess_normal(fx, row); name = row['cell_id']
             if name.endswith('observed_behavior:repeated_observation'):
-                self.assertEqual(verdict['status'], 'BLOCKED'); self.assertIn('PROMOTION_PATH', verdict['reason'])
+                # The sealed ELIGIBLE_WITH_APPLICABILITY row is now reached through the real
+                # public promotion: three attributable low-risk successes, each with its own
+                # registered tool terminal receipt, carry the draft head to active.
+                self.assertEqual(verdict['status'], 'PASS', (name, verdict))
+                promotion = row['observations']['procedure_binding']['promotion']
+                self.assertEqual([step['result']['lifecycle_state'] for step in promotion],
+                                 ['draft', 'eligible_for_activation', 'active'])
+                self.assertEqual([step['result']['independent_successes'] for step in promotion], [1, 2, 3])
+                recall = row['observations']['recalls'][0]['execution']
+                self.assertEqual(len(recall['result']['items']), 1)
+                self.assertEqual(recall['result']['items'][0]['selected_item']['source_revision'],
+                                 promotion[-1]['result']['committed_revision'])
+                for mutate in (
+                    lambda o: o['procedure_binding']['promotion'].pop(),
+                    lambda o: o['procedure_binding']['promotion'][2]['result'].__setitem__('lifecycle_state', 'draft'),
+                    lambda o: o['procedure_binding']['promotion'][1]['result'].__setitem__('independent_successes', 3),
+                    lambda o: o['procedure_binding']['promotion'][0].__setitem__('task_scope_id',
+                        o['procedure_binding']['promotion'][1]['task_scope_id']),
+                    lambda o: next(e for e in o['calls']
+                        if e['call'] == 'register_procedure_observation_conversation'
+                        and e['ordinal'] == 1 and e['item_ordinal'] == 2)['registration']['metadata']
+                        .__setitem__('tool_causal_link', None),
+                ):
+                    broken = copy.deepcopy(row); mutate(broken['observations'])
+                    self.assertEqual(oracle.assess_normal(fx, broken)['status'], 'FAIL', mutate)
             elif name.endswith('semantic:unknown:user_confirmed'):
                 # The public contract refuses the pair at ingress; the cell is proved by the
                 # exact refusal plus its paired permitted control (forbidden oracle).

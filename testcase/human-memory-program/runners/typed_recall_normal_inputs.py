@@ -98,11 +98,32 @@ def lifecycle_path(recipe):
 
 
 def short_inputs(fixture):
-    projection=next(r for r in fixture['minimal_projection_oracle'] if r['memory_type']=='short_horizon')['source_record']
+    """Construction inputs for the short-horizon lane; no sealed expectation is copied in.
+
+    The four chain rows plus the two invalid-chain rows and the short minimal-projection row all
+    read their construction from the sealed text: the projected content and occurred_at come from
+    minimal_projection_oracle, the canary keys OUTSIDE allowed_payload_fields become real
+    construction inputs (the evidence id is really admitted under that name and the classification
+    is really the requested privacy class), and registration_valid/classification_valid select
+    which half of the Host registration chain is deliberately broken.
+    """
+    row = next(r for r in fixture['minimal_projection_oracle'] if r['memory_type']=='short_horizon')
+    projection = row['source_record']
     source=next(v['provider_payload'] for v in fixture['approved_oracle']['semantic_source_vectors'] if v['id']=='incumbent')
     cases=[{'cell_id':'protocol/'+name} for name in ('mixed-long-short','short-only')]
-    for row in fixture['eligibility_cases']:
-        if row['id'] in {'short-chain-complete','short-expiry-equals-now','short-future','short-source-suppressed'}:
-            cases.append({'cell_id':'eligibility/'+row['id'],**{k:v for k,v in row.items() if k in {'now','occurred_at','expires_at'}}})
+    chain={r['id']:r for r in fixture['eligibility_cases'] if r.get('axis')=='short_horizon_chain'}
+    for identifier in ('short-chain-complete','short-expiry-equals-now','short-future','short-source-suppressed'):
+        chain_row=chain[identifier]
+        cases.append({'cell_id':'eligibility/'+identifier,
+            **{k:v for k,v in chain_row.items() if k in {'now','occurred_at','expires_at'}}})
+    for identifier in ('short-registration-invalid','short-classification-invalid'):
+        chain_row=chain[identifier]
+        cases.append({'cell_id':'eligibility/'+identifier,
+            'registration_valid':chain_row['registration_valid'],
+            'classification_valid':chain_row['classification_valid']})
+    canary={k:copy.deepcopy(v) for k,v in projection.items() if k not in row['allowed_payload_fields']}
+    cases.append({'cell_id':'selection-budget/projection:short_horizon',
+        'evidence_id':canary['evidence_ids'][0],'privacy':canary['classification'].lower(),
+        'projection_canary':canary,'allowed_payload_fields':list(row['allowed_payload_fields'])})
     return {'semantic':{'memory_type':'semantic','payload':copy.deepcopy(source)},
-        'text':projection['content'],'occurred_at':projection['occurred_at'],'cases':cases}
+        'text':projection['content'],'occurred_at':projection['occurred_at'],'query':'task','cases':cases}

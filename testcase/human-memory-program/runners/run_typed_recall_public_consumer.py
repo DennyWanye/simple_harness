@@ -388,8 +388,22 @@ def _check_exhaustive_axes(fixture: dict[str, Any], errors: list[str]) -> tuple[
 def self_check(fixture_path: Path, execution_layers_path: Path) -> dict[str, Any]:
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
     if fixture.get("fixture_revision", 0) >= 4:
+        # The legacy synthetic-artifact self-check stays disabled from rev4 on, but the
+        # execution-layers ROUTING oracle is revision independent and still runs, so the
+        # partition is checked instead of silently skipped. It can only report; a routing
+        # failure is surfaced as FAIL and a clean routing never turns this into PASS.
+        routing = _validate_execution_layers(fixture_path=fixture_path, fixture=fixture,
+                                             execution_layers_path=execution_layers_path)
+        if routing["status"] != "PASS":
+            return routing
         return {"status": "NOT_RUN/BLOCKED", "passed_cells": [],
-                "reason": "rev4 uses independent A2 oracle regressions; legacy 401 synthetic artifact self-check is disabled"}
+                "reason": "rev4 uses independent A2 oracle regressions; legacy 401 synthetic artifact self-check is disabled",
+                "execution_layers_fixture": routing["execution_layers_fixture"],
+                "execution_layers_fixture_sha256": routing["execution_layers_fixture_sha256"],
+                "execution_layers_routing": "PASS",
+                "clean_wheel_public_manager_cells": routing["clean_wheel_public_manager_cells"],
+                "source_exact_commit_integration_cells": routing["source_exact_commit_integration_cells"],
+                "combined_exact_union_cells": routing["combined_exact_union_cells"]}
     errors: list[str] = []
     if fixture.get("fixture_revision") != 3:
         errors.append("fixture_revision must be 3")
@@ -610,6 +624,54 @@ def _expected_product_cells(fixture: dict[str, Any]) -> dict[str, dict[str, dict
     return lanes
 
 
+def _execution_layers_revision_errors(layers: dict[str, Any]) -> list[str]:
+    """Derive the acceptable execution-layers revision from the file's own lineage.
+
+    The previous implementation carried a literal allowlist ``(1, 2, 3, 4, 5)``, which went
+    stale the moment the sealed layers file was bumped (it is at revision 15 today) and made
+    the ``--self-check`` routing path fail for a reason that has nothing to do with routing.
+    The revision is not an arbitrary number: ``layers_change_lineage`` is the sealed record of
+    every bump, so the declared ``fixture_revision`` must be exactly the ``layers_revision_to``
+    of the newest lineage entry, the entries must form one ascending unit-step chain, and the
+    same entries must carry the typed-recall fixture revision they pinned.  An empty lineage
+    means the file has never been amended and must still be revision 1.  Nothing here reads a
+    hard-coded revision, so a future sealed bump that follows the rules needs no code change,
+    while a revision that does not match its own lineage is still rejected.
+    """
+
+    errors: list[str] = []
+    revision = layers.get("fixture_revision")
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+        return ["execution-layers revision must be a positive integer"]
+    lineage = layers.get("layers_change_lineage")
+    if not isinstance(lineage, list) or any(not isinstance(row, dict) for row in lineage):
+        return ["execution-layers change lineage must be a list of entries"]
+    if not lineage:
+        if revision != 1:
+            errors.append("execution-layers revision above 1 requires a change lineage entry")
+        return errors
+    previous_to: int | None = None
+    for entry in lineage:
+        start, end = entry.get("layers_revision_from"), entry.get("layers_revision_to")
+        for value in (start, end):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                errors.append("execution-layers lineage revision is not a positive integer")
+                return errors
+        if end != start + 1:
+            errors.append("execution-layers lineage entry is not a single-step bump")
+        if previous_to is not None and start != previous_to:
+            errors.append("execution-layers lineage entries are not a contiguous chain")
+        if not HEX64.fullmatch(str(entry.get("previous_layers_sha256", ""))):
+            errors.append("execution-layers lineage previous SHA-256 must be lowercase hex64")
+        previous_to = end
+    if previous_to != revision:
+        errors.append("execution-layers revision does not match its own change lineage")
+    pinned = lineage[-1].get("typed_recall_fixture_revision_to")
+    if pinned != layers.get("typed_recall_fixture_revision"):
+        errors.append("execution-layers lineage does not pin the declared typed recall revision")
+    return errors
+
+
 def _validate_execution_layers(
     *,
     fixture_path: Path,
@@ -631,8 +693,9 @@ def _validate_execution_layers(
             "errors": [f"invalid execution-layers fixture: {type(exc).__name__}"],
         }
     errors: list[str] = []
-    if layers.get("schema_version") != 1 or layers.get("fixture_revision") not in (1, 2, 3, 4, 5):
+    if layers.get("schema_version") != 1:
         errors.append("execution-layers schema/revision unsupported")
+    errors.extend(_execution_layers_revision_errors(layers))
     if layers.get("quality_gate") != "NOT_RUN/BLOCKED":
         errors.append("execution-layers semantic quality gate must remain NOT_RUN/BLOCKED")
     if layers.get("typed_recall_fixture") != fixture_path.name:

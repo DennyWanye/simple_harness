@@ -319,13 +319,20 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
         assert set(unpairable) == {"selection-budget/tie-matched-lane-count",
                                    "selection-budget/tie-memory-type-empty",
                                    "selection-budget/tie-source-ref",
-                                   "selection-budget/tie-source-revision-or-zero"}
+                                   "selection-budget/tie-source-revision-or-zero",
+                                   "selection-budget/dedupe:exact-cognitive",
+                                   "selection-budget/dedupe:exact-short"}
         assert not set(unpairable) & set(selection_oracle.CELLS)
         for name, reason in unpairable.items():
             row = summary["cell_results"][name]
             assert row["status"] == "BLOCKED" and row["reason"] == reason
-            assert reason.startswith("PUBLIC_TIE_NOT_CONSTRUCTIBLE:")
+            assert reason.startswith(("PUBLIC_TIE_NOT_CONSTRUCTIBLE:", "PUBLIC_DUPLICATE_NOT_CONSTRUCTIBLE:"))
             assert row["blocker_categories"] == ["CONTRACT_FACT_UNPAIRABLE"]
+        # The exact-dedupe adjudication is about duplicate candidate KEYS, not about ties, and
+        # the narrow cross-source merge it guards is really executed by two other cells.
+        assert sum(name.startswith("selection-budget/dedupe:") for name in unpairable) == 2
+        assert {"selection-budget/dedupe:cross-source-merge",
+                "selection-budget/dedupe:cross-source-no-merge-evidence-differs"} <= set(selection_oracle.CELLS)
     assert bridge.read_json(args.artifact_dir / "bridge-summary.json") == summary
 
 
@@ -475,11 +482,12 @@ def test_sealed_rules_forbid_introducing_a_new_cell():
     layers = json.loads(layers_path.read_text())
     additive = {"all cell count mismatch", "all sorted cell-id hash mismatch",
                 "combined exact union count mismatch", "combined exact union hash mismatch"}
-    baseline = set(oracle._validate_execution_layers(
-        fixture_path=fixture_path, fixture=fixture, execution_layers_path=layers_path)["errors"])
-    # The unmodified fixture routes cleanly; the only standing error is the stale
-    # execution-layers revision allowlist in the --self-check path (layers revision 15), which the
-    # 401 scan does not use and this test deliberately does not touch.
+    clean = oracle._validate_execution_layers(
+        fixture_path=fixture_path, fixture=fixture, execution_layers_path=layers_path)
+    # The unmodified pair now routes cleanly end to end: the execution-layers revision is
+    # derived from the file's own layers_change_lineage instead of a stale literal allowlist.
+    assert clean["status"] == "PASS", clean
+    baseline = set(clean.get("errors", []))
     assert not baseline & additive, baseline
     assert bridge.digest(sorted(f"{lane}/{cell}" for lane, cells in
                                 oracle._expected_product_cells(fixture).items()
@@ -492,3 +500,47 @@ def test_sealed_rules_forbid_introducing_a_new_cell():
                                                     execution_layers_path=layers_path)
         assert rejected["status"] == "FAIL", (section, rejected)
         assert additive <= set(rejected["errors"]), (section, rejected["errors"])
+
+
+def test_execution_layers_revision_is_derived_from_the_files_own_lineage():
+    """The routing oracle must accept the sealed revision without a literal allowlist.
+
+    Regression for the stale ``(1, 2, 3, 4, 5)`` allowlist: the layers file is at revision 15,
+    so --self-check rejected it for a reason unrelated to routing. The revision is now read out
+    of ``layers_change_lineage`` (contiguous single-step chain ending exactly at the declared
+    revision, pinning the declared typed-recall fixture revision), so a lawful future bump needs
+    no code change while every unlawful revision is still refused.
+    """
+    spec = importlib.util.spec_from_file_location("oracle", ROOT / "runners/run_typed_recall_public_consumer.py")
+    oracle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(oracle)
+    fixture_path = ROOT / "fixtures/typed-recall-v3.json"
+    layers_path = ROOT / "fixtures/typed-recall-execution-layers-v1.json"
+    layers = json.loads(layers_path.read_text())
+    entry = layers["layers_change_lineage"][0]
+    assert layers["fixture_revision"] == entry["layers_revision_to"] > 5, layers["fixture_revision"]
+    assert oracle._execution_layers_revision_errors(layers) == []
+    routed = oracle._validate_execution_layers(fixture_path=fixture_path,
+        fixture=json.loads(fixture_path.read_text()), execution_layers_path=layers_path)
+    assert routed["status"] == "PASS", routed
+    checked = oracle.self_check(fixture_path, layers_path)
+    assert checked["status"] == "NOT_RUN/BLOCKED" and checked["execution_layers_routing"] == "PASS"
+    assert checked["combined_exact_union_cells"] == 401
+    negatives = {
+        "execution-layers revision does not match its own change lineage": {"fixture_revision": 16},
+        "execution-layers revision above 1 requires a change lineage entry": {"layers_change_lineage": []},
+        "execution-layers lineage entry is not a single-step bump":
+            {"layers_change_lineage": [{**entry, "layers_revision_from": 13}]},
+        "execution-layers lineage entries are not a contiguous chain":
+            {"layers_change_lineage": [{**entry, "layers_revision_from": 12, "layers_revision_to": 13},
+                                       {**entry, "layers_revision_from": 14, "layers_revision_to": 15}]},
+        "execution-layers lineage does not pin the declared typed recall revision":
+            {"layers_change_lineage": [{**entry, "typed_recall_fixture_revision_to": 16}]},
+        "execution-layers lineage previous SHA-256 must be lowercase hex64":
+            {"layers_change_lineage": [{**entry, "previous_layers_sha256": "not-a-digest"}]},
+        "execution-layers revision must be a positive integer": {"fixture_revision": 0},
+        "execution-layers change lineage must be a list of entries": {"layers_change_lineage": "LCL-001"},
+    }
+    for expected, mutation in negatives.items():
+        broken = {**copy.deepcopy(layers), **mutation}
+        assert expected in oracle._execution_layers_revision_errors(broken), (expected, mutation)

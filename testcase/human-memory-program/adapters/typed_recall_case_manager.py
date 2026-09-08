@@ -48,6 +48,7 @@ class CaseManager:
         self.procedure_authorities = {}
         self.prospective_authorities = {}
         self.conversations = {}
+        self.conversation_misbinding = {}
         self.base_revision = 1
         self.audit_receipt = None
         self.clock_kwargs = {"clock":lambda:self.now} if "clock" in inspect.signature(m.MemoryManager.build_human_memory_v7).parameters else {}
@@ -81,6 +82,17 @@ class CaseManager:
                     "authority_hash":grant.authority_hash})
                 return grant
             async def resolve_conversation_registration(self, ref):
+                # conversation_misbinding is an explicit, per-case Host misbehaviour probe: the
+                # registry answers a requested registration id with a DIFFERENT durable
+                # registration. It exists only so Memory's own fail-closed identity check can be
+                # observed (short-registration-invalid); every other case keeps the strict
+                # binding below, and the probe is never enabled implicitly.
+                target=owner.conversation_misbinding.get(ref.registration_id)
+                if target is not None:
+                    registration=owner.conversations[target]
+                    owner.events.append({'call':'resolve_conversation_registration','misbound':True,
+                        'requested':dc.asdict(ref),'answered_registration_id':registration.registration_id})
+                    return registration
                 registration=owner.conversations[ref.registration_id]
                 if ref!=h.ConversationEvidenceRegistrationRef(registration.registration_id,registration.registration_hash,
                         registration.envelope.evidence_id,registration.envelope.envelope_hash):
@@ -116,12 +128,16 @@ class CaseManager:
     def typed_ref(self, receipt):
         return self.fixture_authorities.typed_observation_ref(receipt)
 
-    async def evidence(self, text, evidence_id, epistemic='explicit_user', verification='source_bound'):
+    async def evidence(self, text, evidence_id, epistemic='explicit_user', verification='source_bound', *, source_kind=None):
+        # source_kind is an explicit Host input: a conversation registration whose role is TOOL
+        # must be backed by tool-result evidence (Harness pairs role and source_kind), so the
+        # procedure observation chain admits its terminal item under that exact kind.
         envelope, receipt, span = self.helpers._evidence(self.principal.actor_id)
         payload = {'item_id': evidence_id + '-item', 'public_text': text}
         source_hash = hashlib.sha256(text.encode()).hexdigest()
         envelope = dc.replace(envelope, evidence_id=evidence_id, source_ref=evidence_id + '/user',
-            sanitized_payload=payload, source_hash=source_hash, sanitized_hash=H(payload))
+            sanitized_payload=payload, source_hash=source_hash, sanitized_hash=H(payload),
+            **({} if source_kind is None else {'source_kind': source_kind}))
         typed = epistemic == 'verified_external' or (epistemic == 'observed_behavior' and verification in {'source_verified','repeated_observation'})
         receipt = dc.replace(receipt, receipt_id=evidence_id + '-admission', evidence_id=evidence_id,
             envelope_hash=envelope.envelope_hash, sanitized_hash=envelope.sanitized_hash, source_hash=source_hash)
