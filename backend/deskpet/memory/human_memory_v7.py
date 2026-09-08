@@ -584,7 +584,7 @@ def _fragment_size(payload: Any) -> tuple[int, int]:
 _CHINESE_WEEKDAYS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
 
-def _prospective_trigger_local(payload: Any) -> str | None:
+def _prospective_trigger_local(payload: Any, memory_type: str) -> str | None:
     """Render a prospective time trigger in its own scenario timezone.
 
     ``trigger_at`` is an epoch float and ``timezone`` an IANA name; models
@@ -592,12 +592,17 @@ def _prospective_trigger_local(payload: Any) -> str | None:
     string (ISO local time + Chinese weekday) beside the untouched SDK
     payload. An unknown or missing zone falls back to UTC rather than
     guessing the host's local zone.
+
+    The kind is taken from the fragment's own ``memory_type``, not from the
+    payload: the SDK public payload of a prospective memory carries only
+    ``action``/``trigger`` and no self-describing type field, so gating on
+    ``payload["memory_type"]`` silently rendered nothing at runtime.
     """
 
     from datetime import datetime, timezone as _utc
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-    if not isinstance(payload, Mapping) or payload.get("memory_type") != "prospective":
+    if memory_type != "prospective" or not isinstance(payload, Mapping):
         return None
     trigger = payload.get("trigger")
     if not isinstance(trigger, Mapping) or trigger.get("trigger_kind") != "time":
@@ -661,15 +666,16 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
         seen.add(payload_hash)
         bytes_len, tokens = _fragment_size(item.public_payload)
         public_payload = thaw_json(item.public_payload)
-        trigger_local = _prospective_trigger_local(public_payload)
+        memory_type = "short_horizon" if typed_short else getattr(
+            item.selected_item.memory_type,
+            "value",
+            str(item.selected_item.memory_type),
+        )
+        trigger_local = _prospective_trigger_local(public_payload, memory_type)
         fragments.append(
             {
                 "ref": item.selected_item.item_id,
-                "memory_type": "short_horizon" if typed_short else getattr(
-                    item.selected_item.memory_type,
-                    "value",
-                    str(item.selected_item.memory_type),
-                ),
+                "memory_type": memory_type,
                 "privacy_class": privacy,
                 "score": float(item.score),
                 "payload": public_payload,

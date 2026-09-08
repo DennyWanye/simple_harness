@@ -42,10 +42,17 @@ def _lanes(payload, *, privacy: str = "personal", memory_type: str = "prospectiv
 
 
 def _prospective(trigger_at: float, tz):
+    """The real SDK public payload of a prospective memory.
+
+    run-01j C04-12 shows it verbatim: ``action`` + ``trigger`` only, with no
+    self-describing ``memory_type`` key. Gating the rendering on a payload
+    field that never exists is exactly why trigger_local reached no model.
+    """
+
     trigger = {"trigger_kind": "time", "trigger_at": trigger_at}
     if tz is not None:
         trigger["timezone"] = tz
-    return {"memory_type": "prospective", "action": "提交周报", "trigger": trigger}
+    return {"action": "提交周报", "trigger": trigger}
 
 
 def test_prospective_renders_scenario_local_time_and_chinese_weekday():
@@ -88,11 +95,11 @@ def test_seconds_are_kept_only_when_the_trigger_actually_carries_them():
 
 
 def test_non_time_and_non_prospective_payloads_get_no_rendered_field():
-    event = {"memory_type": "prospective", "action": "提交周报",
+    event = {"action": "提交周报",
              "trigger": {"trigger_kind": "event", "event_authority_ref": "ref",
                          "condition": "when asked", "condition_hash": "d" * 64}}
     assert "trigger_local" not in project_recall_fragments(_lanes(event))[0]
-    semantic = {"memory_type": "semantic", "subject_entity": "user",
+    semantic = {"subject_entity": "user",
                 "predicate": "prefers", "object_value": "Markdown"}
     assert "trigger_local" not in project_recall_fragments(
         _lanes(semantic, memory_type="semantic"))[0]
@@ -100,7 +107,20 @@ def test_non_time_and_non_prospective_payloads_get_no_rendered_field():
 
 def test_malformed_trigger_at_is_skipped_rather_than_guessed():
     for raw in ("2026-09-07T09:00+08:00", None, True):
-        payload = {"memory_type": "prospective", "action": "提交周报",
+        payload = {"action": "提交周报",
                    "trigger": {"trigger_kind": "time", "trigger_at": raw,
                                "timezone": "Asia/Shanghai"}}
         assert "trigger_local" not in project_recall_fragments(_lanes(payload))[0]
+
+
+def test_kind_comes_from_the_fragment_not_from_the_payload():
+    """run-01j regression: an episode payload that happens to carry a time
+    trigger must not be rendered, and a prospective fragment must be rendered
+    even though its payload names no type at all."""
+
+    at = datetime(2026, 9, 7, 1, 0, tzinfo=timezone.utc).timestamp()
+    payload = _prospective(at, "Asia/Shanghai")
+    assert "memory_type" not in payload
+    assert "trigger_local" in project_recall_fragments(_lanes(payload))[0]
+    assert "trigger_local" not in project_recall_fragments(
+        _lanes(payload, memory_type="episode"))[0]
