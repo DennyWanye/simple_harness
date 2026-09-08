@@ -49,6 +49,7 @@ def main():
     parser.add_argument('--port', type=int, default=18120)
     parser.add_argument('--python', type=Path)
     parser.add_argument('--model', default=None, help='default: config.toml [llm] model')
+    parser.add_argument('--env-file', type=Path, default=None, help='BASEURL/APIKEY file for the primary provider (default: <source>/../simple_harness/.env); use with --model to run a journey on another relay, recorded as provider_kind=explicit')
     parser.add_argument('--fallback-model', default=None, help='used (and recorded) only when --model fails preflight')
     parser.add_argument('--fallback-env-file', type=Path, default=None, help='BASEURL/APIKEY for the fallback provider (else the primary credential file)')
     parser.add_argument('--launch', action='store_true')
@@ -78,12 +79,12 @@ def main():
     available = sum(page_counts.get(key, 0) for key in ('Pages free', 'Pages inactive', 'Pages speculative')) * page_size
     if available < args.headroom_mib * 1024 ** 2:
         raise RuntimeError(f'native_test_memory_headroom_low:{available // (1024 ** 2)}MiB')
-    values = dotenv_values(source.parent / 'simple_harness' / '.env', interpolate=False)
+    values = dotenv_values(args.env_file if args.env_file else source.parent / 'simple_harness' / '.env', interpolate=False)
     assert values.get('APIKEY') and values.get('BASEURL'), 'Host process credential configuration missing'
     config = tomlkit.parse((source / 'config.toml').read_text())
     model = args.model or str(config['llm']['model'])
     preflight = [relay_ready(values['BASEURL'], values['APIKEY'], model)]
-    provider_kind = 'primary'
+    provider_kind = 'explicit' if args.env_file else 'primary'
     if not preflight[0]['ready'] and args.fallback_model:
         fallback_values = dotenv_values(args.fallback_env_file, interpolate=False) if args.fallback_env_file else values
         preflight.append({**relay_ready(fallback_values['BASEURL'], fallback_values['APIKEY'], args.fallback_model),
