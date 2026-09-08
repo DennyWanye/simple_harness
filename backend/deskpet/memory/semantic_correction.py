@@ -171,8 +171,12 @@ class SemanticCorrectionAuthority:
         manager = await self._manager()
         from deskpet.operation_audit.memory_attempts import MemoryAttemptJournal
         journal = MemoryAttemptJournal(self._path.with_name("operation-audit.db"), clock=self._clock)
-        execution = await journal.execute_typed_recall(manager, principal=principal, context=context,
-            plan=plan, now=now, caller="analysis_candidates")
+        from deskpet.memory.recall_authority import execute_typed_recall_recollecting
+        # Same benign authority race as the foreground lane: this candidate
+        # query runs while other lanes apply memories, so re-collect (bounded)
+        # instead of failing the analysis attempt.
+        execution = await execute_typed_recall_recollecting(journal, manager, principal=principal,
+            context=context, plan=plan, now=now, caller="analysis_candidates")
         result = execution.result
         result.validate_decision(execution.decision)
         candidates = []
