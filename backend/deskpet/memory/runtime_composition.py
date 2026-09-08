@@ -54,8 +54,16 @@ def compose_human_memory_runtime(
         # Relation-endpoint candidates go through the same public typed recall as every
         # other read, so the SDK's Procedure applicability gate still decides which
         # procedures may surface at all (a never-used Procedure stays invisible).
-        procedure_fingerprints_getter=lambda run_id: (
-            runtime.procedure_runtime.current_fingerprints(run_id)
+        #
+        # HM-TO-A6 事件 S: this lane must NOT ask ``current_fingerprints``.  The
+        # analysis run has no Tool authority and the foreground Run it analyses is
+        # already terminal by then, so that call answered ``KeyError(<analysis run
+        # id>)`` and took the whole relation-endpoint channel — Prospective
+        # endpoints included — down on every batch.  ``applied_use_fingerprints``
+        # answers the same question off-Run; its docstring states exactly which half
+        # of the live gate it keeps and which half it cannot.
+        procedure_fingerprints_getter=lambda: (
+            runtime.procedure_runtime.applied_use_fingerprints()
             if getattr(runtime, "procedure_runtime", None) is not None else _no_fingerprints()
         ),
     )
