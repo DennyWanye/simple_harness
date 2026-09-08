@@ -8221,13 +8221,30 @@ async def _build_product_sdk_runtime_stack(
     deskpet_tool_registry_v2.set_dynamic_capability_admission_provider(
         tool_authorities.validate_runtime_tool_admission
     )
+    from deskpet.execution.termination_budget import resolve_max_wall_seconds
+
+    # C10-13 缺陷：这里不显式给 max_wall_seconds 就静默回落 SDK 默认 900s，
+    # 恰好等于语料批次的外部 SIGTERM deadline，外层先赢 → 连失败终态回执都
+    # 没有（NO_PACKET）。墙钟限额必须显式、可配置，并严格早于任何外层看门狗。
+    # 完整的层级不变式见 deskpet/execution/termination_budget.py。
+    _max_wall_seconds = resolve_max_wall_seconds(config.raw)
+    logger.info(
+        "react_termination_limits",
+        max_turns=25,
+        max_tool_calls=50,
+        max_consecutive_same_tool=10,
+        max_wall_seconds=_max_wall_seconds,
+    )
     driver = build_react_driver(
         clock=clock,
         # SDK H079 的重复键是工具名 + canonical arguments hash；10 限制的是
         # 同名同参的连续调用。改变参数会重置 streak，不是同一工具名总计10次。
         # 25轮/50工具的持久累计计数跨授权恢复保留；外部测试限时另行记录。
         limits=TerminationLimits(
-            max_turns=25, max_tool_calls=50, max_consecutive_same_tool=10
+            max_turns=25,
+            max_tool_calls=50,
+            max_consecutive_same_tool=10,
+            max_wall_seconds=_max_wall_seconds,
         ),
         budget_policy=budget_policy,
         estimator=None,

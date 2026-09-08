@@ -21,7 +21,7 @@ from simple_harness.execution.context_authority import ContextRouteReceipt
 
 from deskpet.memory.schema import initialize_human_memory_program_state_db
 from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
-from deskpet.sdk_adapters.context_route import ContextRouteToolService
+from deskpet.sdk_adapters.context_route import ROUTES, ContextRouteToolService
 
 RUN = "run-route-1"
 
@@ -515,6 +515,29 @@ def test_persona_tells_the_model_what_the_two_host_hint_fields_mean() -> None:
 
     assert "procedure_hint" in PERSONA and "procedure_discover" in PERSONA
     assert "trigger_local" in PERSONA
+
+
+def test_persona_enumerates_every_context_route_the_tool_accepts() -> None:
+    """corpus run-02: PERSONA only ever named create_new / memory_standalone.
+
+    The model then routed a pure text rewrite to ``create_new`` (C10-17), skipped
+    ``task_scope_search`` when asked to find earlier work by an old name
+    (C05-05/06/15), and opened a duplicate scope instead of ``continue_active``
+    (native A6 attempt 4, turn 7). A route the persona never names is a route the
+    model has to rediscover from the schema on its own.
+    """
+    from deskpet.execution.primary_context import PERSONA
+
+    for route in ROUTES:
+        assert route in PERSONA, f"PERSONA never names the {route} route"
+    # The three behaviours the corpus caught, each pinned to its own wording.
+    assert "an active scope needs no search" in PERSONA
+    assert "task_scope_search first" in PERSONA
+    assert "rewriting" in PERSONA and "not a new project task" in PERSONA
+    # Bounded: the persona is protected context on every single request, and the
+    # 8192-token provider tier in tests/execution/test_current_tool_megabyte.py
+    # only completes while the protected block stays this small.
+    assert len(PERSONA) <= 4900
 
 
 # ---- HM-TO-A6 incident B：零命中搜索必须给出唯一的下一步 ----------------------

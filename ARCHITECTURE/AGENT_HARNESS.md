@@ -761,6 +761,8 @@ analysis → 认知记忆物化。
 | 11 | 三跳披露的 `tool_search` / `tool_describe` / `tool_activate`：处理器强制校验必填字段，**schema 却不声明 `required`**——模型看到的契约说「可选」，运行时以 `missing_required_argument` 拒绝，要求只写在描述文字里 | 三处 schema 如实声明 `required`，处理器校验保留。**省略原本有正当理由**（缺项会被冻结 SDK 判 `driver_failed` 打死整个 Run），但**该前提已被本表 #F2 修掉**——缺参现由 `ProductToolsAdapter.validate` 接住成可恢复拒绝。前提消失后省略只剩坏处 |
 
 | 12 | **驱动唤醒丢失** → 回合永停 `CLAIMED`、终态永不提交、Memory 摄入永不发生。`_run_driver` 「无进展即 return」；而 `after_control` 唤醒时若驱动**仍在运行**，`after_enqueue` 只看 `driver.done()`，判假就什么都不做——它设的 `_control_wake` 由 `_pump_controls` 消费，与「重新进入驱动」无关。决策在本轮 `_drive_once` 期间落地即丢失唤醒。#7 只接上了唤醒，没处理唤醒被吞 | ① `after_enqueue` 发现驱动在跑时置 `_rewake_pending` 留痕；② `_run_driver` 退出前在 `_driver_lock` 内复查该标记，并把 `_driver` 置空以消除「标记设上但 `done()` 尚为假」的残余窗口。`close()` 随之区分「从未起过驱动」（照旧早返回）与「跑完置空」（必须清租约） |
+| 13 | 同 #10 的另一半：`main.py` 也漏设 `max_wall_seconds` → 取 SDK 默认 **900.0s**，与语料批次外部 SIGTERM deadline（`run_corpus_batch.py --seconds` 默认 900）**相等**。C10-13 在 900.167s 被外层杀掉，驱动来不及结算，连失败终态回执都没有（`NO_PACKET`） | 限额链显式有序、单一事实源在 `deskpet/execution/termination_budget.py`：provider 传输超时 240s < 驱动 `max_wall_seconds` **600s**（`config.toml [agent]` 可配，非法值回落 600，区间 300–3600）< 前台活跃执行预算 900s < 外部看门狗下限 `600+240+60=900s`（墙钟只在预留边界采样，故须再容一次在途 provider 调用）；批次 `--seconds` 默认改为派生的 1200s 并对低于下限的取值硬拒。回归钉：`tests/execution/test_termination_budget.py` 用 `ast` 断言每个 `TerminationLimits(...)` 都带 `max_wall_seconds` |
+
 
 **#12 的诊断依据**：通过的轮次 `foreground.runtime.bound` 出现 **2 次**（驱动被重新进入），
 挂住的只有 **1 次**；两者 SDK 事件序列**完全相同**（created → activated → decision.open →
