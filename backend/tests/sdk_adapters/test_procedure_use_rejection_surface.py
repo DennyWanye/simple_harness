@@ -26,7 +26,7 @@ from simple_harness.contracts import RunId
 from simple_harness.tools import ToolOutcome
 
 from deskpet.memory.procedure_applicability import ProcedureUseRejected, current_snapshot
-from deskpet.sdk_adapters.procedure_use import procedure_use_registration
+from deskpet.sdk_adapters.procedure_use import SCHEMA, procedure_use_registration
 from deskpet.sdk_adapters.tools import (
     SdkToolExecutorCatalogUnavailable,
     _current_call_id,
@@ -157,3 +157,49 @@ def test_the_tool_description_tells_the_model_to_activate_step_tools_first():
     registration = procedure_use_registration(SimpleNamespace())
     for expected in ("tool_search", "tool_describe", "tool_activate"):
         assert expected in registration.description
+
+
+# r14 (NATIVE-R14-PROCEDURE-CHAIN.md): the additions the real DeepSeek run
+# needed. The deny path and every stable code are untouched.
+
+
+@pytest.mark.asyncio
+async def test_rebinding_in_the_same_run_is_told_which_binding_already_stands():
+    from deskpet.memory.procedure_guidance import bound_step_calls
+
+    class _Service:
+        async def bind_use(self, arguments, context):
+            raise ProcedureUseRejected("procedure_same_run_changed_use", detail={
+                "bound_steps": bound_step_calls([
+                    {"tool": "write_file", "arguments": {"path": "record.txt"}, "arguments_hash": "h"}])})
+
+    registration = procedure_use_registration(_Service())
+    context = SimpleNamespace(run_id=RunId("run-procedure-1"))
+    token = _current_tool_context.set(context)
+    call = _current_call_id.set(CallId("call-procedure-1"))
+    try:
+        payload = await registration.handler({"memory_id": "m", "revision": 1, "steps": []}, context)
+    finally:
+        _current_tool_context.reset(token)
+        _current_call_id.reset(call)
+    assert payload["error_code"] == "procedure_same_run_changed_use"
+    assert payload["retriable"] is False and payload["replan_required"] is True
+    assert "immutable" in payload["next_action"]
+    assert "record.txt" in payload["next_action"]
+
+
+@pytest.mark.asyncio
+async def test_the_static_same_run_guidance_still_applies_without_detail():
+    payload = await _invoke("procedure_same_run_changed_use")
+    assert payload["error_code"] == "procedure_same_run_changed_use"
+    assert "immutable" in payload["next_action"]
+    assert "instead of binding again" in payload["next_action"]
+
+
+def test_the_tool_description_demands_verbatim_arguments_and_names_the_freeze():
+    registration = procedure_use_registration(SimpleNamespace())
+    assert "VERBATIM" in registration.description
+    assert "frozen for the whole Run" in registration.description
+    assert "cannot be called again in this Run" in registration.description
+    step = SCHEMA["properties"]["steps"]["items"]["properties"]["arguments_json"]
+    assert "verbatim" in step["description"]

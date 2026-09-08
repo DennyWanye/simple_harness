@@ -9,7 +9,17 @@ from deskpet.task_scope.protocol import canonical_hash
 
 
 class ProcedureUseRejected(ValueError):
-    pass
+    """A stable public deny code, optionally with facts the model can act on.
+
+    ``str(exc)`` stays the stable code that tests and the corpus assert.
+    ``detail`` only carries what this Run already produced (the model's own
+    bound step calls), so wording can name the exact expected call without
+    disclosing anything new.
+    """
+
+    def __init__(self, code, *, detail=None):
+        super().__init__(code)
+        self.detail = dict(detail) if detail is not None else None
 
 
 @dataclass(frozen=True)

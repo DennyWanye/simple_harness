@@ -597,9 +597,15 @@ class ProductEffectExecutor(EffectExecutor):
                     try:
                         await self._procedure_runtime.before_call(context, kwargs["call"])
                     except ProcedureUseRejected as error:
+                        # r14: one opaque string for every pre-call deny left
+                        # the model guessing and re-binding until the turn
+                        # budget ran out. The code is unchanged; the public
+                        # text now names the exact bound call it must issue.
+                        from deskpet.memory.procedure_guidance import (
+                            call_rejection_public_message)
                         procedure_rejection = ToolResult.rejected(
                             kwargs["call"].call_id, str(error),
-                            "Procedure use was rejected before execution.")
+                            call_rejection_public_message(error))
                 if procedure_rejection is not None:
                     execution = EffectExecution(effect=None, result=procedure_rejection)
                 else:

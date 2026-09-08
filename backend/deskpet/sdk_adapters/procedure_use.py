@@ -11,7 +11,7 @@ SCHEMA = {"type": "object", "required": ["memory_id", "revision", "steps"], "add
             "type": "object", "required": ["text", "tool", "arguments_json"], "additionalProperties": False,
             "properties": {"text": {"type": "string"}, "tool": {"type": "string"},
                            "arguments_json": {"type": "string", "maxLength": 16384,
-                               "description": "Exact tool arguments encoded as one JSON object; no duplicate keys or non-finite numbers."}}}},
+                               "description": "Exact tool arguments encoded as one JSON object; no duplicate keys or non-finite numbers. You must re-send this object verbatim when you call the step tool; it cannot be changed later in this Run."}}}},
     }}
 
 # run-01j C06-14: six consecutive ``procedure_use`` calls came back as the
@@ -53,9 +53,10 @@ _GUIDANCE = {
         "the integer revision returned beside it.", False),
     "procedure_use_arguments_invalid": (
         "Pass exactly memory_id, revision and steps; no other fields.", False),
-    "procedure_use_already_complete": (
-        "This Procedure use is already complete in this Run; do not bind it "
-        "again. Continue with the remaining work.", False),
+    "procedure_same_run_changed_use": (
+        "The Procedure binding for this Run is immutable and was already set "
+        "by your first procedure_use call. Call the steps you already bound, "
+        "with exactly the arguments you bound, instead of binding again.", False),
     "procedure_use_target_unavailable": (_REDISCOVER, True),
     "procedure_use_scope_changed": (_REDISCOVER, True),
     "procedure_use_route_changed": (_REDISCOVER, True),
@@ -73,8 +74,15 @@ _FALLBACK = (
 
 
 def _rejection(exc: ProcedureUseRejected) -> dict:
+    from deskpet.memory.procedure_guidance import bind_rejection_next_action
+
     code = str(exc).strip() or "procedure_use_rejected"
     guidance, retriable = _GUIDANCE.get(code, (_FALLBACK, False))
+    # r14: a deny that can name the already-bound calls says so instead of
+    # repeating a generic sentence. Retriability is unchanged either way.
+    detailed = bind_rejection_next_action(exc)
+    if detailed is not None:
+        guidance = detailed
     return {"error": code, "error_code": code,
             "public_message": f"procedure_use was rejected ({code}). {guidance}",
             "retriable": retriable, "replan_required": not retriable,
@@ -95,6 +103,9 @@ def procedure_use_registration(service):
         "and every verbatim step to one planned tool and exact arguments_json object string, in order. "
         "Activate every step tool first (tool_search, tool_describe, tool_activate); a step tool that is "
         "not active in this Run is rejected. "
+        "Whatever you put in steps[].arguments_json must then be re-sent VERBATIM as that step tool's "
+        "arguments, in order; one changed character is rejected. The binding is frozen for the whole "
+        "Run - procedure_use cannot be called again in this Run, so get the arguments right first. "
         "This only records intended use; every actual tool still requires normal permission. "
         "It grants no execution or successful-observation authority. Never infer success from chat."
     ), input_schema=SCHEMA, handler=handler, dispatch_kind="async", permission_category="procedure_use",

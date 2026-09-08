@@ -83,8 +83,10 @@ def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, 
         _require(ordinal not in providers, "provider_turn_duplicate")
         providers[ordinal] = op
     _require(sorted(providers) == list(range(1, len(providers) + 1)), "provider_turn_gap")
+    from deskpet.memory.primary_message_v2 import effectless_denial
+
     messages = [Message(MessageRole.USER, current_text)]
-    sources, used = [], set()
+    sources, used, denied = [], set(), set()
     for turn, op in sorted(providers.items()):
         invocation = actual_providers[op.provider_invocation_id]
         _require(invocation is not None and invocation.run_id.value == run_id
@@ -100,7 +102,22 @@ def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, 
         for ordinal, call in enumerate(response.tool_calls):
             key = (op.provider_invocation_id, ordinal)
             head = effects.get(key)
-            _require(head is not None, "effect_missing")
+            if head is None:
+                # ``EffectExecutor.execute`` records "requested" before anything
+                # else, so no audit head at all means the call was refused before
+                # any physical dispatch: no effect exists and none ever will.
+                # Keep its transcript position so later item ordinals stay exact
+                # and attest nothing about it. The archived denial itself is the
+                # only claim; a call with no head that reports any other outcome
+                # is still refused below.
+                item = transcript[len(messages)] if len(messages) < len(transcript) else None
+                _require(isinstance(item, dict) and item.get("role") == "tool"
+                         and item.get("call_id") == call.call_id.value
+                         and item.get("name") == call.name
+                         and effectless_denial(item.get("content")), "unsettled_call_not_denied")
+                messages.append(None)
+                denied.add(len(messages))
+                continue
             effect = actual_effects.get(head.effect_id)
             _require(effect is not None and effect.run_id.value == run_id
                      and audit_reference("call", effect.call_id.value) == head.call_id
@@ -132,6 +149,7 @@ def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, 
                 tool_name=call.name, parent_item_ordinal=parent_ordinal, item_ordinal=len(messages)))
             used.add(key)
     _require(used == set(effects) and set(actual_effects) == {h.effect_id for h in effects.values()}, "unconsumed_effect")
-    _require(project(tuple(messages), current_text=current_text) == transcript,
+    _require(project(tuple(m for m in messages if m is not None), current_text=current_text)
+             == tuple(item for index, item in enumerate(transcript, 1) if index not in denied),
              "whole_transcript_mismatch")
     return tuple(sources)

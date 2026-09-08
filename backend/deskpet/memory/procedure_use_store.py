@@ -79,7 +79,11 @@ class ProcedureUseStore:
             target=target.to_json(), target_source_hash=target.source_hash,
             applicability=applicability.to_json(), applicability_fingerprint=applicability.fingerprint,
             hazard=hazard.value, tools=[snapshot.to_json() for snapshot in snapshots],
-            steps=[dict(text_hash=digest, tool=step["tool"], arguments_hash=canonical_hash(step["arguments"]))
+            # r14: ``arguments`` is persisted only so a deny can echo the exact
+            # call the model itself bound. Matching still runs off
+            # ``arguments_hash`` alone; nothing reads ``arguments`` to decide.
+            steps=[dict(text_hash=digest, tool=step["tool"], arguments=step["arguments"],
+                        arguments_hash=canonical_hash(step["arguments"]))
                    for step, digest in zip(steps, target.step_hashes, strict=True)])
         async with self.connection() as db:
             await db.execute("BEGIN IMMEDIATE")
@@ -92,7 +96,9 @@ class ProcedureUseStore:
                 existing = await self._use(db, authority.run_id)
                 if existing is not None:
                     if existing != body:
-                        raise ProcedureUseRejected("procedure_same_run_changed_use")
+                        from deskpet.memory.procedure_guidance import bound_step_calls
+                        raise ProcedureUseRejected("procedure_same_run_changed_use",
+                            detail={"bound_steps": bound_step_calls(existing["steps"])})
                     await db.commit()
                     return existing
                 async with db.execute("SELECT subject FROM task_scopes WHERE task_scope_id=?", (scope_id,)) as cursor:
@@ -149,13 +155,27 @@ class ProcedureUseStore:
                                           (use["use_id"], len(reservations))) as cursor:
                         previous = await cursor.fetchone()
                     if previous is None or _checked(previous)["state"] != "succeeded":
-                        raise ProcedureUseRejected("procedure_previous_step_not_successful")
+                        raise ProcedureUseRejected("procedure_previous_step_not_successful",
+                            detail={"failed_ordinal": len(reservations), "total": len(use["steps"])})
                 ordinal = len(reservations) + 1
                 if ordinal > len(use["steps"]):
-                    raise ProcedureUseRejected("procedure_use_already_complete")
+                    # r15: every bound step is reserved and the last one settled
+                    # ``succeeded`` (the check above), so the binding is complete
+                    # and its observation is already determined -
+                    # ``_observed_outcome`` reads reservations only. The Run may
+                    # make ordinary calls again (the user asked to read both
+                    # files back and compare in the same turn). Nothing relaxes:
+                    # the binding stays immutable, this call reserves no step and
+                    # is attributed to no Procedure step, and a step that failed
+                    # still stops here with ``procedure_previous_step_not_successful``.
+                    await db.commit()
+                    return None
                 step = use["steps"][ordinal - 1]
                 if signature != {key: step[key] for key in ("tool", "arguments_hash")}:
-                    raise ProcedureUseRejected("procedure_call_not_bound_step")
+                    from deskpet.memory.procedure_guidance import bound_step_calls
+                    raise ProcedureUseRejected("procedure_call_not_bound_step", detail={
+                        "expected": bound_step_calls(use["steps"])[ordinal - 1],
+                        "total": len(use["steps"]), "received_tool": call.name})
                 record = dict(use_id=use["use_id"], step_ordinal=ordinal, call_id=call_id, call=signature,
                               applicability_fingerprint=current.fingerprint)
                 await db.execute("INSERT INTO procedure_use_reservations VALUES (?,?,?,?,?)",

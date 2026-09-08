@@ -23,7 +23,8 @@ from tests.memory.test_procedure_scope_runtime import UseProvider, create_draft
 
 
 @asynccontextmanager
-async def session(tmp_path, provider=None, *, risk_level="low", with_discovery=False):
+async def session(tmp_path, provider=None, *, risk_level="low", with_discovery=False,
+                  extra_registrations=()):
     state = tmp_path / "state.db"
     service = HumanMemoryHostServiceFactory(state,
         await dispatch_startup_epoch(state, approved_fresh_lane=True)).bind(local_owner_auth())
@@ -49,7 +50,8 @@ async def session(tmp_path, provider=None, *, risk_level="low", with_discovery=F
             extra = (procedure_discovery_registration(memory.procedure_runtime),)
         runtime, stack, _ = await build(tmp_path, state, ctx.provider, dynamic=True,
             visibility_memory=memory, procedure_runtime=memory.procedure_runtime,
-            extra_registrations=(procedure_use_registration(memory.procedure_runtime), *extra))
+            extra_registrations=(procedure_use_registration(memory.procedure_runtime), *extra,
+                                 *extra_registrations))
         ctx.runtime, ctx.stack = runtime, stack
         yield ctx
     finally:

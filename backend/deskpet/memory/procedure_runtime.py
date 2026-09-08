@@ -69,9 +69,16 @@ class ProcedureRuntime:
             runtime.principal().actor_id, context.run_id.value, target.memory_id, target.revision])
         use = await self.store.bind(authority=authority, registry=self.registry,
             target=target, steps=steps, use_id=use_id, context=context)
+        # r14: the model bound two steps, then re-invented the arguments and
+        # read ``execution_authorized: false`` as "not allowed". Echo the exact
+        # frozen calls back with an explicit next action. The binding, the exact
+        # match and the deny path are all unchanged; only the answer is legible.
+        from deskpet.memory.procedure_guidance import bind_next_action, bound_step_calls
+        calls = bound_step_calls(use["steps"])
         return {"procedure_use_id": use_id, "memory_id": target.memory_id,
                 "revision": target.revision, "steps": len(use["steps"]),
-                "execution_authorized": False}
+                "execution_authorized": False, "binding_frozen": True,
+                "bound_steps": calls, "next_action": bind_next_action(calls)}
 
     async def before_call(self, context, call):
         if call.name in {"procedure_use", "procedure_discover", "context_route", "task_scope_search", "task_scope_update", "prospective_ack"}:
