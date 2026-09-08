@@ -91,6 +91,9 @@ SDK_RUN_ID_RE = re.compile(r'"sdk_run_id":\s*"([^"]+)"|sdk_run_id=([^\s",\]]+)')
 BUDGET_EXCEEDED_LOOKAHEAD = 40
 
 HISTORY_PAGE_PREFIX = "primary-tool-page:v1:"
+# 事件 E 起同 Run 效果页用独立前缀 (current_tool_pages.PREFIX); A6-2 的「大结果分页」两种形态都算。
+EFFECT_PAGE_PREFIX = "primary-effect-page:v1:"
+PAGE_PREFIXES = (HISTORY_PAGE_PREFIX, EFFECT_PAGE_PREFIX)
 EFFECT_PAGE_PREFIX = "primary-effect-page:v1:"
 HISTORY_SUMMARY_KIND = "primary_tool_result_summary_v1"
 HISTORY_MESSAGE_SOURCE = "primary_tool_history_v1"
@@ -922,8 +925,9 @@ def item_a6_2(ev: Evidence) -> Item:
     summaries = 0
     tagged_messages = 0
     for inv in invs:
-        for m in re.finditer(re.escape(HISTORY_PAGE_PREFIX) + r"[0-9a-f]{64}:\d+", inv.request_json_text):
-            refs.add(m.group(0))
+        for prefix in PAGE_PREFIXES:
+            for m in re.finditer(re.escape(prefix) + r"[0-9a-f]{64}:\d+", inv.request_json_text):
+                refs.add(m.group(0))
         if inv.request:
             summaries += len(history_summaries(inv.request))
             tagged_messages += history_message_sources(inv.request)
