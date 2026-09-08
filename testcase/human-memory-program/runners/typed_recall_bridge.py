@@ -298,7 +298,7 @@ def _execute(args, layers, expected):
     shutil.copyfile(adapter_dir / public.name, public)
     shutil.copyfile(adapter_dir / "semantic_relation_public_manager.py", workspace / "semantic_relation_public_manager.py")
     shutil.copyfile(adapter_dir / "typed_recall_public_cases.py", workspace / "typed_recall_public_cases.py")
-    for filename in ("typed_recall_case_manager.py", "typed_recall_normal_cases.py", "typed_recall_procedure_cases.py", "typed_recall_prospective_cases.py", "typed_recall_trigger_cases.py", "typed_recall_prospective_lifecycle_cases.py", "typed_recall_conflict_cases.py", "typed_recall_return_cases.py", "typed_recall_short_cases.py", "typed_recall_fixture_authorities.py", "typed_recall_context_use_cases.py"):
+    for filename in ("typed_recall_case_manager.py", "typed_recall_normal_cases.py", "typed_recall_procedure_cases.py", "typed_recall_prospective_cases.py", "typed_recall_trigger_cases.py", "typed_recall_prospective_lifecycle_cases.py", "typed_recall_conflict_cases.py", "typed_recall_return_cases.py", "typed_recall_short_cases.py", "typed_recall_fixture_authorities.py", "typed_recall_context_use_cases.py", "typed_recall_authority_event_cases.py"):
         shutil.copyfile(adapter_dir / filename, workspace / filename)
     validation_code = {path.name: file_sha(path) for path in workspace.glob("*.py")}
     execution_code = {str(path):file_sha(path) for path in [
@@ -307,7 +307,7 @@ def _execute(args, layers, expected):
         runner_dir / "typed_recall_source_oracle.py", runner_dir / "typed_recall_context_use_oracle.py",
         runner_dir / "typed_recall_procedure_oracle.py", runner_dir / "typed_recall_prospective_oracle.py",
         runner_dir / "typed_recall_prospective_lifecycle_oracle.py",
-        runner_dir / "typed_recall_trigger_oracle.py"]}
+        runner_dir / "typed_recall_trigger_oracle.py", runner_dir / "typed_recall_authority_event_oracle.py"]}
     if args.source_adapter:
         execution_code[str(Path(args.source_adapter).resolve())]=file_sha(args.source_adapter)
     python = args.consumer_python
@@ -358,6 +358,10 @@ def _execute(args, layers, expected):
     context_compiler = importlib.util.module_from_spec(context_spec)
     context_spec.loader.exec_module(context_compiler)
     inputs["context_use"] = context_compiler.inputs(fixture)
+    authority_spec = importlib.util.spec_from_file_location("authority_event_inputs", runner_dir / "typed_recall_authority_event_oracle.py")
+    authority_compiler = importlib.util.module_from_spec(authority_spec)
+    authority_spec.loader.exec_module(authority_compiler)
+    inputs["authority_events"] = authority_compiler.inputs(fixture, inputs["context_use"])
     conflict = fixture["conflict_write_oracle"]
     inputs["conflict"] = {"payloads":{name:{**value,"qualifiers":[]} for name,value in conflict["canonical_payloads"].items()},
         "cases":[{"id":row["id"],"mutation":row.get("mutation",{})} for row in [conflict["create_case"],*conflict["reject_cases"],*conflict["resolution_cases"],conflict["recall_cases"][0]]]}
@@ -482,9 +486,9 @@ def _execute(args, layers, expected):
                 row.update(assessment_scope='NOT_SELECTED',blocker_categories=[])
             elif reason=='CANDIDATE_OBSERVATION_ONLY':
                 row.update(assessment_scope='OBSERVATION_ONLY',blocker_categories=[])
-            elif reason=='CELL_EXECUTOR_NOT_IMPLEMENTED':row['blocker_categories']=['EXECUTOR_UNIMPLEMENTED']
-            elif reason.startswith(('PUBLIC_CASE_PRECONDITION_REJECTED','STATE_PUBLIC_PRECONDITION:')) or any(v in reason for v in (
-                    'APPLICABILITY_OR_SIGNAL','CANARY_AND_CROSS_SCOPE','128_BYTE','SHORT_PUBLIC_PRECONDITION')):
+            elif reason=='CELL_EXECUTOR_NOT_IMPLEMENTED' or 'PROMOTION_PATH_NOT_EXECUTED' in reason:row['blocker_categories']=['EXECUTOR_UNIMPLEMENTED']
+            elif reason.startswith(('PUBLIC_CASE_PRECONDITION_REJECTED','STATE_PUBLIC_PRECONDITION:','PUBLIC_CONTRACT_CONFLICT:')) or any(v in reason for v in (
+                    'APPLICABILITY_OR_SIGNAL','CANARY_AND_CROSS_SCOPE','128_BYTE','SHORT_PUBLIC_PRECONDITION','CONSTRUCTION_CONFLICT')):
                 row['blocker_categories']=['FIXTURE_INVALID_OR_INSUFFICIENT']
             elif any(v in reason for v in ('CANDIDATE_PIN','SOURCE_EXECUTOR_NOT_CONFIGURED','environment','wheel')):
                 row['blocker_categories']=['EXTERNAL_DEPENDENCY']

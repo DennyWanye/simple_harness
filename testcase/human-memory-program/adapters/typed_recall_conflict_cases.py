@@ -88,32 +88,45 @@ async def run_state_cases(inputs,workspace):
         case=await module.CaseManager(workspace/f'state-{index}.sqlite').open()
         o=dict(state_cell=name,calls=case.events,sources=case.sources)
         try:
+            # pre/post snapshots bracket the single state transition under test; the
+            # parent binds receipts and protected table roots across that transition.
             if name in {'eligibility/current-head','eligibility/stale-head'}:
                 op=await seed_revision7(case,payloads['incumbent'])
+                o['pre_transition']=await case.snapshot()
                 op=await case.seed(dict(memory_type='semantic',payload=payloads['challenger']),operation_id='revise-8',
                     evidence_id='evidence-user-python-312',kind='revise',target=h.ExistingMemoryTarget(op.memory_id,op.revision))
+                o['post_transition']=await case.snapshot()
                 o['current_head']=op.to_json()
                 o['recall']=await case.recall(query='3.12' if name.endswith('/current-head') else '11')
             elif name=='eligibility/suppressed':
                 op=await case.seed(dict(memory_type='semantic',payload=payloads['incumbent']))
                 o['before']=await case.recall(query='3.11',key='before-suppression')
+                o['pre_transition']=await case.snapshot()
                 request=m.SuppressionRequest('suppress-case',case.principal.actor_id,m.SuppressionScopeKind.MEMORY,
                     op.memory_id,'user_requested',case.now,purpose=m.OrdinaryMemoryPurpose.RECALL)
                 event=dict(call='suppress',request=request.to_json());case.events.append(event)
                 event['decision']=(await case.manager.suppress(principal=case.principal,request=request)).to_json()
+                o['post_transition']=await case.snapshot()
                 o['recall']=await case.recall(query='3.11',key='after-suppression')
             else:
-                op=await seed_revision7(case,payloads['incumbent']);op=await contest(case,op,payloads['challenger'])
+                op=await seed_revision7(case,payloads['incumbent'])
+                if name=='eligibility/ordinary-contested':o['pre_transition']=await case.snapshot()
+                op=await contest(case,op,payloads['challenger'])
+                if name=='eligibility/ordinary-contested':o['post_transition']=await case.snapshot()
                 o['confirmation']=await case.recall(query='preferred_python',key='confirmation')
                 if name=='eligibility/ordinary-resolved':
+                    o['pre_transition']=await case.snapshot()
                     await case.seed(dict(memory_type='semantic',payload=payloads['incumbent'],conflict_status='resolved'),
                         operation_id='resolve',evidence_id='evidence-user-resolution',kind='revise',
                         target=h.ExistingMemoryTarget(op.memory_id,op.revision))
+                    o['post_transition']=await case.snapshot()
                 elif name=='conflict-state/contested-dependent-partial':
+                    o['pre_transition']=await case.snapshot()
                     request=m.SuppressionRequest('suppress-challenger',case.principal.actor_id,m.SuppressionScopeKind.EVIDENCE,
                         'evidence-user-python-312','user_requested',case.now,purpose=m.OrdinaryMemoryPurpose.RECALL)
                     event=dict(call='suppress',request=request.to_json());case.events.append(event)
                     event['decision']=(await case.manager.suppress(principal=case.principal,request=request)).to_json()
+                    o['post_transition']=await case.snapshot()
                 o['recall']=await case.recall(query='preferred_python',key='after-state')
             o['replay']=(await case.manager.execute_typed_recall(principal=case.principal,
                 context=h.RecallContext.from_json(o['recall']['context']),plan=h.RecallPlan.from_json(o['recall']['plan']),now=case.now))

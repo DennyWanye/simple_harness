@@ -78,10 +78,12 @@ def check_bundle(bundle, shared):
             item_hash=wire['result_item_hashes'][i], conflict_group_id=None, confirmation_hash=None,
             result_group_hash=None, page_id=page['page_id'], page_hash=page_hash,
             use_receipt_id=None, use_receipt_hash=None, public_payload_hash=digest(item['public_payload']))
+        short = selected['source_kind'] == 'short_horizon'
         require(fragment['recall_binding'] == expected and fragment['public_payload'] == item['public_payload']
                 and fragment['public_payload_hash'] == expected['public_payload_hash']
                 and fragment['source_ref'] == selected['source_ref'] and fragment['source_revision'] == selected['source_revision']
-                and fragment['fragment_type'] == 'recalled_memory'
+                and (fragment['source_revision'] is None) is short
+                and fragment['fragment_type'] == ('short_horizon' if short else 'recalled_memory')
                 and fragment['byte_estimate'] == len(canonical(item['public_payload']))
                 and fragment['token_estimate'] == len(canonical(item['public_payload']))
                 and all(fragment[k] == recall['context'][k] for k in ('subject', 'run_id', 'disclosure_context', 'evidence_refs')),

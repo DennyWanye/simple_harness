@@ -19,8 +19,9 @@ def domain(name, value):
 def check(observed, recipe, check_admitted_span):
     proof = observed['procedure_binding']
     seed = recipe['seed']
-    if (seed['memory_type'] != 'procedure' or seed.get('epistemic', 'explicit_user') != 'explicit_user'
-            or seed.get('state', 'active') not in {'active', 'eligible'}
+    states = {'draft', 'eligible', 'active', 'reinforced', 'revised', 'inapplicable', 'superseded'}
+    if (seed['memory_type'] != 'procedure' or seed.get('state', 'active') not in states
+            or (seed.get('epistemic', 'explicit_user') != 'explicit_user' and seed.get('state') != 'draft')
             or recipe['family'] not in {'lifecycle', 'epistemic', 'procedure_applicability'}):
         raise ValueError('procedure proof outside supported input scope')
     raw = seed['payload']['applicability']
@@ -69,7 +70,8 @@ def check(observed, recipe, check_admitted_span):
             or metadata['ordered_group_manifest_hash']!=sha([{'evidence_id':eid,'envelope_hash':eh,'item_ordinal':1}])):
         raise ValueError('procedure metadata receipt/source manifest differs')
     source = observed['sources'][-1]['receipt']['operations'][0]
-    state = 'eligible_for_activation' if seed.get('state') == 'eligible' else 'active'
+    state = seed.get('state', 'active')
+    state = 'eligible_for_activation' if state == 'eligible' else state
     expected = dict(schema_version=1, observation_id='procedure-snapshot', subject='principal-1',
         scope={'kind':'personal','owner_id':'principal-1'}, target_memory_id=source['memory_id'],
         target_revision=source['revision'], kind='applicability_snapshot', applicability=app, applicability_fingerprint=fingerprint,

@@ -242,10 +242,13 @@ def assess_cell(fixture, cell, baseline=None):
     Missing witnesses stay BLOCKED; a failed assertion takes precedence.
     """
     name, observed = cell["cell_id"], cell["observations"]
+    complete = False
     if cell["status"] != "OBSERVED":
         return {"status": cell["status"], "reason": cell["reason"], "business_assertions": []}
     if "context_use_cell" in observed:
         return assess_context_use(fixture,cell)
+    if "authority_event_cell" in observed:
+        return _authority_event_oracle().assess(fixture, cell, globals())
     if "short_recipe" in observed:
         return assess_short(fixture,cell)
     if "state_cell" in observed:
@@ -285,6 +288,51 @@ def assess_cell(fixture, cell, baseline=None):
             else:
                 check_page(observed["page"], observed["result"], observed["result_hash"], observed["result_item_hashes"])
                 checks.append("successful page exact header/content/result-item bindings")
+            # Remaining original obligations: full public hash/identity bindings, frozen clock,
+            # durable exact replay, mutation plan/apply result binding, classification.
+            wire, context, plan = observed["execution"], observed["recall_context"], observed["recall_plan"]
+            if wire["decision"] != observed["decision"] or wire["result"] != observed["result"]:
+                raise ValueError("execution wire differs from recorded decision/result")
+            check_execution_wire(wire, context, plan)
+            replay = observed["replay"]
+            if (replay["decision"] != wire["decision"] or replay["result"] != wire["result"] or not replay["replayed"]
+                    or replay["candidate_query_count"] != 0 or replay["candidate_query_started"] or wire["replayed"]):
+                raise ValueError("durable exact replay differs")
+            now = observed["recall_now"]
+            from datetime import datetime
+            row = fixture["eligibility_cases"][0]
+            frozen = {key: None if row[key] is None else datetime.fromisoformat(row[key].replace("Z", "+00:00")).timestamp()
+                      for key in ("now", "valid_from", "valid_until")}
+            if (now != frozen["now"] or wire["decision"]["decided_at"] != now or wire["result"]["evaluated_at"] != now
+                    or wire["decision"]["filtered_candidate_count"] != 1
+                    or wire["decision"]["candidate_count_stage"] != "after_all_eligibility_gates"
+                    or items[0]["effective_privacy_class"] != "personal" or items[0]["information_attributes"]
+                    or items[0]["cross_scope"] or items[0]["source_task_scope_ids"]
+                    or context["query"] != str(vector["source"]["object_value"]) or plan["query"] != context["query"]
+                    or context["available_memory_types"] != ["semantic"] or plan["requested_memory_types"] != ["semantic"]
+                    or context["allowed_retrieval_modes"] != ["full_text"] or not context["evidence_refs"]):
+                raise ValueError("frozen clock/count/classification/request binding differs")
+            mutation_plan, apply_result = observed["mutation_plan"], observed["apply_result"]
+            op = mutation_plan["operations"][0]
+            if (len(mutation_plan["operations"]) != 1 or op["kind"] != "create" or op["memory_type"] != "semantic"
+                    or op["lifecycle_state"] != "active" or op["epistemic_status"] != "explicit_user"
+                    or op["verification_state"] != "source_bound" or op["conflict_status"] != "uncontested"
+                    or op["valid_time_interval"] != {"valid_from": frozen["valid_from"], "valid_until": frozen["valid_until"]}
+                    or op["payload"] != semantic_source(**{key: vector["source"][key] for key in ("subject_entity", "predicate", "object_value", "qualifiers")})
+                    or op["payload"]["object_value_hash"] != hash_json(vector["source"]["object_value"])
+                    or op["operation_id"] != operation["operation_id"] or op["evidence_spans"][0]["evidence_id"] not in operation["evidence_ids"]):
+                raise ValueError("mutation plan operation differs from frozen unbounded validity input")
+            receipt = observed["mutation_receipt"]
+            if (apply_result["outcome"] != "committed" or apply_result["plan_id"] != mutation_plan["plan_id"]
+                    or apply_result["plan_hash"] != sdk_domain_hash("simple-harness/memory-mutation-plan/v5", mutation_plan)
+                    or receipt["plan_hash"] != apply_result["plan_hash"]
+                    or apply_result["receipt_ref"] != {"receipt_id": receipt["receipt_id"], "receipt_hash": receipt["receipt_hash"]}
+                    or observed["apply_result_hash"] != sdk_domain_hash("simple-harness/memory-mutation-apply-result/v4", apply_result)
+                    or apply_result["subject"] != context["subject"] or mutation_plan["evidence_refs"] != context["evidence_refs"]):
+                raise ValueError("apply result/receipt/plan/evidence binding differs")
+            checks += ["full public hash/identity/context bindings and frozen clock", "durable exact replay with zero candidate reads",
+                       "mutation plan/apply result/receipt binding with frozen unbounded validity"]
+            complete = not blockers
         elif name == "unsupported-replay/exact-replay":
             first, replay = observed["first"], observed["replay"]
             vector = next(v for v in fixture["approved_oracle"]["semantic_source_vectors"] if v["id"] == "incumbent")
@@ -298,6 +346,28 @@ def assess_cell(fixture, cell, baseline=None):
                     or not replay["replayed"]):
                 raise ValueError("exact replay bytes/query/fence differs")
             checks.append("actual decision/result byte-identical replay and zero candidate query")
+            check_execution_wire(first, observed["context"], observed["plan"])
+            check_execution_wire(replay, observed["context"], observed["plan"])
+            if first["replayed"] or first["candidate_query_count"] != 1 or not first["candidate_query_started"]:
+                raise ValueError("first execution is not a fresh single candidate query")
+            original = fixture["request_hash_oracle"]["base_request"]
+            if (observed["context"]["run_id"] != original["run_id"] or observed["context"]["context_revision"] != original["context_revision"]
+                    or observed["context"]["budget"] != original["budget"] or observed["plan"]["plan_id"] != original["plan_id"]
+                    or observed["context"]["subject"] != original["principal_id"]):
+                raise ValueError("replay baseline differs from frozen request inputs")
+            controls = []
+            for label in ("before_control", "after_control"):
+                state = observed[label]
+                protected_hash(state["manifest"], state["payload_hash"], FINAL_TABLES)
+                controls.append({r["table_name"]: r for r in state["manifest"]["table_roots"]})
+            for name_ in FINAL_TABLES:
+                delta = 1 if name_ in {"typed_recall_decisions", "typed_recall_decision_items", "typed_recall_results",
+                                      "typed_recall_result_items", "typed_recall_terminals"} else 0
+                if controls[1][name_]["row_count"] - controls[0][name_]["row_count"] != delta:
+                    raise ValueError("exact-replay control delta differs; first execution plus replay must write one durable terminal: " + name_)
+            checks += ["full public hash/identity bindings for first and replayed execution",
+                       "exactly one durable decision/result/terminal row set across first execution and replay"]
+            complete = True
         elif name.startswith("unsupported-replay/request-hash:"):
             row = next(row for row in fixture["approved_oracle"]["mutation_mapping"] if row["cell_id"] == name)
             rejection_status=judge_rejection(row, observed)
@@ -325,7 +395,25 @@ def assess_cell(fixture, cell, baseline=None):
             if observed.get("exception_type") != "MemoryIdempotencyConflict" or observed.get("exception_reason") != "IDEMPOTENCY_CONFLICT":
                 raise ValueError("conflicting replay failed to reject at idempotency")
             checks.append("actual idempotency rejection")
-            blockers.append("PUBLIC_EXCEPTION_HAS_NO_PER_INVOCATION_CANDIDATE_READ_WITNESS")
+            if baseline is None:
+                raise ValueError("conflicting replay baseline evidence missing")
+            expected_context = copy.deepcopy(baseline["context"])
+            expected_context["query"] = baseline["context"]["query"] + " changed"
+            expected_plan = copy.deepcopy(baseline["plan"])
+            expected_plan["query"] = expected_context["query"]
+            expected_plan["context_hash"] = sdk_domain_hash("simple-harness/recall-context/v2", expected_context)
+            if (observed.get("context") != expected_context or observed.get("plan") != expected_plan
+                    or observed.get("principal_actor_id") != baseline["context"]["subject"] or observed.get("memory_called") is not True
+                    or expected_plan["idempotency_key"] != baseline["plan"]["idempotency_key"]):
+                raise ValueError("conflicting replay inputs differ: same idempotency key with one changed valid query")
+            checks.append("same durable idempotency key with one changed valid query on the frozen baseline")
+            witness_row = {"public_witness_stage": "idempotency", "exact_reason": "IDEMPOTENCY_CONFLICT",
+                           "original_attack": "conflicting-replay"}
+            if check_rejection_witness(witness_row, observed):
+                checks.append("public frozen invocation-bound pre-candidate receipt with exact inputs/stage/reason/zero reads")
+                complete = True
+            else:
+                blockers.append("PUBLIC_EXCEPTION_HAS_NO_PER_INVOCATION_CANDIDATE_READ_WITNESS")
         elif name.startswith("unsupported-replay/"):
             original = next(row for row in fixture["unsupported_cases"] if name.endswith("/" + row["id"]))
             # A supported mandatory carrier cannot erase/change attack reasons.
@@ -342,9 +430,26 @@ def assess_cell(fixture, cell, baseline=None):
                     or value["result"]["items"] or value["result"]["confirmation_groups"]):
                 raise ValueError("unsupported reason/order/zero-query/empty-payload assertion failed")
             checks.append("all original unsupported reasons in exact order; rejected invalid plan, zero query/payload")
+            check_execution_wire(value, observed["context"], observed["plan"])
+            replay = observed["replay"]
+            if (replay["decision"] != value["decision"] or replay["result"] != value["result"] or not replay["replayed"]
+                    or replay["candidate_query_count"] != 0 or replay["candidate_query_started"] or value["replayed"]):
+                raise ValueError("durable exact replay of the rejected invalid plan differs")
+            carrier = observed["input_carrier"]
+            selectors = ["memory_type"] + [v.lower() for v in original["selectors"]]
+            modes = [v.lower() for v in original["modes"]] or ["full_text"]
+            if (carrier != {"original_selectors": original["selectors"], "original_modes": original["modes"],
+                            "added_supported_selector": "memory_type", "default_supported_mode": None if original["modes"] else "full_text"}
+                    or observed["context"]["allowed_selector_domains"] != selectors or observed["plan"]["selector_domains"] != selectors
+                    or observed["context"]["allowed_retrieval_modes"] != modes or observed["plan"]["retrieval_modes"] != modes
+                    or observed["plan"]["idempotency_key"] != "unsupported-" + original["id"] or observed.get("memory_called") is not True):
+                raise ValueError("unsupported attack carrier differs from frozen selectors/modes")
+            checks += ["full public hash/identity bindings of the rejected decision", "durable exact replay with zero candidate reads",
+                       "frozen unsupported selectors/modes on the mandatory typed carrier"]
+            complete = True
         else:
             blockers.append("INDEPENDENT_CELL_ORACLE_NOT_IMPLEMENTED")
-        if not blockers and name.startswith("unsupported-replay/request-hash:"):
+        if not blockers and (name.startswith("unsupported-replay/request-hash:") or complete):
             return {"status":"PASS","reason":"","business_assertions":checks}
         if not blockers:
             blockers.append("FULL_ORIGINAL_CELL_ADMISSION_PENDING")
@@ -460,6 +565,12 @@ def assess_normal(fixture, cell):
             prospective_revision=signal_module.check(observed,recipe)
         if (recipe['seed']['memory_type']=='prospective' and prospective_revision is None) or (recipe['seed']['memory_type']=='procedure' and procedure_revision is None):
             blockers.append('REQUIRED_APPLICABILITY_OR_SIGNAL_AUTHORITY_NOT_ESTABLISHED')
+        seed_spec=recipe['seed']
+        if (recipe['family']=='epistemic' and seed_spec['memory_type']=='procedure' and seed_spec.get('epistemic')=='observed_behavior'
+                and seed_spec.get('verification')=='repeated_observation'):
+            # ELIGIBLE_WITH_APPLICABILITY needs the real observation promotion draft->active; only
+            # the legal draft creation plus applicability snapshot is executed here.
+            blockers.append('OBSERVED_PROCEDURE_ACTIVATION_PROMOTION_PATH_NOT_EXECUTED')
         if recipe['family']=='projection':
             blockers.append('FULL_SOURCE_RECORD_CANARY_AND_CROSS_SCOPE_SETUP_NOT_ESTABLISHED')
             if recipe['seed']['memory_type']=='episode':
@@ -681,8 +792,20 @@ def assess_conflict(fixture,cell):
         if [s['receipt']['operations'][0]['revision'] for s in sources[:7]]!=list(range(1,8)):
             raise ValueError('revision7 is not backed by actual append history')
         checks.append('real authorized append history 1..7 with frozen incumbent evidence')
-        if o.get('exception') or o.get('rejection'):
-            return dict(status='BLOCKED',reason='CONFLICT_REJECTION_OR_PRECONDITION_REQUIRES_FULL_ORACLE',business_assertions=checks)
+        incumbent={**fixture['conflict_write_oracle']['canonical_payloads']['incumbent'],'qualifiers':[]}
+        for index in range(7):
+            check_seed_authority(o,{'seed':{'memory_type':'semantic','payload':incumbent}},semantic_source(**incumbent),
+                source_index=index,check_recall_refs=False)
+            if index:
+                plan=next(e['plan'] for e in o['calls'] if e['call']=='apply_memory_mutation_plan' and e['plan']['plan_id']==sources[index]['receipt']['plan_id'])
+                if plan['operations'][0]['kind']!='revise' or plan['operations'][0]['target']!={'target_kind':'existing_memory','memory_id':op['memory_id'],'revision':index}:
+                    raise ValueError('append history is not an exact-target authorized revise chain')
+                check_action_grant(o,plan)
+        checks.append('complete receipt/evidence/action-grant chain for revisions 1..7')
+        if o.get('exception'):
+            raise ValueError('conflict setup failed: '+str(o['exception']))
+        if o.get('rejection'):
+            return assess_conflict_rejection(fixture,o,checks)
         value=o['confirmation']['execution'];check_execution_wire(value,o['confirmation']['context'],o['confirmation']['plan'])
         decision=value['decision'];groups=decision['confirmation_groups']
         if len(groups)!=1 or decision['selected_items'] or decision['filtered_candidate_count']!=2 or decision['outcome']!='needs_user_confirmation':
@@ -703,6 +826,69 @@ def assess_conflict(fixture,cell):
         return dict(status='BLOCKED',reason='CONFLICT_DURABLE_GROUP_MEMBER_RESOLUTION_HASH_ORACLE_PENDING',business_assertions=checks)
     except (ValueError,KeyError,TypeError,IndexError) as exc:
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
+
+
+REJECTION_MAP={
+    # Fixed from the pinned public contract (Harness MemoryMutationOperation admission, Memory
+    # apply path) before execution; observed strings are compared, never learned.
+    'contest-no-evidence':dict(stage='harness_dto',memory_called=False,
+        exception={'type':'_MemoryMutationAdmissionError','reason':'evidence_spans must contain unique bounded EvidenceSpanRef values'}),
+    'contest-stale-target':dict(stage='memory_apply',memory_called=True,target_revision=6,
+        exception={'type':'MemoryWriterConflict','reason':'cognitive_target_revision_stale'}),
+    'contest-cross-principal':dict(stage='memory_apply',memory_called=True,subject='principal-2',
+        exception={'type':'MemoryValidationError','reason':'mutation_target_not_found'}),
+    'contest-cross-memory':dict(stage='memory_apply',memory_called=True,memory_id='mem-other',
+        exception={'type':'MemoryValidationError','reason':'mutation_target_not_found'}),
+}
+GENERIC_REJECTIONS={'contest-same-content','contest-evidence-not-distinct','contest-active-group-exists'}
+UNCONSTRUCTIBLE_REJECTIONS={'contest-nested','contest-one-member','contest-three-members'}
+
+
+def assess_conflict_rejection(fixture,o,checks):
+    name=o['conflict_recipe']['id'];rejection=o['rejection']
+    original=next(r for r in fixture['conflict_write_oracle']['reject_cases'] if r['id']==name)
+    if original['state_delta']!=0:raise ValueError('original reject case expects a state delta')
+    for access in ('before','after'):
+        bound=o[access];digest=protected_hash(bound['manifest'],bound['payload_hash'],sorted(set(MUTATION_TABLES+FINAL_TABLES)))
+        if access=='before':before=digest
+        elif digest!=before:raise ValueError('rejected contest changed protected durable state')
+    checks.append('independent protected mutation/final state unchanged across the rejected contest')
+    if name in UNCONSTRUCTIBLE_REJECTIONS:
+        if rejection['type']!='NotImplementedError':raise ValueError('unconstructible attack unexpectedly executed')
+        return dict(status='BLOCKED',reason='PUBLIC_CONTRACT_CONFLICT:conflict group membership/nesting is Memory-internal; the public contest '
+            'mutation always forms exactly one incumbent/challenger pair, so the original member-cardinality/nested attacks have no public input',
+            business_assertions=checks)
+    # The attacked contest is always the last contest apply (active-group-exists first commits one).
+    contests=[e for e in o['calls'] if e['call']=='apply_memory_mutation_plan' and e['plan']['operations'][0]['kind']=='contest']
+    contest_plan=contests[-1] if contests else None
+    if name in GENERIC_REJECTIONS:
+        if (rejection!={'type':'ValueError','reason':'seed mutation returned rejected'} or contest_plan is None
+                or contest_plan.get('outcome')!='rejected' or contest_plan['result']['reason_code']!='memory_mutation_validation_rejected'
+                or contest_plan['result']['receipt_ref'] is not None):
+            raise ValueError('generic public validation rejection differs')
+        mutation=original['mutation'];operation=contest_plan['plan']['operations'][0]
+        if (operation['target']['revision']!=mutation['target_revision']
+                or operation['payload']['object_value_hash']!=hash_json(operation['payload']['object_value'])
+                or [s['evidence_id'] for s in operation['evidence_spans']]!=mutation['challenger_evidence_ids']):
+            raise ValueError('rejected contest inputs differ from the frozen mutation')
+        checks.append('actual public contest with the frozen target/evidence inputs rejected by Memory validation')
+        return dict(status='BLOCKED',reason='PUBLIC_WITNESS_UNAVAILABLE:apply result reason_code is the generic memory_mutation_validation_rejected; '
+            'the original '+original['expected_reason']+' reason has no public one-to-one witness',business_assertions=checks)
+    expected=REJECTION_MAP[name]
+    if rejection!=expected['exception']:raise ValueError('rejection layer/reason differs from the frozen public mapping: '+name)
+    if expected['memory_called']:
+        if contest_plan is None or 'outcome' in contest_plan:raise ValueError('Memory contest call witness missing or not raised')
+        plan=contest_plan['plan'];operation=plan['operations'][0]
+        if (operation['target']['revision']!=expected.get('target_revision',original['mutation'].get('target_revision',7))
+                or operation['target']['memory_id']!=expected.get('memory_id',o['revision7']['memory_id'])
+                or plan['subject']!=expected.get('subject','principal-1')
+                or (expected.get('subject') and plan['disclosure_context']['subject']!=expected['subject'])):
+            raise ValueError('contest attack inputs differ from the frozen mutation')
+    else:
+        if contest_plan is not None or not any(e['call']=='MemoryMutationOperation' and e['operation_id']=='contest' for e in o['calls']):
+            raise ValueError('DTO-level rejection must leave Memory uninvoked')
+    checks.append('exact frozen attack input, public rejection layer/reason and Memory call boundary')
+    return dict(status='PASS',reason='',business_assertions=checks)
 
 
 def check_seed_authority(observed,recipe,full_source,*,source_index=0,check_recall_refs=True):
@@ -814,7 +1000,27 @@ def assess_return(fixture,cell):
             elif digest!=before:raise ValueError('parser/page changed protected state')
         checks += ['real no-fault public result before attack','exact public parser/page rejection or page binding',
                    'independent protected manifest unchanged']
-        return dict(status='BLOCKED',reason='RETURN_CELL_COMPLETE_ATTACK_AND_READ_WITNESS_ADMISSION_PENDING',business_assertions=checks)
+        parsers={'strict-v3-rejected':'RecallDecisionV4.from_json','invalid-source-discriminant':'RecallSelectedItemV4.from_json',
+                 'cognitive-missing-revision':'RecallSelectedItemV4.from_json','short-fake-revision':'RecallSelectedItemV4.from_json'}
+        if name in parsers:
+            # Harness strict parser attacks never reach Memory: the zero-read witness is the
+            # absence of any Memory call plus the unchanged protected manifest.
+            raw=o['parser_input']
+            if o.get('memory_called') is not False or o['calls']!=[parsers[name]] or not isinstance(raw,dict):
+                raise ValueError('parser attack reached Memory or recorded no parser input')
+            if name=='strict-v3-rejected':
+                if raw['schema_version']!=o['return_recipe']['wire_protocol_version'] or {k:v for k,v in raw.items() if k!='schema_version'}!={k:v for k,v in value['decision'].items() if k!='schema_version'}:
+                    raise ValueError('strict-v3 input is not the real decision with only schema_version changed')
+            else:
+                recipe=o['return_recipe'];base=value['decision']['selected_items'][0]
+                expected={**base,**{k:v for k,v in recipe.items() if k in {'source_kind','source_ref','source_revision','chunk_ref'}}}
+                if name=='short-fake-revision':expected.update(memory_type=None,source_ref=expected['chunk_ref'])
+                if raw!=expected:raise ValueError('discriminant attack input differs from the real selected item plus frozen mutation')
+            checks.append('Memory never invoked: zero candidate reads by construction, exact frozen parser input')
+            return dict(status='PASS',reason='',business_assertions=checks)
+        return dict(status='BLOCKED',reason='PUBLIC_WITNESS_UNAVAILABLE:page_typed_recall_result rejections carry no per-invocation '
+            'candidate-read witness (TypedRecallRejectionV1 is attached only by execute_typed_recall); original candidate_query_started=false unproven',
+            business_assertions=checks)
     except (ValueError,KeyError,TypeError,IndexError) as exc:
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
 
@@ -849,9 +1055,53 @@ def assess_state(fixture,cell):
                 if event['request']['scope_ref']!=target or event['decision']['scope_ref']!=target or event['decision']['action']!='directive':
                     raise ValueError('suppression actual target differs')
         checks=['actual authorized state transition and original business disclosure assertion','independent current payload/hash or zero disclosure','durable exact replay']
-        return dict(status='BLOCKED',reason='STATE_COMPLETE_RECEIPT_AND_PROTECTED_TRANSITION_BINDING_PENDING',business_assertions=checks)
+        check_state_transition(fixture,o,name)
+        checks+=['complete receipt/evidence/action-grant chain for every revision','protected final tables unchanged and exact mutation-table delta across the transition']
+        return dict(status='PASS',reason='',business_assertions=checks)
     except (ValueError,KeyError,TypeError,IndexError) as exc:
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
+
+
+def check_state_transition(fixture,o,name):
+    payloads={k:{**v,'qualifiers':[]} for k,v in fixture['conflict_write_oracle']['canonical_payloads'].items()}
+    if name=='eligibility/suppressed':history=['incumbent']
+    elif name.endswith(('/current-head','/stale-head')):history=['incumbent']*7+['challenger']
+    elif name=='eligibility/ordinary-resolved':history=['incumbent']*7+['challenger','incumbent']
+    else:history=['incumbent']*7+['challenger']
+    sources=o['sources']
+    if len(sources)!=len(history):raise ValueError('state history length differs')
+    memory_id=sources[0]['receipt']['operations'][0]['memory_id']
+    for index,label in enumerate(history):
+        payload=payloads[label]
+        check_seed_authority(o,{'seed':{'memory_type':'semantic','payload':payload}},semantic_source(**payload),source_index=index,check_recall_refs=False)
+        actual=sources[index]['receipt']['operations'][0]
+        plan=next(e['plan'] for e in o['calls'] if e['call']=='apply_memory_mutation_plan' and e['plan']['plan_id']==sources[index]['receipt']['plan_id'])
+        operation=plan['operations'][0]
+        if actual['memory_id']!=memory_id or actual['revision']!=index+1:raise ValueError('state history is not one exact revision chain')
+        if index==0:
+            if operation['kind']!='create':raise ValueError('first revision must be a create')
+            continue
+        if operation['target']!={'target_kind':'existing_memory','memory_id':memory_id,'revision':index}:raise ValueError('revision target differs')
+        kind='contest' if index==7 and name not in {'eligibility/current-head','eligibility/stale-head'} else 'revise'
+        if operation['kind']!=kind:raise ValueError('revision kind differs from the original transition')
+        if kind=='revise':check_action_grant(o,plan)
+        elif operation['conflict_status']!='contested' or operation['action_authority_ref'] is not None:raise ValueError('contest carrier differs')
+        if index==8 and operation['conflict_status']!='resolved':raise ValueError('resolution revision is not marked resolved')
+    pre,post=o['pre_transition'],o['post_transition']
+    if protected_hash(pre['manifest'],pre['payload_hash'],FINAL_TABLES)!=protected_hash(post['manifest'],post['payload_hash'],FINAL_TABLES):
+        raise ValueError('state transition wrote recall final tables')
+    before={r['table_name']:r for r in pre['manifest']['table_roots']};after={r['table_name']:r for r in post['manifest']['table_roots']}
+    suppression=name in {'eligibility/suppressed','conflict-state/contested-dependent-partial'}
+    revisions=after['cognitive_memory_revisions']['row_count']-before['cognitive_memory_revisions']['row_count']
+    events=after['recall_authority_events']['row_count']-before['recall_authority_events']['row_count']
+    if revisions!=(0 if suppression else 1) or events!=1 or (before['cognitive_memory_heads']==after['cognitive_memory_heads'])!=suppression:
+        raise ValueError('mutation-table delta across the transition differs from the original single transition')
+    if suppression:
+        event=next(e for e in o['calls'] if e['call']=='suppress')
+        expected_scope=('evidence','evidence-user-python-312') if 'partial' in name else ('memory',memory_id)
+        if ((event['request']['scope_kind'],event['request']['scope_ref'])!=expected_scope or event['request']['purpose']!='recall'
+                or event['decision']['action']!='directive' or event['decision']['scope_ref']!=expected_scope[1]):
+            raise ValueError('suppression request/decision binding differs')
 
 
 def check_rejection_witness(row,observed):
@@ -1085,6 +1335,16 @@ def check_context_use_bundle(bundle):
                 or not request['requested_at']<=receipt['authorized_at']<receipt['expires_at']
                 or receipt['expires_at']>result['authority_expires_at']):
             raise ValueError('current-use receipt request/hash/time binding differs')
+
+
+def _authority_event_oracle():
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).with_name('typed_recall_authority_event_oracle.py')
+    spec = importlib.util.spec_from_file_location('typed_recall_authority_event_oracle', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _full_context_use_oracle():
