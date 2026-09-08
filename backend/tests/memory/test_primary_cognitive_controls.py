@@ -4,8 +4,10 @@ The initial semantic memory is materialized by the public SDK test fixture;
 these are API/SQLite controls, not model analysis or native UI evidence.
 """
 
+import re
 import sqlite3
 from dataclasses import replace
+from hashlib import sha256
 
 import aiosqlite
 import pytest
@@ -283,5 +285,219 @@ async def test_same_action_committed_between_initial_lookup_and_view_converges(
         assert response["payload"]["ok"], response
         assert response["payload"]["result"] == other[0]["payload"]["result"]
         assert len(s["action_rows"]()) == 1
+    finally:
+        await s["runtime"].close()
+
+
+# --- Incident M: 关系/争议存在时「记忆列表」整页失效 ---------------------------
+#
+# 一次更正 + 一次争议后，SDK 展示图对同一个 memory_id 同时给出 head 修订与冲突组
+# 里的非 head 修订（node_id = memory_id@revision）。列表/忘记面向的是记忆身份、
+# 且按 memory_id 分页，因此这里只保留 head；多出来的修订留给 primary.memory.graph。
+
+
+def _relation(relation_id, kind, memory_id, source_revision, target_revision):
+    from simple_harness_memory.cognitive.twin_builder import TwinGraphRelationInput
+
+    return TwinGraphRelationInput(
+        relation_id,
+        kind,
+        memory_id,
+        source_revision,
+        memory_id,
+        target_revision,
+        sha256(relation_id.encode()).hexdigest(),
+    )
+
+
+def _amended_then_contested_view(view, memory_id):
+    """Rebuild the real view with the incident's revision-3 contested chain.
+
+    Revision1 is superseded and invisible; revisions2/3 form the unresolved
+    conflict group, so ``view.nodes`` carries two nodes sharing ``memory_id``.
+    """
+    from simple_harness_memory.cognitive.twin_builder import (
+        TwinGraphRecordInput,
+        build_twin_graph_view,
+    )
+
+    (node,) = [item for item in view.nodes if item.memory_id == memory_id]
+    others = [item for item in view.nodes if item.memory_id != memory_id]
+    assert not others  # the fixture materializes exactly one memory
+
+    def revision(number, *, content_hash, group):
+        return TwinGraphRecordInput(
+            memory_id=memory_id,
+            revision=number,
+            head_revision=3,
+            memory_type=node.memory_type,
+            lifecycle_state="active",
+            epistemic_status=node.epistemic_status,
+            conflict_status="contested" if group else "none",
+            verification_state=node.verification_state,
+            valid_from=None,
+            valid_to=None,
+            content={
+                "subject_entity": "user:self",
+                "predicate": "proofreading_python_version",
+                "object_value": f"revision-{number}",
+            },
+            content_hash=content_hash,
+            source_refs=node.source_refs,
+            conflict_group_id=group,
+        )
+
+    records = (
+        revision(1, content_hash="1" * 64, group=None),
+        revision(2, content_hash="2" * 64, group="cognitive-conflict-group-test"),
+        revision(3, content_hash=node.content_hash, group="cognitive-conflict-group-test"),
+    )
+    relations = (
+        _relation("cognitive-relation-amends", "amends", memory_id, 2, 1),
+        _relation("cognitive-relation-contests", "contests", memory_id, 3, 2),
+    )
+    return build_twin_graph_view(
+        subject=view.subject,
+        generated_at=view.generated_at,
+        records=records,
+        relations=relations,
+    )
+
+
+def _assert_frontend_item_contract(items, *, limit=20):
+    """Exactly `tauri-app/src/primary/cognitiveRequests.ts::page`'s item rules."""
+    assert isinstance(items, list) and len(items) <= min(limit, 50)
+    seen = set()
+    for item in items:
+        memory_id = item["memory_id"]
+        assert isinstance(memory_id, str) and 0 < len(memory_id) <= 512
+        assert memory_id.strip() == memory_id
+        assert memory_id not in seen, f"duplicate memory_id {memory_id}"
+        seen.add(memory_id)
+        assert type(item["revision"]) is int and item["revision"] >= 1
+        assert isinstance(item["label"], str) and len(item["label"]) <= 512
+        assert isinstance(item["status"], str) and len(item["status"]) <= 64
+        assert type(item["can_forget"]) is bool
+        assert re.fullmatch(r"[a-f0-9]{64}", item["content_hash"])
+
+
+async def _contested(s, monkeypatch):
+    real = await s["manager"].get_twin_graph_view(principal=s["runtime"].principal())
+    view = _amended_then_contested_view(real, s["memory_id"])
+    # The incident's raw display projection: one identity, two visible revisions.
+    assert len({node.memory_id for node in view.nodes}) == 1 and len(view.nodes) == 2
+    assert {edge.relation_kind for edge in view.edges} == {"contests"}
+
+    async def fabricated(**kwargs):
+        return view
+
+    monkeypatch.setattr(s["manager"], "get_twin_graph_view", fabricated)
+    return view
+
+
+@pytest.mark.asyncio
+async def test_contested_chain_lists_one_contract_valid_head_per_memory(
+    tmp_path, monkeypatch
+):
+    s = await setup(tmp_path)
+    try:
+        await _contested(s, monkeypatch)
+        listing = await s["command"]("primary.memory.list")
+        assert listing["payload"]["ok"], listing
+        result = listing["payload"]["result"]
+        _assert_frontend_item_contract(result["items"])
+        (item,) = result["items"]
+        assert result["next_cursor"] is None
+        assert item["memory_id"] == s["memory_id"]
+        assert (item["revision"], item["status"], item["can_forget"]) == (
+            3,
+            "contested",
+            True,
+        )
+    finally:
+        await s["runtime"].close()
+
+
+@pytest.mark.asyncio
+async def test_forget_applies_to_the_contested_head_and_never_to_its_incumbent(
+    tmp_path, monkeypatch
+):
+    s = await setup(tmp_path)
+    try:
+        await _contested(s, monkeypatch)
+        (item,) = (await s["command"]("primary.memory.list"))["payload"]["result"]["items"]
+        incumbent = await s["command"](
+            "primary.memory.forget",
+            {**s["payload"], "expected_revision": 2, "expected_content_hash": "2" * 64,
+             "action_id": "contested-incumbent"},
+        )
+        assert not incumbent["payload"]["ok"]
+        assert incumbent["payload"]["error"]["code"] == "primary_memory_target_stale"
+        assert s["action_rows"]() == []
+        applied = await s["command"](
+            "primary.memory.forget",
+            {**s["payload"], "expected_revision": item["revision"],
+             "expected_content_hash": item["content_hash"],
+             "action_id": "contested-head"},
+        )
+        assert applied["payload"]["ok"], applied
+        assert applied["payload"]["result"]["status"] == "applied"
+        assert applied["payload"]["result"]["memory_id"] == s["memory_id"]
+        assert len(s["action_rows"]()) == 1
+    finally:
+        await s["runtime"].close()
+
+
+@pytest.mark.asyncio
+async def test_superseded_chain_head_stays_listable_and_forgettable(
+    tmp_path, monkeypatch
+):
+    """No conflict group: only the head revision is visible, and it still works."""
+    s = await setup(tmp_path)
+    try:
+        real = await s["manager"].get_twin_graph_view(principal=s["runtime"].principal())
+        contested = _amended_then_contested_view(real, s["memory_id"])
+        head = next(node for node in contested.nodes if node.revision == 3)
+        ordinary = replace(contested, nodes=(head,), edges=())
+
+        async def fabricated(**kwargs):
+            return ordinary
+
+        monkeypatch.setattr(s["manager"], "get_twin_graph_view", fabricated)
+        result = (await s["command"]("primary.memory.list"))["payload"]["result"]
+        _assert_frontend_item_contract(result["items"])
+        (item,) = result["items"]
+        assert item["revision"] == 3 and item["can_forget"]
+        applied = await s["command"](
+            "primary.memory.forget",
+            {**s["payload"], "expected_revision": 3,
+             "expected_content_hash": item["content_hash"],
+             "action_id": "superseded-head"},
+        )
+        assert applied["payload"]["ok"], applied
+        assert applied["payload"]["result"]["status"] == "applied"
+    finally:
+        await s["runtime"].close()
+
+
+@pytest.mark.asyncio
+async def test_redacted_head_never_falls_back_to_an_older_visible_revision(
+    tmp_path, monkeypatch
+):
+    s = await setup(tmp_path)
+    try:
+        view = await _contested(s, monkeypatch)
+        head = next(node for node in view.nodes if node.revision == 3)
+        incumbent = next(node for node in view.nodes if node.revision == 2)
+        redacted = replace(
+            view, nodes=(incumbent, replace(head, redacted=True)), edges=()
+        )
+
+        async def fabricated(**kwargs):
+            return redacted
+
+        monkeypatch.setattr(s["manager"], "get_twin_graph_view", fabricated)
+        result = (await s["command"]("primary.memory.list"))["payload"]["result"]
+        assert result["items"] == [] and result["next_cursor"] is None
     finally:
         await s["runtime"].close()

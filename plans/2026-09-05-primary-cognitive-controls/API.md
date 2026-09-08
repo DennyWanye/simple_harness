@@ -10,6 +10,16 @@ legacy fact ID or SDK-private database access was added. SDK graph is display-on
   `{primary_ref, items, next_cursor}`. Items include exact memory_id/revision/hash,
   label/status/can_forget. The SDK graph scan remains unbounded; only output is
   paginated/bounded. Redacted nodes are omitted.
+  One item per memory identity (2026-09-08, incident M): the SDK display graph keys
+  nodes by `memory_id@revision` and an unresolved conflict group makes one
+  `memory_id` appear twice (head challenger plus the non-head incumbent). Both
+  `list` and `forget` first collapse `view.nodes` to the head revision per
+  `memory_id` (`_head_nodes`), because forgetting addresses the whole memory
+  identity and the cursor is a `memory_id`. A redacted head is dropped, never
+  replaced by an older visible revision. The extra revision stays in
+  `primary.memory.graph`. Without the collapse the list emits duplicate
+  `memory_id`s (the frontend rejects the page) and `forget` on a contested head
+  is misread as `primary_memory_target_stale`.
 - `primary.memory.forget`: `{primary_ref, action_id, memory_id, expected_revision,
   expected_content_hash}` returns only an exact public SDK durable result:
   `{primary_ref, action_id, memory_id, status:"applied", evidence_ref, directive_ref, decision_hash}`.

@@ -55,6 +55,8 @@ export function PrimaryMemoryPanel({ port, primaryRef, verifiedOwnerKey, ready, 
     {state.error && <p role="alert">{state.error}</p>}
     {state.ready && <>
       {state.loading && <p role="status">正在读取…</p>}
+      {/* One malformed item degrades to a visible notice; the rest of the page still renders. */}
+      {!state.loading && state.skipped > 0 && <p role="alert">有 {state.skipped} 条记忆条目无效，已跳过；其余条目仍可操作。</p>}
       {!state.loading && !state.error && state.items.length === 0 && <p>当前页没有可展示的认知记忆。</p>}
       <ul style={{ listStyle: "none", padding: 0 }}>{state.items.map((item) => <li key={item.memory_id} style={{ padding: 12, marginBottom: 8, background: dark.card, borderRadius: 8, overflowWrap: "anywhere" }}>
         <p>{item.label}</p>

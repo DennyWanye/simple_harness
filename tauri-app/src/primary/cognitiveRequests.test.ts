@@ -121,6 +121,67 @@ describe("cognitive requests on the actual bound port", () => {
     expect(h.client.getSnapshot().error).toContain("主对话刷新失败");
     off(); stop();
   });
+  // Incident M: 后端一度对同一 memory_id 同时给出 head 与冲突组里的非 head 修订。
+  // 单条无效条目只能被跳过并计数，绝不能让整页（唯一的忘记入口）变成一句错误。
+  it("skips a duplicate memory_id instead of blanking the page, and keeps the survivor forgettable", async () => {
+    const h = fixture(), stop = h.client.connect(h.port, "p", "owner", true);
+    const incumbent = { ...item, revision: 2, can_forget: false, content_hash: "c".repeat(64) };
+    h.page(0, [item, incumbent]); await flush();
+    const snapshot = h.client.getSnapshot();
+    expect(snapshot.error).toBe("");
+    expect(snapshot.items).toEqual([item]);
+    expect(snapshot.skipped).toBe(1);
+    const writing = h.client.forget(item); await flush();
+    expect(h.sent[1].operation).toBe("primary.memory.forget");
+    h.ack(1); await flush(); h.page(2, []); await writing;
+    expect(h.client.getSnapshot().notice).toContain("已忘记");
+    expect(h.client.getSnapshot().skipped).toBe(0);
+    stop();
+  });
+  const broken: [string, Record<string, unknown>][] = [
+    ["revision", { revision: 0 }],
+    ["revision", { revision: 1.5 }],
+    ["content_hash", { content_hash: "A".repeat(64) }],
+    ["content_hash", { content_hash: null }],
+    ["can_forget", { can_forget: "true" }],
+    ["status", { status: "x".repeat(65) }],
+    ["label", { label: "字".repeat(513) }],
+    ["memory_id", { memory_id: " padded" }],
+    ["memory_id", { memory_id: "" }],
+  ];
+  it.each(broken)("drops one %s-invalid item and still renders the valid neighbour", async (_field, patch) => {
+    const h = fixture(), stop = h.client.connect(h.port, "p", "owner", true);
+    h.page(0, [{ ...item, memory_id: "broken-memory", ...patch } as typeof item, item]); await flush();
+    expect(h.client.getSnapshot().error).toBe("");
+    expect(h.client.getSnapshot().items).toEqual([item]);
+    expect(h.client.getSnapshot().skipped).toBe(1);
+    stop();
+  });
+  it("a non-object item is skipped, and an all-invalid page reports zero items without an error", async () => {
+    const h = fixture(), stop = h.client.connect(h.port, "p", "owner", true);
+    h.page(0, [null as unknown as typeof item, 7 as unknown as typeof item]); await flush();
+    expect(h.client.getSnapshot().items).toEqual([]);
+    expect(h.client.getSnapshot().skipped).toBe(2);
+    expect(h.client.getSnapshot().error).toBe("");
+    stop();
+  });
+  it("page shape stays a hard failure and the cursor still tracks the last item the server sent", async () => {
+    const h = fixture(), stop = h.client.connect(h.port, "p", "owner", true);
+    const tail = { ...item, memory_id: "tail-memory" };
+    h.reply(0, { primary_ref: "p", items: [item, { ...tail, revision: 0 }], next_cursor: "tail-memory" });
+    await flush();
+    expect(h.client.getSnapshot().items).toEqual([item]);
+    expect(h.client.getSnapshot().nextCursor).toBe("tail-memory");
+    void h.client.refresh();
+    h.reply(1, { primary_ref: "p", items: [item], next_cursor: "somewhere-else" });
+    await flush();
+    expect(h.client.getSnapshot().error).toBe("记忆分页无效");
+    void h.client.refresh();
+    h.reply(2, { primary_ref: "other", items: [], next_cursor: null });
+    await flush();
+    expect(h.client.getSnapshot().error).toBe("认知记忆响应无效");
+    stop();
+  });
   it("queued ACK followed by a rechallenge cannot notify or display success under revoked auth", async () => {
     const h = fixture(), stop = h.client.connect(h.port, "p", "owner", true);
     h.page(0); await flush();

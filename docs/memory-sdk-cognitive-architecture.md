@@ -366,6 +366,25 @@ class ForgetOperation:
 - 单次最多删3条
 - 5秒undo窗口
 
+**Host 展示投影约束（2026-09-08 事故 M 追加）：**
+
+SDK 的展示图 `get_twin_graph_view` 以 `node_id = memory_id@revision` 为主键。
+未解决的冲突组（争议）会让**同一个 `memory_id` 同时出现两个节点**：head 修订
+（challenger，`can_forget=True`）与组内非 head 的 incumbent 修订
+（`can_forget=False`）。
+
+因此 Host 的两个身份面向接口必须先做「每个 `memory_id` 只保留 head 修订」的
+折叠，再对外输出：
+
+- `primary.memory.list`：遗忘按记忆身份生效、分页游标又是 `memory_id`，重复
+  `memory_id` 会同时破坏前端条目契约与游标语义。
+- `primary.memory.forget`：目标选择必须落在同一份 head 投影上，否则争议记忆会
+  因为「同一 `memory_id` 命中两个节点」被误判成 `primary_memory_target_stale`。
+
+多出来的那个修订属于 `primary.memory.graph`（关系图）的展示范围，不进列表。
+实现见 `backend/deskpet/memory/primary_cognitive_controls.py::_head_nodes`，
+裁决见 `plans/2026-09-08-hm-to-a6/DECISION-MEMORY-LIST-INVALID.md`。
+
 ---
 
 ## 🎯 Memory SDK的Port接口设计
