@@ -411,3 +411,99 @@ async def test_resume_malformed_pin_gets_guidance_not_stale(state_db: Path) -> N
     )
     assert bad["error"]["code"] == "context_route_expected_source_hash_malformed"
     del result
+
+
+# -- P1: typed recall withholds unbound Procedures; say so ---------------------
+# Oracle source: run-01g review §4 P1 — 12/18 C06 cases requested
+# memory_types=[semantic, procedure], got semantic only with no signal, and
+# concluded no workflow had ever been saved instead of calling
+# procedure_discover. Typed recall's behaviour is correct per
+# DECISION-PROCEDURE-USE-CHAIN; only its silence is not.
+
+
+def _recall_tool(state_db: Path, fragments, monkeypatch):
+    from deskpet.memory import human_memory_v7
+
+    tool = _service(state_db)
+
+    async def recall(**kwargs):
+        recall.calls.append(kwargs)
+        return SimpleNamespace(
+            result=SimpleNamespace(items=(), truncated=False), degradation_codes=()
+        )
+
+    recall.calls = []
+    tool._recall_executor = recall
+    monkeypatch.setattr(human_memory_v7, "project_recall_fragments",
+                        lambda execution: tuple(fragments))
+    return tool
+
+
+def _fragment(ref: str, memory_type: str) -> dict:
+    return {"ref": ref, "memory_type": memory_type, "privacy_class": "personal",
+            "score": 1.0, "payload": {"memory_type": memory_type}, "payload_hash": "a" * 64,
+            "source_task_scope_ids": [], "bytes": 1, "tokens": 1, "lane": "long_term_typed"}
+
+
+@pytest.mark.asyncio
+async def test_requested_procedure_with_no_procedure_item_points_at_discovery(
+    state_db: Path, monkeypatch
+) -> None:
+    tool = _recall_tool(state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch)
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "发版流程",
+         "memory_types": ["semantic", "procedure"]}
+    )
+    hint = result["procedure_hint"]
+    assert hint["reason"] == "typed_recall_returns_only_applicable_procedures"
+    assert hint["next"] == "procedure_discover"
+    assert "procedure_discover" in hint["message"]
+    # The hint is a top-level result field: the committed receipt is unchanged.
+    assert "procedure_hint" not in result["context_route_receipt"]
+    assert _decision_rows(state_db) == [("memory_standalone", "context_tool", "effect-1")]
+
+
+@pytest.mark.asyncio
+async def test_hint_is_present_even_when_typed_recall_returns_nothing_at_all(
+    state_db: Path, monkeypatch
+) -> None:
+    tool = _recall_tool(state_db, [], monkeypatch)
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "发版流程", "memory_types": ["procedure"]}
+    )
+    assert result["fragments"] == []
+    assert result["procedure_hint"]["next"] == "procedure_discover"
+
+
+@pytest.mark.asyncio
+async def test_returned_procedure_item_needs_no_hint(
+    state_db: Path, monkeypatch
+) -> None:
+    tool = _recall_tool(
+        state_db,
+        [_fragment("recall-item:s:1", "semantic"), _fragment("recall-item:p:1", "procedure")],
+        monkeypatch,
+    )
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "发版流程",
+         "memory_types": ["semantic", "procedure"]}
+    )
+    assert "procedure_hint" not in result
+
+
+@pytest.mark.asyncio
+async def test_unrequested_procedure_type_gets_no_unsolicited_hint(
+    state_db: Path, monkeypatch
+) -> None:
+    tool = _recall_tool(state_db, [], monkeypatch)
+    result = await tool.handle_context_route(
+        {"route": "memory_standalone", "query": "上周做了什么", "memory_types": ["episode"]}
+    )
+    assert "procedure_hint" not in result
+
+
+def test_persona_tells_the_model_what_the_two_host_hint_fields_mean() -> None:
+    from deskpet.execution.primary_context import PERSONA
+
+    assert "procedure_hint" in PERSONA and "procedure_discover" in PERSONA
+    assert "trigger_local" in PERSONA

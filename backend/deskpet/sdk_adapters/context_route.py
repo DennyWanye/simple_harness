@@ -64,6 +64,15 @@ _WORKSPACE_REUSE_NEW_RUN = (
     "This request did not reopen the completed task or edit its files."
 )
 
+_PROCEDURE_HINT = {
+    "reason": "typed_recall_returns_only_applicable_procedures",
+    "next": "procedure_discover",
+    "message": "Typed recall only returns a Procedure that is already bound/applicable here; "
+               "a saved-but-unbound workflow never appears in these fragments. Their absence does not "
+               "mean no such workflow was saved. Call procedure_discover with the workflow name to list "
+               "the actual saved candidates before concluding anything or drafting from scratch.",
+}
+
 CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -460,6 +469,15 @@ class ContextRouteToolService:
                 "fragments": list(fragments),
                 "degradation_codes": list(execution.degradation_codes),
                 "truncated": bool(execution.result.truncated),
+                # By design typed recall withholds unbound Procedures. Silence
+                # reads to the model as "nothing was ever saved", so point at
+                # the discovery surface instead. This rides in the same extras
+                # the receipt hash and typed-use public_result_hash cover; the
+                # ContextRouteReceipt itself is untouched.
+                **({"procedure_hint": dict(_PROCEDURE_HINT)}
+                   if "procedure" in memory_types and not any(
+                       fragment["memory_type"] == "procedure" for fragment in fragments)
+                   else {}),
             },
         )
 
