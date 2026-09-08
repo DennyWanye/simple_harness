@@ -973,6 +973,7 @@ def _plan_turn_messages(
         tool_schema_tokens,
         trim_causal_groups,
         turn_token_estimator,
+        window_tokens_for,
     )
 
     calibration = calibration_for_model(model_id)
@@ -1000,8 +1001,8 @@ def _plan_turn_messages(
         return tuple(protected), {"causal_groups": 0, "trimmed_groups": 0,
                                   "tool_schema_tokens": schema_tokens}
 
-    window = int(window_tokens) if window_tokens else min(PARTITION_CAPS)
-    tier = budget_window(max(window, min(PARTITION_CAPS)))
+    window = window_tokens_for(window_tokens, model_id)
+    tier = budget_window(window)
 
     history = [
         {
@@ -1032,7 +1033,7 @@ def _plan_turn_messages(
     )
     kept_groups, budget_trimmed = trim_causal_groups(
         plan.groups,
-        window_tokens=max(window, min(PARTITION_CAPS)),
+        window_tokens=window,
         protected_tokens=protected_tokens,
         token_estimator=estimator,
     )
@@ -1041,7 +1042,7 @@ def _plan_turn_messages(
     # Frozen pass rule: after every allowed trim the estimate must fit the
     # effective budget — shipping an oversized payload (underestimate) is
     # forbidden, so the turn fails closed instead.
-    effective = effective_input_budget(max(window, min(PARTITION_CAPS)))
+    effective = effective_input_budget(window)
     total = protected_tokens + sum(
         estimator(item.content)
         for group in groups

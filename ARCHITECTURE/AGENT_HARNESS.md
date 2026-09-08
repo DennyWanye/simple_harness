@@ -2124,6 +2124,14 @@ Harness 已吸收该 FailureSet 并从 Plan v1 重规划到 v2。
    约 40%，任何基于文本的估算都看不见）。`deepseek-v4-pro` / `deepseek-v4-flash`
    取 `min(1.35 + 0.11·ordinal, 2.5)`。
 
+配套的两条一致性口径：①`context_partitions.window_tokens_for` —— `context_metadata`
+缺 `context_window` 时，先回落到 `llm.model_info.resolve()` 里**该型号自己的窗口**
+（含用户 override），型号未知才回落最小档 4096；此前一律回落 4096，在工具 schema
+如实计入后连一份真实 catalog 都装不下。②`execution.current_tool_pages.current_tool_allowance`
+用未校准的 `text_tokens` 量同 Run 回执，因此它的额度同样除以
+`ratio(provider_turn_ordinal)` 并共用 `window_tokens_for`——否则校准型号会出现
+"过了同 Run 上界所以不分页 → 紧接着爆预算 fail-close"。
+
 效果（306 组 `request_json` × `usage_json` 真机配对）：`provider input_tokens ÷ Host 估算`
 从 中位 1.98× / 最高 4.87× 的**低估**（306/306 条低估）变为 中位 0.66× / 最高 0.99×
 （**0/306 低估**）；其中真实超 `effective_input_budget` 的 27 条，此前 Host **一条都判不出**，

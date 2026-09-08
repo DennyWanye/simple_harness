@@ -65,27 +65,27 @@ class ContextBudgetExceeded(RuntimeError):
         super().__init__(message or self.code)
 
 
-# \u2500\u2500 Wire-shaped token accounting (Incident N, 2026-09-08) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+# ── Wire-shaped token accounting (Incident N, 2026-09-08) ────────────────────
 #
 # HM-TO-A6 attempt 4 measured 306 (request_json, usage_json) pairs against the
 # real provider tokenizer.  The pre-fix estimator counted *only* message text at
-# ``non_cjk/4`` and reached a median 1.98\u00d7 under-count, peaking at 4.88\u00d7.  The
+# ``non_cjk/4`` and reached a median 1.98× under-count, peaking at 4.88×.  The
 # decomposition (see plans/2026-09-08-hm-to-a6/DECISION-TOKEN-ESTIMATOR.md):
 #
 #   * message text density is provider-specific: JSON tool results tokenize at
 #     ~3.1 non-CJK chars/token on this evidence while the fixed persona and tool
 #     payload sit at ~4.0.  The shared ``/4`` constant is deliberately left
-#     alone \u2014 tightening it globally fails closed on Runs that really did fit,
+#     alone — tightening it globally fails closed on Runs that really did fit,
 #     and a tokenizer's density belongs with the rest of the per-model
-#     correction.  \u2192 ProviderTokenCalibration, not NON_CJK_CHARS_PER_TOKEN.
+#     correction.  → ProviderTokenCalibration, not NON_CJK_CHARS_PER_TOKEN.
 #   * tool schemas were missing entirely from ``_plan_turn_messages``
-#     ``protected_tokens`` (~3.5 K tokens on the evidence).  \u2192 tool_schema_tokens.
+#     ``protected_tokens`` (~3.5 K tokens on the evidence).  → tool_schema_tokens.
 #   * per-message wire framing and the assistant ``tool_calls`` array the
 #     adapter synthesises for every tool result are chat-template shaped, so
 #     they too ride the per-model calibration rather than a global constant.
 #   * the relay re-injects each assistant turn's ``reasoning_content`` into the
 #     prompt; that text never reaches the Host, so no text-derived estimate can
-#     see it.  \u2192 ProviderTokenCalibration, a per-model ratio that grows with the
+#     see it.  → ProviderTokenCalibration, a per-model ratio that grows with the
 #     provider turn ordinal (the number of hidden reasoning blocks carried).
 # Non-CJK characters per token.  Unchanged from the frozen V0 formula on
 # purpose (see the note above); the per-model calibration carries the density.
@@ -103,7 +103,7 @@ def text_tokens(value: object) -> int:
 
     CJK counts one token per character, the rest rounds up at
     ``NON_CJK_CHARS_PER_TOKEN``.  ``token_underestimate_allowed`` is ``false``
-    in the frozen oracle, so the rounding direction is always up \u2014 and what a
+    in the frozen oracle, so the rounding direction is always up — and what a
     text-shaped figure structurally cannot see (tool schemas, wire framing,
     provider-injected content) is added by the callers rather than smuggled into
     this constant.
@@ -147,10 +147,13 @@ DEFAULT_CALIBRATION = ProviderTokenCalibration()
 def calibration_for_model(model_id: object) -> ProviderTokenCalibration:
     """Resolve the per-model calibration from ``llm.model_info`` (best effort).
 
-    Consulted through ``BUILTIN`` directly, exactly like
-    ``agent.token_budget.get_context_window``: no I/O, no log spam, and any
-    import failure degrades to the identity calibration rather than breaking
-    context assembly.
+    Goes through ``resolve()`` rather than ``BUILTIN`` so the global
+    ``model_overrides.toml`` layer really reaches this lane — a relay's hidden
+    injection differs per endpoint, so the user must be able to retune these
+    three numbers against their own observed ``usage.input_tokens``.  The cost
+    is bounded: this runs a few times per provider turn, not per message.
+    Any failure degrades to the identity calibration rather than breaking
+    context assembly, and a ratio below 1.0 can never shrink an estimate.
     """
 
     name = str(model_id or "").strip().lower()
@@ -159,18 +162,47 @@ def calibration_for_model(model_id: object) -> ProviderTokenCalibration:
     if "/" in name:
         name = name.split("/", 1)[1]
     try:
-        from llm.model_info import BUILTIN
+        from llm.model_info import resolve
 
-        info = BUILTIN.get(name)
-        if info is None:
-            return DEFAULT_CALIBRATION
+        info = resolve(name)
         return ProviderTokenCalibration(
-            base_ratio=float(getattr(info, "input_estimate_ratio", 1.0)),
-            per_turn_ratio=float(getattr(info, "input_estimate_ratio_per_turn", 0.0)),
-            max_ratio=float(getattr(info, "input_estimate_ratio_max", 1.0)),
+            base_ratio=float(getattr(info, "input_estimate_ratio", 1.0) or 1.0),
+            per_turn_ratio=float(getattr(info, "input_estimate_ratio_per_turn", 0.0) or 0.0),
+            max_ratio=float(getattr(info, "input_estimate_ratio_max", 1.0) or 1.0),
         )
-    except Exception:  # noqa: BLE001 \u2014 model metadata must never break budgeting
+    except Exception:  # noqa: BLE001 — model metadata must never break budgeting
         return DEFAULT_CALIBRATION
+
+
+def window_tokens_for(window_tokens: object, model_id: object = None) -> int:
+    """The window to budget against: the bound one, else the model's own.
+
+    A missing window used to drop straight to the smallest frozen tier (4096,
+    i.e. 2663 input tokens).  Once the tool schemas are honestly charged that is
+    no longer merely "over-trimming" — a real catalog does not fit at all, so a
+    lane that simply failed to put the window in ``context_metadata`` could not
+    start.  When ``llm.model_info`` actually knows the model we now fall back to
+    its window instead.  An *unknown* model still falls back to the smallest
+    tier: guessing large for a model we know nothing about is the one direction
+    that can overflow rather than over-trim.
+    """
+
+    floor = min(PARTITION_CAPS)
+    if window_tokens:
+        return max(int(window_tokens), floor)
+    name = str(model_id or "").strip().lower()
+    if "/" in name:
+        name = name.split("/", 1)[1]
+    if not name:
+        return floor
+    try:
+        from llm.model_info import BUILTIN, resolve
+
+        if name not in BUILTIN:
+            return floor
+        return max(int(resolve(name).context_window), floor)
+    except Exception:  # noqa: BLE001 — metadata must never break budgeting
+        return floor
 
 
 def tool_schema_tokens(specs: object) -> int:
@@ -179,10 +211,12 @@ def tool_schema_tokens(specs: object) -> int:
     Accepts both catalog rows (``{"name", "description", "input_schema"}``) and
     ``ProviderToolSpec`` objects (``.name`` / ``.description`` / ``.parameters``).
     The pre-fix catalog field ``schema_token_count`` used
-    ``len(repr(input_schema)) // 4`` \u2014 it dropped the tool name and description
+    ``len(repr(input_schema)) // 4`` — it dropped the tool name and description
     entirely and used ``repr`` rather than the JSON actually sent, under-counting
     the evidence's tool payload by ~35%.
     """
+
+    from simple_harness import thaw_json
 
     from deskpet.task_scope.protocol import canonical_json
 
@@ -199,10 +233,22 @@ def tool_schema_tokens(specs: object) -> int:
             description = getattr(spec, "description", None)
             schema = getattr(spec, "parameters", None)
         rendered = str(name or "") + "\n" + str(description or "")
+        # ``ProviderToolSpec`` freezes ``parameters`` into a recursive
+        # MappingProxyType; canonical_json rejects it with a TaskScopeProtocolError,
+        # which is a ValueError — so this silently fell back to repr(), whose
+        # per-level ``mappingproxy(...)`` wrappers priced the *same* catalog 13%
+        # higher here than on the primary lane (3867 vs 3423 tokens on the
+        # incident's 12-tool catalog), i.e. the two lanes this fix exists to
+        # unify would still have disagreed.  Thaw first.
+        thawed = thaw_json(schema) if schema is not None else {}
         try:
-            rendered += "\n" + canonical_json(schema if schema is not None else {})
+            rendered += "\n" + canonical_json(thawed)
         except (TypeError, ValueError):
-            rendered += "\n" + repr(schema)
+            # A schema this rejects cannot be serialised onto the wire either,
+            # so the Run is already broken elsewhere; budgeting must not be the
+            # thing that raises.  Render the *thawed* form so a frozen spec and
+            # its plain catalog row still agree even on this degraded path.
+            rendered += "\n" + repr(thawed)
         total += text_tokens(rendered) + WIRE_TOOL_SPEC_OVERHEAD_TOKENS
     return total
 
@@ -215,7 +261,7 @@ def turn_token_estimator(
     """Per-item token estimator: the text figure, uplifted by the calibration.
 
     Returned as a ``token_estimator`` so :func:`assemble_partitions` and
-    :func:`trim_causal_groups` keep their existing shape \u2014 the calibration
+    :func:`trim_causal_groups` keep their existing shape — the calibration
     reaches every partition and every causal-group item identically, which is
     what keeps the trim decisions consistent with the fail-closed check.
     """
@@ -477,4 +523,5 @@ __all__ = [
     "text_tokens",
     "tool_schema_tokens",
     "turn_token_estimator",
+    "window_tokens_for",
 ]

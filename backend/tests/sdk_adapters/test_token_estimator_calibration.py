@@ -32,6 +32,7 @@ from deskpet.sdk_adapters.context_partitions import (
     text_tokens,
     tool_schema_tokens,
     turn_token_estimator,
+    window_tokens_for,
 )
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "hm_to_a6_token_estimator_samples.json"
@@ -109,15 +110,39 @@ def test_tool_schema_tokens_counts_name_description_and_parameters() -> None:
     assert tokens >= text_tokens(spec["description"])
 
 
-def test_tool_schema_tokens_accepts_provider_spec_objects() -> None:
-    class _Spec:
-        name = "tool_search"
-        description = "search"
-        parameters = {"type": "object"}
+def test_tool_schema_tokens_prices_a_real_frozen_spec_like_its_catalog_row() -> None:
+    """``ProviderToolSpec`` freezes ``parameters`` into a recursive mappingproxy.
 
-    assert tool_schema_tokens([_Spec()]) == tool_schema_tokens(
-        [{"name": "tool_search", "description": "search", "input_schema": {"type": "object"}}]
-    )
+    The two lanes must price the identical catalog identically — a serialisation
+    that chokes on the frozen form and falls back to ``repr`` put the S5a lane
+    13% above the primary lane on the incident's own 12-tool catalog (3867 vs
+    3423 tokens), and more the deeper the schema nests.
+    """
+
+    from simple_harness.providers import ProviderToolSpec
+
+    schema = {
+        "type": "object",
+        "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}},
+        "required": ["query"],
+    }
+    frozen = ProviderToolSpec("tool_search", "search the catalog", schema)
+    row = {"name": "tool_search", "description": "search the catalog", "input_schema": schema}
+    assert tool_schema_tokens([frozen]) == tool_schema_tokens([row])
+
+
+def test_tool_schema_tokens_survives_a_schema_that_will_not_serialise() -> None:
+    """Budgeting must never be the thing that raises.
+
+    ``ProviderToolSpec`` validates its schema, so only a Python-authored catalog
+    row can carry a value ``canonical_json`` rejects — and such a row could not
+    have reached a provider either, i.e. the Run is already broken elsewhere.
+    Here it degrades to a rough figure instead of failing context assembly.
+    """
+
+    row = {"name": "odd", "description": "unserialisable enum",
+           "input_schema": {"type": "string", "enum": {"a", "b"}}}
+    assert tool_schema_tokens([row]) > WIRE_TOOL_SPEC_OVERHEAD_TOKENS
 
 
 def test_tool_schema_tokens_is_zero_for_no_tools() -> None:
@@ -154,6 +179,17 @@ def test_unknown_model_keeps_the_identity_calibration() -> None:
     assert calibration_for_model("") == DEFAULT_CALIBRATION
 
 
+def test_global_override_reaches_the_context_lane(tmp_path, monkeypatch) -> None:
+    """A relay's hidden injection differs per endpoint, so the user must be able
+    to retune these three numbers without a code change."""
+
+    monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(tmp_path))
+    (tmp_path / "model_overrides.toml").write_text(
+        '[models."deepseek-v4-pro"]\ninput_estimate_ratio = 1.9\n', encoding="utf-8"
+    )
+    assert calibration_for_model("deepseek-v4-pro").base_ratio == pytest.approx(1.9)
+
+
 def test_deepseek_v4_is_calibrated_from_the_incident_evidence() -> None:
     calibration = calibration_for_model("deepseek-v4-pro")
     assert calibration != DEFAULT_CALIBRATION
@@ -161,6 +197,80 @@ def test_deepseek_v4_is_calibrated_from_the_incident_evidence() -> None:
     assert calibration.ratio(20) > calibration.ratio(0)
     # The provider prefix is stripped the same way the window lookup does.
     assert calibration_for_model("relay/deepseek-v4-pro") == calibration
+
+
+# ── the window fallback ──────────────────────────────────────────────────────
+
+
+def test_a_bound_window_always_wins_and_never_drops_below_the_floor() -> None:
+    from deskpet.sdk_adapters.context_partitions import PARTITION_CAPS
+
+    floor = min(PARTITION_CAPS)
+    assert window_tokens_for(32000, "deepseek-v4-pro") == 32000
+    assert window_tokens_for(1024, "deepseek-v4-pro") == floor
+    assert window_tokens_for(1024, None) == floor
+
+
+def test_a_missing_window_falls_back_to_a_known_models_own_window() -> None:
+    """Charging the tool schemas honestly made the old 4096 fallback unusable.
+
+    2663 input tokens cannot hold a real catalog, so a lane that merely failed
+    to put ``context_window`` in ``context_metadata`` could not start at all.
+    ``llm.model_info`` already knows this model's window; use it.
+    """
+
+    from llm.model_info import resolve
+
+    assert window_tokens_for(None, "deepseek-v4-pro") == resolve("deepseek-v4-pro").context_window
+    assert window_tokens_for(0, "relay/deepseek-v4-pro") == resolve("deepseek-v4-pro").context_window
+
+
+def test_an_unknown_model_still_falls_back_to_the_smallest_tier() -> None:
+    """Guessing large for a model we know nothing about is the one direction
+    that overflows rather than over-trims."""
+
+    from deskpet.sdk_adapters.context_partitions import PARTITION_CAPS
+
+    floor = min(PARTITION_CAPS)
+    assert window_tokens_for(None, "some-local-7b") == floor
+    assert window_tokens_for(None, None) == floor
+    assert window_tokens_for(None, "") == floor
+
+
+def test_the_window_fallback_honours_a_global_override(tmp_path, monkeypatch) -> None:
+    """The user's own pinned window is the truth, not the built-in default."""
+
+    from llm.model_info import BUILTIN
+
+    monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(tmp_path))
+    (tmp_path / "model_overrides.toml").write_text(
+        '[models."deepseek-v4-pro"]\ncontext_window = 128000\n', encoding="utf-8"
+    )
+    assert BUILTIN["deepseek-v4-pro"].context_window != 128_000
+    assert window_tokens_for(None, "deepseek-v4-pro") == 128_000
+
+
+def test_the_window_fallback_never_raises_on_broken_model_metadata(monkeypatch) -> None:
+    """Model metadata must never break budgeting: degrade to the floor."""
+
+    from deskpet.sdk_adapters.context_partitions import PARTITION_CAPS
+    from llm import model_info
+
+    def explode(_name):
+        raise RuntimeError("metadata unavailable")
+
+    monkeypatch.setattr(model_info, "resolve", explode)
+    assert window_tokens_for(None, "deepseek-v4-pro") == min(PARTITION_CAPS)
+
+
+def test_a_broken_calibration_lookup_degrades_to_the_identity(monkeypatch) -> None:
+    from llm import model_info
+
+    def explode(_name):
+        raise RuntimeError("metadata unavailable")
+
+    monkeypatch.setattr(model_info, "resolve", explode)
+    assert calibration_for_model("deepseek-v4-pro") == DEFAULT_CALIBRATION
 
 
 # ── the invariant, on the evidence ───────────────────────────────────────────
@@ -298,6 +408,23 @@ def test_plan_turn_messages_reports_tool_schema_tokens_with_no_tail() -> None:
                                       tools=_tool_specs(4, 100))
     assert len(kept) == 1
     assert facts["tool_schema_tokens"] > 0
+
+
+def test_current_tool_allowance_shrinks_with_the_same_calibration() -> None:
+    """The same-Run bound measures bodies uncalibrated, so its allowance must
+    shrink by the same ratio the budget check grew — otherwise a calibrated
+    model passes the bound and then fails the budget with paging left unused."""
+
+    from deskpet.execution.current_tool_pages import current_tool_allowance
+
+    plain = current_tool_allowance({"context_window": 32768})
+    binding = {"context_window": 32768, "run_binding": {"model_id": "deepseek-v4-pro"}}
+    turn0 = current_tool_allowance(binding, provider_turn_ordinal=0)
+    turn9 = current_tool_allowance(binding, provider_turn_ordinal=9)
+    assert turn0 < plain
+    assert turn9 < turn0
+    ratio = calibration_for_model("deepseek-v4-pro").ratio(0)
+    assert turn0 == pytest.approx(plain / ratio, rel=0.01)
 
 
 def test_primary_context_and_turn_planner_agree_on_tool_schema_tokens() -> None:
