@@ -438,3 +438,258 @@ Run 因此能跑到装配器，改为在**第 2 次** wire 请求上安全停机
   （本场景两条各 399 token）。按窗口档位缩放 excerpt 会**破坏**
   `verify_request` 的逐字节重算（校验端拿不到窗口），所以不能简单改；
   若要做，需要把窗口档位写进 descriptor 本身。
+
+---
+
+## 预算超限的降级顺序与 flash 校准（2026-09-09，Incident O）
+
+- 分支：`worktree-token-budget-reconcile`，基线 `26247ea8`（含上一节的措辞压缩）。
+- 证据：`.local-test-evidence/2026-09-09/native-a6-run6/primary-ui-0mv7ur1p/`
+  的 `userdata/data/simple-harness-sdk/execution-v6.sqlite3` ——
+  **17 条** `provider_invocations.request_json`（其中 **16 条**带 `usage_json`），
+  全部 `deepseek-v4-flash`、窗口由 `model_overrides.toml` 钉在 32000
+  （→ `budget_tier=8192`、`effective_input_budget=26752`）。
+  按上一次的做法只把**字符类计数**落进
+  `backend/tests/fixtures/hm_to_a6_flash_run6_samples.json`
+  （`text_tokens` / `tool_schema_tokens` 都是纯字符类函数，计数与原文在它们之下逐 token 等价，证据正文不出仓）。
+- 对照：`.local-test-evidence/2026-09-08/native-a6-run5/`（`deepseek-v4-pro`，117 组）。
+- 用户授权「不问、自行裁定并记录」，本节即裁定记录。
+
+### O.1 现象
+
+HM-TO-A6 attempt 6 第 5 轮「在这个任务里，先找一下你有没有能读本地文件的工具。」
+在第 6 次 `tool_search` 之后整轮 fail-close：
+
+```
+sdk_run_driver_failed error_type=ContextBudgetExceeded error_message=sdk_context_budget_exceeded
+sdk_context_budget_exceeded planned=28519 effective=26752 protected=9782 tool_schemas=7249 groups=2 ratio=2.01
+```
+
+而 provider 对那一轮之前 6 次调用真实报的 `input_tokens` 是 7875 → 19491。
+**估算 28519 对真实 19491，多估约 1.46×，然后把 Run 打死。**
+
+这里有**两个独立缺陷**，必须分开修：
+
+1. **倍率配错了型号**。`deepseek-v4-flash` 当时逐字沿用 `deepseek-v4-pro` 的三元组
+   `min(1.35+0.11·ordinal, 2.5)`，第 7 次装配 `ordinal=6` → `ratio=2.01`。
+2. **超限的处理是 fail-close，而不是降级**。日志自己写着 `groups=2`：
+   请求里还留着 2 个因果组、还留着 3370 token 未分页的同 Run 工具回执，
+   Host 明明有东西可以让，却选择了抛异常。
+
+### O.2 裁定一：flash 用自己的证据校准，取 `min(1.25+0.35·ordinal, 1.65)`
+
+`usage.input_tokens` 就是 provider 的 `prompt_tokens`，`cache_tokens` 是它的**子集**
+（`sdk_adapters/provider.py::_sdk_provider_usage`：分别取 `prompt_tokens` 与
+`prompt_tokens_details.cached_tokens`），所以直接用 `input_tokens ÷ Host wire 估算`。
+
+**按轮次实测所需倍率（16 组，逐条最大值）**：
+
+| ordinal | n | 实测最大所需 | 选定 `ratio` | 余量 |
+|---|---|---|---|---|
+| 0 | 6 | 1.118 | **1.25** | +11.8% |
+| 1 | 5 | 1.436 | **1.60** | +11.4% |
+| 2 | 2 | 1.503 | **1.65** | +9.8% |
+| 3 | 2 | 1.449 | 1.65 | +13.9% |
+| 4 | 1 | 1.422 | 1.65 | +16.0% |
+
+**为什么不能沿用 pro**：两者的残差成分根本不同。
+pro 是 thinking 模型，残差主体是中转站把上一轮 `reasoning_content` 加回 prompt，
+这块**随轮次线性增长**（run5 实测单轮 `reasoning_tokens` 最高 19579、累计 57423），
+所以它的 ratio 必须一路爬到 2.5。
+flash 几乎不产 reasoning（run6 单轮最高 1813、累计仅 **1922**，差两个数量级），
+残差只剩「JSON 工具回执比散文密」这一块，而这块随 JSON 占比升高会**饱和**——
+实测第 2 轮之后就稳在 ~1.50，不再增长。沿用 pro 的 `0.11/turn` 就是把一条
+**本 Run 不存在的隐形注入**一直计费到 2.5，这正是事故的直接成因。
+
+**pro 的证据用不用**：只用它的 `ordinal=0`（`cum_reason==0`）那一档做**密度交叉校验**。
+pro 在这 23 个请求上实测比值 中位 1.022 / 最高 1.148，flash 是 1.072 / 1.118，
+同一档——说明 **tokenizer 密度确实共享**，`base` 的量级可以互证。
+但随轮次增长的那一块是 per-endpoint 行为，**不共享**，
+所以 pro 的高轮次样本**不并入** flash 的拟合。
+
+**为什么不取网格搜索的最优解**：纯粹「零低估 + 中位多估最小」的最优是
+`base=1.12 / per=0.32 / max=1.55`，但它在 ordinal 0 只留 0.2% 余量、
+在饱和段只留 3.1%。这是 16 个点的拟合、不是定律，所以统一按「对每个 ordinal 的
+实测上界留约 10%」定（与 `safety_margin` 同量级的工程余量）。
+
+**16 组上的效果**（`ratio_max=1.65` 与旧的 2.5 相比）：
+
+| | 零低估条数 | 估算/实测 中位 | 最大 | ordinal 6 的 ratio |
+|---|---|---|---|---|
+| 沿用 pro 三元组 | 16/16 | 1.224 | 1.333 | 2.01 |
+| **本次 flash 三元组** | **16/16** | **1.162** | 1.433 | **1.65** |
+
+注意浅轮次上旧三元组反而更"紧"（它从 1.35 起步，而 flash 只需要 1.12），
+两者的分岔只发生在**深轮次**——也正是事故发生的地方：
+`ordinal ≥ 3` 的样本上本次三元组逐条更紧，测试
+`test_flash_calibration_is_tighter_than_the_one_it_replaces` 就是按这个口径断言的。
+
+**复现事故那次装配**（用 fixture 回放 `46536e24-t4` 的 15 条消息 + 该轮自己的
+`tool_search` 回执，且刻意取证据里**最大**的一条 `tool_search` 正文，比真实更难）：
+
+| 三元组 | ratio(6) | planned | effective | 结论 |
+|---|---|---|---|---|
+| 沿用 pro | 2.01 | **28030** | 26752 | 抛 `ContextBudgetExceeded`（复现事故；`protected=9782`、`tool_schemas=7249` 与真机日志**逐字相同**） |
+| **本次 flash** | **1.65** | **25229** | 26752 | **装得下，余量 1523（5.7%）**，且未裁一个组、未强制分页一条 |
+
+### O.3 裁定二：超限改为**有序降级**，`ContextBudgetExceeded` 只在真的无路可走时抛
+
+新的顺序（`sdk_adapters/context_authority.py::prepare_snapshot`）：
+
+```
+① 常规装配（有界分页 + 冻结裁剪，保留最后一个已闭合组） —— 装得下就结束
+② 强制分页：把本 Run **所有**可分页的已结算工具回执换成
+   primary_settled_effect_v1 摘要 + context_page_in 引用
+   （不再只分页到 current_tool_allowance，也不再豁免最新一批）
+③ 历史裁到 0：把剩下的已闭合因果组按最旧优先全部丢掉，只留 open 组
+④ 仍不够 → 抛 ContextBudgetExceeded，并给出 protected 拆解
+```
+
+要点：
+
+- **① 用「问」而不是「抛」**。`_plan_turn_messages` 新增
+  `raise_on_overflow=False`，第一趟返回 `facts["budget_headroom"]`（负数即超限），
+  不抛异常。否则一次失败的轮次会让观察者（终局投影、megabyte 夹具的计数器）
+  看见同一个 Run "失败两次"；`ContextBudgetExceeded` 必须只表示**一件事**：
+  已经没东西可让了。
+- **②「最新一批也分页」是刻意的**。有界分页故意保护最新一批
+  （那是模型正在处理的结果），但到了这一步，保护它的代价是关掉整个 Run。
+  模型可以用 `context_page_in` 逐字取回，代价有界。
+  `CONTROL_TOOLS`（`context_route` / `context_page_in` / `task_scope_search` /
+  `task_scope_update`）**任何情况下都不分页**——它们是可执行的上下文/召回凭证；
+  非 `succeeded` 的效果也仍然不分页，因为它根本没有可分页的公开正文，
+  这半条规则不是策略选择。
+- **③ 冻结口径没动**。`assemble_partitions` / `trim_causal_groups`
+  （即 `metric-formulas.json` 钉死的那条 V0 预言机）**一行未改**，
+  "裁到 0" 是 `_plan_turn_messages` 在它们之后、由调用方显式打开
+  `allow_full_group_trim=True` 才走的一步。常规路径的行为与此前**完全一致**。
+- **④ 的诊断**。`str(error)` 仍是 `sdk_context_budget_exceeded`（终局投影和
+  megabyte 夹具都按它取值，不能改），拆解放在 `error.diagnostics` 与日志里：
+  `planned / effective / protected / protected_messages / tool_schemas /
+  open_group / groups`。
+- **receipt 记录每一步降级**：`source_revisions` 新增
+  `pages_forced`（本轮被强制分页的条数，未降级时为 0）、
+  `groups_trimmed_for_budget`（因预算而非因帽子丢掉的组数）、
+  `budget_headroom`（最终装配剩余额度）。
+  `trimmed_groups` 语义不变（仍含 planner 自己的帽子丢弃），
+  所以「历史被限流」和「历史被拿去换这一轮装得下」现在能分开读。
+- **`primary_context.prepare` 不需要改顺序**：它是 Run 的第一轮，没有已结算的
+  工具回执可分页，而它的 `while complete and over_cap(): complete.pop(0)`
+  本来就把完整组裁到 0，抛异常的条件本来就是「protected 单独超预算」——
+  已经符合本节要求。本轮只给它的抛点补上同样的拆解。
+
+### O.4 裁定三：protected 成本——`_visible_provider_specs` 并没有多暴露工具
+
+事故日志里 `tool_schemas=7249` 看着吓人，但拆开看 **7249 = 3606（wire）× 2.01（倍率）**，
+**一多半是倍率、不是目录**。事故轮真实暴露的就是 12 个工具、3606 wire token：
+
+| tokens | 工具 | | tokens | 工具 |
+|---|---|---|---|---|
+| 847 | `context_route` | | 228 | `todo_write` |
+| 635 | `task_scope_update` | | 157 | `tool_describe` |
+| 423 | `procedure_use` | | 153 | `prospective_ack` |
+| 303 | `task_scope_search` | | 136 | `tool_activate` |
+| 246 | `procedure_discover` | | 131 | `context_page_in` |
+| 238 | `tool_search` | | 109 | `todo_complete` |
+
+**结论：`_visible_provider_specs` 没有把该延迟的工具塞进 spec 列表。**
+目录里已经带着 `tool_search` / `tool_describe` / `tool_activate` 三件套
+（合计仅 531 token），其余可延迟的能力本来就在它们后面按需发现——
+run6 那一轮连打 6 次 `tool_search` 正是这条链路在工作。
+`_visible_provider_specs` 现有的收缩（未进入 `ROUTED_TASK` 前不暴露
+PROJECT_EFFECT 工具）也仍然生效。**所以这一条没有可做的改动，只有结论**。
+
+真正能压的是文本，上一节（§附.3）已经做掉，对同一条 wire 的实测收益：
+
+| | run6 实际发出 | 本分支 | 收益 |
+|---|---|---|---|
+| system（PERSONA + Host 可信时钟） | 1260 | 1083 | **−177** |
+| `context_route` schema | 847 | 765 | **−82** |
+| `task_scope_search` schema | 303 | 253 | **−50** |
+| **合计（wire）** | | | **−309** |
+
+在 flash 饱和倍率 1.65 下，这 309 wire token 相当于 **−510 估算 token**。
+`MEMORY_TYPE_SELECTION_POLICY`（178 token）按上一节的裁定**一字未动**：
+它落在「模型选 `memory_types` 参数的那一刻」，比 PERSONA 更贴近现场，
+`test_policy_keeps_the_route_schema_inside_its_measured_token_cost` 的上限仍成立。
+被测试钉死的五个路由名与判别词全部在位（§附.3 A 已逐条列出）。
+
+### O.5 各档余量
+
+**megabyte 夹具**（型号未校准，`ratio=1.00`，与上一节同一组实测，本轮未改动其口径）：
+
+| 档位 | `effective` | 峰值 `planned` | 余量 | 结论 |
+|---|---|---|---|---|
+| 4096 | 2663 | 2723 | **−60** | 仍红（既有红） |
+| 8192 | 5325 | 5261 | +64（1.2%） | 绿 |
+| 32768 | 25396 | 8554 | +16842（66%） | 绿 |
+
+**flash 真机窗口 32000（tier 8192，`effective=26752`）**，回放事故那次装配：
+
+| | planned | 余量 |
+|---|---|---|
+| 事故当时（沿用 pro，ratio 2.01） | 28519（回放 28030） | **−1767（−1278）** |
+| 本次（flash 1.65） | **25229** | **+1523（5.7%）** |
+| 本次 + §附.3 的文本压缩（生产实际值） | 24719 | **+2033（7.6%）** |
+
+回放刻意取了证据里最大的一条 `tool_search` 正文，比真实那次更难；
+真实第 7 次装配比回放还小约 490 token。
+**并且**，即使某一轮真的再超了，现在也不会再打死 Run：
+先强制分页（该轮两条 `tool_search` 正文 1629 + 1741 = 3370 wire token，
+换成两条约 399 token 的摘要后让出 2572 wire ≈ **4244 估算 token**），
+再把历史裁到 0（该轮 2 个组），最后才抛。
+
+**4096 档为什么仍红、且现在是"证明过的红"**：新顺序下它先被问「装得下吗」，
+答案是否；强制分页找不到任何可分页正文，历史裁剪找不到任何已闭合组；
+于是抛出的拆解是
+`protected=2439（PERSONA 1135 + tool schema 1304）+ open 组 284 = 2723 vs effective 2663`。
+即该档在**第一个工具轮**上就差约 60 token 的 protected 空间，且**无路可让**。
+用例断言 `wire_count == 3`（要跑到第 4 次装配）则还差约 640 token，
+仍是 4096 档预算本身的问题，挂在 F-ETR-4 / §5.1 名下，**没有把断言迁就现状**。
+
+### O.6 改点
+
+| 文件 | 改动 |
+|---|---|
+| `backend/llm/model_info.py` | `deepseek-v4-flash` 独立三元组 `1.25 / 0.35 / 1.65` + 取值依据 |
+| `backend/deskpet/sdk_adapters/context_partitions.py` | `ContextBudgetExceeded` 携带 `diagnostics`（`str()` 不变） |
+| `backend/deskpet/sdk_adapters/context_authority.py` | `_plan_turn_messages` 新增 `allow_full_group_trim` / `raise_on_overflow`，facts 新增 `groups_trimmed_for_budget` / `budget_headroom`；`prepare_snapshot` 改为有序降级并记 `pages_forced` |
+| `backend/deskpet/execution/current_tool_pages.py` | `CurrentToolProjector.__call__(..., force_all=)`：忽略 allowance、不豁免最新一批；控制类工具与非 succeeded 效果仍不分页 |
+| `backend/deskpet/execution/primary_context.py` | `prepare` 的抛点补上同样的 protected 拆解 |
+| `backend/tests/fixtures/hm_to_a6_flash_run6_samples.json` | 新增（run6 的 17 条请求，仅字符类计数） |
+| `backend/tests/sdk_adapters/test_token_estimator_calibration.py` | 新增 6 条（flash 校准 3 + 事故回放 1 + 降级顺序 2） |
+| `backend/tests/execution/test_current_tool_megabyte.py` | 4096 既有红的注释补上"已证明无路可让"的拆解 |
+
+### O.7 验证
+
+- 定向：**165 例收集，164 绿 / 1 既有红**（逐文件）——
+  `test_token_estimator_calibration.py` 41（新增 6）、`test_context_partitions.py` 8、
+  `test_context_preparation.py` 14、`test_context_authority_primitives.py` 5、
+  `test_context_route_tool.py` 29、`test_recall_selection_policy.py` 15、
+  `test_model_info.py` 11、`test_token_budget_per_model.py` 14、
+  `test_p5s2_token_budget.py` 17、`test_current_tool_pages.py` 4、
+  `test_primary_context_pages.py` 4，以上全绿；
+  `test_current_tool_megabyte.py` 3 例中 `[8192]` `[32768]` 绿、
+  `[4096]` **既有红**（形态见 §O.5）。
+- 事故回放用例本身带对照：同一组消息在旧三元组下**必须**抛
+  `ContextBudgetExceeded`，在新三元组下必须装得下——它证明的是修复，不只是绿。
+
+### O.8 Followup
+
+- **F-TOK-6（新，量化）**：`deepseek-v4-pro` 现行的
+  `min(1.35+0.11·ordinal, 2.5)` 在 **run5 的 117 组新证据上会低估**——
+  22/117 条低估，最差 `估算 22272 对真实 54683`（0.407×），
+  且其中 **5 条**真实超 `effective_input_budget` 却被判为"装得下"。
+  原因是 run5 有一条 Run（`6154747d49`）累计 `reasoning_tokens` 达 57423，
+  远超当初 306 组证据的量级，所需倍率实测到 **5.25**。
+  本轮**不改 pro**：一是本轮的主要矛盾是 flash 主链路，
+  二是 pro 的正确解多半不是把 max 调到 5+（那会让浅轮次白白损失一半窗口），
+  而是 **F-TOK-1 的闭环 usage 反馈**（用上一轮真实 `input_tokens` 做 floor，
+  实测中位比值 0.993）。低估的后果与本次相反：不是 fail-close，
+  而是请求真的超窗被 provider 拒——需要单独一轮处理。
+- **F-TOK-7（新）**：强制分页目前只在装配超限时触发，且是"全分页"。
+  更好的形态是按需分页到刚好装下（二分或按体积排序逐条分页），
+  能少让出一些模型正在用的正文。本轮取"全分页"是因为它**可证明终止**、
+  且此刻已经是最后一道防线，复杂度不值得。
+- §附.6 的 **F-TOK-4 / F-TOK-5** 仍然有效（语义收口 system 指令的去重、
+  `primary_settled_effect_v1` 摘要的 excerpt 按窗口档位缩放）。

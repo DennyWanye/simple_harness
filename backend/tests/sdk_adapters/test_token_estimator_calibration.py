@@ -491,3 +491,304 @@ def test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn() -> Non
         f"scenario then plans {fixed + variable} against an effective budget of {effective}. "
         "Compress the addition, or re-derive the scenario in DECISION-TOKEN-ESTIMATOR.md."
     )
+
+
+# ── Incident O (2026-09-09): flash's own calibration, and degrade-in-order ───
+#
+# HM-TO-A6 attempt 6 ran ``deepseek-v4-flash`` with the window pinned to 32000.
+# flash carried ``deepseek-v4-pro``'s calibration verbatim, so by the seventh
+# assembly (``provider_turn_ordinal`` 6) the ratio had grown to
+# ``min(1.35 + 0.11*6, 2.5) = 2.01`` — and the turn died with
+# ``planned=28519 effective=26752`` against a provider prompt that really was
+# 19491 tokens.  Two separate defects: a multiplier fitted to the wrong model,
+# and a planner that raised while pageable and trimmable content was still in
+# the request.  Both are pinned below on run 6's own evidence.
+FLASH_FIXTURE = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "hm_to_a6_flash_run6_samples.json"
+)
+# The ratio the inherited pro triple applied at the assembly that failed.
+INHERITED_RATIO_AT_THE_FAILING_TURN = 2.01
+FAILED_ASSEMBLY_PLANNED = 28519
+FAILED_ASSEMBLY_EFFECTIVE = 26752
+# The last request the Host actually assembled before that failure: 15 messages,
+# two ``tool_search`` results still carrying their bodies.
+TURN5_LAST_ASSEMBLED = "46536e24-t4"
+
+
+@pytest.fixture(scope="module")
+def flash_evidence() -> dict:
+    return json.loads(FLASH_FIXTURE.read_text(encoding="utf-8"))
+
+
+def _sample(evidence: dict, sample_id: str) -> dict:
+    return next(s for s in evidence["samples"] if s["id"] == sample_id)
+
+
+def _sample_messages(sample: dict):
+    from simple_harness.contracts.identity import CallId
+    from simple_harness.contracts.messages import Message, MessageRole
+
+    roles = {"system": MessageRole.SYSTEM, "user": MessageRole.USER,
+             "assistant": MessageRole.ASSISTANT, "tool": MessageRole.TOOL}
+    built = []
+    for index, entry in enumerate(sample["messages"]):
+        role = roles[entry["role"]]
+        text = _text(entry["cjk_chars"], entry["other_chars"])
+        if role is MessageRole.TOOL:
+            built.append(Message(role, text, name=entry.get("name") or "tool",
+                                 call_id=CallId(f"call-{index}")))
+        else:
+            built.append(Message(role, text))
+    return tuple(built)
+
+
+def _sample_specs(sample: dict) -> list[dict]:
+    """Specs whose rendered wire form has the recorded character classes.
+
+    ``tool_schema_tokens`` renders ``name + "\\n" + description + "\\n" +
+    canonical_json(schema)``; with a one-character name and an empty schema that
+    is the description plus exactly five non-CJK characters.
+    """
+
+    specs = []
+    for entry in sample["tools"]:
+        other = int(entry["other_chars"]) - 5
+        assert other >= 0
+        specs.append({"name": "t", "description": _text(entry["cjk_chars"], other),
+                      "input_schema": {}})
+    return specs
+
+
+def _flash_calibration() -> ProviderTokenCalibration:
+    return calibration_for_model("deepseek-v4-flash")
+
+
+def test_flash_no_longer_inherits_the_pro_calibration(flash_evidence: dict) -> None:
+    """pro's ratio is fitted to hidden reasoning flash does not produce.
+
+    pro is a thinking model behind a relay that re-injects the previous turn's
+    ``reasoning_content``; that mass grows every provider turn, which is why its
+    ratio has to keep climbing to 2.5.  flash barely reasons at all, so the only
+    residual it carries is JSON density — which *saturates* once tool results
+    dominate the request instead of growing without bound.  The evidence says so
+    directly: run 6's largest single ``reasoning_tokens`` is two orders of
+    magnitude under pro's.
+    """
+
+    flash = _flash_calibration()
+    pro = calibration_for_model("deepseek-v4-pro")
+    assert flash != pro
+    assert flash_evidence["population"]["provider_reasoning_tokens_max"] < 2000
+    # The whole point: at the ordinal that failed the Run, flash is no longer
+    # charged pro's deep-turn ratio.
+    assert flash.ratio(6) < INHERITED_RATIO_AT_THE_FAILING_TURN
+    # …and it still saturates rather than growing without bound.
+    assert flash.ratio(6) == flash.ratio(60) == flash.max_ratio
+
+
+def test_flash_calibration_never_under_counts_its_own_evidence(flash_evidence: dict) -> None:
+    """The frozen oracle's direction: an estimate below the real prompt is a bug.
+
+    ``token_underestimate_allowed`` is false, and the Host only ever gets to
+    enforce ``provider_input <= effective_input_budget`` through its estimate, so
+    an estimate under the measured prompt would let a real overflow through.
+    """
+
+    calibration = _flash_calibration()
+    checked = 0
+    for sample in flash_evidence["samples"]:
+        actual = sample["provider_input_tokens"]
+        if not actual:
+            continue  # the claimed 6th request has no usage row
+        checked += 1
+        estimate = _sample_estimate(sample, calibration)
+        assert estimate >= actual, (
+            f"{sample['id']}: estimated {estimate} for a real {actual}-token prompt"
+        )
+    assert checked == flash_evidence["population"]["pairs_with_usage"] == 16
+
+
+def _needed_ratio_by_ordinal(evidence: dict) -> dict[int, float]:
+    """Per-ordinal ``provider_input / wire_estimate``: the ratio actually required."""
+
+    needed: dict[int, float] = {}
+    for sample in evidence["samples"]:
+        actual = sample["provider_input_tokens"]
+        if not actual:
+            continue
+        wire = _sample_estimate(sample, DEFAULT_CALIBRATION)
+        ordinal = int(sample["provider_turn_ordinal"])
+        needed[ordinal] = max(needed.get(ordinal, 0.0), actual / wire)
+    return needed
+
+
+def test_flash_calibration_covers_each_ordinal_without_overshooting(
+    flash_evidence: dict,
+) -> None:
+    """Every ordinal's measured need is covered, and none by a wide margin.
+
+    "Smallest multiplier that holds the invariant" is a statement about each
+    ordinal separately, not about the aggregate: the incident happened because
+    the inherited ladder kept climbing past the point where flash's real need had
+    already levelled off.  The upper bound here is the part that would have
+    caught it — ordinal 6 needs ~1.50 and was charged 2.01.
+    """
+
+    flash = _flash_calibration()
+    needed = _needed_ratio_by_ordinal(flash_evidence)
+    assert sorted(needed) == [0, 1, 2, 3, 4]
+    for ordinal, required in needed.items():
+        assert flash.ratio(ordinal) >= required, f"ordinal {ordinal} under-charged"
+        # A 16-pair fit earns a margin, but not an open-ended one.
+        assert flash.ratio(ordinal) <= required * 1.25, f"ordinal {ordinal} over-charged"
+    # Past the last measured ordinal the need has plateaued, so the ratio must
+    # too — this is the property the inherited triple did not have.
+    plateau = max(needed.values())
+    assert flash.ratio(9) <= plateau * 1.15
+
+
+def test_flash_calibration_is_tighter_than_the_one_it_replaces(flash_evidence: dict) -> None:
+    """Both triples clear the invariant; only one of them stops climbing.
+
+    The inherited ladder is *tighter* than ours at the shallow ordinals (it
+    starts at 1.35 where flash needs 1.12) and only diverges as the Run deepens —
+    which is precisely where the incident happened.  So compare the median across
+    the evidence, and then the deep turns on their own.
+    """
+
+    flash = _flash_calibration()
+    pro = calibration_for_model("deepseek-v4-pro")
+    paired = [
+        (int(s["provider_turn_ordinal"]),
+         _sample_estimate(s, flash) / s["provider_input_tokens"],
+         _sample_estimate(s, pro) / s["provider_input_tokens"])
+        for s in flash_evidence["samples"] if s["provider_input_tokens"]
+    ]
+    ours = sorted(value for _, value, _ in paired)
+    theirs = sorted(value for _, _, value in paired)
+    assert ours[len(ours) // 2] < theirs[len(theirs) // 2]
+    deep = [(mine, inherited) for ordinal, mine, inherited in paired if ordinal >= 3]
+    assert deep and all(mine < inherited for mine, inherited in deep)
+    # Still a real margin over the tightest observed pair — this is a 16-pair
+    # fit, not a law, so it is deliberately not squeezed to 1.00.
+    assert 1.05 < min(ours) < 1.20
+
+
+def test_run6_turn5_request_set_no_longer_fails_closed(flash_evidence: dict) -> None:
+    """The regression: replay the assembly that killed the Run, and fit.
+
+    ``46536e24-t4`` is the last request the Host really assembled on that turn —
+    15 messages including two ``tool_search`` bodies.  The failure came one step
+    later, when the seventh assembly added that turn's own ``tool_search``
+    result.  Reconstructed here with the *largest* recorded ``tool_search`` body
+    rather than the one that actually arrived, so the replay is harder than the
+    incident, and planned at the ordinal whose ratio did the damage.
+    """
+
+    from deskpet.sdk_adapters.context_authority import _plan_turn_messages
+    from simple_harness.contracts.identity import CallId
+    from simple_harness.contracts.messages import Message, MessageRole
+
+    sample = _sample(flash_evidence, TURN5_LAST_ASSEMBLED)
+    assert sample["state"] == "claimed"  # never settled: the Run died after it
+    window = flash_evidence["context_window"]
+    assert window == 32000
+    biggest_tool_search = max(
+        text_tokens(_text(m["cjk_chars"], m["other_chars"]))
+        for s in flash_evidence["samples"] for m in s["messages"]
+        if m.get("name") == "tool_search"
+    )
+    seventh = (
+        Message(MessageRole.ASSISTANT, "x" * 60),
+        Message(MessageRole.TOOL, "x" * (biggest_tool_search * 4), name="tool_search",
+                call_id=CallId("call-seventh")),
+    )
+    messages = (*_sample_messages(sample), *seventh)
+
+    _, facts = _plan_turn_messages(
+        messages, window, tools=_sample_specs(sample),
+        provider_turn_ordinal=6, model_id=flash_evidence["model_id"],
+    )
+    assert facts["budget_tier"] == 8192  # 32000 lands on the 8192 tier
+    effective = effective_input_budget(window)
+    assert effective == FAILED_ASSEMBLY_EFFECTIVE
+    assert facts["planned_input_tokens"] <= effective
+    assert facts["budget_headroom"] > 0
+    # Nothing was spent to get there: no history trimmed, no forced paging.
+    assert facts["groups_trimmed_for_budget"] == 0
+    # And it is not a hair's breadth — the incident overshot by 1767 tokens.
+    assert facts["planned_input_tokens"] < FAILED_ASSEMBLY_PLANNED - 3000
+
+
+def test_history_is_spent_before_the_budget_ever_fails_closed() -> None:
+    """``ContextBudgetExceeded`` must not fire while a group could still go.
+
+    The frozen trim deliberately stops with one closed group standing, because
+    losing the last of the history is a real loss and should not happen over a
+    few tokens.  ``allow_full_group_trim`` is the caller's second degradation
+    step: once every pageable body has already been paged, that reserve is worth
+    less than the Run, so it goes too.
+    """
+
+    from deskpet.sdk_adapters.context_authority import _plan_turn_messages
+    from deskpet.sdk_adapters.context_partitions import ContextBudgetExceeded
+
+    history = []
+    for index in range(6):
+        history.extend([("user", f"q{index} " + "x" * 12000),
+                        ("assistant", f"a{index} " + "x" * 12000)])
+    messages = _messages(("system", "rules" * 40), *history, ("user", "the current turn"))
+
+    with pytest.raises(ContextBudgetExceeded):
+        _plan_turn_messages(messages, 8192, tools=_tool_specs(4, 400))
+    kept, facts = _plan_turn_messages(messages, 8192, tools=_tool_specs(4, 400),
+                                      allow_full_group_trim=True)
+    assert facts["groups_trimmed_for_budget"] > 0
+    assert facts["planned_input_tokens"] <= effective_input_budget(8192)
+    # The turn the user is actually waiting on survives the degradation.
+    assert kept[-1].content == "the current turn"
+
+
+def test_the_budget_raise_names_the_irreducible_parts() -> None:
+    """Reaching the raise now means nothing is left to give — say what is left.
+
+    The incident's log line reported one number (``planned``) and its two
+    coarsest parts, which does not answer the only question worth asking at that
+    point: which irreducible piece has to shrink.  The ``str()`` stays the stable
+    error code — the terminal projection and the megabyte fixture both key off
+    it — so the breakdown rides on the exception instead.
+    """
+
+    from deskpet.sdk_adapters.context_authority import _plan_turn_messages
+    from deskpet.sdk_adapters.context_partitions import ContextBudgetExceeded
+
+    messages = _messages(("system", "rules"), ("user", "the current turn"))
+    with pytest.raises(ContextBudgetExceeded) as raised:
+        _plan_turn_messages(messages, 32768, tools=_tool_specs(40, 4000),
+                            allow_full_group_trim=True)
+    assert str(raised.value) == "sdk_context_budget_exceeded"
+    diagnostics = raised.value.diagnostics
+    assert diagnostics["planned"] > diagnostics["effective"]
+    # The schemas are the whole story here, and the breakdown says so.
+    assert diagnostics["tool_schemas"] > diagnostics["protected_messages"]
+    assert (diagnostics["protected_messages"] + diagnostics["tool_schemas"]
+            == diagnostics["protected"])
+    assert diagnostics["protected"] + diagnostics["open_group"] == diagnostics["planned"]
+
+
+def test_probe_reports_the_overflow_instead_of_raising_it() -> None:
+    """The caller asks "does this fit?" without an exception as the answer.
+
+    The ordered degradation would otherwise have to raise once to decide to try
+    harder and once to give up, and every observer — the terminal projection, the
+    megabyte fixture's counter — would see a Run fail twice for one turn.
+    """
+
+    from deskpet.sdk_adapters.context_authority import _plan_turn_messages
+
+    messages = _messages(("system", "rules"), ("user", "the current turn"))
+    tools = _tool_specs(40, 4000)
+    _, facts = _plan_turn_messages(messages, 32768, tools=tools, raise_on_overflow=False)
+    assert facts["budget_headroom"] < 0
+    assert (facts["planned_input_tokens"] + facts["budget_headroom"]
+            == effective_input_budget(32768))

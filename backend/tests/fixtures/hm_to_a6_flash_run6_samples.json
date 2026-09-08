@@ -1,0 +1,2079 @@
+{
+  "context_window": 32000,
+  "model_id": "deepseek-v4-flash",
+  "note": "Character-class counts only. text_tokens and tool_schema_tokens are pure character-class functions, so this is exactly equivalent to the original text under them, and no evidence text leaves the run.",
+  "population": {
+    "pairs_with_usage": 16,
+    "provider_input_tokens_max": 18990,
+    "provider_reasoning_tokens_max": 1813,
+    "requests_recorded": 17
+  },
+  "samples": [
+    {
+      "id": "239fc70e-t0",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        }
+      ],
+      "provider_input_tokens": 6554,
+      "provider_reasoning_tokens": 1120,
+      "provider_turn_ordinal": 0,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "46536e24-t0",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 17,
+          "name": null,
+          "other_chars": 73,
+          "role": "user"
+        }
+      ],
+      "provider_input_tokens": 7875,
+      "provider_reasoning_tokens": 1813,
+      "provider_turn_ordinal": 0,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "46536e24-t1",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 17,
+          "name": null,
+          "other_chars": 73,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 37,
+          "name": null,
+          "other_chars": 4,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "task_scope_search",
+          "other_chars": 5914,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 12339,
+      "provider_reasoning_tokens": 68,
+      "provider_turn_ordinal": 1,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "46536e24-t2",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 17,
+          "name": null,
+          "other_chars": 73,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 37,
+          "name": null,
+          "other_chars": 4,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "task_scope_search",
+          "other_chars": 5914,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 29,
+          "name": null,
+          "other_chars": 11,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "context_route",
+          "other_chars": 5851,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 15198,
+      "provider_reasoning_tokens": 41,
+      "provider_turn_ordinal": 2,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "46536e24-t3",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 17,
+          "name": null,
+          "other_chars": 73,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 37,
+          "name": null,
+          "other_chars": 4,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "task_scope_search",
+          "other_chars": 5914,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 29,
+          "name": null,
+          "other_chars": 11,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "context_route",
+          "other_chars": 5851,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 18,
+          "name": null,
+          "other_chars": 2,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 278,
+          "name": "tool_search",
+          "other_chars": 5404,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 17039,
+      "provider_reasoning_tokens": 49,
+      "provider_turn_ordinal": 3,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "46536e24-t4",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 17,
+          "name": null,
+          "other_chars": 73,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 37,
+          "name": null,
+          "other_chars": 4,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "task_scope_search",
+          "other_chars": 5914,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 29,
+          "name": null,
+          "other_chars": 11,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "context_route",
+          "other_chars": 5851,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 18,
+          "name": null,
+          "other_chars": 2,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 278,
+          "name": "tool_search",
+          "other_chars": 5404,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 14,
+          "name": null,
+          "other_chars": 3,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 278,
+          "name": "tool_search",
+          "other_chars": 5849,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": null,
+      "provider_reasoning_tokens": null,
+      "provider_turn_ordinal": 4,
+      "state": "claimed",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "4d4b6911-t0",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 23,
+          "name": null,
+          "other_chars": 2,
+          "role": "user"
+        }
+      ],
+      "provider_input_tokens": 7853,
+      "provider_reasoning_tokens": 1671,
+      "provider_turn_ordinal": 0,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "4d4b6911-t1",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 23,
+          "name": null,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 47,
+          "name": null,
+          "other_chars": 5,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "task_scope_search",
+          "other_chars": 5912,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 12201,
+      "provider_reasoning_tokens": 45,
+      "provider_turn_ordinal": 1,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "4d4b6911-t2",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 23,
+          "name": null,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 47,
+          "name": null,
+          "other_chars": 5,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "task_scope_search",
+          "other_chars": 5912,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 37,
+          "name": null,
+          "other_chars": 6,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "context_route",
+          "other_chars": 5849,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 15027,
+      "provider_reasoning_tokens": 14,
+      "provider_turn_ordinal": 2,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "4d4b6911-t3",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 23,
+          "name": null,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 47,
+          "name": null,
+          "other_chars": 5,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "task_scope_search",
+          "other_chars": 5912,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 37,
+          "name": null,
+          "other_chars": 6,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "context_route",
+          "other_chars": 5849,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 25,
+          "name": null,
+          "other_chars": 23,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 286,
+          "name": "tool_search",
+          "other_chars": 5512,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 280,
+          "name": "tool_search",
+          "other_chars": 5615,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 18777,
+      "provider_reasoning_tokens": 184,
+      "provider_turn_ordinal": 3,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "4d4b6911-t4",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 163,
+          "name": null,
+          "other_chars": 2537,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 23,
+          "name": null,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 47,
+          "name": null,
+          "other_chars": 5,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "task_scope_search",
+          "other_chars": 5912,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 37,
+          "name": null,
+          "other_chars": 6,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 28,
+          "name": "context_route",
+          "other_chars": 5849,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 25,
+          "name": null,
+          "other_chars": 23,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 27,
+          "name": "tool_search",
+          "other_chars": 1925,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 2,
+          "name": "tool_search",
+          "other_chars": 1985,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 44,
+          "name": null,
+          "other_chars": 9,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 292,
+          "name": "tool_search",
+          "other_chars": 5299,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 267,
+          "name": "tool_search",
+          "other_chars": 5946,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 18990,
+      "provider_reasoning_tokens": 118,
+      "provider_turn_ordinal": 4,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "5a51b59d-t0",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 14,
+          "name": null,
+          "other_chars": 2,
+          "role": "user"
+        }
+      ],
+      "provider_input_tokens": 6652,
+      "provider_reasoning_tokens": 346,
+      "provider_turn_ordinal": 0,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "5a51b59d-t1",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 137,
+          "name": null,
+          "other_chars": 2422,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 13,
+          "name": null,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 101,
+          "name": null,
+          "other_chars": 41,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 14,
+          "name": null,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 14,
+          "name": null,
+          "other_chars": 2,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 8,
+          "name": "context_route",
+          "other_chars": 1502,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 7808,
+      "provider_reasoning_tokens": 404,
+      "provider_turn_ordinal": 1,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "6109c7c8-t0",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 26,
+          "name": null,
+          "other_chars": 7,
+          "role": "user"
+        }
+      ],
+      "provider_input_tokens": 5558,
+      "provider_reasoning_tokens": 155,
+      "provider_turn_ordinal": 0,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "6109c7c8-t1",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 84,
+          "name": null,
+          "other_chars": 1565,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 26,
+          "name": null,
+          "other_chars": 7,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 9,
+          "name": "context_route",
+          "other_chars": 1430,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 6407,
+      "provider_reasoning_tokens": 124,
+      "provider_turn_ordinal": 1,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "9965dde5-t0",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 15,
+          "name": null,
+          "other_chars": 16,
+          "role": "user"
+        }
+      ],
+      "provider_input_tokens": 4947,
+      "provider_reasoning_tokens": 484,
+      "provider_turn_ordinal": 0,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "9965dde5-t1",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 5038,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 15,
+          "name": null,
+          "other_chars": 16,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 0,
+          "name": null,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 637,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 5799,
+      "provider_reasoning_tokens": 60,
+      "provider_turn_ordinal": 1,
+      "state": "succeeded",
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "name": "context_page_in",
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "name": "context_route",
+          "other_chars": 3353
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_discover",
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "name": "procedure_use",
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "name": "prospective_ack",
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_search",
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "name": "task_scope_update",
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_complete",
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "name": "todo_write",
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_activate",
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_describe",
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "name": "tool_search",
+          "other_chars": 918
+        }
+      ]
+    }
+  ],
+  "source": ".local-test-evidence/2026-09-09/native-a6-run6/primary-ui-0mv7ur1p/userdata/data/simple-harness-sdk/execution-v6.sqlite3"
+}

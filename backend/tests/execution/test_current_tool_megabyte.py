@@ -73,6 +73,17 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
     # more tokens of protected room at that tier; that is a budget question for
     # the 4096 tier itself, not a wording one, so the expectation is left as it
     # stands rather than rewritten to match the current stop.
+    #
+    # Incident O (same memo, §附2): the stop is now provably irreducible rather
+    # than merely early.  The Host force-pages every pageable settled body and
+    # trims history to zero before it may raise at all, and the refusal reports
+    #   protected=2439 (PERSONA 1135 + tool schemas 1304) + open group 284
+    #   = 2723 against effective 2663
+    # with nothing paged and nothing trimmed, because there is nothing of either
+    # kind in the request.  So this tier is short of protected room by ~60
+    # tokens on its *first* tool turn, exactly as the paragraph above says — and
+    # the single ``budget_rejections`` entry below still holds, because the
+    # degradation asks "does this fit?" without raising.
     budget_stop = context_window == 4096
     budget_rejections = []
     if budget_stop:

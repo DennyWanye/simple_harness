@@ -947,6 +947,8 @@ def _plan_turn_messages(
     tools: Sequence[Any] = (),
     provider_turn_ordinal: int = 0,
     model_id: str | None = None,
+    allow_full_group_trim: bool = False,
+    raise_on_overflow: bool = True,
 ) -> tuple[tuple[Any, ...], dict[str, int]]:
     """Per-turn causal-group + frozen-budget assembly over the Run context.
 
@@ -961,6 +963,25 @@ def _plan_turn_messages(
     which is the ~4 K-token half of the measured under-count.  The per-model
     calibration covers what no text-derived estimate can see (a relay that
     re-injects hidden reasoning content per provider turn).
+
+    Incident O (2026-09-09): ``allow_full_group_trim`` is the second step of the
+    caller's ordered degradation.  The frozen budget trim stops with one closed
+    group still standing, which is right for the normal path — dropping the last
+    piece of history is a real loss and should not happen just because a turn is
+    a few tokens over.  But once the caller has already force-paged every
+    pageable same-Run tool result and the request *still* does not fit, keeping
+    that group would mean closing the Run to protect it.  With the flag set the
+    remaining closed groups go, oldest first, down to zero; only the open group
+    (this Run's own turn, including the current user message) is kept.  Reaching
+    the raise after that means the irreducible part alone is over budget, and
+    the log line names which piece of it.
+
+    ``raise_on_overflow=False`` lets the caller ask "does this fit?" without
+    turning the answer into an exception: the plan comes back with a negative
+    ``budget_headroom`` instead.  That keeps ``ContextBudgetExceeded`` meaning
+    exactly one thing — *nothing left to give* — rather than doubling as the
+    caller's own retry signal, which an observer would otherwise see raised
+    twice per failing turn.
     """
 
     from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
@@ -999,6 +1020,7 @@ def _plan_turn_messages(
     schema_tokens = int(math.ceil(tool_schema_tokens(tools) * ratio))
     if not tail:
         return tuple(protected), {"causal_groups": 0, "trimmed_groups": 0,
+                                  "groups_trimmed_for_budget": 0,
                                   "tool_schema_tokens": schema_tokens}
 
     window = window_tokens_for(window_tokens, model_id)
@@ -1043,20 +1065,50 @@ def _plan_turn_messages(
     # effective budget — shipping an oversized payload (underestimate) is
     # forbidden, so the turn fails closed instead.
     effective = effective_input_budget(window)
-    total = protected_tokens + sum(
-        estimator(item.content)
-        for group in groups
-        for item in group.items
-    )
-    if total > effective:
+
+    def _group_total() -> int:
+        return sum(
+            estimator(item.content)
+            for group in groups
+            for item in group.items
+        )
+
+    total = protected_tokens + _group_total()
+    if total > effective and allow_full_group_trim:
+        # Degradation step 2 (Incident O): history down to zero groups.  The
+        # frozen trim above stops at one closed group; past that point the only
+        # remaining alternative is closing the Run, so history loses.
+        while total > effective:
+            remaining = [i for i, group in enumerate(groups) if not group.open_run]
+            if not remaining:
+                break
+            groups.pop(remaining[0])
+            budget_trimmed += 1
+            trimmed += 1
+            total = protected_tokens + _group_total()
+    if total > effective and raise_on_overflow:
         # Incident N: the numbers are the whole diagnosis when a Run fails
-        # closed here, and they were previously invisible.
+        # closed here, and they were previously invisible.  Incident O: getting
+        # here now means nothing pageable or trimmable is left, so name the
+        # irreducible parts rather than only their sum.
+        open_tokens = total - protected_tokens
+        message_tokens = protected_tokens - schema_tokens
         _LOG.warning(
             "sdk_context_budget_exceeded planned=%d effective=%d protected=%d "
-            "tool_schemas=%d groups=%d ratio=%.2f",
+            "tool_schemas=%d groups=%d ratio=%.2f protected_messages=%d "
+            "open_group=%d full_trim=%s",
             total, effective, protected_tokens, schema_tokens, len(groups), ratio,
+            message_tokens, open_tokens, allow_full_group_trim,
         )
-        raise ContextBudgetExceeded()
+        raise ContextBudgetExceeded(
+            planned=total,
+            effective=effective,
+            protected=protected_tokens,
+            protected_messages=message_tokens,
+            tool_schemas=schema_tokens,
+            open_group=open_tokens,
+            groups=len(groups),
+        )
 
     # Map kept groups back onto the original Message objects by index walk.
     kept_counts = [len(group.items) for group in plan.groups]
@@ -1089,9 +1141,17 @@ def _plan_turn_messages(
     facts = {
         "causal_groups": len(groups),
         "trimmed_groups": trimmed,
+        # Incident O: ``trimmed_groups`` mixes the planner's own cap drops with
+        # budget pressure.  The receipt needs the second number on its own, so
+        # a later reader can tell "history was capped" from "history was spent
+        # to make this turn fit".
+        "groups_trimmed_for_budget": budget_trimmed,
         "budget_tier": tier,
         "tool_schema_tokens": schema_tokens,
         "planned_input_tokens": total,
+        # Negative only on the caller's ``raise_on_overflow=False`` probe: on
+        # every plan that is actually shipped this is the room left over.
+        "budget_headroom": effective - total,
     }
     return tuple(kept_messages), facts
 
@@ -1232,6 +1292,8 @@ class ProductRunContextAuthority:
         return len(tuple(getattr(exact, "root_identity_hashes", ()))) >= 2
 
     async def prepare_snapshot(self, request: Any) -> Any:
+        from deskpet.execution.primary_context_pages import PrimaryContextPageUnavailable
+        from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
         from simple_harness import RequestId
         from simple_harness.execution.context_authority import (
             ContextRouteState,
@@ -1296,14 +1358,7 @@ class ProductRunContextAuthority:
         closure_message = None
         if self._closure_reader is not None:
             closure_message = await self._closure_reader(request.run_id)
-        source_messages = tuple(context.messages)
-        exact_sources = False
-        if self._current_tool_projector is not None:
-            projected = await self._current_tool_projector(request, source_messages)
-            if projected is not None:
-                source_messages, exact_sources = projected, True
-            if ports.context.load(request.run_id).revision != request.prior_context_revision:
-                raise SnapshotContractConflict("sdk_context_authority_revision_drift")
+        raw_messages = tuple(context.messages)
         feedback = getattr(request, "mandatory_context_feedback", None)
         feedback_message = None
         if feedback is not None:
@@ -1311,17 +1366,74 @@ class ProductRunContextAuthority:
             if type(feedback) is not MandatoryContextFeedbackV1:
                 raise SnapshotContractConflict("sdk_mandatory_context_feedback_invalid")
             feedback_message = feedback.message()
-            # The SDK also persisted this exact control in Context for generic
-            # consumers. Protect one copy inside the Host budgeted snapshot.
-            source_messages = tuple(m for m in source_messages if m != feedback_message)
-        messages, assembly_facts = _plan_turn_messages(
-            source_messages, window_tokens,
-            extra_protected=(inbox_message, closure_message, feedback_message),
-            exact_tool_sources=exact_sources,
-            tools=tools,
-            provider_turn_ordinal=int(getattr(request, "provider_turn_ordinal", 0) or 0),
-            model_id=model_id,
+
+        async def _projected(*, force_all: bool) -> tuple[tuple[Any, ...], bool]:
+            """This Run's messages with settled tool bodies paged (or not)."""
+
+            selected, exact = raw_messages, False
+            if self._current_tool_projector is not None:
+                extra = {"force_all": True} if force_all else {}
+                projected = await self._current_tool_projector(request, raw_messages, **extra)
+                if projected is not None:
+                    selected, exact = tuple(projected), True
+                if ports.context.load(request.run_id).revision != request.prior_context_revision:
+                    raise SnapshotContractConflict("sdk_context_authority_revision_drift")
+            if feedback_message is not None:
+                # The SDK also persisted this exact control in Context for
+                # generic consumers. Protect one copy inside the Host budgeted
+                # snapshot.
+                selected = tuple(m for m in selected if m != feedback_message)
+            return selected, exact
+
+        def _plan(selected, exact, *, full_trim: bool, probe_only: bool = False):
+            return _plan_turn_messages(
+                selected, window_tokens,
+                extra_protected=(inbox_message, closure_message, feedback_message),
+                exact_tool_sources=exact,
+                tools=tools,
+                provider_turn_ordinal=int(getattr(request, "provider_turn_ordinal", 0) or 0),
+                model_id=model_id,
+                allow_full_group_trim=full_trim,
+                raise_on_overflow=not probe_only,
+            )
+
+        source_messages, exact_sources = await _projected(force_all=False)
+        # Incident O (2026-09-09): degrade in order instead of failing closed.
+        # The bounded projection above pages only what the >16 KiB rule and the
+        # same-Run allowance ask for, and the plan below trims history only down
+        # to its last closed group — both deliberately conservative, because a
+        # body or a group the model can still read costs it nothing.  When that
+        # turn does not fit, the answer is to spend those reserves, not to close
+        # the Run: force-page every pageable settled body, then let the plan trim
+        # history to zero.  Only an irreducible request (system + PERSONA + tool
+        # schemas + this Run's own open turn) can still raise, and the raise then
+        # carries the breakdown that says which piece is too big.
+        pages_forced = 0
+        messages, assembly_facts = _plan(
+            source_messages, exact_sources, full_trim=False, probe_only=True
         )
+        if assembly_facts.get("budget_headroom", 0) < 0:
+            before = _current_tool_page_facts(source_messages)["current_tool_pages"]
+            try:
+                forced, forced_exact = await _projected(force_all=True)
+            except (PrimaryContextPageUnavailable, PrimaryToolCausalityUnavailable):
+                # No public causal authority for the extra bodies. The bounded
+                # projection already succeeded, so keep it and go on to the
+                # history step rather than replacing a budget failure with a
+                # paging one.
+                forced, forced_exact = source_messages, exact_sources
+            after = _current_tool_page_facts(forced)["current_tool_pages"]
+            if after >= before:
+                source_messages, exact_sources = forced, forced_exact
+                pages_forced = after - before
+            # …otherwise the forced pass declined to project at all (it is also
+            # composed for non-primary callers) and would have *un*-paged what
+            # the bounded pass achieved.  Degrading must never move backwards,
+            # so keep the bounded projection and go on to the history step.
+
+            # Step 3 and, if it is still not enough, step 4: this plan trims the
+            # history to zero and then raises, because nothing is left to spend.
+            messages, assembly_facts = _plan(source_messages, exact_sources, full_trim=True)
         probe = ProviderRequest(
             RequestId("hash-only"),
             messages,
@@ -1334,6 +1446,11 @@ class ProductRunContextAuthority:
             "context": int(request.prior_context_revision),
             **assembly_facts,
             **_current_tool_page_facts(messages),
+            # Incident O: every degradation step this turn actually took, so a
+            # later reader can see the Run survived *by* spending its reserves
+            # rather than assuming it fit comfortably.  ``groups_trimmed_for_
+            # budget`` rides in with ``assembly_facts``.
+            "pages_forced": pages_forced,
         }
         if occurrences is not None:
             await occurrences.recheck(presentation)

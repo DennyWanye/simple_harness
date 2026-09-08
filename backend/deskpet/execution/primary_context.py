@@ -197,7 +197,21 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                             + calibration.apply(schema_tokens))
         budget = effective_input_budget(provider.context_window)
         if protected_tokens > budget:
-            raise ContextBudgetExceeded()
+            # Incident O: this lane already degrades in the right order — it has
+            # no settled tool results to page (it is the Run's first turn) and
+            # the loop below trims complete groups all the way to zero — so
+            # reaching here already meant "the irreducible part alone does not
+            # fit".  What it did not say is *which* part, which is the only
+            # thing worth knowing at that point.
+            raise ContextBudgetExceeded(
+                planned=protected_tokens,
+                effective=budget,
+                protected=protected_tokens,
+                protected_messages=protected_tokens - calibration.apply(schema_tokens),
+                tool_schemas=calibration.apply(schema_tokens),
+                open_group=0,
+                groups=0,
+            )
         def over_cap():
             rows = [m for g in complete for m in project(g)]
             return (sum(len(g["messages"]) for g in complete) > caps["items_max"]

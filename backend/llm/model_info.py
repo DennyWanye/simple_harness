@@ -129,6 +129,31 @@ BUILTIN: dict[str, ModelContextInfo] = {
         input_estimate_ratio_per_turn=0.11,
         input_estimate_ratio_max=2.5,
     ),
+    # 2026-09-09 Incident O: flash 之前直接沿用 pro 的三元组,但两者的残差成分
+    # 完全不同。pro 是 thinking 模型,残差主体是中转站把上一轮 reasoning_content
+    # 加回 prompt(run5 实测单轮 reasoning 最高 19579、累计 57423),所以它的
+    # ratio 必须随轮次一路长到 2.5;flash 几乎不产 reasoning(run6 实测单轮最高
+    # 1813、累计仅 1922),残差只剩「JSON 工具回执比散文密」这一块,而那一块随
+    # JSON 占比升高后会**饱和**,不会随轮次继续长。
+    # 沿用 pro 的 0.11/turn 的后果就是本次事故:第 7 次装配时 ordinal=6 →
+    # ratio=2.01,把真实 19491 的 prompt 估成 28519,超 26752 直接 fail-close。
+    #
+    # 取值依据: .local-test-evidence/2026-09-09/native-a6-run6/ 的 16 组
+    # (request_json, usage_json) 真机配对(全部 deepseek-v4-flash、窗口钉 32000、
+    # 12 个工具)。usage.input_tokens 即 provider 的 prompt_tokens
+    # (cache_tokens 是它的子集,见 sdk_adapters/provider.py::_sdk_provider_usage),
+    # 逐条 provider_input ÷ Host wire 估算的**按轮次最大值**:
+    #   ordinal 0: 1.118 (n=6)   1: 1.436 (n=5)   2: 1.503 (n=2)
+    #   ordinal 3: 1.449 (n=2)   4: 1.422 (n=1)   → 2 轮后饱和在 ~1.50
+    # 三元组按「对每个 ordinal 的实测上界留约 10% 余量」定(与 safety_margin
+    # 同一个数量级的工程余量,而不是把 16 个点拟合到零余量):
+    #   ordinal 0 → 1.25 (+11.8%)  1 → 1.60 (+11.4%)  2+ → 1.65 (+9.8%)
+    # 16 组上零低估,估算/实测中位 1.162、最大 1.433(沿用 pro 三元组时中位
+    # 1.224,且在 ordinal ≥ 6 上白白多估 34%)。
+    # 密度这一块与 pro 同源:pro 在 cum_reason==0 的 23 个 ordinal-0 请求上
+    # 实测比值中位 1.022 / 最高 1.148,与 flash 的 1.072 / 1.118 同一档,
+    # 说明 tokenizer 密度确实共享——所以 base 用两边的 ordinal-0 证据一起看,
+    # 而随轮次增长的那一块**不能**共享,pro 的高轮次样本不并入 flash。
     "deepseek-v4-flash": ModelContextInfo(
         model="deepseek-v4-flash",
         context_window=1_000_000,
@@ -136,9 +161,9 @@ BUILTIN: dict[str, ModelContextInfo] = {
         compact_at_pct=0.75,
         recall_sweet_tokens=384_000,
         supported_windows=(128_000, 400_000, 1_000_000),
-        input_estimate_ratio=1.35,
-        input_estimate_ratio_per_turn=0.11,
-        input_estimate_ratio_max=2.5,
+        input_estimate_ratio=1.25,
+        input_estimate_ratio_per_turn=0.35,
+        input_estimate_ratio_max=1.65,
     ),
     # 2026-07-19 temporary capability pin: the relay currently exposes
     # zai-org/GLM-5.2 as ``sf-glm-5.2`` but does not propagate a usable
