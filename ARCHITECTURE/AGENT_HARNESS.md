@@ -2073,6 +2073,33 @@ Harness 已吸收该 FailureSet 并从 Plan v1 重规划到 v2。
 `[backend_launch] Dev ... backend_dir=F:\projects\deskpet\backend`，证明运行的是当前
 源码而非 frozen backend。
 
+### 同一 Run 内 Provider Context 的累积上界（2026-09-08，Incident E / HM-AC-6）
+
+生产事实：Host 侧的上下文裁剪有**两条**独立通道，此前只有第一条存在。
+
+1. **历史有界**：`primary_context.py::prepare` 整组丢弃最旧的已结算历史组；
+   `context_partitions.trim_causal_groups` 按冻结档位裁 `closed()` 组，
+   **`open_run` 组永不裁剪**。
+2. **同一 Run 内有界**（本次新增）：当前 Run 自己的已结算 tool 结果全都在那个 open 组里，
+   所以历史裁剪对它们无效。`current_tool_pages.CurrentToolProjector` 现在除了原有的
+   「单条 >16 KiB」规则外，还在当前 Run 的非 `CONTROL_TOOLS` 结果体超过
+   `effective_input_budget // CURRENT_TOOL_BUDGET_DIVISOR`（= 1/4）时，把**最旧的**结果体
+   换成同一份 content-addressed `primary_settled_effect_v1` 摘要 + `context_page_in` 引用。
+   不替换最新一个 provider turn 的整批结果，不替换 `state != succeeded` 的 effect，
+   不替换 `CONTROL_TOOLS`，不丢弃任何 tool 消息（因果链与 `name`/`call_id` 完整保留）。
+
+可观测归因：`state.db.run_context_snapshot_receipts.source_revisions_json` 的内层
+`source_revisions` 新增 `current_tool_pages`（本请求内以 page 引用形态出发的 `role=tool` 条数）
+与 `current_tool_tokens`（非 control tool 体仍占的估算 token）。两者**不进**
+`provider_request_fingerprint`，A6-12 快照重放断言不受影响。
+
+边界（必须如实理解）：摘要固定成本约 1.9 KB / ~456 token 每条，所以这是**每条结果的上界**，
+不是渐近有界；请求仍按约 496 token/条线性增长，约 45–50 条结算结果时由
+`_plan_turn_messages` fail closed。相对事故现场（29 条 × 8.7 KiB、`input_tokens` 44378）
+约 4–5 倍余量。证据、候选方案取舍、独立评审与 followup（F-E1…F-E5，含
+`CONTROL_TOOLS` 同样线性累积、`_plan_turn_messages` 缺工具 schema token）见
+[DECISION-SAME-RUN-CONTEXT-BOUND](../plans/2026-09-08-hm-to-a6/DECISION-SAME-RUN-CONTEXT-BOUND.md)。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |

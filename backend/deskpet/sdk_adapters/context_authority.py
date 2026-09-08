@@ -1047,6 +1047,39 @@ def _plan_turn_messages(
     return tuple(kept_messages), facts
 
 
+def _current_tool_page_facts(messages: tuple[Any, ...]) -> dict[str, int]:
+    """HM-AC-6 attribution: what the same-Run tool-result bound actually paged.
+
+    Counted from the planned messages themselves, so the receipt records a fact
+    about the request that was really sent rather than a projector claim.
+    ``current_tool_pages`` is how many ``role=tool`` messages travel as a
+    ``primary_settled_effect_v1`` page reference instead of their body;
+    ``current_tool_tokens`` is what the non-control ``role=tool`` bodies still
+    occupy (the quantity ``current_tool_allowance`` bounds).  On the primary
+    lanes those are exactly the current Run's own settled results — settled
+    history arrives as quoted ``role=user`` groups — so the pair is the A6-3 /
+    A6-4 attribution for the same-Run bound.  On other lanes it degrades to a
+    whole-request tool-token count, which is still a true statement about the
+    request.
+    """
+
+    from deskpet.execution.current_tool_pages import CONTROL_TOOLS, MARKER
+
+    paged = 0
+    carried = 0
+    for message in messages:
+        role = str(getattr(getattr(message, "role", ""), "value", getattr(message, "role", "")))
+        content = getattr(message, "content", None)
+        if role != "tool" or not isinstance(content, str):
+            continue
+        metadata = getattr(message, "metadata", None)
+        if isinstance(metadata, Mapping) and metadata.get("source") == MARKER:
+            paged += 1
+        if getattr(message, "name", None) not in CONTROL_TOOLS:
+            carried += _context_text_tokens(content)
+    return {"current_tool_pages": paged, "current_tool_tokens": carried}
+
+
 def _visible_provider_specs(
     exposure: Any, run_id: Any, route_state: Any, *, hide_project_effects: bool = False
 ) -> tuple:
@@ -1232,6 +1265,7 @@ class ProductRunContextAuthority:
         source_revisions = {
             "context": int(request.prior_context_revision),
             **assembly_facts,
+            **_current_tool_page_facts(messages),
         }
         if occurrences is not None:
             await occurrences.recheck(presentation)
