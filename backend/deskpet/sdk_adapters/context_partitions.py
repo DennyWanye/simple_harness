@@ -59,10 +59,22 @@ _SUPPORTED_WINDOWS = tuple(sorted(PARTITION_CAPS))
 
 
 class ContextBudgetExceeded(RuntimeError):
+    """The request cannot be made to fit even after every allowed degradation.
+
+    Incident O (2026-09-09): this used to fire while pageable tool results and
+    trimmable history groups were still sitting in the request, i.e. it closed
+    a Run that the Host had the means to shrink.  It is now the *last* step of
+    an ordered degradation (see ``_plan_turn_messages``), so reaching it means
+    the irreducible part alone does not fit.  ``diagnostics`` carries that
+    breakdown; the ``str()`` stays the stable error code, because the terminal
+    projection and the fixtures both key off it.
+    """
+
     code = "sdk_context_budget_exceeded"
 
-    def __init__(self, message: str | None = None) -> None:
+    def __init__(self, message: str | None = None, **diagnostics: int) -> None:
         super().__init__(message or self.code)
+        self.diagnostics: dict[str, int] = dict(diagnostics)
 
 
 # ── Wire-shaped token accounting (Incident N, 2026-09-08) ────────────────────

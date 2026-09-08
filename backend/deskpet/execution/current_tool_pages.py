@@ -240,7 +240,21 @@ class CurrentToolProjector:
     def __init__(self, path, stack_getter):
         self.path, self.stack_getter = path, stack_getter
 
-    async def __call__(self, request, messages):
+    async def __call__(self, request, messages, *, force_all=False):
+        """Project this Run's settled tool results onto page references.
+
+        ``force_all`` is the first step of the Host's ordered budget degradation
+        (Incident O, 2026-09-09).  The normal pass pages only what the >16 KiB
+        rule and the same-Run allowance require, which is right: a body the model
+        can still read costs it nothing.  When the assembled turn does not fit
+        even so, the caller comes back with ``force_all=True`` and *every*
+        pageable settled body goes — including the newest provider turn's, which
+        the bounded pass deliberately protects.  That is a real loss (the model
+        has to call ``context_page_in`` to read back what it just produced) and
+        it is still strictly better than the alternative at this point, which is
+        closing the Run.  Control carriers keep their bytes either way.
+        """
+
         large = [m for m in messages if m.role.value == "tool"
                  and isinstance(m.content, str) and len(m.content.encode()) > DEFAULT_LARGE_RESULT_BYTES]
         settled = [m for m in messages if m.role.value == "tool"
@@ -268,14 +282,14 @@ class CurrentToolProjector:
             provider_turn_ordinal=int(getattr(request, "provider_turn_ordinal", 0) or 0),
         )
         over_bound = _settled_tool_tokens(messages) > allowance
-        if not large and not over_bound:
+        if not large and not over_bound and not force_all:
             # Nothing to page: leave the existing generic planner untouched so
             # this turn's request bytes stay exactly what they were before.
             return None
         try:
             return await self._project(messages, stack=stack, run_id=run_id, rows=rows,
                 admission=admission, metadata=metadata, pageable=pageable,
-                over_bound=over_bound, allowance=allowance)
+                over_bound=over_bound, allowance=allowance, force_all=force_all)
         except (PrimaryContextPageUnavailable, PrimaryToolCausalityUnavailable):
             if large:
                 # A >16 KiB result must never travel raw: this turn already
@@ -289,7 +303,7 @@ class CurrentToolProjector:
             return None
 
     async def _project(self, messages, *, stack, run_id, rows, admission, metadata,
-                       pageable, over_bound, allowance):
+                       pageable, over_bound, allowance, force_all=False):
         from simple_harness.contracts.messages import Message
         from deskpet.sdk_adapters.composition import project_primary_transcript
         from deskpet.sdk_adapters.context_partitions import text_tokens
@@ -301,7 +315,7 @@ class CurrentToolProjector:
         _require(isinstance(current_text, str) and current_text and admitted_users
                  and admitted_users[-1] == current_text
                  and admission.get("turn", {}).get("text") == current_text, "current_input_missing")
-        if not pageable and not over_bound:
+        if not pageable and not over_bound and not force_all:
             return messages  # real primary control carriers keep complete bytes
         transcript = project_primary_transcript(messages, current_text=current_text)
         sources = await stack.read_primary_tool_causal_sources(db_path=self.path, host_run_id=run["host_run_id"],
@@ -342,15 +356,18 @@ class CurrentToolProjector:
         # in-flight tool calls just produced and the model is still acting on.
         # Only a settled *succeeded* effect has a pageable public body, so a
         # failed/rejected/partial result simply keeps its own bytes instead of
-        # failing the whole Run.
+        # failing the whole Run.  Under ``force_all`` the newest batch loses that
+        # protection too — see ``__call__`` — but a non-succeeded effect still
+        # has no public body to page, so that half of the rule is not a policy
+        # choice and stays.
         newest = max((source["provider_turn_ordinal"] for _, source in bounded), default=0)
         candidates = sorted(((index, source) for index, source in bounded
-                             if source["provider_turn_ordinal"] < newest
+                             if (force_all or source["provider_turn_ordinal"] < newest)
                              and source["state"] == "succeeded"),
                             key=lambda item: item[0])
         carried = _settled_tool_tokens(output)
         for index, source in candidates:
-            if carried <= allowance:
+            if carried <= allowance and not force_all:
                 break
             try:
                 carried -= replace(index, source, min_bytes=0)

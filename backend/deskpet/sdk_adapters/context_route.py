@@ -90,18 +90,18 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
         },
         "include_short_horizon": {
             "type": "boolean",
-            "description": "For memory_standalone, request relevant prior conversation groups outside the current recent context. Defaults to false. Short and long-term results share one Host budget and current source checks.",
+            "description": "For memory_standalone, also request relevant prior conversation groups outside the recent context; default false. Short and long-term results share one Host budget and source checks.",
         },
         "task_scope_id": {"type": "string", "maxLength": 128},
         "reuse_workspace_of": {
             "type": ["string", "null"], "minLength": 1, "maxLength": 128,
-            "description": "Only create_new: explicitly bind the new active task to the completed task's existing workspace. Copy its exact task_scope_id and expected_source_hash from public search/resume. Requires one verified root and a new binding grant; never reopens the old task. For a new separate workspace or memory_standalone, omit this field and expected_source_hash or set them to JSON null; never use placeholder strings or whitespace.",
+            "description": "Only create_new: bind the new active task to the completed task's existing workspace under a new binding grant to its one verified root, never reopening it. Copy its exact task_scope_id from public search/resume, and its source_hash into expected_source_hash. Otherwise omit both fields or set both to JSON null; never a placeholder, whitespace or an invented hash.",
         },
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
         "expected_source_hash": {
             "type": ["string", "null"], "minLength": 64, "maxLength": 64,
-            "description": "Exact source_hash from public task search/resume for resume_existing or create_new workspace reuse. Otherwise omit this field or set it to JSON null; never fabricate a hash or use placeholders.",
+            "description": "The exact source_hash published beside that task_scope_id by public task search/resume, for resume_existing or create_new workspace reuse.",
         },
     },
     "required": ["route"],

@@ -2200,6 +2200,45 @@ Harness 已吸收该 FailureSet 并从 Plan v1 重规划到 v2。
 已知代价与 followup（F-TOK-1 闭环 usage 反馈可把多估压到 ~1.05×）见
 [DECISION-TOKEN-ESTIMATOR](../plans/2026-09-08-hm-to-a6/DECISION-TOKEN-ESTIMATOR.md)。
 
+### 预算超限的有序降级与 flash 校准（2026-09-09，Incident O）
+
+**校准分型号**：`deepseek-v4-flash` 不再沿用 `deepseek-v4-pro` 的三元组，改为
+`min(1.25 + 0.35·ordinal, 1.65)`。依据是 `.local-test-evidence/2026-09-09/native-a6-run6/`
+的 16 组真机 `(request_json, usage_json)` 配对：两者的残差成分不同——pro 是 thinking
+模型，残差主体是中转站逐轮加回的 `reasoning_content`，**随轮次线性增长**（实测累计
+最高 57423 token），所以它的倍率必须爬到 2.5；flash 几乎不产 reasoning（累计最高
+1922），残差只剩 JSON 密度，**第 2 轮后饱和在 ~1.50**。沿用 pro 的结果就是
+HM-TO-A6 attempt 6 第 5 轮：`ordinal=6` 被计 `ratio=2.01`，把真实 19491 token 的
+prompt 估成 28519 而超 `effective=26752`，整轮 fail-close。新三元组在这 16 组上
+仍**零低估**（中位多估 1.162），同一次装配的回放为 `planned=25229`、余量 5.7%。
+
+**超限不再 fail-close，改为有序降级**（`sdk_adapters/context_authority.py::prepare_snapshot`）：
+① 常规装配 → ② 强制分页本 Run **全部**可分页的已结算工具回执（不再只分页到
+`current_tool_allowance`，也不再豁免最新一批）→ ③ 把已闭合因果组按最旧优先裁到 0
+（只留 open 组）→ ④ 仍不够才抛 `ContextBudgetExceeded`。
+**只要还有可分页或可裁剪的内容，就不允许抛。** 第 ① 步用
+`_plan_turn_messages(raise_on_overflow=False)` 返回 `budget_headroom` 来"问"而不是
+"抛"，所以一次失败的轮次仍然只产生一次异常。`CONTROL_TOOLS` 与非 `succeeded` 效果
+在任何情况下都不分页。冻结口径（`assemble_partitions` / `trim_causal_groups` /
+`metric-formulas.json`）**一行未改**——"裁到 0" 是调用方显式打开
+`allow_full_group_trim=True` 才走的额外一步，常规路径行为完全一致。
+`primary_context.prepare` 本来就符合该顺序（首轮无回执可分页、完整组本就裁到 0），
+本轮只补上诊断。
+
+**归因**：快照 receipt 的 `source_revisions` 新增 `pages_forced`、
+`groups_trimmed_for_budget`、`budget_headroom`；`ContextBudgetExceeded` 携带
+`diagnostics`（`planned / effective / protected / protected_messages /
+tool_schemas / open_group / groups`），`str()` 仍为稳定码
+`sdk_context_budget_exceeded`。
+
+**protected 成本**：`_visible_provider_specs` 经核查**没有**多暴露工具——事故轮的
+12 个 spec 共 3606 wire token，其中已包含 `tool_search`/`tool_describe`/`tool_activate`
+三件套（531 token），其余能力本来就在它们后面按需发现；`7249` 里一多半是
+2.01 的倍率而非目录。可压的是文本：PERSONA 1260→1083、`context_route` schema
+847→765、`task_scope_search` 303→253，合计 **−309 wire token**，
+被测试钉死的五个路由名与判别词全部保留。
+详见 [DECISION-TOKEN-ESTIMATOR §Incident O](../plans/2026-09-08-hm-to-a6/DECISION-TOKEN-ESTIMATOR.md)。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |
