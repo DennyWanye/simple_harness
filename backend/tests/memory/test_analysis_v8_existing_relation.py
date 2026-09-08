@@ -58,6 +58,11 @@ async def test_v8_request_carries_a_relation_endpoint_candidate_channel(tmp_path
     await mh.finish_clean_run(env2)
     adapter = _BodyAdapter()
     menv = memory_env(env2, adapter)
+    # v9 is the current protocol (事件 T); this case is about v8's own assembly, so pin it.
+    from dataclasses import replace
+    menv.config = replace(menv.config, prompt_version=v8.PROMPT_VERSION,
+        result_schema_version=v8.RESULT_SCHEMA_VERSION, policy_version=v8.POLICY_VERSION,
+        validator_version=v8.VALIDATOR_VERSION)
     try:
         assert await menv.worker.run_once() == "delivered"
         assert await mh.run_job(menv) == "applied"

@@ -6,16 +6,17 @@ from deskpet.memory import analysis_proposal_v5_1 as v5_1
 from deskpet.memory import analysis_proposal_v6 as v6
 from deskpet.memory import analysis_proposal_v7 as v7
 from deskpet.memory import analysis_proposal_v8 as v8
+from deskpet.memory import analysis_proposal_v9 as v9
 
-PROMPT_VERSION = v8.PROMPT_VERSION
-RESULT_SCHEMA_VERSION = v8.RESULT_SCHEMA_VERSION
-POLICY_VERSION = v8.POLICY_VERSION
-VALIDATOR_VERSION = v8.VALIDATOR_VERSION
+PROMPT_VERSION = v9.PROMPT_VERSION
+RESULT_SCHEMA_VERSION = v9.RESULT_SCHEMA_VERSION
+POLICY_VERSION = v9.POLICY_VERSION
+VALIDATOR_VERSION = v9.VALIDATOR_VERSION
 
 
 def protocol_for_request(request):
     versions = (request.prompt_version, request.result_schema_version, request.policy_version)
-    for protocol in (v3, v4, v5, v5_1, v6, v7, v8):
+    for protocol in (v3, v4, v5, v5_1, v6, v7, v8, v9):
         if versions == (protocol.PROMPT_VERSION, protocol.RESULT_SCHEMA_VERSION, protocol.POLICY_VERSION):
             return protocol
     raise v3.AnalysisProposalRejected("analysis_protocol_unsupported")

@@ -1,7 +1,7 @@
 # HM-TO-A6 原生真实模型验收方案（2026-09-08）
 
 > 义务：`HM-TO-A6`（delivery，AC = HM-AC-2 / HM-AC-6）
-> 决定性测试原文（acceptance.md 第 162 行）：
+> 决定性测试原文（SDK 仓 `simple-harness-memory-sdk` 的 `plans/2026-08-29-human-memory-digital-twin/acceptance.md`「测试义务矩阵」HM-TO-A6 行）：
 > 「20+ turn/大型 tool result 动态组装 + README/STATUS 超限拆分；clean-wheel public API 在同一 plan
 > 创建节点与 relation memory，验证 edge 更新/纠正/争议/ordinary projection policy 过滤/relation 或
 > endpoint 遗忘/close-reopen；snapshot 重放断言图谱内容不进入 Provider Context」
@@ -70,7 +70,7 @@
 | A6-3 预算内有界 | 每次 `provider_invocations.request_json` 的 token 估算 ≤ `effective_input_budget`；`sdk_provider_attempt_audit.input_tokens` 单调有界（不随轮次线性增长到窗口上限） | 最大 `input_tokens` < 32000 − 2048；后 8 轮的 `input_tokens` 不超过前 8 轮最大值的 1.6 倍 |
 | A6-4 裁剪不破坏因果链 | `request_json.messages` 中每个 `historical_causal_group` 的 `messages` 内部 tool 消息与其发起 assistant 消息同组；被裁的组整组消失 | 任一请求中不存在孤立 tool 消息；组数 ≤10 |
 | A6-5 README/STATUS 超限拆分 | `state.db.task_scope_read_view_revisions`：README `content` 以 `…[bounded; details are content-addressed in EVIDENCE]` 结尾且 `length(content) ≤ 16384`；STATUS `content` 含 `"bounded":true` 且带 `full_content_sha256`/`full_byte_length` | 两视图都进入 bounded 形态，且 EVIDENCE 视图的 `event_count` == `task_scope_events` 实际行数（canonical facts 不丢） |
-| A6-6 同一 plan 创建节点 + relation memory | `human_memory_v7.db.cognitive_relations` 新增 1 行，其 `plan_id`/`plan_hash` 与两个端点 `cognitive_memory_revisions` 的 `plan_id`/`plan_hash` **相同**；`relation_memory_id` 在 `cognitive_memory_heads` 中存在 | 一条 `relation_kind='applies_to'`，`source_memory_id`/`target_memory_id` 均为本 plan 的 exact revision |
+| A6-6 同一 plan 创建节点 + relation memory | `human_memory_v7.db.cognitive_relations` 新增 1 行；该行的 `plan_id`/`plan_hash` 与**本 plan 新建的端点**（流程节点）以及 relation memory 自身在 `cognitive_memory_revisions` 里的 `plan_id`/`plan_hash` **相同**；已有端点记录其当时的 `current_revision`；`relation_memory_id` 在 `cognitive_memory_heads` 中存在 | 一条 `relation_kind='applies_to'`：target 是本 plan 新建流程节点的 exact revision，source 是 T1 那条 Python 版本事实的 current revision。**不再要求两端都是本 plan 的 revision**——那要求本轮再造一条同值 semantic（第二个槽位，正是事件 L 要消灭的东西），而 SDK 仓 `simple-harness-memory-sdk` 的 `plans/2026-08-29-human-memory-digital-twin/acceptance.md`「测试义务矩阵」HM-TO-A6 行对本项的要求逐字只有「clean-wheel public API 在同一 plan 创建节点与 relation memory」。同文件另有两处更紧的措辞：HM-S12 场景行「clean-wheel public API 创建**两个** canonical nodes + 一条 relation memory」、HM-TO-A2 行「clean-wheel public API 在同一原子 plan 正向创建**两个端点**及一条 `applies_to` Semantic relation」；「两个 canonical node」这条义务由 **HM-TO-A2 的 clean-wheel oracle** 履行（SDK 公共 API 直接造两个端点，不经分析车道），本项不重复证明，追踪项 F-T6。**只新建 source**（本轮再造一条同值语义再连一条旧流程）与本行相反，判 FAIL。裁决见 [DECISION-T-RELATION-FORM.md](DECISION-T-RELATION-FORM.md) §1 |
 | A6-7 edge 更新/纠正 | 纠正后 `cognitive_memory_revisions` 出现新 revision（`lifecycle_state` supersede 语义），旧 revision 退出 active；图谱边指向新 revision | 图谱只显示 1 条 active edge，端点为新 revision |
 | A6-8 争议 | `cognitive_conflict_groups` 新增行（`incumbent_revision`/`challenger_revision`）；对应 head 的 `conflict_status` 变 contested | 出现 contested；且依赖该值的执行问句得到"要求确认"而非直接用旧值 |
 | A6-9 ordinary projection policy 过滤 | `twin graph view`（`PrimaryCognitiveControls.list` → `manager.get_twin_graph_view`）返回的 node/edge 中不含 `redacted` 项；contested/suppressed 期间 edge 不出现 | 争议/遗忘态下普通图谱 edge 数按预期降到 0 |
@@ -100,8 +100,8 @@
 | 12 | 顺便问一句，今天几号？ | **负控**：无关闲聊不改 active scope、不建新 scope | `context_route_decisions` 无 `create_new`；active scope 不变 | scope 未漂移 |
 | 13 | FIXTURE_B 里 `ANCHOR-BETA` 后面那一整行原文是什么？ | **page-in #2** | 同 T11 | 答案逐字命中 |
 | 14 | 以后有机会我想学画画。 | **负控**：只进 Semantic Goal | 无 pending Prospective 行 | 不调度不提醒 |
-| 15 | 记住：秋分资料整理这套校对流程，就按我前面说的 Python 环境执行。 | **同一 plan 建节点 + relation memory** | `cognitive_relations` +1（`applies_to`），`plan_id` 与端点 revision 一致 | A6-6 |
-| 16 | （**UI 操作**，不发消息）打开记忆图谱面板，读取节点/边 | 普通图谱 2 节点 1 边；关系记忆不重复成节点 | 图谱读取前后 `provider_invocations` **行数不变** | A6-11 前半 |
+| 15 | 记住：秋分资料整理这套校对流程，就按我前面说的 Python 环境执行。 | **同一 plan 建流程节点 + relation memory**（分析协议 v9 分支②） | `cognitive_relations` +1（`applies_to`）；target 端 revision 的 `plan_id`/`plan_hash` 与关系行一致；source 端是 T1 事实的 current revision；本轮**不**新增第二条 Python 版本 semantic | A6-6 |
+| 16 | （**UI 操作**，不发消息）打开记忆图谱面板，读取节点/边 | 普通图谱出现 1 条 `applies_to` 边，两端分别是 T1 的语义节点与 T15 新建的流程节点；relation memory 自身不作为节点出现（节点总数按当轮已落库记忆计，不是 2） | 图谱读取前后 `provider_invocations` **行数不变** | A6-11 前半 |
 | 17 | （脚本发送 ~18 KiB 目标说明）把下面这段完整的目标说明**逐字**记为这个任务的目标，不要概括、不要省略：`<GOAL_TEXT>` | `task_scope_update(goal.set)` 超长值 | README 视图 bounded 截断；STATUS 视图 `"bounded":true` | A6-5 |
 | 18 | 你把刚才那段目标保存成功了吗？把它的前两句原样复述一遍。 | 复核（若 T17 被概括，本轮是第二次机会） | 同 T17 | A6-5 兜底 |
 | 19 | 按我**最早**说过的，校对结果该存到哪里？只依据我以前说过的回答。 | 跨 15+ 轮后引用早期事实：T2 已被整组裁出最近 10 组，必须走召回补位 | 本轮 `request_json` 中不含 T2 原文的 causal group；出现 typed recall（`memory_call_attempts` / recall 决策） | 答出「外接硬盘 / 校对归档」且来源是召回而非上下文 |

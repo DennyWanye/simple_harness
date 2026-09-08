@@ -290,6 +290,34 @@ def compile_proposal(proposal, *, request, items, base_revision, plan_id, now,
         PROMPT_VERSION, RESULT_SCHEMA_VERSION, POLICY_VERSION
     ):
         raise legacy.AnalysisProposalRejected("analysis_protocol_unsupported")
+    return _compile_validated_proposal(proposal, request=request, items=items,
+        base_revision=base_revision, plan_id=plan_id, now=now, candidates=candidates,
+        relation_candidates=relation_candidates)
+
+
+def _compile_validated_proposal(proposal, *, request, items, base_revision, plan_id, now,
+                                candidates=(), relation_candidates=(),
+                                created_endpoint_must_survive=False):
+    """v8's admission rules without the protocol-identity check.
+
+    v9 is a *policy* version: the same wire, schema and compiler, a different ordered prompt.
+    It reuses this entry so the two protocols cannot drift apart silently, and so a v9 request
+    is never handed to a compiler that believes it is a v8 request (the plan carries the
+    request's own run/job/idempotency identity).  Nothing else calls it.
+
+    ``created_endpoint_must_survive`` is **off for v8** and on for v9, and the difference is a
+    measured one.  v6/v7/v8 resolve an in-plan endpoint against the *raw* operation ids, so a
+    relation whose endpoint operation was itself rejected keeps a dependency on an operation
+    that never made it into the plan; ``MemoryMutationPlan`` then raises
+    ``operation has unknown dependencies`` from inside ``legacy.compile_proposal`` and the whole
+    turn dies — every other memory of that turn included.  It was never reachable often enough
+    to notice, because v8 practically never proposes a created endpoint (F-L1); v9's branch ②
+    emits an endpoint + relation pair every time, and the replay hit it in 1 of 8 flash samples
+    (an over-long ``reason_code`` rejected the procedure, the relation survived).  With the flag
+    on, the relation is refused by name instead — ``analysis_relation_endpoint_unknown`` — and
+    the rest of the turn is kept.  v8 keeps the old behaviour byte for byte so that a persisted
+    v8 request replays to exactly the result it produced when it was first answered.
+    """
     raw_operations = proposal.get("operations") if isinstance(proposal, dict) else None
     claim_ids = {
         str(op.get("operation_id"))
@@ -303,11 +331,16 @@ def compile_proposal(proposal, *, request, items, base_revision, plan_id, now,
         if isinstance(op, dict) and op.get("memory_type") in _RELATION_TARGET_TYPES
     }
 
-    def compile_operation(raw, span, *, item, now, candidates):
-        _validate_operation(raw)
-        if raw.get("memory_type") == RELATION_TYPE:
-            return _compile_relation(raw, span, claim_ids=claim_ids, target_ids=target_ids,
-                                     candidates=candidates, relation_candidates=relation_candidates)
+    # Ids of the non-relation operations that actually compiled.  Order is not kept here and
+    # is not needed: ``legacy.compile_proposal`` walks ``operations`` in the authored order and
+    # ``memory_protocol`` (RELATION_ENDPOINT_DEPENDENCY_REQUIRED / INVALID_DEPENDENCY_ORDER)
+    # already requires a created endpoint to sit at a strictly smaller index than its relation.
+    # So by the time a relation is compiled, every legal in-plan endpoint is already in this
+    # set, and membership alone is the right test.  A relation that (illegally) precedes its
+    # endpoint simply misses it and is refused by name, which is the safe direction.
+    survived: set[str] = set()
+
+    def _compile_non_relation(raw, span, *, item, now, candidates, request, items):
         if raw.get("memory_type") == "semantic":
             _check_object_value(raw, item=item, candidates=candidates)
             if raw.get("action") == CONTEST_ACTION:
@@ -316,6 +349,18 @@ def compile_proposal(proposal, *, request, items, base_revision, plan_id, now,
             return v4._compile_procedure(raw, span, item=item, request=request, items=items,
                                          now=now, candidates=candidates)
         return legacy.compile_operation(raw, span, item=item, now=now, candidates=candidates)
+
+    def compile_operation(raw, span, *, item, now, candidates):
+        _validate_operation(raw)
+        if raw.get("memory_type") == RELATION_TYPE:
+            return _compile_relation(raw, span,
+                                     claim_ids=claim_ids & survived if created_endpoint_must_survive else claim_ids,
+                                     target_ids=target_ids & survived if created_endpoint_must_survive else target_ids,
+                                     candidates=candidates, relation_candidates=relation_candidates)
+        operation = _compile_non_relation(raw, span, item=item, now=now, candidates=candidates,
+                                          request=request, items=items)
+        survived.add(str(raw.get("operation_id")))
+        return operation
 
     from collections.abc import Mapping
     if isinstance(proposal, Mapping) and (

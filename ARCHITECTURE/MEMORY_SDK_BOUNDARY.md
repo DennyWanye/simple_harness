@@ -1329,3 +1329,24 @@ fail closed。
   attestation 和 Gate ledger 仅在 ignored `.local-test-evidence/2026-08-22/`，Git 只保存结论与 hash 索引。
 
 最后更新：2026-09-08（HM-TO-A6 typed recall 超时 Host 侧）。`wemm_embedder.py` 新增真正的 `embed_batch`：按「最长×条数 ≤ 1024 字符、条数 ≤ 32」分组、按长度升序装箱、结果回填输入位置；实测（mps，两路径均预热）6 条短 chunk 322ms vs 串行 1430ms（0.22），长 chunk 独占调用故不劣于串行（现场 6 条 0.93、短三条 0.82），真模型批量/逐条 cos ≥ 0.99988。`short_index_worker.py` 拆出 `maintenance_timeout=60s`（`operation_timeout` 仍 5s 只管扫描/注册），维护重建失败按 60→120→…→600s 指数退避、成功/换 manager 清零、跳过的 tick payload-free 审计；常量由一致性用例绑定生产装配值（实测 projection 600ms + 世代 embed 45690ms ≤ 60s，退避基数 ≥ 超时 → 写锁占空比 ≤ 50%）。`human_memory_v7.py` 前台 `RecallBudget` deadline 1000→2000ms（协议上限，S3 契约 `deadline_ms=1..2000` / hard deadline 2s）。短时域 chunk `public_text` 的长度上限**不在 Host**（Harness 派生 `public_text_hash` 绑定 + SDK 自己拼 chunk），记为需新增的 SDK 契约条款；`context_route.py` 的重试收口另有属主。控制：新增 `test_wemm_embed_batch.py` / `test_short_index_backoff.py` / `test_recall_budget_deadline.py`；`test_short_index_worker.py` 等短索引既有红（fixture 无生产 embedder）不变。[裁决](../plans/2026-09-08-hm-to-a6/DECISION-RECALL-TIMEOUT-HOST-SIDE.md)。
+
+最后更新：2026-09-09（HM-TO-A6 事件 T：分析协议 v9，被点名的流程在同一 plan 里成为关系端点）。
+分析车道当前协议为 `host-analysis-prompt/v9` / `memory-analysis-proposal/v9` / `host-analysis-policy/v9` /
+`host-analysis-validator/v5`（`analysis_proposal_v9.py`，`analysis_protocol.protocol_for_request` 仍解析
+v3/v4/v5/v5.1/v6/v7/v8，线格式与提示词逐字不变——提示体进 `bind_attempt` 哈希，改词必须换协议 id）。
+v9 只加一条策略分支：**用户本句自己点名一套可复用流程、并且就是在决定今后照此执行**时，把该流程在本轮建成
+Procedure 节点，再从被回指的 `semantic_candidates` 事实拉一条 `applies_to` 到它
+（`source_candidate_key` + `target_operation_id`）；不再为这句话另造 semantic。
+边界事实（已安装 SDK 0.6.34 实测，未改 SDK）：`_resolve_semantic_relation_payload_unlocked` 对**已有 SEMANTIC**
+端点**不要求**适用性指纹（`history_visibility` 的类型授权门对 semantic claim 直接放行；只有 procedure 需要指纹），
+但要求 exact `current_revision`、`uncontested`、`lifecycle=active`、typed/evidence/**恰好一行分类**、非 restricted、
+未被 suppress；分类行只由 mutation-apply 写，所以**本 plan 新建**的 Procedure 端点天然有分类行，而观测提升上来的
+已有 Procedure 没有（事件 S 的具名扣留仍然有效）。本 plan 内的端点必须 ACTIVE（v4 只在 `intent_kind=adoption`
+给 ACTIVE）、必须排在关系之前并进 `depends_on_operation_ids`。
+`host-analysis-validator/v5` 新增且仅新增一条准入规则：线内关系端点必须是**已编译成功**的 operation——
+v6/v7/v8 用原始提案 id 校验，端点被拒时关系带着悬空依赖进 `MemoryMutationPlan`，整轮记忆全丢；v9 改为只拒关系
+（`analysis_relation_endpoint_unknown`）。v8 保持原行为，保证持久化请求重放结果不变。
+真实模型复算（复原第 9 次 turn-15 请求，`deepseek-v4-flash` 9 次 / `deepseek-v4-pro` 3 次）：v9 提关系 8/9、3/3，
+Host 接受 8/9、3/3，`finish=length` 1/9、0/3，指代字面值 0/12；v8 对照臂提关系 0/11。
+A6-6 的判据按义务原文改写（`00-PLAN.md`、`scripts/native/a6_verify.py` 同步）：出处是 **SDK 仓 `simple-harness-memory-sdk` 的 `plans/2026-08-29-human-memory-digital-twin/acceptance.md`「测试义务矩阵」HM-TO-A6 行**（第 162 行），它对本项的要求逐字只有「clean-wheel public API 在同一 plan 创建节点与 relation memory」；同文件更紧的两句——HM-S12 场景行（第 135 行）「clean-wheel public API 创建**两个** canonical nodes + 一条 relation memory」与 HM-TO-A2 行（第 158 行）「clean-wheel public API 在同一原子 plan 正向创建**两个端点**及一条 `applies_to` Semantic relation」——那条「两个 canonical node」义务由 **HM-TO-A2 的 clean-wheel oracle**（SDK 公共 API 直接造两个端点，不经分析车道）履行，本次原生跑不重复证明，是否真被覆盖记为 F-T6。新判据是「**relation_kind='applies_to'** + relation memory 自身由本 plan 新建（revision 行 plan_id/plan_hash 与关系行一致且 relation_memory_id 在 heads 中）+ **target 端点由本 plan 新建且 `cognitive_memory_heads.memory_type='procedure'`** + 两端 exact revision 均可解析」；**不能**松成「至少一个端点」——那样「本轮再造一条同值 semantic 当 source + 连一条旧流程当 target」也会 PASS，正是事件 L 要消灭的重复槽位。控制：新增 `backend/tests/native/test_a6_verify_a6_6.py` 11 项（`--selftest` 夹具的 heads 表补 `memory_type` 列，A6-6 在自检里从 schema 缺失变为可达），`test_analysis_proposal_v9.py` 增至 27 项（含 v3..v8 线格式 sha256 金值与「关系排在端点之前只拒关系」）；§3 的真实模型复算驱动提交为 `scripts/native/a6_replay_t15.py`（凭据路径参数化，密钥不打印不入库）。理由与两端形态的取舍见
+[裁决](../plans/2026-09-08-hm-to-a6/DECISION-T-RELATION-FORM.md)。
