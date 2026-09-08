@@ -55,6 +55,7 @@ import aiosqlite
 from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.memory.analysis_lineage import binding_model_config_hash
 from deskpet.memory.analysis_proposal import (
+    ALL_OPERATIONS_REJECTED,
     AdmittedItem,
     AnalysisProposalRejected,
     prompt_items,
@@ -106,6 +107,16 @@ def _host_plan_id(request_hash: str, attempt_id: str) -> str:
     """Deterministic Host analysis plan id (known before derivation — Task 6 F-1)."""
 
     return f"host-analysis-plan-{hashlib.sha256(f'{request_hash}:{attempt_id}'.encode()).hexdigest()[:32]}"
+
+
+# Only Host-owned identifiers/enums are logged; free-form detail (``message``) may echo
+# admitted evidence text and stays out of the log, hashed into the audit row instead.
+_LOGGABLE_REJECTION_DETAIL = ("reason", "memory_type", "role", "item_id", "operation_id")
+
+
+def _rejection_detail(rejected: Any) -> dict[str, Any]:
+    detail = dict(getattr(rejected, "detail", {}) or {})
+    return {key: detail[key] for key in _LOGGABLE_REJECTION_DETAIL if key in detail}
 
 
 def evidence_set_key(request: Any) -> str:
@@ -517,11 +528,35 @@ class HostMemoryAnalysisExecutor:
             now=float(self._clock()),
             candidates=() if candidate_snapshot is None else candidate_snapshot['candidates'],
         )
-        if compiled.plan is not None and any(op.kind.value == 'revise' for op in compiled.plan.operations):
+        if compiled.plan is not None and any(op.kind.value in ('revise', 'contest') for op in compiled.plan.operations):
             authorized = await self._semantic_correction.authorize_plan(request, candidate_snapshot, compiled.plan)
             compiled = replace(compiled, plan=authorized, structured_result=json.loads(canonical_json(authorized.to_json())))
         for rejected in compiled.rejected:
             await self._audit(outbox.sdk_run_id, rejected.code, canonical_hash(rejected.to_json()))
+        # Incident H: a rejected operation used to leave only a reason-code row in
+        # ``host_pre_admission_audit`` and no log line at all, so a proposal that
+        # collapsed to ``analysis_all_operations_rejected`` looked like a clean
+        # "nothing to remember" turn. Reason codes and the Host-owned detail keys are
+        # identifiers, never evidence text, so they are safe to log.
+        if compiled.rejected:
+            logger.warning(
+                "memory.analysis_operations_rejected job=%s rejected=%s kept=%s codes=%s",
+                request.job_id, len(compiled.rejected), compiled.operation_count,
+                [(item.operation_id, item.code, _rejection_detail(item)) for item in compiled.rejected],
+            )
+        if (
+            isinstance(compiled.structured_result, Mapping)
+            and compiled.structured_result.get("closure_reason") == ALL_OPERATIONS_REJECTED
+        ):
+            codes = sorted({item.code for item in compiled.rejected})
+            logger.warning(
+                "memory.analysis_all_operations_rejected job=%s codes=%s "
+                "(模型提出了变更但全部被 Host 拒绝；本轮记忆未物化)",
+                request.job_id, codes,
+            )
+            await self._audit(
+                outbox.sdk_run_id, ALL_OPERATIONS_REJECTED, canonical_hash({"codes": codes}),
+            )
         usage = getattr(response, "usage", None)
         # 「响应不可用」必须留下可观测信号，不能与「模型主动判定无可记」一样静悄悄
         # 收敛成成功。实测：output_tokens 顶满 max_output_tokens 时工具调用发不完整，

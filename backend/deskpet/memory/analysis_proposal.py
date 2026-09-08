@@ -417,7 +417,18 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
             candidate = selected[0]
             old = candidate["payload"]
             approval = candidate.get('correction_intent')
-            if approval is None or approval['evidence_id'] != item.evidence_id or approval['envelope_hash'] != item.envelope.envelope_hash or approval['exact_quote'] != span.exact_quote or approval['new_value'] != payload.object_value:
+            if approval is None or approval['evidence_id'] != item.evidence_id or approval['envelope_hash'] != item.envelope.envelope_hash:
+                raise AnalysisProposalRejected('analysis_explicit_correction_intent_missing')
+            if approval['new_value'] is None:
+                # cue+anchor grammar (Host owns the slot, model owns the replacement):
+                # the quote must lie inside the recognized correction sentence, and the
+                # replacement must be a genuinely different value — neither a substring
+                # nor a superstring of the one the user just disowned.
+                if (not span.exact_quote or span.exact_quote not in approval['exact_quote']
+                        or payload.object_value in approval['old_value']
+                        or approval['old_value'] in payload.object_value):
+                    raise AnalysisProposalRejected('analysis_explicit_correction_intent_missing')
+            elif approval['exact_quote'] != span.exact_quote or approval['new_value'] != payload.object_value:
                 raise AnalysisProposalRejected('analysis_explicit_correction_intent_missing')
             if sum(c.get('correction_intent') is not None and c['correction_intent']['evidence_id'] == approval['evidence_id'] and c['correction_intent']['exact_quote'] == approval['exact_quote'] for c in candidates) != 1:
                 raise AnalysisProposalRejected('analysis_correction_candidate_ambiguous')

@@ -38,8 +38,9 @@ def _proposal(item_id, relation=None):
     return {"outcome": "mutate", "operations": ops}
 
 
-def test_v6_is_default_and_schema_has_relation_branch():
-    assert analysis_protocol.PROMPT_VERSION == v6.PROMPT_VERSION
+def test_v6_wire_is_frozen_and_schema_has_relation_branch():
+    # v6 wire stays frozen and resolvable after the v7 bump.
+    assert analysis_protocol.protocol_for_request(_request(compilation(), v6)) is v6
     branches = v6.PROPOSAL_TOOL_SCHEMA["properties"]["operations"]["items"]["anyOf"]
     kinds = [b["properties"]["memory_type"]["enum"] for b in branches]
     assert ["semantic_relation"] in kinds and len(kinds) == 5
