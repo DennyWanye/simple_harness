@@ -202,6 +202,12 @@ for (( T=START; T<=LAST; T++ )); do
     continue
   fi
 
+  # Attempt 5 lesson: a slow previous Run (T6 > 6 min) must finish before the
+  # next send, otherwise 发送 is replaced by 停止 and the message is lost.
+  for i in $(seq 1 120); do
+    NEWEST=$(q "$STATE" "select current_state from foreground_run_heads order by updated_at desc limit 1;")
+    case "$NEWEST" in RUNNING|CLAIMED|QUEUED) sleep 10 ;; *) break ;; esac
+  done
   counters
   BASE_ENV=$ENV_N; BASE_RUN=$RUN_N; BASE_TS=$RUNTS
   echo "=== T$T send (${#MSG} chars)"
