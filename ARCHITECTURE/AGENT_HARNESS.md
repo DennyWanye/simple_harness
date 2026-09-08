@@ -2239,6 +2239,36 @@ tool_schemas / open_group / groups`），`str()` 仍为稳定码
 被测试钉死的五个路由名与判别词全部保留。
 详见 [DECISION-TOKEN-ESTIMATOR §Incident O](../plans/2026-09-08-hm-to-a6/DECISION-TOKEN-ESTIMATOR.md)。
 
+### 同一 Run 内第二次 `context_route` 卡死前台驱动（2026-09-09，Incident R）
+
+**现象**：HM-TO-A6 第 7 次原生旅程 T6，SDK `run.complete` 之后 Host 终局观察
+连续 4 次抛 `RuntimeError("primary_message_scope_source_mismatch")`，
+记 `foreground.runtime.stalled`，Run 头长期停在 RUNNING。
+原始证据 `.local-test-evidence/2026-09-09/native-a6-run7/primary-ui-6idcnskv/`。
+
+**根因**：`primary_message_v3._verify_route_control_tx` 把「控制事实的
+`harness_evidence_reservations.tool_name` 必须为 NULL」当成控制血统的**正向**判据
+（a4117ef6，取样自 C05 单次真机）。该条件只对一个 Run 的**第一次** `context_route`
+成立：首次路由调用发生在准入 Scope 绑定之前，`ToolAdapter._reserve_evidence`
+拿不到 scope 因而根本不预留，随后由路由账本的 `ingest_ledger_fact_tx` 补预留
+（不带 tool_name）。而**同一 Run 内的第二次** `context_route`（c70f568f 之后，
+`task_scope_search` 零命中会显式引导 `continue_active`；本次即 T6 第 10 个 provider 轮）
+此时 Scope 已存在，普通工具派发路径先预留并写入 `tool_name='context_route'`，
+于是这条判据必然失败。离线复现 18 条因果事实中只有该条 `effect-1ccf1fc0…` 失败，
+其余 ~20 条相等性判据全部成立。
+
+**修复**：控制事实的预留 `tool_name` 允许 `NULL` 或 `context_route` 两种合法写法；
+任何**其它**工具名仍然拒绝（不得把物理调用改标为控制）。其余判据一字未改，
+失败仍然 fail-closed。
+
+**可诊断性**：`~20` 条判据不再共用一个不透明码。新增
+`PrimaryScopeSourceError(code, reason_code, item_ordinal)`，`str()` 仍为原稳定码，
+`reason_code` 只带 Host 字段名（如 `route_control_reservation_tool_name`、
+`reservation_status`、`public_effect_state`），`item_ordinal` 只带 transcript 序号；
+`foreground.runtime.failed` / `stalled` 两条审计线新增
+`error_reason_code` / `error_reason_ordinal`，不含任何 envelope / 工具入参 / 结果字节。
+详见 [DECISION-SCOPE-SOURCE-MISMATCH](../plans/2026-09-08-hm-to-a6/DECISION-SCOPE-SOURCE-MISMATCH.md)。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |
