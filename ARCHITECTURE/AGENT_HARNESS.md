@@ -2171,12 +2171,47 @@ Harness 已吸收该 FailureSet 并从 Plan v1 重规划到 v2。
 与 `current_tool_tokens`（非 control tool 体仍占的估算 token）。两者**不进**
 `provider_request_fingerprint`，A6-12 快照重放断言不受影响。
 
-边界（必须如实理解）：摘要固定成本约 1.9 KB / ~456 token 每条，所以这是**每条结果的上界**，
-不是渐近有界；请求仍按约 496 token/条线性增长，约 45–50 条结算结果时由
-`_plan_turn_messages` fail closed。相对事故现场（29 条 × 8.7 KiB、`input_tokens` 44378）
-约 4–5 倍余量。证据、候选方案取舍、独立评审与 followup（F-E1…F-E5，含
+边界（必须如实理解）：这是**每条结果的上界**，不是渐近有界；请求仍随结算结果条数线性增长，
+最终兜底是 `_plan_turn_messages` 的 fail closed。单条成本见下一节（F-E3 之后为 ~142 token，
+此前为 ~456–507）。证据、候选方案取舍、独立评审与 followup（F-E1…F-E5，含
 `CONTROL_TOOLS` 同样线性累积、`_plan_turn_messages` 缺工具 schema token）见
 [DECISION-SAME-RUN-CONTEXT-BOUND](../plans/2026-09-08-hm-to-a6/DECISION-SAME-RUN-CONTEXT-BOUND.md)。
+
+### 分页摘要自身的成本上界（2026-09-09，F-E3）
+
+生产事实：`primary_settled_effect_v1` **在请求里发送的形态**是 descriptor 的投影，不再是
+descriptor 本身。wire 只带 `kind` / `excerpt`（硬上限 `SUMMARY_EXCERPT_BYTES = 128` 字节的
+确定性前缀）/ `pages` / `page_tool` / `reference_id` / `source_hash` /
+`source:{effect_id, tool_name, content_bytes}`。**单条 566–568 B / 142 token**
+（此前 1 960–2 030 B / 490–507 token，且与被分页的结果体大小无关）。
+
+- **完整 descriptor 未变**：它仍是 `reference()` = `PREFIX + canonical_hash(descriptor)` 的
+  原像，仍是 `admitted_current_page` 返回的 `source`，`context_page_in` 的页大小
+  （`PAGE_BYTES = 1024`）与回读语义**逐字节不变**。被拿掉的
+  `run_id` / `effect_version` / `result_hash` / `provider_invocation_id` /
+  `provider_response_hash` / `content_hash` / `raw_call_id` 由 `verify_request` 从公共
+  audit/effect 事实**重新推导**，再与消息内容逐字节比较——比较覆盖 `reference_id`，
+  所以它们仍是哈希原像分量。**不是不再检查，是不再打印。**
+- **不划算就不分页**：`worth_paging()` 要求摘要 ≤ 原体的 `1 / PAGE_SAVING_DIVISOR`（= 一半）
+  **且** `text_tokens` 上有正收益，否则原体保留原样；只有 Incident O 的 `force_all`
+  降级步会放弃这条 margin（此时"更小"即可）。
+- **兼容读**：`legacy_summary()` 只读不写地接受 F-E3 之前的形态。`admitted_current_page`
+  校验的是**持久化的**父请求，`primary_dependencies.check_runtime_dependencies` 每轮都会
+  对该 Run 全部历史 `context_page_in` effect 重跑一次，没有它则跨升级在飞的 Run 会因
+  格式变化 fail closed 且无法恢复。
+- **回执**：`source_revisions` 新增 `descriptor_bytes_saved`（Σ `source.content_bytes` −
+  摘要自身字节）与 `results_kept_verbatim_small`（原样出发且 < `PAGE_WORTH_MIN_BYTES` 的
+  非 control tool 体条数，**纯描述、不作因果断言**）。两者都不进
+  `provider_request_fingerprint`。
+- **F-E2 未动**：`primary_control_result_elided_v1` 的形态、`verify_control_stubs` 的
+  `run_id` 就地检查、`context_route` 永不省略，全部保持原样。两种形态互不干涉。
+
+证据（HM-TO-A6 第 9 次原生跑，4 个 Run 在"已经分页"的状态下仍 `sdk_context_budget_exceeded`；
+16 条摘要单独占 8 036 / 26 752 token；47 条真实摘要上 128 B 与 1 024 B 的判别力只差 1/45）、
+离线复算、独立评审（1 MUST-FIX：跨版本 wire 兼容）与 followup（F-E3-a/b/c）见
+[DECISION-F-E3-DESCRIPTOR-COST](../plans/2026-09-08-hm-to-a6/DECISION-F-E3-DESCRIPTOR-COST.md)。
+用例 `backend/tests/execution/test_descriptor_cost_bound.py`（10 例，含事故形状：修前
+headroom −1231 / 分页 0 条，修后 +3479 / 分页 10 条）。
 
 ### 输入 token 估算口径与 per-model 校准（2026-09-08，Incident N）
 

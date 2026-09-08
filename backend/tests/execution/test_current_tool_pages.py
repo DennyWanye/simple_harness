@@ -367,8 +367,14 @@ async def test_same_run_settled_results_get_a_per_result_ceiling_and_page_back_e
                 by_hash = {hashlib.sha256(m["content"].encode()).hexdigest(): m["content"]
                            for m in actual if m["role"] == "tool"}
                 # A bounded (sub-16 KiB) settled body must page back exactly too.
+                # F-E3: the bounded descriptor is ~570 B instead of ~1.9 KiB, so
+                # the setup's own small ``tool_describe`` result now clears the
+                # margin and pages as well — and it is the *first* summary in the
+                # request.  This test is about a chunk body, so select one:
+                # anything carrying the write fixture's tail anchor.
                 holder.source = next(s for s in summaries
-                                     if len(by_hash[s["source_hash"]].encode()) <= 16384)
+                                     if len(by_hash[s["source_hash"]].encode()) <= 16384
+                                     and BOUND_TAIL in by_hash[s["source_hash"]])
                 holder.raw = by_hash[holder.source["source_hash"]]
                 assert holder.source["reference_id"].startswith(CURRENT_PREFIX)
                 assert len(holder.source["excerpt"].encode()) <= 1024
