@@ -1864,6 +1864,40 @@ tuple、set、非字符串 key 或非有限浮点仍由严格 validator 拒绝�
 
 ## 验证状态
 
+### 2026-09-08 事件 K：跨轮重放的 assistant.tool_calls 带回真实入参
+
+`_ProductOpenAICompatibleProvider._wire_messages` 从 `tool` 结果重建 assistant
+`tool_calls` 时，`arguments` 不再写字面量 `"{}"`。SDK 0.7.1 契约强制清空 provider
+assistant 的 durable metadata（`provider_invocations.py` "stored public provider message
+metadata must be empty"），实测三份原生证据库共 129 条 `provider_invocations` 中
+`metadata[provider_tool_calls]` 存活数 **为 0**——即历史上线的每一条 assistant
+`tool_calls` 都是空参重建。模型随后照抄自己被污染的 transcript：重建条数为 0 的请求
+0/16 条空参调用，≥20 的请求 22/35（严格单调剂量反应，合并 Pearson r=0.48/0.55），
+每条被 `missing_required_argument` 拒绝直到 `react_max_turns_exceeded`。
+
+现口径：Host 自己的 `ToolCallArgumentsMemo`
+（`backend/deskpet/sdk_adapters/tool_call_arguments.py`，形制对齐 `RunRouteStateMemo`）
+在解析 provider 响应时按 `call_id` 留存模型入参（已剥离 `deskpet_public_progress`，
+与 `execution_effects.arguments_json` 记录的同一份），`_wire_messages` 在后续每一跳读回，
+读取时校验 `tool_name` 一致；有界 LRU（4096 条 / 8 MiB / 单条 256 KiB）。未命中仍退化为
+`"{}"`（线形状合法优先于杀 Run），并记一条**无载荷计数** `product_provider_tool_call_
+arguments_unavailable`。序列化由 `canonical_tool_arguments_json` 唯一定义，与同进程
+metadata 路径逐字节一致；无重建的请求线体逐字节不变，SDK 请求指纹口径未动。
+
+历史因果组（`historical_causal_group`）的 assistant 条目仍不带入参：这是同类丢失，但
+它是被引号包进一条 user 消息的记录、不经 `_wire_messages`，且补入参须同时改
+`project_primary_transcript`、`primary_message_v2.representable/item_ordinals` 与已归档
+终态 evidence 的 envelope hash，记为 followup F-K1。`provider_reasoning_content` 的同构
+跨轮丢失记为 F-K2。上游正解不变：SDK 把 assistant `tool_calls` 当一等公共 transcript
+字段，届时删除本备忘与降级分支。
+
+裁决与逐库数据见
+[`plans/2026-09-08-hm-to-a6/DECISION-TOOL-CALL-ARGUMENTS-REPLAY.md`](../plans/2026-09-08-hm-to-a6/DECISION-TOOL-CALL-ARGUMENTS-REPLAY.md)。
+控制：`tests/sdk_adapters/test_provider_tool_call_arguments_replay.py` 新增 17 例全绿
+（含 durable 真实往返、真实 HTTP `MockTransport` 跨 hop、字节稳定、退化计数）；
+`tests/sdk_adapters` 539 PASS / 58 既有红（失败集合与 `git stash` 基线逐条相同）、
+`tests/execution` 与 provider importers 均无新增红。
+
 ### 2026-09-07 F06 provider 传输超时后前台 Run 续推
 
 Host 侧修复（不发 Harness 新版本）：retry-once `ProviderReconciliationPort` + `RuntimeReconciliationPort`

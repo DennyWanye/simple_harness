@@ -91,3 +91,34 @@ C06-09 是最干净的证据：一个字的插入（排程 → 排日程）就�
 - 现象：模型面 `memory_forget` 只能按 `fact_id` 操作旧事实库，无法忘记认知记忆（事件 J 记录）；UI 面板遗忘正常。
 - 用户决定（2026-09-08）：同意暂不提前做 S5c 的模型可见记忆视图；A6 第 23/24 轮改用 UI 面板遗忘验证 close/reopen 语义，对话遗忘随 S5c 一起做。
 - release tag：用户决定待全部任务完成并**真人验收后**再授权。
+
+## F09 更新（2026-09-08：根因已修，止损降级为可选）
+
+- 根因查明并已修：不是模型自发的坏习惯，而是 Host 自己把污染喂了回去。
+  `_wire_messages` 跨轮重建 assistant `tool_calls` 时 arguments 写字面量 `"{}"`，
+  而 SDK 契约保证 `metadata[provider_tool_calls]` 必然不存活（三份原生证据库
+  129 条 provider_invocations 存活数为 0），于是模型照抄自己被污染的 transcript：
+  重建条数为 0 的请求 0/16 条空参调用，≥20 条的请求 22/35（严格单调剂量反应）。
+- 修复见 `plans/2026-09-08-hm-to-a6/DECISION-TOOL-CALL-ARGUMENTS-REPLAY.md`
+  （`ToolCallArgumentsMemo` 按 call_id 留存并回贴真实入参）。
+- F09 原提的「连续 N 次空参即止损收尾」仍可作为纵深防御保留，但**优先级下调**：
+  在根因修复后它防的是模型自发的空参，而非 Host 制造的空参。待原生复跑观察后再定。
+
+## F-K1 历史因果组的 assistant 条目不带工具入参（2026-09-08）
+
+- 现象：`project_primary_transcript`（`sdk_adapters/composition.py:1170`）只产出
+  `{"role","content"}`，`historical_causal_group` 里模型能看到「调了哪个工具、
+  结果是什么」，看不到「用什么参数调的」。
+- 与事件 K 同类，但**不经 `_wire_messages`**（它是被引号包进一条 user 消息的记录）。
+- 为何本轮不修：补入参须同时改 `project_primary_transcript`、
+  `memory/primary_message_v2.py::representable`（硬性要求 assistant 键集恰为
+  `{"role","content"}`）与 `item_ordinals`，并使**已归档终态 evidence 的
+  envelope hash 全部失效**，还会牵动 `primary_history.transcript_matches` 语义。
+  须与终态 evidence 契约版本升级（`primary_message_v3` 一类）一起做。
+
+## F-K2 provider_reasoning_content 跨轮同样丢失（2026-09-08）
+
+- `metadata[provider_reasoning_content]`（DeepSeek 思考模式要求逐字回显）走的是
+  与事件 K 完全相同的「durable 往返即清空」路径，跨轮同样丢。
+- 修法与 F-K 同构（同一备忘再存一列），但 reasoning 是 provider 私有内容，
+  回灌口径（是否、以及在什么条件下把它放回线上）需单独裁决，未并入本轮。
