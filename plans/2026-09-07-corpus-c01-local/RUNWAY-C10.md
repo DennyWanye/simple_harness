@@ -53,13 +53,14 @@
 
 ### 关键实测事实（单测）
 
-- typed recall 对争议槽位返回 `items=()` 且 `confirmation_groups` 含整组（上海/东京两成员）——即模型一旦查库，SDK 会把冲突交给模型确认，正是 gold 禁止的"无关确认"；零查询是唯一 PASS 路径。
+- typed recall 对**与争议槽位相关的**查询（争议值或槽位名）返回 `items=()` 且 `confirmation_groups` 含整组（上海/东京两成员）——模型一旦查到那一格，SDK 就把冲突交给模型确认，正是 gold 禁止的"无关确认"；零查询是唯一 PASS 路径。
+- Memory 0.6.31 起争议短路**限定槽位**（SDK 备忘 `DECISION-2026-09-08-conflict-short-circuit.md` §3.1）：只命中成员共享的`subject_entity`/`qualifiers` 的查询不再准入确认组，其它未争议候选照常以 `items` 返回。因此"空 fragments"不等于库中无争议，本类判据不变——查库本身即违反 `no_recall`，与是否拿到确认组无关。
 - twin graph 每个 revision 一个节点（rev1、rev2 均 `contested`）；head 取最高 revision。
 - procedure 槽位（C10-11）同样能 CONTEST（步骤序不同即内容不同）。
 
 ## 4. 单测
 
-`backend/tests/quality/test_corpus_c10_prepare.py`（9 项，无 Provider）：20 条原 setup 与 sha256 逐条比对、fixture 文本与 setup/provider_input 隔离、篡改校验；C10-01/11/12/16/20 真实两段作业 + 冲突组公共回读 + 冷重开一致；C10-14 受限不可召回；C10-01 争议仅以 confirmation group 出现；C10-15 抑制后整组隐藏。`test_corpus_supported_case_ids.py` 更新为 200 例（C10=20）。
+`backend/tests/quality/test_corpus_c10_prepare.py`（10 项，无 Provider）：20 条原 setup 与 sha256 逐条比对、fixture 文本与 setup/provider_input 隔离、篡改校验；C10-01/11/12/16/20 真实两段作业 + 冲突组公共回读 + 冷重开一致；C10-14 受限不可召回；C10-01 槽位相关查询仅以 confirmation group 出现、共享限定词查询不再准入；C10-20 无关查询照常返回未争议 extra 且不带出 2.0/2.1；C10-15 抑制后整组隐藏。`test_corpus_supported_case_ids.py` 更新为 200 例（C10=20）。
 
 ## 5. 试跑结果（run-01，4 例）
 

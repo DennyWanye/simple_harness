@@ -156,17 +156,56 @@ async def test_contested_group_reaches_recall_only_as_confirmation(tmp_path):
     runtime = HumanMemoryV7Runtime(tmp_path / 'memory.db', evidence_authority=HostEvidenceAuthority(host.path),
         clock=lambda: compiled.scenario_time)
     try:
-        lanes = await runtime.typed_recall(query='默认区域', run_id='c10-01-current', turn_ordinal=1,
+        # Memory 0.6.31 admits the group only for a SLOT-relevant query: the
+        # contested values and the predicate, never the members' shared
+        # subject/qualifiers (SDK memo DECISION-2026-09-08-conflict-short-circuit §3.1).
+        # A slot-relevant query is exactly the "unrelated confirmation" the C10
+        # gold forbids, so PASS still requires zero query.
+        lanes = await runtime.typed_recall(query='上海', run_id='c10-01-current', turn_ordinal=1,
             memory_types=('semantic',), include_short_horizon=False)
         result = lanes.execution.result
-        # The SDK type-authority gate withholds a contested head from items and
-        # offers the whole group as one confirmation: a query in C10 is exactly the
-        # "unrelated confirmation" the gold forbids, so PASS requires zero query.
         assert result.items == ()
         assert len(result.confirmation_groups) == 1
         members = result.confirmation_groups[0].members
         assert [(m.member.source_ref, m.member.source_revision) for m in members] == [(memory_id, 1), (memory_id, 2)]
         assert {m.public_payload['object_value'] for m in members} == {'上海', '东京'}
+        # The shared qualifier alone no longer admits the group. This store holds
+        # nothing but the contested slot, so the lane is simply empty: the
+        # contested head itself may never enter items.
+        lanes = await runtime.typed_recall(query='默认区域', run_id='c10-01-shared-term', turn_ordinal=2,
+            memory_types=('semantic',), include_short_horizon=False)
+        result = lanes.execution.result
+        assert result.items == () and result.confirmation_groups == ()
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_unrelated_query_returns_items_without_admitting_contested_group(tmp_path):
+    host = await _host(tmp_path / 'host')
+    # C10-20 is the only case with an uncontested extra beside the contested
+    # slot, so it is the one store that can show both halves of the 0.6.31 rule.
+    compiled = batch('C10-20')
+    async with open_c10_fixture(**_args(host, tmp_path), batch=compiled) as (_, actual):
+        extra_id = actual['labels']['H'].memory_id
+    runtime = HumanMemoryV7Runtime(tmp_path / 'memory.db', evidence_authority=HostEvidenceAuthority(host.path),
+        clock=lambda: compiled.scenario_time)
+    try:
+        # A query about the unrelated extra: one open conflict group no longer
+        # short-circuits the whole lane, and the disputed values stay unspoken.
+        lanes = await runtime.typed_recall(query='上次购买数量', run_id='c10-20-unrelated', turn_ordinal=1,
+            memory_types=('semantic', 'episode'), include_short_horizon=False)
+        result = lanes.execution.result
+        assert result.confirmation_groups == ()
+        assert [item.selected_item.source_ref for item in result.items] == [extra_id]
+        payloads = repr([item.public_payload for item in result.items])
+        assert '2.0' not in payloads and '2.1' not in payloads
+        # The slot itself still reaches recall only as a whole-group confirmation.
+        lanes = await runtime.typed_recall(query='2.1', run_id='c10-20-slot', turn_ordinal=2,
+            memory_types=('semantic', 'episode'), include_short_horizon=False)
+        result = lanes.execution.result
+        assert result.items == () and len(result.confirmation_groups) == 1
+        assert {m.public_payload['object_value'] for m in result.confirmation_groups[0].members} == {'2.0', '2.1'}
     finally:
         await runtime.close()
 
