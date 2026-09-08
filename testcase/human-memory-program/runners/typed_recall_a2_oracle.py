@@ -249,6 +249,8 @@ def assess_cell(fixture, cell, baseline=None):
         return assess_context_use(fixture,cell)
     if "authority_event_cell" in observed:
         return _authority_event_oracle().assess(fixture, cell, globals())
+    if "selection_cell" in observed:
+        return _selection_oracle().assess(fixture, cell, globals())
     if "short_recipe" in observed:
         return assess_short(fixture,cell)
     if "state_cell" in observed:
@@ -782,6 +784,36 @@ def assess_source(cell):
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
 
 
+
+# M0.6.31 confirmation-member history visibility. Reason strings are fixed from the pinned
+# public contract before execution (backends/history_visibility.py): a binding that resolves
+# against a live confirmation member reports history_visible; once the group carries a
+# resolution or the head leaves the challenger the whole group reports history_source_stale;
+# a member hash that does not match any result member reports history_binding_mismatch.
+GROUP_VISIBLE = 'history_visible'
+GROUP_STALE = 'history_source_stale'
+GROUP_MISMATCH = 'history_binding_mismatch'
+
+
+def check_group_visibility(observed, wire, member_hashes, expected):
+    """Bind one real check_history_visibility call over the confirmation group members."""
+    result = wire['result']
+    expected_bindings = [{'kind': 'recall', 'result_id': result['result_id'],
+                          'result_hash': wire['result_hash'], 'item_id': item_id, 'item_hash': item_hash}
+                         for item_id, item_hash in zip(wire['result_confirmation_member_ids'][0],
+                                                       member_hashes, strict=True)]
+    if observed['bindings'] != expected_bindings:
+        raise ValueError('history bindings are not the exact public result/member identities')
+    snapshot = observed['snapshot']
+    if snapshot['subject'] != wire['decision']['subject'] or len(snapshot['items']) != len(expected):
+        raise ValueError('visibility snapshot subject/binding count differs')
+    if [(item['visible'], item['reason']) for item in snapshot['items']] != expected:
+        raise ValueError('confirmation member visibility differs from the durable group state')
+    if len({item['binding_hash'] for item in snapshot['items']}) != len(expected):
+        raise ValueError('visibility items do not carry distinct binding identities')
+    return True
+
+
 def assess_conflict(fixture,cell):
     o=cell['observations'];checks=[]
     try:
@@ -818,12 +850,33 @@ def assess_conflict(fixture,cell):
             if member['source_content_hash']!=hash_json(semantic_source(**payload)) or member['public_payload_hash']!=hash_json(payload):
                 raise ValueError('conflict source and projection hashes differ')
         checks.append('one real atomic confirmation group with exact r7/r8 and distinct independent hashes')
+        result_groups=value['result']['confirmation_groups']
+        if len(result_groups)!=1:
+            raise ValueError('durable result carrier does not hold exactly one confirmation group')
+        wrapper=result_groups[0]
+        member_hashes=[sdk_domain_hash('simple-harness/typed-recall-confirmation-member/v1',member)
+                       for member in wrapper['members']]
+        if (value['result_confirmation_member_hashes']!=[member_hashes]
+                or value['result_group_hashes']!=[sdk_domain_hash('simple-harness/typed-recall-confirmation-group/v1',wrapper)]
+                or value['result_confirmation_member_ids']!=[[member['member']['item_id'] for member in wrapper['members']]]
+                or [member['member'] for member in wrapper['members']]!=members):
+            raise ValueError('public confirmation group/member hash binding differs')
+        checks.append('independently recomputed public group and member hashes over the durable result carrier')
+        check_group_visibility(o['group_visibility'],value,member_hashes,[(True,GROUP_VISIBLE)]*2)
+        tampered=[('0' if member_hashes[0][0]!='0' else '1')+member_hashes[0][1:],member_hashes[1]]
+        check_group_visibility(o['group_visibility_control'],value,tampered,[(False,GROUP_MISMATCH),(True,GROUP_VISIBLE)])
+        checks.append('durable member binding accepted for both live members and rejected for a tampered member hash')
         if 'after_resolution' in o:
             after=o['after_resolution']['execution'];check_execution_wire(after,o['after_resolution']['context'],o['after_resolution']['plan'])
             if o['revision9']['revision']!=9 or after['decision']['confirmation_groups'] or after['result']['confirmation_groups']:
                 raise ValueError('resolution must append revision9 and remove active group')
             checks.append('real authorized revision9; resolved group absent from new recall')
-        return dict(status='BLOCKED',reason='CONFLICT_DURABLE_GROUP_MEMBER_RESOLUTION_HASH_ORACLE_PENDING',business_assertions=checks)
+            check_group_visibility(o['group_visibility_after'],value,member_hashes,[(False,GROUP_STALE)]*2)
+            checks.append('after the resolution the whole group goes stale atomically on the same durable bindings')
+        elif 'group_visibility_after' in o:
+            raise ValueError('a case without a resolution must not carry a post-resolution witness')
+        return dict(status='PASS',reason='original conflict group/member/resolution obligation verified through public operations',
+                    business_assertions=checks)
     except (ValueError,KeyError,TypeError,IndexError) as exc:
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
 
@@ -1335,6 +1388,16 @@ def check_context_use_bundle(bundle):
                 or not request['requested_at']<=receipt['authorized_at']<receipt['expires_at']
                 or receipt['expires_at']>result['authority_expires_at']):
             raise ValueError('current-use receipt request/hash/time binding differs')
+
+
+def _selection_oracle():
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).with_name('typed_recall_selection_oracle.py')
+    spec = importlib.util.spec_from_file_location('typed_recall_selection_oracle', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _authority_event_oracle():

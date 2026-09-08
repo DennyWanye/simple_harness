@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "fixture_id": "HM-TYPED-RECALL-V3",
-  "fixture_revision": 15,
+  "fixture_revision": 16,
   "seed": "HM-TYPED-RECALL-20260831-V3",
   "quality_gate": "NOT_RUN/BLOCKED",
   "quality_gate_reason": "Deterministic protocol verification does not replace the independently reviewed 200+ query real-model corpus.",
@@ -37,9 +37,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.28",
-        "source_commit": "e554c20dd8699606d44ac5af3bc88958822b8f56",
-        "wheel_sha256": "16498e49a8494ae2a3cb24bb1325a80576e3b2063bc921f732568cbcf55436f9"
+        "version": "0.6.31",
+        "source_commit": "ff8be5f38e6b7e925f54bcc9f4f5dc65d450b3db",
+        "wheel_sha256": "e8dc27cc7585a34e38f99a5b94ba1d5b500dcde537548a0cfc2dc85ae72b9896"
       }
     },
     "consumer_entrypoint_argument": "--consumer-entrypoint",
@@ -3188,9 +3188,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.28",
-        "source_commit": "e554c20dd8699606d44ac5af3bc88958822b8f56",
-        "wheel_sha256": "16498e49a8494ae2a3cb24bb1325a80576e3b2063bc921f732568cbcf55436f9"
+        "version": "0.6.31",
+        "source_commit": "ff8be5f38e6b7e925f54bcc9f4f5dc65d450b3db",
+        "wheel_sha256": "e8dc27cc7585a34e38f99a5b94ba1d5b500dcde537548a0cfc2dc85ae72b9896"
       }
     },
     "candidate_approval": "User authorized trunk-development re-pin to Host main composition H0.7.10/M0.6.20 on 2026-09-07; pins frozen before execution; no acceptance claim.",
@@ -3829,15 +3829,34 @@
         "wheel_sha256": "abe301b03f912b0b749cf5dedd1c0291a8f87cb449628e6b860b474603e4306c"
       }
     }
+ ,
+    {
+      "fixture_sha256": "3e4f23b7a72bc271fc8a225ccf9cb862eb3be6bf6ee505d100c95d105f184d5a",
+      "fixture_revision": 15,
+      "harness": {
+        "status": "PINNED",
+        "distribution": "simple-harness-sdk",
+        "version": "0.7.10",
+        "source_commit": "031fdc688ceea604ffa409a06a69fd85071aa612",
+        "wheel_sha256": "e559bc1b58ebfce0423247bc11ead0969f2364d76209fe7b9481bb2892ad2539"
+      },
+      "memory": {
+        "status": "PINNED",
+        "distribution": "simple-harness-memory-sdk",
+        "version": "0.6.28",
+        "source_commit": "e554c20dd8699606d44ac5af3bc88958822b8f56",
+        "wheel_sha256": "16498e49a8494ae2a3cb24bb1325a80576e3b2063bc921f732568cbcf55436f9"
+      }
+    }
   ],
   "candidate_pin_change": {
     "date": "2026-09-08",
-    "scope": "Candidate identity only: Memory 0.6.26 -> 0.6.28 (0.6.27 rebuilds short-horizon and cognitive-vector generations in three phases with embed_batch outside the write lock plus optimistic manifest CAS, and takes the recall write lock under the request deadline so the vector lane degrades with cognitive_vector_deadline instead of failing; 0.6.28 advances the recall authority epoch only for eligibility-changing events, so index-only generation activations no longer bump it and short-horizon projection bumps only when removed_chunk_count > 0. Public payload shape, hash domain, eligibility gates, 0.45 threshold, lane budgets, recall_authority_events/heads DDL and memory schema 7.4 unchanged, no DDL change; memory-only forget, CJK lexical gate and prospective trigger rendering retained). Original 401 cells, attacks, oracle inputs and thresholds unchanged.",
+    "scope": "Candidate identity only: Memory 0.6.28 -> 0.6.31 (0.6.29 replaces the recall-context-use authority-epoch equality test with a non-regression test, so an advanced epoch is admitted only when the per-bound-source revalidation inside the same write lock and the same BEGIN IMMEDIATE transaction passes, and otherwise still rejects with the same stable RECALL_AUTHORITY_STALE code, zero payload and zero receipt row; policy_hash mismatch, expiry and epoch regression remain hard failures, and a read-only read_recall_context_use_authority_notes view plus the authority_epoch_advanced code are added without touching the receipt DDL or hash domain. 0.6.30 caps a short-horizon chunk at SHORT_HORIZON_CHUNK_MAX_CHARS = 2048 code points, deterministically segmenting an over-long causal group into at most SHORT_HORIZON_CHUNK_MAX_SEGMENTS = 8 content-addressed chunks stored under a projection key that joins the causal group id and the segment ordinal with U+001F; unsegmented groups keep the bare Host id and the byte-identical chunk_id payload, projection rebuild becomes incremental and generation rebuild reuses active-generation vectors for unchanged chunks. 0.6.31 narrows conflict-group admission from any-lane hit to slot-level relevance: lexical matching sees only contested_slot_text (the public fields whose values differ between the two members, plus the semantic predicate slot name), and the vector lane requires member cosine >= 0.45 and not below any ordinary candidate of the same type, so an unrelated query no longer short-circuits the whole typed-recall lane; a non-admitted group is not a candidate, is not counted in filtered_candidate_count and does not set truncated. History visibility may now bind confirmation-group members by result_member_hash with whole-group atomicity, while typed-short source expansion still rejects them. Public payload shape, hash domain, eligibility gates, 0.45 threshold, lane budgets, Harness v4 wire shape, build_host_confirmation_execution, recall_authority_events/heads DDL and memory schema 7.4 unchanged, no DDL change; memory-only forget, CJK lexical gate and prospective trigger rendering retained). Original 401 cells, attacks, oracle inputs and thresholds unchanged.",
     "authority": "User 2026-09-08 decision: trunk development on main, quality gate first; pins frozen before any execution on this candidate",
     "harness_source_commit": "031fdc688ceea604ffa409a06a69fd85071aa612",
     "harness_wheel_sha256": "e559bc1b58ebfce0423247bc11ead0969f2364d76209fe7b9481bb2892ad2539",
-    "source_commit": "e554c20dd8699606d44ac5af3bc88958822b8f56",
-    "wheel_sha256": "16498e49a8494ae2a3cb24bb1325a80576e3b2063bc921f732568cbcf55436f9"
+    "source_commit": "ff8be5f38e6b7e925f54bcc9f4f5dc65d450b3db",
+    "wheel_sha256": "e8dc27cc7585a34e38f99a5b94ba1d5b500dcde537548a0cfc2dc85ae72b9896"
   },
   "candidate_successor_lineage": {
     "base_host_commit": "60f280dc2dd674a2af42e517f9c0d04d46aec72c",

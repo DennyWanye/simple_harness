@@ -247,7 +247,7 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
     def run_child(command, cwd, *, timeout):
         request = bridge.read_json(command[command.index("--request") + 1])
         response_path = Path(command[command.index("--response") + 1])
-        assert set(request["inputs"]) == {"claim", "validity", "mutations", "unsupported", "normal", "conflict", "returns", "short", "context_use", "authority_events"}
+        assert set(request["inputs"]) == {"claim", "validity", "mutations", "unsupported", "normal", "conflict", "returns", "short", "context_use", "authority_events", "selection"}
         context_use = request["inputs"]["context_use"]
         assert set(context_use) == {"version", "seeds", "query", "run_id", "turn_id", "evaluated_at", "use_at",
                                    "context_expires_at", "attempt", "continuation", "next_attempt", "after_attempt",
@@ -373,6 +373,6 @@ def test_0613_successor_retains_original_obligations_and_candidate_lineage():
     assert bridge.file_sha(layers_path) == bridge.LAYERS_SHA
     pins = fixture["public_consumer"]["candidate_identity_pins"]
     assert pins == fixture["approved_oracle"]["candidate_identity"]
-    assert (pins["harness"]["version"], pins["memory"]["version"]) == ("0.7.10", "0.6.28")
+    assert (pins["harness"]["version"], pins["memory"]["version"]) == ("0.7.10", "0.6.31")
     for name, pin in pins.items():
         assert layers["clean_wheel_public_manager"][f"candidate_{name}_identity"] == pin

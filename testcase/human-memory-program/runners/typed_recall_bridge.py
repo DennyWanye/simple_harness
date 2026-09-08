@@ -20,8 +20,8 @@ from email.parser import BytesParser
 from pathlib import Path
 
 SCHEMA = "typed-recall-execution-bridge/v1"
-FIXTURE_SHA = "3e4f23b7a72bc271fc8a225ccf9cb862eb3be6bf6ee505d100c95d105f184d5a"
-LAYERS_SHA = "ab0d0ad7f27b213cd4e243f93bee54f72a3bbf9f94fc93eaf125570619faa022"
+FIXTURE_SHA = "31fbb8bc8186143f5a06e77af42b36b56de8bb36e40ffa65edb5f60c013225c9"
+LAYERS_SHA = "83238bc6691ba6b1c70a2aa7e0b89a2316f38475f2901b0f35524914389a42aa"
 ORACLE_BLOCKERS = []
 
 
@@ -298,7 +298,7 @@ def _execute(args, layers, expected):
     shutil.copyfile(adapter_dir / public.name, public)
     shutil.copyfile(adapter_dir / "semantic_relation_public_manager.py", workspace / "semantic_relation_public_manager.py")
     shutil.copyfile(adapter_dir / "typed_recall_public_cases.py", workspace / "typed_recall_public_cases.py")
-    for filename in ("typed_recall_case_manager.py", "typed_recall_normal_cases.py", "typed_recall_procedure_cases.py", "typed_recall_prospective_cases.py", "typed_recall_trigger_cases.py", "typed_recall_prospective_lifecycle_cases.py", "typed_recall_conflict_cases.py", "typed_recall_return_cases.py", "typed_recall_short_cases.py", "typed_recall_fixture_authorities.py", "typed_recall_context_use_cases.py", "typed_recall_authority_event_cases.py"):
+    for filename in ("typed_recall_case_manager.py", "typed_recall_normal_cases.py", "typed_recall_procedure_cases.py", "typed_recall_prospective_cases.py", "typed_recall_trigger_cases.py", "typed_recall_prospective_lifecycle_cases.py", "typed_recall_conflict_cases.py", "typed_recall_return_cases.py", "typed_recall_short_cases.py", "typed_recall_fixture_authorities.py", "typed_recall_context_use_cases.py", "typed_recall_authority_event_cases.py", "typed_recall_selection_cases.py"):
         shutil.copyfile(adapter_dir / filename, workspace / filename)
     validation_code = {path.name: file_sha(path) for path in workspace.glob("*.py")}
     execution_code = {str(path):file_sha(path) for path in [
@@ -307,7 +307,8 @@ def _execute(args, layers, expected):
         runner_dir / "typed_recall_source_oracle.py", runner_dir / "typed_recall_context_use_oracle.py",
         runner_dir / "typed_recall_procedure_oracle.py", runner_dir / "typed_recall_prospective_oracle.py",
         runner_dir / "typed_recall_prospective_lifecycle_oracle.py",
-        runner_dir / "typed_recall_trigger_oracle.py", runner_dir / "typed_recall_authority_event_oracle.py"]}
+        runner_dir / "typed_recall_trigger_oracle.py", runner_dir / "typed_recall_authority_event_oracle.py",
+        runner_dir / "typed_recall_selection_oracle.py"]}
     if args.source_adapter:
         execution_code[str(Path(args.source_adapter).resolve())]=file_sha(args.source_adapter)
     python = args.consumer_python
@@ -362,6 +363,10 @@ def _execute(args, layers, expected):
     authority_compiler = importlib.util.module_from_spec(authority_spec)
     authority_spec.loader.exec_module(authority_compiler)
     inputs["authority_events"] = authority_compiler.inputs(fixture, inputs["context_use"])
+    selection_spec = importlib.util.spec_from_file_location("selection_inputs", runner_dir / "typed_recall_selection_oracle.py")
+    selection_compiler = importlib.util.module_from_spec(selection_spec)
+    selection_spec.loader.exec_module(selection_compiler)
+    inputs["selection"] = {"version": selection_compiler.VERSION, "cases": selection_compiler.inputs(fixture)}
     conflict = fixture["conflict_write_oracle"]
     inputs["conflict"] = {"payloads":{name:{**value,"qualifiers":[]} for name,value in conflict["canonical_payloads"].items()},
         "cases":[{"id":row["id"],"mutation":row.get("mutation",{})} for row in [conflict["create_case"],*conflict["reject_cases"],*conflict["resolution_cases"],conflict["recall_cases"][0]]]}
