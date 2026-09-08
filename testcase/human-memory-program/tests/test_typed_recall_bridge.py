@@ -258,7 +258,8 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
         context_use = request["inputs"]["context_use"]
         assert set(context_use) == {"version", "seeds", "query", "run_id", "turn_id", "evaluated_at", "use_at",
                                    "context_expires_at", "attempt", "continuation", "next_attempt", "after_attempt",
-                                   "next_use_at", "next_continuation"}
+                                   "next_use_at", "next_continuation",
+                                   "continuation_control_attempt", "continuation_probe_attempt"}
         assert len(context_use["seeds"]) == 2
         assert all(set(seed) == {"memory_type", "payload"} for seed in context_use["seeds"])
         assert all(set(row) == {"original_attack", "public_path", "mutation"}
@@ -307,6 +308,24 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
     if not source_fault:
         assert len(summary["layers"]["source"]["observed_cells"]) == 10
         assert len(summary["artifacts"]) == 2
+        # The four sealed tie-break rows adjudicated as unreachable on the public contract must
+        # carry their exact reason and their own blocker category, never the generic default,
+        # and the adjudication can never award a PASS.
+        selection = importlib.util.spec_from_file_location(
+            "selection_oracle", ROOT / "runners/typed_recall_selection_oracle.py")
+        selection_oracle = importlib.util.module_from_spec(selection)
+        selection.loader.exec_module(selection_oracle)
+        unpairable = selection_oracle.UNPAIRABLE_TIE_CELLS
+        assert set(unpairable) == {"selection-budget/tie-matched-lane-count",
+                                   "selection-budget/tie-memory-type-empty",
+                                   "selection-budget/tie-source-ref",
+                                   "selection-budget/tie-source-revision-or-zero"}
+        assert not set(unpairable) & set(selection_oracle.CELLS)
+        for name, reason in unpairable.items():
+            row = summary["cell_results"][name]
+            assert row["status"] == "BLOCKED" and row["reason"] == reason
+            assert reason.startswith("PUBLIC_TIE_NOT_CONSTRUCTIBLE:")
+            assert row["blocker_categories"] == ["CONTRACT_FACT_UNPAIRABLE"]
     assert bridge.read_json(args.artifact_dir / "bridge-summary.json") == summary
 
 
@@ -435,3 +454,41 @@ def test_0613_successor_retains_original_obligations_and_candidate_lineage():
     assert (pins["harness"]["version"], pins["memory"]["version"]) == ("0.7.10", "0.6.31")
     for name, pin in pins.items():
         assert layers["clean_wheel_public_manager"][f"candidate_{name}_identity"] == pin
+
+
+def test_sealed_rules_forbid_introducing_a_new_cell():
+    """Adjudication for the two missing matrix cells: 401 is closed, additive cells are not allowed.
+
+    fixture_change_lineage can only express a field substitution inside an EXISTING row - the
+    lineage test above requires the amended section to keep exactly the base row-id set and every
+    other section to stay byte-identical to the base commit, and the layers routing oracle freezes
+    all_cells (count plus sorted cell-id hash) and the combined-gate union. A 0.6.31 conflict
+    short-circuit negative cell and a 0.6.29 use-fence positive cell therefore cannot be added
+    with lineage on this contract; they are recorded in the run record instead.
+    """
+    spec = importlib.util.spec_from_file_location("oracle", ROOT / "runners/run_typed_recall_public_consumer.py")
+    oracle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(oracle)
+    fixture_path = ROOT / "fixtures/typed-recall-v3.json"
+    layers_path = ROOT / "fixtures/typed-recall-execution-layers-v1.json"
+    fixture = json.loads(fixture_path.read_text())
+    layers = json.loads(layers_path.read_text())
+    additive = {"all cell count mismatch", "all sorted cell-id hash mismatch",
+                "combined exact union count mismatch", "combined exact union hash mismatch"}
+    baseline = set(oracle._validate_execution_layers(
+        fixture_path=fixture_path, fixture=fixture, execution_layers_path=layers_path)["errors"])
+    # The unmodified fixture routes cleanly; the only standing error is the stale
+    # execution-layers revision allowlist in the --self-check path (layers revision 15), which the
+    # 401 scan does not use and this test deliberately does not touch.
+    assert not baseline & additive, baseline
+    assert bridge.digest(sorted(f"{lane}/{cell}" for lane, cells in
+                                oracle._expected_product_cells(fixture).items()
+                                for cell in cells)) == layers["all_cells"]["sorted_lane_cell_ids_sha256"]
+    for section, new_id in (("result_page_cases", "page-conflict-short-circuit-negative"),
+                            ("context_use_cases", "use-fence-positive")):
+        grown = copy.deepcopy(fixture)
+        grown[section].append({**copy.deepcopy(grown[section][0]), "id": new_id})
+        rejected = oracle._validate_execution_layers(fixture_path=fixture_path, fixture=grown,
+                                                    execution_layers_path=layers_path)
+        assert rejected["status"] == "FAIL", (section, rejected)
+        assert additive <= set(rejected["errors"]), (section, rejected["errors"])

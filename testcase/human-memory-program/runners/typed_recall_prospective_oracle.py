@@ -15,7 +15,7 @@ def domain(name,value):
 def check(o,recipe,*,registration_state='pending',ack_identity='fixture-registration_accepted'):
     seed=recipe['seed'];state=seed.get('state','pending')
     if (seed['memory_type']!='prospective' or state not in {registration_state,'triggered'}
-            or recipe['family'] not in {'lifecycle','epistemic'}
+            or recipe['family'] not in {'lifecycle','epistemic','projection'}
             or o['prospective_binding']['scope']!='synthetic-sdk-contract-only'):
         raise ValueError('prospective proof scope differs')
     raw=seed['payload']['trigger']

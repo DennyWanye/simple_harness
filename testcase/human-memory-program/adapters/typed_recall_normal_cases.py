@@ -40,6 +40,35 @@ def recall_params(recipe, seed=None):
         modes=recipe.get('modes',('full_text',)))
 
 
+def projection_canary_probes(case, recipe):
+    """Pure public DTO constructions for the half of the sealed canary a strict payload forbids.
+
+    The sealed source_record carries six keys outside allowed_payload_fields. Three of them are
+    planted for real elsewhere (the admitted evidence id, the classification and the mutation
+    conflict_status); all six are additionally offered to the strict typed payload parser here.
+    A refusal is a stronger witness than "stripped after the fact": the field cannot even enter.
+    Nothing is asserted here; the parent oracle owns every verdict.
+    """
+    payload = case.payload(recipe['seed'])
+    wire = payload.to_json()
+    cls = type(payload)
+    probes = {'payload_class': cls.__name__, 'clean_wire': wire, 'fields': {}}
+    try:
+        cls.from_json(dict(wire))
+        probes['clean_accepted'] = True
+    except Exception as exc:  # noqa: BLE001 - recorded, never swallowed
+        probes['clean_accepted'] = False
+        probes['clean_exception'] = {'type': type(exc).__name__, 'reason': str(exc)}
+    for key, value in sorted(recipe['projection_canary'].items()):
+        try:
+            cls.from_json({**wire, key: value})
+            probes['fields'][key] = {'constructed': True}
+        except Exception as exc:  # noqa: BLE001 - the refusal itself is the observation
+            probes['fields'][key] = {'constructed': False,
+                'exception': {'type': type(exc).__name__, 'reason': str(exc)}}
+    return probes
+
+
 async def disclosure_dto_probes(case, recipe):
     """Pure public DTO constructions that localise the sealed SEALED_AUTHORITY_REQUIRED rule."""
     helper = load('typed_recall_case_manager')
@@ -165,12 +194,18 @@ async def run_cases(recipes, workspace):
             prospective=load('typed_recall_prospective_cases')
             if prospective.supported(recipe) and recipe['seed'].get('state')=='triggered':
                 path=[{**recipe['seed'],'state':'pending'}]
+            if recipe['family']=='projection':
+                observed['projection_canary']=projection_canary_probes(case,recipe)
             previous=None
             for ordinal,spec in enumerate(path):
                 kwargs={} if ordinal==0 else dict(kind='supersede' if spec['state']=='superseded' else 'revise',
                     target=helper.h.ExistingMemoryTarget(previous.memory_id,previous.revision))
+                # The projection cell admits the sealed canary evidence id itself, so the
+                # forbidden identifier really exists in the database behind the recalled item.
+                evidence_id=(recipe['projection_canary']['evidence_ids'][0]
+                             if recipe['family']=='projection' else f'evidence-case-{ordinal+1}')
                 previous=await case.seed(spec,operation_id=f'create-{ordinal+1}',
-                    evidence_id=f'evidence-case-{ordinal+1}',**kwargs)
+                    evidence_id=evidence_id,**kwargs)
             if prospective.supported(recipe):
                 observed['prospective_binding']=await prospective.bind(case,recipe,previous)
             procedure = load('typed_recall_procedure_cases')

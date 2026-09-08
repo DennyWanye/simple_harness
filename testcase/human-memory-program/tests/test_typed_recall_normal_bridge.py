@@ -307,3 +307,51 @@ async def test_selected_source_batch_does_not_set_up_other_family(tmp_path,monke
         candidate_identity={'memory':{'wheel_path':str(wheel)}},cell_ids=[family])
     rows=await source.execute_source(request,tmp_path)
     assert calls==[family] and rows[0]['cell_id']==family
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('kind',['semantic','episode','procedure','prospective'])
+async def test_minimal_projection_canary_is_planted_and_never_leaks(tmp_path,kind):
+    """The four sealed minimal-projection cells, with independent counterexamples.
+
+    The canary is real: the sealed evidence id is admitted, the sealed conflict_status is the
+    mutation argument and the sealed classification is the privacy class. The oracle must accept
+    only when the projected payload is exactly the sealed abstract payload under the declared
+    map, and must reject if any canary key/value leaks, if a strict payload stops refusing a
+    canary key, or if the planted evidence/classification is not the sealed one.
+    """
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    recipe=next(r for r in load(ROOT/'runners/typed_recall_normal_inputs.py').recipes(fixture)
+                if r['cell_id']=='selection-budget/projection:'+kind)
+    sealed=next(r for r in fixture['minimal_projection_oracle'] if r['memory_type']==kind)
+    canary={k:v for k,v in sealed['source_record'].items() if k not in sealed['allowed_payload_fields']}
+    assert recipe['projection_canary']==canary and recipe['privacy']==canary['classification']
+    result=(await load(ROOT/'adapters/typed_recall_normal_cases.py').run_cases([recipe],tmp_path))[0]
+    assert 'exception' not in result['observations'],result['observations'].get('exception')
+    oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
+    judged=oracle.assess_normal(fixture,result)
+    assert judged['status']=='PASS',judged
+    # The forbidden identifier really exists behind the item, only ever as a manifest hash.
+    observations=result['observations']
+    assert observations['sources'][-1]['evidence_ids']==canary['evidence_ids']
+    item=observations['recalls'][0]['execution']['result']['items'][0]
+    assert item['evidence_manifest_hash']==oracle.hash_json(sorted(canary['evidence_ids']))
+    assert 'secret-evidence' not in oracle.canonical(item['public_payload']).decode()
+    for attack in ('leak_key','leak_value','payload_shifted','probe_accepted','probe_missing',
+                   'cross_scope','wrong_evidence','wrong_classification'):
+        row=copy.deepcopy(result);o=row['observations']
+        payload=o['recalls'][0]['execution']['result']['items'][0]
+        if attack=='leak_key':payload['public_payload']['classification']=canary['classification']
+        elif attack=='leak_value':
+            key=sorted(payload['public_payload'])[0]
+            payload['public_payload'][key]=canary['source_ref']
+        elif attack=='payload_shifted':
+            key=sorted(payload['public_payload'])[0]
+            payload['public_payload'][key]='forged'
+        elif attack=='probe_accepted':
+            o['projection_canary']['fields']['extra_typed_field']={'constructed':True}
+        elif attack=='probe_missing':o.pop('projection_canary')
+        elif attack=='cross_scope':payload['cross_scope']=True
+        elif attack=='wrong_evidence':o['sources'][-1]['evidence_ids']=['other-evidence']
+        else:payload['effective_privacy_class']='personal'
+        assert oracle.assess_normal(fixture,row)['status']=='FAIL',attack

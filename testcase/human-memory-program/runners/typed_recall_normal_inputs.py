@@ -41,7 +41,18 @@ def recipes(fixture):
         add(f"eligibility/attribute:{row['recipient']}:{row['attribute']}", 'attribute',seed(),
             recipient=row['recipient'],purpose='task_execution',privacy=row['privacy'],attributes=[row['attribute']])
     for kind in ('semantic','episode','procedure','prospective'):
-        add('selection-budget/projection:'+kind, 'projection',dict(memory_type=kind,payload=profiles[kind]),privacy='SENSITIVE')
+        row = next(r for r in fixture['minimal_projection_oracle'] if r['memory_type']==kind)
+        # The frozen source_record keys that are NOT in allowed_payload_fields are the sealed
+        # canary. Every one of them is carried as a real construction input here (never as an
+        # expectation): the evidence id is admitted for real, classification becomes the
+        # requested privacy class, conflict_status is the mutation argument, and source_ref /
+        # cross_scope / extra_typed_field are the three the strict public contract places
+        # outside the typed payload altogether. The parent oracle owns the acceptance.
+        canary = {k: copy.deepcopy(v) for k, v in row['source_record'].items()
+                  if k not in row['allowed_payload_fields']}
+        add('selection-budget/projection:'+kind, 'projection',
+            dict(memory_type=kind,payload=profiles[kind],conflict_status=canary['conflict_status']),
+            privacy=canary['classification'],projection_canary=canary)
     for row in fixture['budget_oracle']['literal_cases']:
         if row['id'].startswith('semantic-'):
             payload = json.loads(row['canonical_json'])[0]['payload']

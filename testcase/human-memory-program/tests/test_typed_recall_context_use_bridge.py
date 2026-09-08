@@ -54,6 +54,37 @@ class PublicContextUseTests(unittest.IsolatedAsyncioTestCase):
             elif attack=='page_request':o['uses']['first']['pages'][0]['request']['max_items']=2
             else:o['uses']['first']['fragments'][0]['fragment']['byte_estimate']+=1
             self.assertEqual(oracle.assess_cell(fixture,row)['status'],'FAIL',attack)
+        continuation=next(r for r in rows if r['cell_id']=='current-use/context:new-continuation')
+        probes=continuation['observations']['continuation']
+        self.assertEqual(probes['same_attempt']['exception'],
+                         {'type':'MemoryIdempotencyConflict','reason':'RECALL_CONTEXT_USE_IDEMPOTENCY_CONFLICT'})
+        self.assertEqual(probes['fresh_attempt']['exception'],
+                         {'type':'MemoryValidationError','reason':'typed_recall_context_use_invocation_binding_invalid'})
+        self.assertIn('receipt',probes['control'])
+        for attack in ('same_attempt_accepted','fresh_attempt_accepted','control_refused','control_turn_changed',
+                       'probe_turn_unchanged','shared_attempt','sealed_validation_reason','missing_probe'):
+            row=copy.deepcopy(continuation);o=row['observations']
+            if attack=='same_attempt_accepted':
+                o['continuation']['same_attempt'].pop('exception')
+                o['continuation']['same_attempt']['receipt']=copy.deepcopy(o['uses']['first']['receipt'])
+                o['continuation']['same_attempt']['receipt_hash']=o['uses']['first']['receipt_hash']
+            elif attack=='fresh_attempt_accepted':
+                o['continuation']['fresh_attempt']['exception']={'type':'MemoryValidationError','reason':'RECALL_AUTHORITY_STALE'}
+            elif attack=='control_refused':
+                o['continuation']['control'].pop('receipt')
+            elif attack=='control_turn_changed':
+                o['continuation']['control']['request']['turn_id']='continuation-2'
+            elif attack=='probe_turn_unchanged':
+                o['continuation']['fresh_attempt']['request']['turn_id']=o['initial']['context']['turn_id']
+            elif attack=='shared_attempt':
+                o['continuation']['control']['request']['provider_attempt_id']=\
+                    o['continuation']['fresh_attempt']['request']['provider_attempt_id']
+            elif attack=='sealed_validation_reason':
+                o['receipt_validation']['different_continuation']['exception']['reason']='unrelated rejection'
+            else:
+                o['continuation'].pop('fresh_attempt')
+            self.assertEqual(oracle.assess_cell(fixture,row)['status'],'FAIL',attack)
+
         wrong=next(r for r in rows if r['cell_id']=='current-use/context:wrong-snapshot')
         for attack in ('dto_reason','valid_attack_input','valid_attack_accepted','stale_instead_of_snapshot','wrong_conflict_reason'):
             row=copy.deepcopy(wrong);o=row['observations']

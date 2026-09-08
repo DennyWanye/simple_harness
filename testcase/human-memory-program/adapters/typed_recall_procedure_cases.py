@@ -26,7 +26,9 @@ def supported(recipe):
     # fingerprint. Non-explicit epistemic Procedures only exist publicly as draft (Memory refuses
     # to activate them on create); their draft head still receives a real snapshot.
     seed = recipe['seed']
-    return (recipe['family'] in {'lifecycle', 'epistemic', 'procedure_applicability'} and seed['memory_type'] == 'procedure'
+    # 'projection' reuses the same binding: the minimal-projection cell needs a real applicability
+    # snapshot before an active Procedure head can be recalled at all.
+    return (recipe['family'] in {'lifecycle', 'epistemic', 'procedure_applicability', 'projection'} and seed['memory_type'] == 'procedure'
         and seed.get('state', 'active') in SNAPSHOT_STATES
         and (seed.get('epistemic', 'explicit_user') == 'explicit_user' or seed.get('state') == 'draft'))
 

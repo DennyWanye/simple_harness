@@ -22,7 +22,7 @@ def check(observed, recipe, check_admitted_span):
     states = {'draft', 'eligible', 'active', 'reinforced', 'revised', 'inapplicable', 'superseded'}
     if (seed['memory_type'] != 'procedure' or seed.get('state', 'active') not in states
             or (seed.get('epistemic', 'explicit_user') != 'explicit_user' and seed.get('state') != 'draft')
-            or recipe['family'] not in {'lifecycle', 'epistemic', 'procedure_applicability'}):
+            or recipe['family'] not in {'lifecycle', 'epistemic', 'procedure_applicability', 'projection'}):
         raise ValueError('procedure proof outside supported input scope')
     raw = seed['payload']['applicability']
     schema = {'type': 'object', 'properties': {}, 'additionalProperties': False}

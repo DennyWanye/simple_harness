@@ -526,6 +526,98 @@ def normal_projection(spec):
     return payload
 
 
+def _string_leaves(value):
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [leaf for item in value for leaf in _string_leaves(item)]
+    if isinstance(value, dict):
+        return [leaf for item in value.values() for leaf in _string_leaves(item)]
+    return []
+
+
+def check_projection_canary(fixture, recipe, observed):
+    """Sealed minimal-projection obligation, verified through real public operations.
+
+    The sealed source_record is deliberately larger than allowed_payload_fields. Its extra keys
+    split into two halves and BOTH are witnessed here, without rewriting a single sealed byte:
+
+      * plantable half - the evidence id is really admitted and really bound to the recalled
+        item (only ever as a manifest hash), classification is the requested privacy class and
+        conflict_status is the real mutation argument. The obligation is that none of the three
+        reaches the public payload.
+      * strictly unrepresentable half - source_ref, cross_scope and extra_typed_field cannot
+        even enter a typed payload: the frozen Harness DTOs reject an exact-key superset. "Must
+        be stripped" therefore holds in a strictly stronger form on this contract, and the
+        witness is the parser refusal, not a rewritten fixture.
+
+    cross_scope additionally lives at item level in the public contract (item['cross_scope']),
+    not inside the payload, so "not in allowed_payload_fields" is satisfied by the public field
+    layout itself; both facts are asserted.
+
+    The projected bytes are tied back to the sealed row through the sealed abstract payload:
+    normal_projection() is the declared abstract->public map (episode occurred_interval ->
+    occurred_start/occurred_end, procedure applicability dict -> tool@version, prospective
+    trigger -> typed trigger, semantic qualifiers -> ordered container), so the public payload
+    must equal normal_projection(sealed payload) exactly, and sha256(canonical(sealed payload))
+    must still be the sealed payload_hash. No hash is re-sealed from an observation.
+    """
+    kind = recipe['seed']['memory_type']
+    sealed = next(r for r in fixture['minimal_projection_oracle'] if r['memory_type'] == kind)
+    canary = {k: v for k, v in sealed['source_record'].items()
+              if k not in sealed['allowed_payload_fields']}
+    if recipe['projection_canary'] != canary or not canary:
+        raise ValueError('projection canary input differs from the sealed source record')
+    if set(sealed['payload']) != set(sealed['allowed_payload_fields']):
+        raise ValueError('sealed projection payload is not exactly the allowed field set')
+    if hash_json(sealed['payload']) != sealed['payload_hash']:
+        raise ValueError('sealed projection payload no longer hashes to the sealed payload_hash')
+    expected = normal_projection({'memory_type': kind, 'payload': copy.deepcopy(sealed['payload'])})
+    probes = observed.get('projection_canary') or {}
+    if probes.get('clean_accepted') is not True or set(probes.get('fields', {})) != set(canary):
+        raise ValueError('strict payload canary probe missing or clean wire refused')
+    for key, probe in probes['fields'].items():
+        message = probes['payload_class'] + " fields differ; missing=[], extra=['" + key + "']"
+        if probe.get('constructed') is not False or probe['exception'] != {
+                'type': 'ValueError', 'reason': message}:
+            raise ValueError('strict typed payload admitted the sealed canary key ' + key)
+    source = observed['sources'][-1]
+    operation = next(event['plan']['operations'][0] for event in observed['calls']
+                     if event['call'] == 'apply_memory_mutation_plan'
+                     and event['plan']['plan_id'] == source['receipt']['plan_id'])
+    if (source['evidence_ids'] != canary['evidence_ids'] or source['evidence_id'] != canary['evidence_ids'][0]
+            or operation['conflict_status'] != canary['conflict_status']
+            or operation['proposed_privacy_class'] != canary['classification'].lower()):
+        raise ValueError('planted canary evidence/conflict/classification differs from the sealed record')
+    forbidden = sorted({leaf for value in canary.values() for leaf in _string_leaves(value)})
+    for recall in observed['recalls']:
+        items = recall['execution']['result']['items']
+        if len(items) != 1:
+            raise ValueError('minimal projection needs exactly one recalled item')
+        item = items[0]
+        payload = item['public_payload']
+        if payload != expected or set(payload) != set(expected):
+            raise ValueError('public projection differs from the sealed payload under the declared map')
+        if set(payload) & set(canary):
+            raise ValueError('public projection leaked a sealed canary key')
+        blob = canonical(payload).decode()
+        for value in forbidden:
+            if value in blob:
+                raise ValueError('public projection leaked the sealed canary value ' + value)
+        if 'cross_scope' in payload or item['cross_scope'] is not False or item['source_task_scope_ids']:
+            raise ValueError('cross_scope is not carried at item level outside the payload')
+        if item['evidence_manifest_hash'] != hash_json(sorted(canary['evidence_ids'])):
+            raise ValueError('recalled item does not bind exactly the planted canary evidence manifest')
+        if item['effective_privacy_class'] != canary['classification'].lower():
+            raise ValueError('recalled item classification differs from the sealed canary')
+        if item['selected_item']['source_ref'] != operation.get('memory_id', item['selected_item']['source_ref']):
+            raise ValueError('recalled item source_ref is not the real memory identity')
+    return ['sealed canary evidence id admitted for real and reachable only as a manifest hash',
+            'strict typed payload refuses every sealed canary key by exact-key parity',
+            'public projection equals the sealed abstract payload under the declared map, sealed payload_hash re-derived',
+            'cross_scope carried at item level, zero canary key or value inside the payload']
+
+
 def actual_lifecycle(spec):
     if spec['memory_type']=='procedure' and spec.get('state')=='eligible':
         return 'eligible_for_activation'
@@ -578,10 +670,6 @@ def assess_normal(fixture, cell):
             # ELIGIBLE_WITH_APPLICABILITY needs the real observation promotion draft->active; only
             # the legal draft creation plus applicability snapshot is executed here.
             blockers.append('OBSERVED_PROCEDURE_ACTIVATION_PROMOTION_PATH_NOT_EXECUTED')
-        if recipe['family']=='projection':
-            blockers.append('FULL_SOURCE_RECORD_CANARY_AND_CROSS_SCOPE_SETUP_NOT_ESTABLISHED')
-            if recipe['seed']['memory_type']=='episode':
-                blockers.append('ORIGINAL_EPISODE_OCCURRED_INTERVAL_DIFFERS_FROM_PUBLIC_PROJECTION')
         if not observed['sources'] or len(observed['recalls']) != (2 if recipe['family']=='budget' else 1):
             raise ValueError('missing actual source or recall')
         source=observed['sources'][-1]
@@ -707,6 +795,8 @@ def assess_normal(fixture, cell):
                 if value['degradation_codes']!=codes:
                     raise ValueError('ordered vector degradation reason differs')
                 blockers.append('PUBLIC_EXECUTED_LANE_WITNESS_UNAVAILABLE')
+        if recipe['family']=='projection':
+            checks += check_projection_canary(fixture,recipe,observed)
         checks += ['original eligibility/whole-item selection assertions','independent full source/projection/evidence/rank bindings',
                    'full public hash and result identity bindings','actual durable exact replay with zero candidate reads']
         return dict(status='BLOCKED' if blockers else 'PASS',reason=';'.join(sorted(set(blockers))),business_assertions=checks)
@@ -1037,6 +1127,61 @@ def check_admitted_span(observed,recipe,span,eid,prefix):
     return eh
 
 
+def check_page_zero_read(fixture,o,name,value,checks):
+    """Sealed candidate_query_started=false for every page call, witnessed by invariance.
+
+    Memory attaches a TypedRecallRejectionV1 (the per-invocation candidate-read counter) only to
+    execute_typed_recall, so there is no direct counter on the page seam. The obligation is
+    nevertheless decidable on the public contract, and in a form that a counter could not give:
+    page_typed_recall_result is served from the durable typed_recall_results row alone, so if it
+    read candidates its answer would have to move when the candidate layer's answer moves.
+
+    In one database, at the same clock: a real recall returns the seeded memory (1 item), the
+    memory is really suppressed, the same real recall now returns nothing (0 items, one real
+    candidate read each time), and every page call of this batch is then replayed byte for byte
+    at its own clock. Not one byte moves - successful page, budget refusal, coordinate refusal,
+    binding refusal and expiry refusal alike - while the durable result still binds exactly the
+    suppressed memory. A candidate read cannot have happened.
+    """
+    sealed = next((row for row in fixture['result_page_cases'] + fixture['source_binding_cases']
+                   if row['id'] == name), None)
+    if sealed is None or sealed.get('candidate_query_started') is not False:
+        raise ValueError('sealed page row does not carry the candidate_query_started obligation')
+    if sealed['payload_count'] != (len(o['returned']['bindings']) if 'returned' in o else 0):
+        raise ValueError('sealed page payload count differs from the actual page content')
+    witness = o.get('zero_read_witness') or {}
+    if set(witness) != {'control_before', 'suppression', 'control_after', 'replays'}:
+        raise ValueError('page zero-read witness missing')
+    memory_id = witness['suppression']['memory_id']
+    items = value['result']['items']
+    if len(items) != 1 or items[0]['selected_item']['source_ref'] != memory_id:
+        raise ValueError('the durable result does not bind exactly the memory that gets suppressed')
+    decision = witness['suppression']['decision']
+    if (witness['suppression']['request']['scope_ref'] != memory_id
+            or witness['suppression']['request']['scope_kind'] != 'memory'
+            or decision['scope_ref'] != memory_id or decision['action'] != 'directive'):
+        raise ValueError('zero-read witness did not really suppress the bound memory')
+    for label, expected_items in (('control_before', 1), ('control_after', 0)):
+        control = witness[label]
+        check_execution_wire(control['execution'], control['context'], control['plan'])
+        wire = control['execution']
+        if (len(wire['result']['items']) != expected_items
+                or wire['candidate_query_count'] != 1 or wire['candidate_query_started'] is not True):
+            raise ValueError('zero-read control did not perform exactly one real candidate read: ' + label)
+    if witness['control_before']['execution']['result']['items'][0]['selected_item']['source_ref'] != memory_id:
+        raise ValueError('zero-read control before suppression did not return the bound memory')
+    if witness['control_after']['execution']['decision']['outcome'] != 'no_recall':
+        raise ValueError('suppression did not remove the memory from the candidate layer')
+    replay = (witness['replays'] or {}).get(name)
+    if replay is None:
+        raise ValueError('page call was not replayed after suppression')
+    before = {k: v for k, v in o.items() if k in {'returned', 'exception'}}
+    if replay != before or not before:
+        raise ValueError('page bytes moved after the candidate layer changed; page read candidates')
+    checks.append('page bytes byte-identical across a real 1->0 change of the candidate layer: '
+                  'the sealed zero candidate read holds for this page call')
+
+
 def assess_return(fixture,cell):
     o=cell['observations'];name=cell['cell_id'].split('/',1)[1];checks=[]
     try:
@@ -1098,9 +1243,8 @@ def assess_return(fixture,cell):
                 if raw!=expected:raise ValueError('discriminant attack input differs from the real selected item plus frozen mutation')
             checks.append('Memory never invoked: zero candidate reads by construction, exact frozen parser input')
             return dict(status='PASS',reason='',business_assertions=checks)
-        return dict(status='BLOCKED',reason='PUBLIC_WITNESS_UNAVAILABLE:page_typed_recall_result rejections carry no per-invocation '
-            'candidate-read witness (TypedRecallRejectionV1 is attached only by execute_typed_recall); original candidate_query_started=false unproven',
-            business_assertions=checks)
+        check_page_zero_read(fixture,o,name,value,checks)
+        return dict(status='PASS',reason='',business_assertions=checks)
     except (ValueError,KeyError,TypeError,IndexError) as exc:
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
 
@@ -1286,7 +1430,9 @@ def check_action_grant(observed,plan):
 
 
 def assess_context_use(fixture,cell):
-    if cell['observations'].get('executor_version') == 2:
+    # Executor 2 and later are the two-item current-use trace owned by the dedicated oracle
+    # (3 adds the continuation probes); version 1 below is the older product-loop shape.
+    if cell['observations'].get('executor_version', 0) >= 2:
         return _full_context_use_oracle().assess(fixture, cell, globals())
     o=cell['observations'];checks=[]
     try:
