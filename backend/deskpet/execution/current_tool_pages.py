@@ -9,6 +9,7 @@ import aiosqlite
 from deskpet.execution.primary_context_pages import (
     PrimaryContextPageUnavailable, _excerpt, _sha,
 )
+from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, redact_credential_shapes
 from deskpet.sdk_adapters.causal_groups import DEFAULT_LARGE_RESULT_BYTES
 
@@ -18,6 +19,16 @@ MARKER = "primary_settled_effect_v1"
 # complete public carriers under the original budget; never turn them into an
 # empty typed attestation or a generic content summary.
 CONTROL_TOOLS = frozenset({"context_route", "context_page_in", "task_scope_search", "task_scope_update"})
+# HM-AC-6 same-Run accumulation bound. History trimming only bounds *history*:
+# the current Run's own settled tool results all live in the single open causal
+# group, which is never trimmed, so 25 provider turns of small results grow the
+# request without limit (native HM-TO-A6 evidence: 29 same-Run tool messages,
+# 68 KiB, every one under the 16 KiB per-result threshold). Once this Run's own
+# non-control tool bodies exceed this share of effective_input_budget, the
+# OLDEST settled bodies travel as the same content-addressed
+# primary_settled_effect_v1 summary + context_page_in reference the >16 KiB rule
+# already produces, so the model can page any of them back byte-exactly.
+CURRENT_TOOL_BUDGET_DIVISOR = 4
 
 
 def _require(condition, code):
@@ -92,7 +103,17 @@ def read_effect_facts(uow, run_id, effect_id):
     return effect, head, invocation, request
 
 
-def source_content(facts):
+def source_content(facts, *, min_bytes=DEFAULT_LARGE_RESULT_BYTES):
+    """Rebuild one settled effect's exact public tool body plus its descriptor.
+
+    ``min_bytes`` is the *policy* gate that selects which settled results the
+    >16 KiB rule may page; it is not an integrity check. Integrity is the
+    descriptor: it is derived from public audit/effect facts only, and the
+    retained summary must equal ``summary(descriptor, content)`` byte for byte.
+    The same-Run accumulation bound pages smaller settled bodies, and
+    ``verify_request`` re-derives whatever the request actually retained, so
+    both pass ``min_bytes=0``.
+    """
     from simple_harness import thaw_json
     from simple_harness.execution.audit import audit_hash
     effect, head, parent, _ = facts
@@ -105,7 +126,7 @@ def source_content(facts):
     content = redact_credential_shapes(canonical_json(dict(outcome=result.outcome.value,
         value=thaw_json(result.value), error_code=result.error_code,
         public_message=result.public_message)))[0]
-    _require(len(content.encode()) > DEFAULT_LARGE_RESULT_BYTES, "source_not_large")
+    _require(len(content.encode()) > int(min_bytes), "source_not_large")
     descriptor = dict(run_id=effect.run_id.value, effect_id=effect.effect_id.value,
         effect_version=effect.version, result_hash=head.result_hash,
         provider_invocation_id=parent.invocation_id, provider_response_hash=audit_hash(thaw_json(parent.response_json)),
@@ -134,7 +155,8 @@ def verify_request(stack, run_id, messages):
         body = json.loads(message.content)
         claimed = body.get("source", {})
         _require(claimed.get("run_id") == run_id, "foreign_source")
-        descriptor, content = source_content(stack.read_primary_effect_page_facts(run_id, claimed.get("effect_id")))
+        descriptor, content = source_content(
+            stack.read_primary_effect_page_facts(run_id, claimed.get("effect_id")), min_bytes=0)
         _require(message.content == summary(descriptor, content)
                  and message.name == descriptor["tool_name"]
                  and message.call_id.value == descriptor["raw_call_id"], "summary_mismatch")
@@ -177,16 +199,39 @@ async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, argu
         next_reference_id=reference(descriptor, end) if end < descriptor["content_bytes"] else None)
 
 
+def _settled_tool_tokens(messages):
+    """Tokens this Run's own non-control settled tool bodies currently occupy.
+
+    Only the current Run's results are physically ``role=tool`` here: settled
+    history arrives as quoted ``role=user`` groups (``project_history_group``).
+    """
+    from deskpet.sdk_adapters.context_partitions import text_tokens
+    return sum(text_tokens(m.content) for m in messages
+               if m.role.value == "tool" and isinstance(m.content, str)
+               and m.name not in CONTROL_TOOLS)
+
+
+def current_tool_allowance(metadata):
+    """The current Run's share of the frozen effective input budget."""
+    from deskpet.sdk_adapters.context_authority import _resolve_window_tokens
+    from deskpet.sdk_adapters.context_partitions import PARTITION_CAPS, effective_input_budget
+    window = _resolve_window_tokens(metadata) if isinstance(metadata, Mapping) else None
+    # A missing window falls back to the smallest frozen tier — the same
+    # over-trim direction _plan_turn_messages already takes.
+    window = max(int(window) if window else 0, min(PARTITION_CAPS))
+    return effective_input_budget(window) // CURRENT_TOOL_BUDGET_DIVISOR
+
+
 class CurrentToolProjector:
     def __init__(self, path, stack_getter):
         self.path, self.stack_getter = path, stack_getter
 
     async def __call__(self, request, messages):
-        from simple_harness.contracts.messages import Message
-        from deskpet.sdk_adapters.composition import project_primary_transcript
         large = [m for m in messages if m.role.value == "tool"
                  and isinstance(m.content, str) and len(m.content.encode()) > DEFAULT_LARGE_RESULT_BYTES]
-        if not large:
+        settled = [m for m in messages if m.role.value == "tool"
+                   and isinstance(m.content, str) and m.name not in CONTROL_TOOLS]
+        if not large and not settled:
             return None
         pageable = [m for m in large if m.name not in CONTROL_TOOLS]
         stack = self.stack_getter()
@@ -204,6 +249,34 @@ class CurrentToolProjector:
             # A trusted Host lookup plus absence of primary admission selects
             # their existing planner, not a fabricated primary source grant.
             return None
+        allowance = current_tool_allowance(metadata)
+        over_bound = _settled_tool_tokens(messages) > allowance
+        if not large and not over_bound:
+            # Nothing to page: leave the existing generic planner untouched so
+            # this turn's request bytes stay exactly what they were before.
+            return None
+        try:
+            return await self._project(messages, stack=stack, run_id=run_id, rows=rows,
+                admission=admission, metadata=metadata, pageable=pageable,
+                over_bound=over_bound, allowance=allowance)
+        except (PrimaryContextPageUnavailable, PrimaryToolCausalityUnavailable):
+            if large:
+                # A >16 KiB result must never travel raw: this turn already
+                # reached here before the bound existed, so keep its original
+                # fail-closed behaviour untouched.
+                raise
+            # Accumulation-bound-only turn — a path that used to return early.
+            # Without public causal authority we cannot page anything, but the
+            # turn ran fine before, so leave it exactly as it was;
+            # _plan_turn_messages still fails closed on a genuine overflow.
+            return None
+
+    async def _project(self, messages, *, stack, run_id, rows, admission, metadata,
+                       pageable, over_bound, allowance):
+        from simple_harness.contracts.messages import Message
+        from deskpet.sdk_adapters.composition import project_primary_transcript
+        from deskpet.sdk_adapters.context_partitions import text_tokens
+
         _require(len(rows) == 1 and metadata.get("root_run_id") == rows[0]["host_run_id"], "host_run_missing")
         run = rows[0]
         current_text = admission.get("input", {}).get("text")
@@ -211,7 +284,7 @@ class CurrentToolProjector:
         _require(isinstance(current_text, str) and current_text and admitted_users
                  and admitted_users[-1] == current_text
                  and admission.get("turn", {}).get("text") == current_text, "current_input_missing")
-        if not pageable:
+        if not pageable and not over_bound:
             return messages  # real primary control carriers keep complete bytes
         transcript = project_primary_transcript(messages, current_text=current_text)
         sources = await stack.read_primary_tool_causal_sources(db_path=self.path, host_run_id=run["host_run_id"],
@@ -222,13 +295,48 @@ class CurrentToolProjector:
         anchor = anchors[-1]
         indices = [i for i in range(anchor, len(messages)) if messages[i].role.value != "system"]
         output = list(messages)
+
+        def replace(index, source, *, min_bytes):
+            """Swap one settled body for its content-addressed page summary."""
+            message = messages[index]
+            descriptor, content = source_content(
+                stack.read_primary_effect_page_facts(run_id, source["effect_id"]), min_bytes=min_bytes)
+            _require(transcript[source["item_ordinal"] - 1]["content"] == content, "transcript_mismatch")
+            body = summary(descriptor, content)
+            if len(body.encode()) >= len(content.encode()):
+                return 0  # a body smaller than its own summary saves nothing
+            output[index] = Message(message.role, body, name=message.name,
+                call_id=message.call_id, metadata={"source": MARKER})
+            return text_tokens(content) - text_tokens(body)
+
+        bounded = []
         for source in sources:
             index = indices[source["item_ordinal"] - 1]
             message = messages[index]
-            if message not in pageable:
+            if (message.role.value != "tool" or not isinstance(message.content, str)
+                    or message.name in CONTROL_TOOLS):
+                # Executable context/recall attestations keep their full bytes.
                 continue
-            descriptor, content = source_content(stack.read_primary_effect_page_facts(run_id, source["effect_id"]))
-            _require(transcript[source["item_ordinal"] - 1]["content"] == content, "transcript_mismatch")
-            output[index] = Message(message.role, summary(descriptor, content), name=message.name,
-                call_id=message.call_id, metadata={"source": MARKER})
+            if len(message.content.encode()) > DEFAULT_LARGE_RESULT_BYTES:
+                replace(index, source, min_bytes=DEFAULT_LARGE_RESULT_BYTES)
+            else:
+                bounded.append((index, source))
+        # Never the results of the newest provider turn: those are what the
+        # in-flight tool calls just produced and the model is still acting on.
+        # Only a settled *succeeded* effect has a pageable public body, so a
+        # failed/rejected/partial result simply keeps its own bytes instead of
+        # failing the whole Run.
+        newest = max((source["provider_turn_ordinal"] for _, source in bounded), default=0)
+        candidates = sorted(((index, source) for index, source in bounded
+                             if source["provider_turn_ordinal"] < newest
+                             and source["state"] == "succeeded"),
+                            key=lambda item: item[0])
+        carried = _settled_tool_tokens(output)
+        for index, source in candidates:
+            if carried <= allowance:
+                break
+            try:
+                carried -= replace(index, source, min_bytes=0)
+            except PrimaryContextPageUnavailable:
+                continue  # this body is not pageable; it keeps its own bytes
         return tuple(output)
