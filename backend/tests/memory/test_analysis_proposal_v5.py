@@ -6,7 +6,7 @@ import pytest
 from simple_harness import thaw_json
 
 from deskpet.memory import analysis_proposal as v3, analysis_proposal_v4 as v4
-from deskpet.memory import analysis_proposal_v5 as v5, analysis_protocol
+from deskpet.memory import analysis_proposal_v5 as v5, analysis_proposal_v5_1 as v5_1, analysis_protocol
 from tests.memory.test_procedure_adoption import (
     compilation, ADOPTION, REPORTED, UNCERTAIN,
     test_public_materialization_and_response_only_reopen_keep_persisted_protocol as replay,
@@ -31,7 +31,8 @@ def test_wire_schema_excludes_other_bodies_and_keeps_old_protocols():
     case = compilation()
     for protocol in (v3, v4, v5):
         assert analysis_protocol.protocol_for_request(_request(case, protocol)) is protocol
-    assert analysis_protocol.PROMPT_VERSION == "host-analysis-prompt/v5.1"
+    # v5.1 stays resolvable; the *current* protocol is asserted by its own version test.
+    assert analysis_protocol.protocol_for_request(_request(case, v5_1)) is v5_1
     assert "anyOf" not in v4.PROPOSAL_TOOL_SCHEMA["properties"]["operations"]["items"]
     assert "intent_kind" not in v3.PROPOSAL_TOOL_SCHEMA["properties"]["operations"]["items"]["properties"]["procedure"]["properties"]
 
