@@ -266,8 +266,10 @@ class TaskScopeSearchStore:
         query: str,
         limit: int = 20,
         cursor: str | None = None,
+        access: Mapping[str, str | None] | None = None,
     ) -> SearchResult:
         identifier(subject, "subject", 512)
+        access = _access_refs(access)
         allowed = tuple(sorted(set(allowed_scope_ids)))
         if len(allowed) > MAX_ALLOWED_SCOPES:
             raise TaskScopeSearchError("human_memory_search_allowset_too_large")
@@ -304,7 +306,7 @@ class TaskScopeSearchStore:
                 authorized_scopes = ()
         if not authorized_scopes:
             _decode_cursor(cursor, request_hash, canonical_hash([]))
-            return await self._record_search_receipt(subject, request_hash, (), None)
+            return await self._record_search_receipt(subject, request_hash, (), None, access)
         for scope_id in authorized_scopes:
             await self.rebuild_scope(scope_id)
         fts_query = _fts_query(query)
@@ -328,7 +330,7 @@ class TaskScopeSearchStore:
             await document_cursor.close()
             if not authorized_documents:
                 _decode_cursor(cursor, request_hash, source_set_hash)
-                return await self._record_search_receipt(subject, request_hash, (), None)
+                return await self._record_search_receipt(subject, request_hash, (), None, access)
             offset = _decode_cursor(cursor, request_hash, source_set_hash)
             placeholders = ",".join("?" for _ in authorized_documents)
             # Phase one above produces only authorized immutable document ids.
@@ -377,7 +379,7 @@ class TaskScopeSearchStore:
             if has_more
             else None
         )
-        return await self._record_search_receipt(subject, request_hash, candidates, next_cursor)
+        return await self._record_search_receipt(subject, request_hash, candidates, next_cursor, access)
 
     async def open_exact(
         self,
@@ -389,9 +391,11 @@ class TaskScopeSearchStore:
         live_probe: Mapping[str, object] | None = None,
         source_id: str | None = None,
         materialized_only: bool = False,
+        access: Mapping[str, str | None] | None = None,
     ) -> ExactOpenResult:
         identifier(subject, "subject", 512)
         identifier(task_scope_id, "task_scope_id", 512)
+        access = _access_refs(access)
         allowed = set(allowed_scope_ids)
         if task_scope_id not in allowed:
             raise TaskScopeSearchError("human_memory_permission_denied")
@@ -471,7 +475,7 @@ class TaskScopeSearchStore:
         }
         request_hash = canonical_hash(request)
         receipt_hash = await self._record_access_receipt(
-            "open", subject, request_hash, package_hash
+            "open", subject, request_hash, package_hash, access
         )
         return ExactOpenResult(
             task_scope_id,
@@ -489,6 +493,7 @@ class TaskScopeSearchStore:
         request_hash: str,
         candidates: tuple[SearchCandidate, ...],
         next_cursor: str | None,
+        access: Mapping[str, str | None],
     ) -> SearchResult:
         result_payload = {
             "candidates": [
@@ -504,19 +509,25 @@ class TaskScopeSearchStore:
         }
         result_hash = canonical_hash(result_payload)
         receipt_hash = await self._record_access_receipt(
-            "search", subject, request_hash, result_hash
+            "search", subject, request_hash, result_hash, access
         )
         return SearchResult(candidates, next_cursor, receipt_hash)
 
     async def _record_access_receipt(
-        self, operation: str, subject: str, request_hash: str, result_hash: str
+        self, operation: str, subject: str, request_hash: str, result_hash: str,
+        access: Mapping[str, str | None],
     ) -> str:
+        # schema_version 2 (G2): the receipt names the SDK effect/run that
+        # performed the access (null on the HUMAN channel), so every tool-path
+        # search/open reconciles one-to-one with its execution effect.
         receipt = {
-            "schema_version": 1,
+            "schema_version": 2,
             "operation": operation,
             "subject": subject,
             "request_hash": request_hash,
             "result_hash": result_hash,
+            "effect_id": access["effect_id"],
+            "sdk_run_id": access["sdk_run_id"],
         }
         receipt_hash = canonical_hash(receipt)
         async with self._connection() as db:
@@ -564,6 +575,23 @@ class TaskScopeSearchStore:
             await connection.execute("PRAGMA foreign_keys=ON")
             await connection.execute("PRAGMA busy_timeout=5000")
             yield connection
+
+
+def _access_refs(access: Mapping[str, str | None] | None) -> dict[str, str | None]:
+    """Optional SDK effect/run identity of the accessing tool call; HUMAN reads pass none."""
+    refs: dict[str, str | None] = {"effect_id": None, "sdk_run_id": None}
+    if access is None:
+        return refs
+    if not isinstance(access, Mapping) or set(access) - set(refs):
+        raise TaskScopeSearchError("human_memory_search_access_ref_invalid")
+    for key in refs:
+        value = access.get(key)
+        if value is not None:
+            identifier(value, key, 512)
+            refs[key] = str(value)
+    if (refs["effect_id"] is None) != (refs["sdk_run_id"] is None):
+        raise TaskScopeSearchError("human_memory_search_access_ref_invalid")
+    return refs
 
 
 _CJK_RUN = re.compile(r"[\u3400-\u9fff]+")

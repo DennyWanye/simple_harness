@@ -8460,6 +8460,11 @@ async def _build_product_sdk_runtime_stack(
         _state_db_path, stack_getter=lambda: _sdk_runtime_stack,
         policy_factory=_primary_history_policy,
     )
+    # G1: durable payload-free page-in issue/consume receipts in the audit sidecar.
+    from deskpet.operation_audit.page_in_receipts import ContextPageInReceiptLedger
+    context_page_store.receipt_ledger = ContextPageInReceiptLedger(
+        _state_db_path.with_name("operation-audit.db"), clock=clock,
+    )
     from deskpet.memory.procedure_recovery_schema import initialize_procedure_recovery_state_db
     from deskpet.sdk_adapters.procedure_use import procedure_use_registration
     from deskpet.sdk_adapters.procedure_discovery import procedure_discovery_registration

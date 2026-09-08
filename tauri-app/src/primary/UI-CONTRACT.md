@@ -40,6 +40,31 @@ are dropped and counted in `CognitiveSnapshot.skipped`; the panel renders the su
 rows plus a visible `role="alert"` notice. The 忘记 control lives only in this tab, so a
 single malformed row must never blank it.
 
+## Audit tab: memory records and Host run audit (S6 Task4 + G5/G6, 2026-09-08)
+
+The 「操作记录」 tab holds one explicit grant and never reads anything on its own. `primary.audit.open`
+happens only on the user's click; every page is a further click. Two independent read families live under
+that one grant:
+
+- `primary.audit.page` — the memory system's own OA1 families, unchanged, with the grant's `max_reads` budget.
+- `primary.audit.host.page` — Host-local run-audit rows, request `{primary_ref, audit_ref, page_action_id,
+  section, cursor_ref, target_ref}` with `section` in `runs` / `run_operations` / `memory_calls`.
+  `target_ref` is the job ref and is required for `run_operations` only; it must be absent for the other two.
+
+Host rows are payload-free: identities, closed status/error codes, hashes, counters and timestamps. No
+arguments, no results, no memory content. A row that carries anything outside the declared item shape fails
+the whole page (`响应未通过核对；本次结果尚未确认。`) and stays retryable under the same `page_action_id`.
+
+A Host section is its own stream: its own snapshot, cursor and read budget (`HOST_MAX_READS` = 32, mirrored in
+`auditRequests.ts`; a different `max_reads` echo fails the check). Host reads do not spend the memory-page
+budget. A stream never restarts inside a grant — the first read of a section sends `cursor_ref: null`, every
+later read sends the cursor the server returned, a `snapshot_hash` change or a `reads_used` skip fails the page.
+One `page_action_id` is one response: replaying the same action returns the saved response, the same action
+with a different input is `primary_audit_action_conflict`.
+
+Close, rebind, expiry and hiding the tab drop every Host page with the grant, exactly as they drop the memory
+page. Nothing is cached across grants, and no Host section is fetched to "warm up" a view.
+
 ## Handoff blocker and verification
 
 Unknown enqueue status belongs to the delivery across attempts. A later local send failure or explicit rejection cannot clear an earlier unknown delivery key; only its valid ACK or a verified owner change resolves it. A first definitely-unsent attempt still permits an edited draft. This uncertainty is local state, never an extra queue.enqueue wire field. Regression cases cover both retry failures and the first-unsent negative control.

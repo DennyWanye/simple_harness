@@ -38,6 +38,9 @@ def build_fixture(root: Path) -> Path:
         {**_head("effect", ref(5), "failed", operation_name="memory_forget"), "error_code_hash": "h"},
         _head("effect", ref(7), "succeeded", operation_name="context_page_in"),
         _head("effect", ref(8), "succeeded", operation_name="procedure_discover"),
+        _head("effect", ref(9), "succeeded", operation_name="task_scope_search"),
+        _head("effect", ref(10), "succeeded", operation_name="task_scope_search"),
+        {**_head("effect", ref(11), "failed", operation_name="context_page_in"), "error_code": "reference_stale"},
         {**_head("provider", ac.audit_reference("provider", "inv-1"), "succeeded"), "usage": {"total_tokens": 5}},
         {**_head("provider", ac.audit_reference("provider", "inv-2"), "succeeded"), "usage": {"total_tokens": 5}},
         {"kind": "runtime", "record_type": "boundary", "operation_id": "runtime:x", "operation_name": "context.no_recall", "state": "completed"},
@@ -64,6 +67,14 @@ def build_fixture(root: Path) -> Path:
         ])
         _table(db, "memory_call_findings", ["finding_id", "operation_ref"], [{"finding_id": "f-j2", "operation_ref": "memory-attempt:j2"}])
         _table(db, "preparation_audit_sources", ["source_ref", "source_status"], [{"source_ref": "t-1:th", "source_status": "verified"}])
+        _table(db, "context_page_in_receipts", ["receipt_id", "phase", "effect_id", "outcome"], [
+            {"receipt_id": "pr-issued", "phase": "issued", "effect_id": None, "outcome": "issued"},
+            {"receipt_id": "pr-7", "phase": "consumed", "effect_id": eff(7), "outcome": "ok"},
+            {"receipt_id": "pr-11", "phase": "denied", "effect_id": eff(11), "outcome": "reference_stale"},
+        ])
+        _table(db, "human_audit_host_deliveries", ["audit_ref", "action_id", "status", "section"], [
+            {"audit_ref": "g-1", "action_id": "a-1", "status": "saved", "section": "runs"},
+        ])
 
     with sqlite3.connect(data / "state.db") as db:
         _table(db, "foreground_terminal_receipts", ["terminal_receipt_id", "host_run_id", "sdk_run_id", "terminal_state", "receipt_hash"], [
@@ -77,7 +88,7 @@ def build_fixture(root: Path) -> Path:
             {"event_id": "ev-plan", "source_event_id": "mutation-plan:p1", "event_kind": "mutation.plan"},
             {"event_id": "ev1", "source_event_id": "execution:effect:effect-1", "event_kind": "harness.tool_invocation"},
         ])
-        _table(db, "primary_effect_identities", ["effect_id"], [{"effect_id": eff(i)} for i in (1, 2, 3, 4, 5, 6, 7, 8)])
+        _table(db, "primary_effect_identities", ["effect_id"], [{"effect_id": eff(i)} for i in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)])
         _table(db, "sdk_provider_attempt_audit", ["invocation_id", "state", "usage_available", "total_tokens"], [{"invocation_id": "inv-1", "state": "succeeded", "usage_available": 1, "total_tokens": 5}])
         _table(db, "run_context_snapshot_receipts", ["sdk_run_id", "expected_request_fingerprint"], [{"sdk_run_id": RUN, "expected_request_fingerprint": "fp-1"}, {"sdk_run_id": RUN, "expected_request_fingerprint": "fp-unsent"}])
         _table(db, "context_route_decisions", ["decision_id", "sdk_run_id", "route", "origin", "task_scope_id", "effect_id"], [
@@ -86,7 +97,11 @@ def build_fixture(root: Path) -> Path:
             {"decision_id": "d-3", "sdk_run_id": RUN2, "route": "direct_standalone", "origin": "no_recall", "task_scope_id": None, "effect_id": "no-recall:y"},
         ])
         _table(db, "context_route_tool_invocations", ["decision_id", "effect_id", "verdict"], [{"decision_id": "d-1", "effect_id": eff(3), "verdict": "accepted"}])
-        _table(db, "task_scope_search_access_receipts", ["operation"], [{"operation": "search"}, {"operation": "open"}])
+        _table(db, "task_scope_search_access_receipts", ["operation", "receipt_json"], [
+            {"operation": "search", "receipt_json": json.dumps({"schema_version": 2, "operation": "search", "effect_id": eff(9), "sdk_run_id": RUN})},
+            {"operation": "open", "receipt_json": json.dumps({"schema_version": 2, "operation": "open", "effect_id": eff(9), "sdk_run_id": RUN})},
+            {"operation": "search", "receipt_json": json.dumps({"schema_version": 2, "operation": "search", "effect_id": None, "sdk_run_id": None})},
+        ])
         _table(db, "task_scope_mutation_attempts", ["attempt_id", "plan_id", "result"], [{"attempt_id": "a-1", "plan_id": "p1", "result": "applied"}, {"attempt_id": "a-2", "plan_id": "p2", "result": "applied"}])
         _table(db, "task_scope_mutation_decisions", ["plan_id", "outcome"], [{"plan_id": "p1", "outcome": "mutate"}])
         _table(db, "task_scope_execution_ingest_receipts", ["receipt_id", "event_id", "evidence_kind"], [{"receipt_id": "i-1", "event_id": "ev1", "evidence_kind": "tool"}, {"receipt_id": "i-2", "event_id": "ev-missing", "evidence_kind": "tool"}])
@@ -166,6 +181,9 @@ def build_fixture(root: Path) -> Path:
             {"effect_id": eff(6), "run_id": RUN, "tool_name": "tool_activate", "state": "succeeded"},
             {"effect_id": eff(7), "run_id": RUN, "tool_name": "context_page_in", "state": "succeeded"},
             {"effect_id": eff(8), "run_id": RUN, "tool_name": "procedure_discover", "state": "succeeded"},
+            {"effect_id": eff(9), "run_id": RUN, "tool_name": "task_scope_search", "state": "succeeded"},
+            {"effect_id": eff(10), "run_id": RUN, "tool_name": "task_scope_search", "state": "succeeded"},
+            {"effect_id": eff(11), "run_id": RUN, "tool_name": "context_page_in", "state": "failed"},
         ])
         _table(db, "provider_invocations", ["invocation_id", "run_id", "state", "request_fingerprint"], [
             {"invocation_id": "inv-1", "run_id": RUN, "state": "succeeded", "request_fingerprint": "fp-1"},
@@ -222,7 +240,7 @@ def test_synthetic_evidence_per_kind_coverage(evidence, tmp_path):
     assert (by["run_terminal"].observed, by["run_terminal"].audited) == (2, 1)
     assert "status=unavailable" in by["run_terminal"].missing[0]
 
-    assert (by["tool_effect"].observed, by["tool_effect"].audited) == (8, 7)
+    assert (by["tool_effect"].observed, by["tool_effect"].audited) == (11, 10)
     assert "effect-6" in by["tool_effect"].missing[0] and "审计页无对应 head" in by["tool_effect"].missing[0]
 
     assert (by["provider_attempt"].observed, by["provider_attempt"].audited) == (2, 1)
@@ -234,8 +252,15 @@ def test_synthetic_evidence_per_kind_coverage(evidence, tmp_path):
     assert (by["route_decision"].observed, by["route_decision"].audited) == (3, 2)
     assert "d-3" in by["route_decision"].missing[0]
 
-    assert by["context_page_in"].status == "partial" and by["context_page_in"].audited == 1
-    assert by["task_scope_search_open"].observed == 0
+    # G1: consumed/denied receipts join by effect; issued rows are counted only.
+    page_in = by["context_page_in"]
+    assert page_in.status == "covered" and (page_in.observed, page_in.audited) == (2, 2)
+    assert any("issued=1" in n and "=2" in n for n in page_in.notes)
+    # G2: schema_version 2 receipts join by effect; effect-10 has none.
+    search = by["task_scope_search_open"]
+    assert (search.observed, search.audited, search.status) == (2, 1, "gap")
+    assert "effect-10" in search.missing[0] and "schema_version 2 回执" in search.missing[0]
+    assert any("按 effect 关联 1 个" in n for n in search.notes)
     assert (by["task_scope_mutation"].observed, by["task_scope_mutation"].audited) == (2, 1)
     assert (by["taskscope_event_ledger"].observed, by["taskscope_event_ledger"].audited) == (2, 1)
 
@@ -270,6 +295,10 @@ def test_synthetic_evidence_per_kind_coverage(evidence, tmp_path):
     assert report.separation.hits == ["state.leaky_projection.body"]
     assert report.surfaces["primary.audit.page(OA1)"]["exercised"] is False
     assert report.surfaces["host.audit_pages"]["jobs_by_status"] == {"enumerated": 1, "unavailable": 1}
+    assert report.surfaces["host.audit_pages"]["ui_operation"].startswith("primary.audit.host.page")
+    assert report.surfaces["host.audit_pages"]["exercised"] is True and report.surfaces["host.audit_pages"]["host_deliveries"] == 1
+    assert report.surfaces["host.memory_call_attempts"]["exercised"] is False
+    assert report.surfaces["host.context_page_in_receipts"]["by_phase"] == {"issued": 1, "consumed": 1, "denied": 1}
     assert "audit:human_audit_grants" in report.missing_tables
     summary = report.summary()
     assert "memory_analysis_apply" in summary["gap_kinds"] and summary["separation"] == "leak"

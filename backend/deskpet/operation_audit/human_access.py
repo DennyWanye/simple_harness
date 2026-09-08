@@ -25,6 +25,15 @@ from deskpet.operation_audit.store import canonical, digest
 MAX_READS = 32
 PAGE_LIMIT = 100
 TTL = 300
+# Host-side run-audit sections (G6). Reads are local operation-audit.db rows,
+# never an SDK charge, so one transaction freezes request+read+save together.
+HOST_MAX_READS = 32
+HOST_SECTIONS = {'runs': 20, 'run_operations': 100, 'memory_calls': 50}
+_OPERATION_FIELDS = (
+    'operation_id', 'kind', 'record_type', 'operation_name', 'state', 'error_code',
+    'created_at', 'settled_at', 'handoff_to_settlement_seconds', 'parent_operation_id',
+    'effect_id', 'provider_invocation_id', 'request_hash', 'result_hash', 'source_hash',
+)
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS human_audit_grants (
  audit_ref TEXT PRIMARY KEY, lease_ref TEXT NOT NULL, action_id TEXT NOT NULL,
@@ -37,6 +46,17 @@ CREATE TABLE IF NOT EXISTS human_audit_deliveries (
  audit_ref TEXT NOT NULL, action_id TEXT NOT NULL, input_hash TEXT NOT NULL,
  status TEXT NOT NULL, started_at REAL NOT NULL, response_json TEXT, response_hash TEXT,
  page_hash TEXT, access_event_hash TEXT,
+ PRIMARY KEY(audit_ref,action_id)
+);
+CREATE TABLE IF NOT EXISTS human_audit_host_streams (
+ audit_ref TEXT NOT NULL, stream_key TEXT NOT NULL, section TEXT NOT NULL, target_ref TEXT,
+ snapshot_at REAL NOT NULL, snapshot_hash TEXT NOT NULL, cursor_ref TEXT, keyset_json TEXT,
+ reads INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(audit_ref,stream_key)
+);
+CREATE TABLE IF NOT EXISTS human_audit_host_deliveries (
+ audit_ref TEXT NOT NULL, action_id TEXT NOT NULL, input_hash TEXT NOT NULL,
+ status TEXT NOT NULL, started_at REAL NOT NULL, section TEXT NOT NULL,
+ response_json TEXT, response_hash TEXT, page_hash TEXT,
  PRIMARY KEY(audit_ref,action_id)
 );
 """
@@ -313,6 +333,169 @@ class HumanAuditAccess:
         if len(canonical(response).encode()) > 256*1024:
             raise HumanAuditError('primary_audit_response_too_large')
         return response
+
+    async def host_page(self, *, principal, auth, primary_ref, audit_ref, page_action_id,
+                        section, cursor_ref, target_ref):
+        """Paginate Host run-audit pages / memory-call journal under the same grant.
+
+        Same durable logical delivery rules as ``page``: one action key is one
+        response; a changed input under the same key conflicts; a stream never
+        restarts inside a grant (a new explicit open selects a new snapshot).
+        Rows are payload-free hashes/codes/timestamps; SDK payloads never appear.
+        """
+        identifier(page_action_id)
+        if section not in HOST_SECTIONS:
+            raise HumanAuditError('primary_audit_request_invalid')
+        if cursor_ref is not None:
+            identifier(cursor_ref)
+        if (target_ref is None) != (section != 'run_operations'):
+            raise HumanAuditError('primary_audit_request_invalid')
+        if target_ref is not None:
+            identifier(target_ref)
+        grant = self._grant(auth=auth, primary_ref=primary_ref, audit_ref=audit_ref)
+        if principal.actor_id != grant.subject:
+            raise HumanAuditError('primary_audit_subject_mismatch')
+        stream_key = digest(['host-audit-stream/v1', section, target_ref])
+        query_hash = digest([audit_ref, primary_ref, section, target_ref, cursor_ref])
+        async with grant.lock:
+            async with human_memory_request_boundary():
+                self._check(grant)
+                with self._db() as db:
+                    row = db.execute('SELECT status FROM human_audit_grants WHERE audit_ref=?', (audit_ref,)).fetchone()
+                    delivery = db.execute('SELECT * FROM human_audit_host_deliveries WHERE audit_ref=? AND action_id=?',
+                                          (audit_ref, page_action_id)).fetchone()
+                    if delivery:
+                        if delivery['input_hash'] != query_hash:
+                            raise HumanAuditError('primary_audit_action_conflict')
+                        if delivery['status'] != 'saved':
+                            raise HumanAuditError('primary_audit_delivery_unknown')
+                        response = json.loads(delivery['response_json'])
+                        if digest(response) != delivery['response_hash']:
+                            raise HumanAuditError('primary_audit_delivery_corrupt')
+                        return response
+                    if row is None or row['status'] != 'active':
+                        raise HumanAuditError('primary_audit_delivery_unknown')
+                    stream = db.execute('SELECT * FROM human_audit_host_streams WHERE audit_ref=? AND stream_key=?',
+                                        (audit_ref, stream_key)).fetchone()
+                    reads = stream['reads'] if stream else 0
+                    if reads >= HOST_MAX_READS:
+                        raise HumanAuditError('primary_audit_budget_exhausted')
+                    if (stream is None) != (cursor_ref is None) or (stream is not None and stream['cursor_ref'] != cursor_ref):
+                        raise HumanAuditError('primary_audit_cursor_invalid')
+                    snapshot_at = stream['snapshot_at'] if stream else self.clock()
+                    keyset = json.loads(stream['keyset_json']) if stream and stream['keyset_json'] else None
+                    self.fault('before_host_page')
+                    items, next_keyset, coverage, total = self._host_read(
+                        db, section, target_ref, snapshot_at, keyset, principal)
+                    snapshot_hash = stream['snapshot_hash'] if stream else digest(
+                        ['host-audit-snapshot/v1', section, target_ref, snapshot_at, total])
+                    next_ref = uuid.uuid4().hex if next_keyset is not None else None
+                    response = {'primary_ref': grant.primary, 'audit_ref': grant.ref,
+                                'page_action_id': page_action_id, 'section': section, 'target_ref': target_ref,
+                                'snapshot_hash': snapshot_hash, 'page_hash': digest(items), 'items': items,
+                                'coverage': coverage, 'next_cursor_ref': next_ref,
+                                'enumeration_complete': next_keyset is None,
+                                'all_operations_recorded': False, 'reads_used': reads + 1,
+                                'max_reads': HOST_MAX_READS, 'expires_at': grant.expires}
+                    if len(canonical(response).encode()) > 256*1024:
+                        raise HumanAuditError('primary_audit_response_too_large')
+                    self._check(grant)
+                    db.execute("INSERT INTO human_audit_host_deliveries VALUES(?,?,?,'saved',?,?,?,?,?)",
+                               (audit_ref, page_action_id, query_hash, self.clock(), section,
+                                canonical(response), digest(response), response['page_hash']))
+                    db.execute('INSERT OR REPLACE INTO human_audit_host_streams VALUES(?,?,?,?,?,?,?,?,?)',
+                               (audit_ref, stream_key, section, target_ref, snapshot_at, snapshot_hash, next_ref,
+                                canonical(next_keyset) if next_keyset is not None else None, reads + 1))
+                self.fault('after_host_save_before_ack')
+                self._check(grant)
+                return response
+
+    def _host_read(self, db, section, target_ref, snapshot_at, keyset, principal):
+        limit = HOST_SECTIONS[section]
+        if section == 'runs':
+            where, params = 'WHERE created_at<=?', [snapshot_at]
+            total = db.execute(f'SELECT count(*) FROM audit_jobs {where}', params).fetchone()[0]
+            if keyset:
+                where += ' AND (created_at<? OR (created_at=? AND job_id<?))'
+                params += [keyset['created_at'], keyset['created_at'], keyset['job_id']]
+            rows = db.execute(
+                'SELECT job_id,host_run_id,sdk_run_id,terminal_state,status,last_code,total_operations,'
+                f'processed_operations,total_pages,next_page,rule_version,created_at,updated_at FROM audit_jobs {where} '
+                'ORDER BY created_at DESC,job_id DESC LIMIT ?', [*params, limit + 1]).fetchall()
+            items = []
+            for r in rows[:limit]:
+                items.append({
+                    'job_ref': r['job_id'], 'run_ref': r['sdk_run_id'], 'host_run_ref': r['host_run_id'],
+                    'terminal_state': r['terminal_state'], 'status': r['status'], 'last_code': r['last_code'],
+                    'rule_version': r['rule_version'], 'total_operations': r['total_operations'],
+                    'processed_operations': r['processed_operations'], 'total_pages': r['total_pages'],
+                    'pages_committed': r['next_page'], 'created_at': r['created_at'], 'updated_at': r['updated_at'],
+                    'attempts': dict(db.execute('SELECT COALESCE(outcome,\'unsettled\'),count(*) FROM audit_attempts WHERE job_id=? GROUP BY 1', (r['job_id'],)).fetchall()),
+                    'findings': dict(db.execute('SELECT rule_id,count(*) FROM audit_findings WHERE job_id=? GROUP BY rule_id', (r['job_id'],)).fetchall()),
+                })
+            last = rows[limit - 1] if len(rows) > limit else None
+            coverage = {
+                'producer_scope': 'foreground_terminal_only', 'status_as_of': 'read_time',
+                'jobs_by_status': dict(db.execute('SELECT status,count(*) FROM audit_jobs WHERE created_at<=? GROUP BY status', (snapshot_at,)).fetchall()),
+                'source_rejections': db.execute('SELECT count(*) FROM audit_source_rejections').fetchone()[0],
+            }
+            return items, ({'created_at': last['created_at'], 'job_id': last['job_id']} if last else None), coverage, total
+        if section == 'memory_calls':
+            from deskpet.operation_audit.memory_attempts import owner_ref
+            owner = owner_ref(principal)
+            where, params = 'WHERE owner_ref=? AND started_at<=?', [owner, snapshot_at]
+            total = db.execute(f'SELECT count(*) FROM memory_call_attempts {where}', params).fetchone()[0]
+            if keyset:
+                where += ' AND (started_at<? OR (started_at=? AND attempt_ref<?))'
+                params += [keyset['started_at'], keyset['started_at'], keyset['attempt_ref']]
+            rows = db.execute(
+                'SELECT attempt_ref,request_ref,caller,state,observation_status,started_at,settled_at,'
+                'context_run_ref_hash,context_hash,plan_hash,result_hash,decision_hash,observation_hash '
+                f'FROM memory_call_attempts {where} ORDER BY started_at DESC,attempt_ref DESC LIMIT ?',
+                [*params, limit + 1]).fetchall()
+            items = []
+            for r in rows[:limit]:
+                finding = db.execute('SELECT reason FROM memory_call_findings WHERE operation_ref=? ORDER BY finding_id LIMIT 1',
+                                     (r['attempt_ref'],)).fetchone()
+                items.append({**dict(r), 'finding_reason': finding['reason'] if finding else None})
+            last = rows[limit - 1] if len(rows) > limit else None
+            coverage = {
+                'producer_scope': 'host_memory_call_journal', 'status_as_of': 'read_time',
+                'callers': dict(db.execute('SELECT caller,count(*) FROM memory_call_attempts WHERE owner_ref=? AND started_at<=? GROUP BY caller', (owner, snapshot_at)).fetchall()),
+                'findings': db.execute('SELECT count(*) FROM memory_call_findings WHERE owner_ref=?', (owner,)).fetchone()[0],
+            }
+            return items, ({'started_at': last['started_at'], 'attempt_ref': last['attempt_ref']} if last else None), coverage, total
+        job = db.execute('SELECT * FROM audit_jobs WHERE job_id=?', (target_ref,)).fetchone()
+        if job is None:
+            raise HumanAuditError('primary_audit_target_unavailable')
+        # The stream freezes the committed page count on its first read, so a job
+        # that keeps committing pages cannot shift this stream's offset window.
+        frozen = int(keyset['pages'] if keyset else (job['next_page'] or 0))
+        records = []
+        for page in db.execute('SELECT payload_json FROM audit_pages WHERE job_id=? AND page_index<? ORDER BY page_index',
+                               (target_ref, frozen)):
+            try:
+                operations = json.loads(page['payload_json'])['operations']
+            except (ValueError, KeyError, TypeError):
+                continue
+            records.extend(op for op in operations if isinstance(op, dict) and op.get('record_type') in ('head', 'boundary'))
+        offset = keyset['offset'] if keyset else 0
+        items = []
+        for op in records[offset:offset + limit]:
+            item = {key: op.get(key) for key in _OPERATION_FIELDS}
+            usage = op.get('usage')
+            item['usage'] = {k: v for k, v in usage.items() if isinstance(v, (int, float)) and not isinstance(v, bool)} if isinstance(usage, dict) else None
+            items.append(item)
+        next_keyset = {'offset': offset + limit, 'pages': frozen} if offset + limit < len(records) else None
+        coverage = {
+            'producer_scope': 'foreground_terminal_only', 'status_as_of': 'read_time',
+            'job_status': job['status'], 'last_code': job['last_code'], 'run_ref': job['sdk_run_id'],
+            'total_operations': job['total_operations'], 'processed_operations': job['processed_operations'],
+            'pages_frozen': frozen,
+            'record_types': ['head', 'boundary'],
+            'findings': dict(db.execute('SELECT rule_id,count(*) FROM audit_findings WHERE job_id=? GROUP BY rule_id', (target_ref,)).fetchall()),
+        }
+        return items, next_keyset, coverage, len(records)
 
     async def close(self, *, auth, primary_ref, audit_ref):
         # No page lock: an admitted SDK read may finish, but must not disclose.

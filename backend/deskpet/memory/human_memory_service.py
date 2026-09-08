@@ -140,14 +140,27 @@ class SaveCheckpointRequest:
         reject_private_payload(dict(self.checkpoint), "checkpoint")
 
 
+def _validate_access_refs(effect_id: object, sdk_run_id: object) -> None:
+    for name, value in (("effect_id", effect_id), ("sdk_run_id", sdk_run_id)):
+        if value is not None:
+            identifier(value, name, 512)
+    if (effect_id is None) != (sdk_run_id is None):
+        raise ValueError("effect_id and sdk_run_id must be given together")
+
+
 @dataclass(frozen=True, slots=True)
 class SearchTaskScopesRequest:
     query: str
     max_candidates: int = 8
     cursor: str | None = None
+    # SDK effect/run performing this access on the tool path (G2 receipts);
+    # the HUMAN wire channel never sets them.
+    effect_id: str | None = None
+    sdk_run_id: str | None = None
 
     def __post_init__(self) -> None:
         identifier(self.query, "query", 65_536)
+        _validate_access_refs(self.effect_id, self.sdk_run_id)
         if isinstance(self.max_candidates, bool) or not isinstance(
             self.max_candidates, int
         ):
@@ -276,9 +289,12 @@ class OpenTaskScopeRequest:
     scope_ref: str
     live_probe: Mapping[str, object] | None = None
     expected_source_hash: str | None = None
+    effect_id: str | None = None
+    sdk_run_id: str | None = None
 
     def __post_init__(self) -> None:
         identifier(self.scope_ref, "scope_ref", 512)
+        _validate_access_refs(self.effect_id, self.sdk_run_id)
         if self.live_probe is not None:
             reject_private_payload(dict(self.live_probe), "live_probe")
 
@@ -632,6 +648,9 @@ class HumanMemoryHostService:
         runtime, access = self._human_audit_runtime()
         if operation == "primary.audit.close":
             return await access.close(auth=self._auth, **request)
+        if operation == "primary.audit.host.page":
+            # Host-local run-audit rows under the same explicit grant; no SDK read.
+            return await access.host_page(principal=runtime.principal(), auth=self._auth, **request)
         # Lazy SDK initialization can be slow; it must not retain a stale lease.
         lease = require_human_audit_request()
         manager = await runtime.manager()
@@ -1089,6 +1108,7 @@ class HumanMemoryHostService:
             query=request.query,
             limit=request.max_candidates,
             cursor=request.cursor,
+            access={"effect_id": request.effect_id, "sdk_run_id": request.sdk_run_id},
         )
         return {
             "candidates": [
@@ -1119,6 +1139,7 @@ class HumanMemoryHostService:
             task_scope_id=request.scope_ref,
             expected_source_hash=request.expected_source_hash,
             live_probe=request.live_probe,
+            access={"effect_id": request.effect_id, "sdk_run_id": request.sdk_run_id},
         )
         drift = result.drift_report
         # Checkpoint drift compares checkpoint metadata against a probe the

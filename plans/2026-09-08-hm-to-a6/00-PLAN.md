@@ -229,3 +229,22 @@ bash scripts/native/a6_driver.sh <bundle-id> <E>/userdata <E> [start-turn]
 
 预期总时长：**24 轮 × 3–5 分钟 ≈ 100–150 分钟**（含 2 次大文件读取与 5–7 次 `context_page_in` 翻页），
 加事后核对脚本约 20–30 分钟。
+
+---
+
+> **2026-09-08 追加（受控审计面 G5/G6）**：T16 与 T24 两轮纯 UI 图谱操作，**同时**打开记忆面板的
+> 「操作记录」tab 并完成一次显式取证：点「查看我的记忆操作记录（仅元数据）」拿授权 →
+> 至少翻一页记忆系统记录（`primary.audit.page`）→ 在「本机执行审计」里点「读取终态 Run 审计」
+> （`primary.audit.host.page` section=runs）→ 对其中一个 Run 点「查看该 Run 的操作」（section=run_operations）
+> → 点「读取记忆调用记录」（section=memory_calls）→ 切回「记忆列表」触发 `primary.audit.close`。
+>
+> 目的：把 `AUDIT-COVERAGE-2026-09-08.md` 的 G5（受控面在真实运行中未被调用）与 G6（终态 Run 审计页
+> 无 UI 读取面）从"按表构造判定"变成实测。核对依据：`operation-audit.db` 的
+> `human_audit_grants` / `human_audit_deliveries` / `human_audit_host_deliveries` / `human_audit_host_streams` 有行，
+> SDK `sealed_audit_access_events` 等访问事件 > 0；核对器 `--evidence` 的「受控读取面事实」里
+> `primary.audit.page(OA1).exercised`、`host.audit_pages.exercised`、`host.memory_call_attempts.exercised` 全为 true。
+>
+> 负控不变且扩展：审计面读取是本机只读，**不得**新增 `provider_invocations` 行（并入 §4 第 5 条
+> "T16/T24 图谱操作不得新增 `provider_invocations` 行"），也不得让 `human_audit_grants.reads`
+> （SDK 记忆页预算）因为 Host 分节翻页而增加。审计标识（`memory-attempt:`、`memory-request:`、
+> `audit_jobs.job_id`、`finding_id` 等）仍不得出现在 state / human_memory_v7 / execution 三个业务库中。
