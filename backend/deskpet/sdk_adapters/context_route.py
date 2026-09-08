@@ -5,7 +5,18 @@
 
 Host adjudication over the model's route proposal:
 
-- ``direct_standalone`` — standalone receipt, no TaskScope, no Memory query.
+- ``direct_standalone`` — standalone receipt, no TaskScope, no recalled content
+  in the result. Since event V it is not "no Memory query": every executing
+  route first runs the confirmation-only contested probe below, whose one and
+  only output is a ``conflict_notice``.
+
+What event V guarantees is that **the Host always asks Memory** before any
+route commits — not that a contested value is always reported. Whether the ask
+returns a group is the SDK's own slot-level admission, and on 0.6.34 a
+Chinese-only turn over a slot whose ``contested_slot_text`` holds no CJK and
+whose memory has no vector generation admits nothing (SDK followup F-V-2, a
+blocker for the AC). The probe therefore sends both surfaces the Host has and
+records which one admitted.
 - ``memory_standalone`` — explicit long-term and/or short-horizon selection,
   with one typed RecallPlan budget and current source checks.
 - ``continue_active``   — exact current active scope (latest durable
@@ -23,8 +34,10 @@ every non-commit outcome is a stable ``{"ok": false, "error": {...}}`` failure
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
@@ -54,6 +67,12 @@ ROUTES = (
 _MAX_TEXT = 2048
 _AUDIT_CANCEL_SECONDS = 2.0
 _LOG = logging.getLogger(__name__)
+
+# Event V: the two Host lanes that ask Memory outside the model's own
+# ``memory_standalone`` recall. They name their own durable SDK requests so a
+# probe can never spend the idempotency key the model's recall needs.
+CONTESTED_PROBE_PURPOSE = "contested-probe"
+CONTESTED_PROBE_ATTRIBUTION_PURPOSE = "contested-probe-attribution"
 _WORKSPACE_REUSE_OMIT = (
     "reuse_workspace_of is only valid for create_new with an exact verified task ID "
     "and source hash. For memory_standalone, omit both reuse_workspace_of and "
@@ -125,6 +144,97 @@ def _error(code: str, **detail: Any) -> dict[str, Any]:
     return payload
 
 
+async def read_current_turn_text(db_path: Any, sdk_run_id: str) -> str:
+    """This Run's own live user turn text, as the Host admitted it.
+
+    Event V: the contested probe must not stand only on the model's paraphrase
+    of the turn (T22 happened to quote the contested values; a plainly worded
+    turn would not). This is a read of the Host's own durable claim — the live
+    ``foreground_run_heads`` row bound to this SDK Run and its atomic
+    ``foreground_turns`` body — never model text and never a memory-read grant.
+    Returns "" when the Run has no live claim (a settled or foreign Run), which
+    only costs the probe one lexical surface.
+    """
+
+    import json
+
+    import aiosqlite
+
+    from deskpet.memory.current_input_visibility import (
+        LIVE_CLAIM_PLACEHOLDERS, LIVE_CLAIM_STATES,
+    )
+
+    async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await (await db.execute(
+            "SELECT t.turn_json FROM foreground_run_heads h "
+            "JOIN foreground_turns t ON t.turn_id=h.turn_id AND t.subject=h.subject "
+            f"WHERE h.sdk_run_id=? AND h.current_state IN ({LIVE_CLAIM_PLACEHOLDERS}) LIMIT 2",
+            (sdk_run_id, *LIVE_CLAIM_STATES),
+        )).fetchall()
+    if len(rows) != 1:
+        return ""
+    text = json.loads(rows[0]["turn_json"]).get("payload", {}).get("text")
+    return text if isinstance(text, str) else ""
+
+
+@dataclass(frozen=True)
+class _ContestedProbe:
+    """One verdict of the event-V contested guard, plus what the audit needs.
+
+    ``status is None`` means the probe never ran for this call (the
+    ``memory_standalone`` lane asks for itself, and a proposal rejected before
+    dispatch never reached it): the recorded detail is then byte-identical to
+    the pre-event-V one.
+    """
+
+    notice: dict[str, Any] | None = None
+    status: str | None = None
+    query_sources: tuple[str, ...] = ()
+    degradation_codes: tuple[str, ...] = ()
+    admitted: str | None = None
+
+    def audit(self) -> dict[str, Any]:
+        """The bounded probe record. Never the query text, never a payload."""
+
+        if self.status is None:
+            return {}
+        return {
+            "contested_probe": self.status,
+            **({"contested_probe_query_sources": list(self.query_sources)}
+               if self.query_sources else {}),
+            # The SDK's own lane degradations for the probe read. The model
+            # never sees them on a non-memory route; the audit must, or a
+            # silently degraded probe is indistinguishable from a clear one.
+            **({"contested_probe_degradation_codes": list(self.degradation_codes)}
+               if self.degradation_codes else {}),
+            **({"contested_probe_admitted": self.admitted}
+               if self.admitted is not None else {}),
+        }
+
+
+_NO_PROBE = _ContestedProbe()
+
+
+def _conflict_digest(notice: Mapping[str, Any]) -> dict[str, Any]:
+    """The audit projection of a conflict notice.
+
+    Stable Host reason code plus the bounded conflict identity (group id +
+    exact revisions), never the candidate payloads: the audit needs
+    attribution, not the user's contested values a second time.
+    """
+
+    return {
+        "reason": notice["reason"],
+        "conflict_status": notice["conflict_status"],
+        "groups": [{
+            "conflict_group_id": group["conflict_group_id"],
+            "memory_type": group["memory_type"],
+            "revisions": [candidate["revision"] for candidate in group["candidates"]],
+        } for group in notice["groups"]],
+    }
+
+
 def local_owner_auth() -> Any:
     """The single authenticated local owner (main.py control-channel template)."""
 
@@ -153,6 +263,7 @@ class ContextRouteToolService:
         scope_disclosure_reader: Any = None,
         producer_dependencies_reader: Any = None,
         typed_use_authority: Any = None,
+        current_turn_text_reader: Any = None,
     ) -> None:
         self._service_factory_getter = service_factory_getter
         self._binding_store_factory = binding_store_factory
@@ -164,6 +275,7 @@ class ContextRouteToolService:
         self._scope_disclosure_reader = scope_disclosure_reader
         self._producer_dependencies_reader = producer_dependencies_reader
         self._typed_use_authority = typed_use_authority
+        self._current_turn_text_reader = current_turn_text_reader
 
     # -- shared -----------------------------------------------------------
 
@@ -245,7 +357,15 @@ class ContextRouteToolService:
         recall_short_horizon: bool | None = None,
         typed_carrier: Mapping[str, Any] | None = None,
         recall_conflict: Mapping[str, Any] | None = None,
+        contested: _ContestedProbe = _NO_PROBE,
     ) -> dict[str, Any]:
+        # Event V: the guard's verdict, taken by ``handle_context_route`` before
+        # this route touched anything. ``memory_standalone`` passes its own
+        # ``recall_conflict`` and never carries one here, so the value lands in
+        # the same extras field and the same audit detail either way.
+        if recall_conflict is None and contested.notice is not None:
+            recall_conflict = contested.notice
+            extras = {**dict(extras or {}), "conflict_notice": dict(recall_conflict)}
         receipt = ContextRouteReceipt(
             receipt_id=str(
                 uuid.uuid5(
@@ -289,8 +409,13 @@ class ContextRouteToolService:
             decision_id=f"route-decision:{run_id}:{effect_id}",
             detail={
                 "route": route.value, "task_scope_id": task_scope_id,
-                **({"typed_carrier": dict(typed_carrier),
-                    "public_result_hash": canonical_sha256(result)} if typed_carrier is not None else {}),
+                **({"typed_carrier": dict(typed_carrier)} if typed_carrier is not None else {}),
+                # What the model actually received. Event V made this necessary
+                # on non-memory routes too: those build no typed carrier, so
+                # before this the contested values delivered in ``extras`` were
+                # covered by no hash at all.
+                **({"public_result_hash": canonical_sha256(result)}
+                   if typed_carrier is not None or contested.notice is not None else {}),
                 **({"recall_selection": {
                     "origin": "model_proposal",
                     "requested_memory_types": list(recall_types),
@@ -298,22 +423,172 @@ class ContextRouteToolService:
                     "selection_policy_departures":
                         list(selection_policy_departures(recall_types or ())),
                 }} if recall_types or recall_short_horizon is not None else {}),
-                # Stable Host reason code for the receipt/audit. Record only the
-                # bounded conflict identity (group id + exact revisions), never
-                # the candidate payloads: the audit needs attribution, not the
-                # user's contested values a second time.
-                **({"recall_conflict": {
-                    "reason": recall_conflict["reason"],
-                    "conflict_status": recall_conflict["conflict_status"],
-                    "groups": [{
-                        "conflict_group_id": group["conflict_group_id"],
-                        "memory_type": group["memory_type"],
-                        "revisions": [candidate["revision"] for candidate in group["candidates"]],
-                    } for group in recall_conflict["groups"]],
-                }} if recall_conflict is not None else {}),
+                **({"recall_conflict": _conflict_digest(recall_conflict)}
+                   if recall_conflict is not None else {}),
+                # Every route that ran the guard says so, clear included: "no
+                # notice" and "never asked" are different facts and the AC is
+                # about the asking.
+                **contested.audit(),
             },
         )
         return result
+
+    async def _current_turn_text(self, run_id: str) -> str:
+        """This turn's user text as the Host itself admitted it, if readable.
+
+        Advisory: an unavailable reader only costs the probe one of its two
+        lexical surfaces, never the route.
+        """
+
+        if self._current_turn_text_reader is None:
+            return ""
+        try:
+            text = self._current_turn_text_reader(run_id)
+            if inspect.isawaitable(text):
+                text = await text
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - advisory guard, never a route verdict
+            _LOG.warning("context_route_current_turn_text_unavailable run_id=%s", run_id)
+            return ""
+        return str(text or "").strip()[:_MAX_TEXT]
+
+    async def _probe_recall(
+        self, *, query: str, run_id: str, turn_ordinal: int, effect_id: str, purpose: str,
+    ) -> Any:
+        """One confirmation-only recall in the probe's own idempotency lane.
+
+        The SDK keys one durable request per ``idempotency_key`` and rejects a
+        second, different request under the same key. ``turn_ordinal`` is per
+        provider *response*, shared by every tool call in one batch, so the
+        probe must never spend the model's own ``context-route:{run}:{turn}``
+        key: with two ``context_route`` calls in a batch the second would come
+        back ``context_route_adjudication_failed``. Purpose + ``effect_id``
+        give every read of a turn its own key.
+        """
+
+        return await self._recall_executor(
+            query=query, run_id=run_id, turn_ordinal=turn_ordinal,
+            memory_types=REQUESTABLE_MEMORY_TYPES,
+            include_short_horizon=False,
+            idempotency_purpose=purpose,
+            idempotency_scope=effect_id,
+        )
+
+    async def _contested_notice(
+        self,
+        *,
+        run_id: str,
+        turn_ordinal: int,
+        effect_id: str,
+        proposal: Mapping[str, Any],
+    ) -> _ContestedProbe:
+        """Ask Memory whether this turn's own words touch a contested value.
+
+        Confirmation-only: the probe's ordinary items and refs are discarded
+        (its degradation codes go to the audit, not to the model), so a
+        non-memory route still delivers no recalled content, keeps
+        ``recall_refs`` empty and leaves ``ContextRouteReceipt`` untouched.
+        Relevance is the SDK's own slot-level admission (0.6.31
+        ``contested_slot_text`` + vector), not a Host heuristic, so an unrelated
+        turn discloses nothing (minimum necessary) while the turn that names the
+        contested slot gets the identical notice ``memory_standalone`` returns.
+
+        The probe query is BOTH surfaces the Host has, model paraphrase first
+        then the admitted user turn, because neither alone is sound: 0.6.34
+        admits a group lexically only when a query term hits
+        ``contested_slot_text`` (the differing fields + ``predicate``), and this
+        incident's memory has that text in English/values only, with no vector
+        generation to fall back on (SDK followup F-V-2). The real T22 user
+        sentence 「那你现在按哪个版本执行这套校对流程？」 admits **nothing** on
+        0.6.34 — the replay measured ``confirmation_groups 0`` — and only the
+        model's paraphrase, which quoted 「3.13，不是 3.12」, hit the slot; a
+        differently-worded turn is the mirror case. Sending both is what makes
+        this a guarantee that the Host *asks* on every executing route. It is
+        not a guarantee that Memory can always answer: until F-V-2 lands, a
+        Chinese turn over a Chinese-less slot can still come back clear.
+
+        Never a route verdict: a route that already validated must not fail on
+        an unavailable memory read, so every failure degrades to ``unavailable``
+        in the audit.
+        """
+
+        model_query = str(proposal.get("query") or "").strip()[:_MAX_TEXT]
+        turn_text = await self._current_turn_text(run_id)
+        sources: list[str] = []
+        parts: list[str] = []
+        for name, text in (("model_query", model_query), ("user_turn", turn_text)):
+            if text and text not in parts:
+                sources.append(name)
+                parts.append(text)
+        if not parts:
+            # Neither surface exists, so there is no bounded basis to disclose
+            # on. Recorded, never silent.
+            return _ContestedProbe(status="no_query")
+        if self._recall_executor is None:
+            return _ContestedProbe(status="unavailable", query_sources=tuple(sources))
+        from deskpet.memory.human_memory_v7 import project_contested_confirmation
+
+        try:
+            execution = await self._probe_recall(
+                query="\n".join(parts), run_id=run_id, turn_ordinal=turn_ordinal,
+                effect_id=effect_id, purpose=CONTESTED_PROBE_PURPOSE,
+            )
+            notice = project_contested_confirmation(execution)
+            codes = tuple(str(getattr(code, "value", code))
+                          for code in (getattr(execution, "degradation_codes", ()) or ()))
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - advisory guard, never a route verdict
+            # Exception text can carry provider or source content; log identity.
+            _LOG.warning("context_route_contested_probe_unavailable run_id=%s", run_id)
+            return _ContestedProbe(status="unavailable", query_sources=tuple(sources))
+        if notice is None:
+            return _ContestedProbe(
+                status="clear", query_sources=tuple(sources), degradation_codes=codes)
+        return _ContestedProbe(
+            notice=notice, status="contested", query_sources=tuple(sources),
+            degradation_codes=codes,
+            admitted=await self._admitting_surface(
+                turn_text=turn_text, sources=tuple(sources), run_id=run_id,
+                turn_ordinal=turn_ordinal, effect_id=effect_id,
+            ),
+        )
+
+    async def _admitting_surface(
+        self, *, turn_text: str, sources: tuple[str, ...], run_id: str,
+        turn_ordinal: int, effect_id: str,
+    ) -> str | None:
+        """Would the user's own sentence alone have reached this group?
+
+        Asked only when a notice actually fired and both surfaces were sent, so
+        it costs one extra recall on the rare contested turn and none otherwise.
+        This is the production measurement of SDK followup F-V-2, and it asks
+        the one question that matters: ``user_turn`` means the Host stands on
+        the user's own words and the model's paraphrase was not needed;
+        ``model_query`` means the user's sentence did NOT reach the group and
+        this disclosure only happened because the model happened to quote the
+        contested values — the T22 shape, and exactly the case F-V-2 must close.
+        A field of ``model_query`` in production is therefore a defect report,
+        not a statistic. Discarded result, own idempotency lane, never a verdict.
+        """
+
+        if sources != ("model_query", "user_turn"):
+            return sources[0] if sources else None
+        from deskpet.memory.human_memory_v7 import project_contested_confirmation
+
+        try:
+            execution = await self._probe_recall(
+                query=turn_text, run_id=run_id, turn_ordinal=turn_ordinal,
+                effect_id=effect_id,
+                purpose=CONTESTED_PROBE_ATTRIBUTION_PURPOSE,
+            )
+            return "user_turn" if project_contested_confirmation(execution) else "model_query"
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - attribution is a measurement, not a gate
+            _LOG.warning("context_route_contested_attribution_unavailable run_id=%s", run_id)
+            return "unknown"
 
     async def _binding_head(self, task_scope_id: str) -> dict[str, Any]:
         store = self._binding_store_factory()
@@ -355,6 +630,21 @@ class ContextRouteToolService:
                 "context_route_source_hash_not_applicable",
                 message="expected_source_hash requires resume_existing or exact create_new workspace reuse. "
                         "Otherwise omit expected_source_hash or set it to JSON null; never fabricate a hash.")
+        # Event V: ``memory_standalone`` is not the only route that executes on
+        # a stored value. A6 attempt 9 T22 asked 「那你现在按哪个版本执行这套校对
+        # 流程？」 66 s after the contest landed, routed ``direct_standalone``
+        # ("answer the turn as it stands") and answered "Python 3.13" from its
+        # own transcript: the Host's contested gate lived only inside
+        # ``_memory_standalone``, so no route but that one ever consulted the
+        # open conflict group. Every other route now runs the same bounded probe
+        # — deliberately here, BEFORE any route side effect, so a cancelled probe
+        # can never leave a created TaskScope without its route decision.
+        contested = _NO_PROBE
+        if route_value != "memory_standalone":
+            contested = await self._contested_notice(
+                run_id=run_id, turn_ordinal=turn_ordinal, effect_id=effect_id,
+                proposal=proposal,
+            )
         try:
             if route_value == "direct_standalone":
                 return await self._commit_receipt(
@@ -364,6 +654,7 @@ class ContextRouteToolService:
                     turn_ordinal=turn_ordinal,
                     route=TaskScopeRoute.DIRECT_STANDALONE,
                     proposal=proposal,
+                    contested=contested,
                 )
             if route_value == "memory_standalone":
                 return await self._memory_standalone(
@@ -371,17 +662,21 @@ class ContextRouteToolService:
                 )
             if route_value == "continue_active":
                 return await self._continue_active(
-                    run_id, raw_call_id, effect_id, turn_ordinal, proposal
+                    run_id, raw_call_id, effect_id, turn_ordinal, proposal,
+                    contested=contested,
                 )
             if route_value == "resume_existing":
                 return await self._resume_existing(
-                    run_id, raw_call_id, effect_id, turn_ordinal, proposal
+                    run_id, raw_call_id, effect_id, turn_ordinal, proposal,
+                    contested=contested,
                 )
             return await self._create_new(
-                run_id, raw_call_id, effect_id, turn_ordinal, proposal
+                run_id, raw_call_id, effect_id, turn_ordinal, proposal,
+                contested=contested,
             )
         except _CompositionUnavailable as exc:
-            return await self._reject(run_id, raw_call_id, effect_id, proposal, exc.code)
+            return await self._reject(run_id, raw_call_id, effect_id, proposal, exc.code,
+                                      contested=contested)
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
             if route_value == "memory_standalone":
                 # Exception messages/codes can contain provider or source text.
@@ -391,6 +686,7 @@ class ContextRouteToolService:
             code = str(getattr(exc, "code", "") or "context_route_adjudication_failed")
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal, code,
+                contested=contested,
                 message=(_WORKSPACE_REUSE_NEW_RUN if code == "context_route_workspace_reuse_requires_new_run"
                          else str(exc)[:512]),
             )
@@ -402,8 +698,19 @@ class ContextRouteToolService:
         effect_id: str,
         proposal: Mapping[str, Any],
         code: str,
+        *,
+        contested: _ContestedProbe = _NO_PROBE,
         **detail: Any,
     ) -> dict[str, Any]:
+        # Event V: the guard runs before dispatch, so a contest can be found on
+        # a proposal that then fails route validation (no active scope, missing
+        # task_scope_id/title, a binding or authorization rejection). Dropping
+        # it there would put the Host back where T22 was — it asked Memory, was
+        # told the value is contested, and told the model nothing. The error
+        # code stays exactly what it was; the notice rides the error extras.
+        notice = contested.notice
+        payload = _error(code, **detail,
+                         **({"conflict_notice": dict(notice)} if notice is not None else {}))
         await self._record(
             run_id=run_id,
             raw_call_id=raw_call_id,
@@ -411,9 +718,16 @@ class ContextRouteToolService:
             proposal=proposal,
             verdict="rejected",
             decision_id=None,
-            detail={"code": code, **detail},
+            detail={
+                "code": code, **detail, **contested.audit(),
+                **({"recall_conflict": _conflict_digest(notice),
+                    # The rejection body is what the model receives, contested
+                    # values included; cover it like a committed result.
+                    "public_result_hash": canonical_sha256(payload)}
+                   if notice is not None else {}),
+            },
         )
-        return _error(code, **detail)
+        return payload
 
 
     async def _memory_standalone(
@@ -455,6 +769,11 @@ class ContextRouteToolService:
                 query=query, run_id=run_id, turn_ordinal=turn_ordinal,
                 memory_types=memory_types,
                 include_short_horizon=include_short_horizon,
+                # One provider response can carry two context_route calls; the
+                # turn ordinal alone is not a per-call identity, so the model's
+                # second recall of a turn used to collide with its first inside
+                # the SDK's idempotency store.
+                idempotency_scope=effect_id,
                 **({"admitted_context": admitted} if admitted is not None else {}),
             )
         except asyncio.CancelledError:
@@ -560,12 +879,15 @@ class ContextRouteToolService:
         effect_id: str,
         turn_ordinal: int,
         proposal: Mapping[str, Any],
+        *,
+        contested: _ContestedProbe = _NO_PROBE,
     ) -> dict[str, Any]:
         active = await self._ledger.latest_task_route_decision()
         if active is None or not active.get("task_scope_id"):
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_no_active_task_scope",
+                contested=contested,
             )
         active_scope = str(active["task_scope_id"])
         proposed = proposal.get("task_scope_id")
@@ -573,6 +895,7 @@ class ContextRouteToolService:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_active_scope_mismatch",
+                contested=contested,
                 active_task_scope_id=active_scope,
             )
         binding = await self._binding_head(active_scope)
@@ -585,6 +908,7 @@ class ContextRouteToolService:
             proposal=proposal,
             task_scope_id=active_scope,
             binding=binding,
+            contested=contested,
         )
 
     async def _resume_existing(
@@ -594,6 +918,8 @@ class ContextRouteToolService:
         effect_id: str,
         turn_ordinal: int,
         proposal: Mapping[str, Any],
+        *,
+        contested: _ContestedProbe = _NO_PROBE,
     ) -> dict[str, Any]:
         scope = proposal.get("task_scope_id")
         if not scope:
@@ -601,6 +927,7 @@ class ContextRouteToolService:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_exact_task_scope_required",
+                contested=contested,
                 guidance="Call task_scope_search first, confirm one candidate, "
                 "then pass its exact task_scope_id.",
             )
@@ -614,6 +941,7 @@ class ContextRouteToolService:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_expected_source_hash_malformed",
+                contested=contested,
                 guidance="expected_source_hash is optional; omit it, or copy "
                 "the candidate's source_hash exactly (64 lowercase hex).",
             )
@@ -645,9 +973,11 @@ class ContextRouteToolService:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_binding_lineage_stale",
+                contested=contested,
             )
         if self._scope_disclosure_reader is None:
-            return await self._reject(run_id, raw_call_id, effect_id, proposal, "scope_disclosure_reader_missing")
+            return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                                      "scope_disclosure_reader_missing", contested=contested)
         resume_package = await self._scope_disclosure_reader(run_id, resume_package, effect_id)
         return await self._commit_receipt(
             run_id=run_id,
@@ -658,6 +988,7 @@ class ContextRouteToolService:
             proposal=proposal,
             task_scope_id=str(scope),
             binding=binding,
+            contested=contested,
             extras={
                 "resume_package": resume_package,
                 "resume_sha256": canonical_sha256(resume_package),
@@ -672,12 +1003,15 @@ class ContextRouteToolService:
         effect_id: str,
         turn_ordinal: int,
         proposal: Mapping[str, Any],
+        *,
+        contested: _ContestedProbe = _NO_PROBE,
     ) -> dict[str, Any]:
         title = str(proposal.get("title") or "").strip()
         if not title:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_title_required",
+                contested=contested,
             )
         service = self._bind_service(binding_append=self._binding_append_getter())
         from deskpet.memory.human_memory_service import AppendBindingRequest, CreateTaskScopeRequest
@@ -689,7 +1023,7 @@ class ContextRouteToolService:
             if bound is not None or envelope.task_scope_id is not None:
                 return await self._reject(run_id, raw_call_id, effect_id, proposal,
                     "context_route_workspace_reuse_requires_new_run",
-                    message=_WORKSPACE_REUSE_NEW_RUN)
+                    contested=contested, message=_WORKSPACE_REUSE_NEW_RUN)
             from deskpet.sdk_adapters.workspace_continuation import resolve_workspace_continuation
             continuation = await resolve_workspace_continuation(
                 service=service, binding_store=self._binding_store_factory(),
@@ -711,6 +1045,7 @@ class ContextRouteToolService:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_binding_authority_unavailable",
+                contested=contested,
                 task_scope_id=scope,
             )
         store = self._binding_store_factory()
@@ -719,6 +1054,7 @@ class ContextRouteToolService:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_workspace_root_not_configured",
+                contested=contested,
                 task_scope_id=scope,
             )
         # Normal creation gets its own stable direct child. Explicit reuse
@@ -736,6 +1072,7 @@ class ContextRouteToolService:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_binding_authorization_required",
+                contested=contested,
                 task_scope_id=scope,
                 binding_challenge=dict(outcome),
                 required_action="binding.manual.decide",
@@ -750,6 +1087,7 @@ class ContextRouteToolService:
             proposal=proposal,
             task_scope_id=scope,
             binding=binding,
+            contested=contested,
             extras={"created": dict(created), "producer_dependencies": producer_dependencies,
                     **({} if continuation is None else {"workspace_source": dict(continuation.source)})},
         )

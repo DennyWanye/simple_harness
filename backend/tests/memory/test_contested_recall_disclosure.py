@@ -206,3 +206,84 @@ def test_role_follows_the_exact_revision_not_the_member_ordinal() -> None:
     assert [(c["role"], c["revision"]) for c in group["candidates"]] == [
         ("challenger", 3), ("incumbent", 2),
     ]
+
+
+# -- event V: a contested value must never arrive as an ordinary fact ----------
+# Installed SDK 0.6.34 cannot produce this shape (the ordinary lane's
+# ``_cognitive_recall_state_allowed`` admits only ``uncontested|resolved``), so
+# these are forward-compat guards on the Host's own projection: whatever carrier
+# a later SDK picks, a contested value leaves as a notice, never as a fragment.
+
+
+def _contested_item_lanes(*, privacy: str = "personal", group_id: str | None = None):
+    item = SimpleNamespace(
+        selected_item=SimpleNamespace(
+            item_id="recall-item:x:1",
+            memory_type=SimpleNamespace(value="semantic"),
+            public_payload_hash="a" * 64,
+            source_kind=SimpleNamespace(value="cognitive_memory"),
+            source_revision=3,
+            conflict_status=SimpleNamespace(value="contested"),
+            **({"conflict_group_id": group_id} if group_id else {}),
+        ),
+        effective_privacy_class=privacy,
+        score=0.5,
+        public_payload={"object_value": "3.12"},
+        source_task_scope_ids=(),
+        result_item_hash="b" * 64,
+    )
+    return SimpleNamespace(
+        execution=SimpleNamespace(
+            result=SimpleNamespace(
+                items=(item,), confirmation_groups=(), result_id="recall-result:z",
+                result_hash="d" * 64, truncated=False,
+            ),
+            degradation_codes=(),
+        ),
+        short_horizon=None,
+        selected_typed_short_sources=None,
+    )
+
+
+def test_a_contested_item_never_becomes_a_fragment() -> None:
+    assert project_recall_fragments(_contested_item_lanes()) == ()
+
+
+def test_a_contested_item_raises_the_same_notice_as_a_confirmation_group() -> None:
+    notice = project_contested_confirmation(
+        _contested_item_lanes(group_id="cognitive-conflict-group-abc")
+    )
+    assert notice["reason"] == CONTESTED_DISCLOSURE_REASON
+    assert notice["conflict_status"] == "contested"
+    assert notice["next"] == "ask_user_to_confirm"
+    group, = notice["groups"]
+    assert group["conflict_group_id"] == "cognitive-conflict-group-abc"
+    assert group["memory_type"] == "semantic"
+    candidate, = group["candidates"]
+    assert (candidate["role"], candidate["revision"]) == ("head", 3)
+    assert candidate["payload_hash"] and candidate["privacy_class"] == "personal"
+    # Deliberately payload-free: with no counter-candidate the only honest
+    # message is "this value is contested, do not execute on it". Printing the
+    # lone value is what invites the model to adopt it — the T22 failure.
+    assert "value" not in candidate
+
+
+def test_a_contested_item_without_a_group_id_is_still_disclosed_by_item_id() -> None:
+    group, = project_contested_confirmation(_contested_item_lanes())["groups"]
+    assert group["conflict_group_id"] == "recall-item:x:1"
+
+
+def test_an_ineligible_contested_item_discloses_nothing_at_all() -> None:
+    lanes = _contested_item_lanes(privacy="restricted")
+    assert project_recall_fragments(lanes) == ()
+    assert project_contested_confirmation(lanes) is None
+
+
+def test_an_uncontested_item_carrying_a_status_is_untouched() -> None:
+    lanes = _selected_lanes()
+    lanes.execution.result.items[0].selected_item.conflict_status = SimpleNamespace(
+        value="resolved"
+    )
+    assert project_contested_confirmation(lanes) is None
+    fragment, = project_recall_fragments(lanes)
+    assert fragment["conflict_status"] == "not_contested"
