@@ -242,6 +242,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     elif case_id.startswith("C04-"):
         from deskpet.quality.corpus_c04 import compile_c04_setup as compile_setup
         from deskpet.quality.corpus_c04_prepare import open_c04_fixture as open_fixture
+    elif case_id.startswith("C10-"):
+        from deskpet.quality.corpus_c10 import compile_c10_setup as compile_setup
+        from deskpet.quality.corpus_c10_prepare import open_c10_fixture as open_fixture
     elif case_id.startswith("C11-"):
         from deskpet.quality.corpus_c11 import compile_c11_setup as compile_setup
         from deskpet.quality.corpus_c11_prepare import open_c11_fixture as open_fixture
@@ -370,7 +373,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                         batch=batch, classification_policy=host_classification_policy(),
                         supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES))
                 elif open_fixture is not None:
-                    # C04 / C11 own their fixture clocks (ingestion time before scenario time).
+                    # C04 / C10 / C11 own their fixture clocks (ingestion time before scenario time).
                     _, seed = await fixture_owners.enter_async_context(open_fixture(
                         path=main._state_db_path, memory_path=memory_path,
                         principal=local_memory_principal(), authority_ref=auth.authority_ref,
@@ -399,6 +402,14 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                     outcome["setup_receipt"].update(wire({name: seed[name] for name in
                         ("ingestion_receipt", "application", "request", "initial_plan", "plan",
                          "old_receipt", "new_receipt", "old_receipt_ref", "new_receipt_ref")}))
+                elif case_id.startswith("C10-"):
+                    # Both fixture jobs, the suppression (if authored) and the
+                    # post-contest graph; what the group shows is recorded, not scored.
+                    outcome["setup_receipt"].update(wire({name: seed[name] for name in
+                        ("fixture_defaults", "challenger_source_pair", "incumbent_ingestion_receipt", "incumbent_application",
+                         "incumbent_request", "incumbent_outcome", "initial_plan", "old_receipt",
+                         "new_receipt", "old_receipt_ref", "new_receipt_ref", "suppression_request",
+                         "suppression_decision", "graph_contested", "partial_group_visible_memory_ids")}))
         # Reopen with actual production authorities. Never replace the production
         # analysis authority with the local setup executor during scoring.
         outcome["stage"] = "main_product_runtime_factory"

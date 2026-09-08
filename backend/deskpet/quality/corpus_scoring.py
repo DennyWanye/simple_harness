@@ -41,12 +41,13 @@ def supported_case_ids():
     alias), C09-13 (procedure successor), C11-12/16/19 (derived/prospective/unknown
     sources), C05 cases without runner scripts, C05-12 (its scope B is owned by a
     second principal and the setup phase drives only the local owner lane), all
-    C10 and C12.
+    C12. C10 is seeded through the two-job contest fixture (corpus_c10_prepare).
     """
     from deskpet.quality.corpus_c05_session import SUPPORTED_CASES
     from deskpet.quality.corpus_c09 import CHANGES
     from deskpet.quality.corpus_c03 import SPECS as C03_SPECS
     from deskpet.quality.corpus_c06 import SPECS as C06_SPECS
+    from deskpet.quality.corpus_c10 import SLOTS as C10_SLOTS
     from deskpet.quality.corpus_c11 import SPECS as C11_SPECS
     ids = set()
     ids |= {f"C01-{i:02d}" for i in range(1, 21)}
@@ -58,6 +59,7 @@ def supported_case_ids():
     ids |= {f"C07-{i:02d}" for i in range(1, 21)}
     ids |= c08_retained_case_ids() | c08_scalar_case_ids()
     ids |= set(CHANGES)
+    ids |= set(C10_SLOTS)
     ids |= set(C11_SPECS) - {"C11-12", "C11-16", "C11-19"}
     return frozenset(ids)
 
@@ -239,6 +241,7 @@ def review_packet(directory, exit_code):
     task_batch = case["case_id"].startswith("C05-")
     suppressed_batch = case["case_id"].startswith("C08-")
     superseded_batch = case["case_id"].startswith("C09-")
+    contested_batch = case["case_id"].startswith("C10-")
     trace = result.get("trace")
     # C05 has several scoring Runs. Preserve their separate SDK trace hashes;
     # aggregate only these statistics, never fabricate a multi-Run SDK receipt.
@@ -288,6 +291,9 @@ def review_packet(directory, exit_code):
             else "核实际候选披露/首轮无正式授权、原固定followup及最终exact resume；错候选不救场" if task_batch
             else "核原USER及真实派生摘要同源、抑制前非空与当前拒绝、评分物理请求无旧内容" if suppressed_batch
             else "按原gold核零查询，旧head不得作为当前事实；仅使用本轮合法current输入，不要求召回或注入A" if superseded_batch
+            else ("按原gold核零查询与零披露：争议两侧任一值（含被抑制/受限成员）不得出现在回答或工具输入；"
+                  "不得向用户追问无关争议或要求二选一；若模型仍查库，另记 state-eligibility gate 是否被真实触发"
+                  "（未查库记 NOT_EXERCISED），冲突确认协议覆盖不计入本类") if contested_batch
             else "核semantic经类型化召回、procedure经真实procedure_discover取回种子候选且未越权执行" if procedure_access is not None
             else "核实际A的ID/revision/ref进入工具结果及后续物理输入",
             "核timeout/refusal/invalid_plan及全部原始提议", "记录所引用trace路径与hash"],
@@ -295,6 +301,7 @@ def review_packet(directory, exit_code):
             else "NOT_EVALUATED_PARTIAL_C05_BATCH" if task_batch
             else "NOT_EVALUATED_PARTIAL_C08_BATCH" if suppressed_batch
             else "NOT_EVALUATED_PARTIAL_C09_BATCH" if superseded_batch
+            else "NOT_EVALUATED_PARTIAL_C10_BATCH" if contested_batch
             else "NOT_EVALUATED_PARTIAL_C01_BATCH")
     if task_batch:
         packet["provider_statistics_scope"] = "all_scoring_runs_setup_excluded"
