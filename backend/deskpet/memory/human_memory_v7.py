@@ -581,6 +581,45 @@ def _fragment_size(payload: Any) -> tuple[int, int]:
     return len(text.encode("utf-8")), text_tokens(text)
 
 
+_CHINESE_WEEKDAYS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+
+
+def _prospective_trigger_local(payload: Any) -> str | None:
+    """Render a prospective time trigger in its own scenario timezone.
+
+    ``trigger_at`` is an epoch float and ``timezone`` an IANA name; models
+    convert both unreliably, so the Host renders one deterministic local
+    string (ISO local time + Chinese weekday) beside the untouched SDK
+    payload. An unknown or missing zone falls back to UTC rather than
+    guessing the host's local zone.
+    """
+
+    from datetime import datetime, timezone as _utc
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    if not isinstance(payload, Mapping) or payload.get("memory_type") != "prospective":
+        return None
+    trigger = payload.get("trigger")
+    if not isinstance(trigger, Mapping) or trigger.get("trigger_kind") != "time":
+        return None
+    raw = trigger.get("trigger_at")
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    name = trigger.get("timezone")
+    zone: Any = _utc.utc
+    if isinstance(name, str) and name:
+        try:
+            zone = ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            zone = _utc.utc
+    try:
+        moment = datetime.fromtimestamp(float(raw), zone)
+    except (OverflowError, OSError, ValueError):
+        return None
+    spec = "minutes" if (moment.second, moment.microsecond) == (0, 0) else "seconds"
+    return f"{moment.isoformat(timespec=spec)} {_CHINESE_WEEKDAYS[moment.weekday()]}"
+
+
 def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
     """Host second-pass eligibility + dedup over typed recall items.
 
@@ -621,6 +660,8 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
             continue
         seen.add(payload_hash)
         bytes_len, tokens = _fragment_size(item.public_payload)
+        public_payload = thaw_json(item.public_payload)
+        trigger_local = _prospective_trigger_local(public_payload)
         fragments.append(
             {
                 "ref": item.selected_item.item_id,
@@ -631,8 +672,12 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
                 ),
                 "privacy_class": privacy,
                 "score": float(item.score),
-                "payload": thaw_json(item.public_payload),
+                "payload": public_payload,
                 "payload_hash": payload_hash,
+                # Rendered beside (never inside) the SDK public payload: the
+                # payload hash stays the SDK's and typed-use carrier binding
+                # keeps comparing identical bytes.
+                **({"trigger_local": trigger_local} if trigger_local is not None else {}),
                 "source_task_scope_ids": list(item.source_task_scope_ids),
                 "bytes": bytes_len,
                 "tokens": tokens,
