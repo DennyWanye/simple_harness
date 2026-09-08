@@ -436,3 +436,58 @@ def test_primary_context_and_turn_planner_agree_on_tool_schema_tokens() -> None:
     _, facts = _plan_turn_messages(_messages(("system", "rules"), ("user", "q")),
                                    32768, tools=specs)
     assert facts["tool_schema_tokens"] == tool_schema_tokens(specs)
+
+
+# ── The 8192-tier headroom guard (2026-09-09 reconciliation) ────────────────
+#
+# Three merges that were each green on their own turned
+# ``tests/execution/test_current_tool_megabyte.py::…[8192]`` red together: the
+# schemas became protected mass (this incident), the ``memory_types``
+# description grew by 136 wire tokens, and PERSONA grew by 103.  Nothing in a
+# unit test saw it — only a ~10 s integration Run did, and only after the merge.
+# These two numbers were measured on that Run's peak provider turn after the
+# reconciliation (see DECISION-TOKEN-ESTIMATOR.md §附录).  Anything the PERSONA
+# lane or the context_route schema lane adds now trips here in milliseconds
+# instead of failing a Run closed later.
+MEGABYTE_PEAK_PLANNED_TOKENS = 5261
+MEGABYTE_PEAK_FIXED_TOKENS = 2223
+
+
+def _megabyte_fixed_model_facing_specs() -> list[dict]:
+    """The product schemas that scenario really ships (fixture: description=name)."""
+
+    from deskpet.sdk_adapters.context_route import (
+        CONTEXT_ROUTE_SCHEMA,
+        TASK_SCOPE_SEARCH_SCHEMA,
+    )
+    from deskpet.sdk_adapters.task_scope_mutation import TASK_SCOPE_UPDATE_SCHEMA
+    from deskpet.tools.context_page_in_tools import CONTEXT_PAGE_IN_SCHEMA
+
+    specs = [{"name": name, "description": name, "input_schema": schema}
+             for name, schema in (("context_route", CONTEXT_ROUTE_SCHEMA),
+                                  ("task_scope_search", TASK_SCOPE_SEARCH_SCHEMA),
+                                  ("task_scope_update", TASK_SCOPE_UPDATE_SCHEMA))]
+    specs.append({"name": "context_page_in", "description": "Load exact context",
+                  "input_schema": CONTEXT_PAGE_IN_SCHEMA["parameters"]})
+    return specs
+
+
+def test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn() -> None:
+    """PERSONA + the product schemas must leave the megabyte Run its room.
+
+    The variable half of that turn (Host closure instruction + the open causal
+    group + the fixture's own capability-discovery schemas) is held at its
+    measured value, so this asserts exactly one thing: the model-facing text two
+    independent lanes keep editing has not eaten the remaining headroom.
+    """
+
+    from deskpet.execution.primary_context import PERSONA
+
+    fixed = text_tokens(PERSONA) + tool_schema_tokens(_megabyte_fixed_model_facing_specs())
+    variable = MEGABYTE_PEAK_PLANNED_TOKENS - MEGABYTE_PEAK_FIXED_TOKENS
+    effective = effective_input_budget(8192)
+    assert fixed + variable <= effective, (
+        f"protected model-facing text grew to {fixed} tokens; the 8192-tier megabyte "
+        f"scenario then plans {fixed + variable} against an effective budget of {effective}. "
+        "Compress the addition, or re-derive the scenario in DECISION-TOKEN-ESTIMATOR.md."
+    )

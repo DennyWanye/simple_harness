@@ -292,3 +292,149 @@ primary 拿 catalog dict。改为先 `thaw_json` 再 `canonical_json` 后，两�
   `arguments` 退化成 `"{}"`（原文其实在 SDK 的 provider-invocation 记录里）。
   上游把 `tool_calls` 提升为一等公共 transcript 字段后即可去掉该降级，
   届时 wire 与估算都会更贴近真实。
+
+---
+
+## 附录（2026-09-09）：三条并行车道合流后的 8192 档预算复原
+
+分支 `worktree-token-budget-reconcile`，基线 `26247ea8`。
+用户授权「不问、自行裁定并记录」，本节即裁定记录。
+
+### 附.1 现象：各自都绿，合起来红
+
+`tests/execution/test_current_tool_megabyte.py::…[8192]` 在
+`26247ea8` 上转红，而当晚合入的三条车道**每一条单独都保持它是绿的**：
+
+| # | 提交 | 改动 | 对该场景峰值轮的增量 |
+|---|---|---|---|
+| N | `8e39f018` | tool schema 计入 `protected_tokens`（本备忘 §3） | **+1379**（该车道原本按 0 计） |
+| — | `d5c72465` | `MEMORY_TYPE_SELECTION_POLICY` 拼进 `memory_types` 的 schema description | **+136** |
+| Q | `26247ea8` | PERSONA 补五路由段（481 字符） | **+103** |
+
+峰值轮实测（`_plan_turn_messages` 的 warning，8192 档）：
+
+```
+planned=5418 effective=5325 protected=3350 tool_schemas=1379 groups=1 ratio=1.00
+```
+
+拆解：PERSONA + Host 可信时钟 **1260**、语义收口 system 指令 **711**、
+tool schema **1379**（合计 protected 3350），未收口因果组 **2068**。
+`effective_input_budget(8192) = 8192 − 2048（生成预留）− 819（10% 安全余量） = 5325`。
+**超 93 token。**
+
+任意去掉其中一条即可回到预算内（5315 / 5282 / 4039），
+所以三条车道各自的单测结论都成立——**合流本身才是缺陷**。
+特别地：N + d5c 合流后 8192 档只剩 **10 token** 余量，
+Q 的 103 token 落在这条只剩 10 token 的线上，必然溢出。
+
+### 附.2 裁定一：不是校准倍率的问题，megabyte 夹具的预算假设不需要重新推导
+
+该场景绑定的型号是夹具的 `model`，`llm.model_info` 认识它但**没有配校准三元组**，
+所以 `ProviderTokenCalibration` 退化为恒等式，日志里的 `ratio=1.00` 就是证据。
+`5418` 是**未经任何倍率放大**的 wire 口径数值：
+夹具里 1 MiB 结果本身从未整体上过线（它以 `primary_settled_effect_v1` 摘要 +
+`context_page_in` 引用travel，两条摘要各 399 token），
+`effective` 也自 V0 冻结以来未变（`metric-formulas.json` 逐字节钉死）。
+
+→ **夹具的预算假设不 predates calibration，重新推导它是错的**：
+真正变了的是「同一请求里模型可见文本的总量」，该改的是文本，不是预算。
+
+### 附.3 裁定二：压缩措辞 + 去重，两份备忘点名的负载条款一字不改
+
+改动只有两个文件（外加一条新守卫测试）：
+
+**A. `backend/deskpet/execution/primary_context.py` 的 PERSONA：1208 → 1083 token（4829 → 4330 字符）**
+
+- **一字未动**：事件 Q 的五路由整段（`DECISION-TERMINATION-AND-PERSONA-ROUTES.md`
+  §三.3 明确「a year」与「typed recall never returns task scopes」是这段里唯一
+  起作用的部分，别动它们）；历史引文封框段；`REMINDER_CAPABILITY`。
+  测试钉死的判别词（五个路由名、`an active scope needs no search`、
+  `task_scope_search first`、`rewriting` + `not a new project task`、
+  `conflict_notice` / `contested` / `ask the user which one applies`、
+  `procedure_hint` / `procedure_discover` / `trigger_local`）全部仍在。
+- **同义压缩**（条款一条不少，只并句去冗）：记忆检索段、Procedure 段、
+  `trigger_local` 段、`conflict_notice` 段、`create_new` 段、`context_page_in` 段。
+- **跨面去重**（删掉的话，同一请求里另一处仍原样送达模型）：
+  1. 「A stored Procedure stays outside typed recall until it has actually been
+     used once」——`MEMORY_TYPE_SELECTION_POLICY` 的 R4 就是这句话，
+     且 `DECISION-EXTRA-TYPE-RATE.md` §3.1 自己写明二者「同源」，
+     只是 R4 落在**模型选参数的那一刻**，比 PERSONA 更早也更贴近现场。
+     **保留**了 R4 没有的那半句推断护栏：「never conclude from the absence …
+     that you saved no such workflow」。
+  2. 「The ref of a recall fragment … is not a page reference; never pass it as
+     reference_id」——`CONTEXT_PAGE_IN_SCHEMA.reference_id` 的 description
+     已逐字带着同一个例子（`"recall-item:<id>:1"`）。
+  3. 「choosing the needed memory_types from the question」——
+     `memory_types` 的 description 现在把选型规则讲得细得多。
+
+**B. `backend/deskpet/sdk_adapters/context_route.py` 的 schema description：632 → 600 token**
+
+正是 `DECISION-EXTRA-TYPE-RATE.md` 的 **F-ETR-4** 点名的杠杆
+（「压缩 `context_route` schema 里与本轮无关的长描述」），本轮消费掉它：
+
+- `reuse_workspace_of` 105 → 92：四条契约（仅 create_new / 从公开
+  search·resume 抄 `task_scope_id` 与 `source_hash` / 新绑定授权到唯一已验证
+  root 且绝不重开旧任务 / 否则两个字段都省略或 JSON null、绝不用占位串或伪造
+  hash）**一条不少**，只是并句。
+- `expected_source_hash` 49 → 35：省略/JSON null/不得伪造这条规则原本在两个
+  字段里各写一遍，现在只在 `reuse_workspace_of` 里说一次。
+- `include_short_horizon` 50 → 46：纯并句。
+- **`MEMORY_TYPE_SELECTION_POLICY` 一字未动**（178 token），
+  `test_policy_keeps_the_route_schema_inside_its_measured_token_cost` 的
+  643 上限仍然成立（现为 600）。
+
+**C. 新增守卫（`tests/sdk_adapters/test_token_estimator_calibration.py`）**
+
+`test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn`：
+把该场景峰值轮的**可变部分**（Host 收口指令 + 未收口因果组 + 夹具自己的能力
+发现 schema）按实测值 `5261 − 2223 = 3038` 固定住，只断言两条车道真正会去改的
+**固定文本**（PERSONA + 四个产品 schema）加上它仍 ≤ 5325。
+本次缺陷的本质是「只有一条 ~10 s 的集成用例能看见这堵墙，而且要等合流之后」；
+现在多加一句话会在**毫秒级**触发失败，并在断言信息里给出该压缩还是该重推的选项。
+这也正是 `DECISION-TERMINATION-AND-PERSONA-ROUTES.md` §四遗留 3 要的东西。
+
+### 附.4 复原后各档余量（实测峰值轮，`ratio=1.00`）
+
+| 档位 | `effective` | 峰值 `planned` | 余量 | 结论 |
+|---|---|---|---|---|
+| 4096 | 2663 | 2723 | **−60** | 仍红（既有红，见 §5.1） |
+| 8192 | 5325 | **5261** | **+64（1.2%）** | **绿：分页并完成** |
+| 32768 | 25396 | 8554 | +16842（66%） | 绿 |
+
+对照：修复前 8192 档为 `5418 / 5325 = −93`；
+只有 N + d5c 时余量 **+10**。本轮把它抬到 **+64**，并加了守卫。
+
+**4096 档的形态又变了一次，必须记录**：`26247ea8` 上它红在
+`primary_context.prepare` 的硬校验（`protected_tokens > budget` 直接抛
+`ContextBudgetExceeded`，连一次装配都到不了，`_plan_turn_messages` 的诊断日志
+一行都没有）；压缩后 `prepare` 重新装得下（protected 2439 vs 2663，+224），
+Run 因此能跑到装配器，改为在**第 2 次** wire 请求上安全停机
+（`wire_count = 1`，而用例断言 3）。
+**没有把断言改成 1**：那是把期望迁就现状，不是修好它。
+要让 4096 档真的走到第 4 次装配，还需要约 640 token 的 protected 空间——
+那是 4096 档预算本身的问题（tool schema 1304 + PERSONA 1135 已占 2439/2663），
+不是措辞问题，仍挂在 F-ETR-4 / 本备忘 §5.1 名下。
+
+### 附.5 验证
+
+- 定向绿：`test_current_tool_megabyte.py`（`[8192]` `[32768]` 绿，`[4096]` 既有红）、
+  `test_current_tool_pages.py` 3 绿、
+  `test_token_estimator_calibration.py` 33 绿（含新守卫）、
+  `test_context_route_tool.py` + `test_recall_selection_policy.py` +
+  `test_p5s2_token_budget.py` + `test_token_budget_per_model.py` 合计 108 绿。
+- 回归对照（同 venv，逐条 test id 比对基线 `26247ea8`）：
+  `tests/sdk_adapters`（排除 `test_composition.py`）58 红 → 58 红，逐条相同；
+  `tests/execution` 与基线相同（唯一差异是 megabyte `[4096]` 的失败**形态**，
+  见 §附.4；该用例前后都红）。
+
+### 附.6 Followup
+
+- **F-TOK-4**：语义收口 system 指令（本场景 **711 token**）是 protected 分区里
+  第二大的一块，其中 `material_events` 把同一个 effect 的
+  `source_event_id`（`effect:effect-<64 hex>`，各约 20 token）写两遍
+  （`host.file` + `harness.tool_invocation`）。它是 Host 自己生成的文本，
+  压缩它不涉及任何模型契约用词，是 4096 档唯一还剩的大杠杆。属 S5b 收口车道。
+- **F-TOK-5**：`primary_settled_effect_v1` 摘要固定带 1 KiB excerpt
+  （本场景两条各 399 token）。按窗口档位缩放 excerpt 会**破坏**
+  `verify_request` 的逐字节重算（校验端拿不到窗口），所以不能简单改；
+  若要做，需要把窗口档位写进 descriptor 本身。

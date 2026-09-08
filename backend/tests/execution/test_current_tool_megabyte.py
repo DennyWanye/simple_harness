@@ -63,6 +63,16 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
     # megabyte result is produced at all.  8192 and 32768 still page and
     # complete: charging the schemas by their real JSON (not ``repr``) leaves
     # 8192 inside its budget.
+    #
+    # 2026-09-09 reconciliation (DECISION-TOKEN-ESTIMATOR.md §附录): 8192 was
+    # restored by compressing PERSONA and the context_route schema.  The 4096
+    # tier stays the documented pre-existing red, and its shape moved once more
+    # — ``primary_context.prepare`` now fits again (it did not at 26247ea8), so
+    # the Run reaches this planner and stops on its *second* wire request
+    # (``wire_count`` 1, not the 3 asserted below).  Reaching 3 would need ~640
+    # more tokens of protected room at that tier; that is a budget question for
+    # the 4096 tier itself, not a wording one, so the expectation is left as it
+    # stands rather than rewritten to match the current stop.
     budget_stop = context_window == 4096
     budget_rejections = []
     if budget_stop:
