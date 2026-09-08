@@ -246,3 +246,4 @@ cd tauri-app && npm test
 4. 真实模型：主用 `gpt-5.6-luna`（svtun）；中转不可用时用 `.env` 的 `DEEPSEEKER_APIKEY`（DeepSeek 官方 API，`deepseek-v4-pro`）作为回退，并在证据中记录回退。
 
 - 2026-09-08 用户决定：F01 事件触发本轮不做，记为下一轮 followup（首选方案 B：绑定工作区本地 git release tag）；release tag 待全部任务完成并真人验收后再授权；"通过对话遗忘认知记忆"暂不提前做 S5c 模型可见记忆视图（A6 T23 改 UI 面板遗忘，对话遗忘记 F10）。
+- 2026-09-09 用户决定：DeepSeek 已充值，模型改用 **`deepseek-v4-flash`**（更便宜）；原生旅程与语料批次默认走 flash，`model_overrides.toml` 需为 flash 钉 32000 窗口。
