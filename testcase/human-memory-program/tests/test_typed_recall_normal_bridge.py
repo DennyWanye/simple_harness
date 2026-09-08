@@ -241,12 +241,46 @@ async def test_short_real_registration_projection_and_mixed_public_dispatch(tmp_
     fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
     inputs=load(ROOT/'runners/typed_recall_normal_inputs.py').short_inputs(fixture)
     rows=await load(ROOT/'adapters/typed_recall_short_cases.py').run_cases(inputs,tmp_path)
-    assert len(rows)==6
+    assert len(rows)==9
     oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
     for row in rows:
         assert 'exception' not in row['observations'],(row['cell_id'],row['observations'].get('exception'))
         judged=oracle.assess_short(fixture,row)
-        assert judged['status']=='BLOCKED' and judged['business_assertions'],(row['cell_id'],judged)
+        assert judged['status']=='PASS' and judged['business_assertions'],(row['cell_id'],judged)
+    by_cell={row['cell_id']:row for row in rows}
+    # Paired negatives: every added short binding must be able to fail.
+    def broken(cell,mutate):
+        changed=copy.deepcopy(by_cell[cell]);mutate(changed['observations']);return oracle.assess_short(fixture,changed)
+    def flip(text):return ('0' if text[0]!='0' else '1')+text[1:]
+    negatives=[
+        ('eligibility/short-chain-complete',lambda o:o.pop('typed_sources')),
+        ('eligibility/short-chain-complete',lambda o:o['typed_sources']['snapshot']['items'][0].__setitem__('visible',False)),
+        ('eligibility/short-chain-complete',lambda o:o['typed_sources']['snapshot']['items'][0]['source_refs'][0]
+            .__setitem__('registration_hash',flip(o['typed_sources']['snapshot']['items'][0]['source_refs'][0]['registration_hash']))),
+        ('eligibility/short-chain-complete',lambda o:o['typed_sources']['snapshot'].__setitem__('valid_until',
+            o['typed_sources']['snapshot']['valid_until']+1)),
+        ('eligibility/short-chain-complete',lambda o:o['tampered_sources']['snapshot']['items'][0].__setitem__('visible',True)),
+        ('eligibility/short-chain-complete',lambda o:o['recall']['execution']['result']['items'][0]
+            .__setitem__('effective_privacy_class','public')),
+        ('eligibility/short-expiry-equals-now',lambda o:o.__setitem__('recall_now',o['chunk_expiry']-2.0)),
+        ('eligibility/short-expiry-equals-now',lambda o:o['just_before']['execution']['result'].__setitem__('items',[])),
+        ('eligibility/short-registration-invalid',lambda o:o.pop('registration_rejection')),
+        ('eligibility/short-registration-invalid',lambda o:o['registration_rejection'].__setitem__('reason','other')),
+        ('eligibility/short-registration-invalid',lambda o:o['control_recall']['execution']['result'].__setitem__('items',[])),
+        ('eligibility/short-classification-invalid',lambda o:o['projection_build'].__setitem__('projected_chunk_count',1)),
+        ('eligibility/short-classification-invalid',lambda o:next(e for e in o['calls']
+            if e['call']=='register_conversation_evidence' and e['registration']['evidence_id']=='conversation-evidence-1')
+            .__setitem__('has_authorized_public_text',True)),
+        ('selection-budget/projection:short_horizon',lambda o:o['recall']['execution']['result']['items'][0]['public_payload']
+            .__setitem__('content','user: '+o['short_recipe']['projection_canary']['extra_typed_field'])),
+        ('selection-budget/projection:short_horizon',lambda o:o['recall']['execution']['result']['items'][0]
+            .__setitem__('cross_scope',True)),
+        ('selection-budget/projection:short_horizon',lambda o:o['recall']['execution']['result']['items'][0]
+            .__setitem__('evidence_manifest_hash','0'*64)),
+    ]
+    for cell,mutate in negatives:
+        verdict=broken(cell,mutate)
+        assert verdict['status']=='FAIL',(cell,verdict)
 
 
 @pytest.mark.asyncio

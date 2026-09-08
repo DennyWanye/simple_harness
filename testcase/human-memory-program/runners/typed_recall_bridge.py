@@ -478,10 +478,10 @@ def _execute(args, layers, expected):
         summary.update(status="FAIL", reason="validation or oracle code changed during execution")
         for layer in summary["layers"]:
             invalidate_admissions(summary,layer,summary["reason"])
-    # Sealed tie-break rows adjudicated as unreachable on the frozen public contract (see the
-    # reachability note in typed_recall_selection_oracle). They only ever REPLACE the generic
-    # "no executor yet" reason on a cell that is already BLOCKED: never a PASS, never a FAIL,
-    # never a cell some executor actually observed.
+    # Sealed rows adjudicated as unreachable on the frozen public contract (the tie-break
+    # reachability note and the exact-dedupe key note in typed_recall_selection_oracle). They
+    # only ever REPLACE the generic "no executor yet" reason on a cell that is already BLOCKED:
+    # never a PASS, never a FAIL, never a cell some executor actually observed.
     for name, reason in unpairable.items():
         row = summary["cell_results"].get(name)
         if (row is not None and row["status"] == "BLOCKED"
@@ -504,7 +504,7 @@ def _execute(args, layers, expected):
                 row.update(assessment_scope='OBSERVATION_ONLY',blocker_categories=[])
             elif reason.startswith('SDK_INCREMENT_REQUIRED:'):row['blocker_categories']=['SDK_INCREMENT_REQUIRED']
             elif reason.startswith('DUPLICATE_OF_POSITIVE_INVARIANT_WITNESS:'):row['blocker_categories']=['DUPLICATE_UNTESTABLE']
-            elif reason.startswith('PUBLIC_TIE_NOT_CONSTRUCTIBLE:'):row['blocker_categories']=['CONTRACT_FACT_UNPAIRABLE']
+            elif reason.startswith(('PUBLIC_TIE_NOT_CONSTRUCTIBLE:','PUBLIC_DUPLICATE_NOT_CONSTRUCTIBLE:')):row['blocker_categories']=['CONTRACT_FACT_UNPAIRABLE']
             elif reason.startswith('CELL_EXECUTOR_NOT_IMPLEMENTED') or 'PROMOTION_PATH_NOT_EXECUTED' in reason:row['blocker_categories']=['EXECUTOR_UNIMPLEMENTED']
             elif reason.startswith(('PUBLIC_CASE_PRECONDITION_REJECTED','STATE_PUBLIC_PRECONDITION:','PUBLIC_CONTRACT_CONFLICT:','SEALED_PAGE_BOUND')) or any(v in reason for v in (
                     'APPLICABILITY_OR_SIGNAL','CANARY_AND_CROSS_SCOPE','SHORT_PUBLIC_PRECONDITION','CONSTRUCTION_CONFLICT')):
