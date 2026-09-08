@@ -34,3 +34,7 @@
 这正是事件 E 备忘录留下的 F-E2：控制类结果在同一 Run 内线性累积且不受同 Run 上限约束。修复方向由子代理按证据裁定并写 `DECISION-F-E2-CONTROL-RESULT-BOUND.md`：被后续同族控制调用取代的旧结果压成带回执 id 的短桩；`context_page_in` 结果可按 page_id 重取，超出允许量的旧页压桩；回执新增 `control_results_stubbed` 供 `a6_verify.py` 佐证；最新一轮控制结果保持原文。
 
 对验收的影响：A6-3（同 Run 动态换页不失败）本次判 FAIL；第 9 次尝试需带 F-E2 修复重跑。
+
+## 新发现：分析关系候选全部不可用（事件 S，已派独立子代理修复）
+
+T18 时 `cognitive_relations` 仍为 0 行；`native.log` 有 17 条 `memory.analysis_relation_candidates_unavailable`（每个分析批一条），`error_type=KeyError`、`error_message='fb154920-9038-5bd4-8a4f-5c6875c2464a'`，记录器 `deskpet.memory.semantic_correction`。即分析协议 v8 的关系候选构建在查某个成员/头 id 时抛 KeyError，整批关系被降级为无。A6-6 本次判 FAIL；修复方向：候选构建必须解析计划引用的每个成员，不可解析的成员按逐成员原因码跳过而非整批丢弃；备忘录 `DECISION-S-RELATION-KEYERROR.md`。
