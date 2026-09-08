@@ -32,3 +32,10 @@ F-E2 + 事件 S 合入 main → Host 钉 Memory 0.6.33（或 0.6.34）→ 重建
 ## A6-2 补充归因（2026-09-09 04:30）
 
 `execution_effects` 显示 flash 本次从未调用 `read_file`，两份 fixture（40 003 / 47 670 字节）都用 `run_shell cat` 读取，结果被 shell 工具的输出上限截到 17 950 / 21 322 字节（含 JSON 包装），请求中没有任何 >16 KiB 的 tool 消息，分页路径从未触发，ANCHOR-ALPHA 也因截断未被模型看到。这是模型选工具的行为差异（第 5 次用 `read_file` 时 A6-2 通过），不是 Host 缺陷。第 9 次驱动的 T6/T8 提示改为「用 read_file 工具（不要用 shell 命令）一次读出全文」，以确保走大结果分页路径（`a6_driver.sh` 已改并提交）。
+
+## F-E2 合入（2026-09-09 05:05，`566011b7`）与子代理对 T11 诊断的三点更正
+
+- `tool_search` 不是控制类工具且本次已全部被分页（4 条 `primary_settled_effect_v1`）；控制类实际为 `context_route` ×3（11 573 B）+ `task_scope_search`（12 389 B）= 41 078 B 工具字节中的 80.4%。
+- 修复形态：每 Run 控制类结果字节配额、最旧优先压成固定成本的**省略通知**（`primary_control_result_elided_v1`，约 160 token），不是分页引用（可执行证明不能变成可读回的准入令牌）；`context_route` 结果永不省略（`typed_context_use` 从请求体重读它）；最新一轮控制结果保持原文。事故形状离线复算：planned 27 016 → 19 545，余量 −263 → +7 207。
+- 估算器备注：T8/T9 估算稳定高出真实 4.5%，T11 的 `planned=27015` 折算真实约 25 857 < 26 752，本次抛出很可能是**估算假阳性**（归 Incident N / F-TOK-6，未在 F-E2 内处理）。
+- 评审 MUST-FIX 已修：受保护轮次改从全部因果来源推导（否则只含旧 `task_scope_search` 的 Run 永远不省略）。遗留 F-E2b–f 见备忘录 `DECISION-F-E2-CONTROL-RESULT-BOUND.md`。
