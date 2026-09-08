@@ -3,6 +3,9 @@ from pathlib import Path
 import aiosqlite
 
 from deskpet.memory.current_input_source import read_current_input_source, CurrentInputSourceError
+from deskpet.memory.current_input_visibility import (
+    LIVE_CLAIM_STATES, LIVE_CLAIM_PLACEHOLDERS, same_physical_claim,
+)
 from deskpet.memory.history_source_authority import HostHistorySourceAuthority
 from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 
@@ -33,9 +36,9 @@ class HostCurrentInputAuthority:
             rows = await (await db.execute(
                 "SELECT h.*,t.turn_hash FROM foreground_run_heads h "
                 "JOIN foreground_turns t ON t.turn_id=h.turn_id AND t.subject=h.subject "
-                "WHERE h.subject=? AND h.turn_id=? AND h.current_state IN "
-                "('CLAIMED','RUNNING','PAUSE_REQUESTED','PAUSED','STOP_REQUESTED','CANCEL_REQUESTED') LIMIT 2",
-                (principal.actor_id, binding.turn_id),
+                f"WHERE h.subject=? AND h.turn_id=? AND h.current_state IN "
+                f"({LIVE_CLAIM_PLACEHOLDERS}) LIMIT 2",
+                (principal.actor_id, binding.turn_id, *LIVE_CLAIM_STATES),
             )).fetchall()
             if len(rows) != 1:
                 return None
@@ -69,9 +72,11 @@ class HostCurrentInputAuthority:
             db.row_factory = aiosqlite.Row
             final = await (await db.execute("SELECT * FROM foreground_run_heads WHERE host_run_id=?",
                 (run["host_run_id"],))).fetchone()
-        stamp = ("host_run_id", "subject", "turn_id", "primary_conversation_id",
-            "owner_id", "generation", "current_state", "sdk_run_id")
-        if final is None or any(final[key] != run[key] for key in stamp):
+        # This slow span sits inside the Host's own hand-off window, so the two
+        # writes it straddles are this claim starting, not another holder: the
+        # ``CLAIMED->RUNNING`` transition, and the ``bind_sdk_run`` this reader
+        # already admitted as absent above. Everything else still fails closed.
+        if not same_physical_claim(run, final, may_bind_sdk_run_id=expected_run):
             return None
         kind = fact["input_use"]["declaration"]["kind"]
         item = EvidenceItemAuthority(

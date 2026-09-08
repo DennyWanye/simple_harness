@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 
 import aiosqlite
@@ -10,10 +11,46 @@ from simple_harness import (DisclosureContext, DeliveryRecipient, IntendedAudien
 from simple_harness.providers import ProviderRequestRejectedError
 from deskpet.task_scope.protocol import canonical_json, digest, identifier
 
+_REASON_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
+
 
 class PrimaryHistoryDisclosureRejected(ProviderRequestRejectedError):
     error_code = "primary_history_disclosure_rejected"
     default_message = "Current history dependencies cannot be verified for this request."
+
+
+# The guard redacts its private cause, which left every rejection opaque at the
+# provider boundary (corpus C12-19 surfaced only ``EXECUTION_FAILED``). These are
+# the module's own literal failure codes: no path, identifier, hash, payload or
+# message text from the request or the stores can reach this set.
+_PUBLIC_REJECTION_REASONS = frozenset({
+    "primary_dependencies_carrier_unsupported", "primary_dependencies_draft_sink_missing",
+    "primary_dependencies_invalid", "primary_dependencies_item_mismatch",
+    "primary_dependencies_limit", "primary_dependencies_missing",
+    "primary_dependencies_not_visible", "primary_dependencies_short_bytes_mismatch",
+    "primary_dependencies_short_sources_missing", "primary_disclosure_changed_during_check",
+    "primary_input_claim_changed_during_check",
+    # Raised by the physical request comparison this guard calls
+    # (``composition.verify_current_input_provider_request``).
+    "current_input_provider_store_unavailable", "current_input_provider_request_unbound",
+    "current_input_provider_request_mismatch",
+})
+_GENERIC_REJECTION_REASON = "primary_dependencies_rejected"
+
+
+def rejection_reason(exc):
+    """Stable, payload-free reason for the redacted rejection; never a cause dump."""
+    from deskpet.memory.current_input_source import CurrentInputSourceError
+
+    if isinstance(exc, CurrentInputSourceError):
+        # ``code`` is always ``"host_current_input_" + <literal>`` built in code.
+        code = getattr(exc, "code", None)
+        if isinstance(code, str) and _REASON_CODE.fullmatch(code):
+            return code
+        return _GENERIC_REJECTION_REASON
+    if type(exc) is ValueError and str(exc) in _PUBLIC_REJECTION_REASONS:
+        return str(exc)
+    return _GENERIC_REJECTION_REASON
 
 
 def dependencies(evidence=(), recall=(), short_horizon=(), *, schema_version=None, procedure_drafts=()):
@@ -436,6 +473,8 @@ async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, pol
             original_input_claim = None
             if ":input-v1:" in disclosure.authority_ref:
                 from deskpet.memory.current_input_visibility import claim_stamp
+                # ``CLAIMED`` is the admitted hand-off state for this very
+                # request (the ``SDK_START`` boundary), not a pre-claim read.
                 original_input_claim = await claim_stamp(db_path, run["host_run_id"], sdk_run_id)
                 stack.verify_current_input_provider_request(sdk_run_id, request)
             allowed = await policy.check_dependencies(db=db, primary_ref=run["primary_conversation_id"],
@@ -449,8 +488,13 @@ async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, pol
         if current != disclosure:
             raise ValueError("primary_disclosure_changed_during_check")
         if original_input_claim is not None:
-            if await claim_stamp(db_path, run["host_run_id"], sdk_run_id) != original_input_claim:
+            from deskpet.memory.current_input_visibility import same_physical_claim
+            # G1->G2 still rejects rather than substitutes; the sole tolerated
+            # movement is the Host recording the start of THIS hand-off.
+            if not same_physical_claim(original_input_claim,
+                                       await claim_stamp(db_path, run["host_run_id"], sdk_run_id)):
                 raise ValueError("primary_input_claim_changed_during_check")
             stack.verify_current_input_provider_request(sdk_run_id, request)
     except Exception as exc:
-        raise PrimaryHistoryDisclosureRejected(private_cause=exc) from None
+        raise PrimaryHistoryDisclosureRejected(
+            public_message=rejection_reason(exc), private_cause=exc) from None
