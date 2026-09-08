@@ -594,6 +594,27 @@ class ForegroundRuntimeExecutionAuthority:
             )
 
     @staticmethod
+    def _reason_audit_fields(exc: BaseException) -> dict[str, object]:
+        """Payload-free clause identity for stable codes that cover many clauses.
+
+        2026-09-09 HM-TO-A6 incident R：``primary_message_scope_source_mismatch``
+        一个码盖了 ~20 条相等性判据，线上 stalled 只留一个码，无从定位是哪一条、
+        哪一个事实。产生方现在带 ``reason_code``（字段名）与 ``item_ordinal``
+        （transcript 序号），两者都不含任何 envelope/工具参数/结果字节。
+        """
+
+        reason = getattr(exc, "reason_code", None)
+        if not reason:
+            return {}
+        ordinal = getattr(exc, "item_ordinal", None)
+        # 长度上限是廉价保险：稳定码本就是短字段名，截断可防止别的异常把长文本
+        # 塞进 ``reason_code`` 混进审计。
+        return {
+            "error_reason_code": str(reason)[:120],
+            "error_reason_ordinal": ordinal if type(ordinal) is int else None,
+        }
+
+    @staticmethod
     def _cause_audit_fields(exc: BaseException) -> dict[str, object]:
         """Payload-free identity of the innermost wrapped cause, for Host logs.
 
@@ -683,6 +704,7 @@ class ForegroundRuntimeExecutionAuthority:
                     error_detail=detail[:500],
                     attempt=attempt,
                     **self._cause_audit_fields(exc),
+                    **self._reason_audit_fields(exc),
                 )
                 # 2026-09-08 HM-TO-A6：驱动此前一抛异常就永久退出，队列里已受理的
                 # 回合再没有任何东西去推进它，UI 只能一直显示「等待主对话就绪」。
@@ -695,6 +717,7 @@ class ForegroundRuntimeExecutionAuthority:
                         error_type=type(exc).__name__,
                         attempts=attempt,
                         **self._cause_audit_fields(exc),
+                        **self._reason_audit_fields(exc),
                     )
                     break
                 delay = min(
