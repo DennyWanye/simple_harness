@@ -39,6 +39,13 @@ from simple_harness.providers import (
     Secret,
 )
 
+from deskpet.sdk_adapters.tool_call_arguments import (
+    EMPTY_TOOL_CALL_ARGUMENTS_JSON,
+    ToolCallArgumentsMemo,
+    canonical_tool_arguments_json,
+    default_tool_call_arguments_memo,
+)
+
 _PROVIDER_TOOL_CALLS_METADATA_KEY = "provider_tool_calls"
 _PROVIDER_REASONING_CONTENT_METADATA_KEY = "provider_reasoning_content"
 _PUBLIC_PROGRESS_ARGUMENT = "deskpet_public_progress"
@@ -457,10 +464,16 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         self,
         *args: Any,
         reasoning_wire: Mapping[str, object] | None = None,
+        tool_call_arguments_memo: ToolCallArgumentsMemo | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._reasoning_wire = dict(reasoning_wire or {})
+        self._tool_call_arguments = (
+            tool_call_arguments_memo
+            if tool_call_arguments_memo is not None
+            else default_tool_call_arguments_memo()
+        )
         self._client = _DiagnosticPostClient(self._client, self._redactor)
 
     async def _post_once(self, request: ProviderRequest) -> ProviderResponse:
@@ -472,7 +485,9 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
 
     def _request_payload(self, request: ProviderRequest) -> dict[str, Any]:
         payload = super()._request_payload(request)
-        payload["messages"] = self._wire_messages(request.messages)
+        payload["messages"] = self._wire_messages(
+            request.messages, arguments_memo=self._tool_call_arguments
+        )
         payload.update(self._reasoning_wire)
         # Preserve Chat Completions' non-strict optional-field contract
         # explicitly on the physical wire; do not rewrite schemas or arguments.
@@ -482,7 +497,12 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         return payload
 
     @classmethod
-    def _wire_messages(cls, messages: Sequence[Message]) -> list[dict[str, Any]]:
+    def _wire_messages(
+        cls,
+        messages: Sequence[Message],
+        *,
+        arguments_memo: ToolCallArgumentsMemo | None = None,
+    ) -> list[dict[str, Any]]:
         """Assemble the wire ``messages`` array, restoring assistant tool_calls.
 
         S5A-UI-F2 (2026-09-02, real desktop UI): an OpenAI-compatible endpoint
@@ -496,21 +516,40 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
 
         The durable messages themselves carry the missing facts: each tool
         result holds its ``call_id`` and tool ``name``.  Rebuild the assistant
-        ``tool_calls`` from the tool results that follow it; original arguments
-        are used when the live metadata is still present (same-process turn)
-        and degrade to an empty JSON object otherwise, which keeps the wire
-        shape valid instead of killing the Run.
+        ``tool_calls`` from the tool results that follow it; the arguments come
+        back from the Host's own ``ToolCallArgumentsMemo``, which retained them
+        when this process parsed the response that issued the call.
 
-        S5b upstream obligation: the arguments are NOT actually lost — the SDK's
-        durable provider-invocation record round-trips full ``ProviderToolCall``
-        arguments (``execution/provider_invocations.py``), the adapter simply has
-        no handle to them here.  The clean fix is upstream: treat an assistant's
-        ``tool_calls`` as a first-class public transcript field (it is part of the
-        conversation, not provider-private metadata) and re-attach it when the
-        Context rebuilds a request.  Remove this degradation once that lands.
+        HM-TO-A6 incident K (2026-09-08): before the memo existed the rebuild
+        used a literal ``"{}"``, and the measured evidence shows that was not a
+        harmless shape degradation.  ``metadata[provider_tool_calls]`` survives
+        in **zero** durable requests, so every assistant ``tool_calls`` on the
+        wire was the ``{}`` rebuild, and the model imitated its own corrupted
+        transcript: pooled over three native DeepSeek runs, requests with no
+        rebuilt call emitted 0/16 empty-argument tool calls while requests with
+        20+ rebuilt calls emitted 22/35, each rejected
+        ``missing_required_argument`` until ``react_max_turns_exceeded``.
+
+        A memo miss still degrades to ``"{}"`` — a valid wire shape beats a dead
+        Run — but it is counted in a payload-free log line instead of passing
+        silently.
+
+        S5b upstream obligation (unchanged): the clean fix is upstream — treat an
+        assistant's ``tool_calls`` as a first-class public transcript field (it is
+        part of the conversation, not provider-private metadata) and re-attach it
+        when the Context rebuilds a request.  The memo is a process-local Host
+        repair, so a cold restart mid-conversation still degrades; remove both
+        once the SDK carries the field.
         """
 
+        memo = (
+            arguments_memo
+            if arguments_memo is not None
+            else default_tool_call_arguments_memo()
+        )
         payloads = [cls._message_payload(message) for message in messages]
+        restored_total = 0
+        fallback_total = 0
         for index, message in enumerate(messages):
             if message.role is not MessageRole.ASSISTANT:
                 continue
@@ -522,18 +561,38 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                     break
                 # call_id 必然存在：Message 契约对 TOOL 角色强制要求它
                 # （contracts/messages.py "tool message requires call_id"）。
+                name = str(follower.name or "unknown")
+                restored = memo.read(follower.call_id.value, name)
+                if restored is None:
+                    fallback_total += 1
+                else:
+                    restored_total += 1
                 followers.append(
                     {
                         "id": follower.call_id.value,
                         "type": "function",
                         "function": {
-                            "name": str(follower.name or "unknown"),
-                            "arguments": "{}",
+                            "name": name,
+                            "arguments": (
+                                EMPTY_TOOL_CALL_ARGUMENTS_JSON
+                                if restored is None
+                                else restored
+                            ),
                         },
                     }
                 )
             if followers:
                 payloads[index]["tool_calls"] = followers
+        if fallback_total:
+            # Counts only — never a call id, tool name or argument value.
+            logger.warning(
+                "product_provider_tool_call_arguments_unavailable "
+                "request_ref=%s rebuilt=%s restored=%s fallback_empty=%s",
+                _diagnostic_request_ref.get(),
+                restored_total + fallback_total,
+                restored_total,
+                fallback_total,
+            )
         return payloads
 
     @staticmethod
@@ -593,10 +652,11 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                     "type": "function",
                     "function": {
                         "name": name,
-                        "arguments": json.dumps(
-                            thaw_json(arguments) if isinstance(arguments, Mapping) else {},
-                            sort_keys=True,
-                            separators=(",", ":"),
+                        # One serialisation for both paths (live metadata here,
+                        # memo restore in ``_wire_messages``) so a restored call
+                        # is byte-identical to the same-process one.
+                        "arguments": canonical_tool_arguments_json(
+                            thaw_json(arguments) if isinstance(arguments, Mapping) else {}
                         ),
                     },
                 }
@@ -775,22 +835,40 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         )
 
 
-def _retain_tool_calls_in_message(response: ProviderResponse) -> ProviderResponse:
+def _retain_tool_calls_in_message(
+    response: ProviderResponse,
+    *,
+    arguments_memo: ToolCallArgumentsMemo | None = None,
+) -> ProviderResponse:
     if not response.tool_calls:
         return response
+    memo = (
+        arguments_memo
+        if arguments_memo is not None
+        else default_tool_call_arguments_memo()
+    )
     metadata = dict(response.message.metadata)
-    metadata[_PROVIDER_TOOL_CALLS_METADATA_KEY] = [
-        {
-            "id": call.call_id.value,
-            "name": call.name,
-            # ProviderToolCall freezes nested JSON objects/arrays as
-            # mappingproxy/tuple. Message freezes metadata again, so a shallow
-            # dict() copy leaves unsupported frozen containers below the first
-            # level. Thaw the full JSON tree before crossing that contract.
-            "arguments": thaw_json(call.arguments),
-        }
-        for call in response.tool_calls
-    ]
+    retained: list[dict[str, Any]] = []
+    for call in response.tool_calls:
+        # ProviderToolCall freezes nested JSON objects/arrays as
+        # mappingproxy/tuple. Message freezes metadata again, so a shallow
+        # dict() copy leaves unsupported frozen containers below the first
+        # level. Thaw the full JSON tree before crossing that contract.
+        arguments = thaw_json(call.arguments)
+        retained.append(
+            {"id": call.call_id.value, "name": call.name, "arguments": arguments}
+        )
+        # HM-TO-A6 incident K: the same object must survive the durable Context
+        # round trip, which strips this metadata by SDK contract. The memo is
+        # the Host's own copy, read back by ``_wire_messages`` on every later
+        # turn of this Run. It holds exactly what is retained here — the model's
+        # arguments after ``_extract_public_progress`` removed the Host-internal
+        # narration field, i.e. the same object the durable effect ledger stores
+        # for this call (``tools/executor.py`` thaws the very same ToolCall
+        # arguments into ``execution_effects.arguments_json``; only the JSON
+        # escaping differs). No redacted record is re-exposed.
+        memo.record(call.call_id.value, call.name, arguments)
+    metadata[_PROVIDER_TOOL_CALLS_METADATA_KEY] = retained
     return replace(
         response,
         message=Message(
@@ -922,6 +1000,7 @@ class ProductProviderAdapter:
         # 取 240s：高于当前最大车道 deadline（analysis 180s）并留余量。
         timeout: float = 240.0,
         pre_invoke_guard=None,
+        tool_call_arguments_memo: ToolCallArgumentsMemo | None = None,
     ) -> None:
         entry = registry.get_entry(provider_id)
         if entry is None or not bool(getattr(entry, "enabled", True)):
@@ -982,7 +1061,11 @@ class ProductProviderAdapter:
             provider_id=provider_id,
             pricing_key=pricing_key,
             reasoning_wire=self.reasoning_wire,
+            tool_call_arguments_memo=tool_call_arguments_memo,
         )
+        # One memo per adapter, shared with its delegate: the response parse
+        # writes it, the next turn's wire assembly reads it (HM-TO-A6 事件 K).
+        self._tool_call_arguments = self._delegate._tool_call_arguments
         self._pre_invoke_guard = pre_invoke_guard
         self._timeout_seconds = float(timeout)
         self._target = ProviderTarget(
@@ -1140,7 +1223,9 @@ class ProductProviderAdapter:
             raise
         try:
             response = _extract_public_progress(response)
-            response = _retain_tool_calls_in_message(response)
+            response = _retain_tool_calls_in_message(
+                response, arguments_memo=self._tool_call_arguments
+            )
         except ContractValidationError as exc:
             # Local normalization is still part of the Provider response
             # contract. A deterministic JSON-shape failure must settle as a
