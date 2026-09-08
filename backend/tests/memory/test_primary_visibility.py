@@ -471,3 +471,302 @@ async def real_recall(manager, principal, envelope):
         "item_id": item.selected_item.item_id,
         "item_hash": item.result_item_hash,
     }
+
+
+# --------------------------------------------------------------------------
+# 2026-09-08 HM-TO-A6：单条超出 Memory 内联上限的 S1 证据，曾让整个主对话的
+# 每一次 history 批次都抛 primary_read_policy_unavailable（实测证据
+# .local-test-evidence/2026-09-08/native-a6-7cec5249）。
+# --------------------------------------------------------------------------
+
+
+def oversized_user_evidence():
+    """A real Host user-turn envelope whose inline payload exceeds Memory's ceiling."""
+    from deskpet.memory.human_memory_service import build_foreground_turn_evidence
+    from deskpet.memory.primary_visibility import inline_evidence_limit
+
+    limit = inline_evidence_limit()
+    assert limit is not None
+    return build_foreground_turn_evidence(
+        subject=AUTH.subject,
+        authority_ref=AUTH.authority_ref,
+        delivery_key="oversized-source",
+        text="x" * (limit + 4096),
+    )
+
+
+@pytest.mark.asyncio
+async def test_oversized_source_is_invisible_and_never_fails_the_batch(tmp_path):
+    """One unadmissible envelope withholds only its own root, not the batch."""
+    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+    f = await setup(tmp_path)
+    result(await f.send("queue.enqueue", {"text": "real admitted source"}))
+    good, _ = (await pairs(f))[0]
+    envelope, receipt = oversized_user_evidence()
+    await HumanMemoryProgramStore(f.path).append_evidence(envelope, receipt)
+
+    async with aiosqlite.connect(f.path) as db:
+        db.row_factory = aiosqlite.Row
+        visible = await PrimaryHistoryPolicy(
+            f.path, AUTH.subject, f.policy.history
+        ).check_evidence_ids(
+            db=db,
+            primary_ref=f.primary,
+            evidence_ids=(good.evidence_id, envelope.evidence_id),
+            disclosure_context=disclosure(),
+        )
+    assert visible == {good.evidence_id: True, envelope.evidence_id: False}
+    # The unadmissible envelope never entered the SDK batch; the good root was
+    # still decided by one real snapshot.
+    assert len(f.policy.history_calls) == 1
+    _, _, bindings = f.policy.history_calls[0]
+    assert [b.envelope.evidence_id for b in bindings] == [good.evidence_id]
+
+
+@pytest.mark.asyncio
+async def test_oversized_source_reaches_the_sdk_batch_without_the_guard(
+    tmp_path, monkeypatch
+):
+    """Control: without the admissibility guard the poison envelope is batched."""
+    from deskpet.memory import primary_visibility as pv
+    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+    monkeypatch.setattr(pv, "assert_source_admissible", lambda envelope, receipt: None)
+    f = await setup(tmp_path)
+    result(await f.send("queue.enqueue", {"text": "real admitted source"}))
+    good, _ = (await pairs(f))[0]
+    envelope, receipt = oversized_user_evidence()
+    await HumanMemoryProgramStore(f.path).append_evidence(envelope, receipt)
+
+    async with aiosqlite.connect(f.path) as db:
+        db.row_factory = aiosqlite.Row
+        await PrimaryHistoryPolicy(
+            f.path, AUTH.subject, f.policy.history
+        ).check_evidence_ids(
+            db=db,
+            primary_ref=f.primary,
+            evidence_ids=(good.evidence_id, envelope.evidence_id),
+            disclosure_context=disclosure(),
+        )
+    _, _, bindings = f.policy.history_calls[0]
+    assert envelope.evidence_id in [b.envelope.evidence_id for b in bindings]
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_batch_rejects_the_oversized_envelope(tmp_path):
+    """The SDK really refuses it — the guard mirrors an actual admission rule."""
+    from simple_harness_memory.core.errors import MemoryLimitError
+    from simple_harness_memory.core.evidence import validate_sanitized_evidence
+
+    envelope, receipt = oversized_user_evidence()
+    with pytest.raises(MemoryLimitError) as raised:
+        validate_sanitized_evidence(
+            envelope, receipt, supported_filter_policies=tuple(FILTERS)
+        )
+    assert str(raised.value) == "evidence_payload_requires_controlled_blob_ref"
+
+
+def _nested(depth):
+    value = "leaf"
+    for _ in range(depth):
+        value = {"n": value}
+    return value
+
+
+@pytest.mark.parametrize(
+    "name,payload",
+    [
+        # Every one of these is rejected by the SDK on *every* read and each one
+        # reproduced the stall. The superseded hand-rolled 64 KiB guard admitted
+        # all six (Task 6 review F-1).
+        ("oversized_inline", {"kind": "x", "t": "y" * (64 * 1024 + 1)}),
+        (
+            "malformed_blob_ref",
+            # `blob:sha256:` is not the controlled prefix; the SDK requires
+            # `memory-blob:` and raises rather than falling back to inline.
+            {
+                "blob_ref": "blob:sha256:" + "a" * 64,
+                "content_hash": "b" * 64,
+                "byte_length": 4096,
+            },
+        ),
+        ("blob_length_invalid", {
+            "blob_ref": "memory-blob:" + "a" * 64,
+            "content_hash": "b" * 64,
+            "byte_length": 0,
+        }),
+        ("too_many_nodes", {"kind": "x", "items": [{"i": i} for i in range(5000)]}),
+        ("too_deep", {"kind": "x", "deep": _nested(40)}),
+        ("credential_boundary_key", {"kind": "x", "authorization": "public-looking"}),
+    ],
+)
+def test_structurally_doomed_sources_are_all_withheld(name, payload):
+    """The guard mirrors the SDK's whole admission rule, not just its size rule."""
+    from simple_harness_memory.core.errors import MemoryLimitError, MemoryValidationError
+    from simple_harness_memory.core.evidence import validate_sanitized_evidence
+
+    from deskpet.execution.primary_history import evidence_pair
+    from deskpet.memory.primary_visibility import (
+        PrimaryVisibilityError,
+        assert_source_admissible,
+    )
+
+    envelope, receipt = evidence_pair(AUTH.subject, f"sdk-{name}", payload, 1.0)
+    # Control: the real SDK really refuses this pair.
+    with pytest.raises((MemoryValidationError, MemoryLimitError)):
+        validate_sanitized_evidence(
+            envelope, receipt, supported_filter_policies=("host-primary-runtime-v1",)
+        )
+    with pytest.raises(PrimaryVisibilityError) as raised:
+        assert_source_admissible(envelope, receipt)
+    assert raised.value.code == "primary_visibility_source_unadmissible"
+
+
+def test_admissible_sources_pass_the_guard():
+    from deskpet.execution.primary_history import evidence_pair
+    from deskpet.memory.primary_visibility import (
+        assert_source_admissible,
+        inline_evidence_limit,
+    )
+
+    from simple_harness.contracts import canonical_json as sdk_json
+
+    limit = inline_evidence_limit()
+    ordinary, receipt = evidence_pair(
+        AUTH.subject, "sdk-small", {"kind": "x", "t": "y"}, 1.0
+    )
+    assert_source_admissible(ordinary, receipt)
+
+    empty, _ = evidence_pair(AUTH.subject, "sdk-edge", {"t": ""}, 1.0)
+    overhead = len(sdk_json(empty.to_json()["sanitized_payload"]).encode("utf-8"))
+    edge, edge_receipt = evidence_pair(
+        AUTH.subject, "sdk-edge", {"t": "y" * (limit - overhead)}, 1.0
+    )
+    assert (
+        len(sdk_json(edge.to_json()["sanitized_payload"]).encode("utf-8")) == limit
+    )
+    assert_source_admissible(edge, edge_receipt)  # exactly at the ceiling
+
+    blob, blob_receipt = evidence_pair(
+        AUTH.subject,
+        "sdk-blob",
+        {
+            "blob_ref": "memory-blob:" + "a" * 64,
+            "content_hash": "b" * 64,
+            "byte_length": limit * 4,
+        },
+        1.0,
+    )
+    assert_source_admissible(blob, blob_receipt)  # size-independent controlled ref
+
+
+@pytest.mark.asyncio
+async def test_visibility_error_carries_payload_free_cause(tmp_path):
+    from simple_harness_memory.core.errors import MemoryLimitError
+
+    from deskpet.memory.primary_visibility import PrimaryVisibilityError
+
+    f = await setup(tmp_path)
+    result(await f.send("queue.enqueue", {"text": "real admitted source"}))
+    env, _ = (await pairs(f))[0]
+
+    async def checker(**kwargs):
+        raise MemoryLimitError("evidence_payload_requires_controlled_blob_ref")
+
+    async with aiosqlite.connect(f.path) as db:
+        db.row_factory = aiosqlite.Row
+        with pytest.raises(PrimaryVisibilityError) as raised:
+            await PrimaryHistoryPolicy(f.path, AUTH.subject, checker).check_evidence_ids(
+                db=db,
+                primary_ref=f.primary,
+                evidence_ids=(env.evidence_id,),
+                disclosure_context=disclosure(),
+            )
+    exc = raised.value
+    assert exc.code == "primary_read_policy_unavailable"
+    assert exc.cause_type == "MemoryLimitError"
+    assert exc.cause_detail == "evidence_payload_requires_controlled_blob_ref"
+
+
+def test_cause_detail_only_survives_for_stable_codes():
+    """Task 6 review F-3: an opaque cause contributes its type and nothing else."""
+    from simple_harness_memory.core.errors import MemoryLimitError, MemoryValidationError
+
+    from deskpet.memory.primary_visibility import cause_fields
+
+    # Free-form runtime text — an HTTP body, a SQL statement, a provider URL —
+    # must never reach a durable audit row.
+    opaque = sqlite3.IntegrityError(
+        "UNIQUE constraint failed: https://relay.example/v1?token=abc"
+    )
+    assert cause_fields(opaque) == {
+        "cause_type": "IntegrityError",
+        "cause_detail": None,
+    }
+    assert cause_fields(RuntimeError("connection reset by peer")) == {
+        "cause_type": "RuntimeError",
+        "cause_detail": None,
+    }
+    # Allowlisted SDK stable-code types: the *message* is the specific code and
+    # wins over a generic class-level `.code`.
+    assert cause_fields(MemoryLimitError("evidence_structure_limit_exceeded")) == {
+        "cause_type": "MemoryLimitError",
+        "cause_detail": "evidence_structure_limit_exceeded",
+    }
+    assert MemoryValidationError.code == "memory_validation_error"  # generic
+    assert cause_fields(
+        MemoryValidationError("evidence_credential_boundary_rejected")
+    ) == {
+        "cause_type": "MemoryValidationError",
+        "cause_detail": "evidence_credential_boundary_rejected",
+    }
+    # Anything exposing `.code` is a stable code by construction.
+    class _Coded(RuntimeError):
+        code = "short_group_source_unadmissible"
+
+    assert cause_fields(_Coded("ignored free text")) == {
+        "cause_type": "_Coded",
+        "cause_detail": "short_group_source_unadmissible",
+    }
+
+
+def test_cause_detail_is_redacted_and_bounded():
+    """Even an allowlisted message goes through the credential red line."""
+    from simple_harness_memory.core.errors import MemoryLimitError
+
+    from deskpet.memory.primary_visibility import MAX_CAUSE_DETAIL, cause_fields
+
+    fields = cause_fields(MemoryLimitError("rejected sk-" + "A" * 32 + " tail"))
+    assert "sk-" not in fields["cause_detail"]
+    assert "[redacted:credential]" in fields["cause_detail"]
+
+    long = cause_fields(MemoryLimitError("e" * (MAX_CAUSE_DETAIL + 500)))
+    assert len(long["cause_detail"]) == MAX_CAUSE_DETAIL
+
+
+@pytest.mark.asyncio
+async def test_read_error_reexports_the_visibility_cause(tmp_path):
+    """PrimaryReadModel re-wraps without losing the real cause."""
+    from simple_harness_memory.core.errors import MemoryLimitError
+
+    from deskpet.memory.primary_read_model import PrimaryReadError, PrimaryReadModel
+
+    f = await setup(tmp_path)
+    result(await f.send("queue.enqueue", {"text": "real admitted source"}))
+
+    async def checker(**kwargs):
+        raise MemoryLimitError("evidence_payload_requires_controlled_blob_ref")
+
+    model = PrimaryReadModel(
+        f.path,
+        subject=AUTH.subject,
+        suppression_resolver=f.policy,
+        history_visibility_checker=checker,
+    )
+    with pytest.raises(PrimaryReadError) as raised:
+        await model.state(disclosure_context=disclosure())
+    exc = raised.value
+    assert exc.code == "primary_read_policy_unavailable"
+    assert exc.cause_type == "MemoryLimitError"
+    assert exc.cause_detail == "evidence_payload_requires_controlled_blob_ref"

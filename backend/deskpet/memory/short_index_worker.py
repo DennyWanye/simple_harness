@@ -42,6 +42,13 @@ class PrimaryShortIndexWorker:
         self._manager = None
         self._after, self._upper = 0, None
         self._confirmed = OrderedDict()
+        # 2026-09-08 HM-TO-A6：确定性不可受理的组（例如 payload 超出 Memory 内联
+        # 上限的终态源）此前每个周期都会被重新注册一次，每次都先把同一条 USER
+        # 证据再摄入一遍——线上表现为每分钟 28 条 evidence_ingestion_replayed。
+        # 止血的是 register_group 首次写之前的 assert_group_admissible，而不是
+        # 这里再加一个负缓存：负缓存的 key 只能覆盖 registrations，漏掉
+        # terminal_source，修好那条终态证据之后该组会被永久挡住（Task 6 评审
+        # F-5）。每周期多做一次纯读的受理校验，换掉一整类过期 key 缺陷。
         self._last_projection = None
         self._generation_pending = False
 

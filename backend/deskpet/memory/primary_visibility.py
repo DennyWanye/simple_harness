@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 from collections.abc import Mapping
+from functools import lru_cache
 from pathlib import Path
 
 from simple_harness import (
@@ -18,16 +19,86 @@ from deskpet.task_scope.protocol import (
     canonical_json,
     digest,
     identifier,
+    redact_credential_shapes,
 )
 
 MAX_BINDINGS = 256
 MAX_DEPTH = 64
 MAX_EDGES = 4096
+# 2026-09-08 HM-TO-A6：包住的真实异常必须能落到 Host 日志/审计里。只带
+# 「类型 + 稳定消息」，不带任何 envelope/payload 字节，并再过一遍凭据形状红线。
+MAX_CAUSE_DETAIL = 200
+# 一条 S1 证据被 Memory 结构性拒绝（永久、逐 envelope、与策略无关）的稳定码。
+SOURCE_UNADMISSIBLE = "primary_visibility_source_unadmissible"
+
+
+@lru_cache(maxsize=1)
+def _stable_message_types() -> tuple[type, ...]:
+    """Error types whose ``str(exc)`` is a stable code, never free-form text.
+
+    Task 6 review F-3: an arbitrary innermost cause can carry a raw HTTP body,
+    a SQLite statement or a provider URL.  Only a ``.code`` attribute or one of
+    these types is proof that the message is a bounded, content-free token.
+    """
+
+    allowed: list[type] = []
+    try:
+        from simple_harness_memory.core import errors as sdk_errors
+    except ImportError:  # pragma: no cover - no SDK ⇒ nothing to allowlist
+        pass
+    else:
+        allowed += [
+            sdk_errors.MemoryErrorBase,
+            sdk_errors.MemoryLimitError,
+            sdk_errors.MemoryCorruptionError,
+            sdk_errors.EmbeddingError,
+        ]
+    from deskpet.task_scope.protocol import TaskScopeProtocolError
+
+    allowed.append(TaskScopeProtocolError)
+    return tuple(allowed)
+
+
+def cause_fields(exc: BaseException | None) -> dict[str, str | None]:
+    """Payload-free (type, stable code) of a wrapped cause, for Host logs only.
+
+    The type name is always safe to record.  The *message* is recorded only
+    when it is a stable code by construction — the exception exposes ``.code``,
+    or its class is one of the allowlisted Host/SDK stable-error types.  Any
+    other cause contributes its type and nothing else, so an audit record can
+    never carry a raw HTTP body, SQL text or a provider URL.
+    """
+
+    if exc is None:
+        return {"cause_type": None, "cause_detail": None}
+    fields = {"cause_type": type(exc).__name__, "cause_detail": None}
+    code = getattr(exc, "code", None)
+    if isinstance(exc, _stable_message_types()):
+        # The message wins over ``.code`` for these: an SDK stable-error class
+        # carries a *generic* class-level code ("memory_validation_error")
+        # while its message is the specific one we actually need
+        # ("evidence_credential_boundary_rejected").
+        message = str(exc)
+    elif isinstance(code, str) and code:
+        message = code
+    else:
+        return fields
+    # Belt and braces: a "stable" code is still redacted and bounded before it
+    # reaches a durable audit row.
+    detail, _ = redact_credential_shapes(message)
+    fields["cause_detail"] = detail[:MAX_CAUSE_DETAIL] or None
+    return fields
 
 
 class PrimaryVisibilityError(ValueError):
-    def __init__(self, code: str):
+    def __init__(self, code: str, cause: BaseException | None = None):
         self.code = code
+        fields = cause_fields(cause)
+        # 只记类型与稳定消息：`primary_read_policy_unavailable` 这类稳定码此前
+        # 把真实原因（例如 SDK 的 MemoryLimitError）整个吞掉，线上只剩一个无从
+        # 下手的码（实测 2026-09-08 native-a6-7cec5249）。
+        self.cause_type = fields["cause_type"]
+        self.cause_detail = fields["cause_detail"]
         super().__init__(code)
 
 
@@ -72,7 +143,7 @@ async def read_evidence_pair(*, db, subject, primary_ref, evidence_id):
             raise ValueError("Host S1 row mismatch")
         return envelope, receipt
     except (ValueError, TypeError, KeyError) as exc:
-        raise PrimaryVisibilityError("primary_source_corrupt") from exc
+        raise PrimaryVisibilityError("primary_source_corrupt", exc) from exc
 
 
 def _fields(value, keys):
@@ -84,7 +155,7 @@ def _dependencies(proof):
     try:
         from simple_harness_memory import HistoryRecallBinding
     except ImportError as exc:
-        raise PrimaryVisibilityError("primary_read_policy_unavailable") from exc
+        raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
 
     if not isinstance(proof, Mapping):
         raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
@@ -116,7 +187,7 @@ def _dependencies(proof):
         try:
             from simple_harness_memory import HistoryShortHorizonBinding
         except ImportError as exc:
-            raise PrimaryVisibilityError("primary_read_policy_unavailable") from exc
+            raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
         for item in proof["short_horizon"]:
             _fields(item, ("audit_id", "chunk_ref", "content_hash"))
             recalls.append(HistoryShortHorizonBinding(**dict(item)))
@@ -133,6 +204,56 @@ def _binding_hash(binding):
     return canonical_hash(
         {"domain": "memory.history.binding.v1", "payload": binding.to_json()}
     )
+
+
+def inline_evidence_limit() -> int | None:
+    """The Memory inline-payload ceiling this build's SDK will admit."""
+    try:
+        from simple_harness_memory.core.evidence import MAX_INLINE_EVIDENCE_BYTES
+    except ImportError:  # pragma: no cover - no SDK ⇒ every read already fails
+        return None
+    return int(MAX_INLINE_EVIDENCE_BYTES)
+
+
+def assert_source_admissible(envelope, receipt) -> None:
+    """Reject an S1 pair the Memory batch can never admit (fail-closed).
+
+    2026-09-08 HM-TO-A6: a single terminal observation whose inline payload
+    exceeded Memory's 64 KiB ceiling made **every** later history batch raise
+    ``MemoryLimitError``.  The Host wrapped that as the transient-looking
+    ``primary_read_policy_unavailable`` and the whole primary conversation
+    became unreadable — the foreground driver died and no later turn could
+    start.
+
+    Structural rejection is a permanent, per-envelope property, not a policy
+    outage, so it withholds that one source instead of the batch.  Task 6
+    review F-1: this calls **the SDK's own** :func:`validate_sanitized_evidence`
+    rather than reimplementing one of its rules, because the batch also dies on
+    a malformed ``blob_ref``, a >4096-node or depth->32 structure, an oversized
+    public string and a credential-boundary hit — a hand-rolled 64 KiB check
+    admitted every one of those and reproduced the stall.
+
+    This only ever withholds a source; no binding becomes visible because of it.
+    """
+
+    try:
+        from simple_harness_memory.core.errors import (
+            MemoryLimitError,
+            MemoryValidationError,
+        )
+        from simple_harness_memory.core.evidence import validate_sanitized_evidence
+    except ImportError as exc:  # pragma: no cover - no SDK ⇒ every read fails
+        raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
+    from deskpet.memory.human_memory_v7 import HOST_SUPPORTED_FILTER_POLICIES
+
+    try:
+        validate_sanitized_evidence(
+            envelope,
+            receipt,
+            supported_filter_policies=tuple(sorted(HOST_SUPPORTED_FILTER_POLICIES)),
+        )
+    except (MemoryValidationError, MemoryLimitError) as exc:
+        raise PrimaryVisibilityError(SOURCE_UNADMISSIBLE, exc) from exc
 
 
 class PrimaryHistoryPolicy:
@@ -187,10 +308,13 @@ class PrimaryHistoryPolicy:
         from deskpet.execution.preparation_rejection import REASONS
 
         capture = {}
+        # Task 6 review F-7: an unadmissible *current* USER source is not
+        # "no proven denial" — it is a source this Run can never read back.
+        # Let the stable code out instead of degrading it into ``None``.
         visible, _ = await self._check(
             db=db, primary_ref=primary_ref, evidence_ids=(evidence_id,),
             disclosure_context=disclosure_context, expected_hashes={evidence_id: evidence_hash},
-            snapshot_capture=capture,
+            snapshot_capture=capture, propagate_unadmissible=True,
         )
         if visible.get(evidence_id) is not False or "snapshot" not in capture:
             return None
@@ -215,6 +339,7 @@ class PrimaryHistoryPolicy:
         expected_hashes=None,
         recall=(),
         snapshot_capture=None,
+        propagate_unadmissible=False,
     ):
         """All dependency decisions belong to this call's single SDK snapshot."""
         try:
@@ -223,7 +348,7 @@ class PrimaryHistoryPolicy:
                 HistoryVisibilitySnapshot,
             )
         except ImportError as exc:
-            raise PrimaryVisibilityError("primary_read_policy_unavailable") from exc
+            raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
 
         identifier(primary_ref, "primary_ref", 512)
         if (
@@ -270,6 +395,9 @@ class PrimaryHistoryPolicy:
             )
             if expected_hash is not None and expected_hash != envelope.envelope_hash:
                 raise PrimaryVisibilityError("primary_visibility_binding_mismatch")
+            # Checked before the batch is assembled: one unadmissible source
+            # must withhold only its own root, never the whole SDK batch.
+            assert_source_admissible(envelope, receipt)
             active.add(evidence_id)
             try:
                 required = {add(HistoryEvidenceBinding(envelope, receipt))}
@@ -359,7 +487,9 @@ class PrimaryHistoryPolicy:
                     None if expected_hashes is None else expected_hashes[evidence_id],
                 )
             except PrimaryVisibilityError as exc:
-                if exc.code == "primary_visibility_limit":
+                if exc.code == "primary_visibility_limit" or (
+                    propagate_unadmissible and exc.code == SOURCE_UNADMISSIBLE
+                ):
                     raise
                 roots[evidence_id] = None
             except (ValueError, TypeError, KeyError, RuntimeError):
@@ -389,7 +519,9 @@ class PrimaryHistoryPolicy:
             ):
                 raise ValueError("history visibility response mismatch")
         except Exception as exc:
-            raise PrimaryVisibilityError("primary_read_policy_unavailable") from exc
+            # 这里是唯一的 SDK 快照调用点；把真实异常的类型与稳定消息带出去，
+            # 否则 `foreground.runtime.failed` 只剩一个空壳码。
+            raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
         if snapshot_capture is not None:
             snapshot_capture.update(snapshot=snapshot, bindings=ordered)
         decisions = {item.binding_hash: item.visible for item in snapshot.items}

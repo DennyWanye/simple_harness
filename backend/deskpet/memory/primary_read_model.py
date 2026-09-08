@@ -24,6 +24,7 @@ from simple_harness_memory.core.suppression import (
 from deskpet.memory.primary_visibility import (
     PrimaryHistoryPolicy,
     PrimaryVisibilityError,
+    cause_fields,
     read_evidence_pair,
 )
 from deskpet.task_scope.protocol import (
@@ -35,9 +36,15 @@ from deskpet.task_scope.protocol import (
 
 
 class PrimaryReadError(ValueError):
-    def __init__(self, code):
+    def __init__(self, code, cause=None):
         super().__init__(code)
         self.code = code
+        # 2026-09-08 HM-TO-A6：稳定码之外再带一份「被包住的真实异常」的类型与
+        # 稳定消息（无 payload），否则线上只看得到 primary_read_policy_unavailable。
+        inner = getattr(cause, "cause_type", None)
+        fields = cause_fields(cause)
+        self.cause_type = inner or fields["cause_type"]
+        self.cause_detail = getattr(cause, "cause_detail", None) or fields["cause_detail"]
 
 
 def bounded_int(value, *, minimum, maximum):
@@ -116,7 +123,7 @@ class PrimaryReadModel:
                 raise TypeError("typed suppression resolution required")
             return not value.denied
         except Exception as exc:
-            raise PrimaryReadError("primary_read_policy_unavailable") from exc
+            raise PrimaryReadError("primary_read_policy_unavailable", exc) from exc
 
     async def _subject_visible(self):
         if not await self._visible():
@@ -190,7 +197,7 @@ class PrimaryReadModel:
                 disclosure_context=disclosure_context,
             )
         except PrimaryVisibilityError as exc:
-            raise PrimaryReadError(exc.code) from exc
+            raise PrimaryReadError(exc.code, exc) from exc
 
     async def state(self, *, disclosure_context):
         async with self._snapshot() as (db, primary):
@@ -303,7 +310,7 @@ class PrimaryReadModel:
             )
             return envelope
         except PrimaryVisibilityError as exc:
-            raise PrimaryReadError(exc.code) from exc
+            raise PrimaryReadError(exc.code, exc) from exc
 
     @staticmethod
     def _public_message(raw):

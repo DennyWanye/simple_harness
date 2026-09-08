@@ -293,3 +293,185 @@ async def test_cancel_after_real_projection_ack_reopens_without_false_confirmati
     short._fault_hook = None
     assert (await short.step()).confirmed == 11
     assert len((await recall(await env.runtime.manager(), "quartznebula")).hits) == 1
+
+
+# --------------------------------------------------------------------------
+# 2026-09-08 HM-TO-A6：终态源 payload 超出 Memory 内联上限的组，此前每个轮询
+# 周期都会被重新注册一次，每次先把同一条 USER 证据再摄入一遍——线上表现为
+# 每分钟 28 条 memory.evidence_ingestion_replayed（native-a6-7cec5249）。
+# --------------------------------------------------------------------------
+
+
+def _pair(delivery_key, text):
+    from deskpet.memory.human_memory_service import build_foreground_turn_evidence
+
+    return build_foreground_turn_evidence(
+        subject=local_owner_auth().subject,
+        authority_ref="host:test-owner",
+        delivery_key=delivery_key,
+        text=text,
+    )
+
+
+def _stub_group(*, oversized):
+    from deskpet.memory.primary_visibility import inline_evidence_limit
+
+    limit = inline_evidence_limit()
+    envelope, receipt = _pair("short-user", "actual user turn")
+    terminal, terminal_receipt = _pair(
+        "short-terminal", "y" * (limit + 4096) if oversized else "small terminal"
+    )
+    registration = SimpleNamespace(
+        registration_id="registration-1",
+        registration_hash="a" * 64,
+        envelope=envelope,
+        admission_receipt=receipt,
+    )
+    return SimpleNamespace(
+        registrations=(registration,),
+        terminal_source=(terminal, terminal_receipt),
+        user_analysis_lineage=None,
+        references=(),
+    )
+
+
+class _StubManager:
+    def __init__(self):
+        self.ingested = []
+        self.admitted = []
+
+    async def ingest_committed_evidence(self, envelope, receipt, *, analysis_lineage=None):
+        self.ingested.append(envelope.evidence_id)
+
+    async def admit_evidence_source(self, *, principal, envelope, receipt):
+        self.admitted.append(envelope.evidence_id)
+
+    async def register_conversation_evidence(self, reference):
+        return reference
+
+    async def rebuild_short_horizon_projection(self, *, principal):
+        return SimpleNamespace(projected_chunk_count=0)
+
+    async def rebuild_short_horizon_generation(self):
+        return SimpleNamespace(activated=False)
+
+    async def rebuild_cognitive_vector_generation(self):
+        return SimpleNamespace(activated=False)
+
+
+def _stub_runtime(group):
+    principal = SimpleNamespace(actor_id=local_owner_auth().subject)
+    manager = _StubManager()
+    reads = []
+
+    class Authority:
+        subject = principal.actor_id
+
+        async def page_turns(self, *, after, upper, limit):
+            return 1, [(1, "run-1", "COMPLETED")]
+
+        async def registrations_for_run(self, run_id):
+            reads.append(run_id)
+            return group
+
+    runtime = SimpleNamespace(
+        conversation_evidence_authority=Authority(),
+        procedure_runtime=None,
+        manager=lambda: _resolved(manager),
+        principal=lambda: principal,
+    )
+    return runtime, manager, reads
+
+
+async def _resolved(value):
+    return value
+
+
+@pytest.mark.asyncio
+async def test_unadmissible_group_is_blocked_before_any_write():
+    from deskpet.memory.conversation_registration import ConversationRegistrationUnavailable
+    from deskpet.memory.short_indexing import SOURCE_UNADMISSIBLE, assert_group_admissible
+
+    with pytest.raises(ConversationRegistrationUnavailable) as raised:
+        assert_group_admissible(_stub_group(oversized=True))
+    assert raised.value.code == SOURCE_UNADMISSIBLE
+    assert_group_admissible(_stub_group(oversized=False))  # control
+
+
+@pytest.mark.asyncio
+async def test_unadmissible_group_never_writes_across_repeated_cycles(monkeypatch):
+    """The storm stops at the pre-write assert, not at a negative cache.
+
+    Task 6 review F-5/F-6: the earlier ``_rejected`` cache was keyed on the
+    registrations alone, so a *corrected* terminal source stayed blocked
+    forever, and the test that guarded it passed with the cache deleted. The
+    cache is gone; what has to hold is that every cycle enters
+    ``register_group``, is stopped by ``assert_group_admissible`` **before the
+    first write**, and therefore performs zero ingests and zero admissions.
+    """
+
+    from deskpet.memory import short_indexing
+    from deskpet.memory.short_indexing import (
+        SOURCE_UNADMISSIBLE,
+        PrimaryShortIndexingService,
+    )
+
+    entered, guarded = [], []
+    real_register = PrimaryShortIndexingService.register_group
+    real_assert = short_indexing.assert_group_admissible
+
+    async def spy_register(self, group):
+        entered.append(group)
+        return await real_register(self, group)
+
+    def spy_assert(group):
+        guarded.append((group, len(entered)))
+        return real_assert(group)
+
+    monkeypatch.setattr(PrimaryShortIndexingService, "register_group", spy_register)
+    monkeypatch.setattr(short_indexing, "assert_group_admissible", spy_assert)
+
+    group = _stub_group(oversized=True)
+    runtime, manager, reads = _stub_runtime(group)
+    worker = PrimaryShortIndexWorker(runtime, page_size=1)
+    for _ in range(4):
+        step = await worker.step()
+        assert step.blocked == (("run-1", SOURCE_UNADMISSIBLE),)
+        assert step.confirmed == 0
+        # No write ever happened — that replay was the observed storm.
+        assert manager.ingested == [] and manager.admitted == []
+    # The guard ran inside register_group on every cycle (its recorded
+    # register_group entry count matches), before any write could happen.
+    assert len(entered) == 4
+    assert [count for _, count in guarded] == [1, 2, 3, 4]
+    assert len(reads) == 4
+
+
+@pytest.mark.asyncio
+async def test_corrected_terminal_source_is_retried():
+    """A group blocked only by its terminal source recovers once it is fixed."""
+    from deskpet.memory.short_indexing import SOURCE_UNADMISSIBLE
+
+    doomed = _stub_group(oversized=True)
+    runtime, manager, _ = _stub_runtime(doomed)
+    worker = PrimaryShortIndexWorker(runtime, page_size=1)
+    assert (await worker.step()).blocked == (("run-1", SOURCE_UNADMISSIBLE),)
+
+    # Same registrations (same identity key), admissible terminal source.
+    fixed = _stub_group(oversized=False)
+    runtime.conversation_evidence_authority.registrations_for_run = (
+        lambda run_id: _resolved(fixed)
+    )
+    step = await worker.step()
+    assert step.blocked == () and step.confirmed == 1
+    assert len(manager.ingested) == 1 and len(manager.admitted) == 1
+
+
+@pytest.mark.asyncio
+async def test_admissible_group_still_registers():
+    group = _stub_group(oversized=False)
+    runtime, manager, _ = _stub_runtime(group)
+    worker = PrimaryShortIndexWorker(runtime, page_size=1)
+    step = await worker.step()
+    assert step.blocked == () and step.confirmed == 1
+    assert len(manager.ingested) == 1 and len(manager.admitted) == 1

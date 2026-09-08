@@ -1,6 +1,7 @@
 """Real SQLite/Harness ledger at the production preflight/transport boundary."""
 import asyncio
 import sqlite3
+import aiosqlite
 import httpx
 import pytest
 
@@ -200,3 +201,250 @@ async def test_new_recall_four_tuple_checked_before_next_physical_provider(tmp_p
         await stack.close()
         await mh.close(menv)
         await client.aclose()
+
+
+# --------------------------------------------------------------------------
+# 2026-09-08 HM-TO-A6 根因侧：工具密集的一轮产生了 74196 字节的终态观察，越过
+# Memory 的 64 KiB 内联上限。Host 收下了它，Memory 之后每一次读都拒绝，整条
+# 主对话不可读、前台驱动永死。写入点必须先用 SDK 自己的受理规则校验，并作
+# 确定性降级，让这一轮的终态观察既可受理、又不会被悄悄丢掉。
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_oversized_transcript_degrades_instead_of_poisoning_memory(tmp_path, caplog):
+    """A real turn over the real 64 KiB ceiling still settles admissibly.
+
+    Drives the production path end to end (`ForegroundRuntimeExecutionAuthority`
+    -> `record_terminal_observation`) with a transcript that genuinely exceeds
+    the SDK's inline limit.  What must hold: the stored terminal observation
+    passes the SDK's own admission rule, the elided body hashes back to the
+    settled SDK transcript, the USER text is untouched, the turn is still
+    readable history, and the next turn runs.
+    """
+    import logging
+
+    from simple_harness.contracts.messages import Message, MessageRole
+    from simple_harness.providers import ProviderResponse, ProviderUsage
+
+    from deskpet.execution.primary_history import (
+        ELISION_PREFIX,
+        PrimaryHistoryStore,
+        elided_content,
+        terminal_observation_tx,
+    )
+    from deskpet.memory.primary_visibility import (
+        assert_source_admissible,
+        inline_evidence_limit,
+        read_evidence_pair,
+    )
+    from tests.execution.test_primary_foreground_runtime import (
+        Provider,
+        history_disclosure,
+    )
+
+    limit = inline_evidence_limit()
+    body = "z" * (limit + 4096)  # this one message alone busts the whole budget
+
+    class HugeProvider(Provider):
+        async def invoke(self, request, *, cancel):
+            self.requests.append(request)
+            return ProviderResponse(
+                request.request_id, Message(MessageRole.ASSISTANT, body),
+                model="model", usage=ProviderUsage(10, 10, 20),
+                opaque_continuation_ref="fixture-opaque")
+
+    state = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
+    service = HumanMemoryHostServiceFactory(state, startup).bind(local_owner_auth())
+    primary = (await service.open_primary())["primary_ref"]
+    subject = local_owner_auth().subject
+    runtime, stack, _ = await build(
+        tmp_path, state, HugeProvider(), provider_context_window=1_000_000)
+    try:
+        await service.enqueue_turn(QueueTurnRequest(None, "huge", "Actual oversized turn"))
+        with caplog.at_level(logging.WARNING, logger="deskpet.execution.primary_history"):
+            assert await asyncio.wait_for(runtime._drive_once(), 30)
+
+        host_run_id, sdk_run_id = _run_ids(state)
+        _, settled = stack.read_settled_primary_run(
+            sdk_run_id, current_text="Actual oversized turn")
+        settled = list(settled)
+        async with aiosqlite.connect(state) as db:
+            db.row_factory = aiosqlite.Row
+            found = await terminal_observation_tx(
+                db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject)
+            assert found is not None
+            row, payload = found
+            envelope, receipt = await read_evidence_pair(
+                db=db, subject=subject, primary_ref=primary,
+                evidence_id=row["evidence_id"])
+
+        # 1. Admissible by the SDK's own rule — the exact check that used to
+        #    fail on every later read and take the whole conversation with it.
+        assert_source_admissible(envelope, receipt)
+        # 2. Only the oversized body moved, and its marker hashes back to what
+        #    the SDK actually settled.
+        stored = payload["messages"]
+        assert [m["role"] for m in stored] == ["user", "assistant"]
+        assert settled[1]["content"] == body  # the SDK transcript is untouched
+        assert stored[0] == settled[0]
+        assert stored[0]["content"] == "Actual oversized turn"  # USER text kept
+        assert stored[1]["content"].startswith(ELISION_PREFIX)
+        assert stored[1]["content"] == elided_content(body)
+        # 3. Reported where it is produced, with no transcript content, and the
+        #    degrade actually worked — no residual unadmissible warning.
+        degraded = [r.getMessage() for r in caplog.records
+                    if "primary_terminal_observation_degraded" in r.getMessage()]
+        assert len(degraded) == 1 and "elided_ordinals=[2]" in degraded[0]
+        assert "zzzz" not in degraded[0]
+        assert not [r for r in caplog.records
+                    if "primary_terminal_observation_unadmissible" in r.getMessage()]
+        # 4. The turn is still real, readable history — not a lost turn.
+        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
+            subject=subject, primary_ref=primary,
+            disclosure_context=history_disclosure(), before_sequence=2)
+        assert len(history) == 1 and history[0]["messages"] == stored
+        # 5. And the conversation keeps going.
+        await service.enqueue_turn(QueueTurnRequest(None, "after", "Continue after oversize"))
+        assert await asyncio.wait_for(runtime._drive_once(), 30)
+    finally:
+        await runtime.close()
+        await stack.close()
+
+
+def _run_ids(state):
+    with sqlite3.connect(state) as db:
+        return db.execute(
+            "SELECT r.host_run_id,b.sdk_run_id FROM foreground_runs r "
+            "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id "
+            "ORDER BY r.rowid LIMIT 1"
+        ).fetchone()
+
+
+def test_transcript_degrade_prefers_tool_results_and_stays_verifiable():
+    """The elision policy itself: tool bodies first, USER text never, replayable."""
+    from deskpet.execution.primary_history import (
+        bound_terminal_messages,
+        elided_content,
+        transcript_matches,
+    )
+
+    messages = [
+        {"role": "user", "content": "u" * 400},
+        {"role": "assistant", "content": "a" * 600},
+        {"role": "tool", "content": "t" * 4000, "call_id": "c1", "name": "web_search"},
+        {"role": "tool", "content": "s" * 9000, "call_id": "c2", "name": "file_read"},
+        {"role": "assistant", "content": "b" * 500},
+    ]
+    # Budget reachable by giving up the two tool bodies alone.
+    bounded, elided = bound_terminal_messages(messages, 2500)
+    assert elided == (3, 4)  # largest tool first, then the other; 1-based
+    assert bounded[0] == messages[0] and bounded[1] == messages[1]
+    assert bounded[4] == messages[4]
+    assert bounded[3]["content"] == elided_content(messages[3]["content"])
+    assert bounded[3]["call_id"] == "c2" and bounded[3]["name"] == "file_read"
+    assert transcript_matches(messages, bounded)
+    # Pure and replayable: the same input reduces to exactly the same bytes.
+    assert bound_terminal_messages(messages, 2500) == (bounded, elided)
+    # Already-elided bodies are never elided twice.
+    assert bound_terminal_messages(bounded, 2500)[1] == ()
+
+    # Under budget: byte-for-byte identical, nothing recorded.
+    assert bound_terminal_messages(messages, 1_000_000) == (messages, ())
+    # A forged marker is not a match.
+    forged = [dict(m) for m in bounded]
+    forged[3] = {**forged[3], "content": elided_content("something else")}
+    assert not transcript_matches(messages, forged)
+    # Assistant bodies only once the tool bodies are not enough; USER never.
+    tiny, tiny_elided = bound_terminal_messages(messages, 600)
+    assert tiny_elided == (2, 3, 4, 5)
+    assert tiny[0] == messages[0]
+
+
+def test_terminal_payload_budget_is_exact_not_a_reserve():
+    """A payload Memory would admit keeps every byte — paging reads those bytes.
+
+    The first version of this degrade reserved worst-case room for `turn_id`
+    and `tool_scope_sources`, and cut a transcript that actually fit; that
+    broke `context_page_in` for large tool results
+    (`test_primary_context_pages::test_actual_history_page_and_physical_guard`).
+    The budget is derived from the real canonical size instead.
+    """
+    from deskpet.execution.primary_history import bound_terminal_payload
+    from deskpet.memory.primary_visibility import inline_evidence_limit
+    from deskpet.task_scope.protocol import canonical_json
+
+    limit = inline_evidence_limit()
+
+    def payload(body):
+        return {
+            "schema_version": 1, "kind": "primary_run_terminal",
+            "host_run_id": "h", "sdk_run_id": "s", "turn_id": "t" * 64,
+            "tool_causal_sources": [{"item_ordinal": 3, "effect_id": "e" * 40}] * 8,
+            "messages": [
+                {"role": "user", "content": "actual user turn"},
+                {"role": "assistant", "content": "answering"},
+                {"role": "tool", "content": body, "call_id": "c1", "name": "read"},
+            ],
+        }
+
+    # Comfortably under the ceiling once the rest of the payload is counted:
+    # untouched, byte for byte.
+    fits = payload("L" * (limit - 4096))
+    assert bound_terminal_payload(fits) == (fits, ())
+    assert len(canonical_json(fits).encode("utf-8")) <= limit
+
+    over = payload("L" * (limit + 1))
+    bounded, elided = bound_terminal_payload(over)
+    assert elided == (3,)
+    assert len(canonical_json(bounded).encode("utf-8")) <= limit
+    assert bounded["messages"][0] == over["messages"][0]
+    assert {k: v for k, v in bounded.items() if k != "messages"} == {
+        k: v for k, v in over.items() if k != "messages"}
+
+    # When the *rest* of the payload is what overflows, giving up transcript
+    # bodies buys nothing — so it gives up none of them.
+    hopeless = payload("L" * 32)
+    hopeless["tool_scope_sources"] = [{"item_ordinal": i, "blob": "S" * 64}
+                                      for i in range(limit // 64)]
+    assert len(canonical_json(hopeless).encode("utf-8")) > limit
+    assert bound_terminal_payload(hopeless) == (hopeless, ())
+
+
+def test_residual_unadmissible_observation_is_reported_at_its_source(caplog):
+    """Fail-safe: a payload the degrade cannot fix is still written, but loudly.
+
+    The transcript is not the only thing that can overflow (a very large
+    `tool_scope_sources`, a credential-boundary key). Refusing to commit would
+    leave the Run unsettled forever, so the row is written and the write point
+    reports it with the SDK's own stable reason — identifiers and byte counts
+    only, never transcript content.
+    """
+    import logging
+
+    from deskpet.execution.primary_history import _warn_if_unadmissible, evidence_pair
+    from deskpet.sdk_adapters.context_route import local_owner_auth
+
+    subject = local_owner_auth().subject
+    good, good_receipt = evidence_pair(
+        subject, "sdk-ok", {"kind": "primary_run_terminal", "messages": []}, 1.0)
+    with caplog.at_level(logging.WARNING, logger="deskpet.execution.primary_history"):
+        _warn_if_unadmissible("sdk-ok", good, good_receipt)
+    assert caplog.records == []
+
+    # A credential-boundary key: rejected by the SDK on every read, and not
+    # something the transcript degrade can repair.
+    doomed, doomed_receipt = evidence_pair(
+        subject, "sdk-doomed",
+        {"kind": "primary_run_terminal", "authorization": "public-looking",
+         "messages": [{"role": "user", "content": "SECRET_TRANSCRIPT_CANARY"}]},
+        1.0)
+    with caplog.at_level(logging.WARNING, logger="deskpet.execution.primary_history"):
+        _warn_if_unadmissible("sdk-doomed", doomed, doomed_receipt)
+    messages = [r.getMessage() for r in caplog.records]
+    assert len(messages) == 1
+    assert "primary_terminal_observation_unadmissible" in messages[0]
+    assert "reason=evidence_credential_boundary_rejected" in messages[0]
+    assert "message_count=1" in messages[0]
+    assert "SECRET_TRANSCRIPT_CANARY" not in messages[0]
