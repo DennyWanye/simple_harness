@@ -37,7 +37,16 @@
 
 ## 三、试跑
 
-（填写于试跑完成后）
+证据：`.local-test-evidence/2026-09-08/corpus-rest/run-01/`（经 `scripts/run_corpus_batch.py` → `run_resource_bounded.py` 锁串行；host-root 为本工作树，installed target 为工作树内 `installed-h0710-m0628-s0313`，因 `verify_memory_candidate` 要求 direct_url 指向本树 vendor wheel）。同一时段 `corpus-c10` 批次持有锁，本批在其释放后启动。
+
+| id | provider | 跑道结果 | 模型结果 | 说明 |
+|---|---|---|---|---|
+| C05-06 | primary gpt-5.6-luna | 跑道 OK：setup 两 scope CONFIRMED，真实披露 title=内容校对任务/图片压缩任务、goal=网站整理（合成 goal 已进入 scope_disclosure），setup 零真实模型调用 | `FOLLOWUP_UNMET`（f1） | 首轮模型只调 `context_route memory_standalone`（`memory_types` 含 episode/semantic），未调 `task_scope_search`，无候选预览事件，按 `record_unmet_and_stop_no_rescue` 停止。属模型行为（同 run-01e C05-10），非跑道缺口 |
+| C08-20 | primary gpt-5.6-luna | 跑道 OK：标量 A（semantic `tool_alias=蓝盒`）真实 job APPLIED 后公开 suppress，评分前 twin graph 为空 | `PENDING_POST_TERMINAL_REVIEW`，主代理复核 **PASS** | 1 次 handoff、0 次工具调用（零查询），回答逐字为"青灯阅读器"，未套"蓝盒"映射；符合 gold（hard_trigger=suppression、no_recall） |
+| C05-01 | primary gpt-5.6-luna | 跑道 OK：两 scope CONFIRMED；真实 `task_scope_search` 回执中 A/B 同名"资料归档"，goal 分别为 `2025-11；纸质扫描` / `2025-06；照片`，resume 为核备份/地点标签；f1 前置事件 SATISFIED（候选可见 2、首轮无正式 scope 授权） | `PENDING_POST_TERMINAL_REVIEW`，主代理复核 **PASS** | 首轮只列两候选并请用户选择、无 resume；f1 后 `context_route resume_existing` 恰为 A（真实 ID），回答说明下一步"核备份"。合成 goal 起到了 gold 要求的月份/介质消歧作用 |
+| C09-13 | primary gpt-5.6-luna | 跑道 OK：Procedure old-0（rev1）→ successor-0（rev2，SUPERSEDED）两张真实 receipt，评分前 twin graph 为空 | `PENDING_POST_TERMINAL_REVIEW`，主代理复核 **PASS** | 1 次 handoff、0 次工具调用（零查询），回答"本次仅提交电子稿，无需附送纸质副本"，未因旧流程增加纸质动作 |
+
+小结：4 例真实试跑，跑道全部走通（setup CONFIRMED、真实 Provider、事件/审批按契约执行）；语义复核 3 PASS（C05-01、C08-20、C09-13）、1 例模型行为 FOLLOWUP_UNMET（C05-06）。C09-13 的锁冲突（另一代理批次持锁，`run_resource_bounded` 非阻塞返回 75）产生的空 stub 目录已清除后重跑，`batch-summary.jsonl` 中保留该条 rc 75 记录。首次试跑 4 例的表格 id/adapter 行见"二"。未试跑的 8 例（C05-02/03/05/15/19、C11-12/16/19）与试跑例走同一适配路径，其 setup 已由无 Provider 单测（C11 prepare 20/20 含真实 job 与过期后召回为空断言）与离线 `prepare_batch` 编译（`prepare-check-rest/`）证实。
 
 ## 四、支持面变化
 
