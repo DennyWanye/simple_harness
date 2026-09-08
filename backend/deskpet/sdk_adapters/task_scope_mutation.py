@@ -21,8 +21,11 @@ Handler order and stable reason codes:
 1. standalone route (latest durable route decision of the Run carries no
    TaskScope) → ``task_scope_update_scope_unbound``
 2. payload shape / DTO validation → ``task_scope_update_payload_invalid``
-3. no material dirt and no pending receipt → ``task_scope_update_nothing_to_close``
-   (revision untouched, so the model's ``base_revision`` cannot drift)
+3. ``outcome=no_mutation`` with no material dirt and no pending receipt →
+   ``task_scope_update_nothing_to_close`` (revision untouched, so the model's
+   ``base_revision`` cannot drift).  ``outcome=mutate`` is **never** gated on
+   dirt: the mutation plan is itself the material change (2026-09-08 A6 事件 C,
+   see ``plans/2026-09-08-hm-to-a6/DECISION-CLOSURE-DIRT-AND-PROTOCOL-RETRY.md``)
 4. evidence refs not linked to the scope → ``task_scope_update_refs_outside_scope``
 5. status transition table → ``task_scope_update_after_complete`` /
    ``task_scope_update_illegal_transition``
@@ -81,6 +84,19 @@ _STATUS_AFTER: dict[str, str] = {
 }
 _MAX_REFS = 64
 _MAX_OPERATIONS = 32
+
+# What the model must do differently after ``task_scope_update_nothing_to_close``.
+# Rendered into the rejection message, so it names both the missing precondition
+# and the payload that *is* accepted on a clean scope.
+_NOTHING_TO_CLOSE_GUIDANCE = (
+    "outcome=no_mutation declares that objective effects needed closing and "
+    "nothing changed, but this TaskScope has no material event since the last "
+    "closure (file write / shell / test / project-effect tool) and no pending "
+    "closure receipt, so there is nothing to declare closed. To record what the "
+    "user stated, send outcome=mutate with the matching operations instead "
+    "(goal.set / goal.revise / decision.record / plan.step.* / task.* / "
+    "resume.update); a mutate plan is accepted on a clean scope."
+)
 
 TASK_SCOPE_UPDATE_DESCRIPTION = (
     "Submit the TaskScope semantic closure for this turn (call at most once, "
@@ -366,11 +382,29 @@ class TaskScopeUpdateService:
                 "SELECT 1 FROM task_scope_mutation_attempts WHERE plan_id=? AND result='applied'",
                 (derived_plan_id,),
             )
-            if require_dirty and applied_before is None:
+            # The dirt gate is an *effect-closure* gate.  It descends from the
+            # frozen plan's "expose the closure Tool only when the scope is
+            # dirty/pending" rule, which had to become a handler gate because a
+            # hidden-Tool call is a whole-Run fault (challenge synthesis
+            # ``task-scope-update-projectless-safe-vs-dirty-exposure``).  It was
+            # never a write authority over the canonical archive: design-freeze
+            # §2 makes ``host.turn`` *trivial* only so ordinary conversation
+            # cannot force a closure — not so that a user-stated goal/decision
+            # is unrecordable, and the Host's own typed route
+            # (``human_memory_service``) applies the same operations with no
+            # dirt check at all.  A ``mutate`` plan therefore carries its own
+            # material change (it appends a decision + revision under CAS) and
+            # is admitted on a clean scope; only ``no_mutation`` — a claim that
+            # there is something to close and nothing changed — still needs
+            # dirt or a pending receipt behind it.
+            if require_dirty and applied_before is None and str(payload["outcome"]) != "mutate":
                 dirty = await dirty_state_tx(db, task_scope_id)
                 pending = await pending_receipts_tx(db, task_scope_id)
                 if not dirty.is_dirty and not pending:
-                    raise ClosureRejected("task_scope_update_nothing_to_close")
+                    raise ClosureRejected(
+                        "task_scope_update_nothing_to_close",
+                        accepts=_NOTHING_TO_CLOSE_GUIDANCE,
+                    )
             linked = await db.execute(
                 "SELECT DISTINCT evidence_id,content_hash FROM task_scope_evidence_links WHERE task_scope_id=?",
                 (task_scope_id,),

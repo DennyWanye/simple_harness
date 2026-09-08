@@ -44,6 +44,26 @@ _PROVIDER_REASONING_CONTENT_METADATA_KEY = "provider_reasoning_content"
 _PUBLIC_PROGRESS_ARGUMENT = "deskpet_public_progress"
 logger = logging.getLogger(__name__)
 _diagnostic_request_ref: ContextVar[str] = ContextVar("provider_diagnostic_request_ref", default="missing")
+# The one parse failure that a fresh sample of the *same* request can fix: the
+# model serialized a tool call whose ``arguments`` string is not JSON and that
+# ``_repaired_tool_arguments`` could not repair information-preservingly.
+_RESAMPLEABLE_PARSE_FAILURE_CHECK = "tool_call_arguments_not_json"
+# One retry, never two (2026-09-08 A6 事件 D).
+_MAX_PROVIDER_PROTOCOL_ATTEMPTS = 2
+
+
+class _ToolArgumentsProtocolError(ProviderProtocolError):
+    """A 200 response rejected *only* because a tool call's ``arguments`` is not JSON.
+
+    Same public taxonomy as its base (``error_code='provider_protocol_error'``,
+    ``retryable=False``): if it escapes the adapter the SDK coordinator settles
+    the Run exactly as before.  The subclass exists so that
+    :meth:`ProductProviderAdapter.invoke` — and nothing further out — can tell
+    this one transient sampling defect apart from every other invalid response
+    and draw a second sample of the same request.
+    """
+
+    __slots__ = ()
 
 
 class _DiagnosticPostClient:
@@ -698,18 +718,18 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         try:
             parsed = super()._parse_response(request, payload, response)
         except Exception as exc:
+            detail: dict[str, object] = {"check": "diagnostic_unavailable"}
             try:
+                detail = _parse_failure_diagnostic(
+                    payload,
+                    provider_request_id_header=bool(response.headers.get("x-request-id")),
+                )
                 diagnostic = json.dumps(
-                    _parse_failure_diagnostic(
-                        payload,
-                        provider_request_id_header=bool(response.headers.get("x-request-id")),
-                    ),
-                    ensure_ascii=True,
-                    sort_keys=True,
-                    separators=(",", ":"),
+                    detail, ensure_ascii=True, sort_keys=True, separators=(",", ":")
                 )
             except Exception:
                 # Diagnostics must never replace the original Provider error.
+                detail = {"check": "diagnostic_unavailable"}
                 diagnostic = '{"check":"diagnostic_unavailable"}'
             logger.warning(
                 "product_provider_response_parse_failed "
@@ -720,6 +740,13 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                 _provider_error_code(exc),
                 diagnostic,
             )
+            if (
+                isinstance(exc, ProviderProtocolError)
+                and detail.get("check") == _RESAMPLEABLE_PARSE_FAILURE_CHECK
+            ):
+                # Narrow the taxonomy for the adapter's resample decision only;
+                # the public error_code and retryable flag are unchanged.
+                raise _ToolArgumentsProtocolError(private_cause=exc) from None
             raise
         if not isinstance(payload, Mapping):
             return parsed
@@ -970,6 +997,58 @@ class ProductProviderAdapter:
     def target(self) -> ProviderTarget:
         return self._target
 
+    async def _invoke_with_protocol_resample(
+        self,
+        request: ProviderRequest,
+        *,
+        cancel: CancelToken,
+        request_ref: str,
+        started_at: float,
+    ) -> ProviderResponse:
+        """Draw at most one fresh sample of the *same* request after a malformed tool call.
+
+        Scope (2026-09-08 A6 事件 D): the only retried failure is
+        :class:`_ToolArgumentsProtocolError` — a 200 response whose sole defect
+        is a tool-call ``arguments`` string that is not JSON and that the
+        deterministic ``_repaired_tool_arguments`` repair could not fix.  With a
+        sampling LLM that is a transient serialization defect, yet the SDK
+        coordinator lists ``ProviderProtocolError`` among its *definite*
+        failures, so one bad sample fails the whole Run.
+
+        Why here and not deeper or further out: the SDK is frozen, and its
+        ``reconcile_incomplete`` retry lane (F06,
+        ``plans/2026-09-07-native-main-journey/DECISION-PROVIDER-TIMEOUT-STALL.md``)
+        only ever sees UNKNOWN records — a definite protocol failure never
+        reaches it.  This adapter is the last Host-owned frame before the
+        coordinator, and it already owns the repair for the same defect.
+
+        Bounds, mirroring F06's retry-once policy: at most
+        ``_MAX_PROVIDER_PROTOCOL_ATTEMPTS`` attempts, no delay, the identical
+        ``ProviderRequest`` (same ``request_id``), a second failure raised
+        unchanged, and nothing retried once the turn is cancelled.  The retry
+        lives *inside* one SDK hand-off, so the ledger keeps one invocation with
+        one outcome; the discarded sample produced no parsed tool call and
+        therefore no dispatched effect — its only cost is one billed completion
+        (the same trade F06 accepted).
+        """
+
+        for attempt in range(1, _MAX_PROVIDER_PROTOCOL_ATTEMPTS + 1):
+            try:
+                return await self._delegate.invoke(request, cancel=cancel)
+            except _ToolArgumentsProtocolError:
+                if attempt >= _MAX_PROVIDER_PROTOCOL_ATTEMPTS or cancel.is_cancelled:
+                    raise
+                logger.warning(
+                    "product_provider_protocol_resampled "
+                    "request_ref=%s attempt=%s max_attempts=%s check=%s elapsed_ms=%s",
+                    request_ref,
+                    attempt,
+                    _MAX_PROVIDER_PROTOCOL_ATTEMPTS,
+                    _RESAMPLEABLE_PARSE_FAILURE_CHECK,
+                    round((time.monotonic() - started_at) * 1000),
+                )
+        raise AssertionError("unreachable: the last attempt always returns or raises")
+
     async def invoke(
         self, request: ProviderRequest, *, cancel: CancelToken
     ) -> ProviderResponse:
@@ -1003,9 +1082,11 @@ class ProductProviderAdapter:
             summary["temperature_set"],
         )
         try:
-            response = await self._delegate.invoke(
+            response = await self._invoke_with_protocol_resample(
                 request,
                 cancel=cancel,
+                request_ref=request_ref,
+                started_at=started_at,
             )
         except ProviderCancelledError:
             # OpenAICompatibleProvider converts task cancellation into a
