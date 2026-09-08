@@ -38,3 +38,9 @@
 ## 新发现：分析关系候选全部不可用（事件 S，已派独立子代理修复）
 
 T18 时 `cognitive_relations` 仍为 0 行；`native.log` 有 17 条 `memory.analysis_relation_candidates_unavailable`（每个分析批一条），`error_type=KeyError`、`error_message='fb154920-9038-5bd4-8a4f-5c6875c2464a'`，记录器 `deskpet.memory.semantic_correction`。即分析协议 v8 的关系候选构建在查某个成员/头 id 时抛 KeyError，整批关系被降级为无。A6-6 本次判 FAIL；修复方向：候选构建必须解析计划引用的每个成员，不可解析的成员按逐成员原因码跳过而非整批丢弃；备忘录 `DECISION-S-RELATION-KEYERROR.md`。
+
+## 新发现：召回超时复发（T19–T22，6 次 `context_route_recall_timeout`）
+
+`native.log` UTC 19:59–20:00（本地 03:59–04:00）连续 6 次 `product_tool.failed tool=context_route code=context_route_recall_timeout`，每次约 2 s（1000 ms deadline + 审计）。T19 更正「Python 3.13」因此未产生 supersede（头仍 rev 1、内容 "Python 3.12"），T21 未产生争议（conf=0），T22 与 T24 重发都直接答 3.13 而未要求用户确认——A6-7、A6-8、NC-4 本次不能判 PASS。手动重发（04:04）未再超时。
+
+假设：Host 仍钉 Memory 0.6.31，尚未含 0.6.33 的 `sqlite_tx.begin_transaction` 修复（被取消的 BEGIN 遗留孤儿事务 → 之后每次前台 recall 等锁直至 DEADLINE_EXCEEDED），与本次「触发后连续 6 次全超时、稍后自愈」的形状吻合。第 9 次尝试前钉 0.6.33（带阶段名的 DEADLINE_EXCEEDED 可直接证实或推翻）。
