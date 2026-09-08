@@ -7746,11 +7746,11 @@ def _freeze_sdk_catalog(
     """Return the exact immutable Tool catalog used by Provider and executor."""
 
     from deskpet.sdk_adapters.context_authority import canonical_sha256
+    from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
     from simple_harness import thaw_json
 
     specs: list[dict[str, Any]] = []
     schema_fingerprints: dict[str, str] = {}
-    schema_token_count = 0
     for spec in tools_adapter.specs:
         if str(spec.name) in {"memory_recall", "memory_search"}:
             continue
@@ -7784,7 +7784,10 @@ def _freeze_sdk_catalog(
         }
         specs.append(record)
         schema_fingerprints[str(spec.name)] = canonical_sha256(schema)
-        schema_token_count += max(1, len(repr(schema)) // 4)
+    # Incident N: one wire-shaped tool-schema estimator for every lane.  The
+    # old ``len(repr(schema)) // 4`` dropped the tool name and description and
+    # counted a repr rather than the JSON actually sent.
+    schema_token_count = tool_schema_tokens(specs)
     fingerprint = canonical_sha256(specs)
     return {
         "generation": int(generation),

@@ -507,6 +507,8 @@ class S4ValuePublicAdapter:
             }
             for name in ("tool_search", "tool_describe", "tool_activate")
         ]
+        from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
+
         schema_fingerprints = {
             str(item["name"]): canonical_hash(item["input_schema"])
             for item in specs
@@ -516,7 +518,7 @@ class S4ValuePublicAdapter:
             "content_fingerprint": canonical_hash(specs),
             "tool_names": [str(item["name"]) for item in specs],
             "tool_count": len(specs),
-            "schema_token_count": sum(max(1, len(repr(item)) // 4) for item in specs),
+            "schema_token_count": tool_schema_tokens(specs),
             "schema_fingerprints": schema_fingerprints,
             "specs": specs,
         }

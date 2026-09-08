@@ -76,6 +76,22 @@ class ModelContextInfo:
     # 写入全局 override(context_window)。空 tuple = 只有 context_window
     # 一档(不可调)。这是型号属性,不在 _OVERRIDABLE_FIELDS,TOML 不可覆盖。
     supported_windows: tuple = ()
+    # ── 输入 token 估算校准(Incident N, 2026-09-08)────────────────────────
+    # Host 只能按自己发出的 messages/tools 文本估 token。有些 provider(尤其
+    # 中转站后面的 thinking 模型)会把 Host 看不见的内容重新注入 prompt——
+    # 实测 deepseek-v4-pro 每轮把上一轮的 reasoning_content 加回 prompt,
+    # 306 组 (request_json, usage_json) 证据里这部分最高占到 provider
+    # input_tokens 的 40%,任何基于文本的估算都不可能看见它。
+    #
+    # 校准量 = min(base + per_turn * provider_turn_ordinal, max):
+    #   * base —— 单轮的 wire 结构性余量
+    #   * per_turn —— 每多一个 provider turn 就多一块隐藏 reasoning
+    #   * max —— 深轮次的上限,避免深 Run 直接被估爆而 fail-close
+    # 默认 1.0/0.0/1.0 = 恒等(未校准型号保持既有口径,不多 fail-close 任何 Run)。
+    # 取值来源: plans/2026-09-08-hm-to-a6/DECISION-TOKEN-ESTIMATOR.md §3。
+    input_estimate_ratio: float = 1.0
+    input_estimate_ratio_per_turn: float = 0.0
+    input_estimate_ratio_max: float = 1.0
 
 
 # ─────────────────────────── 内置表（design.md D1）───────────────────────────
@@ -95,6 +111,13 @@ BUILTIN: dict[str, ModelContextInfo] = {
         recall_sweet_tokens=160_000,
         supported_windows=(128_000, 400_000, 1_000_000),
     ),
+    # 2026-09-08 Incident N: HM-TO-A6 attempt 4 的 306 组 request/usage 实测。
+    # 未校准时 Host 估算中位低估 1.98×、最高 4.88×;wire 口径修好后中位已经
+    # 补齐 tool schema + wire 框架后仍中位低估 1.27×、最高 2.12×——残差有两块:
+    # relay 每轮把上一轮的 reasoning_content 加回 prompt(随 provider turn 增长),
+    # 以及 JSON 工具结果比散文更密(实测 ~3.1 char/token)。
+    # min(1.35+0.11*ordinal, 2.5) 是 306 组证据上「零低估」里中位余量近乎最小的
+    # 一组(中位多估 1.52×,最大 2.09×)。
     "deepseek-v4-pro": ModelContextInfo(
         model="deepseek-v4-pro",
         context_window=1_000_000,
@@ -102,6 +125,20 @@ BUILTIN: dict[str, ModelContextInfo] = {
         compact_at_pct=0.75,
         recall_sweet_tokens=384_000,
         supported_windows=(128_000, 400_000, 1_000_000),
+        input_estimate_ratio=1.35,
+        input_estimate_ratio_per_turn=0.11,
+        input_estimate_ratio_max=2.5,
+    ),
+    "deepseek-v4-flash": ModelContextInfo(
+        model="deepseek-v4-flash",
+        context_window=1_000_000,
+        effective_pct=0.95,
+        compact_at_pct=0.75,
+        recall_sweet_tokens=384_000,
+        supported_windows=(128_000, 400_000, 1_000_000),
+        input_estimate_ratio=1.35,
+        input_estimate_ratio_per_turn=0.11,
+        input_estimate_ratio_max=2.5,
     ),
     # 2026-07-19 temporary capability pin: the relay currently exposes
     # zai-org/GLM-5.2 as ``sf-glm-5.2`` but does not propagate a usable
@@ -175,6 +212,11 @@ _OVERRIDABLE_FIELDS = frozenset(
         "effective_pct",
         "compact_at_pct",
         "recall_sweet_tokens",
+        # 中转站/自建 endpoint 的隐藏注入行为各不相同,允许用户按实际
+        # usage.input_tokens 反馈调这三个校准量(见 Incident N 备忘录)。
+        "input_estimate_ratio",
+        "input_estimate_ratio_per_turn",
+        "input_estimate_ratio_max",
     }
 )
 

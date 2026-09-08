@@ -211,15 +211,29 @@ def _settled_tool_tokens(messages):
                and m.name not in CONTROL_TOOLS)
 
 
-def current_tool_allowance(metadata):
-    """The current Run's share of the frozen effective input budget."""
-    from deskpet.sdk_adapters.context_authority import _resolve_window_tokens
-    from deskpet.sdk_adapters.context_partitions import PARTITION_CAPS, effective_input_budget
-    window = _resolve_window_tokens(metadata) if isinstance(metadata, Mapping) else None
-    # A missing window falls back to the smallest frozen tier — the same
-    # over-trim direction _plan_turn_messages already takes.
-    window = max(int(window) if window else 0, min(PARTITION_CAPS))
-    return effective_input_budget(window) // CURRENT_TOOL_BUDGET_DIVISOR
+def current_tool_allowance(metadata, *, provider_turn_ordinal=0):
+    """The current Run's share of the frozen effective input budget.
+
+    Incident N: ``_settled_tool_tokens`` measures bodies with the uncalibrated
+    ``text_tokens``, while ``_plan_turn_messages`` now judges the same bodies
+    through the per-model calibration.  Divide the allowance by that same ratio
+    so the two stay in proportion — otherwise a calibrated model could pass this
+    bound and still fail the budget, i.e. fail closed where paging had room left.
+    """
+    from deskpet.sdk_adapters.context_authority import _resolve_model_id, _resolve_window_tokens
+    from deskpet.sdk_adapters.context_partitions import (
+        calibration_for_model, effective_input_budget, window_tokens_for,
+    )
+    mapping = metadata if isinstance(metadata, Mapping) else {}
+    model_id = _resolve_model_id(mapping)
+    # Same window resolution as _plan_turn_messages, so the two bounds cannot
+    # disagree about which tier this Run is in.
+    window = window_tokens_for(_resolve_window_tokens(mapping), model_id)
+    ratio = calibration_for_model(model_id).ratio(provider_turn_ordinal)
+    # Integer arithmetic end to end: a float divide could shift the bound by a
+    # token purely from representation.
+    scale = max(1, round(CURRENT_TOOL_BUDGET_DIVISOR * ratio * 1000))
+    return effective_input_budget(window) * 1000 // scale
 
 
 class CurrentToolProjector:
@@ -249,7 +263,10 @@ class CurrentToolProjector:
             # A trusted Host lookup plus absence of primary admission selects
             # their existing planner, not a fabricated primary source grant.
             return None
-        allowance = current_tool_allowance(metadata)
+        allowance = current_tool_allowance(
+            metadata,
+            provider_turn_ordinal=int(getattr(request, "provider_turn_ordinal", 0) or 0),
+        )
         over_bound = _settled_tool_tokens(messages) > allowance
         if not large and not over_bound:
             # Nothing to page: leave the existing generic planner untouched so

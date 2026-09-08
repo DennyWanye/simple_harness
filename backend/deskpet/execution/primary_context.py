@@ -16,7 +16,8 @@ from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 import aiosqlite
 from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
 from deskpet.sdk_adapters.context_partitions import (
-    PARTITION_CAPS, ContextBudgetExceeded, budget_window, effective_input_budget, text_tokens,
+    PARTITION_CAPS, ContextBudgetExceeded, budget_window, calibration_for_model,
+    effective_input_budget, tool_schema_tokens, turn_token_estimator,
 )
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
@@ -172,7 +173,21 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             from deskpet.memory.current_input_source import COMMON_POLICY_TEXT
             persona += "\n" + COMMON_POLICY_TEXT
         protected = [{"role": "system", "content": persona}, current]
-        protected_tokens = text_tokens(canonical_json(protected)) + int(tools.catalog.get("schema_token_count", 0))
+        # Incident N: one estimator for the whole request. The catalog's own
+        # ``schema_token_count`` (len(repr(input_schema))//4, no name, no
+        # description) under-counted the tool payload it stands for, and the
+        # per-model calibration covers prompt mass the provider injects behind
+        # the Host's back. This is the first provider turn of the Run, so the
+        # calibration's turn ordinal is 0.
+        calibration = calibration_for_model(provider.model_id)
+        estimate = turn_token_estimator(calibration)
+        # Prefer the specs themselves; a catalog that carries no specs still
+        # reports the same figure under ``schema_token_count``, and neither may
+        # silently become zero.
+        schema_tokens = (tool_schema_tokens(tools.catalog.get("specs", ()))
+                         or int(tools.catalog.get("schema_token_count", 0)))
+        protected_tokens = (estimate(canonical_json(protected))
+                            + calibration.apply(schema_tokens))
         budget = effective_input_budget(provider.context_window)
         if protected_tokens > budget:
             raise ContextBudgetExceeded()
@@ -180,7 +195,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             rows = [m for g in complete for m in project(g)]
             return (sum(len(g["messages"]) for g in complete) > caps["items_max"]
                     or len(canonical_json(rows).encode()) > caps["bytes_max"]
-                    or protected_tokens + text_tokens(canonical_json(rows)) > budget)
+                    or protected_tokens + estimate(canonical_json(rows)) > budget)
         while complete and over_cap():
             # Trim whole groups only; retain exact tool call/result ordering.
             complete.pop(0)

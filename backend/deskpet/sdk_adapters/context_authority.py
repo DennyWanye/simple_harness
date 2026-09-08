@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -893,6 +894,21 @@ def _resolve_window_tokens(metadata: Mapping[str, Any]) -> int | None:
     return None
 
 
+def _resolve_model_id(metadata: Mapping[str, Any]) -> str | None:
+    """Resolve the bound model id from the same start shapes as the window.
+
+    Only feeds :func:`context_partitions.calibration_for_model`; a missing id
+    yields the identity calibration, i.e. exactly the wire-shaped estimate.
+    """
+
+    for source in (metadata, metadata.get("run_binding"), metadata.get("budget")):
+        if isinstance(source, Mapping):
+            value = source.get("model_id") or source.get("model")
+            if value:
+                return str(value)
+    return None
+
+
 def _pending_occurrence_message(pending: tuple[Any, ...], *, overdue_keys=frozenset()) -> Any:
     """Bounded, Host-authored summary of eligible pending occurrences."""
 
@@ -928,6 +944,9 @@ def _plan_turn_messages(
     *,
     extra_protected: Any = None,
     exact_tool_sources: bool = False,
+    tools: Sequence[Any] = (),
+    provider_turn_ordinal: int = 0,
+    model_id: str | None = None,
 ) -> tuple[tuple[Any, ...], dict[str, int]]:
     """Per-turn causal-group + frozen-budget assembly over the Run context.
 
@@ -935,6 +954,13 @@ def _plan_turn_messages(
     ``source=memory``); the conversational tail is grouped into causal units
     (最近 10 完整组 + open tail).  A missing window falls back to the smallest
     frozen tier — over-trimming is safe, overflowing is not.
+
+    Incident N (2026-09-08): the tool schemas travel in the same request as the
+    messages and are just as unavoidable, so they belong in ``protected_tokens``
+    — ``primary_context.prepare`` already counted them and this lane did not,
+    which is the ~4 K-token half of the measured under-count.  The per-model
+    calibration covers what no text-derived estimate can see (a relay that
+    re-injects hidden reasoning content per provider turn).
     """
 
     from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
@@ -942,9 +968,19 @@ def _plan_turn_messages(
         PARTITION_CAPS,
         ContextBudgetExceeded,
         budget_window,
+        calibration_for_model,
         effective_input_budget,
+        tool_schema_tokens,
         trim_causal_groups,
+        turn_token_estimator,
+        window_tokens_for,
     )
+
+    calibration = calibration_for_model(model_id)
+    estimator = turn_token_estimator(
+        calibration, provider_turn_ordinal=provider_turn_ordinal
+    )
+    ratio = calibration.ratio(provider_turn_ordinal)
 
     split = 0
     for message in messages:
@@ -960,11 +996,13 @@ def _plan_turn_messages(
         extras = extra_protected if isinstance(extra_protected, (list, tuple)) else (extra_protected,)
         protected = (*protected, *[item for item in extras if item is not None])
     tail = messages[split:]
+    schema_tokens = int(math.ceil(tool_schema_tokens(tools) * ratio))
     if not tail:
-        return tuple(protected), {"causal_groups": 0, "trimmed_groups": 0}
+        return tuple(protected), {"causal_groups": 0, "trimmed_groups": 0,
+                                  "tool_schema_tokens": schema_tokens}
 
-    window = int(window_tokens) if window_tokens else min(PARTITION_CAPS)
-    tier = budget_window(max(window, min(PARTITION_CAPS)))
+    window = window_tokens_for(window_tokens, model_id)
+    tier = budget_window(window)
 
     history = [
         {
@@ -988,27 +1026,36 @@ def _plan_turn_messages(
         or protected_bytes > int(protected_caps["bytes_max"])
     ):
         raise ContextBudgetExceeded("sdk_context_protected_partition_over_cap")
-    protected_tokens = sum(
-        _context_text_tokens(_message_text(m)) for m in protected
+    # The tool schemas ship in the same request and cannot be trimmed, so they
+    # are protected mass exactly like the system prefix (Incident N F-E4).
+    protected_tokens = schema_tokens + sum(
+        estimator(_message_text(m)) for m in protected
     )
     kept_groups, budget_trimmed = trim_causal_groups(
         plan.groups,
-        window_tokens=max(window, min(PARTITION_CAPS)),
+        window_tokens=window,
         protected_tokens=protected_tokens,
-        token_estimator=_context_text_tokens,
+        token_estimator=estimator,
     )
     groups = list(kept_groups)
     trimmed = plan.dropped_group_count + budget_trimmed
     # Frozen pass rule: after every allowed trim the estimate must fit the
     # effective budget — shipping an oversized payload (underestimate) is
     # forbidden, so the turn fails closed instead.
-    effective = effective_input_budget(max(window, min(PARTITION_CAPS)))
+    effective = effective_input_budget(window)
     total = protected_tokens + sum(
-        _context_text_tokens(item.content)
+        estimator(item.content)
         for group in groups
         for item in group.items
     )
     if total > effective:
+        # Incident N: the numbers are the whole diagnosis when a Run fails
+        # closed here, and they were previously invisible.
+        _LOG.warning(
+            "sdk_context_budget_exceeded planned=%d effective=%d protected=%d "
+            "tool_schemas=%d groups=%d ratio=%.2f",
+            total, effective, protected_tokens, schema_tokens, len(groups), ratio,
+        )
         raise ContextBudgetExceeded()
 
     # Map kept groups back onto the original Message objects by index walk.
@@ -1043,6 +1090,8 @@ def _plan_turn_messages(
         "causal_groups": len(groups),
         "trimmed_groups": trimmed,
         "budget_tier": tier,
+        "tool_schema_tokens": schema_tokens,
+        "planned_input_tokens": total,
     }
     return tuple(kept_messages), facts
 
@@ -1213,6 +1262,7 @@ class ProductRunContextAuthority:
         temperature: float | None = None
         max_output_tokens: int | None = None
         window_tokens: int | None = None
+        model_id: str | None = None
         if isinstance(start_input, Mapping):
             raw_temperature = start_input.get("temperature")
             if raw_temperature is not None:
@@ -1223,6 +1273,7 @@ class ProductRunContextAuthority:
             metadata = start_input.get("context_metadata")
             if isinstance(metadata, Mapping):
                 window_tokens = _resolve_window_tokens(metadata)
+                model_id = _resolve_model_id(metadata)
         inbox_message = None
         presentation = None
         occurrences = self._occurrences
@@ -1267,6 +1318,9 @@ class ProductRunContextAuthority:
             source_messages, window_tokens,
             extra_protected=(inbox_message, closure_message, feedback_message),
             exact_tool_sources=exact_sources,
+            tools=tools,
+            provider_turn_ordinal=int(getattr(request, "provider_turn_ordinal", 0) or 0),
+            model_id=model_id,
         )
         probe = ProviderRequest(
             RequestId("hash-only"),

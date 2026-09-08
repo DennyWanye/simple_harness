@@ -1139,10 +1139,9 @@ def filter_sdk_catalog_for_workspace(
         selected["specs"] = list(selected_specs)
         selected["tool_names"] = [str(item.get("name")) for item in selected_specs]
         selected["tool_count"] = len(selected_specs)
-        selected["schema_token_count"] = sum(
-            max(1, len(repr(item.get("input_schema", {}))) // 4)
-            for item in selected_specs
-        )
+        from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
+
+        selected["schema_token_count"] = tool_schema_tokens(selected_specs)
         schema_fingerprints = catalog.get("schema_fingerprints")
         if isinstance(schema_fingerprints, Mapping):
             selected["schema_fingerprints"] = {
