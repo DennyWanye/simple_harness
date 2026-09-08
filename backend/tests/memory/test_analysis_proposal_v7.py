@@ -15,13 +15,12 @@ def _semantic_branch(schema):
     return next(b for b in branches if b["properties"]["memory_type"]["enum"] == ["semantic"])
 
 
-def test_v7_is_current_and_every_persisted_protocol_still_resolves():
+def test_v7_is_still_resolvable_after_the_v8_bump():
+    # v8 (Incident L) is the current protocol; every persisted wire must keep replaying.
     case = compilation()
-    assert analysis_protocol.PROMPT_VERSION == v7.PROMPT_VERSION
-    assert analysis_protocol.RESULT_SCHEMA_VERSION == v7.RESULT_SCHEMA_VERSION
-    assert analysis_protocol.POLICY_VERSION == v7.POLICY_VERSION
     for protocol in (v3, v4, v5, v5_1, v6, v7):
         assert analysis_protocol.protocol_for_request(_request(case, protocol)) is protocol
+    assert analysis_protocol.PROMPT_VERSION != v7.PROMPT_VERSION
 
 
 def test_contest_action_is_only_on_the_v7_semantic_branch():
