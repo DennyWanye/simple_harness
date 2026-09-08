@@ -693,3 +693,209 @@ PROJECT_EFFECT 工具）也仍然生效。**所以这一条没有可做的改动
   且此刻已经是最后一道防线，复杂度不值得。
 - §附.6 的 **F-TOK-4 / F-TOK-5** 仍然有效（语义收口 system 指令的去重、
   `primary_settled_effect_v1` 摘要的 excerpt 按窗口档位缩放）。
+
+---
+
+## pro 校准重拟：低估 25/423 → 0（2026-09-09，Incident P / F-TOK-6）
+
+- 分支：`worktree-pro-calibration`，基线 `f161f5a4`。
+- 证据（合池 **423 组** `(request_json, usage_json)` 真机配对，68 个 Run，全部
+  `deepseek-v4-pro`、窗口钉 32000 → `budget_tier=8192`、`effective_input_budget=26752`）：
+  `.local-test-evidence/2026-09-08/native-a6-run5/primary-ui-htxhf38f/`（**117 组**，本轮新增）、
+  `native-a6-run4/primary-ui-7f_uv2a1/`（124 组）、`native-a6-b3682fe1/primary-ui-xmqudtzt/`（182 组）。
+  证据库只读复制到临时目录后离线统计；按前两轮的做法，仓库里只落**字符类计数**
+  夹具 `backend/tests/fixtures/hm_to_a6_pro_pool_samples.json`（生成脚本对全部 423 组做了
+  round-trip 断言：用 `"汉"×N + "x"×M` 复原出的 `wire_messages` / `wire_schema`
+  与原文逐 token 相等，证据正文不出仓）。
+- 用户授权「不问、自行裁定并记录」，本节即裁定记录。
+
+### P.1 现象：方向与 Incident O 相反的那一种失败
+
+§O.8 的 F-TOK-6 只给了 run5 单库的数字，本轮把三库合池复算，结论一致且更完整：
+
+| 口径 | 低估条数 | 最差比值 | 真实超预算却被判为「装得下」 |
+|---|---|---|---|
+| 现行 `min(1.35+0.11·ordinal, 2.5)` | **25 / 423** | **0.407×**（估算 22267 对真实 54683） | **5 条** |
+| 本次 `min(1.50+1.25·ordinal, 7.10)` + schema 1.30 | **0 / 423** | 1.104×（最紧一条仍留 +10.4%） | **0 条** |
+
+真实超 `effective_input_budget` 的请求共 **65 条**；旧口径判出 60 条、**漏判 5 条**，
+本次 **65 条全判出**。漏判的后果与 Incident O 相反、也更难兜底：Incident O 是 Host
+把装得下的请求判成装不下（fail-close，还能靠有序降级救回来），这里是 Host 把
+**装不下**的请求判成装得下，请求真的发出去、由 provider 拒——Host 侧没有任何一层
+会拦它。冻结口径 `token_underestimate_allowed: false` 说的就是这个方向。
+
+**根因**：现行三元组是在 Incident N 的 306 组上拟的，那批证据里累计
+`reasoning_tokens` 最高 **14 716**；run5 有一条 Run（`6154747d49`）累计到
+**57 423**（单轮最高 19 579），隐藏注入的量级翻了近 4 倍，`0.11/turn` 的爬升速度
+根本跟不上。这不是「参数偏小」，是**拟合区间外推**。
+
+### P.2 裁定一：`tools` 数组从倍率里拆出来，单独按 1.30 计价
+
+这条先做，因为它决定了 messages 那条 ladder 要拟合的残差是多少。
+
+倍率存在的理由是「Host 看不见的隐藏质量」，而那块质量是中转站回灌的
+**上一轮 assistant `reasoning_content`**——它只落在 messages 流里。`tools` 数组是
+Host 自己写的、每轮逐字节相同的定长负载，`tool_schema_tokens` 实测只比真正发出的
+wire 文本低 **7.2%**（§3.1 的表）。**把一个我们量得准的东西乘以为未知质量拟出来的
+倍率是量纲错误**，而且很贵：pro 深轮次要乘到 7.1，3.4K token 的目录会被记成 24K，
+凭空吃掉 8192 档整整四倍的预算。
+
+- 新增 `ModelContextInfo.input_estimate_schema_ratio`（在 `_OVERRIDABLE_FIELDS` 里）与
+  `ProviderTokenCalibration.schema_ratio` / `tool_schema_ratio()` / `apply_tool_schema()`。
+- **`0.0` = 未配置 → `tools` 沿用 `ratio(ordinal)`**，即 Incident P 之前的行为。
+  未校准型号、`_default`、`deepseek-v4-flash` 全部走这条，估算值**逐 token 不变**
+  （`test_an_unconfigured_schema_ratio_follows_the_message_ratio` 钉死）。
+  只有 `deepseek-v4-pro` 配了 1.30。
+- 取值 1.30 ≈ `4 ÷ 3.1`，即 §3.1 第 3 条实测的「JSON 相对散文的 tokenizer 密度」；
+  同时覆盖上面那 7.2% 的口径残差。下限与 `ratio()` 一致恒为 1.0，误配 <1 的
+  override 不会把一个量得准的负载变成低估。
+- 收益（合池 423 组，最优解对比）：不拆时最优 `1.45/0.85/5.8`，中位多估 **3.23×**；
+  拆开后 **2.72×**，p95 4.54→4.50。约 **16%** 的窗口是白省下来的。
+
+### P.3 裁定二：messages 的 ladder 取 `min(1.50 + 1.25·ordinal, 7.10)`
+
+口径与 flash 那轮完全一致：**对每个 ordinal 的实测上界留约 10% 工程余量**
+（与 `safety_margin` 同一量级），而不是把 423 个点拟合到零余量。
+下表的「实测 msg 上界」是**全部 423 组**逐条 `(provider_input − ceil(wire_schema×1.30)) ÷ wire_messages`
+的按轮次最大值：
+
+| ordinal | n | 实测 msg 上界 | 选定 ratio | 余量 | 该档最紧样本的实际余量 |
+|---|---|---|---|---|---|
+| 0 | 68 | 1.235 | **1.50** | +21.5% | +12.4% |
+| 1 | 50 | 1.751 | **2.75** | +57.0% | +30.0% |
+| 2 | 25 | 3.453 | **4.00** | +15.8% | +13.4% |
+| 3 | 24 | 4.586 | **5.25** | +14.5% | +12.7% |
+| 4 | 21 | 5.827 | **6.50** | +11.5% | **+10.4%**（全局最紧） |
+| 5 | 21 | 6.081 | **7.10** | +16.8% | +15.4% |
+| 6 | 20 | 6.109 | 7.10 | +16.2% | +15.1% |
+| 7 | 20 | 5.937 | 7.10 | +19.6% | +18.3% |
+| 8 | 18 | **6.335**（观测最高） | 7.10 | +12.1% | +11.4% |
+| 9–12 | 60 | 2.43 ~ 2.75 | 7.10 | +159% ~ +193% | — |
+| 13–20 | 71 | 4.34 ~ 5.42 | 7.10 | +31% ~ +64% | — |
+| 21 | 7 | 6.138 | 7.10 | +15.7% | +14.6% |
+| 22 | 7 | 6.158 | 7.10 | +15.3% | +14.4% |
+| 23–24 | 11 | 3.44 ~ 3.48 | 7.10 | +104% ~ +106% | — |
+
+`1.50 + 1.25·ordinal` 就是 ordinal 0/2/4 三条约束的**最小线性上包络**
+（网格搜索在「每档 ≥10% 余量」约束下的中位最优解落在同一点）。
+ordinal 9~12、23~24 的巨大余量是**非单调**造成的：那几档的样本来自另一批
+reasoning 轻的 Run，而单调饱和曲线不可能只对某几档回落——按 ordinal 建查找表能省下
+这块，但那是对「哪些 Run 恰好跑得长」过拟合，不做。
+
+### P.4 为什么 7.10 是「可以封顶」而不是「赌一把」
+
+所需倍率 = `密度 + 累计reasoning ÷ wire`。reasoning 质量逐轮线性增长，但 **wire 自己
+也在逐轮增长**（每轮都往请求里加自己的消息），所以这个商**收敛而不发散**。
+证据直接支持：两条彼此独立的最深 Run 都在 **6.1~6.3** 处走平——
+
+- `6154747d49`（run5，9 轮）：msgneed 0.72 → 1.75 → 3.45 → 4.59 → 5.83 → 6.08 →
+  **6.11 → 5.94 → 6.33**（cum_reason 0 → 57 423）；
+- `d34ea7dbb5`（run5，23 轮）：… → 5.32 → 5.42 → **6.14 → 6.16**（cum_reason 至 55 169）。
+
+（夹具里这两条 Run 的样本 id 用 run_id 末 8 位：`run5-54747d49-*` / `run5-4ea7dbb5-*`。）
+一条在 ordinal 8 走平、另一条在 ordinal 22 走平，落点几乎相同。所以
+`max_ratio = 7.10 ≈ 观测平台 × 1.12` 是**实测形态**，不是外推假设；
+`test_pro_saturates_instead_of_growing_without_bound` 把「平台存在 + 封顶不超过平台
+1.20 倍」一起钉死。
+
+任务书给的另一条路——「adapter 能通过 `provider_reasoning_content` 看到累计
+reasoning 时就按实际字节计费」——**这条路现在走不通，且已核查**：主对话链路重建
+Context 时 assistant 消息的 `content` 就是空串（证据里逐条如此），`reasoning_content`
+只存在于 SDK 私有 metadata，`_plan_turn_messages` 拿到的 `messages` 里没有它。
+真要把它接进来就是 F-TOK-1 的那套跨进程 usage 读取，属于独立一轮。
+另外也实测了「密度倍率 + 按轮次累加的固定 reasoning 预留」这种加性模型
+（`ceil(1.48×wire) + min(7600×ordinal, 62000)`）：中位 3.22× 与本方案接近，但
+p95 **6.82×**、最大 **9.28×**（远差于本方案的 4.50 / 4.94），因为固定预留对小请求
+是灾难。**否决**。
+
+### P.5 代价，说清楚
+
+| | 旧（1.35/0.11/2.5） | 新（1.50/1.25/7.10 + schema 1.30） |
+|---|---|---|
+| 低估条数 | 25 / 423 | **0 / 423** |
+| 最差比值 | 0.407× | 1.104× |
+| 估算 ÷ 实测 中位 | 1.35× | **2.72×** |
+| p95 / 最大 | 1.89× / 2.08× | 4.50× / 4.94× |
+| 判为超预算的请求 | 166 | 280（真实 65） |
+| 真实超预算却漏判 | **5** | **0** |
+
+中位多估从 1.35× 抬到 2.72× 是实打实的代价：**在窗口钉 32000 的实验里**，会有更多轮
+走进 Incident O 的有序降级（先强制分页、再裁历史），可用上下文按估算口径少一半以上。
+**生产窗口 1M 下没有实际影响**：`effective_input_budget(1M) = 895 904`，20K 的 wire
+乘 7.1 也只有 142K。这与 §3.2 已经接受过的取舍是同一条。
+
+**真正的解仍是 F-TOK-1**（用本 Run 上一轮真实 `usage.input_tokens + output_tokens`
+做估算下界，实测中位比值 0.993、最大 1.072），它能把 2.72× 压回 ~1.05×，并且对
+**任何** provider 的隐形注入天然免疫、不再依赖手工校准表。本轮先把「不低估」这条
+守住——F-TOK-6 描述的是一个会把请求真的发出去的缺陷，不能等。
+`test_pro_over_estimate_stays_inside_its_recorded_price` 把这个代价写成断言，
+下一次重拟必须拿数字来跟它讲道理。
+
+### P.6 改点
+
+| 文件 | 改动 |
+|---|---|
+| `backend/llm/model_info.py` | 新增 `input_estimate_schema_ratio`（含 `_OVERRIDABLE_FIELDS`）；`deepseek-v4-pro` 改为 `1.50 / 1.25 / 7.10 / schema 1.30` + 取值依据 |
+| `backend/deskpet/sdk_adapters/context_partitions.py` | `ProviderTokenCalibration` 新增 `schema_ratio` 字段与 `tool_schema_ratio()` / `apply_tool_schema()`（未配置时恒等于 `ratio()`，下限 1.0）；`calibration_for_model` 读取新字段 |
+| `backend/deskpet/sdk_adapters/context_authority.py` | `_plan_turn_messages` 的 `schema_tokens` 改走 `apply_tool_schema` |
+| `backend/deskpet/execution/primary_context.py` | `prepare` 同上（含 `ContextBudgetExceeded` 拆解里的 `tool_schemas`） |
+| `backend/tests/fixtures/hm_to_a6_pro_pool_samples.json` | **新增**：合池 423 组的字符类计数夹具，保留 36 条样本（每个 ordinal 最紧的 1~2 条 + 旧口径漏判的 5 条 + 最大/最小 prompt + 累计 reasoning 最高的两条），并带 population 统计与**全池**的 per-ordinal 实测上界表 |
+| `backend/tests/sdk_adapters/test_token_estimator_calibration.py` | 新增 13 例（Incident P 段）；`_sample_estimate` 改用 `apply_tool_schema`（对 flash / 未校准型号数值不变） |
+
+**未改动**：`text_tokens` 口径、`tool_schema_tokens`、`safety_margin` /
+`GENERATION_RESERVE` / `PARTITION_CAPS` / `effective_input_budget`、
+`assemble_partitions` / `trim_causal_groups`（冻结口径）、`provider_request_fingerprint`、
+Incident O 的降级顺序与 receipt 字段、`current_tool_allowance` 的除法
+（它量的是工具**回执**，属 messages，仍除 `ratio(ordinal)`——正确）。
+
+### P.7 新增测试（13 例）
+
+- 夹具与人口统计：`test_pro_fixture_describes_the_pooled_population`。
+- schema 拆价：`test_pro_prices_the_tools_array_apart_from_the_messages`、
+  `test_an_unconfigured_schema_ratio_follows_the_message_ratio`（flash / 默认逐 token 不变）、
+  `test_a_schema_ratio_below_one_can_never_shrink_a_measured_payload`。
+- 缺陷与修复：`test_the_replaced_pro_calibration_under_counted_this_evidence`（复现 0.407×）、
+  `test_pro_never_under_counts_the_pooled_evidence`（零低估）、
+  `test_pro_keeps_a_ten_percent_margin_at_every_ordinal`（**逐 ordinal** 而非聚合——
+  这正是旧口径「在自己那 306 组上聚合合格却漏掉 ordinal 2~8」的地方；该用例同时断言
+  `schema_ratio` 等于夹具里 `measured_with_schema_ratio`，改了密度就必须重拟表）、
+  `test_pro_saturates_instead_of_growing_without_bound`、
+  `test_pro_over_estimate_stays_inside_its_recorded_price`。
+- 事故回放：`test_every_over_budget_pro_request_the_old_ladder_hid_is_now_visible`
+  （5 条逐条：真实 > 26752、旧估算 ≤ 26752、新估算 > 26752）、
+  `test_the_worst_pro_assembly_is_now_planned_as_over_budget`（把最差那一轮真的送进
+  `_plan_turn_messages`：未校准口径报正 headroom，pro 口径报负 headroom，且
+  `tool_schema_tokens` 用的是 schema 倍率而不是深轮次倍率）。
+- 降级顺序：`test_the_worst_pro_turn_needs_force_paging_not_only_history`
+  （该轮的历史裁到 0 也不够——余下的全是本 Run 自己的已结算回执，即降级顺序里的
+  **第 ① 步**该管的东西，抛出的拆解把质量放在 `open_group` 而不是 protected，
+  证明顺序本身是对的）、
+  `test_pro_overflow_walks_the_degrade_order_before_it_fails_closed`
+  （pro 深轮次下：probe 返回负 headroom 不抛 → `allow_full_group_trim` 花掉历史后装下、
+  仍不抛 → 只有 protected 单独超预算时才抛，且 `str()` 仍是稳定码）。
+
+### P.8 验证
+
+- 指定的五个文件（`-p no:randomly`，逐文件跑，`PYTHONPATH=<worktree>/backend`）：
+  - `tests/sdk_adapters/test_token_estimator_calibration.py` **54 绿**（41 → 54，新增 13）；
+  - `tests/test_model_info.py` + `tests/test_token_budget_per_model.py` 合计 **25 绿**；
+  - `tests/execution/test_current_tool_pages.py` **3 绿**；
+  - `tests/execution/test_current_tool_megabyte.py` `[8192]` `[32768]` **绿**，
+    `[4096]` **既有红**且形态与 §O.5 记录**逐字相同**：
+    `planned=2723 effective=2663 protected=2439 tool_schemas=1304 groups=1 ratio=1.00
+    protected_messages=1135 open_group=284` ——该场景型号未校准，`ratio=1.00`、
+    schema 也未配倍率，本轮改动对它**一个 token 都没动**。
+- importer 冒烟：`import main` 与 `context_partitions` / `context_authority` /
+  `primary_context` / `current_tool_pages` / `llm.model_info` 均正常。
+- 夹具 round-trip：生成脚本对全部 423 组断言「字符类复原 == 原文口径」，全过。
+
+### P.9 Followup
+
+- **F-TOK-1（本轮再次确认为最高价值）**：闭环 usage 反馈。本轮把 pro 的中位多估
+  推到 2.72×，正是因为 Host 只能按 ordinal worst-case 猜隐藏 reasoning。
+  用上一轮真实 usage 做下界可一次性解决，并让本节的校准表退化为兜底。
+- **F-TOK-8（新）**：`ordinal 9~12` / `23~24` 那几档白多估 100%~190%，
+  根因是「所需倍率随 ordinal 非单调」而单调曲线只能取上包络。若将来有更强的
+  可见特征（例如本 Run 已产生的 assistant 轮数 × 上一轮真实 `reasoning_tokens`），
+  可以把这块拿回来——它与 F-TOK-1 是同一个信息源，建议合并处理。
+- §O.8 的 **F-TOK-7**、§附.6 的 **F-TOK-4 / F-TOK-5** 仍然有效。

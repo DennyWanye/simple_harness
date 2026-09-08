@@ -1,0 +1,7581 @@
+{
+ "context_window": 32000,
+ "measured_max_needed_message_ratio_by_ordinal": {
+  "0": 1.2349,
+  "1": 1.751,
+  "10": 2.5762,
+  "11": 2.7423,
+  "12": 2.746,
+  "13": 4.3397,
+  "14": 4.5744,
+  "15": 5.0244,
+  "16": 4.9866,
+  "17": 4.8726,
+  "18": 4.7217,
+  "19": 5.3245,
+  "2": 3.4534,
+  "20": 5.4181,
+  "21": 6.1385,
+  "22": 6.1577,
+  "23": 3.4435,
+  "24": 3.4757,
+  "3": 4.5862,
+  "4": 5.8271,
+  "5": 6.081,
+  "6": 6.1089,
+  "7": 5.9371,
+  "8": 6.3349,
+  "9": 2.4255
+ },
+ "measured_max_needed_ratio_by_ordinal": {
+  "0": 1.2617,
+  "1": 1.6017,
+  "10": 2.3069,
+  "11": 2.4333,
+  "12": 2.42,
+  "13": 3.5154,
+  "14": 3.7029,
+  "15": 3.9535,
+  "16": 3.9191,
+  "17": 3.875,
+  "18": 3.801,
+  "19": 4.2779,
+  "2": 2.7457,
+  "20": 4.3603,
+  "21": 4.8982,
+  "22": 5.012,
+  "23": 2.4367,
+  "24": 2.4662,
+  "3": 3.5233,
+  "4": 4.3714,
+  "5": 4.6662,
+  "6": 4.8284,
+  "7": 4.8119,
+  "8": 5.2485,
+  "9": 2.1926
+ },
+ "measured_with_schema_ratio": 1.3,
+ "model_id": "deepseek-v4-pro",
+ "note": "Character-class counts only.  text_tokens and tool_schema_tokens are pure character-class functions, so a sample rebuilt as CJK*n + 'x'*m estimates bit-identically to the original request, and no evidence text leaves the run.",
+ "population": {
+  "cumulative_reasoning_tokens_max": 57423,
+  "max_provider_turn_ordinal": 24,
+  "over_budget_hidden_by_the_replaced_calibration": 5,
+  "pairs": 423,
+  "pairs_by_evidence": {
+   "b368": 182,
+   "run4": 124,
+   "run5": 117
+  },
+  "provider_input_tokens_max": 84354,
+  "provider_reasoning_tokens_max": 19579,
+  "requests_over_effective_budget": 65,
+  "runs": 68,
+  "under_counted_by_the_replaced_calibration": 25,
+  "worst_ratio_of_the_replaced_calibration": 0.4072
+ },
+ "replaced_calibration": {
+  "base_ratio": 1.35,
+  "max_ratio": 2.5,
+  "per_turn_ratio": 0.11
+ },
+ "samples": [
+  {
+   "cumulative_reasoning_tokens_before": 0,
+   "evidence": "b368",
+   "id": "b368-1ced045e-t0",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 23,
+     "name": null,
+     "other_chars": 5,
+     "role": "user"
+    }
+   ],
+   "provider_input_tokens": 4604,
+   "provider_reasoning_tokens": 142,
+   "provider_turn_ordinal": 0,
+   "selected_for": [
+    "smallest_provider_prompt"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 5052,
+   "evidence": "b368",
+   "id": "b368-34ecd8ef-t7",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 120,
+     "name": null,
+     "other_chars": 1913,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 150,
+     "name": null,
+     "other_chars": 66,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 18,
+     "name": null,
+     "other_chars": 9,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 68,
+     "name": "task_scope_search",
+     "other_chars": 8713,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 14,
+     "name": null,
+     "other_chars": 4,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 34,
+     "name": "context_route",
+     "other_chars": 4619,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 19,
+     "name": null,
+     "other_chars": 72,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 17024,
+   "provider_reasoning_tokens": 47,
+   "provider_turn_ordinal": 7,
+   "selected_for": [
+    "tightest_at_ordinal_7"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 5099,
+   "evidence": "b368",
+   "id": "b368-34ecd8ef-t8",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 120,
+     "name": null,
+     "other_chars": 1913,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 150,
+     "name": null,
+     "other_chars": 66,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 18,
+     "name": null,
+     "other_chars": 9,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 68,
+     "name": "task_scope_search",
+     "other_chars": 8713,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 14,
+     "name": null,
+     "other_chars": 4,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 34,
+     "name": "context_route",
+     "other_chars": 4619,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 19,
+     "name": null,
+     "other_chars": 72,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 17195,
+   "provider_reasoning_tokens": 41,
+   "provider_turn_ordinal": 8,
+   "selected_for": [
+    "tightest_at_ordinal_8"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 5140,
+   "evidence": "b368",
+   "id": "b368-34ecd8ef-t9",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 120,
+     "name": null,
+     "other_chars": 1913,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 150,
+     "name": null,
+     "other_chars": 66,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 18,
+     "name": null,
+     "other_chars": 9,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 68,
+     "name": "task_scope_search",
+     "other_chars": 8713,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 14,
+     "name": null,
+     "other_chars": 4,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 34,
+     "name": "context_route",
+     "other_chars": 4619,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 19,
+     "name": null,
+     "other_chars": 72,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 167,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 17318,
+   "provider_reasoning_tokens": 188,
+   "provider_turn_ordinal": 9,
+   "selected_for": [
+    "tightest_at_ordinal_9"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 0,
+   "evidence": "b368",
+   "id": "b368-66e7c6b8-t0",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 120,
+     "name": null,
+     "other_chars": 1913,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 150,
+     "name": null,
+     "other_chars": 66,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 53,
+     "name": null,
+     "other_chars": 14512,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 9,
+     "name": null,
+     "other_chars": 2,
+     "role": "user"
+    }
+   ],
+   "provider_input_tokens": 11170,
+   "provider_reasoning_tokens": 165,
+   "provider_turn_ordinal": 0,
+   "selected_for": [
+    "tightest_at_ordinal_0"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 1216,
+   "evidence": "b368",
+   "id": "b368-876754a1-t1",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 23,
+     "name": null,
+     "other_chars": 5,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 15,
+     "name": null,
+     "other_chars": 5,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 6048,
+   "provider_reasoning_tokens": 147,
+   "provider_turn_ordinal": 1,
+   "selected_for": [
+    "tightest_at_ordinal_1"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 1363,
+   "evidence": "b368",
+   "id": "b368-876754a1-t2",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 23,
+     "name": null,
+     "other_chars": 5,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 15,
+     "name": null,
+     "other_chars": 5,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 6412,
+   "provider_reasoning_tokens": 12,
+   "provider_turn_ordinal": 2,
+   "selected_for": [
+    "tightest_at_ordinal_2"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 9174,
+   "evidence": "b368",
+   "id": "b368-876754a1-t23",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 23,
+     "name": null,
+     "other_chars": 5,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 15,
+     "name": null,
+     "other_chars": 5,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 12,
+     "name": "context_route",
+     "other_chars": 1091,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 338,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 17759,
+   "provider_reasoning_tokens": 310,
+   "provider_turn_ordinal": 23,
+   "selected_for": [
+    "tightest_at_ordinal_23"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 9484,
+   "evidence": "b368",
+   "id": "b368-876754a1-t24",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 23,
+     "name": null,
+     "other_chars": 5,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 15,
+     "name": null,
+     "other_chars": 5,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 258,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 12,
+     "name": "context_route",
+     "other_chars": 1091,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 338,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 356,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 18193,
+   "provider_reasoning_tokens": 432,
+   "provider_turn_ordinal": 24,
+   "selected_for": [
+    "tightest_at_ordinal_24"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 1375,
+   "evidence": "b368",
+   "id": "b368-876754a1-t3",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 23,
+     "name": null,
+     "other_chars": 5,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 15,
+     "name": null,
+     "other_chars": 5,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 6640,
+   "provider_reasoning_tokens": 14,
+   "provider_turn_ordinal": 3,
+   "selected_for": [
+    "tightest_at_ordinal_3"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 1389,
+   "evidence": "b368",
+   "id": "b368-876754a1-t4",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 23,
+     "name": null,
+     "other_chars": 5,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 15,
+     "name": null,
+     "other_chars": 5,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 6870,
+   "provider_reasoning_tokens": 40,
+   "provider_turn_ordinal": 4,
+   "selected_for": [
+    "tightest_at_ordinal_4"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 1429,
+   "evidence": "b368",
+   "id": "b368-876754a1-t5",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 23,
+     "name": null,
+     "other_chars": 5,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 15,
+     "name": null,
+     "other_chars": 5,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 7126,
+   "provider_reasoning_tokens": 21,
+   "provider_turn_ordinal": 5,
+   "selected_for": [
+    "tightest_at_ordinal_5"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 1450,
+   "evidence": "b368",
+   "id": "b368-876754a1-t6",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 23,
+     "name": null,
+     "other_chars": 5,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 15,
+     "name": null,
+     "other_chars": 5,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 650,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 7364,
+   "provider_reasoning_tokens": 41,
+   "provider_turn_ordinal": 6,
+   "selected_for": [
+    "tightest_at_ordinal_6"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 0,
+   "evidence": "b368",
+   "id": "b368-c253f069-t0",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 10,
+     "name": null,
+     "other_chars": 1,
+     "role": "user"
+    }
+   ],
+   "provider_input_tokens": 4593,
+   "provider_reasoning_tokens": 463,
+   "provider_turn_ordinal": 0,
+   "selected_for": [
+    "smallest_provider_prompt"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 999
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 0,
+   "evidence": "run4",
+   "id": "run4-b236ed09-t0",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4142,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 110,
+     "name": null,
+     "other_chars": 1900,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 182,
+     "name": null,
+     "other_chars": 77,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 201,
+     "name": null,
+     "other_chars": 11592,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 24,
+     "name": null,
+     "other_chars": 20,
+     "role": "user"
+    }
+   ],
+   "provider_input_tokens": 10655,
+   "provider_reasoning_tokens": 1317,
+   "provider_turn_ordinal": 0,
+   "selected_for": [
+    "tightest_at_ordinal_0"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 28606,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t13",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 98,
+     "name": "tool_search",
+     "other_chars": 3883,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 522,
+     "name": "tool_search",
+     "other_chars": 4183,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 44959,
+   "provider_reasoning_tokens": 2464,
+   "provider_turn_ordinal": 13,
+   "selected_for": [
+    "tightest_at_ordinal_13"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 31070,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t14",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1908,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 149,
+     "name": "tool_search",
+     "other_chars": 1477,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 255,
+     "name": "tool_search",
+     "other_chars": 6393,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 48245,
+   "provider_reasoning_tokens": 141,
+   "provider_turn_ordinal": 14,
+   "selected_for": [
+    "tightest_at_ordinal_14"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 31211,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t15",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1908,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 149,
+     "name": "tool_search",
+     "other_chars": 1477,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1512,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 47679,
+   "provider_reasoning_tokens": 139,
+   "provider_turn_ordinal": 15,
+   "selected_for": [
+    "tightest_at_ordinal_15"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 31350,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t16",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1908,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 149,
+     "name": "tool_search",
+     "other_chars": 1477,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1512,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 735,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 48413,
+   "provider_reasoning_tokens": 602,
+   "provider_turn_ordinal": 16,
+   "selected_for": [
+    "tightest_at_ordinal_16"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 402
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 31952,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t17",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 118,
+     "name": null,
+     "other_chars": 1157,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1908,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 149,
+     "name": "tool_search",
+     "other_chars": 1477,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1512,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 735,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 192,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 49635,
+   "provider_reasoning_tokens": 251,
+   "provider_turn_ordinal": 17,
+   "selected_for": [
+    "tightest_at_ordinal_17"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 402
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 32203,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t18",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 118,
+     "name": null,
+     "other_chars": 1157,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1908,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 149,
+     "name": "tool_search",
+     "other_chars": 1477,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1512,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 735,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 192,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 50527,
+   "provider_reasoning_tokens": 7707,
+   "provider_turn_ordinal": 18,
+   "selected_for": [
+    "tightest_at_ordinal_18"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 402
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 39910,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t19",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 118,
+     "name": null,
+     "other_chars": 1157,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1908,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 149,
+     "name": "tool_search",
+     "other_chars": 1477,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1512,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 735,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 192,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 58838,
+   "provider_reasoning_tokens": 1543,
+   "provider_turn_ordinal": 19,
+   "selected_for": [
+    "tightest_at_ordinal_19"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 402
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 41453,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t20",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 118,
+     "name": null,
+     "other_chars": 1157,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1908,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 149,
+     "name": "tool_search",
+     "other_chars": 1477,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1512,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 735,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 192,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 682,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 60717,
+   "provider_reasoning_tokens": 7479,
+   "provider_turn_ordinal": 20,
+   "selected_for": [
+    "tightest_at_ordinal_20"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 402
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 48932,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t21",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 118,
+     "name": null,
+     "other_chars": 1157,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1908,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 149,
+     "name": "tool_search",
+     "other_chars": 1477,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1512,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 735,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 192,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 682,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 116,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 68350,
+   "provider_reasoning_tokens": 6237,
+   "provider_turn_ordinal": 21,
+   "selected_for": [
+    "tightest_at_ordinal_21"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 402
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 55169,
+   "evidence": "run5",
+   "id": "run5-4ea7dbb5-t22",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 118,
+     "name": null,
+     "other_chars": 1157,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 17,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 19,
+     "name": "tool_search",
+     "other_chars": 1961,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2019,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1908,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1070,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 149,
+     "name": "tool_search",
+     "other_chars": 1477,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 24,
+     "name": "context_route",
+     "other_chars": 5851,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 419,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1512,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 735,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 192,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1933,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 1843,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 682,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 116,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 52,
+     "name": "tool_search",
+     "other_chars": 4636,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 76007,
+   "provider_reasoning_tokens": 16226,
+   "provider_turn_ordinal": 22,
+   "selected_for": [
+    "largest_cumulative_reasoning",
+    "largest_provider_prompt",
+    "tightest_at_ordinal_22"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    },
+    {
+     "cjk_chars": 0,
+     "name": "workspace_prepare",
+     "other_chars": 402
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 6752,
+   "evidence": "run5",
+   "id": "run5-54747d49-t1",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 4953,
+     "name": null,
+     "other_chars": 2246,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 13,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 42,
+     "name": "context_route",
+     "other_chars": 1098,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 16768,
+   "provider_reasoning_tokens": 7281,
+   "provider_turn_ordinal": 1,
+   "selected_for": [
+    "tightest_at_ordinal_1"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 14033,
+   "evidence": "run5",
+   "id": "run5-54747d49-t2",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 4953,
+     "name": null,
+     "other_chars": 2246,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 13,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 42,
+     "name": "context_route",
+     "other_chars": 1098,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 225,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 28973,
+   "provider_reasoning_tokens": 8440,
+   "provider_turn_ordinal": 2,
+   "selected_for": [
+    "hidden_over_budget_before",
+    "tightest_at_ordinal_2"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 22473,
+   "evidence": "run5",
+   "id": "run5-54747d49-t3",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 4953,
+     "name": null,
+     "other_chars": 2246,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 13,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 42,
+     "name": "context_route",
+     "other_chars": 1098,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 225,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 37773,
+   "provider_reasoning_tokens": 4407,
+   "provider_turn_ordinal": 3,
+   "selected_for": [
+    "hidden_over_budget_before",
+    "tightest_at_ordinal_3"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 26880,
+   "evidence": "run5",
+   "id": "run5-54747d49-t4",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 4953,
+     "name": null,
+     "other_chars": 2246,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 13,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 42,
+     "name": "context_route",
+     "other_chars": 1098,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 225,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 253,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 47146,
+   "provider_reasoning_tokens": 6585,
+   "provider_turn_ordinal": 4,
+   "selected_for": [
+    "hidden_over_budget_before",
+    "tightest_at_ordinal_4"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 33465,
+   "evidence": "run5",
+   "id": "run5-54747d49-t5",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 4953,
+     "name": null,
+     "other_chars": 2246,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 13,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 42,
+     "name": "context_route",
+     "other_chars": 1098,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 225,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 253,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 222,
+     "name": "tool_search",
+     "other_chars": 2846,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 54683,
+   "provider_reasoning_tokens": 6695,
+   "provider_turn_ordinal": 5,
+   "selected_for": [
+    "hidden_over_budget_before",
+    "tightest_at_ordinal_5"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 40160,
+   "evidence": "run5",
+   "id": "run5-54747d49-t6",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 4953,
+     "name": null,
+     "other_chars": 2246,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 13,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 42,
+     "name": "context_route",
+     "other_chars": 1098,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 225,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 253,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 222,
+     "name": "tool_search",
+     "other_chars": 2846,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 5105,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 62880,
+   "provider_reasoning_tokens": 3670,
+   "provider_turn_ordinal": 6,
+   "selected_for": [
+    "hidden_over_budget_before",
+    "tightest_at_ordinal_6"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 43830,
+   "evidence": "run5",
+   "id": "run5-54747d49-t7",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 4953,
+     "name": null,
+     "other_chars": 2246,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 13,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 42,
+     "name": "context_route",
+     "other_chars": 1098,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 225,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 253,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 222,
+     "name": "tool_search",
+     "other_chars": 2846,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 5105,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 110,
+     "name": "context_route",
+     "other_chars": 4633,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 68772,
+   "provider_reasoning_tokens": 13593,
+   "provider_turn_ordinal": 7,
+   "selected_for": [
+    "largest_provider_prompt",
+    "tightest_at_ordinal_7"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 57423,
+   "evidence": "run5",
+   "id": "run5-54747d49-t8",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 4953,
+     "name": null,
+     "other_chars": 2246,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 13,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 42,
+     "name": "context_route",
+     "other_chars": 1098,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 25,
+     "name": null,
+     "other_chars": 2,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 225,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 674,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 253,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 222,
+     "name": "tool_search",
+     "other_chars": 2846,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 5105,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 110,
+     "name": "context_route",
+     "other_chars": 4633,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 255,
+     "name": "tool_search",
+     "other_chars": 6100,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 84354,
+   "provider_reasoning_tokens": 15646,
+   "provider_turn_ordinal": 8,
+   "selected_for": [
+    "largest_cumulative_reasoning",
+    "largest_provider_prompt",
+    "tightest_at_ordinal_8"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 14882,
+   "evidence": "run5",
+   "id": "run5-9803837d-t10",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 98,
+     "name": null,
+     "other_chars": 1852,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 90,
+     "name": null,
+     "other_chars": 1998,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 16,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1976,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 28,
+     "name": "tool_search",
+     "other_chars": 1901,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 68,
+     "name": "task_scope_search",
+     "other_chars": 12059,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 11,
+     "name": null,
+     "other_chars": 4,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 34,
+     "name": "context_route",
+     "other_chars": 4619,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1993,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2009,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1995,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 5162,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 37902,
+   "provider_reasoning_tokens": 1404,
+   "provider_turn_ordinal": 10,
+   "selected_for": [
+    "tightest_at_ordinal_10"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 16286,
+   "evidence": "run5",
+   "id": "run5-9803837d-t11",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 98,
+     "name": null,
+     "other_chars": 1852,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 90,
+     "name": null,
+     "other_chars": 1998,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 16,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1976,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 28,
+     "name": "tool_search",
+     "other_chars": 1901,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 68,
+     "name": "task_scope_search",
+     "other_chars": 12059,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 11,
+     "name": null,
+     "other_chars": 4,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 34,
+     "name": "context_route",
+     "other_chars": 4619,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1993,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2009,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1995,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1987,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 2202,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 39388,
+   "provider_reasoning_tokens": 130,
+   "provider_turn_ordinal": 11,
+   "selected_for": [
+    "tightest_at_ordinal_11"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  },
+  {
+   "cumulative_reasoning_tokens_before": 16416,
+   "evidence": "run5",
+   "id": "run5-9803837d-t12",
+   "messages": [
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 4623,
+     "role": "system"
+    },
+    {
+     "cjk_chars": 98,
+     "name": null,
+     "other_chars": 1852,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 90,
+     "name": null,
+     "other_chars": 1998,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 16,
+     "name": null,
+     "other_chars": 73,
+     "role": "user"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2023,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 27,
+     "name": "tool_search",
+     "other_chars": 1941,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1976,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 28,
+     "name": "tool_search",
+     "other_chars": 1901,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 68,
+     "name": "task_scope_search",
+     "other_chars": 12059,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 11,
+     "name": null,
+     "other_chars": 4,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 34,
+     "name": "context_route",
+     "other_chars": 4619,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1993,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2027,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 2009,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1995,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 1987,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 2202,
+     "role": "tool"
+    },
+    {
+     "cjk_chars": 0,
+     "name": null,
+     "other_chars": 0,
+     "role": "assistant"
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 727,
+     "role": "tool"
+    }
+   ],
+   "provider_input_tokens": 40308,
+   "provider_reasoning_tokens": 328,
+   "provider_turn_ordinal": 12,
+   "selected_for": [
+    "tightest_at_ordinal_12"
+   ],
+   "state": "succeeded",
+   "tools": [
+    {
+     "cjk_chars": 0,
+     "name": "context_page_in",
+     "other_chars": 490
+    },
+    {
+     "cjk_chars": 0,
+     "name": "context_route",
+     "other_chars": 2803
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_discover",
+     "other_chars": 952
+    },
+    {
+     "cjk_chars": 0,
+     "name": "procedure_use",
+     "other_chars": 1660
+    },
+    {
+     "cjk_chars": 0,
+     "name": "prospective_ack",
+     "other_chars": 579
+    },
+    {
+     "cjk_chars": 0,
+     "name": "run_shell",
+     "other_chars": 1116
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_search",
+     "other_chars": 1180
+    },
+    {
+     "cjk_chars": 0,
+     "name": "task_scope_update",
+     "other_chars": 2506
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_complete",
+     "other_chars": 402
+    },
+    {
+     "cjk_chars": 0,
+     "name": "todo_write",
+     "other_chars": 879
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_activate",
+     "other_chars": 511
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_describe",
+     "other_chars": 596
+    },
+    {
+     "cjk_chars": 0,
+     "name": "tool_search",
+     "other_chars": 918
+    }
+   ]
+  }
+ ],
+ "source": "HM-TO-A6 pooled deepseek-v4-pro evidence: 2026-09-08 native-a6-run5 (117 pairs), native-a6-run4 (124), native-a6-b3682fe1 (182) — provider_invocations.request_json x usage_json."
+}

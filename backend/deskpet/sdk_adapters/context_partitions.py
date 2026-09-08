@@ -138,19 +138,46 @@ class ProviderTokenCalibration:
     thinking model behind a relay) carries a ratio > 1 that grows with the
     provider turn ordinal, because the hidden mass grows one reasoning block
     per turn.
+
+    Incident P (2026-09-09): ``schema_ratio`` prices the ``tools`` array apart
+    from the messages.  The hidden mass this calibration exists to cover is
+    re-injected *assistant reasoning*, and that lands in the message stream only
+    — the tools array is a fixed Host-authored payload whose wire size
+    ``tool_schema_tokens`` measures to within ~7%.  Charging a quantity we do
+    measure at a multiplier fitted to one we cannot is a category error, and an
+    expensive one: pro's deep-turn ratio would price a 3.4 K-token catalog at
+    24 K.  ``0.0`` means "not configured", and the tools keep following
+    ``ratio(ordinal)`` — the pre-Incident-P behaviour, which is what every
+    uncalibrated model and ``deepseek-v4-flash`` still get, token for token.
     """
 
     base_ratio: float = 1.0
     per_turn_ratio: float = 0.0
     max_ratio: float = 1.0
+    schema_ratio: float = 0.0
 
     def ratio(self, provider_turn_ordinal: int = 0) -> float:
         ordinal = max(0, int(provider_turn_ordinal))
         value = float(self.base_ratio) + float(self.per_turn_ratio) * ordinal
         return max(1.0, min(value, max(1.0, float(self.max_ratio))))
 
+    def tool_schema_ratio(self, provider_turn_ordinal: int = 0) -> float:
+        """The multiplier for the ``tools`` array: its own, else the messages'."""
+
+        configured = float(self.schema_ratio or 0.0)
+        if configured <= 0.0:
+            return self.ratio(provider_turn_ordinal)
+        # Same floor as ``ratio``: a misconfigured override below 1.0 must never
+        # turn a payload we can measure into an under-count.
+        return max(1.0, configured)
+
     def apply(self, tokens: int, *, provider_turn_ordinal: int = 0) -> int:
         return int(math.ceil(max(0, int(tokens)) * self.ratio(provider_turn_ordinal)))
+
+    def apply_tool_schema(self, tokens: int, *, provider_turn_ordinal: int = 0) -> int:
+        return int(
+            math.ceil(max(0, int(tokens)) * self.tool_schema_ratio(provider_turn_ordinal))
+        )
 
 
 DEFAULT_CALIBRATION = ProviderTokenCalibration()
@@ -162,7 +189,7 @@ def calibration_for_model(model_id: object) -> ProviderTokenCalibration:
     Goes through ``resolve()`` rather than ``BUILTIN`` so the global
     ``model_overrides.toml`` layer really reaches this lane — a relay's hidden
     injection differs per endpoint, so the user must be able to retune these
-    three numbers against their own observed ``usage.input_tokens``.  The cost
+    four numbers against their own observed ``usage.input_tokens``.  The cost
     is bounded: this runs a few times per provider turn, not per message.
     Any failure degrades to the identity calibration rather than breaking
     context assembly, and a ratio below 1.0 can never shrink an estimate.
@@ -181,6 +208,7 @@ def calibration_for_model(model_id: object) -> ProviderTokenCalibration:
             base_ratio=float(getattr(info, "input_estimate_ratio", 1.0) or 1.0),
             per_turn_ratio=float(getattr(info, "input_estimate_ratio_per_turn", 0.0) or 0.0),
             max_ratio=float(getattr(info, "input_estimate_ratio_max", 1.0) or 1.0),
+            schema_ratio=float(getattr(info, "input_estimate_schema_ratio", 0.0) or 0.0),
         )
     except Exception:  # noqa: BLE001 — model metadata must never break budgeting
         return DEFAULT_CALIBRATION
