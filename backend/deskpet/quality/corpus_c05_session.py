@@ -14,14 +14,27 @@ from deskpet.quality.corpus_c05 import SPECS as _SPECS
 # unsupported here rather than being seeded under the owner they must exclude.
 SINGLE_OWNER_CASES = frozenset(case_id for case_id, specs in _SPECS.items()
                                if all(spec.owner == 'self' for spec in specs))
-_SCRIPTED_CASES = frozenset({'C05-04', 'C05-07', 'C05-08', 'C05-09', 'C05-10', 'C05-11', 'C05-12',
-                             'C05-14', 'C05-20'})
+# Not scripted here, each for a reason recorded in
+# plans/2026-09-07-corpus-c01-local/RUNWAY-REST.md: C05-13 (no field-level
+# suppression inside a scope disclosure), C05-16 (search and open share one
+# disclosure reader, so no second-tier field can appear after f1), C05-17
+# (create_new binds an anonymous direct child root, never an authored named
+# root), C05-18 (its fixture_action needs the setup Provider re-admitted
+# between two real scoring turns).
+_SCRIPTED_CASES = frozenset({'C05-01', 'C05-02', 'C05-03', 'C05-04', 'C05-05', 'C05-06', 'C05-07',
+                             'C05-08', 'C05-09', 'C05-10', 'C05-11', 'C05-12', 'C05-14', 'C05-15',
+                             'C05-19', 'C05-20'})
 SUPPORTED_CASES = _SCRIPTED_CASES & SINGLE_OWNER_CASES
 _PREVIEW = 'candidate_preview_then_turn_terminal'
 _UNMET = 'record_unmet_and_stop_no_rescue'
 # Exact authored scripts. No target ID, expected answer, or selected label.
 _SCRIPTS = {
+    'C05-01': ((_PREVIEW, '要十一月整理纸质扫描件那个。'),),
+    'C05-02': ((_PREVIEW, '选采访文字校对那项。'),),
+    'C05-03': ((_PREVIEW, '就是后来改叫秋季小展的那项。'),),
     'C05-04': ((_PREVIEW, '选社区物品登记那个。'),),
+    'C05-05': ((_PREVIEW, '选2025年整理票据的。'),),
+    'C05-06': ((_PREVIEW, '我要处理文字校对，不是图片压缩。'),),
     'C05-07': ((_PREVIEW, '对，选家庭藏书那项。'),),
     'C05-08': ((_PREVIEW, '选已经结束那次，只看最终结论，别重新做。'),),
     'C05-09': ((_PREVIEW, '选等待字体授权的家谱任务，先告诉我卡点。'),),
@@ -29,6 +42,8 @@ _SCRIPTS = {
     'C05-11': ((_PREVIEW, '选校稿，不是打印。'),),
     'C05-12': ((_PREVIEW, '选本人那份家庭照片编目。'),),
     'C05-14': ((_PREVIEW, '选需要核对座位的那项。'),),
+    'C05-15': ((_PREVIEW, '选八月份那份相册校对。'),),
+    'C05-19': ((_PREVIEW, '选扫描件那份，不处理笔记。'),),
     'C05-20': ((_PREVIEW, '我原想选排版，先别切换。'),
                ('assistant_turn_terminal_after_f1', '改选封面校对，以这条为准。')),
 }

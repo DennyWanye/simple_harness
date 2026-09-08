@@ -25,16 +25,16 @@ def test_original_setup_only_compiler_rejects_drift_and_unprepared_procedure():
         if line.startswith('**setup（模型初始不可见）：** '):
             originals[case_id] = line.split('** ', 1)[1]
     assert set(originals) == set(SETUPS) == {f'C09-{i:02}' for i in range(1, 21)}
-    assert set(CHANGES) == set(originals) - {'C09-13'}
+    assert set(CHANGES) == set(originals)
     for case_id, original in originals.items():
         assert SETUPS[case_id] == (original, sha256(original.encode()).hexdigest())
         with pytest.raises(ValueError, match='source_changed'):
             compile_c09_setup(case_id, original + 'new value from oracle', scenario_clock=CLOCK)
-        if case_id == 'C09-13':
-            with pytest.raises(ValueError, match='procedure_successor_not_prepared'):
-                compile_c09_setup(case_id, original, scenario_clock=CLOCK)
-            continue
         batch = compile_c09_setup(case_id, original, scenario_clock=CLOCK)
+        # Only the authored step is a Procedure; no unauthored step is invented.
+        assert {spec[1] for spec in batch.specs} == ({'procedure'} if case_id == 'C09-13' else {'semantic'})
+        if case_id == 'C09-13':
+            assert batch.changes == (('旧提交程序（原文未提供其余步骤）', '附纸质副本', None, ('旧程序（原文未提供适用条件）',)),)
         with pytest.raises(ValueError, match='exact_compiled_setup'):
             validate_c09_setup(replace(batch, changes=()))
     assert compile_c09_setup('C09-02', SETUPS['C09-02'][0], scenario_clock=CLOCK).changes[0][2] is None
@@ -82,7 +82,7 @@ async def test_actual_original_job_and_public_successor_survive_reopen(tmp_path,
                 receipt_ref=actual[name+'_receipt_ref']) == actual[name+'_receipt']
         for i, (predicate, old, new, _) in enumerate(batch.changes):
             lanes = await runtime.typed_recall(query=predicate, run_id=f'c09-public-{i}', turn_ordinal=1,
-                memory_types=('semantic',), include_short_horizon=False)
+                memory_types=(batch.specs[i][1],), include_short_horizon=False)
             selected = lanes.execution.result.items
             if new is None:
                 assert selected == (), 'retired claim must not be an ordinary current result'

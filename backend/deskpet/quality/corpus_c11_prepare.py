@@ -27,6 +27,17 @@ class ExpiredFixtureExecutor(FixtureSetupExecutor):
         _, start, end = next(item for item in self.batch.intervals if item[0] == spec[0])
         return h.ValidTimeInterval(start, end)
 
+    def payload_for_spec(self, spec):
+        label, kind, _, _, value, _ = spec
+        if kind != 'prospective':
+            return super().payload_for_spec(spec)
+        # An expired reminder: pending at ingestion, due exactly when its
+        # authored validity ends. Its expiry is time exclusion, no state rewrite.
+        _, _, end = next(item for item in self.batch.intervals if item[0] == label)
+        if end is None:
+            raise ValueError('c11_expired_reminder_requires_valid_until')
+        return h.ProspectiveMemoryPayload(value, h.ProspectiveTimeTrigger(end, 'Asia/Shanghai'))
+
     async def analyze_memory(self, request):
         result = await super().analyze_memory(request)
         self.executed_plan = h.MemoryMutationPlan.from_json(h.thaw_json(result.result.structured_result))

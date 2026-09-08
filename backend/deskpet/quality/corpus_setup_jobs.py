@@ -61,7 +61,8 @@ class FixtureSetupExecutor(FixtureAnalysisDelivery):
         for spec in self.batch.specs:
             label,kind,*_=spec
             state={'semantic':h.SemanticLifecycleState.ACTIVE,'episode':h.EpisodeLifecycleState.ACTIVE,
-                'prospective':h.ProspectiveLifecycleState.PENDING}[kind]
+                'prospective':h.ProspectiveLifecycleState.PENDING,
+                'procedure':h.ProcedureLifecycleState.ACTIVE}[kind]
             operations.append(h.MemoryMutationOperation(operation_id=label,kind=h.MemoryMutationKind.CREATE,
                 memory_type=h.LongTermMemoryType(kind),payload=self.payload_for_spec(spec),
                 target=None,depends_on_operation_ids=(),lifecycle_state=state,

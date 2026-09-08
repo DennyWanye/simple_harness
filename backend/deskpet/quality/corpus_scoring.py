@@ -36,14 +36,15 @@ def c08_scalar_case_ids():
 def supported_case_ids():
     """Exact case IDs the scoring session can set up end-to-end on this tree.
 
-    Excluded on purpose (no complete setup mechanism yet): C02-19 (real inference
-    source), C03-20 (inference drain), C06-01 (mapping pending), C08-20 (entity
-    alias), C09-13 (procedure successor), C11-12/16/19 (derived/prospective/unknown
-    sources), C05 cases without runner scripts, C05-12 (its scope B is owned by a
-    second principal and the setup phase drives only the local owner lane), all
-    C12. C10 is seeded through the two-job contest fixture (corpus_c10_prepare).
-    all C10. C12 (recipient-private) is set up through the reviewed trusted
-    bindings plus the actual Host disclosure configuration (corpus_c12).
+    Excluded on purpose (no complete setup mechanism yet): C02-19 and C03-20
+    (their unconfirmed inference needs a real ASSISTANT source Run in a store
+    separate from the scoring store), C06-01 (mapping pending), C05 cases without
+    runner scripts (C05-13/16/17 blocked by product contracts, C05-18 pending the
+    fixture_action re-admission seam), C05-12 (its scope B is owned by a second
+    principal and the setup phase drives only the local owner lane). C10 is seeded
+    through the two-job contest fixture (corpus_c10_prepare); C12 (recipient-private)
+    is set up through the reviewed trusted bindings plus the actual Host disclosure
+    configuration (corpus_c12). Reasons per case: plans/2026-09-07-corpus-c01-local/RUNWAY-REST.md.
     """
     from deskpet.quality.corpus_c05_session import SUPPORTED_CASES
     from deskpet.quality.corpus_c09 import CHANGES
@@ -63,7 +64,7 @@ def supported_case_ids():
     ids |= c08_retained_case_ids() | c08_scalar_case_ids()
     ids |= set(CHANGES)
     ids |= set(C10_SLOTS)
-    ids |= set(C11_SPECS) - {"C11-12", "C11-16", "C11-19"}
+    ids |= set(C11_SPECS)
     ids |= set(C12_SPECS)
     return frozenset(ids)
 

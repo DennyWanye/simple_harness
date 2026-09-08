@@ -14,9 +14,8 @@ from deskpet.memory.evidence_authority import HostEvidenceAuthority, HostEvidenc
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.human_memory_service import build_foreground_turn_evidence
 from deskpet.memory.memory_ingestion_outbox import build_worker_config
-from deskpet.quality.corpus_c01 import payload
 from deskpet.quality.corpus_c04_prepare import _ApplicationWitness
-from deskpet.quality.corpus_c09 import validate_c09_setup
+from deskpet.quality.corpus_c09 import validate_c09_setup, c09_payload
 from deskpet.quality.corpus_fixture_delivery import CONFIG_HASH
 from deskpet.quality.corpus_setup_jobs import FixtureSetupExecutor, SetupFixtureDeliveryAuthority
 from deskpet.task_scope.protocol import canonical_hash
@@ -31,10 +30,25 @@ class SupersededFixtureExecutor(FixtureSetupExecutor):
         self.evidence, self.store = HostEvidenceAuthority(path), HumanMemoryProgramStore(path)
         self.executions, self.setup_hash, self.executed_plan = 0, batch.manifest_hash, None
 
+    def payload_for_spec(self, spec):
+        return c09_payload(spec, self.batch.scenario_time)
+
     async def analyze_memory(self, request):
         envelope = await super().analyze_memory(request)
         self.executed_plan = h.MemoryMutationPlan.from_json(h.thaw_json(envelope.result.structured_result))
         return envelope
+
+
+def _successor_payload(spec, old, new):
+    if spec[1] == 'procedure':
+        return c09_payload(spec, None)  # retired step text is retained, never rewritten
+    return h.SemanticMemoryPayload('user:self', spec[3], old if new is None else new, spec[5])
+
+
+def _successor_state(kind, new):
+    if kind == 'procedure':
+        return h.ProcedureLifecycleState.SUPERSEDED if new is None else h.ProcedureLifecycleState.ACTIVE
+    return h.SemanticLifecycleState.SUPERSEDED if new is None else h.SemanticLifecycleState.ACTIVE
 
 
 def _successor_plan(batch, original, prior, committed_revision, source, proof):
@@ -46,12 +60,13 @@ def _successor_plan(batch, original, prior, committed_revision, source, proof):
     for i, (predicate, old, new, qualifiers) in enumerate(batch.changes):
         label = f'old-{i}'
         target = by_label[label]
+        spec = next(item for item in batch.specs if item[0] == label)
         create = next(op for op in original.operations if op.operation_id == label)
         operations.append(replace(create, operation_id=f'successor-{i}',
             kind=h.MemoryMutationKind.SUPERSEDE if new is None else h.MemoryMutationKind.REVISE,
             target=h.ExistingMemoryTarget(target.memory_id, target.revision),
-            payload=h.SemanticMemoryPayload('user:self', predicate, old if new is None else new, qualifiers),
-            lifecycle_state=h.SemanticLifecycleState.SUPERSEDED if new is None else h.SemanticLifecycleState.ACTIVE,
+            payload=_successor_payload(spec, old, new),
+            lifecycle_state=_successor_state(spec[1], new),
             evidence_spans=(span,)))
     identity = 'corpus-c09-successor:' + canonical_hash([batch.manifest_hash, prior.plan_hash,
         [(op.memory_id, op.revision) for op in prior.operations]])
@@ -75,10 +90,11 @@ class SupersededActionAuthority:
             raise ValueError('c09_revision_original_source_differs')
         manager = self.manager_getter()
         prior = await manager.get_memory_mutation_receipt_view(principal=self.principal, receipt_ref=prior_ref)
-        expected = {spec[0]: canonical_hash(payload(spec, self.batch.scenario_time).to_json()) for spec in self.batch.specs}
+        expected = {spec[0]: canonical_hash(c09_payload(spec, self.batch.scenario_time).to_json()) for spec in self.batch.specs}
+        kinds = {spec[0]: spec[1] for spec in self.batch.specs}
         if (prior.plan_hash != original.plan_hash or len(prior.operations) != len(expected)
                 or {op.operation_id for op in prior.operations} != set(expected)
-                or any(op.memory_type != 'semantic' or op.revision != 1
+                or any(op.memory_type != kinds[op.operation_id] or op.revision != 1
                     or op.content_hash != expected[op.operation_id]
                     or op.evidence_ids != (source.evidence_id,) for op in prior.operations)):
             raise ValueError('c09_revision_prior_not_authored')

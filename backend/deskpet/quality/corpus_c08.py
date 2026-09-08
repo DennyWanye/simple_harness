@@ -22,15 +22,19 @@ FACTS = {
     'C08-12': ('semantic', 'residential_area', '北湾测试区'),
     'C08-14': ('semantic', 'hobby', '模型拼装'),
     'C08-17': ('semantic', 'family_schedule', '周六探访亲戚'),
+    # The authored setup names only the alias itself; the other entity it maps
+    # to is unnamed, so no entity/relation row is invented (C08-04 precedent).
+    'C08-20': ('semantic', 'tool_alias', '蓝盒'),
 }
 
-# These four also name independent derived carriers in the original setup.
+# These five also name independent derived carriers in the original setup.
 # Scalar suppression remains useful evidence, but cannot mark the case ready.
 UNPREPARED_CARRIERS = {
     'C08-01': ('retained_summary',),
     'C08-02': ('derived_contact_material',),
     'C08-04': ('address_term_association',),
     'C08-09': ('amount_reference',),
+    'C08-20': ('entity_alias_association',),
 }
 
 

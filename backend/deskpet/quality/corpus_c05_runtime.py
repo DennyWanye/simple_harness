@@ -83,8 +83,9 @@ class PreparedTaskCase:
     async def enqueue_scoring(self, *, text, delivery_key):
         # The caller supplies the unchanged corpus turn, never a whole Case.
         # C07's shared dispatcher owns that separation; labels stay here.
-        if self.batch.case_id not in {'C05-04', 'C05-07', 'C05-08', 'C05-09', 'C05-10',
-                                      'C05-11', 'C05-12', 'C05-14', 'C05-18', 'C05-20'}:
+        if self.batch.case_id not in {'C05-01', 'C05-02', 'C05-03', 'C05-04', 'C05-05', 'C05-06',
+                                      'C05-07', 'C05-08', 'C05-09', 'C05-10', 'C05-11', 'C05-12',
+                                      'C05-14', 'C05-15', 'C05-18', 'C05-19', 'C05-20'}:
             raise RuntimeError('c05_remaining_source_obligations:' + ','.join(self.batch.requirements))
         result = await self.lanes['self'].service.enqueue_turn(
             QueueTurnRequest(self.scoring_scope_ref, delivery_key, text))

@@ -1,7 +1,8 @@
 """C09 setup-only values; no current input, gold, or provider reply is accepted.
 
 Explicit old/new scalar facts are fixtures of the original authored setup.
-Procedure replacement is separate and remains unsupported here.
+C09-13 retires one authored Procedure step by superseding the Procedure that
+carries it; the other steps are unauthored and never invented.
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -59,6 +60,11 @@ CHANGES = {
     'C09-10': (('output_format', '表格', '短列表', ()),),
     'C09-11': (('deployment_version', '2.4', '2.6', ()),),
     'C09-12': (('measurement_unit', '毫米', '厘米', ()),),
+    # Procedure: predicate is the procedure name, the old value its only
+    # authored step, qualifiers its applicability (the SDK requires one; the
+    # setup names none, so the limitation is stated, not invented — C06
+    # precedent). None retires it (SUPERSEDE) without a successor step.
+    'C09-13': (('旧提交程序（原文未提供其余步骤）', '附纸质副本', None, ('旧程序（原文未提供适用条件）',)),),
     'C09-14': (('approval_role_description', '项目负责人', '值班协调员', ()),),
     'C09-15': (('deadline', '9月12日', '9月9日', ()),),
     'C09-16': (('delivery_place', 'A座', 'B座', ()),),
@@ -69,6 +75,18 @@ CHANGES = {
     'C09-20': (('unit_price', '12', '15', ('元',)), ('quantity', '4', '3', ())),
 }
 UNCHANGED = {'C09-16': (('delivery_time', '10:00', ()),)}
+# Cognitive type of every change in a case; scalar semantic unless listed.
+KINDS = {'C09-13': 'procedure'}
+
+
+def c09_payload(spec, clock):
+    """Public payload for one compiled spec; procedure specs carry one step."""
+    label, kind, subject, predicate, value, qualifiers = spec
+    if kind == 'procedure':
+        import simple_harness as h
+        return h.ProcedureMemoryPayload(predicate, tuple(qualifiers), (value,), h.ProcedureRiskLevel.LOW)
+    from deskpet.quality.corpus_c01 import payload
+    return payload(spec, clock)
 
 
 @dataclass(frozen=True)
@@ -95,7 +113,8 @@ def compile_c09_setup(case_id, setup_text, *, scenario_clock):
     if instant.tzinfo is None or not math.isfinite(instant.timestamp()) or instant.timestamp() < 0:
         raise ValueError('c09_trusted_aware_clock_required')
     changes, unchanged = CHANGES[case_id], UNCHANGED.get(case_id, ())
-    specs = tuple((f'old-{i}', 'semantic', 'user:self', predicate, value, qualifiers)
+    kind = KINDS.get(case_id, 'semantic')
+    specs = tuple((f'old-{i}', kind, 'user:self', predicate, value, qualifiers)
         for i, (predicate, value, _, qualifiers) in enumerate(changes)) + tuple(
         (f'unchanged-{i}', 'semantic', 'user:self', predicate, value, qualifiers)
         for i, (predicate, value, qualifiers) in enumerate(unchanged))
