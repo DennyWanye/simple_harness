@@ -1098,7 +1098,14 @@ class ProductRunContextAuthority:
         typed_use_authority: Any = None,
         occurrence_coordinator: Any = None,
         current_tool_projector: Any = None,
+        route_state_memo: Any = None,
     ) -> None:
+        # HM-TO-A6 incident A: the same route state that shrinks this turn's
+        # provider specs is published to the capability-discovery surface, so
+        # ``tool_describe`` / ``tool_activate`` stop offering a PROJECT_EFFECT
+        # Tool the Run can never execute.  Advisory only — see
+        # ``deskpet.sdk_adapters.run_route_state``.
+        self._route_state_memo = route_state_memo
         self._occurrences = occurrence_coordinator
         self._typed_use_authority = typed_use_authority
         self._current_tool_projector = current_tool_projector
@@ -1144,7 +1151,10 @@ class ProductRunContextAuthority:
 
     async def prepare_snapshot(self, request: Any) -> Any:
         from simple_harness import RequestId
-        from simple_harness.execution.context_authority import RunContextSnapshot
+        from simple_harness.execution.context_authority import (
+            ContextRouteState,
+            RunContextSnapshot,
+        )
         from simple_harness.execution.provider_invocations import (
             provider_request_fingerprint,
         )
@@ -1155,6 +1165,10 @@ class ProductRunContextAuthority:
         if context.revision != request.prior_context_revision:
             raise SnapshotContractConflict("sdk_context_authority_revision_drift")
         exposure = self._exposure_resolver(request.run_id)
+        if self._route_state_memo is not None:
+            self._route_state_memo.record(
+                request.run_id, ContextRouteState(request.route_state).value
+            )
         tools = _visible_provider_specs(
             exposure,
             request.run_id,

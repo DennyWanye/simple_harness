@@ -73,12 +73,19 @@ class _FakeService:
         return await self.binding_append.append_binding(task_scope_id=request.scope_ref,
             root=request.root, idempotency_key=request.idempotency_key)
 
+    # HM-TO-A6 incident B: the zero-hit case is the one the real model looped on.
+    empty_search = False
+
     async def search_task_scopes(self, request):
         return {
-            "candidates": [
-                {"scope_ref": "scope-a", "title": "Task A", "rank": -1.0,
-                 "source_hash": "e" * 64}
-            ],
+            "candidates": (
+                []
+                if self.empty_search
+                else [
+                    {"scope_ref": "scope-a", "title": "Task A", "rank": -1.0,
+                     "source_hash": "e" * 64}
+                ]
+            ),
             "next_cursor": None,
             "receipt_hash": "c" * 64,
         }
@@ -507,3 +514,87 @@ def test_persona_tells_the_model_what_the_two_host_hint_fields_mean() -> None:
 
     assert "procedure_hint" in PERSONA and "procedure_discover" in PERSONA
     assert "trigger_local" in PERSONA
+
+
+# ---- HM-TO-A6 incident B：零命中搜索必须给出唯一的下一步 ----------------------
+#
+# 证据：2026-09-08 native run ``product-sdk-cba43a68…`` turn 7。真实 DeepSeek 用
+# 三种措辞把同一条零命中查询发了 10 次（每次都 succeeded、candidates 为空），再用
+# ``task_scope_search {}`` 空参 8 次，最终 ``react_max_turns_exceeded`` 打掉整轮。
+# 当时系统里**有**一个当前活跃任务，而 ``continue_active`` 根本不需要搜索——工具面
+# （描述 + 返回体）从未说过这件事。错误码与 schema 不变，只补可执行文案。
+
+
+def _empty_search_tool(state_db: Path, **kwargs) -> ContextRouteToolService:
+    inner = _FakeService()
+    inner.empty_search = True
+    inner.binding_append = kwargs.get("binding_append")
+    return _service(
+        state_db,
+        factory=SimpleNamespace(bind=lambda auth, **kw: inner),
+        disclosure_reader=_FakeDisclosureReader(),
+        **kwargs,
+    )
+
+
+@pytest.mark.asyncio
+async def test_empty_search_without_active_task_points_at_create_new(
+    state_db: Path,
+) -> None:
+    tool = _empty_search_tool(state_db)
+    result = await tool.handle_task_scope_search({"query": "主清单 清单核对"})
+    assert result["candidates"] == []
+    action = result["next_action"]
+    assert "Do not repeat the same search" in action
+    assert "no current active task" in action
+    assert "create_new" in action
+    # 引导不改变任何路由事实。
+    assert _decision_rows(state_db) == []
+
+
+@pytest.mark.asyncio
+async def test_empty_search_with_active_task_names_continue_active(
+    state_db: Path,
+) -> None:
+    binding_store = _FakeBindingStore()
+    binding_store.receipts["scope-new-1"] = SimpleNamespace(
+        binding_set_revision=1, receipt_id="bind-new", receipt_hash="a" * 64
+    )
+    tool = _empty_search_tool(
+        state_db, binding_store=binding_store, binding_append=_FakeBindingAppend()
+    )
+    await tool.handle_context_route({"route": "create_new", "title": "核对主清单 A"})
+
+    result = await tool.handle_task_scope_search({"query": "主清单 清单核对"})
+    assert result["candidates"] == []
+    action = result["next_action"]
+    assert "continue_active" in action
+    assert "no search is needed" in action
+    assert "scope-new-1" in action
+
+
+@pytest.mark.asyncio
+async def test_non_empty_search_keeps_its_contract_unchanged(state_db: Path) -> None:
+    """命中时的返回体不新增引导字段（回归护栏）。"""
+
+    tool = _service(state_db, disclosure_reader=_FakeDisclosureReader())
+    result = await tool.handle_task_scope_search({"query": "以前的 A"})
+    assert result["candidates"]
+    assert "next_action" not in result
+
+
+def test_task_scope_search_description_tells_the_model_to_skip_the_search() -> None:
+    """工具描述本身必须说明「续做当前活跃任务无需搜索」。"""
+
+    import re
+
+    source = Path(__file__).resolve().parents[2] / "main.py"
+    block = re.search(
+        r'name="task_scope_search",\s*\n\s*description=\((.*?)\n\s*\),',
+        source.read_text(encoding="utf-8"),
+        re.S,
+    )
+    assert block is not None
+    description = block.group(1)
+    assert "continue_active" in description
+    assert "zero candidates" in description

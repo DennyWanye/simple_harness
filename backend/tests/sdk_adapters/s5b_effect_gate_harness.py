@@ -73,6 +73,7 @@ from deskpet.sdk_adapters.context_route import (
 )
 from deskpet.sdk_adapters.effect_gate import EffectGate
 from deskpet.sdk_adapters.run_faults import RunFaultMemo
+from deskpet.sdk_adapters.run_route_state import RunRouteStateMemo
 from deskpet.sdk_adapters.task_execution import (
     BindingRootResolver,
     ProductTaskExecutionAuthority,
@@ -611,6 +612,7 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
     from deskpet.execution.semantic_closure import closure_instruction_for_run
 
     binding_store = WorkspaceBindingAuthorityStore(db_path)
+    route_memo = RunRouteStateMemo()
     authority = ProductRunContextAuthority(
         ports_resolver=lambda: ports,
         exposure_resolver=lambda run_id: exposure,
@@ -618,6 +620,9 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
         closure_reader=lambda run_id: closure_instruction_for_run(db_path, run_id.value),
         # Task 6 (AC-3⑥)：≥2 root scope 的 snapshot 不暴露 PROJECT_EFFECT 工具（与生产装配一致）。
         binding_store=binding_store,
+        # HM-TO-A6 incident A：同一个 route_state 既收窄本轮 provider specs，
+        # 也发布给能力披露面（与生产装配一致）。
+        route_state_memo=route_memo,
     )
     closure_service = TaskScopeUpdateService(
         db_path,
@@ -665,6 +670,7 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
         sink=sink,
         gate=gate,
         memo=memo,
+        route_memo=route_memo,
         binding_store=binding_store,
         task_authority=task_authority,
         frozen=frozen,

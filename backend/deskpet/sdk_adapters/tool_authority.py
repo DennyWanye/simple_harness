@@ -31,6 +31,7 @@ from simple_harness.tools import (
     RuntimeCapabilityRecord,
     RuntimeToolCatalog,
     RuntimeToolCatalogError,
+    ToolEffectClass,
     ToolExposureMode,
 )
 from simple_harness.tools.runtime_catalog import MAX_SEARCH_RESULTS
@@ -41,6 +42,7 @@ from deskpet.permissions.runtime import (
     PreparedAuthorizationRuntime,
 )
 from deskpet.product_state.authorization_saga import AuthorizationSagaIdentity
+from deskpet.sdk_adapters.run_route_state import ROUTED_TASK_STATE
 from deskpet.tools.build_identity import EffectClass
 from deskpet.tools.capabilities import (
     PreparedToolCapability,
@@ -500,6 +502,12 @@ class SdkRunToolAuthorityRegistry:
         self._records: dict[str, SdkRunToolAuthorityV1] = {}
         self._runtime_exposures: dict[str, CatalogRunToolExposure] = {}
         self._unavailable_capabilities: dict[str, dict[str, str]] = {}
+        # HM-TO-A6 incident A: capability ids of this Run's PROJECT_EFFECT
+        # Tools, read from the very records that carry the SDK execution
+        # policy.  The capability bridge needs the classification for
+        # capabilities that are still *deferred* — ``execution_policy`` only
+        # answers for visible ones.
+        self._project_effect_capabilities: dict[str, frozenset[str]] = {}
         self._resource_records = tuple(resource_records)
         self._workspace_identity_validator = workspace_identity_validator
         self._run_fault_sink = run_fault_sink
@@ -948,6 +956,11 @@ class SdkRunToolAuthorityRegistry:
             )
             unavailable_capabilities[capability_id] = reason
         self._unavailable_capabilities[run_id] = unavailable_capabilities
+        self._project_effect_capabilities[run_id] = frozenset(
+            record.capability_id
+            for record in runtime_records
+            if ToolEffectClass(record.effect_class) is ToolEffectClass.PROJECT_EFFECT
+        )
         self._runtime_exposures[run_id] = FaultRecordingRunToolExposure(
             RuntimeToolCatalog(
                 (
@@ -981,6 +994,17 @@ class SdkRunToolAuthorityRegistry:
 
         key = run_id.value if isinstance(run_id, RunId) else str(run_id)
         return dict(self._unavailable_capabilities.get(key, {}))
+
+    def project_effect_capabilities(self, run_id: object) -> frozenset[str]:
+        """capability_ids whose frozen SDK EffectClass is PROJECT_EFFECT.
+
+        Frozen at Run start together with the runtime catalog records, so the
+        classification never re-reads a newer manifest and stays valid for
+        deferred capabilities that ``execution_policy`` refuses to answer for.
+        """
+
+        key = run_id.value if isinstance(run_id, RunId) else str(run_id)
+        return self._project_effect_capabilities.get(key, frozenset())
 
     def is_tool_exposed(self, run_id: object, tool_name: str) -> bool:
         """Return whether the SDK Run may currently project ``tool_name``.
@@ -1318,6 +1342,8 @@ class SdkRunToolAuthorityRegistry:
         record = self.resolve(run_id)
         self._records.pop(record.run_id, None)
         self._runtime_exposures.pop(record.run_id, None)
+        self._unavailable_capabilities.pop(record.run_id, None)
+        self._project_effect_capabilities.pop(record.run_id, None)
         self.scope_store.unpin(
             record.prepared_tool_set.scope_id,
             session_id=record.session_id,
@@ -1440,7 +1466,29 @@ class SdkCapabilityBridgeAdapter:
 # disclosure carried no reason and the refusal was an opaque ``tool_failed``.
 # The text names the product path that does work in that Run; it is not a
 # system-prompt change and contains no private data.
+#
+# HM-TO-A6 incident A (2026-09-08 native run product-sdk-a551104a…, turn 8) adds
+# a second, *route-scoped* reason to the same surface: a real model activated
+# ``builtin:run_shell`` while the Run was UNROUTED, then committed
+# ``direct_standalone`` and called it from the schema ``tool_describe`` had put
+# in its own history.  A PROJECT_EFFECT Tool has no task execution authority
+# under a standalone route, so the Host envelope authority refuses — and the
+# frozen SDK turns that refusal into a whole-Run ``driver_failed`` before any
+# Tool result exists.  The refusal is correct and stays; the *disclosure* was
+# what was wrong, so the discovery surface now says so while the model can
+# still act on it.  Unlike ``workspace_unscoped`` this one is retriable: after
+# context_route commits a task route the capability activates normally.
+PROJECT_EFFECT_ROUTE_REASON = "project_effect_requires_task_route"
+PROJECT_EFFECT_ROUTE_NEXT_ACTION = (
+    "This Tool writes into or executes inside a task workspace, so it needs a "
+    "bound TaskScope. Call context_route first with route=continue_active "
+    "(the Run's current active task), resume_existing (an exact task_scope_id) "
+    "or create_new (a new task with title and goal). Then call tool_describe "
+    "and tool_activate for this capability again. Under direct_standalone or "
+    "memory_standalone it can never run; do not call it by name either."
+)
 UNAVAILABLE_CAPABILITY_NEXT_ACTIONS: Mapping[str, str] = {
+    PROJECT_EFFECT_ROUTE_REASON: PROJECT_EFFECT_ROUTE_NEXT_ACTION,
     "workspace_unscoped": (
         "This capability is not bound to the Run workspace and cannot be "
         "activated in this Run. Do not retry tool_activate for it. Use the "
@@ -1473,17 +1521,47 @@ class SdkRuntimeCapabilityBridgeAdapter:
         self,
         authorities: SdkRunToolAuthorityRegistry,
         context_getter: Callable[[], ToolExecutionContext],
+        *,
+        route_state_memo: Any = None,
     ) -> None:
         self._authorities = authorities
         self._context_getter = context_getter
+        # HM-TO-A6 incident A: written by ``ProductRunContextAuthority`` for the
+        # turn whose provider request produced this very tool call.  ``None``
+        # (unwired, or no snapshot prepared yet) keeps the previous behaviour —
+        # this memo shapes disclosure, never authority.
+        self._route_state_memo = route_state_memo
 
     def _binding(self) -> tuple[RunId, CatalogRunToolExposure]:
         run_id = RunId(self._context_getter().run_id)
         return run_id, self._authorities.resolve_exposure(run_id)
 
+    def _route_blocked_capabilities(self, run_id: RunId) -> frozenset[str]:
+        """PROJECT_EFFECT capability ids that this Run's route can never run."""
+
+        if self._route_state_memo is None:
+            return frozenset()
+        state = self._route_state_memo.read(run_id)
+        if state is None or str(state) == ROUTED_TASK_STATE:
+            return frozenset()
+        return self._authorities.project_effect_capabilities(run_id)
+
+    def _unavailable_with_route(self, run_id: RunId) -> dict[str, str]:
+        """Descriptor-only reasons plus this turn's route-blocked capabilities.
+
+        A capability that already carries its own availability_reason keeps it:
+        the durable Run-start reason is the more specific fact.
+        """
+
+        reasons = self._authorities.unavailable_capabilities(run_id)
+        merged = dict(reasons)
+        for capability_id in self._route_blocked_capabilities(run_id):
+            merged.setdefault(capability_id, PROJECT_EFFECT_ROUTE_REASON)
+        return merged
+
     def search(self, query: str, *, limit: int = 10, cursor: int = 0) -> dict[str, Any]:
         run_id, exposure = self._binding()
-        unavailable = self._authorities.unavailable_capabilities(run_id)
+        unavailable = self._unavailable_with_route(run_id)
         if not unavailable:
             page = exposure.search(run_id, query, limit=limit, cursor=cursor)
             return {
@@ -1568,7 +1646,9 @@ class SdkRuntimeCapabilityBridgeAdapter:
         value["schema_hash"] = value["capability_hash"]
         value["describe_nonce"] = value["nonce"]
         value["capability_id"] = descriptor["capability_id"]
-        reason = self._authorities.unavailable_reason(run_id, descriptor["capability_id"])
+        reason = self._unavailable_with_route(run_id).get(
+            str(descriptor["capability_id"])
+        )
         if reason is not None:
             # Descriptor-only in this Run: say so before the model wastes a
             # tool_activate turn (UI-B looped three times on exactly this).
@@ -1597,6 +1677,11 @@ class SdkRuntimeCapabilityBridgeAdapter:
         unavailable = self._authorities.unavailable_reason(run_id, capability_id)
         if unavailable is not None:
             raise RuntimeError(f"tool_unavailable:{unavailable}")
+        if str(capability_id) in self._route_blocked_capabilities(run_id):
+            # Deny is unchanged either way — a standalone route has no task
+            # execution authority.  Refusing here makes it a model-visible
+            # rejection it can act on, instead of a whole-Run fault later.
+            raise RuntimeError(PROJECT_EFFECT_ROUTE_REASON)
         described = exposure.describe(run_id, str(capability_id))
         if str(schema_hash) != described.capability_hash:
             raise RuntimeError("activation_schema_hash_stale")
@@ -2084,6 +2169,8 @@ class SdkPreparedAuthorizationPolicy:
 
 
 __all__ = (
+    "PROJECT_EFFECT_ROUTE_NEXT_ACTION",
+    "PROJECT_EFFECT_ROUTE_REASON",
     "PROJECT_EFFECT_TOOL_NAMES",
     "SDK_DIRECT_TOOL_KERNEL",
     "SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY",

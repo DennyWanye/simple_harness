@@ -722,7 +722,7 @@ class ContextRouteToolService:
             package = await self._scope_disclosure_reader(run_id, opened["resume_package"], effect_id)
             candidates.append({"task_scope_id": scope_id, "source_id": package["source_id"],
                 "source_hash": package["source_hash"], "scope_disclosure": package})
-        return {
+        payload: dict[str, Any] = {
             "candidates": candidates,
             "next_cursor": result.get("next_cursor"),
             "receipt_hash": result.get("receipt_hash"),
@@ -732,6 +732,44 @@ class ContextRouteToolService:
             "binding. It must be the first task route in a new Run; do not resume the old task first. "
             "Active tasks may use resume_existing with their exact task_scope_id.",
         }
+        if not candidates:
+            # HM-TO-A6 incident B: a real model re-issued the same zero-hit
+            # query ten times because an empty candidate list said nothing
+            # about what to do next.  The Host already knows whether a current
+            # active task route exists — say so, and name the exact next call.
+            payload["next_action"] = await self._empty_search_next_action()
+        return payload
+
+    async def _empty_search_next_action(self) -> str:
+        """The one next call to make when the search returned no candidates.
+
+        The active task's id is a fact the Host already returns to the model on
+        ``context_route_active_scope_mismatch``; its *title* only exists behind
+        the scope-disclosure authority, so it is deliberately not echoed here.
+        """
+
+        try:
+            active = await self._ledger.latest_task_route_decision()
+        except Exception:  # noqa: BLE001 - guidance must never fail the search
+            active = None
+        base = (
+            "No task matched this query. Do not repeat the same search; a "
+            "different wording of a zero-hit query returns the same empty list."
+        )
+        if active is not None and active.get("task_scope_id"):
+            return (
+                f"{base} There is a current active task "
+                f"(task_scope_id={active['task_scope_id']}). If this request "
+                "continues it, call context_route with route=continue_active — "
+                "no search is needed for the active task. Otherwise call "
+                "context_route with route=create_new plus title and goal."
+            )
+        return (
+            f"{base} There is no current active task, so continue_active and "
+            "resume_existing have nothing to select. Call context_route with "
+            "route=create_new plus title and goal for multi-step work, or "
+            "route=direct_standalone / memory_standalone if no task is needed."
+        )
 
 
 class _CompositionUnavailable(RuntimeError):

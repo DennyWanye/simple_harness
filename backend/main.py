@@ -7495,6 +7495,23 @@ def _ensure_run_fault_memo():  # type: ignore[no-untyped-def]
     return _run_fault_memo
 
 
+# HM-TO-A6 incident A: process-local memo of the ContextRouteState each provider
+# turn was prepared under.  ``ProductRunContextAuthority`` writes it, the
+# capability-discovery bridge reads it so tool_search / tool_describe /
+# tool_activate stop offering PROJECT_EFFECT Tools the Run's route can never
+# execute.  Advisory only; every authority check downstream is unchanged.
+_run_route_state_memo = None
+
+
+def _ensure_run_route_state_memo():  # type: ignore[no-untyped-def]
+    global _run_route_state_memo
+    if _run_route_state_memo is None:
+        from deskpet.sdk_adapters.run_route_state import RunRouteStateMemo
+
+        _run_route_state_memo = RunRouteStateMemo()
+    return _run_route_state_memo
+
+
 # S5b Task 2: single owner of Harness evidence reservations / same-transaction
 # objective events over the human-memory state.db.  Shared by the effect
 # executor (tool_invocation + host.file/host.test), the provider coordinator
@@ -8151,6 +8168,9 @@ async def _build_product_sdk_runtime_stack(
         ),
         run_fault_sink=_ensure_run_fault_memo(),
     )
+    tool_authorities.add_terminal_listener(
+        lambda authority: _ensure_run_route_state_memo().release(authority.run_id)
+    )
     project_bindings = service_context.get("project_binding_service")
     if project_bindings is not None:
         from deskpet.sdk_adapters.runtime_paths import (
@@ -8249,7 +8269,9 @@ async def _build_product_sdk_runtime_stack(
         return project_tool_execution_context(base, tool_context)
 
     capability_bridge = SdkRuntimeCapabilityBridgeAdapter(
-        tool_authorities, execution_context_getter
+        tool_authorities,
+        execution_context_getter,
+        route_state_memo=_ensure_run_route_state_memo(),
     )
 
     dependencies = ToolCatalogDependencies(
@@ -8542,7 +8564,11 @@ async def _build_product_sdk_runtime_stack(
                 "Permission-first search over the caller's own archived task "
                 "scopes. Returns read-only candidates (title, goal, snippet, "
                 "rank); candidates grant no authority and never change the "
-                "active task. For an active task, pass its exact task_scope_id to "
+                "active task. To continue the Run's current active task you do "
+                "not need this tool at all: call "
+                "context_route(route=continue_active) directly. Do not repeat a "
+                "query that returned zero candidates. "
+                "For an active task, pass its exact task_scope_id to "
                 "context_route(route=resume_existing). For completed candidates, "
                 "use create_new with reuse_workspace_of "
                 "and expected_source_hash as the first task route in a new Run "
@@ -9152,6 +9178,9 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         occurrence_coordinator=occurrence_coordinator,
         current_tool_projector=CurrentToolProjector(db_path, lambda: _sdk_runtime_stack),
         closure_reader=closure_reader,
+        # HM-TO-A6 incident A: publish this turn's route state to the
+        # capability-discovery surface (same value that shrinks the specs).
+        route_state_memo=_ensure_run_route_state_memo(),
         # S5b Task 6 (AC-3⑥): ≥2-root scopes never see PROJECT_EFFECT Tools.
         binding_store=WorkspaceBindingAuthorityStore(db_path,
             configured_workspace_root=configured_workspace_root),

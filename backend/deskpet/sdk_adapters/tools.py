@@ -781,6 +781,79 @@ def _missing_required_arguments(
     ]
 
 
+# HM-TO-A6 incident B（2026-09-08 native run product-sdk-cba43a68… turn 7）：
+# 真实 DeepSeek 连发 8 次 ``task_scope_search {}`` 与 6 次 ``task_scope_update {}``，
+# 每次都收到同一句「see the tool description for the expected values」，直到
+# ``react_max_turns_exceeded`` 打掉整轮。缺参回执点名了字段，却没有回显字段的
+# **形状**（类型 / 枚举 / 最小项数），模型无从补齐。参照 procedure_use（bcd3bb15）
+# 的做法：稳定码与 schema 都不动，只把已发布 schema 里已有的形状回显出来。
+_MAX_ECHOED_ENUM = 6
+_MAX_ARGUMENT_SHAPE_CHARS = 600
+
+
+def _argument_shape(schema: Any) -> str:
+    """One compact human-readable shape line for a single JSON-Schema property."""
+
+    if not isinstance(schema, Mapping):
+        return "value"
+    raw_type = schema.get("type")
+    if isinstance(raw_type, list):
+        kind = "|".join(str(item) for item in raw_type if str(item) != "null")
+    else:
+        kind = str(raw_type or "value")
+    parts: list[str] = [kind or "value"]
+    enum = schema.get("enum")
+    if isinstance(enum, (list, tuple)) and enum:
+        shown = [json.dumps(item, ensure_ascii=False) for item in enum[:_MAX_ECHOED_ENUM]]
+        if len(enum) > _MAX_ECHOED_ENUM:
+            shown.append("…")
+        parts.append("one of " + "|".join(shown))
+    if kind == "array":
+        items = schema.get("items")
+        item_kind = (
+            str(items.get("type") or "object")
+            if isinstance(items, Mapping)
+            else "object"
+        )
+        parts.append(f"of {item_kind}")
+        required_items = items.get("required") if isinstance(items, Mapping) else None
+        if isinstance(required_items, (list, tuple)) and required_items:
+            parts.append(
+                "each item requires "
+                + ", ".join(str(item) for item in required_items)
+            )
+    for key, label in (
+        ("minimum", "min"),
+        ("minItems", "min items"),
+        ("minLength", "min length"),
+    ):
+        value = schema.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            parts.append(f"{label} {value}")
+    return ", ".join(parts)
+
+
+def _expected_arguments_hint(
+    input_schema: Mapping[str, Any], missing: Sequence[str]
+) -> str:
+    """``Expected: name (shape); …`` for exactly the arguments that were missing."""
+
+    properties = input_schema.get("properties")
+    if not isinstance(properties, Mapping):
+        return ""
+    shapes = [
+        f"{name} ({_argument_shape(properties.get(name))})"
+        for name in missing
+        if isinstance(properties.get(name), Mapping)
+    ]
+    if not shapes:
+        return ""
+    hint = "Expected: " + "; ".join(shapes) + "."
+    if len(hint) > _MAX_ARGUMENT_SHAPE_CHARS:
+        hint = hint[: _MAX_ARGUMENT_SHAPE_CHARS - 1].rstrip() + "…"
+    return hint
+
+
 def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
     async def invoke(arguments, context):
         call_id = active_product_tool_call_id()
@@ -794,14 +867,15 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
                 registration.name,
                 names,
             )
+            expected = _expected_arguments_hint(input_schema, missing)
             return ToolResult.failed(
                 call_id,
                 MISSING_ARGUMENT_ERROR_CODE,
                 (
                     f"{registration.name} rejected: missing required "
                     f"argument(s) {names}. Call {registration.name} again with "
-                    f"{names} filled in; see the tool description for the "
-                    "expected values."
+                    f"{names} filled in."
+                    + (f" {expected}" if expected else "")
                 ),
             )
         if invalid is not None:
