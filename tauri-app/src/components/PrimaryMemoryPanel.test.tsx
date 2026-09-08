@@ -63,3 +63,25 @@ it("parent-owned requests survive unmount/disconnect, replay the original action
   expect(screen.queryByRole("button", { name: "重试同一忘记操作" })).toBeNull();
   second.unmount();
 });
+
+// Incident M: 争议/更正之后，列表页里一条无效条目不能吞掉整页——忘记入口只在这里。
+it("shows a visible skip notice and still renders and forgets the valid rows of a partly invalid page", async () => {
+  const listeners = new Set<(v: unknown) => void>(), sent: PrimaryWireRequest[] = [];
+  const port: PrimaryPort = { state: () => "connected", on_state_change: () => () => {},
+    send_command: (r) => { sent.push(r); return true; }, on_message: (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; } };
+  render(<PrimaryMemoryPanel port={port} primaryRef="p" verifiedOwnerKey="owner" ready />);
+  const head = { memory_id: "canonical-42", revision: 3, label: "偏好简洁", status: "contested", can_forget: true, content_hash: "a".repeat(64) };
+  await act(async () => { listeners.forEach((fn) => fn({ type: "human_memory_response", request_id: sent[0].request_id,
+    payload: { ok: true, operation: "primary.memory.list", result: { primary_ref: "p", next_cursor: null, items: [
+      head,
+      { ...head, revision: 2, can_forget: false, content_hash: "c".repeat(64) }, // same identity,非 head 修订
+    ] } } })); });
+  expect(screen.getByText("偏好简洁")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("1 条记忆条目无效");
+  expect(screen.queryByText("当前页没有可展示的认知记忆。")).toBeNull();
+  const buttons = screen.getAllByRole("button", { name: "忘记这条记忆" });
+  expect(buttons).toHaveLength(1);
+  fireEvent.click(buttons[0]);
+  await waitFor(() => expect(sent).toHaveLength(2));
+  expect(sent[1].request).toMatchObject({ memory_id: "canonical-42", expected_revision: 3, expected_content_hash: "a".repeat(64) });
+});

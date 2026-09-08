@@ -24,6 +24,25 @@ class PrimaryCognitiveError(ValueError):
         super().__init__(code)
 
 
+def _head_nodes(nodes):
+    """One entry per memory identity: its head revision.
+
+    The SDK display graph also emits the non-head incumbent revision of an
+    unresolved conflict group, so ``view.nodes`` can hold two nodes that share a
+    ``memory_id``. List/forget address the whole memory identity (and page on
+    ``memory_id``), so both keep only the head — the sole member the SDK marks
+    ``can_forget`` — and leave the extra revision to ``primary.memory.graph``.
+    Redacted heads stay here so a redacted head can never be replaced by an
+    older visible revision; callers drop them afterwards.
+    """
+    heads = {}
+    for node in nodes:
+        current = heads.get(node.memory_id)
+        if current is None or node.revision > current.revision:
+            heads[node.memory_id] = node
+    return heads
+
+
 class PrimaryCognitiveControls:
     def __init__(self, path, *, auth, runtime_getter, display_invalidation=None):
         self._display_invalidation = display_invalidation
@@ -69,7 +88,7 @@ class PrimaryCognitiveControls:
         nodes = sorted(
             (
                 node
-                for node in view.nodes
+                for node in _head_nodes(view.nodes).values()
                 if not node.redacted and (cursor is None or node.memory_id > cursor)
             ),
             key=lambda node: node.memory_id,
@@ -164,8 +183,9 @@ class PrimaryCognitiveControls:
         )
         if action is None:
             view = await self._view(manager, principal)
-            targets = [node for node in view.nodes if node.memory_id == memory_id]
-            node = targets[0] if len(targets) == 1 else None
+            # Same identity projection as ``list``: a contested memory exposes two
+            # revisions, and only its head is offered and forgettable.
+            node = _head_nodes(view.nodes).get(memory_id)
             if (
                 node is None
                 or node.redacted

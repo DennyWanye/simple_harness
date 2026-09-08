@@ -23,6 +23,23 @@ Dirac owns `plans/2026-09-05-s6-primary-preparation/PRIMARY-API.md` in the prima
 
 Runtime events use current_run.sdk_run_ref + execution_session_ref, never primary_ref as a Session. Permission pending-list explicitly targets the real execution session; original request/decision/nonce/version are echoed. Stop pins the run/generation visible when the button was rendered. Project directory selection reuses the existing card but says submitted/waiting, because current response_applied is only a backend log. Carver/main must verify actual TaskScope manual-binding/route interaction, permission recovery and event delivery; legacy directory callbacks are not proof of the new SDK path. Tool activity is live bounded metadata (last20); durable tool/artifact public text comes from primary history; full artifact/context/TaskScope inspector and primary attachment/slash/realtime integrations remain unfinished. Existing global settings/skills/artifact-library navigation is retained. No App/provider or whole S6 acceptance is claimed.
 
+## Cognitive list degradation (S6 Task3/4, 2026-09-08 incident M)
+
+`primary.memory.list` returns at most one item per memory identity: the Host collapses
+the SDK display graph to the head revision per `memory_id` before paging, so a contested
+memory appears once, at its head, with `status:"contested"` and `can_forget:true`. The
+non-head incumbent revision of an unresolved conflict group belongs to the 关系图 tab.
+
+The client no longer fails the whole page on one bad item. Page shape stays a hard
+failure (`primary_ref` mismatch, non-array items, more than50 items, a `next_cursor`
+that is neither null nor a valid ID, or a `next_cursor` that is not the memory_id of the
+last item the server sent). Individual items that break the item contract — bad ID,
+non-positive/unsafe revision, label over512 codepoints, status over64, non-boolean
+`can_forget`, a `content_hash` that is not64 lowercase hex, or a repeated `memory_id` —
+are dropped and counted in `CognitiveSnapshot.skipped`; the panel renders the surviving
+rows plus a visible `role="alert"` notice. The 忘记 control lives only in this tab, so a
+single malformed row must never blank it.
+
 ## Handoff blocker and verification
 
 Unknown enqueue status belongs to the delivery across attempts. A later local send failure or explicit rejection cannot clear an earlier unknown delivery key; only its valid ACK or a verified owner change resolves it. A first definitely-unsent attempt still permits an edited draft. This uncertainty is local state, never an extra queue.enqueue wire field. Regression cases cover both retry failures and the first-unsent negative control.

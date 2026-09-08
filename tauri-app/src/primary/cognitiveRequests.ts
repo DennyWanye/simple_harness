@@ -10,32 +10,45 @@ interface Action {
 }
 export interface CognitiveSnapshot {
   ready: boolean; loading: boolean; writing: boolean; items: CognitiveMemoryItem[];
+  /** Items of the last page dropped because they broke the item contract. */
+  skipped: number;
   nextCursor: string | null; pending: Action[]; notice: string; error: string;
 }
 const hash = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
 const id = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= 512 && v.trim() === v;
-function page(raw: unknown, primary: string): { items: CognitiveMemoryItem[]; nextCursor: string | null } {
+const valid = (item: Record<string, unknown>, seen: Set<string>): boolean =>
+  id(item.memory_id) && !seen.has(item.memory_id) && Number.isSafeInteger(item.revision) && Number(item.revision) >= 1 &&
+  typeof item.label === "string" && Array.from(item.label).length <= 512 &&
+  typeof item.status === "string" && Array.from(item.status).length <= 64 &&
+  typeof item.can_forget === "boolean" && hash(item.content_hash);
+/**
+ * Page shape stays a hard failure; a single bad item does not.
+ * One malformed or duplicate entry must never blank the whole list — the forget
+ * control lives only here — so invalid items are dropped and counted instead.
+ * The cursor keeps its meaning against the last item the server actually sent,
+ * so dropping items never turns a valid page into a paging failure.
+ */
+function page(raw: unknown, primary: string): { items: CognitiveMemoryItem[]; nextCursor: string | null; skipped: number } {
   const p = record(raw);
   if (p.primary_ref !== primary || !Array.isArray(p.items) || p.items.length > 50 ||
       !(p.next_cursor === null || id(p.next_cursor))) throw new Error("认知记忆响应无效");
   const seen = new Set<string>();
-  const items = p.items.map((value) => {
+  const items: CognitiveMemoryItem[] = [];
+  let tail: string | null = null;
+  for (const value of p.items) {
     const item = record(value);
-    if (!id(item.memory_id) || seen.has(item.memory_id) || !Number.isSafeInteger(item.revision) || Number(item.revision) < 1 ||
-        typeof item.label !== "string" || Array.from(item.label).length > 512 ||
-        typeof item.status !== "string" || Array.from(item.status).length > 64 || typeof item.can_forget !== "boolean" || !hash(item.content_hash)) {
-      throw new Error("认知记忆条目无效");
-    }
-    seen.add(item.memory_id);
-    return item as unknown as CognitiveMemoryItem;
-  });
-  if (p.next_cursor !== null && (items.length === 0 || p.next_cursor !== items.at(-1)?.memory_id)) throw new Error("记忆分页无效");
-  return { items, nextCursor: p.next_cursor as string | null };
+    tail = id(item.memory_id) ? item.memory_id : null;
+    if (!valid(item, seen)) continue;
+    seen.add(item.memory_id as string);
+    items.push(item as unknown as CognitiveMemoryItem);
+  }
+  if (p.next_cursor !== null && p.next_cursor !== tail) throw new Error("记忆分页无效");
+  return { items, nextCursor: p.next_cursor as string | null, skipped: p.items.length - items.length };
 }
 
 /** Main passes a verified owner key and its actual bound PrimaryPort. No legacy socket. */
 export class CognitiveRequests {
-  private value: CognitiveSnapshot = { ready: false, loading: false, writing: false, items: [], nextCursor: null, pending: [], notice: "", error: "" };
+  private value: CognitiveSnapshot = { ready: false, loading: false, writing: false, items: [], skipped: 0, nextCursor: null, pending: [], notice: "", error: "" };
   private listeners = new Set<() => void>();
   private forgottenListeners = new Set<() => void>();
   private reads?: PrimaryRequests;
@@ -57,7 +70,7 @@ export class CognitiveRequests {
   private clearRead() {
     ++this.epoch;
     this.reads?.invalidate();
-    this.update({ items: [], nextCursor: null, loading: false });
+    this.update({ items: [], skipped: 0, nextCursor: null, loading: false });
   }
   connect(port: PrimaryPort, primaryRef: string, verifiedOwnerKey: string | null, ready: boolean) {
     const life = ++this.lifetime;
