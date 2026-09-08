@@ -168,6 +168,16 @@ class ProcedureRuntime:
           It is only ever a *candidate*: the SDK re-resolves every relation endpoint at
           apply time, and ``SemanticCorrectionAuthority.check`` re-verifies disclosure.
 
+        F-S1b (Memory SDK 0.6.36) re-adjudicated this trade once it started deciding
+        whether ``check`` passes at all (see
+        ``plans/2026-09-08-hm-to-a6/DECISION-F-S1B-PROCEDURE-ENDPOINT-LIFT.md`` §5).
+        The half that is *kept* is no longer a Host-only assertion: when these
+        fingerprints are presented to ``check_history_visibility``, Memory admits a
+        Procedure only where its own immutable ``procedure_observations`` audit carries
+        the same fingerprint for that memory with a successful, attributable observation
+        (per memory and fingerprint, not per revision).  The half that is *dropped* is
+        unchanged and still costs what it says above.
+
         Ordering is not what makes a replayed batch stable — ``prepare`` returns the
         persisted candidate snapshot and ``snapshot_for_attempt`` re-checks its hash.
         A corrupt ``procedure_uses`` body propagates (``_checked``): the analysis lane

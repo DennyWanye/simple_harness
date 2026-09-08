@@ -327,6 +327,27 @@ claim, and077 artifact is unchanged. [Contract](../plans/2026-09-06-expiry-termi
 
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-09 F-S1b：Procedure 关系端点扣留解除，A6-6 Procedure 形态端到端可达
+
+基线 `dbf967fc`，工作树 `.claude/worktrees/f-s1b`（分支 `worktree-f-s1b`，已 `git merge main` 到 `1e7043e9`，
+未合回 main）。
+事件 S 的两条 SDK 事实全部闭合：坑二由 Memory SDK 0.6.35 修（分类决定由血缘上最近的已分类
+祖先承担），坑一由 **0.6.36** 修（`check_history_visibility` 新增可选、显式 provenance 的
+`ProcedureApplicabilityAttestation`，且 SDK 用自己的 `procedure_observations` 审计佐证该标签）。
+Host 侧 `deskpet/memory/semantic_correction.py`：关系候选召回所绑定的指纹持久进候选快照
+（新键 `relation_applicability_fingerprints`，随快照一起被 `bind_attempt` 哈希），`check()`
+只从快照读同一份构造 attestation；Procedure 候选**仍是 `check_history_visibility` 的普通绑定**，
+没有替代谓词（事件 S 备忘 §4.4 的要求）。扣留的解除按**能力探测**而非版本号，同一份代码在
+0.6.34/0.6.35 上继续按名扣留、在 0.6.36 上放行；两处 fail-closed（下发前无指纹记
+`sdk_procedure_applicability_absent`；复核时无能力/无指纹整批
+`analysis_candidate_no_longer_visible`）。事件 S 备忘 §4.1 的 `applied_use_fingerprints`
+取舍按要求重新裁定为「可作为复核依据」，残余暴露面记 F-S1B-1。
+Host 未 pin 0.6.36（`backend/pyproject.toml` 仍是 0.6.34），验证走独立叠加 venv `.venv-0636`：
+合并后主 venv 四个 `test_analysis_relation_*.py` 13 passed / 3 skipped，0.6.36 venv 同四文件
+16 passed / 0 skipped（差额恰为三项 `needs_0_6_36`），v8/v9 关系与提案三文件两版均 30 passed。
+[裁决与证据](../plans/2026-09-08-hm-to-a6/DECISION-F-S1B-PROCEDURE-ENDPOINT-LIFT.md)、
+[SDK 边界](./MEMORY_SDK_BOUNDARY.md)。
+
 ## 2026-09-09 域 schema 链单一真源 + Procedure 提示解耦
 
 基线 `243369c0`，工作树 `.claude/worktrees/s5c-cursor-version`。修复生产回归：v55
