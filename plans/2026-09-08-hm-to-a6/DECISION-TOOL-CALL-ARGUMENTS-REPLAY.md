@@ -117,19 +117,59 @@ tool 结果 `Message` 由**冻结的 SDK** 构造
 
 **为什么它足够：** §2 已证 `provider_tool_calls` 存活数为 0，即从一个 Run 的第 2 轮起
 每一跳都在丢入参；而这些跳全部发生在同一进程内（一次 Run 的 ReAct 循环）。跨 Run 的
-历史不会以裸 assistant/tool 消息进入新 Context（见 §4），所以进程内备忘覆盖了事件 K
-的全部发生面。
+历史**不会**以裸 assistant/tool 消息进入新 Context——它是被引号包进一条 user 消息的
+`historical_causal_group`（见 §5），所以进程内备忘覆盖了事件 K 的全部发生面。
+
+**备忘的存活范围与安全性的关系（澄清）：** 备忘按上一段的口径**不需要**跨 Run 存活；
+它事实上跨 Run 存活，只是因为它是一个进程级有界 LRU（这是实现上的简化，不是设计意图，
+更不是「因为跨 Run 需要」）。跨 Run 的安全性完全由 §3.1 的三重失败关闭保证，
+而不是由「备忘活多久」保证。
 
 **与「Run 终态释放」的偏离及理由：** 任务建议按 Run 分组并在终态释放。实测发现
 provider 请求身份在当前 SDK 下是 `provider-turn:N`（**不含 run id**，见
 `_capture_public_tool_narration` 里为此做的单 Run 兜底），在 provider 模块内解析 run id
-本身是脆弱的、要依赖 `_delivery_adapters` 只有一个活跃 Run。因此改为：
+本身是脆弱的、要依赖 `_delivery_adapters` 只有一个活跃 Run。因此改为进程级有界 LRU：
+4096 条 **且** 总计 8 MiB，单条上限 256 KiB；内存上界由容量本身保证，不依赖终态钩子。
+生产不注入备忘，所以全进程共用模块级单例；保留 `release_call` / `clear` 供显式清理，
+测试侧由 `tests/sdk_adapters/conftest.py` 的 autouse fixture 每例清空（本仓库跑
+`pytest-randomly`，共享可变单例会造成顺序相关的偶发红）。
 
-- **键 = `call_id`，读取时校验 `tool_name` 必须一致**（call id 由 provider 生成、全局唯一；
-  名字不符即退化，杜绝张冠李戴）；
-- **有界 LRU**：4096 条 **且** 总计 8 MiB，单条上限 256 KiB；超大单条直接不存（退化计数），
-  不为它清空整个备忘。内存上界由容量本身保证，不依赖终态钩子。
-- 保留 `release_call` / `clear` 供调用方与测试显式清理。
+### 3.1 追加裁决（独立评审 F1）：原始 `call_id` **不是**全局唯一，必须失败关闭
+
+初版把「call id 由 provider 生成、全局唯一」当作前提，键只有 `call_id`、只用
+`tool_name` 兜底。独立评审推翻了这个前提，且**已在本工作树复现**：
+
+```
+turn1 记 call_0 -> {"path":"A.md"}；turn2 记 call_0 -> {"path":"B.md"}
+wire[1]（turn-1 assistant）: {"path":"B.md"}  | 其后紧跟的 tool 结果: contents of A
+```
+
+证据链：
+- SDK 自己就不信任原始 id——`runtime/drivers/react_loop.py::_internal_effect_identity`
+  把 `{run_id, turn_ordinal, raw_provider_call_id, call_ordinal}` **一起哈希**才得到内部
+  `CallId`，即原始 id 只在一个 `(run, turn, ordinal)` 内唯一；
+- `execution_effects` 也因此单列 `raw_call_id`（§2.3 的对账正是靠它做的 join）；
+- DeepSeek 发的是长随机 id（`call_00_IKphh2J3…`），但产品 registry 能接到的
+  vLLM / llama.cpp / LM Studio / 本地网关普遍发 `call_0`/`call_1` 这种**每轮从 0 重排**
+  的序号 id。
+
+**为什么这比不修更坏：** `{}` 只是信息缺失，模型看得出「参数没了」；而错贴的入参是一条
+**自洽但虚假**的「调用 → 结果」配对（"我调了 `read_file {"path":"B.md"}`" 紧跟 A.md 的正文），
+恰恰是本文件认定的那条模仿通道，而且它被计为 `restored`、一声不吭。
+
+**裁决：三重失败关闭，宁可退回 `{}`。**
+
+1. 读取时 `tool_name` 必须一致；
+2. **毒化**：同一 `call_id` 以不同入参（或不同工具）再次留存 → 该键永久不可读
+   （直到淘汰/释放），`record` 返回 `False`；**同参数重复留存幂等**，所以协议重采样
+   对同一轮再记一次不会误伤；
+3. **同请求内重复即歧义**：`_wire_messages` 先统计整份消息里各 `call_id` 的出现次数，
+   出现 >1 次的一律对其**全部出现位**退化，并单列 `ambiguous_call_ids` 计数。
+
+第 2 条防「某一跳只看得到一处出现、但备忘里已被后轮覆盖」；第 3 条防「毒化条目被 LRU
+淘汰后又被重新写入」。序号 id 端点由此整体退回修复前的 `{}` 行为（安全），随机 id 端点
+（DeepSeek、relay，即本次证据里的真实链路）拿到完整修复。有 5 个专测锁定，其中
+`test_unique_ids_still_get_their_arguments_across_turns` 是防守卫误伤的反向控。
 
 ## 4. 保存与隐私（任务 2 后半）
 
@@ -146,9 +186,9 @@ provider 请求身份在当前 SDK 下是 `provider-turn:N`（**不含 run id**�
 - **隐私结论：没有任何「从耐久记录里被脱敏掉的东西」被重新暴露。** 这份内容是模型自己
   写的、刚刚由同一个 provider 端点发过来、并且在 `execution_effects.arguments_json`
   里本来就是原文存储（证据侧实测：三库 0 处脱敏标记）。备忘只是把它原样发回同一端点。
-- **降级日志无载荷**：未命中只打 `rebuilt/restored/fallback_empty` 三个计数与
-  `request_ref`（不透明摘要），不含 call id、工具名或任何入参值；有专测断言这些字符串
-  不出现在日志里。
+- **降级日志无载荷**：未命中只打 `rebuilt/restored/fallback_empty/ambiguous_call_ids`
+  四个计数与 `request_ref`（不透明摘要），不含 call id、工具名或任何入参值；有专测断言
+  这些字符串不出现在日志里。
 - **请求指纹不受影响**：SDK 的 `provider_request_fingerprint` 基于 `ProviderRequest.messages`
   计算，本修复只改物理线体 payload，不改 SDK 请求身份；且无重建的请求线体逐字节不变（有专测）。
 
@@ -193,19 +233,24 @@ SDK 落地后本备忘与降级分支一并删除。
 
 ## 7. 测试
 
-新增 17 例全绿，覆盖：durable 真实往返（`provider_response_json` →
+新增 25 例全绿，覆盖：durable 真实往返（`provider_response_json` →
 `provider_response_from_json`，契约确实清空 metadata）后 memo 补回入参；真实 HTTP
-（`httpx.MockTransport` + 生产 `ProductProviderAdapter`）跨 continuation 跳的线体断言；
+（`httpx.MockTransport` + 生产 `ProductProviderAdapter`）跨 continuation 跳的线体断言，
+并在该 fixture 里带上 `deskpet_public_progress` 金丝雀，从而**锁定 `invoke` 里
+`_extract_public_progress` 必须在 `_retain_tool_calls_in_message` 之前**这一顺序；
 并行多调用各归各位；同 call_id 异工具名不借用；未命中退化 + 无载荷计数日志 + 全命中不告警；
-memo 复原与同进程 metadata 路径逐字节相同；无重建请求逐字节稳定（空 memo / 热 memo 两种）；
-`deskpet_public_progress` 剥离后才留存；以及 memo 本体的边界、容量淘汰、LRU 刷新、
-字节预算、超大条跳过、非法输入、last-write-wins/release/clear。
+memo 复原与同进程 metadata 路径逐字节相同；**共享序列化的黄金串**（含非 ASCII、嵌套、
+null/bool/float，按修复前的 `json.dumps(sort_keys, separators, ensure_ascii=True)` 写死）；
+无重建请求逐字节稳定；以及 §3.1 的五个失败关闭控（序号 id 复用不张冠李戴、冲突毒化跨请求
+生效、同参数重复留存幂等、异工具名毒化、**唯一 id 仍正常复原的反向控**）；
+memo 本体的边界、容量淘汰、LRU 刷新、字节预算（含 tool_name）、超大条跳过、
+非法/异常输入不外抛、拒绝留存不留旧答案、poison/release/clear。
 
 回归（全部与 `git stash` 基线逐条比对）：
 
 | 套件 | 修复后 | 基线 | 结论 |
 |---|---|---|---|
-| `tests/sdk_adapters`（除 `test_composition.py`） | 539 passed / 58 failed | 522 passed / 58 failed | 失败集合 `diff` 完全相同；+17 全为新增用例 |
+| `tests/sdk_adapters`（除 `test_composition.py`） | 547 passed / 58 failed | 522 passed / 58 failed | 失败集合 `diff` 完全相同；+25 全为新增用例 |
 | `tests/execution`（`test_scope_disclosure_runtime.py` 定向、`-p no:randomly`） | 13 passed / 3 failed | 13 passed / 3 failed | 同参数、同条目 |
 | `tests/execution` 全量 | 43 failed / 211 passed / 10 errors | 40 failed / 214 passed / 10 errors | 差额 3 条全在 `test_scope_disclosure_runtime` 的**随机顺序**干扰下；定向复跑两边一致 |
 | provider importers（`tests/memory` 8 文件） | 31 passed / 10 failed | 31 passed / 10 failed | 逐条相同 |
@@ -221,3 +266,35 @@ effect_gate / s5a_milestone_route_loop、scope_disclosure、typed_context_use_pr
 
 **未做真人 UI 复跑**：桌面 app 有活跃运行（端口 18120），按任务约束不动它；本轮以
 durable 证据相关性 + 真实 HTTP 传输集成测试作为验收面。原生复跑记为交付后的验证项。
+
+## 8. 独立评审与回应（2026-09-08）
+
+按用户「技术取舍交子代理裁决」的口径，本修复提交后交由独立评审代理做对抗性审查。
+verdict：**CHANGES REQUIRED**，一条真缺陷 + 若干文档/测试问题。逐条处置：
+
+| 编号 | 级别 | 结论 | 处置 |
+|---|---|---|---|
+| F1 原始 call_id 复用导致张冠李戴 | major | **成立，已在本工作树复现** | 见 §3.1：三重失败关闭 + 5 个专测 |
+| F2 「call id 全局唯一」是未经验证的前提 | minor | 成立 | §3.1 已推翻并写明证据链 |
+| F3 模块 docstring 与本备忘对「跨 Run 存活」口径自相矛盾；`见 §4` 交叉引用错 | minor | 成立 | §3(c) 增「存活范围与安全性的关系」澄清；引用改为 §5 |
+| F4 「与 effect 账本逐字节相同」不成立（`ensure_ascii` 口径不同） | minor | 成立 | 评审读到的是修订前版本；代码注释与 §4 已改为「同一个对象，仅转义不同」 |
+| F5 「One memo per adapter」注释与生产拓扑不符 | minor | 成立 | 注释改写为「生产是模块级单例；安全性由守卫而非拓扑保证」 |
+| F6 默认全局单例造成测试间共享可变状态 | minor | 成立 | 新增 `tests/sdk_adapters/conftest.py` autouse 清空 |
+| F7 字节稳定测试是空转（消息里根本没有 tool_calls） | minor | 成立 | 新增 `test_live_metadata_serialisation_is_byte_frozen` 黄金串（含非 ASCII/嵌套/null/bool/float） |
+| F8 剥离顺序未被锁定（换行序不会红） | minor | 成立 | HTTP 跨跳 fixture 加 `NARRATION_CANARY`，断言不得出现在 `tool_calls` 内 |
+| F9 `record` 可能把异常抛进 Provider 路径 | nit | 成立 | `record` 整体 try/except → 返回 `False` |
+| F10 拒绝留存时留下旧答案可读 / 非 dict 静默变 `{}` | nit | 成立 | 拒绝路径统一毒化既有键；新增 `test_rejected_record_never_leaves_a_stale_answer` |
+| F11 字节预算未计 `tool_name` | nit | 成立 | 抽出 `_entry_bytes(key, name, payload)`，四处共用 |
+| F12 ARCHITECTURE 里日志名被换行截断 | nit | 成立 | 已改写该段 |
+
+评审确认无误的部分：SDK 边界合规（不开 SDK 表）、既有 7 个 continuation 测试全绿、
+请求指纹口径未动、降级日志无泄漏、内存有界、`read` 的 `move_to_end` 承重、
+以及「tool 结果消息携带的正是原始 provider `call_id` 与 `call.name`」——所以生产命中
+是真的，不是手搭消息的假象。
+
+修订后复验：定向 provider 8 文件 **125 PASS**；`tests/sdk_adapters` **547 PASS / 58 既有红**
+（失败集合与基线 `diff` 仍完全相同）；`tests/execution` 定向 3 文件 48 PASS / 4 既有红；
+provider importers 31 PASS / 10 既有红——均与基线逐条一致。反向验证：把
+`ToolCallArgumentsMemo.read` 强制打成永远未命中后，25 例中 **12 例转红**。
+F1 复现脚本在修订后输出 `{}`/`{}`（并记 `ambiguous_call_ids=2`），缺陷关闭。
+8 线程 × 5000 次混合读写/毒化/释放压测：字节账目零漂移，容量与字节上界均未越界。
