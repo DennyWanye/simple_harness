@@ -1,0 +1,13 @@
+{
+  "schema": "simple-harness-memory-candidate-v1",
+  "version": "0.6.34",
+  "source": "36dac46a84d2cd8107f10b10883f355b5f897167",
+  "reviewed_source": "36dac46a84d2cd8107f10b10883f355b5f897167",
+  "artifacts": {
+    "simple_harness_memory_sdk-0.6.34-py3-none-any.whl": "c322adb36aa9e814864bf8db3be0ab068cbbcf11edfe9510938a44e4ea2c1efd"
+  },
+  "build_count": 1,
+  "source_date_epoch": "1788898658",
+  "memory_schema": "7.4",
+  "scope": "0.6.31 plus 0.6.32 (matrix public witnesses), 0.6.33 (recall-path transaction primitive: cancelled BEGIN never leaves an orphan transaction; stage-named DEADLINE_EXCEEDED with terminal rows) and 0.6.34 (vector admission relative margin: effective=min(0.45,max(0.35,0.90*per-type best)); audit terminal_json.cognitive_vector.admission)"
+}
