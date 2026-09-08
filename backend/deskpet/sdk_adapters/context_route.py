@@ -36,7 +36,10 @@ from deskpet.sdk_adapters.context_authority import (
     ContextRouteLedgerStore,
     canonical_sha256,
 )
-from deskpet.memory.recall_selection import REQUESTABLE_MEMORY_TYPES, parse_recall_selection
+from deskpet.memory.recall_selection import (
+    MEMORY_TYPE_SELECTION_POLICY, REQUESTABLE_MEMORY_TYPES, parse_recall_selection,
+    selection_policy_departures,
+)
 
 ROUTES = (
     "direct_standalone",
@@ -81,7 +84,9 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
         "memory_types": {
             "type": "array", "minItems": 0, "maxItems": 4,
             "items": {"type": "string", "enum": list(REQUESTABLE_MEMORY_TYPES)},
-            "description": "Required for memory_standalone. Select only the needed long-term types: semantic (facts/preferences), episode (past events), procedure (applicable steps), prospective (future intentions/reminders). An empty list is valid only with include_short_horizon=true. Selection grants no permission to disclose or execute.",
+            "description": ("Required for memory_standalone. " + MEMORY_TYPE_SELECTION_POLICY
+                            + " An empty list is valid only with include_short_horizon=true. "
+                              "Selection grants no permission to disclose or execute."),
         },
         "include_short_horizon": {
             "type": "boolean",
@@ -203,7 +208,11 @@ class ContextRouteToolService:
                 )
                 selection = {"origin": "model_proposal",
                              "requested_memory_types": list(selected),
-                             "include_short_horizon": short}
+                             "include_short_horizon": short,
+                             # Advisory only: recorded so the extra-type rate has
+                             # a Host-side trace. Never gates or rewrites recall.
+                             "selection_policy_departures":
+                                 list(selection_policy_departures(selected))}
             except ValueError as exc:
                 selection = {"origin": "model_proposal", "selection_status": "invalid",
                              "selection_error": str(exc)}
@@ -286,6 +295,8 @@ class ContextRouteToolService:
                     "origin": "model_proposal",
                     "requested_memory_types": list(recall_types),
                     "include_short_horizon": bool(recall_short_horizon),
+                    "selection_policy_departures":
+                        list(selection_policy_departures(recall_types or ())),
                 }} if recall_types or recall_short_horizon is not None else {}),
                 # Stable Host reason code for the receipt/audit. Record only the
                 # bounded conflict identity (group id + exact revisions), never

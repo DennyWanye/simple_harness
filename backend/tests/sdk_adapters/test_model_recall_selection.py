@@ -43,7 +43,10 @@ async def test_route_passes_only_explicit_types_to_installed_memory(state_db, tm
         assert json.loads(row[1]) == {
             'route': 'memory_standalone', 'task_scope_id': None,
             'recall_selection': {'origin': 'model_proposal', 'requested_memory_types': selected,
-                                 'include_short_horizon': False},
+                                 'include_short_horizon': False,
+                                 'selection_policy_departures':
+                                     ['procedure_not_served_by_typed_recall']
+                                     if 'procedure' in selected else []},
         }
     finally:
         await runtime.close()

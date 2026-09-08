@@ -14,7 +14,7 @@ from tests.sdk_adapters.test_context_route_tool import _service, state_db
 PROPOSAL = {"route": "memory_standalone", "query": "PRIVATE_QUERY_CANARY",
             "memory_types": ["semantic"], "include_short_horizon": True}
 SELECTION = {"origin": "model_proposal", "requested_memory_types": ["semantic"],
-             "include_short_horizon": True}
+             "include_short_horizon": True, "selection_policy_departures": []}
 
 
 def durable_row(path):

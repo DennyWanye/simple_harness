@@ -49,7 +49,10 @@ async def test_model_short_selection_is_one_budgeted_typed_execution(actual, sta
     with sqlite3.connect(state_db) as db:
         detail = json.loads(db.execute("SELECT detail_json FROM context_route_tool_invocations").fetchone()[0])
     assert detail["recall_selection"] == {"origin": "model_proposal", "requested_memory_types": selected,
-                                          "include_short_horizon": True}
+                                          "include_short_horizon": True,
+                                          "selection_policy_departures":
+                                              ["procedure_not_served_by_typed_recall"]
+                                              if "procedure" in selected else []}
 
 
 @pytest.mark.asyncio
