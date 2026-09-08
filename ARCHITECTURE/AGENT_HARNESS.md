@@ -447,11 +447,24 @@ SDK 产品授权适配器同时接受旧测试 fixture 的 callable policy 和�
 `policy.decide(prepared, request=...)` 端口。正式 SDK 桌面装配走后者，工具 effect 才能完成
 prepare → handoff → invoke → settle；授权异常不会再被误报成无上下文的 driver failure。
 
-完整 77 项 SDK 工具目录在组合时会把 `memory_recall` 动态绑定到
+完整 77 项 SDK 工具目录在组合时会把 `memory_recall` / `memory_search` 动态绑定到
 `deskpet.memory.recall_adapter` 的 owner-scoped 真实适配器，不再依赖已退休的 legacy registry
-authority。清单中为历史会话兼容而保留的 `memory_forget/read/search/write` 由 import-safe
-兼容处理器明确返回 `memory_sdk_unavailable`；它们不会重新引入已删除的旧内存存储栈，也不会再
-因处理器模块缺失导致整个 Agent 工具目录构建或运行时调用崩溃。
+authority。当 Host 装配提供了 `memory_manager` + `memory_identity_resolver` 时，
+`memory_write` / `memory_read` / `memory_forget` 由 `deskpet/tool_catalog/providers.py` 的
+closure 绑定到 Memory SDK 的显式 fact API（trusted principal + 由 `root_run_id/call_id`
+派生的 `source_event_id`）；未装配时仍回落到 `deskpet.tools.memory_tools` 的 import-safe
+兼容处理器（`memory_sdk_unavailable`），不会因处理器模块缺失导致工具目录构建或运行时崩溃。
+
+`memory_forget` 的模型可见契约（2026-09-08 事故 J 修复，见
+`plans/2026-09-08-hm-to-a6/DECISION-MEMORY-FORGET-TOOL.md`）：处理器**永不抛裸异常**。
+缺 `fact_id`、`fact_id` 非整数、只给自然语言 `query`、id 不属于该 principal、Memory 侧异常，
+分别返回稳定码 `memory_forget_target_required` / `memory_forget_invalid_fact_id` /
+`memory_forget_natural_language_disabled` / `memory_forget_unknown_fact_id` /
+`memory_forget_store_unavailable`（Host 身份不变量失败另有
+`memory_forget_identity_unavailable`），并在 `public_message` 里给出候选 id 与下一步动作
+（无候选时明确劝停，避免 `react_repeated_tool_exceeded`）。自然语言遗忘仍然禁用，
+授权/抑制入参不变；工具描述在构建期投影，不再指向不存在的 `memory_facts_list`。
+按 id 抑制**认知记忆**（`human_memory_v7`）仍需 S5c 的模型可见记忆视图，本轮未接入。
 
 simple_harness 当前可持久保存多个 UUID conversation Sessions，产品窗口同一时刻只选择其中一个作为
 当前主会话。每条普通新消息都在所选 Session 中创建一个独立顶层 Run，顶层 Profile 固定为
