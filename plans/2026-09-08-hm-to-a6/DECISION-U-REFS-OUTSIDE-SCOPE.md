@@ -136,10 +136,11 @@ foreground_run_sdk_bindings b
   JOIN human_memory_evidence e ON e.evidence_id = t.evidence_id
 WHERE b.sdk_run_id = ? AND r.host_run_id = ? AND r.subject = ?
   AND e.subject = ? AND e.envelope_sha256 = t.evidence_hash
+  AND (t.task_scope_id IS NULL OR t.task_scope_id = ?)
 ```
 
 受理后 `store._link_refs_tx` 会把它链接到本 scope，**守卫的后置条件被恢复**——这是一次
-bootstrap，不是把闸打开。缺前台表的单测夹具走 `OperationalError` 分支，贡献空集（宁可不放宽）。
+bootstrap，不是把闸打开。缺前台表的单测夹具走 `no such table` 分支，贡献空集（宁可不放宽）；其余 `OperationalError`（锁、I/O）原样上抛，绝不吞成一次伪造的 `refs_outside_scope`。
 
 ### 3.2 拒绝回执披露（仅 id）
 
@@ -151,7 +152,7 @@ bootstrap，不是把闸打开。缺前台表的单测夹具走 `OperationalErro
 | `allowed_evidence_refs` | 可引用 id，**≤16，最新在前，仅 id**；模型**不需要**也不应发 `content_hash` |
 | `allowed_evidence_refs_total` | 可引用集合总数（说明是否被截断） |
 | `current_turn_evidence_ref` | 本轮 USER 消息自己的 evidence id（只在存在时出现） |
-| `next_step` | 可执行下一步：原样重发本条载荷，`evidence_refs` 与每条 operation 的 `evidence_refs` 只从 `allowed_evidence_refs` 里取；明确禁止用 run id / call id / effect id / 信封哈希 / 前缀形式拼 id |
+| `next_step` | 可执行下一步：原样重发本条载荷，`evidence_refs` 与每条 operation 的 `evidence_refs` 从 `allowed_evidence_refs`（或收口指令给过的那份）里取；明确禁止用 run id / call id / effect id / 信封哈希 / 前缀形式拼 id |
 
 集合为空时（本 Run 确实无解）：`allowed_evidence_refs: []` + 明说「本 Run 没有可接受的载荷，
 不要再换 id 试，把内容放进最终回答，档案由宿主在 Run 终态自己收口」——**模型循环有终点**。
@@ -208,14 +209,17 @@ S5b Task 3 与 design-freeze §7 把谓词写成「refs ∈ 该 scope 已链接 
 | `test_disclosed_ref_lets_mid_run_verbatim_goal_set_apply` | **A6-5**：披露的 id 此刻还不在 `task_scope_evidence_links` 里（主干上无解）；用它发 18 KiB（>16384 字节）逐字 `goal.set` → 受理，revision 1→2，`state_json.goal` 与原文**逐字相等**；落库后该 id 成为 scope 已链接证据 |
 | `test_gate_stays_fail_closed_when_only_some_refs_are_admissible` | 夹带一个范围外 ref → 整条照旧拒绝，`refs` 精确为那一个，revision 不动 |
 | `test_empty_admissible_set_names_the_terminus` | 集合为空 → `allowed_evidence_refs: []`、无 `current_turn_evidence_ref`、`next_step` 为「本 Run 无解」文案 |
-| `test_tool_path_audits_every_rejection_and_escalates_after_bound` | Tool 路径每次拒绝写审计行；前 N 次无 `escalation`，第 N+1 次起有且带次数 |
+| `test_tool_path_audits_every_rejection_and_escalates_after_bound` | Tool 路径每次拒绝写审计行；前 N 次无 `escalation`，第 N+1 次起有且逐字等于升级文案 |
+| `test_turn_evidence_needs_both_run_bindings[run_id / host_run_id]` | 加宽来源的两条 Run 绑定各自必需：任一条对不上 → 可引用集合塌成空集，直接引用那条 id 照旧被拒（删掉任一谓词本例即转红） |
 
 基线对照（一次性 detached worktree，跑同一份文件）：
 
-- **主干 5/5 红**，修复后 **5/5 绿**。
+- **主干 7/7 红**，修复后 **7/7 绿**。
 - 回归：`test_task_scope_update_tool.py` / `test_task_scope_update_clean_scope.py` /
-  `test_closure_request_guard.py` / `test_s5b_acceptance_matrix.py` / `test_foreground_fifo_closure.py`
-  —— 主干与分支 FAILED 集合**完全相同（同样 12 条，均为既有失败）**，分支 45 passed vs 主干 40 passed（差值即新增 5 条）。
+  `test_closure_request_guard.py` / `test_s5b_acceptance_matrix.py` / `tests/faults` / `tests/task_scope` /
+  `test_closure_resume_sources.py` / `test_completed_scope_guidance.py`
+  —— 主干与分支 FAILED 集合**逐条完全相同（同样 25 条，均为既有失败）**，
+  分支 116 passed vs 主干 109 passed（差值即新增 7 条）。
 - 另跑全绿：`test_audit_coverage.py` / `test_primary_foreground_runtime.py` / `test_closure_resume_sources.py` /
   `test_canonical_archive.py` / `test_missing_argument_shape_echo.py` / `test_completed_scope_guidance.py` /
   `test_procedure_binding_ergonomics.py`（61 passed）。
@@ -248,3 +252,26 @@ S5b Task 3 与 design-freeze §7 把谓词写成「refs ∈ 该 scope 已链接 
 | U-3 | 收口指令的下发条件：干净 scope 也给一份 `allowed_evidence_refs`（现在 `closure_instruction_for_run` 在干净 scope 返回 `None`） | 需单独论证——它同时控制收口指令**文本**，改动会让普通对话轮也看到收口措辞 | 否 |
 | U-4 | 两条通道的排序不一致（收口指令最旧在前上限 64；拒绝回执最新在前上限 16） | 若后续统一，以「最新在前」为准并同步收口指令 | 否 |
 | U-5 | PERSONA / 工具描述是否还需驱动侧或 prompt 侧改动 | 本轮已改静态 `TASK_SCOPE_UPDATE_DESCRIPTION`；是否再在 PERSONA 里点明「evidence id 不可推导」，待下一次原生旅程观察 | 否 |
+
+---
+
+## 8. 独立评审（只读 opus，一次）
+
+结论：**无 MUST-FIX**。授权/披露、fail-closed、与 store `_verify_refs_tx` 的一致性、审计、契约取舍四项均判通过。
+已落地的 SHOULD-FIX / NIT：
+
+| 项 | 处理 |
+| --- | --- |
+| 空集合时升级文案与「不要再试」自相矛盾 | 升级提示改为仅在 `allowed_evidence_refs` 非空时附加 |
+| `except aiosqlite.OperationalError` 过宽（会吞掉 `database is locked` → 伪造一次 `refs_outside_scope`） | 收窄为只吞 `no such table`，其余原样上抛；并在 docstring 里钉死「本函数在显式事务外调用」这个前提 |
+| 加宽查询缺 `task_scope_id` 谓词（跨 scope 不变量靠调用方保证） | 补 `AND (t.task_scope_id IS NULL OR t.task_scope_id=?)`，把不变量落在断言它的查询里 |
+| 缺「别的 Run 不能引用本轮未链接 USER 证据」的用例 | 新增参数化用例，分别打掉 `sdk_run_id` / `host_run_id` 绑定 |
+| 升级用例断言近乎空转（只找字符 `"3"`） | 改为逐字匹配渲染后的升级文案 |
+| 空集合分支缺 `allowed_evidence_refs_total` | 补 `0`，保持同一拒绝码的 detail 形状稳定 |
+| 文案「ids you cannot derive」不准确（其实是 `uuid5` 确定性派生） | 改为 `cannot construct or guess` |
+| 「drawn **only** from allowed_evidence_refs」可能让模型丢掉收口指令给过的合法 ref（两条通道排序/上限不同，见 U-4） | 改为「从下方 `allowed_evidence_refs`（或收口指令的 `allowed_evidence_refs`，若你拿到过）里取」 |
+
+未改（评审已确认无害）：`ORDER BY linked_at DESC, evidence_id` 理论上非全序，但 `_verify_refs_tx`
+把 `content_hash` 钉死为不可变的 `envelope_sha256`，加上 `seen` 去重，结果稳定；
+工具描述里「先如实发一次以取回 id」会占掉一次升级计数，即实际阈值是 2 次真实错误而非 3 次——
+升级只是加提示，无副作用。

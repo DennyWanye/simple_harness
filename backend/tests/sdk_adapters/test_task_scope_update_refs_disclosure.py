@@ -219,7 +219,43 @@ async def test_tool_path_audits_every_rejection_and_escalates_after_bound(tmp_pa
         assert "escalation" not in message
         assert "allowed_evidence_refs" in message and "next_step" in message
     assert "escalation" in messages[-1]
-    assert str(tsm._REFS_ESCALATION_AFTER + 1) in messages[-1]
+    assert tsm._REFS_OUTSIDE_SCOPE_ESCALATION.format(count=tsm._REFS_ESCALATION_AFTER + 1) in messages[-1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drop", ["run_id", "host_run_id"])
+async def test_turn_evidence_needs_both_run_bindings(tmp_path: Path, drop: str) -> None:
+    """加宽来源的两条绑定各自必需：任一条对不上，本轮 USER 证据既不披露也不可引用。
+
+    去掉任一条谓词都会让本用例转绿失败——这正是「别的 Run 不能引用本轮尚未链接的
+    USER 证据」这条权威属性的守卫。
+    """
+
+    env, service = await _incident_env(tmp_path)
+    with pytest.raises(ClosureRejected) as mine:
+        await _apply(service, env, _goal_arguments(GUESSED_REFS, key=f"own-{drop}"))
+    [my_ref] = mine.value.detail["allowed_evidence_refs"]
+
+    foreign = {
+        "run_id": env.run_id,
+        "host_run_id": env.admission.host_run_id,
+        **{drop: f"other-{drop}"},
+    }
+    with pytest.raises(ClosureRejected) as other:
+        # 换一个 Run 身份来问：可引用集合必须塌成空集，且直接引用那条 id 照旧被拒。
+        await service.apply_closure(
+            _goal_arguments([my_ref], key=f"foreign-{drop}"),
+            task_scope_id=ch.SCOPE,
+            subject=ch.SUBJECT,
+            source_turn_id=f"sdk-run:{foreign['run_id']}:turn:17",
+            reason_code=tsm.MODEL_CLOSURE_REASON_CODE,
+            **foreign,
+        )
+    assert other.value.code == "task_scope_update_refs_outside_scope"
+    assert other.value.detail["refs"] == [my_ref]
+    assert other.value.detail["allowed_evidence_refs"] == []
+    assert "current_turn_evidence_ref" not in other.value.detail
 
 
 async def _resolved(value):  # type: ignore[no-untyped-def]

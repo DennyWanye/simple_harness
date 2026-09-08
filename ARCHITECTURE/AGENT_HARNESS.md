@@ -2336,7 +2336,7 @@ tool_schemas / open_group / groups`），`str()` 仍为稳定码
   （该 Run 14 次 provider 请求里 `task_scope_closure_required` 出现 0 次）。
 - **可引用集合**（`task_scope_mutation._admissible_refs_tx`）= scope 已链接证据 **∪**
   `foreground_turns.evidence_id`（本轮正在回答的用户消息的已净化证据，
-  `sdk_run_id` + `host_run_id` + `subject` 三重绑定并校验 `envelope_sha256`，查询里无模型输入）。
+  `sdk_run_id` + `host_run_id` + `subject` + `task_scope_id` 四重绑定并校验 `envelope_sha256`，查询里无模型输入）。
   受理后 `store._link_refs_tx` 立即把它链接到本 scope，谓词后置条件恢复——是 bootstrap，不是开闸。
 - **拒绝回执**新增 `allowed_evidence_refs`（**≤16、最新在前、仅 id**）、`allowed_evidence_refs_total`、
   `current_turn_evidence_ref`、`next_step`；集合为空时明说本 Run 无解并要求停止试错。
@@ -2351,9 +2351,12 @@ tool_schemas / open_group / groups`），`str()` 仍为稳定码
 - **已知未做**：`task_scope_search` 的 `disclosure_manifest.dependencies.evidence[]` 与
   `context_route` 的 `producer_dependencies.evidence[]` 都在向模型广播 evidence id 却不区分可否引用
   （第 5 次蒙对、第 9 次蒙错皆源于此），标注属驱动/披露面改动，未做。
-- 用例 `backend/tests/sdk_adapters/test_task_scope_update_refs_disclosure.py` **5 例**
-  （主干 5/5 红、修复后 5/5 绿），含 A6-5 的 >16 KiB 逐字 `goal.set` 落库（revision 1→2）。
+- 用例 `backend/tests/sdk_adapters/test_task_scope_update_refs_disclosure.py` **7 例**
+  （主干 7/7 红、修复后 7/7 绿），含 A6-5 的 >16 KiB 逐字 `goal.set` 落库（revision 1→2）。
   详见 [DECISION-U-REFS-OUTSIDE-SCOPE](../plans/2026-09-08-hm-to-a6/DECISION-U-REFS-OUTSIDE-SCOPE.md)。
+- 一次只读 opus 评审：**无 MUST-FIX**；SHOULD-FIX/NIT 已全部落地（空集合不再附加自相矛盾的升级文案、
+  `OperationalError` 收窄为只吞 `no such table`、加宽查询补 `task_scope_id` 谓词、新增跨 Run 绑定用例、
+  升级断言改为逐字匹配、空集合分支补 `allowed_evidence_refs_total: 0`）。
 
 ## 历史阶段索引
 

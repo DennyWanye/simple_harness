@@ -109,11 +109,12 @@ _REFS_ESCALATION_AFTER = 2
 _REFS_OUTSIDE_SCOPE_NEXT_STEP = (
     "evidence_refs (and every operation's evidence_refs) must be evidence ids the "
     "Host has already admitted for this task. They are opaque ids you cannot "
-    "derive: never send a run id, call id, effect id, envelope/receipt/binding "
-    "id, memory id, content hash, or any prefixed form of them. You never send a "
-    "content_hash — the Host resolves it. Re-send this same task_scope_update "
-    "with evidence_refs and each operation's evidence_refs drawn only from "
-    "allowed_evidence_refs below."
+    "construct or guess: never send a run id, call id, effect id, "
+    "envelope/receipt/binding id, memory id, content hash, or any prefixed form "
+    "of them. You never send a content_hash — the Host resolves it. Re-send this "
+    "same task_scope_update with evidence_refs and each operation's evidence_refs "
+    "drawn from allowed_evidence_refs below (or from a closure instruction's "
+    "allowed_evidence_refs, if you were given one)."
 )
 _REFS_OUTSIDE_SCOPE_CURRENT_TURN = (
     " current_turn_evidence_ref is this turn's own user message: cite exactly "
@@ -322,6 +323,11 @@ class TaskScopeUpdateService:
             if (
                 rejected.code == "task_scope_update_refs_outside_scope"
                 and repeats > _REFS_ESCALATION_AFTER
+                # Review SHOULD-FIX 1: with an empty admissible set ``next_step``
+                # already says "no payload can be accepted, do not retry".  Adding
+                # "or send it using allowed_evidence_refs" there would tell the
+                # model to retry with an empty list — the opposite of the terminus.
+                and detail.get("allowed_evidence_refs")
             ):
                 # HM-TO-A6 incident U: the model re-guessed ids seven times and
                 # burned the Run.  The gate never softens — the escalation only
@@ -633,6 +639,9 @@ async def _admissible_refs_tx(
     authority row's ``envelope_sha256``.  No model input reaches the query, so the
     admissible set is a pure function of Host state.  A DB without the foreground
     tables (unit fixtures) contributes nothing rather than widening the set.
+
+    Precondition: called outside an explicit transaction (``apply_closure`` issues
+    no ``BEGIN``).  The ``no such table`` recovery below must not run inside one.
     """
 
     ordered: list[tuple[str, str]] = []
@@ -647,12 +656,22 @@ async def _admissible_refs_tx(
             "JOIN human_memory_evidence e ON e.evidence_id=t.evidence_id "
             "WHERE b.sdk_run_id=? AND r.host_run_id=? AND r.subject=? "
             "AND e.subject=? AND e.envelope_sha256=t.evidence_hash "
+            # Review SHOULD-FIX 3: the caller always passes the Run's own admission
+            # scope, but ``resolve_run_scope_tx`` can fall back to a model-chosen
+            # route decision when ``foreground_runs.task_scope_id`` is NULL — keep
+            # the cross-scope invariant local to the query that asserts it.
+            "AND (t.task_scope_id IS NULL OR t.task_scope_id=?) "
             "ORDER BY t.enqueue_sequence DESC, t.evidence_id",
-            (sdk_run_id, host_run_id, subject, subject),
+            (sdk_run_id, host_run_id, subject, subject, task_scope_id),
         )
         turn_rows = await turn_cursor.fetchall()
         await turn_cursor.close()
-    except aiosqlite.OperationalError:
+    except aiosqlite.OperationalError as exc:
+        # Only a DB without the foreground tables (unit fixtures) degrades to
+        # "no turn evidence".  Anything else — a lock, a corrupt page — must not
+        # be swallowed into a spurious ``refs_outside_scope``.
+        if "no such table" not in str(exc):
+            raise
         turn_rows = []
     for row in turn_rows:
         evidence_id = str(row["evidence_id"])
@@ -686,7 +705,12 @@ def _refs_outside_scope_disclosure(admissible: _AdmissibleRefs) -> dict[str, Any
 
     disclosed = [evidence_id for evidence_id, _ in admissible.ordered[:_MAX_DISCLOSED_REFS]]
     if not disclosed:
-        return {"allowed_evidence_refs": [], "next_step": _REFS_OUTSIDE_SCOPE_EMPTY}
+        # Stable detail shape across rejections of the same code.
+        return {
+            "allowed_evidence_refs": [],
+            "allowed_evidence_refs_total": 0,
+            "next_step": _REFS_OUTSIDE_SCOPE_EMPTY,
+        }
     detail: dict[str, Any] = {
         "allowed_evidence_refs": disclosed,
         "allowed_evidence_refs_total": len(admissible.ordered),
