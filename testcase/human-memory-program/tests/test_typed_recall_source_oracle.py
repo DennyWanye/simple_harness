@@ -20,7 +20,7 @@ async def test_source_ten_complete_state_and_rejection_counterexamples(tmp_path)
     layers=json.loads((ROOT/'fixtures/typed-recall-execution-layers-v1.json').read_text())
     pin=layers['clean_wheel_public_manager']['candidate_memory_identity']
     import os
-    checkout=Path(os.environ.get('TYPED_RECALL_SOURCE_CHECKOUT', ROOT.parents[2]/'simple-harness-memory-sdk-0626-source'))
+    checkout=Path(os.environ.get('TYPED_RECALL_SOURCE_CHECKOUT', ROOT.parents[2]/'simple-harness-memory-sdk-0628-source'))
     bridge=load(ROOT/'runners/typed_recall_bridge.py')
     identity=bridge.source_identity(checkout,pin)
     wheel_name='simple_harness_memory_sdk-'+pin['version']+'-py3-none-any.whl'

@@ -268,7 +268,7 @@ class FixtureAuthoritiesTests(unittest.IsolatedAsyncioTestCase):
 
     def test_installed_versions_and_independent_schema_hash(self):
         self.assertEqual(
-            importlib.metadata.version("simple-harness-memory-sdk"), "0.6.26"
+            importlib.metadata.version("simple-harness-memory-sdk"), "0.6.28"
         )
         self.assertEqual(importlib.metadata.version("simple-harness-sdk"), "0.7.10")
         for package in (h, m):
