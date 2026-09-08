@@ -28,3 +28,7 @@
 ## 第 9 次尝试前置条件
 
 F-E2 + 事件 S 合入 main → Host 钉 Memory 0.6.33（或 0.6.34）→ 重建 bundle → 无并发 corpus/agent 测试占用 venv → 白天有人值守。
+
+## A6-2 补充归因（2026-09-09 04:30）
+
+`execution_effects` 显示 flash 本次从未调用 `read_file`，两份 fixture（40 003 / 47 670 字节）都用 `run_shell cat` 读取，结果被 shell 工具的输出上限截到 17 950 / 21 322 字节（含 JSON 包装），请求中没有任何 >16 KiB 的 tool 消息，分页路径从未触发，ANCHOR-ALPHA 也因截断未被模型看到。这是模型选工具的行为差异（第 5 次用 `read_file` 时 A6-2 通过），不是 Host 缺陷。第 9 次驱动的 T6/T8 提示改为「用 read_file 工具（不要用 shell 命令）一次读出全文」，以确保走大结果分页路径（`a6_driver.sh` 已改并提交）。
