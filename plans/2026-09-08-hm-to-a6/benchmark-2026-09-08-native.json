@@ -1,0 +1,2639 @@
+{
+  "schema": "hm-benchmark-v1",
+  "generated_at": "2026-09-08T18:39:23+08:00",
+  "contract": {
+    "recall_p95_ms": 500,
+    "recall_hard_deadline_ms": 2000,
+    "provider_timeout_s_default": 240.0,
+    "corpus_required_recall_min": 0.9,
+    "corpus_no_recall_accuracy_min": 0.9,
+    "corpus_extra_type_rate_max": 0.15,
+    "corpus_privacy_accuracy": 1.0
+  },
+  "evidence_paths": {
+    "A6尝试3": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-08/native-a6-b3682fe1",
+    "A6尝试4": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-08/native-a6-run4/primary-ui-7f_uv2a1",
+    "r14": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-08/native-7cec5249",
+    "r15": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-08/native-r15-188394b1"
+  },
+  "review_verdict_paths": [],
+  "per_evidence": {
+    "A6尝试3": {
+      "runtime_roots": 1,
+      "warnings": [],
+      "turn_wall_ms": {
+        "all_settled": {
+          "n": 23,
+          "p50": 45092.5,
+          "p95": 316595.0,
+          "max": 317277.2,
+          "min": 4086.2,
+          "mean": 94786.8,
+          "sum": 2180095.3
+        },
+        "completed_only": {
+          "n": 16,
+          "p50": 13792.2,
+          "p95": 316595.0,
+          "max": 316595.0,
+          "min": 4086.2,
+          "mean": 72370.3,
+          "sum": 1157924.2
+        },
+        "turns_total": 23,
+        "turns_unsettled": 0,
+        "terminal_states": {
+          "COMPLETED": 16,
+          "FAILED": 7
+        }
+      },
+      "driver_turn_wall_s": {
+        "all": {
+          "n": 23,
+          "p50": 32.0,
+          "p95": 264.0,
+          "max": 326.0,
+          "min": 0.0,
+          "mean": 78.8,
+          "sum": 1812.0
+        },
+        "completed_only": {
+          "n": 15,
+          "p50": 25.0,
+          "p95": 326.0,
+          "max": 326.0,
+          "min": 9.0,
+          "mean": 72.1,
+          "sum": 1081.0
+        },
+        "outcomes": {
+          "settled/COMPLETED": 15,
+          "settled/FAILED": 5,
+          "manual_ui/FAILED": 2,
+          "send_failed/FAILED": 1
+        }
+      },
+      "provider_latency_ms": {
+        "db_succeeded": {
+          "n": 182,
+          "p50": 3464.3,
+          "p95": 25660.5,
+          "max": 116955.3,
+          "min": 1303.1,
+          "mean": 8066.2,
+          "sum": 1468055.1
+        },
+        "db_unmeasured_zero_duration": 0,
+        "native_log_elapsed": {
+          "n": 205,
+          "p50": 3569.0,
+          "p95": 29886.0,
+          "max": 116677.0,
+          "min": 1163.0,
+          "mean": 8586.2,
+          "sum": 1760181.0
+        },
+        "states": {
+          "succeeded": 182,
+          "failed": 1
+        },
+        "error_codes": {
+          "provider_protocol_error": 1
+        },
+        "log_started": 206,
+        "log_succeeded": 205,
+        "log_failed_or_degraded": 1,
+        "timeout_seconds_seen": [
+          240.0
+        ]
+      },
+      "provider_calls_per_turn": {
+        "n": 23,
+        "p50": 2.0,
+        "p95": 25.0,
+        "max": 25.0,
+        "min": 1.0,
+        "mean": 7.96,
+        "sum": 183.0
+      },
+      "provider_calls_total": 183,
+      "tokens": {
+        "input_per_turn": {
+          "n": 23,
+          "p50": 18087.0,
+          "p95": 549265.0,
+          "max": 721647.0,
+          "min": 4593.0,
+          "mean": 136485.0,
+          "sum": 3139158.0
+        },
+        "output_per_turn": {
+          "n": 23,
+          "p50": 1707.0,
+          "p95": 15559.0,
+          "max": 17045.0,
+          "min": 127.0,
+          "mean": 3614.0,
+          "sum": 83114.0
+        },
+        "input_per_call": {
+          "n": 182,
+          "p50": 15262.0,
+          "p95": 34782.0,
+          "max": 44378.0,
+          "min": 4593.0,
+          "mean": 17248.0,
+          "sum": 3139158.0
+        },
+        "output_per_call": {
+          "n": 182,
+          "p50": 138.0,
+          "p95": 1568.0,
+          "max": 8181.0,
+          "min": 29.0,
+          "mean": 457.0,
+          "sum": 83114.0
+        },
+        "peak_input_tokens_single_call": 44378,
+        "peak_input_tokens_run_sum": 721647,
+        "cache_tokens_total": 2241152,
+        "input_tokens_total": 3139158,
+        "output_tokens_total": 83114,
+        "attempt_states": {
+          "succeeded": 182,
+          "failed": 1
+        },
+        "models": [
+          "deepseek-v4-pro"
+        ]
+      },
+      "host_estimate_vs_provider": {
+        "ratio_messages_only": {
+          "n": 182,
+          "p50": 0.613,
+          "p95": 0.695,
+          "max": 0.712,
+          "min": 0.22,
+          "mean": 0.549,
+          "sum": 99.829
+        },
+        "ratio_with_tools": {
+          "n": 182,
+          "p50": 0.824,
+          "p95": 0.986,
+          "max": 1.025,
+          "min": 0.478,
+          "mean": 0.816,
+          "sum": 148.515
+        },
+        "peak_estimated_messages_tokens": 24504,
+        "peak_estimated_with_tools_tokens": 28351,
+        "estimator": "deskpet.sdk_adapters.context_partitions.text_tokens"
+      },
+      "typed_recall": {
+        "by_caller": {
+          "analysis_candidates": {
+            "latency_ms": {
+              "n": 23,
+              "p50": 9.2,
+              "p95": 38.5,
+              "max": 177.1,
+              "min": 2.9,
+              "mean": 19.5,
+              "sum": 447.6
+            },
+            "states": {
+              "returned": 23
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 0,
+            "over_2000ms": 0
+          },
+          "discover_procedure_drafts": {
+            "latency_ms": {
+              "n": 1,
+              "p50": 1426.4,
+              "p95": 1426.4,
+              "max": 1426.4,
+              "min": 1426.4,
+              "mean": 1426.4,
+              "sum": 1426.4
+            },
+            "states": {
+              "returned": 1
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 1,
+            "over_2000ms": 0
+          },
+          "foreground_recall": {
+            "latency_ms": {
+              "n": 14,
+              "p50": 3505.4,
+              "p95": 5304.0,
+              "max": 5304.0,
+              "min": 457.8,
+              "mean": 3151.9,
+              "sum": 44126.1
+            },
+            "states": {
+              "returned": 3,
+              "raised": 11
+            },
+            "raised_rate": 0.7857,
+            "over_500ms": 13,
+            "over_2000ms": 10
+          }
+        },
+        "all_callers_latency_ms": {
+          "n": 38,
+          "p50": 23.0,
+          "p95": 4795.1,
+          "max": 5304.0,
+          "min": 2.9,
+          "mean": 1210.5,
+          "sum": 46000.1
+        },
+        "sdk_terminal_kinds": {
+          "completed": 26,
+          "deadline_exceeded": 11
+        },
+        "sdk_degradation_codes": {
+          "cognitive_vector_stale": 1,
+          "STALE_ACTIVE_GENERATION": 1
+        },
+        "sdk_timeout_rate": 0.2973,
+        "sdk_terminals_total": 37,
+        "request_deadline_ms_seen": [
+          1000
+        ]
+      },
+      "analysis_lane": {
+        "invocations_total": 23,
+        "invocation_status": {
+          "public/analysis_validator_accepted": 21,
+          "rejected_unsafe/analysis_delivery_authority_rejected": 2
+        },
+        "latency_ms_accepted": {
+          "n": 21,
+          "p50": 10883.0,
+          "p95": 44346.0,
+          "max": 51042.0,
+          "min": 3286.0,
+          "mean": 17263.0,
+          "sum": 362524.0
+        },
+        "latency_unmeasured": 0,
+        "input_tokens_accepted": {
+          "n": 21,
+          "p50": 3992.0,
+          "p95": 4116.0,
+          "max": 4228.0,
+          "min": 3879.0,
+          "mean": 3982.0,
+          "sum": 83632.0
+        },
+        "output_tokens_accepted": {
+          "n": 21,
+          "p50": 733.0,
+          "p95": 3333.0,
+          "max": 3376.0,
+          "min": 191.0,
+          "mean": 1123.0,
+          "sum": 23591.0
+        },
+        "cost_microunits_total": 0,
+        "invocation_failure_rate": 0.087,
+        "batches_total": 23,
+        "batch_states": {
+          "applied": 21,
+          "failed": 2
+        },
+        "batch_failure_rate": 0.087,
+        "batch_failure_reasons": {
+          "analysis_delivery_authority_rejected": 2
+        },
+        "batch_wall_ms": {
+          "n": 23,
+          "p50": 10327.6,
+          "p95": 44538.3,
+          "max": 51256.6,
+          "min": 3477.2,
+          "mean": 16709.4,
+          "sum": 384316.4
+        },
+        "request_budget_seen": {
+          "deadline_ms": [
+            180000
+          ],
+          "max_input_tokens": [
+            16384
+          ],
+          "max_output_tokens": [
+            6144
+          ]
+        }
+      },
+      "context_assembly": {
+        "receipts": 184,
+        "budget_tiers": {
+          "8192": 184
+        },
+        "causal_groups": {
+          "n": 184,
+          "p50": 4.0,
+          "p95": 6.0,
+          "max": 6.0,
+          "min": 1.0,
+          "mean": 3.92,
+          "sum": 721.0
+        },
+        "trimmed_groups_total": 0,
+        "receipts_with_trim": 0,
+        "current_tool_pages_total": 0,
+        "current_tool_tokens_max": 0,
+        "context_page_in_effects": 0,
+        "log_context_events": {
+          "context.preparing": 23,
+          "context.staged": 23,
+          "context.consumed": 23
+        },
+        "log_context_triple_mismatch": false
+      },
+      "run_failures": {
+        "runs_with_terminal": 23,
+        "failed_runs": 7,
+        "failure_rate": 0.3043,
+        "by_reason": {
+          "react_max_turns_exceeded": 1,
+          "driver_failed": 3,
+          "react_repeated_tool_exceeded": 3
+        },
+        "driver_runtime_failed_by_detail": {
+          "primary_history_transcript_mismatch": 8
+        }
+      },
+      "budget": {
+        "window_tokens": 32000,
+        "model_windows": {
+          "deepseek-v4-pro": 32000
+        },
+        "budget_tier": 8192,
+        "effective_input_budget": 26752
+      },
+      "corpus_cases": {
+        "cases": 0,
+        "elapsed_seconds": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "min": null,
+          "mean": null,
+          "sum": null
+        },
+        "oracle_verdicts": {},
+        "execution_failed_rate": null,
+        "peak_rss_mib_max": null
+      }
+    },
+    "A6尝试4": {
+      "runtime_roots": 1,
+      "warnings": [],
+      "turn_wall_ms": {
+        "all_settled": {
+          "n": 22,
+          "p50": 25162.0,
+          "p95": 179620.0,
+          "max": 206046.2,
+          "min": 4262.4,
+          "mean": 61313.9,
+          "sum": 1348906.2
+        },
+        "completed_only": {
+          "n": 18,
+          "p50": 13823.9,
+          "p95": 169906.5,
+          "max": 169906.5,
+          "min": 4262.4,
+          "mean": 38773.8,
+          "sum": 697928.3
+        },
+        "turns_total": 22,
+        "turns_unsettled": 0,
+        "terminal_states": {
+          "COMPLETED": 18,
+          "FAILED": 4
+        }
+      },
+      "driver_turn_wall_s": {
+        "all": {
+          "n": 24,
+          "p50": 25.0,
+          "p95": 183.0,
+          "max": 222.0,
+          "min": 0.0,
+          "mean": 57.4,
+          "sum": 1378.0
+        },
+        "completed_only": {
+          "n": 19,
+          "p50": 25.0,
+          "p95": 183.0,
+          "max": 183.0,
+          "min": 0.0,
+          "mean": 45.9,
+          "sum": 873.0
+        },
+        "outcomes": {
+          "settled/COMPLETED": 18,
+          "settled/FAILED": 3,
+          "manual_ui/FAILED": 2,
+          "manual_ui/COMPLETED": 1
+        }
+      },
+      "provider_latency_ms": {
+        "db_succeeded": {
+          "n": 124,
+          "p50": 4820.3,
+          "p95": 30521.3,
+          "max": 136022.6,
+          "min": 1641.1,
+          "mean": 9893.2,
+          "sum": 1226762.8
+        },
+        "db_unmeasured_zero_duration": 0,
+        "native_log_elapsed": {
+          "n": 146,
+          "p50": 4887.0,
+          "p95": 32358.0,
+          "max": 135617.0,
+          "min": 1530.0,
+          "mean": 10236.9,
+          "sum": 1494594.0
+        },
+        "states": {
+          "succeeded": 124
+        },
+        "error_codes": {},
+        "log_started": 146,
+        "log_succeeded": 146,
+        "log_failed_or_degraded": 0,
+        "timeout_seconds_seen": [
+          240.0
+        ]
+      },
+      "provider_calls_per_turn": {
+        "n": 22,
+        "p50": 2.0,
+        "p95": 25.0,
+        "max": 25.0,
+        "min": 1.0,
+        "mean": 5.64,
+        "sum": 124.0
+      },
+      "provider_calls_total": 124,
+      "tokens": {
+        "input_per_turn": {
+          "n": 22,
+          "p50": 19027.0,
+          "p95": 411214.0,
+          "max": 432112.0,
+          "min": 5472.0,
+          "mean": 82611.0,
+          "sum": 1817444.0
+        },
+        "output_per_turn": {
+          "n": 22,
+          "p50": 1260.0,
+          "p95": 9279.0,
+          "max": 16412.0,
+          "min": 126.0,
+          "mean": 3482.0,
+          "sum": 76607.0
+        },
+        "input_per_call": {
+          "n": 124,
+          "p50": 13200.0,
+          "p95": 24859.0,
+          "max": 31154.0,
+          "min": 4643.0,
+          "mean": 14657.0,
+          "sum": 1817444.0
+        },
+        "output_per_call": {
+          "n": 124,
+          "p50": 238.0,
+          "p95": 1913.0,
+          "max": 14684.0,
+          "min": 37.0,
+          "mean": 618.0,
+          "sum": 76607.0
+        },
+        "peak_input_tokens_single_call": 31154,
+        "peak_input_tokens_run_sum": 432112,
+        "cache_tokens_total": 1268736,
+        "input_tokens_total": 1817444,
+        "output_tokens_total": 76607,
+        "attempt_states": {
+          "succeeded": 124
+        },
+        "models": [
+          "deepseek-v4-pro"
+        ]
+      },
+      "host_estimate_vs_provider": {
+        "ratio_messages_only": {
+          "n": 124,
+          "p50": 0.521,
+          "p95": 0.708,
+          "max": 0.793,
+          "min": 0.235,
+          "mean": 0.523,
+          "sum": 64.817
+        },
+        "ratio_with_tools": {
+          "n": 124,
+          "p50": 0.782,
+          "p95": 1.001,
+          "max": 1.095,
+          "min": 0.589,
+          "mean": 0.816,
+          "sum": 101.208
+        },
+        "peak_estimated_messages_tokens": 18838,
+        "peak_estimated_with_tools_tokens": 22331,
+        "estimator": "deskpet.sdk_adapters.context_partitions.text_tokens"
+      },
+      "typed_recall": {
+        "by_caller": {
+          "analysis_candidates": {
+            "latency_ms": {
+              "n": 22,
+              "p50": 11.0,
+              "p95": 132.0,
+              "max": 542.3,
+              "min": 2.6,
+              "mean": 41.8,
+              "sum": 919.6
+            },
+            "states": {
+              "returned": 22
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 1,
+            "over_2000ms": 0
+          },
+          "discover_procedure_drafts": {
+            "latency_ms": {
+              "n": 11,
+              "p50": 2.0,
+              "p95": 4.7,
+              "max": 4.7,
+              "min": 1.3,
+              "mean": 2.3,
+              "sum": 25.1
+            },
+            "states": {
+              "returned": 11
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 0,
+            "over_2000ms": 0
+          },
+          "foreground_recall": {
+            "latency_ms": {
+              "n": 10,
+              "p50": 692.6,
+              "p95": 1383.8,
+              "max": 1383.8,
+              "min": 234.3,
+              "mean": 731.5,
+              "sum": 7314.8
+            },
+            "states": {
+              "returned": 10
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 8,
+            "over_2000ms": 0
+          }
+        },
+        "all_callers_latency_ms": {
+          "n": 43,
+          "p50": 11.0,
+          "p95": 854.2,
+          "max": 1383.8,
+          "min": 1.3,
+          "mean": 192.1,
+          "sum": 8259.4
+        },
+        "sdk_terminal_kinds": {
+          "completed": 32
+        },
+        "sdk_degradation_codes": {
+          "cognitive_vector_stale": 3,
+          "STALE_ACTIVE_GENERATION": 2
+        },
+        "sdk_timeout_rate": 0.0,
+        "sdk_terminals_total": 32,
+        "request_deadline_ms_seen": [
+          1000,
+          2000
+        ]
+      },
+      "analysis_lane": {
+        "invocations_total": 22,
+        "invocation_status": {
+          "public/analysis_validator_accepted": 22
+        },
+        "latency_ms_accepted": {
+          "n": 22,
+          "p50": 8983.0,
+          "p95": 44381.0,
+          "max": 64142.0,
+          "min": 3027.0,
+          "mean": 14659.0,
+          "sum": 322499.0
+        },
+        "latency_unmeasured": 0,
+        "input_tokens_accepted": {
+          "n": 22,
+          "p50": 4188.0,
+          "p95": 4503.0,
+          "max": 9292.0,
+          "min": 4065.0,
+          "mean": 4445.0,
+          "sum": 97787.0
+        },
+        "output_tokens_accepted": {
+          "n": 22,
+          "p50": 612.0,
+          "p95": 2811.0,
+          "max": 4384.0,
+          "min": 156.0,
+          "mean": 919.0,
+          "sum": 20223.0
+        },
+        "cost_microunits_total": 0,
+        "invocation_failure_rate": 0.0,
+        "batches_total": 22,
+        "batch_states": {
+          "applied": 22
+        },
+        "batch_failure_rate": 0.0,
+        "batch_failure_reasons": {},
+        "batch_wall_ms": {
+          "n": 22,
+          "p50": 9250.1,
+          "p95": 44618.3,
+          "max": 64381.2,
+          "min": 3294.9,
+          "mean": 14984.6,
+          "sum": 329660.8
+        },
+        "request_budget_seen": {
+          "deadline_ms": [
+            180000
+          ],
+          "max_input_tokens": [
+            16384
+          ],
+          "max_output_tokens": [
+            6144
+          ]
+        }
+      },
+      "context_assembly": {
+        "receipts": 125,
+        "budget_tiers": {
+          "8192": 125
+        },
+        "causal_groups": {
+          "n": 125,
+          "p50": 3.0,
+          "p95": 8.0,
+          "max": 8.0,
+          "min": 1.0,
+          "mean": 3.66,
+          "sum": 457.0
+        },
+        "trimmed_groups_total": 0,
+        "receipts_with_trim": 0,
+        "current_tool_pages_total": 427,
+        "current_tool_tokens_max": 8243,
+        "context_page_in_effects": 4,
+        "log_context_events": {
+          "context.preparing": 22,
+          "context.staged": 22,
+          "context.consumed": 22
+        },
+        "log_context_triple_mismatch": false
+      },
+      "run_failures": {
+        "runs_with_terminal": 22,
+        "failed_runs": 4,
+        "failure_rate": 0.1818,
+        "by_reason": {
+          "react_max_turns_exceeded": 3,
+          "driver_failed": 1
+        },
+        "driver_runtime_failed_by_detail": {}
+      },
+      "budget": {
+        "window_tokens": 32000,
+        "model_windows": {
+          "deepseek-v4-pro": 32000
+        },
+        "budget_tier": 8192,
+        "effective_input_budget": 26752
+      },
+      "corpus_cases": {
+        "cases": 0,
+        "elapsed_seconds": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "min": null,
+          "mean": null,
+          "sum": null
+        },
+        "oracle_verdicts": {},
+        "execution_failed_rate": null,
+        "peak_rss_mib_max": null
+      }
+    },
+    "r14": {
+      "runtime_roots": 1,
+      "warnings": [],
+      "turn_wall_ms": {
+        "all_settled": {
+          "n": 5,
+          "p50": 24507.0,
+          "p95": 460669.3,
+          "max": 460669.3,
+          "min": 4050.2,
+          "mean": 105489.3,
+          "sum": 527446.4
+        },
+        "completed_only": {
+          "n": 4,
+          "p50": 7268.5,
+          "p95": 30951.4,
+          "max": 30951.4,
+          "min": 4050.2,
+          "mean": 16694.3,
+          "sum": 66777.1
+        },
+        "turns_total": 5,
+        "turns_unsettled": 0,
+        "terminal_states": {
+          "COMPLETED": 4,
+          "FAILED": 1
+        }
+      },
+      "driver_turn_wall_s": {
+        "all": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "min": null,
+          "mean": null,
+          "sum": null
+        },
+        "completed_only": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "min": null,
+          "mean": null,
+          "sum": null
+        },
+        "outcomes": {}
+      },
+      "provider_latency_ms": {
+        "db_succeeded": {
+          "n": 32,
+          "p50": 7375.6,
+          "p95": 55060.3,
+          "max": 97574.0,
+          "min": 1817.4,
+          "mean": 15886.6,
+          "sum": 508370.6
+        },
+        "db_unmeasured_zero_duration": 0,
+        "native_log_elapsed": {
+          "n": 36,
+          "p50": 9819.0,
+          "p95": 54971.0,
+          "max": 97484.0,
+          "min": 1740.0,
+          "mean": 17833.0,
+          "sum": 641989.0
+        },
+        "states": {
+          "succeeded": 32
+        },
+        "error_codes": {},
+        "log_started": 39,
+        "log_succeeded": 36,
+        "log_failed_or_degraded": 2,
+        "timeout_seconds_seen": [
+          240.0
+        ]
+      },
+      "provider_calls_per_turn": {
+        "n": 5,
+        "p50": 2.0,
+        "p95": 25.0,
+        "max": 25.0,
+        "min": 1.0,
+        "mean": 6.4,
+        "sum": 32.0
+      },
+      "provider_calls_total": 32,
+      "tokens": {
+        "input_per_turn": {
+          "n": 5,
+          "p50": 19012.0,
+          "p95": 828016.0,
+          "max": 828016.0,
+          "min": 9093.0,
+          "mean": 177152.0,
+          "sum": 885762.0
+        },
+        "output_per_turn": {
+          "n": 5,
+          "p50": 1472.0,
+          "p95": 30600.0,
+          "max": 30600.0,
+          "min": 110.0,
+          "mean": 6870.0,
+          "sum": 34351.0
+        },
+        "input_per_call": {
+          "n": 32,
+          "p50": 27710.0,
+          "p95": 48597.0,
+          "max": 55563.0,
+          "min": 4552.0,
+          "mean": 27680.0,
+          "sum": 885762.0
+        },
+        "output_per_call": {
+          "n": 32,
+          "p50": 479.0,
+          "p95": 3744.0,
+          "max": 7059.0,
+          "min": 29.0,
+          "mean": 1073.0,
+          "sum": 34351.0
+        },
+        "peak_input_tokens_single_call": 55563,
+        "peak_input_tokens_run_sum": 828016,
+        "cache_tokens_total": 707072,
+        "input_tokens_total": 885762,
+        "output_tokens_total": 34351,
+        "attempt_states": {
+          "succeeded": 32
+        },
+        "models": [
+          "deepseek-v4-pro"
+        ]
+      },
+      "host_estimate_vs_provider": {
+        "ratio_messages_only": {
+          "n": 32,
+          "p50": 0.645,
+          "p95": 0.749,
+          "max": 0.765,
+          "min": 0.252,
+          "mean": 0.623,
+          "sum": 19.93
+        },
+        "ratio_with_tools": {
+          "n": 32,
+          "p50": 0.826,
+          "p95": 1.019,
+          "max": 1.025,
+          "min": 0.537,
+          "mean": 0.819,
+          "sum": 26.193
+        },
+        "peak_estimated_messages_tokens": 26221,
+        "peak_estimated_with_tools_tokens": 29858,
+        "estimator": "deskpet.sdk_adapters.context_partitions.text_tokens"
+      },
+      "typed_recall": {
+        "by_caller": {
+          "analysis_candidates": {
+            "latency_ms": {
+              "n": 5,
+              "p50": 2.6,
+              "p95": 4.1,
+              "max": 4.1,
+              "min": 2.4,
+              "mean": 2.9,
+              "sum": 14.3
+            },
+            "states": {
+              "returned": 5
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 0,
+            "over_2000ms": 0
+          },
+          "discover_procedure_drafts": {
+            "latency_ms": {
+              "n": 2,
+              "p50": 8.5,
+              "p95": 9.9,
+              "max": 9.9,
+              "min": 8.5,
+              "mean": 9.2,
+              "sum": 18.4
+            },
+            "states": {
+              "returned": 2
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 0,
+            "over_2000ms": 0
+          },
+          "read_procedure_use_target": {
+            "latency_ms": {
+              "n": 8,
+              "p50": 3.4,
+              "p95": 4.7,
+              "max": 4.7,
+              "min": 2.9,
+              "mean": 3.6,
+              "sum": 28.5
+            },
+            "states": {
+              "returned": 8
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 0,
+            "over_2000ms": 0
+          }
+        },
+        "all_callers_latency_ms": {
+          "n": 15,
+          "p50": 3.4,
+          "p95": 9.9,
+          "max": 9.9,
+          "min": 2.4,
+          "mean": 4.1,
+          "sum": 61.2
+        },
+        "sdk_terminal_kinds": {
+          "completed": 5
+        },
+        "sdk_degradation_codes": {},
+        "sdk_timeout_rate": 0.0,
+        "sdk_terminals_total": 5,
+        "request_deadline_ms_seen": [
+          1000
+        ]
+      },
+      "analysis_lane": {
+        "invocations_total": 4,
+        "invocation_status": {
+          "public/analysis_validator_accepted": 4
+        },
+        "latency_ms_accepted": {
+          "n": 4,
+          "p50": 30442.0,
+          "p95": 45127.0,
+          "max": 45127.0,
+          "min": 23046.0,
+          "mean": 34234.0,
+          "sum": 136936.0
+        },
+        "latency_unmeasured": 0,
+        "input_tokens_accepted": {
+          "n": 4,
+          "p50": 3909.0,
+          "p95": 3926.0,
+          "max": 3926.0,
+          "min": 3897.0,
+          "mean": 3912.0,
+          "sum": 15647.0
+        },
+        "output_tokens_accepted": {
+          "n": 4,
+          "p50": 2440.0,
+          "p95": 2730.0,
+          "max": 2730.0,
+          "min": 1640.0,
+          "mean": 2370.0,
+          "sum": 9478.0
+        },
+        "cost_microunits_total": 0,
+        "invocation_failure_rate": 0.0,
+        "batches_total": 9,
+        "batch_states": {
+          "applied": 4,
+          "failed": 5
+        },
+        "batch_failure_rate": 0.5556,
+        "batch_failure_reasons": {
+          "analysis_executor_failed": 5
+        },
+        "batch_wall_ms": {
+          "n": 9,
+          "p50": 32774.0,
+          "p95": 210474.0,
+          "max": 210474.0,
+          "min": 23.8,
+          "mean": 47327.4,
+          "sum": 425946.2
+        },
+        "request_budget_seen": {
+          "deadline_ms": [
+            180000
+          ],
+          "max_input_tokens": [
+            16384
+          ],
+          "max_output_tokens": [
+            6144
+          ]
+        }
+      },
+      "context_assembly": {
+        "receipts": 32,
+        "budget_tiers": {
+          "32768": 32
+        },
+        "causal_groups": {
+          "n": 32,
+          "p50": 5.0,
+          "p95": 5.0,
+          "max": 5.0,
+          "min": 1.0,
+          "mean": 4.41,
+          "sum": 141.0
+        },
+        "trimmed_groups_total": 0,
+        "receipts_with_trim": 0,
+        "current_tool_pages_total": 0,
+        "current_tool_tokens_max": 0,
+        "context_page_in_effects": 0,
+        "log_context_events": {
+          "context.preparing": 5,
+          "context.staged": 5,
+          "context.consumed": 5
+        },
+        "log_context_triple_mismatch": false
+      },
+      "run_failures": {
+        "runs_with_terminal": 5,
+        "failed_runs": 1,
+        "failure_rate": 0.2,
+        "by_reason": {
+          "react_max_turns_exceeded": 1
+        },
+        "driver_runtime_failed_by_detail": {}
+      },
+      "budget": {
+        "window_tokens": 1000000,
+        "model_windows": {
+          "deepseek-v4-pro": 1000000
+        },
+        "budget_tier": 32768,
+        "effective_input_budget": 895904
+      },
+      "corpus_cases": {
+        "cases": 0,
+        "elapsed_seconds": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "min": null,
+          "mean": null,
+          "sum": null
+        },
+        "oracle_verdicts": {},
+        "execution_failed_rate": null,
+        "peak_rss_mib_max": null
+      }
+    },
+    "r15": {
+      "runtime_roots": 1,
+      "warnings": [],
+      "turn_wall_ms": {
+        "all_settled": {
+          "n": 5,
+          "p50": 40918.1,
+          "p95": 264844.0,
+          "max": 264844.0,
+          "min": 5565.3,
+          "mean": 76684.0,
+          "sum": 383420.1
+        },
+        "completed_only": {
+          "n": 4,
+          "p50": 7723.5,
+          "p95": 64369.2,
+          "max": 64369.2,
+          "min": 5565.3,
+          "mean": 29644.0,
+          "sum": 118576.1
+        },
+        "turns_total": 5,
+        "turns_unsettled": 0,
+        "terminal_states": {
+          "COMPLETED": 4,
+          "FAILED": 1
+        }
+      },
+      "driver_turn_wall_s": {
+        "all": {
+          "n": 5,
+          "p50": 82.0,
+          "p95": 278.0,
+          "max": 278.0,
+          "min": 17.0,
+          "mean": 99.0,
+          "sum": 495.0
+        },
+        "completed_only": {
+          "n": 4,
+          "p50": 18.0,
+          "p95": 100.0,
+          "max": 100.0,
+          "min": 17.0,
+          "mean": 54.2,
+          "sum": 217.0
+        },
+        "outcomes": {
+          "COMPLETED/COMPLETED": 4,
+          "FAILED/FAILED": 1
+        }
+      },
+      "provider_latency_ms": {
+        "db_succeeded": {
+          "n": 35,
+          "p50": 5100.0,
+          "p95": 42514.6,
+          "max": 44657.4,
+          "min": 1762.5,
+          "mean": 10065.3,
+          "sum": 352285.9
+        },
+        "db_unmeasured_zero_duration": 0,
+        "native_log_elapsed": {
+          "n": 39,
+          "p50": 6126.0,
+          "p95": 42222.0,
+          "max": 44555.0,
+          "min": 1597.0,
+          "mean": 11123.7,
+          "sum": 433826.0
+        },
+        "states": {
+          "succeeded": 35
+        },
+        "error_codes": {},
+        "log_started": 40,
+        "log_succeeded": 39,
+        "log_failed_or_degraded": 0,
+        "timeout_seconds_seen": [
+          240.0
+        ]
+      },
+      "provider_calls_per_turn": {
+        "n": 5,
+        "p50": 3.0,
+        "p95": 25.0,
+        "max": 25.0,
+        "min": 1.0,
+        "mean": 7.0,
+        "sum": 35.0
+      },
+      "provider_calls_total": 35,
+      "tokens": {
+        "input_per_turn": {
+          "n": 5,
+          "p50": 21002.0,
+          "p95": 695222.0,
+          "max": 695222.0,
+          "min": 7535.0,
+          "mean": 155589.0,
+          "sum": 777945.0
+        },
+        "output_per_turn": {
+          "n": 5,
+          "p50": 2137.0,
+          "p95": 13491.0,
+          "max": 13491.0,
+          "min": 152.0,
+          "mean": 3940.0,
+          "sum": 19702.0
+        },
+        "input_per_call": {
+          "n": 35,
+          "p50": 26829.0,
+          "p95": 37279.0,
+          "max": 37681.0,
+          "min": 4625.0,
+          "mean": 22227.0,
+          "sum": 777945.0
+        },
+        "output_per_call": {
+          "n": 35,
+          "p50": 289.0,
+          "p95": 2620.0,
+          "max": 2974.0,
+          "min": 28.0,
+          "mean": 563.0,
+          "sum": 19702.0
+        },
+        "peak_input_tokens_single_call": 37681,
+        "peak_input_tokens_run_sum": 695222,
+        "cache_tokens_total": 570240,
+        "input_tokens_total": 777945,
+        "output_tokens_total": 19702,
+        "attempt_states": {
+          "succeeded": 35
+        },
+        "models": [
+          "deepseek-v4-pro"
+        ]
+      },
+      "host_estimate_vs_provider": {
+        "ratio_messages_only": {
+          "n": 35,
+          "p50": 0.548,
+          "p95": 0.681,
+          "max": 0.686,
+          "min": 0.243,
+          "mean": 0.548,
+          "sum": 19.165
+        },
+        "ratio_with_tools": {
+          "n": 35,
+          "p50": 0.743,
+          "p95": 0.992,
+          "max": 0.999,
+          "min": 0.651,
+          "mean": 0.795,
+          "sum": 27.813
+        },
+        "peak_estimated_messages_tokens": 21113,
+        "peak_estimated_with_tools_tokens": 24954,
+        "estimator": "deskpet.sdk_adapters.context_partitions.text_tokens"
+      },
+      "typed_recall": {
+        "by_caller": {
+          "analysis_candidates": {
+            "latency_ms": {
+              "n": 5,
+              "p50": 5.5,
+              "p95": 12.4,
+              "max": 12.4,
+              "min": 2.7,
+              "mean": 7.0,
+              "sum": 34.9
+            },
+            "states": {
+              "returned": 5
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 0,
+            "over_2000ms": 0
+          },
+          "discover_procedure_drafts": {
+            "latency_ms": {
+              "n": 2,
+              "p50": 9.7,
+              "p95": 24.9,
+              "max": 24.9,
+              "min": 9.7,
+              "mean": 17.3,
+              "sum": 34.6
+            },
+            "states": {
+              "returned": 2
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 0,
+            "over_2000ms": 0
+          },
+          "read_procedure_use_target": {
+            "latency_ms": {
+              "n": 14,
+              "p50": 8.8,
+              "p95": 13.7,
+              "max": 13.7,
+              "min": 7.3,
+              "mean": 9.8,
+              "sum": 137.2
+            },
+            "states": {
+              "returned": 14
+            },
+            "raised_rate": 0.0,
+            "over_500ms": 0,
+            "over_2000ms": 0
+          }
+        },
+        "all_callers_latency_ms": {
+          "n": 21,
+          "p50": 9.4,
+          "p95": 13.7,
+          "max": 24.9,
+          "min": 2.7,
+          "mean": 9.8,
+          "sum": 206.7
+        },
+        "sdk_terminal_kinds": {
+          "completed": 5
+        },
+        "sdk_degradation_codes": {},
+        "sdk_timeout_rate": 0.0,
+        "sdk_terminals_total": 5,
+        "request_deadline_ms_seen": [
+          1000
+        ]
+      },
+      "analysis_lane": {
+        "invocations_total": 4,
+        "invocation_status": {
+          "public/analysis_validator_accepted": 3,
+          "rejected_unsafe/analysis_delivery_authority_rejected": 1
+        },
+        "latency_ms_accepted": {
+          "n": 3,
+          "p50": 29601.0,
+          "p95": 31387.0,
+          "max": 31387.0,
+          "min": 18416.0,
+          "mean": 26468.0,
+          "sum": 79404.0
+        },
+        "latency_unmeasured": 0,
+        "input_tokens_accepted": {
+          "n": 3,
+          "p50": 3910.0,
+          "p95": 3924.0,
+          "max": 3924.0,
+          "min": 3894.0,
+          "mean": 3909.0,
+          "sum": 11728.0
+        },
+        "output_tokens_accepted": {
+          "n": 3,
+          "p50": 1984.0,
+          "p95": 2161.0,
+          "max": 2161.0,
+          "min": 1004.0,
+          "mean": 1716.0,
+          "sum": 5149.0
+        },
+        "cost_microunits_total": 0,
+        "invocation_failure_rate": 0.25,
+        "batches_total": 5,
+        "batch_states": {
+          "applied": 3,
+          "failed": 1,
+          "handed_off": 1
+        },
+        "batch_failure_rate": 0.4,
+        "batch_failure_reasons": {
+          "analysis_delivery_authority_rejected": 1
+        },
+        "batch_wall_ms": {
+          "n": 5,
+          "p50": 18636.6,
+          "p95": 31669.5,
+          "max": 31669.5,
+          "min": 0.0,
+          "mean": 18244.6,
+          "sum": 91223.0
+        },
+        "request_budget_seen": {
+          "deadline_ms": [
+            180000
+          ],
+          "max_input_tokens": [
+            16384
+          ],
+          "max_output_tokens": [
+            6144
+          ]
+        }
+      },
+      "context_assembly": {
+        "receipts": 35,
+        "budget_tiers": {
+          "8192": 35
+        },
+        "causal_groups": {
+          "n": 35,
+          "p50": 4.0,
+          "p95": 4.0,
+          "max": 4.0,
+          "min": 1.0,
+          "mean": 3.29,
+          "sum": 115.0
+        },
+        "trimmed_groups_total": 0,
+        "receipts_with_trim": 0,
+        "current_tool_pages_total": 0,
+        "current_tool_tokens_max": 0,
+        "context_page_in_effects": 0,
+        "log_context_events": {
+          "context.preparing": 5,
+          "context.staged": 5,
+          "context.consumed": 5
+        },
+        "log_context_triple_mismatch": false
+      },
+      "run_failures": {
+        "runs_with_terminal": 5,
+        "failed_runs": 1,
+        "failure_rate": 0.2,
+        "by_reason": {
+          "react_max_turns_exceeded": 1
+        },
+        "driver_runtime_failed_by_detail": {}
+      },
+      "budget": {
+        "window_tokens": 32000,
+        "model_windows": {
+          "deepseek-v4-pro": 32000
+        },
+        "budget_tier": 8192,
+        "effective_input_budget": 26752
+      },
+      "corpus_cases": {
+        "cases": 0,
+        "elapsed_seconds": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "min": null,
+          "mean": null,
+          "sum": null
+        },
+        "oracle_verdicts": {},
+        "execution_failed_rate": null,
+        "peak_rss_mib_max": null
+      }
+    }
+  },
+  "per_evidence_verdicts": {
+    "A6尝试3": [
+      {
+        "key": "recall_p95",
+        "metric": "typed recall（foreground_recall，Host 墙钟）p95",
+        "threshold": "≤ 500 ms",
+        "observed": 5304.0,
+        "verdict": "FAIL",
+        "source": "acceptance.md HM-AC-8",
+        "note": "样本来源 operation-audit.db.memory_call_attempts(caller=foreground_recall)"
+      },
+      {
+        "key": "recall_hard_deadline",
+        "metric": "typed recall（foreground_recall）最大值 / SDK deadline_exceeded",
+        "threshold": "max ≤ 2000 ms 且 SDK 超时率 = 0",
+        "observed": {
+          "max_ms": 5304.0,
+          "sdk_timeout_rate": 0.2973
+        },
+        "verdict": "FAIL",
+        "source": "acceptance.md HM-AC-8 / S3 hard deadline",
+        "note": ""
+      },
+      {
+        "key": "recall_all_p95",
+        "metric": "typed recall（全部 caller）p95",
+        "threshold": "≤ 500 ms",
+        "observed": 4795.1,
+        "verdict": "FAIL",
+        "source": "acceptance.md HM-AC-8（信息性：含 analysis_candidates 等后台 caller）",
+        "note": ""
+      },
+      {
+        "key": "provider_timeout",
+        "metric": "Provider 调用最大延迟 / 超时错误",
+        "threshold": "max < 240 s 且无 timeout error_code",
+        "observed": {
+          "max_ms": 116955.3,
+          "timeout_error_codes": 0,
+          "log_failed_or_degraded": 1
+        },
+        "verdict": "PASS",
+        "source": "S5 provider timeout（native.log timeout_seconds）",
+        "note": ""
+      },
+      {
+        "key": "input_budget_provider",
+        "metric": "Provider 实报单次 input_tokens 峰值",
+        "threshold": "≤ effective_input_budget=26752",
+        "observed": 44378,
+        "verdict": "FAIL",
+        "source": "S5 context_partitions.effective_input_budget（窗口取 native.log model_context_resolved）",
+        "note": ""
+      },
+      {
+        "key": "input_budget_estimated",
+        "metric": "Host 估算（messages）单次峰值",
+        "threshold": "≤ effective_input_budget=26752",
+        "observed": 24504,
+        "verdict": "PASS",
+        "source": "S5 effective_input_budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_deadline",
+        "metric": "分析通道 LLM 延迟最大值",
+        "threshold": "≤ 请求预算 deadline_ms=180000",
+        "observed": 51042.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_input_budget",
+        "metric": "分析通道输入 token 最大值",
+        "threshold": "≤ 请求预算 max_input_tokens=16384",
+        "observed": 4228.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_output_budget",
+        "metric": "分析通道输出 token 最大值",
+        "threshold": "≤ 请求预算 max_output_tokens=6144",
+        "observed": 3376.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "context_triple",
+        "metric": "native.log context.preparing/staged/consumed 三元组计数一致",
+        "threshold": "三者相等",
+        "observed": {
+          "context.preparing": 23,
+          "context.staged": 23,
+          "context.consumed": 23
+        },
+        "verdict": "PASS",
+        "source": "plans/2026-09-08-hm-to-a6/00-PLAN.md §0",
+        "note": ""
+      },
+      {
+        "key": "turn_wall",
+        "metric": "每 turn 墙钟（enqueued→终态）p95",
+        "threshold": "契约未给出阈值",
+        "observed": 316595.0,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "calls_per_turn",
+        "metric": "每 turn provider 调用数 p95",
+        "threshold": "契约未给出阈值",
+        "observed": 25.0,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "estimate_ratio",
+        "metric": "Host 估算 / Provider 实报（messages）p50",
+        "threshold": "契约未给出阈值",
+        "observed": 0.613,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "run_failure_rate",
+        "metric": "Run 失败率",
+        "threshold": "契约未给出阈值",
+        "observed": 0.3043,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "analysis_failure_rate",
+        "metric": "分析通道 invocation 失败率",
+        "threshold": "契约未给出阈值",
+        "observed": 0.087,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      }
+    ],
+    "A6尝试4": [
+      {
+        "key": "recall_p95",
+        "metric": "typed recall（foreground_recall，Host 墙钟）p95",
+        "threshold": "≤ 500 ms",
+        "observed": 1383.8,
+        "verdict": "FAIL",
+        "source": "acceptance.md HM-AC-8",
+        "note": "样本来源 operation-audit.db.memory_call_attempts(caller=foreground_recall)"
+      },
+      {
+        "key": "recall_hard_deadline",
+        "metric": "typed recall（foreground_recall）最大值 / SDK deadline_exceeded",
+        "threshold": "max ≤ 2000 ms 且 SDK 超时率 = 0",
+        "observed": {
+          "max_ms": 1383.8,
+          "sdk_timeout_rate": 0.0
+        },
+        "verdict": "PASS",
+        "source": "acceptance.md HM-AC-8 / S3 hard deadline",
+        "note": ""
+      },
+      {
+        "key": "recall_all_p95",
+        "metric": "typed recall（全部 caller）p95",
+        "threshold": "≤ 500 ms",
+        "observed": 854.2,
+        "verdict": "FAIL",
+        "source": "acceptance.md HM-AC-8（信息性：含 analysis_candidates 等后台 caller）",
+        "note": ""
+      },
+      {
+        "key": "provider_timeout",
+        "metric": "Provider 调用最大延迟 / 超时错误",
+        "threshold": "max < 240 s 且无 timeout error_code",
+        "observed": {
+          "max_ms": 136022.6,
+          "timeout_error_codes": 0,
+          "log_failed_or_degraded": 0
+        },
+        "verdict": "PASS",
+        "source": "S5 provider timeout（native.log timeout_seconds）",
+        "note": ""
+      },
+      {
+        "key": "input_budget_provider",
+        "metric": "Provider 实报单次 input_tokens 峰值",
+        "threshold": "≤ effective_input_budget=26752",
+        "observed": 31154,
+        "verdict": "FAIL",
+        "source": "S5 context_partitions.effective_input_budget（窗口取 native.log model_context_resolved）",
+        "note": ""
+      },
+      {
+        "key": "input_budget_estimated",
+        "metric": "Host 估算（messages）单次峰值",
+        "threshold": "≤ effective_input_budget=26752",
+        "observed": 18838,
+        "verdict": "PASS",
+        "source": "S5 effective_input_budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_deadline",
+        "metric": "分析通道 LLM 延迟最大值",
+        "threshold": "≤ 请求预算 deadline_ms=180000",
+        "observed": 64142.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_input_budget",
+        "metric": "分析通道输入 token 最大值",
+        "threshold": "≤ 请求预算 max_input_tokens=16384",
+        "observed": 9292.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_output_budget",
+        "metric": "分析通道输出 token 最大值",
+        "threshold": "≤ 请求预算 max_output_tokens=6144",
+        "observed": 4384.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "context_triple",
+        "metric": "native.log context.preparing/staged/consumed 三元组计数一致",
+        "threshold": "三者相等",
+        "observed": {
+          "context.preparing": 22,
+          "context.staged": 22,
+          "context.consumed": 22
+        },
+        "verdict": "PASS",
+        "source": "plans/2026-09-08-hm-to-a6/00-PLAN.md §0",
+        "note": ""
+      },
+      {
+        "key": "turn_wall",
+        "metric": "每 turn 墙钟（enqueued→终态）p95",
+        "threshold": "契约未给出阈值",
+        "observed": 179620.0,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "calls_per_turn",
+        "metric": "每 turn provider 调用数 p95",
+        "threshold": "契约未给出阈值",
+        "observed": 25.0,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "estimate_ratio",
+        "metric": "Host 估算 / Provider 实报（messages）p50",
+        "threshold": "契约未给出阈值",
+        "observed": 0.521,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "run_failure_rate",
+        "metric": "Run 失败率",
+        "threshold": "契约未给出阈值",
+        "observed": 0.1818,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "analysis_failure_rate",
+        "metric": "分析通道 invocation 失败率",
+        "threshold": "契约未给出阈值",
+        "observed": 0.0,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      }
+    ],
+    "r14": [
+      {
+        "key": "recall_p95",
+        "metric": "typed recall（foreground_recall，Host 墙钟）p95",
+        "threshold": "≤ 500 ms",
+        "observed": null,
+        "verdict": "N-A",
+        "source": "acceptance.md HM-AC-8",
+        "note": "样本来源 operation-audit.db.memory_call_attempts(caller=foreground_recall)"
+      },
+      {
+        "key": "recall_hard_deadline",
+        "metric": "typed recall（foreground_recall）最大值 / SDK deadline_exceeded",
+        "threshold": "max ≤ 2000 ms 且 SDK 超时率 = 0",
+        "observed": {
+          "max_ms": null,
+          "sdk_timeout_rate": 0.0
+        },
+        "verdict": "N-A",
+        "source": "acceptance.md HM-AC-8 / S3 hard deadline",
+        "note": ""
+      },
+      {
+        "key": "recall_all_p95",
+        "metric": "typed recall（全部 caller）p95",
+        "threshold": "≤ 500 ms",
+        "observed": 9.9,
+        "verdict": "PASS",
+        "source": "acceptance.md HM-AC-8（信息性：含 analysis_candidates 等后台 caller）",
+        "note": ""
+      },
+      {
+        "key": "provider_timeout",
+        "metric": "Provider 调用最大延迟 / 超时错误",
+        "threshold": "max < 240 s 且无 timeout error_code",
+        "observed": {
+          "max_ms": 97574.0,
+          "timeout_error_codes": 0,
+          "log_failed_or_degraded": 2
+        },
+        "verdict": "PASS",
+        "source": "S5 provider timeout（native.log timeout_seconds）",
+        "note": ""
+      },
+      {
+        "key": "input_budget_provider",
+        "metric": "Provider 实报单次 input_tokens 峰值",
+        "threshold": "≤ effective_input_budget=895904",
+        "observed": 55563,
+        "verdict": "PASS",
+        "source": "S5 context_partitions.effective_input_budget（窗口取 native.log model_context_resolved）",
+        "note": ""
+      },
+      {
+        "key": "input_budget_estimated",
+        "metric": "Host 估算（messages）单次峰值",
+        "threshold": "≤ effective_input_budget=895904",
+        "observed": 26221,
+        "verdict": "PASS",
+        "source": "S5 effective_input_budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_deadline",
+        "metric": "分析通道 LLM 延迟最大值",
+        "threshold": "≤ 请求预算 deadline_ms=180000",
+        "observed": 45127.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_input_budget",
+        "metric": "分析通道输入 token 最大值",
+        "threshold": "≤ 请求预算 max_input_tokens=16384",
+        "observed": 3926.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_output_budget",
+        "metric": "分析通道输出 token 最大值",
+        "threshold": "≤ 请求预算 max_output_tokens=6144",
+        "observed": 2730.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "context_triple",
+        "metric": "native.log context.preparing/staged/consumed 三元组计数一致",
+        "threshold": "三者相等",
+        "observed": {
+          "context.preparing": 5,
+          "context.staged": 5,
+          "context.consumed": 5
+        },
+        "verdict": "PASS",
+        "source": "plans/2026-09-08-hm-to-a6/00-PLAN.md §0",
+        "note": ""
+      },
+      {
+        "key": "turn_wall",
+        "metric": "每 turn 墙钟（enqueued→终态）p95",
+        "threshold": "契约未给出阈值",
+        "observed": 460669.3,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "calls_per_turn",
+        "metric": "每 turn provider 调用数 p95",
+        "threshold": "契约未给出阈值",
+        "observed": 25.0,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "estimate_ratio",
+        "metric": "Host 估算 / Provider 实报（messages）p50",
+        "threshold": "契约未给出阈值",
+        "observed": 0.645,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "run_failure_rate",
+        "metric": "Run 失败率",
+        "threshold": "契约未给出阈值",
+        "observed": 0.2,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "analysis_failure_rate",
+        "metric": "分析通道 invocation 失败率",
+        "threshold": "契约未给出阈值",
+        "observed": 0.0,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      }
+    ],
+    "r15": [
+      {
+        "key": "recall_p95",
+        "metric": "typed recall（foreground_recall，Host 墙钟）p95",
+        "threshold": "≤ 500 ms",
+        "observed": null,
+        "verdict": "N-A",
+        "source": "acceptance.md HM-AC-8",
+        "note": "样本来源 operation-audit.db.memory_call_attempts(caller=foreground_recall)"
+      },
+      {
+        "key": "recall_hard_deadline",
+        "metric": "typed recall（foreground_recall）最大值 / SDK deadline_exceeded",
+        "threshold": "max ≤ 2000 ms 且 SDK 超时率 = 0",
+        "observed": {
+          "max_ms": null,
+          "sdk_timeout_rate": 0.0
+        },
+        "verdict": "N-A",
+        "source": "acceptance.md HM-AC-8 / S3 hard deadline",
+        "note": ""
+      },
+      {
+        "key": "recall_all_p95",
+        "metric": "typed recall（全部 caller）p95",
+        "threshold": "≤ 500 ms",
+        "observed": 13.7,
+        "verdict": "PASS",
+        "source": "acceptance.md HM-AC-8（信息性：含 analysis_candidates 等后台 caller）",
+        "note": ""
+      },
+      {
+        "key": "provider_timeout",
+        "metric": "Provider 调用最大延迟 / 超时错误",
+        "threshold": "max < 240 s 且无 timeout error_code",
+        "observed": {
+          "max_ms": 44657.4,
+          "timeout_error_codes": 0,
+          "log_failed_or_degraded": 0
+        },
+        "verdict": "PASS",
+        "source": "S5 provider timeout（native.log timeout_seconds）",
+        "note": ""
+      },
+      {
+        "key": "input_budget_provider",
+        "metric": "Provider 实报单次 input_tokens 峰值",
+        "threshold": "≤ effective_input_budget=26752",
+        "observed": 37681,
+        "verdict": "FAIL",
+        "source": "S5 context_partitions.effective_input_budget（窗口取 native.log model_context_resolved）",
+        "note": ""
+      },
+      {
+        "key": "input_budget_estimated",
+        "metric": "Host 估算（messages）单次峰值",
+        "threshold": "≤ effective_input_budget=26752",
+        "observed": 21113,
+        "verdict": "PASS",
+        "source": "S5 effective_input_budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_deadline",
+        "metric": "分析通道 LLM 延迟最大值",
+        "threshold": "≤ 请求预算 deadline_ms=180000",
+        "observed": 31387.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_input_budget",
+        "metric": "分析通道输入 token 最大值",
+        "threshold": "≤ 请求预算 max_input_tokens=16384",
+        "observed": 3924.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "analysis_output_budget",
+        "metric": "分析通道输出 token 最大值",
+        "threshold": "≤ 请求预算 max_output_tokens=6144",
+        "observed": 2161.0,
+        "verdict": "PASS",
+        "source": "analysis_batches.request_json.budget",
+        "note": ""
+      },
+      {
+        "key": "context_triple",
+        "metric": "native.log context.preparing/staged/consumed 三元组计数一致",
+        "threshold": "三者相等",
+        "observed": {
+          "context.preparing": 5,
+          "context.staged": 5,
+          "context.consumed": 5
+        },
+        "verdict": "PASS",
+        "source": "plans/2026-09-08-hm-to-a6/00-PLAN.md §0",
+        "note": ""
+      },
+      {
+        "key": "turn_wall",
+        "metric": "每 turn 墙钟（enqueued→终态）p95",
+        "threshold": "契约未给出阈值",
+        "observed": 264844.0,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "calls_per_turn",
+        "metric": "每 turn provider 调用数 p95",
+        "threshold": "契约未给出阈值",
+        "observed": 25.0,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "estimate_ratio",
+        "metric": "Host 估算 / Provider 实报（messages）p50",
+        "threshold": "契约未给出阈值",
+        "observed": 0.548,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "run_failure_rate",
+        "metric": "Run 失败率",
+        "threshold": "契约未给出阈值",
+        "observed": 0.2,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      },
+      {
+        "key": "analysis_failure_rate",
+        "metric": "分析通道 invocation 失败率",
+        "threshold": "契约未给出阈值",
+        "observed": 0.25,
+        "verdict": "N-A",
+        "source": "—",
+        "note": ""
+      }
+    ]
+  },
+  "pooled": {
+    "runtime_roots": 4,
+    "warnings": [],
+    "turn_wall_ms": {
+      "all_settled": {
+        "n": 55,
+        "p50": 30951.4,
+        "p95": 316595.0,
+        "max": 460669.3,
+        "min": 4050.2,
+        "mean": 80724.9,
+        "sum": 4439867.9
+      },
+      "completed_only": {
+        "n": 42,
+        "p50": 13823.9,
+        "p95": 254593.6,
+        "max": 316595.0,
+        "min": 4050.2,
+        "mean": 48600.1,
+        "sum": 2041205.6
+      },
+      "turns_total": 55,
+      "turns_unsettled": 0,
+      "terminal_states": {
+        "COMPLETED": 42,
+        "FAILED": 13
+      }
+    },
+    "driver_turn_wall_s": {
+      "all": {
+        "n": 52,
+        "p50": 26.0,
+        "p95": 264.0,
+        "max": 326.0,
+        "min": 0.0,
+        "mean": 70.9,
+        "sum": 3685.0
+      },
+      "completed_only": {
+        "n": 38,
+        "p50": 25.0,
+        "p95": 264.0,
+        "max": 326.0,
+        "min": 0.0,
+        "mean": 57.1,
+        "sum": 2171.0
+      },
+      "outcomes": {
+        "settled/COMPLETED": 33,
+        "settled/FAILED": 8,
+        "manual_ui/FAILED": 4,
+        "send_failed/FAILED": 1,
+        "manual_ui/COMPLETED": 1,
+        "COMPLETED/COMPLETED": 4,
+        "FAILED/FAILED": 1
+      }
+    },
+    "provider_latency_ms": {
+      "db_succeeded": {
+        "n": 373,
+        "p50": 4449.7,
+        "p95": 32618.8,
+        "max": 136022.6,
+        "min": 1303.1,
+        "mean": 9532.1,
+        "sum": 3555474.3
+      },
+      "db_unmeasured_zero_duration": 0,
+      "native_log_elapsed": {
+        "n": 426,
+        "p50": 4476.0,
+        "p95": 37313.0,
+        "max": 135617.0,
+        "min": 1163.0,
+        "mean": 10165.7,
+        "sum": 4330590.0
+      },
+      "states": {
+        "succeeded": 373,
+        "failed": 1
+      },
+      "error_codes": {
+        "provider_protocol_error": 1
+      },
+      "log_started": 431,
+      "log_succeeded": 426,
+      "log_failed_or_degraded": 3,
+      "timeout_seconds_seen": [
+        240.0
+      ]
+    },
+    "provider_calls_per_turn": {
+      "n": 55,
+      "p50": 2.0,
+      "p95": 25.0,
+      "max": 25.0,
+      "min": 1.0,
+      "mean": 6.8,
+      "sum": 374.0
+    },
+    "provider_calls_total": 374,
+    "tokens": {
+      "input_per_turn": {
+        "n": 55,
+        "p50": 19027.0,
+        "p95": 695222.0,
+        "max": 828016.0,
+        "min": 4593.0,
+        "mean": 120369.0,
+        "sum": 6620309.0
+      },
+      "output_per_turn": {
+        "n": 55,
+        "p50": 1546.0,
+        "p95": 16412.0,
+        "max": 30600.0,
+        "min": 110.0,
+        "mean": 3887.0,
+        "sum": 213774.0
+      },
+      "input_per_call": {
+        "n": 373,
+        "p50": 15262.0,
+        "p95": 37284.0,
+        "max": 55563.0,
+        "min": 4552.0,
+        "mean": 17749.0,
+        "sum": 6620309.0
+      },
+      "output_per_call": {
+        "n": 373,
+        "p50": 196.0,
+        "p95": 2233.0,
+        "max": 14684.0,
+        "min": 28.0,
+        "mean": 573.0,
+        "sum": 213774.0
+      },
+      "peak_input_tokens_single_call": 55563,
+      "peak_input_tokens_run_sum": 828016,
+      "cache_tokens_total": 4787200,
+      "input_tokens_total": 6620309,
+      "output_tokens_total": 213774,
+      "attempt_states": {
+        "succeeded": 373,
+        "failed": 1
+      },
+      "models": [
+        "deepseek-v4-pro"
+      ]
+    },
+    "host_estimate_vs_provider": {
+      "ratio_messages_only": {
+        "n": 373,
+        "p50": 0.582,
+        "p95": 0.705,
+        "max": 0.793,
+        "min": 0.22,
+        "mean": 0.546,
+        "sum": 203.741
+      },
+      "ratio_with_tools": {
+        "n": 373,
+        "p50": 0.818,
+        "p95": 0.999,
+        "max": 1.095,
+        "min": 0.478,
+        "mean": 0.814,
+        "sum": 303.729
+      },
+      "peak_estimated_messages_tokens": 26221,
+      "peak_estimated_with_tools_tokens": 29858,
+      "estimator": "deskpet.sdk_adapters.context_partitions.text_tokens"
+    },
+    "typed_recall": {
+      "by_caller": {
+        "analysis_candidates": {
+          "latency_ms": {
+            "n": 55,
+            "p50": 9.2,
+            "p95": 132.0,
+            "max": 542.3,
+            "min": 2.4,
+            "mean": 25.8,
+            "sum": 1416.5
+          },
+          "states": {
+            "returned": 55
+          },
+          "raised_rate": 0.0,
+          "over_500ms": 1,
+          "over_2000ms": 0
+        },
+        "discover_procedure_drafts": {
+          "latency_ms": {
+            "n": 16,
+            "p50": 2.3,
+            "p95": 1426.4,
+            "max": 1426.4,
+            "min": 1.3,
+            "mean": 94.0,
+            "sum": 1504.5
+          },
+          "states": {
+            "returned": 16
+          },
+          "raised_rate": 0.0,
+          "over_500ms": 1,
+          "over_2000ms": 0
+        },
+        "foreground_recall": {
+          "latency_ms": {
+            "n": 24,
+            "p50": 960.3,
+            "p95": 4795.1,
+            "max": 5304.0,
+            "min": 234.3,
+            "mean": 2143.4,
+            "sum": 51440.8
+          },
+          "states": {
+            "returned": 13,
+            "raised": 11
+          },
+          "raised_rate": 0.4583,
+          "over_500ms": 21,
+          "over_2000ms": 10
+        },
+        "read_procedure_use_target": {
+          "latency_ms": {
+            "n": 22,
+            "p50": 7.6,
+            "p95": 12.6,
+            "max": 13.7,
+            "min": 2.9,
+            "mean": 7.5,
+            "sum": 165.6
+          },
+          "states": {
+            "returned": 22
+          },
+          "raised_rate": 0.0,
+          "over_500ms": 0,
+          "over_2000ms": 0
+        }
+      },
+      "all_callers_latency_ms": {
+        "n": 117,
+        "p50": 9.5,
+        "p95": 3777.0,
+        "max": 5304.0,
+        "min": 1.3,
+        "mean": 466.0,
+        "sum": 54527.4
+      },
+      "sdk_terminal_kinds": {
+        "completed": 68,
+        "deadline_exceeded": 11
+      },
+      "sdk_degradation_codes": {
+        "cognitive_vector_stale": 4,
+        "STALE_ACTIVE_GENERATION": 3
+      },
+      "sdk_timeout_rate": 0.1392,
+      "sdk_terminals_total": 79,
+      "request_deadline_ms_seen": [
+        1000,
+        2000
+      ]
+    },
+    "analysis_lane": {
+      "invocations_total": 53,
+      "invocation_status": {
+        "public/analysis_validator_accepted": 50,
+        "rejected_unsafe/analysis_delivery_authority_rejected": 3
+      },
+      "latency_ms_accepted": {
+        "n": 50,
+        "p50": 12477.0,
+        "p95": 45127.0,
+        "max": 64142.0,
+        "min": 3027.0,
+        "mean": 18027.3,
+        "sum": 901363.0
+      },
+      "latency_unmeasured": 0,
+      "input_tokens_accepted": {
+        "n": 50,
+        "p50": 4065.0,
+        "p95": 4496.0,
+        "max": 9292.0,
+        "min": 3879.0,
+        "mean": 4176.0,
+        "sum": 208794.0
+      },
+      "output_tokens_accepted": {
+        "n": 50,
+        "p50": 774.0,
+        "p95": 3333.0,
+        "max": 4384.0,
+        "min": 156.0,
+        "mean": 1169.0,
+        "sum": 58441.0
+      },
+      "cost_microunits_total": 0,
+      "invocation_failure_rate": 0.0566,
+      "batches_total": 59,
+      "batch_states": {
+        "applied": 50,
+        "failed": 8,
+        "handed_off": 1
+      },
+      "batch_failure_rate": 0.1525,
+      "batch_failure_reasons": {
+        "analysis_delivery_authority_rejected": 3,
+        "analysis_executor_failed": 5
+      },
+      "batch_wall_ms": {
+        "n": 59,
+        "p50": 11151.9,
+        "p95": 51256.6,
+        "max": 210474.0,
+        "min": 0.0,
+        "mean": 20866.9,
+        "sum": 1231146.4
+      },
+      "request_budget_seen": {
+        "deadline_ms": [
+          180000
+        ],
+        "max_input_tokens": [
+          16384
+        ],
+        "max_output_tokens": [
+          6144
+        ]
+      }
+    },
+    "context_assembly": {
+      "receipts": 376,
+      "budget_tiers": {
+        "8192": 344,
+        "32768": 32
+      },
+      "causal_groups": {
+        "n": 376,
+        "p50": 4.0,
+        "p95": 6.0,
+        "max": 8.0,
+        "min": 1.0,
+        "mean": 3.81,
+        "sum": 1434.0
+      },
+      "trimmed_groups_total": 0,
+      "receipts_with_trim": 0,
+      "current_tool_pages_total": 427,
+      "current_tool_tokens_max": 8243,
+      "context_page_in_effects": 4,
+      "log_context_events": {
+        "context.preparing": 55,
+        "context.staged": 55,
+        "context.consumed": 55
+      },
+      "log_context_triple_mismatch": false
+    },
+    "run_failures": {
+      "runs_with_terminal": 55,
+      "failed_runs": 13,
+      "failure_rate": 0.2364,
+      "by_reason": {
+        "react_max_turns_exceeded": 6,
+        "driver_failed": 4,
+        "react_repeated_tool_exceeded": 3
+      },
+      "driver_runtime_failed_by_detail": {
+        "primary_history_transcript_mismatch": 8
+      }
+    },
+    "budget": {
+      "window_tokens": 32000,
+      "model_windows": {
+        "deepseek-v4-pro": 32000
+      },
+      "budget_tier": 8192,
+      "effective_input_budget": 26752
+    },
+    "corpus_cases": {
+      "cases": 0,
+      "elapsed_seconds": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null,
+        "min": null,
+        "mean": null,
+        "sum": null
+      },
+      "oracle_verdicts": {},
+      "execution_failed_rate": null,
+      "peak_rss_mib_max": null
+    }
+  },
+  "corpus_review": null,
+  "verdicts": [
+    {
+      "key": "recall_p95",
+      "metric": "typed recall（foreground_recall，Host 墙钟）p95",
+      "threshold": "≤ 500 ms",
+      "observed": 4795.1,
+      "verdict": "FAIL",
+      "source": "acceptance.md HM-AC-8",
+      "note": "样本来源 operation-audit.db.memory_call_attempts(caller=foreground_recall)"
+    },
+    {
+      "key": "recall_hard_deadline",
+      "metric": "typed recall（foreground_recall）最大值 / SDK deadline_exceeded",
+      "threshold": "max ≤ 2000 ms 且 SDK 超时率 = 0",
+      "observed": {
+        "max_ms": 5304.0,
+        "sdk_timeout_rate": 0.1392
+      },
+      "verdict": "FAIL",
+      "source": "acceptance.md HM-AC-8 / S3 hard deadline",
+      "note": ""
+    },
+    {
+      "key": "recall_all_p95",
+      "metric": "typed recall（全部 caller）p95",
+      "threshold": "≤ 500 ms",
+      "observed": 3777.0,
+      "verdict": "FAIL",
+      "source": "acceptance.md HM-AC-8（信息性：含 analysis_candidates 等后台 caller）",
+      "note": ""
+    },
+    {
+      "key": "provider_timeout",
+      "metric": "Provider 调用最大延迟 / 超时错误",
+      "threshold": "max < 240 s 且无 timeout error_code",
+      "observed": {
+        "max_ms": 136022.6,
+        "timeout_error_codes": 0,
+        "log_failed_or_degraded": 3
+      },
+      "verdict": "PASS",
+      "source": "S5 provider timeout（native.log timeout_seconds）",
+      "note": ""
+    },
+    {
+      "key": "input_budget_provider",
+      "metric": "Provider 实报单次 input_tokens 峰值",
+      "threshold": "≤ effective_input_budget=26752",
+      "observed": 55563,
+      "verdict": "FAIL",
+      "source": "S5 context_partitions.effective_input_budget（窗口取 native.log model_context_resolved）",
+      "note": ""
+    },
+    {
+      "key": "input_budget_estimated",
+      "metric": "Host 估算（messages）单次峰值",
+      "threshold": "≤ effective_input_budget=26752",
+      "observed": 26221,
+      "verdict": "PASS",
+      "source": "S5 effective_input_budget",
+      "note": ""
+    },
+    {
+      "key": "analysis_deadline",
+      "metric": "分析通道 LLM 延迟最大值",
+      "threshold": "≤ 请求预算 deadline_ms=180000",
+      "observed": 64142.0,
+      "verdict": "PASS",
+      "source": "analysis_batches.request_json.budget",
+      "note": ""
+    },
+    {
+      "key": "analysis_input_budget",
+      "metric": "分析通道输入 token 最大值",
+      "threshold": "≤ 请求预算 max_input_tokens=16384",
+      "observed": 9292.0,
+      "verdict": "PASS",
+      "source": "analysis_batches.request_json.budget",
+      "note": ""
+    },
+    {
+      "key": "analysis_output_budget",
+      "metric": "分析通道输出 token 最大值",
+      "threshold": "≤ 请求预算 max_output_tokens=6144",
+      "observed": 4384.0,
+      "verdict": "PASS",
+      "source": "analysis_batches.request_json.budget",
+      "note": ""
+    },
+    {
+      "key": "context_triple",
+      "metric": "native.log context.preparing/staged/consumed 三元组计数一致",
+      "threshold": "三者相等",
+      "observed": {
+        "context.preparing": 55,
+        "context.staged": 55,
+        "context.consumed": 55
+      },
+      "verdict": "PASS",
+      "source": "plans/2026-09-08-hm-to-a6/00-PLAN.md §0",
+      "note": ""
+    },
+    {
+      "key": "turn_wall",
+      "metric": "每 turn 墙钟（enqueued→终态）p95",
+      "threshold": "契约未给出阈值",
+      "observed": 316595.0,
+      "verdict": "N-A",
+      "source": "—",
+      "note": ""
+    },
+    {
+      "key": "calls_per_turn",
+      "metric": "每 turn provider 调用数 p95",
+      "threshold": "契约未给出阈值",
+      "observed": 25.0,
+      "verdict": "N-A",
+      "source": "—",
+      "note": ""
+    },
+    {
+      "key": "estimate_ratio",
+      "metric": "Host 估算 / Provider 实报（messages）p50",
+      "threshold": "契约未给出阈值",
+      "observed": 0.582,
+      "verdict": "N-A",
+      "source": "—",
+      "note": ""
+    },
+    {
+      "key": "run_failure_rate",
+      "metric": "Run 失败率",
+      "threshold": "契约未给出阈值",
+      "observed": 0.2364,
+      "verdict": "N-A",
+      "source": "—",
+      "note": ""
+    },
+    {
+      "key": "analysis_failure_rate",
+      "metric": "分析通道 invocation 失败率",
+      "threshold": "契约未给出阈值",
+      "observed": 0.0566,
+      "verdict": "N-A",
+      "source": "—",
+      "note": ""
+    }
+  ]
+}
