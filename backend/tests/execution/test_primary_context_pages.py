@@ -14,7 +14,8 @@ from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 
 from deskpet.execution.primary_context_pages import (
-    HISTORY_PREFIX, PREFIX, PrimaryContextPageReader, _excerpt, project_history_group, verify_history_projections,
+    HISTORY_PREFIX, HISTORY_SUFFIX, PREFIX, PrimaryContextPageReader, _excerpt, project_history_group,
+    verify_history_projections,
 )
 from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
@@ -46,6 +47,13 @@ async def test_utf8_page_oracle_and_no_invented_source():
             dict(role="tool", content=LARGE, call_id="real-call", name="read"),
             dict(role="assistant", content="done")])
     assert PREFIX not in project_history_group(group, run_id="new")[0]["content"]
+    # A quoted group is delimited on both sides; a plain turn group is never
+    # wrapped, so a single-turn request carries no marker at all.
+    quoted = project_history_group(group, run_id="new")[0]["content"]
+    assert quoted.startswith(HISTORY_PREFIX) and quoted.endswith(HISTORY_SUFFIX)
+    assert json.loads(quoted[len(HISTORY_PREFIX):-len(HISTORY_SUFFIX)])["kind"] == "historical_causal_group"
+    plain = dict(group, messages=[dict(role="user", content="read"), dict(role="assistant", content="done")])
+    assert project_history_group(plain, run_id="new") == plain["messages"]
     group.update(source_ref="actual-source", terminal_state="FAILED")
     assert PREFIX not in project_history_group(group, run_id="new")[0]["content"]
     group["terminal_state"] = "COMPLETED"
@@ -61,7 +69,8 @@ def summary_from(request, *, content_hash):
     for message in request.messages:
         if message.role.value != "user" or not isinstance(message.content, str) or not message.content.startswith(HISTORY_PREFIX):
             continue
-        group = json.loads(message.content[len(HISTORY_PREFIX):])
+        assert message.content.endswith(HISTORY_SUFFIX)
+        group = json.loads(message.content[len(HISTORY_PREFIX):-len(HISTORY_SUFFIX)])
         for item in group["messages"]:
             if item["role"] == "tool":
                 content = json.loads(item["content"])

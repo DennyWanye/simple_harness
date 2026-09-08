@@ -27,6 +27,7 @@ from deskpet.execution.foreground_runtime import (
 )
 from deskpet.execution.foreground_runtime_ports import ProductForegroundToolPort
 from deskpet.execution.primary_context import PrimaryForegroundContextPort
+from deskpet.execution.primary_context_pages import HISTORY_PREFIX, HISTORY_SUFFIX
 from deskpet.execution.primary_history import PrimaryHistoryStore
 from deskpet.execution.primary_dependencies import current_disclosure
 
@@ -509,6 +510,12 @@ async def test_primary_tool_history_uses_actual_group_not_fabricated_tool_calls(
     try:
         await service.enqueue_turn(QueueTurnRequest(None, "tool", "Actual tool turn"))
         assert await asyncio.wait_for(runtime._drive_once(), 15)
+        # A first turn has no history block, so the current turn stays bare:
+        # the delimiter exists only where a quotation must actually be closed.
+        first = provider.requests[0].messages
+        assert [m.role.value for m in first] == ["system", "user"]
+        assert first[-1].content == "Actual tool turn"
+        assert not any(HISTORY_PREFIX in str(m.content) or HISTORY_SUFFIX in str(m.content) for m in first)
         history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
         messages = history[0]["messages"]
         assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant"]
@@ -520,8 +527,14 @@ async def test_primary_tool_history_uses_actual_group_not_fabricated_tool_calls(
         assert await asyncio.wait_for(runtime._drive_once(), 15)
         sent = provider.requests[-1].messages
         assert not any(m.role.value == "tool" for m in sent)  # no orphan native tool results
-        quoted = next(m.content.split("\n", 1)[1] for m in sent if isinstance(m.content, str) and "historical_causal_group" in m.content)
+        block = next(m for m in sent if isinstance(m.content, str) and "historical_causal_group" in m.content)
+        # The quotation is explicitly closed, and the current instruction is the
+        # last USER message after that marker — never a tail of the quotation.
+        assert block.content.startswith(HISTORY_PREFIX) and block.content.endswith(HISTORY_SUFFIX)
+        quoted = block.content[len(HISTORY_PREFIX):-len(HISTORY_SUFFIX)]
         assert json.loads(quoted)["messages"] == messages
+        assert list(sent).index(block) == len(sent) - 2
+        assert sent[-1].role.value == "user" and sent[-1].content == "Continue after actual tool"
         assert len(provider.requests) == 3
     finally:
         await runtime.close()
