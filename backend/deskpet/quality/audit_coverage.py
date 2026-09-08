@@ -72,8 +72,8 @@ PROSPECTIVE_CALLERS = (
 CURRENT_INPUT_CALLER = "current_input_visibility"
 
 SURFACE_OA1 = "受控面 primary.audit.page（OA1 family: {families}）"
-SURFACE_PAGES = "Host audit_pages（终态 Run 审计页；仅进程内 AuditStore.inspect，无 primary.audit.* 入口）"
-SURFACE_JOURNAL = "Host memory_call_attempts（仅进程内 journal.page()，无 primary.audit.* 入口）"
+SURFACE_PAGES = "受控面 primary.audit.host.page（section=runs / run_operations，终态 Run 审计页）；另有进程内 AuditStore.inspect"
+SURFACE_JOURNAL = "受控面 primary.audit.host.page（section=memory_calls）；另有进程内 journal.page()"
 SURFACE_HOST_LEDGER = "Host 业务账本自身（无独立审计读取面）"
 SURFACE_LOG = "仅 native.log（_AuditSink → logger.info，非持久）"
 
@@ -445,26 +445,72 @@ def _tool_kind(ev: Evidence, pages: PageIndex, r: KindResult, like: str) -> None
 @register("context_page_in")
 def check_context_page_in(ev: Evidence, pages: PageIndex) -> KindResult:
     r = KindResult("context_page_in", "Context page-in（受控引用换入 TaskScope 内容）", "HM-AC-6 受控引用 page-in；HM-AC-7",
-                   "execution.execution_effects(tool_name=context_page_in)", "audit_pages effect head（参数/结果 hash）；Host 无持久 page-in 回执（ContextPageInStore 为进程内 TTL 存储）",
+                   "execution.execution_effects(tool_name=context_page_in)", "audit_pages effect head（参数/结果 hash）+ audit.context_page_in_receipts（consumed/denied 回执按 effect_id 关联；issued 回执按引用 hash）",
                    SURFACE_PAGES)
-    _tool_kind(ev, pages, r, "context_page_in")
-    if r.observed:
-        r.partial = True
-        r.notes.append("仅 effect 级审计：Host 侧 page-in 引用发放/消费无持久回执（followup）")
+    receipts_present = ev.has_table("audit", "context_page_in_receipts")
+    consumed: dict[str, str] = {}
+    issued = 0
+    if receipts_present:
+        for x in ev.rows("audit", "SELECT phase,effect_id,outcome FROM context_page_in_receipts"):
+            if x["phase"] == "issued":
+                issued += 1
+            elif x["effect_id"]:
+                consumed[x["effect_id"]] = x["outcome"]
+    for e in _effects(ev, "WHERE tool_name LIKE ?", ("context_page_in",)):
+        r.observed += 1
+        reasons = _effect_reasons(pages, e)
+        if receipts_present:
+            outcome = consumed.get(e["effect_id"])
+            if outcome is None:
+                reasons.append("Host page-in 回执缺（无 consumed/denied 行）")
+            elif (outcome == "ok") != (e["state"] == "succeeded"):
+                reasons.append(f"回执 outcome={outcome} 与 effect state={e['state']} 不一致")
+        if reasons:
+            r.miss(f"{e['effect_id']}/{e['tool_name']}/{e['state']}", "; ".join(reasons))
+        else:
+            r.audited += 1
+    if not receipts_present:
+        if r.observed:
+            r.partial = True
+        r.notes.append("证据无 context_page_in_receipts 表（早于 G1 回执落地）：仅 effect 级审计")
+    else:
+        r.notes.append(f"page-in 回执：issued={issued}，consumed/denied（带 effect）={len(consumed)}")
     return r
 
 
 @register("task_scope_search_open")
 def check_task_scope_search_open(ev: Evidence, pages: PageIndex) -> KindResult:
     r = KindResult("task_scope_search_open", "TaskScope search/open（tool 路径）", "HM-AC-1 普通 search/open 遵守 suppression；HM-AC-7",
-                   "execution.execution_effects(tool_name LIKE task_scope_search/open)", "audit_pages effect head + state.task_scope_search_access_receipts（按 operation 计数，回执不含 effect/run 引用）",
+                   "execution.execution_effects(tool_name LIKE task_scope_search/open)", "audit_pages effect head + state.task_scope_search_access_receipts（schema_version 2 回执按 effect_id/sdk_run_id 逐条关联）",
                    SURFACE_PAGES)
-    _tool_kind(ev, pages, r, "task_scope_search")
-    _tool_kind(ev, pages, r, "task_scope_open%")
-    receipts = Counter(x["operation"] for x in ev.rows("state", "SELECT operation FROM task_scope_search_access_receipts"))
+    by_effect: dict[str, Counter] = {}
+    versioned = False
+    receipts: Counter = Counter()
+    for x in ev.rows("state", "SELECT operation,receipt_json FROM task_scope_search_access_receipts"):
+        receipts[x["operation"]] += 1
+        try:
+            body = json.loads(x["receipt_json"] or "{}")
+        except ValueError:
+            continue
+        if isinstance(body, dict) and int(body.get("schema_version") or 0) >= 2:
+            versioned = True
+            if body.get("effect_id"):
+                by_effect.setdefault(str(body["effect_id"]), Counter())[x["operation"]] += 1
+    for like in ("task_scope_search", "task_scope_open%"):
+        for e in _effects(ev, "WHERE tool_name LIKE ?", (like,)):
+            r.observed += 1
+            reasons = _effect_reasons(pages, e)
+            if versioned and e["state"] == "succeeded" and e["effect_id"] not in by_effect:
+                reasons.append("Host 访问回执缺（无该 effect_id 的 schema_version 2 回执）")
+            if reasons:
+                r.miss(f"{e['effect_id']}/{e['tool_name']}/{e['state']}", "; ".join(reasons))
+            else:
+                r.audited += 1
     if receipts:
-        r.notes.append("Host 访问回执 " + ", ".join(f"{k}={v}" for k, v in sorted(receipts.items())) + "（无法逐条关联到 effect：receipt_json 无 effect_id/sdk_run_id，followup）")
-        r.partial = r.observed > 0
+        r.notes.append("Host 访问回执 " + ", ".join(f"{k}={v}" for k, v in sorted(receipts.items()))
+                       + (f"；按 effect 关联 {len(by_effect)} 个" if versioned else "（全部为 schema_version 1，无 effect/run 引用：早于 G2 落地，仅按 operation 计数）"))
+        if not versioned:
+            r.partial = r.observed > 0
     return r
 
 
@@ -968,6 +1014,7 @@ class Report:
 
 def surface_facts(ev: Evidence) -> dict[str, Any]:
     families = {family: ev.count("memory", table) for family, table in OA1_FAMILY_TABLES}
+    host_deliveries = Counter(x["section"] for x in ev.rows("audit", "SELECT section FROM human_audit_host_deliveries WHERE status='saved'"))
     return {
         "primary.audit.page(OA1)": {
             "family_rows": families,
@@ -982,12 +1029,20 @@ def surface_facts(ev: Evidence) -> dict[str, Any]:
             "jobs_by_status": {k: v for k, v in Counter(x["status"] for x in ev.rows("audit", "SELECT status FROM audit_jobs")).items()},
             "pages": ev.count("audit", "audit_pages"),
             "findings_by_rule": {k: v for k, v in Counter(x["rule_id"] for x in ev.rows("audit", "SELECT rule_id FROM audit_findings")).items()},
-            "ui_operation": None,
+            "ui_operation": "primary.audit.host.page(section=runs|run_operations)",
+            "host_deliveries": host_deliveries.get("runs", 0) + host_deliveries.get("run_operations", 0),
+            "exercised": bool(host_deliveries.get("runs", 0) + host_deliveries.get("run_operations", 0)),
         },
         "host.memory_call_attempts": {
             "by_caller": {k: v for k, v in Counter(x["caller"] for x in ev.rows("audit", "SELECT caller FROM memory_call_attempts")).items()},
             "findings": ev.count("audit", "memory_call_findings"),
-            "ui_operation": None,
+            "ui_operation": "primary.audit.host.page(section=memory_calls)",
+            "host_deliveries": host_deliveries.get("memory_calls", 0),
+            "exercised": bool(host_deliveries.get("memory_calls", 0)),
+        },
+        "host.context_page_in_receipts": {
+            "by_phase": {k: v for k, v in Counter(x["phase"] for x in ev.rows("audit", "SELECT phase FROM context_page_in_receipts")).items()},
+            "ui_operation": "primary.audit.host.page(section=run_operations) 的 effect 头（回执本身仅供核对器对账）",
         },
         "host.preparation_audit_sources": {"rows": ev.count("audit", "preparation_audit_sources"), "ui_operation": None},
     }

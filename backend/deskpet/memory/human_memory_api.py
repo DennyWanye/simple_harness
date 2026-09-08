@@ -31,7 +31,9 @@ from deskpet.memory.human_memory_service import (
 )
 
 HUMAN_MEMORY_COMMAND = "human_memory_request"
-HUMAN_AUDIT_OPERATIONS = frozenset({"primary.audit.open", "primary.audit.page", "primary.audit.close"})
+HUMAN_AUDIT_OPERATIONS = frozenset({
+    "primary.audit.open", "primary.audit.page", "primary.audit.host.page", "primary.audit.close",
+})
 _AUTHORITY_FIELDS = frozenset(
     {
         "subject",
@@ -195,6 +197,9 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         fields = {
             "primary.audit.open": {"primary_ref", "open_action_id"},
             "primary.audit.page": {"primary_ref", "audit_ref", "page_action_id", "cursor_ref"},
+            "primary.audit.host.page": {
+                "primary_ref", "audit_ref", "page_action_id", "section", "cursor_ref", "target_ref",
+            },
             "primary.audit.close": {"primary_ref", "audit_ref"},
         }[operation]
         if set(request) != fields:

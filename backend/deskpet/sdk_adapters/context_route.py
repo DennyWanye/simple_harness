@@ -712,6 +712,7 @@ class ContextRouteToolService:
             return _error("task_scope_search_query_invalid")
         try:
             service = self._bind_service()
+            run_id, _, effect_id, _ = self._identity()
         except _CompositionUnavailable as exc:
             return _error(exc.code)
         from deskpet.memory.human_memory_service import SearchTaskScopesRequest
@@ -727,6 +728,8 @@ class ContextRouteToolService:
                         if arguments.get("cursor")
                         else None
                     ),
+                    effect_id=effect_id,
+                    sdk_run_id=run_id,
                 )
             )
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
@@ -735,12 +738,11 @@ class ContextRouteToolService:
         from deskpet.memory.human_memory_service import OpenTaskScopeRequest
         if self._scope_disclosure_reader is None:
             return _error("scope_disclosure_reader_missing")
-        run_id, _, effect_id, _ = self._identity()
         candidates = []
         for item in result["candidates"]:
             scope_id = item["scope_ref"]
             opened = await service.open_task_scope(OpenTaskScopeRequest(scope_ref=scope_id,
-                expected_source_hash=item["source_hash"]))
+                expected_source_hash=item["source_hash"], effect_id=effect_id, sdk_run_id=run_id))
             package = await self._scope_disclosure_reader(run_id, opened["resume_package"], effect_id)
             candidates.append({"task_scope_id": scope_id, "source_id": package["source_id"],
                 "source_hash": package["source_hash"], "scope_disclosure": package})

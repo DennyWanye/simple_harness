@@ -58,6 +58,8 @@ class ContextPageInStore:
         self._records: dict[str, ContextPageInReference] = {}
         self._active: set[str] = set()
         self.primary_reader = None  # composed Host reader; never an in-memory grant
+        # Optional durable payload-free issue/consume receipts (operation-audit.db, G1).
+        self.receipt_ledger = None
 
     def put(self, *, kind: str, source: str, content: str, session_id: str,
             request_id: str, scope_id: str) -> ContextPageInReference:
@@ -75,6 +77,11 @@ class ContextPageInStore:
             expires_at=time.monotonic() + self._ttl,
         )
         self._records[ref.reference_id] = ref
+        if self.receipt_ledger is not None:
+            self.receipt_ledger.record_sync(
+                phase="issued", reference_id=ref.reference_id, kind=ref.kind, source=ref.source,
+                source_hash=ref.source_hash, session_id=ref.session_id, request_id=ref.request_id,
+                scope_id=ref.scope_id, sdk_run_id=None, effect_id=None, outcome="issued")
         return ref
 
     def get(self, reference_id: str) -> ContextPageInReference | None:
@@ -109,42 +116,71 @@ def build_context_page_in_handler(
     execution_context_getter: Callable[[], Any],
     skill_body_getter: Callable[[str], str] | None = None,
 ):
+    async def receipt(runtime: Any, *, reference_id: str, kind: str, outcome: str,
+                      ref: ContextPageInReference | None = None) -> None:
+        # Durable consume/deny receipt keyed by the SDK effect (coverage join);
+        # payload-free and never able to change the result already computed.
+        ledger = store.receipt_ledger
+        if ledger is None:
+            return
+        effect = getattr(runtime, "effect_id", None)
+        run = getattr(runtime, "run_id", None)
+        await ledger.record(
+            phase="consumed" if outcome == "ok" else "denied", reference_id=reference_id, kind=kind,
+            source=ref.source if ref else None, source_hash=ref.source_hash if ref else None,
+            session_id=getattr(runtime, "session_id", None), request_id=getattr(runtime, "request_id", None),
+            scope_id=getattr(runtime, "scope_id", None),
+            sdk_run_id=getattr(run, "value", run), effect_id=getattr(effect, "value", effect), outcome=outcome)
+
     async def handle(args: dict[str, Any], task_id: str) -> str:  # noqa: ARG001
         runtime = execution_context_getter()
         if runtime is None:
             return _error("context_scope_missing")
         from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
         from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
+        reference_id = str(args.get("reference_id", "") or "").strip()
         if isinstance(args.get("reference_id"), str) and args["reference_id"].startswith((PREFIX, CURRENT_PREFIX)):
+            kind = "primary_page" if args["reference_id"].startswith(PREFIX) else "current_tool_page"
             if store.primary_reader is None:
+                await receipt(runtime, reference_id=reference_id, kind=kind, outcome="primary_page_reader_unavailable")
                 return _error("primary_page_reader_unavailable")
             try:
-                return json.dumps(await store.primary_reader(args), ensure_ascii=False)
+                result = json.dumps(await store.primary_reader(args), ensure_ascii=False)
             except PrimaryContextPageUnavailable as exc:
+                await receipt(runtime, reference_id=reference_id, kind=kind, outcome=str(exc))
                 return json.dumps({"ok": False, "error_code": str(exc),
                     "public_message": "Requested primary page is unavailable."})
-        reference_id = str(args.get("reference_id", "") or "").strip()
+            await receipt(runtime, reference_id=reference_id, kind=kind, outcome="ok")
+            return result
         source_hash = str(args.get("source_hash", "") or "").strip()
         ref = store.get(reference_id)
         if ref is None:
+            await receipt(runtime, reference_id=reference_id, kind="unknown", outcome="reference_stale")
             return _error("reference_stale")
+        outcome = "ok"
+        content = ref.content
         if (ref.session_id != str(getattr(runtime, "session_id", ""))
                 or ref.request_id != str(getattr(runtime, "request_id", ""))
                 or ref.scope_id != str(getattr(runtime, "scope_id", ""))):
-            return _error("reference_scope_denied")
-        if source_hash != ref.source_hash:
-            return _error("reference_hash_mismatch")
-        content = ref.content
-        if ref.kind == "skill":
+            outcome = "reference_scope_denied"
+        elif source_hash != ref.source_hash:
+            outcome = "reference_hash_mismatch"
+        elif ref.kind == "skill":
             if skill_body_getter is None:
-                return _error("reference_stale")
-            try:
-                content = str(skill_body_getter(ref.source))
-            except Exception:
-                return _error("reference_stale")
-            if hashlib.sha256(content.encode("utf-8")).hexdigest() != ref.source_hash:
-                return _error("reference_stale")
+                outcome = "reference_stale"
+            else:
+                try:
+                    content = str(skill_body_getter(ref.source))
+                except Exception:
+                    outcome = "reference_stale"
+                else:
+                    if hashlib.sha256(content.encode("utf-8")).hexdigest() != ref.source_hash:
+                        outcome = "reference_stale"
+        if outcome != "ok":
+            await receipt(runtime, reference_id=reference_id, kind=ref.kind, outcome=outcome, ref=ref)
+            return _error(outcome)
         store.mark_active(ref.reference_id)
+        await receipt(runtime, reference_id=reference_id, kind=ref.kind, outcome="ok", ref=ref)
         return json.dumps({"ok": True, "reference_id": ref.reference_id,
                            "kind": ref.kind, "source": ref.source,
                            "source_hash": ref.source_hash, "content": content},

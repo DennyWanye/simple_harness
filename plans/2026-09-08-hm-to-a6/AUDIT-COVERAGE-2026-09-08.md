@@ -131,3 +131,23 @@ PYTHONPATH=backend backend/.venv/bin/python scripts/audit/audit_coverage.py \
   --evidence .local-test-evidence/2026-09-08/native-a6-b3682fe1/merged-attempt3 --fail-on-gap
 cd backend && python -m pytest tests/quality/test_audit_coverage.py -q
 ```
+
+---
+
+## 6. 2026-09-08 追加：G1 / G2 / G5 / G6 已实现（本文其余内容保持核对当时的事实）
+
+见 `DECISION-AUDIT-SURFACE-G1-G2-G6.md`。要点：
+
+- **G6**：新增受控只读操作 `primary.audit.host.page`（section=`runs` / `run_operations` / `memory_calls`），
+  与 `primary.audit.page` 共用同一张签名 grant，Host 读取不消耗 SDK 页预算，按 section+target 分流各 32 页，
+  行只含标识/状态码/哈希/计数/时间戳；「操作记录」tab 新增「本机执行审计」小节（全部显式点击）。
+- **G1**：`operation-audit.db` 新表 `context_page_in_receipts`（issued / consumed / denied，payload-free，
+  带 `sdk_run_id` / `effect_id`），核对器按 `effect_id` 与 effect 逐条对账。
+- **G2**：`task_scope_search_access_receipts.receipt_json` 升到 `schema_version 2`，带 `effect_id` / `sdk_run_id`
+  （HUMAN 通道为 null），`receipt_hash` 随之改变。
+- **G5**：`backend/tests/operation_audit/test_audit_surface_exercise.py` 走生产 `/ws/control` 路径做
+  grant → 分页 → ACK → close 的无 UI 演练，并用核对器断言三个受控面 `exercised=true`；
+  真实运行的实测挂在 00-PLAN 的 T16/T24 追加取证上。
+- **旧证据不变**：本文第 3 节的两次运行里 `context_page_in` / `task_scope_search_open` 仍是 ◐、
+  受控面 `exercised=false`——回执与交付表只可能出现在新的运行里。
+- G3 / G4 / G7（SDK 侧）与 G8 / G9（记录不修）维持原结论。
