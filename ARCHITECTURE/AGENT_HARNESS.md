@@ -2320,6 +2320,41 @@ tool_schemas / open_group / groups`），`str()` 仍为稳定码
   `test_token_estimator_calibration.py` 新增 13 例共 **54 绿**。
   详见 [DECISION-TOKEN-ESTIMATOR §Incident P](../plans/2026-09-08-hm-to-a6/DECISION-TOKEN-ESTIMATOR.md)。
 
+## 2026-09-09 `task_scope_update` 可引用证据披露（HM-TO-A6 事件 U）
+
+最后更新：2026-09-09。`task_scope_update_refs_outside_scope` 从「只回显违规 ref」改为
+**可执行拒绝**；可引用证据集合补上「本 Run 已受理的 USER 证据」。守卫、稳定码、请求 schema 不变。
+
+- **现场**：第 9 次 T17 要求逐字登记 18 KiB 目标，模型在同一 Run 里 7 次调用
+  `task_scope_update` 全被拒。根因不是引导：`task_scope_evidence_links` 只在
+  `host.file` / `harness.tool_invocation` / `harness.run_terminal` / `mutation.plan`
+  追加事件时才铸行，Run 内新建且本轮无 material 效果的 scope **整个 Run 都是 0 行**，
+  而 `evidence_refs` 是 `minItems: 1` ⇒ **载荷空间为空**。该 scope 第一条链接行由本 Run 自己的
+  `terminal:failed` 铸出，比最后一次拒绝晚 28 秒。
+- **披露通道同时也关着**：`allowed_evidence_refs` 只经收口指令下发，而
+  `closure_instruction_for_run` 在 scope 干净时返回 `None`——最需要清单的那一轮结构上拿不到清单
+  （该 Run 14 次 provider 请求里 `task_scope_closure_required` 出现 0 次）。
+- **可引用集合**（`task_scope_mutation._admissible_refs_tx`）= scope 已链接证据 **∪**
+  `foreground_turns.evidence_id`（本轮正在回答的用户消息的已净化证据，
+  `sdk_run_id` + `host_run_id` + `subject` 三重绑定并校验 `envelope_sha256`，查询里无模型输入）。
+  受理后 `store._link_refs_tx` 立即把它链接到本 scope，谓词后置条件恢复——是 bootstrap，不是开闸。
+- **拒绝回执**新增 `allowed_evidence_refs`（**≤16、最新在前、仅 id**）、`allowed_evidence_refs_total`、
+  `current_turn_evidence_ref`、`next_step`；集合为空时明说本 Run 无解并要求停止试错。
+  这不是新披露口径：`semantic_closure` 的收口指令早就把同一张表的同一批 id（上限 64、最旧在前）
+  发给模型，本次是其**收窄投影**；`content_hash` 与任何载荷/信封/标题/目标文本一律不过境。
+- **有界升级**：同 Run 同码拒绝次数取自 `host_pre_admission_audit` 行（写审计行的同一事务内计数），
+  超过 2 次后 detail 追加 `escalation` 要求停手。不新增状态、不放宽守卫。
+  背景：事件 D 的 provider 重采是另一条车道；SDK `max_consecutive_same_tool=10` 按
+  「工具名 + 参数哈希」计连击，模型每次改 `evidence_refs` 就重置，实际只剩 `max_turns=25` 兜底。
+- **冻结文本漂移（留痕）**：S5b Task 3 与 design-freeze §7 的谓词「refs ∈ 该 scope 已链接 evidence」
+  需扩为「∪ 本 Run 已受理的 USER 证据」。两份文件在 memory-sdk 仓、本轮只读，照事件 C 先例留痕待改。
+- **已知未做**：`task_scope_search` 的 `disclosure_manifest.dependencies.evidence[]` 与
+  `context_route` 的 `producer_dependencies.evidence[]` 都在向模型广播 evidence id 却不区分可否引用
+  （第 5 次蒙对、第 9 次蒙错皆源于此），标注属驱动/披露面改动，未做。
+- 用例 `backend/tests/sdk_adapters/test_task_scope_update_refs_disclosure.py` **5 例**
+  （主干 5/5 红、修复后 5/5 绿），含 A6-5 的 >16 KiB 逐字 `goal.set` 落库（revision 1→2）。
+  详见 [DECISION-U-REFS-OUTSIDE-SCOPE](../plans/2026-09-08-hm-to-a6/DECISION-U-REFS-OUTSIDE-SCOPE.md)。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |
