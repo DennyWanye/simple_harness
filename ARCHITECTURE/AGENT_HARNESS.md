@@ -2102,6 +2102,39 @@ Harness 已吸收该 FailureSet 并从 Plan v1 重规划到 v2。
 `CONTROL_TOOLS` 同样线性累积、`_plan_turn_messages` 缺工具 schema token）见
 [DECISION-SAME-RUN-CONTEXT-BOUND](../plans/2026-09-08-hm-to-a6/DECISION-SAME-RUN-CONTEXT-BOUND.md)。
 
+### 输入 token 估算口径与 per-model 校准（2026-09-08，Incident N）
+
+生产事实：装配阶段的"这次请求要花多少 token"由三段相加得到，`text_tokens` 的
+文本口径本身**未变**（CJK 1 token/字，其余 `/4` 向上取整）：
+
+1. `Σ text_tokens(message)` —— 与此前一致；
+2. `context_partitions.tool_schema_tokens(tools)` —— **新增计入**
+   `_plan_turn_messages` 的 `protected_tokens`（此前该链路完全没数工具 schema；
+   `primary_context.prepare` 数了，但用的是 `len(repr(input_schema))//4`，丢掉工具名与
+   description，低估约 35%）。两条链路现在共用同一个函数，catalog 的
+   `schema_token_count` 也改用它，全链路一个口径。
+3. `context_partitions.ProviderTokenCalibration` —— per-model 倍率
+   `min(base + per_turn × provider_turn_ordinal, max)`，取自
+   `llm.model_info.ModelContextInfo.input_estimate_ratio*`（可被
+   `model_overrides.toml` / `.deskpet/context.toml` 覆盖）。**默认恒等 1.0**，
+   未校准型号的判定与此前一致，不会多 fail-close 任何 Run。它覆盖 Host 结构上
+   看不见的三件事：tokenizer 密度（JSON 回执实测 ~3.1 char/token 而非 4）、
+   每条消息的 chat-template 框架、以及**中转站每轮把上一轮 `reasoning_content`
+   重新塞回 prompt**（HM-TO-A6 306 组真机配对里最高占 provider `input_tokens` 的
+   约 40%，任何基于文本的估算都看不见）。`deepseek-v4-pro` / `deepseek-v4-flash`
+   取 `min(1.35 + 0.11·ordinal, 2.5)`。
+
+效果（306 组 `request_json` × `usage_json` 真机配对）：`provider input_tokens ÷ Host 估算`
+从 中位 1.98× / 最高 4.87× 的**低估**（306/306 条低估）变为 中位 0.66× / 最高 0.99×
+（**0/306 低估**）；其中真实超 `effective_input_budget` 的 27 条，此前 Host **一条都判不出**，
+现在 27 条全部在装配阶段被判为超预算，先裁剪/分页而不是照发。
+代价是中位多估 1.52×（生产 1M 窗口下无感）。`safety_margin` /
+`GENERATION_RESERVE` / `PARTITION_CAPS` / `effective_input_budget` 与
+`provider_request_fingerprint` **均未改动**；快照 receipt 的 `source_revisions` 新增
+`tool_schema_tokens` 与 `planned_input_tokens` 两个归因字段。
+已知代价与 followup（F-TOK-1 闭环 usage 反馈可把多估压到 ~1.05×）见
+[DECISION-TOKEN-ESTIMATOR](../plans/2026-09-08-hm-to-a6/DECISION-TOKEN-ESTIMATOR.md)。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |

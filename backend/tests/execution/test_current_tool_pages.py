@@ -193,7 +193,12 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
             async with aiosqlite.connect(state) as db:
                 rows = await (await db.execute("SELECT outcome,reason_code FROM task_scope_closure_receipts WHERE sdk_run_id=?",
                     (holder.first_run,))).fetchall()
-                assert rows == [("pending", "closure_run_not_completed")]
+                # Incident N (2026-09-08): the tool schemas are now charged to
+                # protected_tokens, so on the smallest windows the budget can
+                # stop the Run *before* it ever routes a TaskScope — then there
+                # is no closure receipt at all.  Either shape is a safe stop;
+                # what must never appear is a settled/closed receipt.
+                assert rows in ([], [("pending", "closure_run_not_completed")]), rows
             before = len(holder.sent)
             await runtime.close()
             await stack.close()

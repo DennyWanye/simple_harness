@@ -1,0 +1,2681 @@
+{
+  "context_window": 32000,
+  "model_id": "deepseek-v4-pro",
+  "population": {
+    "pairs": 306,
+    "provider_input_tokens_max": 44378,
+    "requests_over_effective_budget": 27
+  },
+  "samples": [
+    {
+      "id": "A00-t4",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 429,
+          "other_chars": 5583,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 9,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 14,
+          "other_chars": 20,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 20,
+          "other_chars": 18,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 223,
+          "other_chars": 122,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 10,
+          "other_chars": 1,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 112,
+          "other_chars": 20,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 4953,
+          "other_chars": 2246,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 34,
+          "other_chars": 4682,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 12,
+          "other_chars": 4,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 34,
+          "other_chars": 4619,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 562,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 26363,
+      "provider_turn_ordinal": 4,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1180
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "B01-t25",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 23,
+          "other_chars": 5,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 15,
+          "other_chars": 5,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 12,
+          "other_chars": 1091,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 356,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 338,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 356,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 356,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 356,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 18193,
+      "provider_turn_ordinal": 25,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "B02-t24",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 23,
+          "other_chars": 5,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 15,
+          "other_chars": 5,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 12,
+          "other_chars": 1091,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 356,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 338,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 356,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 356,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 17759,
+      "provider_turn_ordinal": 24,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "B03-t4",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 120,
+          "other_chars": 1913,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 25,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 150,
+          "other_chars": 66,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 18,
+          "other_chars": 9,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 68,
+          "other_chars": 8713,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 14,
+          "other_chars": 4,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 34,
+          "other_chars": 4619,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 19,
+          "other_chars": 72,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 167,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 15267,
+      "provider_turn_ordinal": 4,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "B04-t23",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 23,
+          "other_chars": 5,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 15,
+          "other_chars": 5,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 650,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 258,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 12,
+          "other_chars": 1091,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 356,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 338,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 356,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 17438,
+      "provider_turn_ordinal": 23,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "B05-t25",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 120,
+          "other_chars": 1913,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 25,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 150,
+          "other_chars": 66,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 24,
+          "other_chars": 20,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 68,
+          "other_chars": 8713,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 34,
+          "other_chars": 4619,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 280,
+          "other_chars": 5490,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 278,
+          "other_chars": 5400,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 255,
+          "other_chars": 6397,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 329,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 315,
+          "other_chars": 6118,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 27,
+          "other_chars": 4781,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 27,
+          "other_chars": 5395,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1512,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2202,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 735,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 305,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 266,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2202,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 727,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 192,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 221,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 221,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2074,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 225,
+          "other_chars": 1219,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 246,
+          "other_chars": 1153,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 4,
+          "other_chars": 224,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 484,
+          "other_chars": 513,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 568,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 44378,
+      "provider_turn_ordinal": 25,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1116
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        }
+      ]
+    },
+    {
+      "id": "B06-t24",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 118,
+          "other_chars": 8716,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 120,
+          "other_chars": 1913,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 25,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 150,
+          "other_chars": 66,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 24,
+          "other_chars": 20,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 68,
+          "other_chars": 8713,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 34,
+          "other_chars": 4619,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 280,
+          "other_chars": 5490,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 278,
+          "other_chars": 5400,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 255,
+          "other_chars": 6397,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 329,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 315,
+          "other_chars": 6118,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 27,
+          "other_chars": 4781,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 27,
+          "other_chars": 5395,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1512,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2202,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 735,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 305,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 266,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2202,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 727,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 192,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 221,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 221,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2074,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 225,
+          "other_chars": 1219,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 246,
+          "other_chars": 1153,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 4,
+          "other_chars": 224,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 484,
+          "other_chars": 513,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 41293,
+      "provider_turn_ordinal": 24,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1116
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        }
+      ]
+    },
+    {
+      "id": "B07-t23",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 118,
+          "other_chars": 8043,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 120,
+          "other_chars": 1913,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 25,
+          "other_chars": 2,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 150,
+          "other_chars": 66,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 24,
+          "other_chars": 20,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 68,
+          "other_chars": 8713,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 34,
+          "other_chars": 4619,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 280,
+          "other_chars": 5490,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 278,
+          "other_chars": 5400,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 255,
+          "other_chars": 6397,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 329,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 315,
+          "other_chars": 6118,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 27,
+          "other_chars": 4781,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 27,
+          "other_chars": 5395,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1512,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2202,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 735,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 305,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 266,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2202,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 727,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 192,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 221,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 221,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2074,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 225,
+          "other_chars": 1219,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 246,
+          "other_chars": 1153,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 4,
+          "other_chars": 224,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 40281,
+      "provider_turn_ordinal": 23,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1116
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        }
+      ]
+    },
+    {
+      "id": "B08-t12",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 120,
+          "other_chars": 1913,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 16,
+          "other_chars": 73,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 280,
+          "other_chars": 5606,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 302,
+          "other_chars": 5297,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 280,
+          "other_chars": 6047,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 329,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 282,
+          "other_chars": 5945,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2202,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 727,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 148,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 250,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 250,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 15610,
+      "provider_turn_ordinal": 12,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "B09-t11",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 120,
+          "other_chars": 1913,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 16,
+          "other_chars": 73,
+          "role": "user"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 280,
+          "other_chars": 5606,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 302,
+          "other_chars": 5297,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 280,
+          "other_chars": 6047,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 329,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 282,
+          "other_chars": 5945,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2202,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 727,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 246,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 148,
+          "role": "tool"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 0,
+          "role": "assistant"
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 250,
+          "role": "tool"
+        }
+      ],
+      "provider_input_tokens": 15517,
+      "provider_turn_ordinal": 11,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "B10-t1",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 15,
+          "other_chars": 16,
+          "role": "user"
+        }
+      ],
+      "provider_input_tokens": 4605,
+      "provider_turn_ordinal": 1,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        }
+      ]
+    },
+    {
+      "id": "B11-t1",
+      "messages": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 4142,
+          "role": "system"
+        },
+        {
+          "cjk_chars": 10,
+          "other_chars": 1,
+          "role": "user"
+        }
+      ],
+      "provider_input_tokens": 4593,
+      "provider_turn_ordinal": 1,
+      "tools": [
+        {
+          "cjk_chars": 0,
+          "other_chars": 490
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2803
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 952
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 1660
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 579
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 999
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 2506
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 402
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 879
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 511
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 596
+        },
+        {
+          "cjk_chars": 0,
+          "other_chars": 918
+        }
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "source": "HM-TO-A6 attempt 4 evidence (.local-test-evidence/2026-09-08), 306 provider request/usage pairs; anonymised to character-class counts, which the estimator treats identically to the original text."
+}
