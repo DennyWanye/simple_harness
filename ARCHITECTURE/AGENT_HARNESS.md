@@ -1894,12 +1894,21 @@ call_ordinal}` 一起哈希才得到内部 `CallId`（`react_loop.py::_internal_
 `canonical_tool_arguments_json` 唯一定义，与同进程 metadata 路径逐字节一致；
 无重建的请求线体逐字节不变，SDK 请求指纹口径未动。
 
-历史因果组（`historical_causal_group`）的 assistant 条目仍不带入参：这是同类丢失，但
-它是被引号包进一条 user 消息的记录、不经 `_wire_messages`，且补入参须同时改
-`project_primary_transcript`、`primary_message_v2.representable/item_ordinals` 与已归档
-终态 evidence 的 envelope hash，记为 followup F-K1。`provider_reasoning_content` 的同构
-跨轮丢失记为 F-K2。上游正解不变：SDK 把 assistant `tool_calls` 当一等公共 transcript
-字段，届时删除本备忘与降级分支。
+**跨轮（F-K1，2026-09-08 同日落地）**：历史因果组（`historical_causal_group`）的 assistant
+条目现在带 `tool_calls: [{call_id, name, arguments}]`。做法不是改 transcript 形状（那会让
+`primary_message_v2.representable` 与已归档终态 envelope hash 全部失效），而是 Host state 的
+**内容寻址旁路记录**：v55 `primary_assistant_tool_calls`（`primary/047_…_v55.sql`），按
+`(sdk_run_id, message_ordinal)` 键入、绑定到所属终态观察的 `(evidence_id, envelope_hash)`，
+在终态观察同一事务里由 `primary_tool_causality.read_tool_causality`（与 `tool_causal_sources`
+同一趟已验证的公共 provider 记录读取）写入；`PrimaryHistoryStore.read` 与
+`primary_context_pages._source_group` 做同一个 join，`project_history_group` 渲染（单条入参超
+16 KiB 时为确定性摘要）。旧归档 / 无旁路表 / 无工具调用的 Run 渲染与线体逐字节不变；损坏或
+与归档 transcript 不一致的旁路行使整组退回旧渲染并记只含标识符的告警，不抛。裁决与表结构见
+[`plans/2026-09-08-hm-to-a6/DECISION-HISTORY-TOOL-CALL-ARGS.md`](../plans/2026-09-08-hm-to-a6/DECISION-HISTORY-TOOL-CALL-ARGS.md)。
+`provider_reasoning_content` 的同构跨轮丢失（F-K2）仍开放：durable 公共记录里没有「本轮有过
+推理」的事实（SDK 禁止 hidden reasoning 进入 durable response state），不能诚实地渲染标记。
+上游正解不变：SDK 把 assistant `tool_calls` 当一等公共 transcript 字段，届时删除本备忘、
+降级分支与旁路表。
 
 裁决与逐库数据见
 [`plans/2026-09-08-hm-to-a6/DECISION-TOOL-CALL-ARGUMENTS-REPLAY.md`](../plans/2026-09-08-hm-to-a6/DECISION-TOOL-CALL-ARGUMENTS-REPLAY.md)。

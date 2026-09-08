@@ -213,6 +213,8 @@ wire[1]（turn-1 assistant）: {"path":"B.md"}  | 其后紧跟的 tool 结果: c
 
 **记为 followup（F-K1）**：历史因果组补入参，需与终态 evidence 契约版本升级
 （`primary_message_v3` 一类）一起做，不可单独打补丁。
+→ 2026-09-08 同日裁决为**不改契约、不动 envelope**，改用 Host state 的内容寻址旁路记录
+（v55）在投影时 join，见 [DECISION-HISTORY-TOOL-CALL-ARGS.md](DECISION-HISTORY-TOOL-CALL-ARGS.md)。
 
 **同批观察到的相邻缺陷（不在本次范围，记 F-K2）**：
 `metadata[provider_reasoning_content]`（DeepSeek 思考模式要求逐字回显）走的是同一条

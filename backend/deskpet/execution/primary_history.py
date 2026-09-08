@@ -264,7 +264,8 @@ async def terminal_observation_tx(db, *, host_run_id, sdk_run_id, subject):
 
 async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subject,
                                       owner_id, generation, terminal, sdk_evidence, messages, error_code=None,
-                                      visibility_dependencies=None, tool_causal_sources=None, occurrence_sources=None):
+                                      visibility_dependencies=None, tool_causal_sources=None, occurrence_sources=None,
+                                      assistant_tool_calls=None):
     from deskpet.execution.foreground_queue import ForegroundQueueStore
     queue = ForegroundQueueStore(db_path)
     async with aiosqlite.connect(db_path) as db:
@@ -315,7 +316,7 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
             payload.update(message_source_contract="primary-message-v2",
                            tool_causal_sources=list(tool_causal_sources))
             cursor = await db.execute("PRAGMA user_version")
-            if (await cursor.fetchone())[0] in (53, 54):
+            if (await cursor.fetchone())[0] in (53, 54, 55):
                 from deskpet.memory.primary_message_v3 import CONTRACT, read_scope_sources_tx
                 scopes = await read_scope_sources_tx(db, subject=subject, sdk_run_id=sdk_run_id, facts=tool_causal_sources)
                 payload.update(message_source_contract=CONTRACT, tool_scope_sources=scopes)
@@ -342,6 +343,18 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
             db, store=HumanMemoryProgramStore(db_path), host_run_id=host_run_id,
             terminal_envelope=envelope, terminal_receipt=receipt,
         )
+        # 2026-09-08 HM-TO-A6 F-K1: the assistant's own tool calls (name +
+        # arguments) go to a Host side table in this same transaction, bound
+        # to the observation just written. The envelope above is untouched;
+        # the existing-observation branch never backfills (old archives render
+        # without arguments, exactly as before).
+        if assistant_tool_calls and terminal.value == "COMPLETED":
+            from deskpet.execution.primary_tool_calls import write_assistant_tool_calls_tx
+            await write_assistant_tool_calls_tx(
+                db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, evidence_id=committed.evidence_id,
+                envelope_hash=committed.envelope_sha256, messages=payload["messages"],
+                records=assistant_tool_calls, recorded_at=time.time(),
+            )
         await db.commit()
         return committed.evidence_id, committed.envelope_sha256
 
@@ -425,9 +438,19 @@ class PrimaryHistoryStore:
                 if (receipt.get("primary_observation_ref") != row["evidence_id"]
                         or receipt.get("primary_observation_hash") != row["envelope_sha256"]):
                     raise RuntimeError("primary_history_observation_corrupt")
-                result.append({"source_ref": row["evidence_id"], "source_hash": row["envelope_sha256"],
-                               "turn_id": payload["turn_id"], "terminal_state": payload["terminal_state"],
-                               "messages": payload["messages"]})
+                group = {"source_ref": row["evidence_id"], "source_hash": row["envelope_sha256"],
+                         "turn_id": payload["turn_id"], "terminal_state": payload["terminal_state"],
+                         "messages": payload["messages"]}
+                # F-K1: join the Host side record of assistant tool calls. The
+                # key is present only when rows exist, so a group without tool
+                # calls (and every pre-v55 archive) keeps its exact prior shape.
+                from deskpet.execution.primary_tool_calls import GROUP_KEY, read_assistant_tool_calls_tx
+                calls = await read_assistant_tool_calls_tx(db, sdk_run_id=run["sdk_run_id"],
+                    evidence_id=row["evidence_id"], envelope_hash=row["envelope_sha256"],
+                    messages=payload["messages"])
+                if calls:
+                    group[GROUP_KEY] = calls
+                result.append(group)
             if self._policy is None or disclosure_context is None:
                 raise RuntimeError("primary_history_policy_unavailable")
             # Policy runs after potentially slow public SDK reads. Check both

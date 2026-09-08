@@ -8469,6 +8469,9 @@ async def _build_product_sdk_runtime_stack(
     )):
         raise RuntimeError("procedure_public_sdk_successor_required")
     await initialize_procedure_recovery_state_db(_state_db_path)
+    # 2026-09-08 HM-TO-A6 F-K1: v55 side record of assistant tool-call arguments.
+    from deskpet.memory.primary_tool_call_schema import initialize_primary_tool_call_state_db
+    await initialize_primary_tool_call_state_db(_state_db_path)
     projected_registrations = (*projected_registrations,
         procedure_use_registration(_human_memory_v7.procedure_runtime),
         procedure_discovery_registration(_human_memory_v7.procedure_runtime))

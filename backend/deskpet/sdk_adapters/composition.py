@@ -864,10 +864,22 @@ class ProductSdkRuntimeStack:
     async def read_primary_tool_causal_sources(self, *, db_path, host_run_id, run_id,
                                              subject, current_text, messages):
         """Host identity index plus public SDK result authority; no new grant."""
+        sources, _ = await self.read_primary_tool_causality(db_path=db_path, host_run_id=host_run_id,
+            run_id=run_id, subject=subject, current_text=current_text, messages=messages)
+        return sources
+
+    async def read_primary_tool_causality(self, *, db_path, host_run_id, run_id,
+                                          subject, current_text, messages):
+        """``(tool_causal_sources, assistant_tool_calls)``; same verification as above.
+
+        2026-09-08 HM-TO-A6 F-K1: the assistant's tool calls (name + arguments)
+        come from the same verified public provider records, projected by the
+        transcript ordinal of the assistant item. Read-only; no new grant.
+        """
         import aiosqlite
         from deskpet.task_scope.protocol import canonical_hash, canonical_json
         from deskpet.memory.primary_tool_causality import (
-            PrimaryToolCausalityUnavailable, read_tool_causal_sources,
+            PrimaryToolCausalityUnavailable, read_tool_causality,
         )
         self.require_ready()
         if self._uow is None:
@@ -888,7 +900,7 @@ class ProductSdkRuntimeStack:
                             effect_id=row["effect_id"], tool_name=row["tool_name"])
                 if row["identity_json"] != canonical_json(body) or row["identity_hash"] != canonical_hash(body):
                     raise PrimaryToolCausalityUnavailable("primary_tool_host_identity_mismatch")
-        return read_tool_causal_sources(self._uow, run_id, current_text=current_text,
+        return read_tool_causality(self._uow, run_id, current_text=current_text,
             transcript=messages, project=project_primary_transcript,
             effect_ids=tuple(row["effect_id"] for row in rows))
 

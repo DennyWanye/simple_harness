@@ -21,6 +21,9 @@ def _require(condition, code):
         raise PrimaryToolCausalityUnavailable("primary_tool_" + code)
 
 
+ASSISTANT_TOOL_CALLS_KIND = "primary_assistant_tool_calls/v1"
+
+
 def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, effect_ids):
     """Bounded, exact public-record read for a completed ReAct transcript.
 
@@ -28,8 +31,23 @@ def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, 
     joins; public records supply original results. No SQL or private SDK helper.
     A source projection never authorizes replay, mutation or context disclosure.
     """
+    return read_tool_causality(uow, run_id, current_text=current_text, transcript=transcript,
+                               project=project, effect_ids=effect_ids)[0]
+
+
+def read_tool_causality(uow, run_id, *, current_text, transcript, project, effect_ids):
+    """``(tool_causal_sources, assistant_tool_calls)`` from one verified pass.
+
+    2026-09-08 HM-TO-A6 F-K1: the same settled provider responses that prove
+    each tool result also carry the assistant's own ``tool_calls`` (name and
+    arguments). They are returned as a second, separate projection keyed by
+    the transcript ordinal of the assistant item that issued them, so the Host
+    can archive them as a side record without touching the terminal
+    observation's envelope. The first element is byte-identical to
+    ``read_tool_causal_sources``; every existing caller keeps its shape.
+    """
     if not any(item.get("role") == "tool" for item in transcript):
-        return ()
+        return (), ()
     _require(type(effect_ids) is tuple and 0 < len(effect_ids) <= 256
              and len(set(effect_ids)) == len(effect_ids), "effect_identity_input_invalid")
     actual_effects = {audit_reference("effect", value): uow.read_effect(EffectId(value))
@@ -86,7 +104,7 @@ def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, 
     from deskpet.memory.primary_message_v2 import effectless_denial
 
     messages = [Message(MessageRole.USER, current_text)]
-    sources, used, denied = [], set(), set()
+    sources, used, denied, assistant_calls = [], set(), set(), []
     for turn, op in sorted(providers.items()):
         invocation = actual_providers[op.provider_invocation_id]
         _require(invocation is not None and invocation.run_id.value == run_id
@@ -99,6 +117,13 @@ def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, 
         response = provider_response_from_json(raw)
         messages.append(response.message)
         parent_ordinal = len(messages)
+        if response.tool_calls:
+            assistant_calls.append(dict(schema_version=1, kind=ASSISTANT_TOOL_CALLS_KIND,
+                sdk_run_id=run_id, message_ordinal=parent_ordinal,
+                provider_invocation_id=invocation.invocation_id, provider_turn_ordinal=turn,
+                provider_response_hash=op.result_hash,
+                tool_calls=[dict(call_id=call.call_id.value, name=call.name,
+                                 arguments=thaw_json(call.arguments)) for call in response.tool_calls]))
         for ordinal, call in enumerate(response.tool_calls):
             key = (op.provider_invocation_id, ordinal)
             head = effects.get(key)
@@ -152,4 +177,4 @@ def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, 
     _require(project(tuple(m for m in messages if m is not None), current_text=current_text)
              == tuple(item for index, item in enumerate(transcript, 1) if index not in denied),
              "whole_transcript_mismatch")
-    return tuple(sources)
+    return tuple(sources), tuple(assistant_calls)

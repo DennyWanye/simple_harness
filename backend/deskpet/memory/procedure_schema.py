@@ -23,7 +23,7 @@ def _sql():
 
 def validate_procedure_state_db(path, *, _expected_user_version=53):
     path = Path(path)
-    if _expected_user_version not in (53, 54):
+    if _expected_user_version not in (53, 54, 55):
         raise schema.HumanMemoryProgramEpochError("procedure_schema_invalid")
     validate_s5c_terminal_state_db(path, _expected_user_version=_expected_user_version)
     sql = _sql()
@@ -65,6 +65,10 @@ def validate_procedure_state_db(path, *, _expected_user_version=53):
 async def initialize_procedure_state_db(path, *, fault_inject=None):
     path = Path(path)
     version = await migrator.read_user_version(path)
+    if version == 55:
+        from deskpet.memory.primary_tool_call_schema import validate_primary_tool_call_state_db
+        validate_primary_tool_call_state_db(path)
+        return
     if version == 54:
         from deskpet.memory.procedure_recovery_schema import validate_procedure_recovery_state_db
         validate_procedure_recovery_state_db(path)
