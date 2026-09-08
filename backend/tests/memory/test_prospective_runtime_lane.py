@@ -243,3 +243,70 @@ async def test_parent_repeated_cancel_waits_for_owned_timer_and_index_cleanup():
         await closing
     assert worker.done() and lane._task is None
     assert not [t for t in asyncio.all_tasks() if t.get_name() == 'memory-analysis-lane-cleanup' and not t.done()]
+
+
+# -- RUN-RERUN-FLASH-01 review §1: the lane's own failure observability --------
+# `log.warning("...type=%s", type(exc).__name__)` was the only record of a
+# registration failure, so a v55 database rejecting every write with
+# `s5c_cursor_successor_required` reached the corpus run as a bare
+# `IntegrityError`. The identity must name the constraint and stay payload-free.
+
+
+def _abort_error(token):
+    import sqlite3
+    db = sqlite3.connect(':memory:')
+    db.executescript(
+        'CREATE TABLE t(a);'
+        f"CREATE TRIGGER g BEFORE INSERT ON t BEGIN SELECT RAISE(ABORT,'{token}'); END;")
+    try:
+        db.execute('INSERT INTO t VALUES(1)')
+    except sqlite3.Error as error:
+        return error
+    raise AssertionError('trigger did not abort')
+
+
+def test_failure_identity_names_the_sqlite_constraint_that_actually_fired():
+    from deskpet.memory.prospective_runtime import failure_identity
+
+    identity = failure_identity(_abort_error('s5c_cursor_successor_required'))
+    assert identity.startswith('type=IntegrityError ')
+    assert 'sqlite=SQLITE_CONSTRAINT_TRIGGER' in identity
+    assert 'constraint=s5c_cursor_successor_required' in identity
+
+
+def test_failure_identity_reaches_through_a_wrapping_exception():
+    from deskpet.memory.prospective_runtime import failure_identity
+
+    try:
+        raise RuntimeError('registration failed') from _abort_error('s5c_append_only')
+    except RuntimeError as wrapper:
+        identity = failure_identity(wrapper)
+    assert identity.startswith('type=RuntimeError ')
+    assert 'constraint=s5c_append_only' in identity
+
+
+def test_failure_identity_never_logs_a_message_that_could_carry_content():
+    """Only a bare snake_case RAISE token survives; every other message does not."""
+
+    import sqlite3
+    from deskpet.memory.prospective_runtime import failure_identity
+
+    db = sqlite3.connect(':memory:')
+    db.execute('CREATE TABLE u(a TEXT UNIQUE)')
+    db.execute("INSERT INTO u VALUES('用户的会议纪要')")
+    try:
+        db.execute("INSERT INTO u VALUES('用户的会议纪要')")
+    except sqlite3.Error as error:
+        identity = failure_identity(error)
+    assert identity == 'type=IntegrityError sqlite=SQLITE_CONSTRAINT_UNIQUE sqlite_code=2067'
+    assert '用户' not in identity and 'u.a' not in identity
+    assert failure_identity(ValueError('内部细节')) == 'type=ValueError'
+
+
+def test_failure_identity_terminates_on_a_self_referential_cause():
+    from deskpet.memory.prospective_runtime import failure_identity
+
+    first, second = RuntimeError('a'), RuntimeError('b')
+    first.__cause__ = second
+    second.__cause__ = first
+    assert failure_identity(first) == 'type=RuntimeError'

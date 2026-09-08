@@ -16,6 +16,7 @@ from deskpet.memory.recall_selection import (
     HOST_DEFAULT_MEMORY_TYPES,
     MEMORY_TYPE_SELECTION_POLICY,
     REQUESTABLE_MEMORY_TYPES,
+    indicates_workflow_request,
     parse_memory_types,
     parse_recall_selection,
     selection_policy_departures,
@@ -105,3 +106,51 @@ def test_policy_keeps_the_route_schema_inside_its_measured_token_cost():
     tokens = tool_schema_tokens([{"name": "context_route", "description": "Route context",
                                   "input_schema": CONTEXT_ROUTE_SCHEMA}])
     assert tokens <= 643, f"context_route schema grew to {tokens} wire tokens"
+
+
+# -- F-ETR-5: the workflow-request signal that decouples the Procedure hint ----
+# Rule R4 above tells the model not to request `procedure`, so the Host may not
+# read that selection as "the user asked how something is done". This pure
+# helper is the replacement signal; it stays advisory exactly like
+# `selection_policy_departures` and never gates or rewrites a recall.
+
+
+@pytest.mark.parametrize("query", [
+    "发版流程是怎么走的",
+    "上线的步骤有哪些",
+    "这个报表怎么做",
+    "备份的做法是什么",
+    "SOP 在哪",
+    "what is the deploy workflow",
+    "How do I roll back a release",
+    "give me the steps",
+    "the release checklist",
+])
+def test_workflow_shaped_requests_are_recognised(query):
+    assert indicates_workflow_request(query) is True
+
+
+@pytest.mark.parametrize("query", [
+    "我常用的日期格式",
+    "上周做了什么",
+    "下周三提醒我交周报",
+    "我和小王约定的单位是什么",
+    "who did I meet yesterday",
+    "",
+])
+def test_ordinary_requests_are_not_workflow_shaped(query):
+    assert indicates_workflow_request(query) is False
+
+
+def test_non_text_is_never_a_workflow_request():
+    for value in (None, 3, ["流程"], {"query": "流程"}):
+        assert indicates_workflow_request(value) is False
+
+
+def test_the_signal_is_advisory_and_selects_nothing():
+    """It reports on the query only; it can neither add nor drop a type."""
+
+    assert parse_recall_selection(["semantic"]) == (("semantic",), False)
+    assert selection_policy_departures(("semantic",)) == ()
+    assert indicates_workflow_request("发版流程") is True
+    assert parse_recall_selection(["semantic"]) == (("semantic",), False)

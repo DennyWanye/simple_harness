@@ -12,10 +12,11 @@ from pathlib import Path
 
 import aiosqlite
 
-from deskpet.memory import migrator, schema
+from deskpet.memory import migrator, schema, schema_chain
 from deskpet.memory.s5c_schema import initialize_s5c_state_db, validate_s5c_state_db
 
 TIMER_MIGRATION = "s5c/043_prospective_time_signals_v51.sql"
+SCHEMA_VERSION = 51
 TIMER_TABLE = "prospective_timer_events"
 
 
@@ -28,9 +29,9 @@ def _version(path):
         return db.execute("PRAGMA user_version").fetchone()[0]
 
 
-def validate_s5c_timer_state_db(path: str | Path, *, _expected_user_version: int = 51) -> None:
+def validate_s5c_timer_state_db(path: str | Path, *, _expected_user_version: int = SCHEMA_VERSION) -> None:
     path = Path(path)
-    if _expected_user_version not in (51, 52, 53, 54, 55):
+    if _expected_user_version not in schema_chain.accepted_versions(SCHEMA_VERSION):
         raise schema.HumanMemoryProgramEpochError("s5c_timer_schema_invalid")
     validate_s5c_state_db(path, _expected_user_version=_expected_user_version)
     sql = _sql()
@@ -62,29 +63,23 @@ def validate_s5c_timer_state_db(path: str | Path, *, _expected_user_version: int
 
 
 def validate_s5c_domain_state_db(path: str | Path) -> None:
-    """Domain stores accept exactly the known base or validated timer extension."""
+    """Domain stores accept exactly the base or one registered chain successor.
+
+    The successor ladder is the chain registry, not a hand-maintained elif
+    chain: an unregistered integer (a future or unpublished schema) falls
+    through to the base validator, which fails closed on it.
+    """
     path = Path(path)
-    if _version(path) == 55:
-        from deskpet.memory.primary_tool_call_schema import validate_primary_tool_call_state_db
-        validate_primary_tool_call_state_db(path)
-    elif _version(path) == 54:
-        from deskpet.memory.procedure_recovery_schema import validate_procedure_recovery_state_db
-        validate_procedure_recovery_state_db(path)
-    elif _version(path) == 53:
-        from deskpet.memory.procedure_schema import validate_procedure_state_db
-        validate_procedure_state_db(path)
-    elif _version(path) == 52:
-        from deskpet.memory.s5c_terminal_schema import validate_s5c_terminal_state_db
-        validate_s5c_terminal_state_db(path)
-    elif _version(path) == 51:
-        validate_s5c_timer_state_db(path)
-    else:
+    validator = schema_chain.domain_validator(_version(path))
+    if validator is None:
         validate_s5c_state_db(path)
+        return
+    validator(path)
 
 
 def validate_s5c_timer_runtime_state_db(path: str | Path) -> None:
     """A timer requires the real time journal, including in the typed successor."""
-    if _version(path) not in (51, 52, 53, 54, 55):
+    if _version(path) not in schema_chain.accepted_versions(SCHEMA_VERSION):
         raise schema.HumanMemoryProgramEpochError("s5c_timer_schema_required")
     validate_s5c_domain_state_db(path)
 

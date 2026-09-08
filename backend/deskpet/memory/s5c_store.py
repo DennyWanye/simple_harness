@@ -30,8 +30,17 @@ from simple_harness_memory import MemoryPrincipal
 from simple_harness_memory.core.lifecycle_results import ProspectiveSignalApplyResult
 from simple_harness_memory.core.occurrence import OccurrenceInboxEntryV1, OutboxEntryV1
 
+from deskpet.memory import schema_chain
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
+from deskpet.memory.s5c_terminal_schema import SCHEMA_VERSION as _TERMINAL_SCHEMA_VERSION
 from deskpet.memory.s5c_timer_schema import validate_s5c_domain_state_db
+
+# The typed cursor arrives with the v52 terminal step and every later chain
+# version keeps it, because that same step seals the v50 table with
+# ``s5c_cursor_successor_required``. Derived from the chain, never a literal
+# tuple: the v55 Primary step forgot to extend one, so every production
+# registration silently addressed the sealed table.
+_TYPED_CURSOR_VERSIONS = schema_chain.accepted_versions(_TERMINAL_SCHEMA_VERSION)
 
 
 class S5cConflict(ValueError):
@@ -89,10 +98,11 @@ class S5cStore:
         self.fault = fault_inject
         validate_s5c_domain_state_db(self.path)
         with sqlite3.connect(f"{self.path.resolve().as_uri()}?mode=ro", uri=True) as db:
-            self.cursor_table = (
-                "prospective_outbox_cursor_v52" if db.execute("PRAGMA user_version").fetchone() in ((52,), (53,), (54,))
-                else "prospective_outbox_cursor"
-            )
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+        self.cursor_table = (
+            "prospective_outbox_cursor_v52" if version in _TYPED_CURSOR_VERSIONS
+            else "prospective_outbox_cursor"
+        )
 
     @asynccontextmanager
     async def _transaction(self):

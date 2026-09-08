@@ -15,9 +15,10 @@ from pathlib import Path
 
 import aiosqlite
 
-from deskpet.memory import migrator, schema
+from deskpet.memory import migrator, schema, schema_chain
 
 S5C_MIGRATION = "s5c/042_prospective_memory_actions_v50.sql"
+SCHEMA_VERSION = 50
 S5C_TABLES = (
     "prospective_scheduler_registrations",
     "prospective_outbox_cursor",
@@ -30,9 +31,9 @@ def _sql() -> str:
     return (migrator.DEFAULT_MIGRATIONS_DIR / S5C_MIGRATION).read_text(encoding="utf-8")
 
 
-def validate_s5c_state_db(path: Path, *, _expected_user_version: int = 50) -> None:
+def validate_s5c_state_db(path: Path, *, _expected_user_version: int = SCHEMA_VERSION) -> None:
     """Verify the base chain, v50 checksum/DDL and registered recovery fences."""
-    if _expected_user_version not in (50, 51, 52, 53, 54, 55):
+    if _expected_user_version not in schema_chain.accepted_versions(SCHEMA_VERSION):
         raise schema.HumanMemoryProgramEpochError("s5c_schema_invalid")
     for validator in (
         schema._validate_human_memory_program_marker,

@@ -21,7 +21,18 @@ REGISTRATION_REQUIRED_LIFECYCLE = frozenset({"pending", "rescheduled"})
 
 
 class ProspectiveSetupNotReady(ValueError):
-    """A seeded reminder holds no accepted registration; scoring it is invalid."""
+    """A seeded reminder holds no accepted registration; scoring it is invalid.
+
+    Carries the same durable ``receipt`` the success path returns. The v55
+    cursor regression blocked 20 corpus cases and the run kept only the reason
+    string, so which reminders were seeded, how many ticks ran and what the lane
+    reported had to be reconstructed by hand.
+    """
+
+    def __init__(self, code, receipt=None):
+        super().__init__(code)
+        self.code = str(code)
+        self.receipt = receipt
 
 
 async def seeded_reminders(manager, principal):
@@ -56,13 +67,17 @@ async def settle_prospective_registrations(*, lane, manager, path, principal, ma
         # No reminder in this case: never wake a lane the runway just closed.
         return receipt
     if lane is None or not callable(getattr(lane, "tick", None)):
-        raise ProspectiveSetupNotReady("corpus_prospective_runtime_lane_unavailable")
+        raise ProspectiveSetupNotReady(
+            "corpus_prospective_runtime_lane_unavailable", receipt)
+    from deskpet.memory.prospective_runtime import failure_identity
     from deskpet.memory.s5c_store import S5cStore
     try:
         store = S5cStore(path, principal)
     except Exception as exc:
+        receipt["setup_error"] = failure_identity(exc)
         raise ProspectiveSetupNotReady(
-            "corpus_prospective_registration_store_unavailable:" + type(exc).__name__) from exc
+            "corpus_prospective_registration_store_unavailable:" + type(exc).__name__,
+            receipt) from exc
 
     async def confirm(nodes):
         remaining = []
@@ -80,16 +95,20 @@ async def settle_prospective_registrations(*, lane, manager, path, principal, ma
         try:
             await lane.tick()
         except Exception as exc:
+            receipt["setup_error"] = failure_identity(exc)
             raise ProspectiveSetupNotReady(
-                "corpus_prospective_registration_tick_raised:" + type(exc).__name__) from exc
+                "corpus_prospective_registration_tick_raised:" + type(exc).__name__,
+                receipt) from exc
         receipt["ticks"] += 1
         if lane.last_registration_error is not None:
-            receipt["tick_errors"].append(type(lane.last_registration_error).__name__)
+            # Same payload-free identity the lane logs: the stable SQLite
+            # constraint is what tells a blocked corpus case from a real miss.
+            receipt["tick_errors"].append(failure_identity(lane.last_registration_error))
         pending = await confirm(pending)
     receipt["missing"] = [node.memory_id for node in pending]
     if pending:
         raise ProspectiveSetupNotReady("corpus_prospective_registration_missing:"
-                                       + ",".join(sorted(receipt["missing"])))
+                                       + ",".join(sorted(receipt["missing"])), receipt)
     return receipt
 
 

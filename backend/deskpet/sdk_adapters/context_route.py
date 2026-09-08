@@ -37,8 +37,8 @@ from deskpet.sdk_adapters.context_authority import (
     canonical_sha256,
 )
 from deskpet.memory.recall_selection import (
-    MEMORY_TYPE_SELECTION_POLICY, REQUESTABLE_MEMORY_TYPES, parse_recall_selection,
-    selection_policy_departures,
+    MEMORY_TYPE_SELECTION_POLICY, REQUESTABLE_MEMORY_TYPES, indicates_workflow_request,
+    parse_recall_selection, selection_policy_departures,
 )
 
 ROUTES = (
@@ -485,6 +485,9 @@ class ContextRouteToolService:
                 execution=execution, projected=fragments, admitted=admitted, effect_id=effect_id,
             )
         refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
+        procedure_hint = await self._procedure_hint(
+            run_id=run_id, query=query, memory_types=memory_types, fragments=fragments,
+        )
         return await self._commit_receipt(
             run_id=run_id,
             raw_call_id=raw_call_id,
@@ -507,12 +510,48 @@ class ContextRouteToolService:
                 # the discovery surface instead. This rides in the same extras
                 # the receipt hash and typed-use public_result_hash cover; the
                 # ContextRouteReceipt itself is untouched.
-                **({"procedure_hint": dict(_PROCEDURE_HINT)}
-                   if "procedure" in memory_types and not any(
-                       fragment["memory_type"] == "procedure" for fragment in fragments)
-                   else {}),
+                **({"procedure_hint": procedure_hint} if procedure_hint else {}),
             },
         )
+
+    async def _run_is_task_scoped(self, run_id: str) -> bool:
+        """Has this Run already bound a TaskScope (any earlier turn of the Run)?
+
+        Never fail an already successful recall on this read; an unavailable
+        ledger only means the Host cannot claim the Run is doing task work.
+        """
+
+        try:
+            decision = await self._ledger.latest_route_decision_for_run(
+                run_id, task_only=True,
+            )
+        except Exception:  # noqa: BLE001 - advisory hint only, never a route verdict
+            _LOG.warning("context_route_procedure_hint_scope_unavailable run_id=%s", run_id)
+            return False
+        return decision is not None
+
+    async def _procedure_hint(
+        self, *, run_id: str, query: str, memory_types: tuple[str, ...], fragments,
+    ) -> dict[str, Any] | None:
+        """Point at ``procedure_discover`` whenever a workflow could be the answer.
+
+        F-ETR-5: this used to fire only when the model had put ``procedure`` in
+        ``memory_types``. Rule R4 of ``MEMORY_TYPE_SELECTION_POLICY`` then
+        correctly told the model to stop requesting a type typed recall cannot
+        serve, which silently switched the hint off for the very requests it
+        exists for (C06 ``procedure_discover`` 18/19 → 14/19). The trigger is
+        therefore the request, not the type selection: a workflow-shaped query,
+        or a Run already inside a TaskScope, where an unbound saved workflow is
+        exactly what typed recall withholds. The payload is unchanged.
+        """
+
+        if any(fragment["memory_type"] == "procedure" for fragment in fragments):
+            return None
+        if not ("procedure" in memory_types
+                or indicates_workflow_request(query)
+                or await self._run_is_task_scoped(run_id)):
+            return None
+        return dict(_PROCEDURE_HINT)
 
     async def _continue_active(
         self,

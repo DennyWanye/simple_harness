@@ -8,10 +8,11 @@ import time
 from pathlib import Path
 
 import aiosqlite
-from deskpet.memory import migrator, schema
+from deskpet.memory import migrator, schema, schema_chain
 from deskpet.memory.procedure_schema import initialize_procedure_state_db, validate_procedure_state_db
 
 MIGRATION = "procedure/046_procedure_attempts_v54.sql"
+SCHEMA_VERSION = 54
 TABLES = ("procedure_observation_attempts",)
 
 
@@ -19,9 +20,9 @@ def _sql():
     return (migrator.DEFAULT_MIGRATIONS_DIR / MIGRATION).read_text(encoding="utf-8")
 
 
-def validate_procedure_recovery_state_db(path, *, _expected_user_version=54):
+def validate_procedure_recovery_state_db(path, *, _expected_user_version=SCHEMA_VERSION):
     path = Path(path)
-    if _expected_user_version not in (54, 55):
+    if _expected_user_version not in schema_chain.accepted_versions(SCHEMA_VERSION):
         raise schema.HumanMemoryProgramEpochError("procedure_schema_invalid")
     validate_procedure_state_db(path, _expected_user_version=_expected_user_version)
     sql = _sql()
@@ -63,15 +64,15 @@ def validate_procedure_recovery_state_db(path, *, _expected_user_version=54):
 async def initialize_procedure_recovery_state_db(path, *, fault_inject=None):
     path = Path(path)
     version = await migrator.read_user_version(path)
-    if version == 55:
-        from deskpet.memory.primary_tool_call_schema import validate_primary_tool_call_state_db
-        validate_primary_tool_call_state_db(path)
+    if version >= SCHEMA_VERSION:
+        # Already at this step or at a registered chain successor: validate that
+        # exact published schema. An unregistered integer is a future/unpublished
+        # database, never re-interpreted as this step.
+        validator = schema_chain.domain_validator(version)
+        if validator is None:
+            raise schema.HumanMemoryProgramEpochError("human_memory_program_future_database_unsupported")
+        validator(path)
         return
-    if version == 54:
-        validate_procedure_recovery_state_db(path)
-        return
-    if version > 54:
-        raise schema.HumanMemoryProgramEpochError("human_memory_program_future_database_unsupported")
     await initialize_procedure_state_db(path)
     async with schema._human_memory_program_lock(path):
         async with aiosqlite.connect(path) as db:

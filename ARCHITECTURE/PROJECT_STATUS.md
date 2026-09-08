@@ -327,6 +327,21 @@ claim, and077 artifact is unchanged. [Contract](../plans/2026-09-06-expiry-termi
 
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-09 域 schema 链单一真源 + Procedure 提示解耦
+
+基线 `243369c0`，工作树 `.claude/worktrees/s5c-cursor-version`。修复生产回归：v55
+（`primary/047_…_v55.sql`）未同步 `S5cStore` 的字面量游标白名单，`ProspectiveRuntimeLane`
+每一次预约登记都被 v52 封死触发器 `s5c_cursor_successor_required` 拒绝（语料 20 例
+SETUP_BLOCKED）。新增 `deskpet/memory/schema_chain.py` 从迁移文件发现链并派生全部准入判断，
+清掉 `memory/` 下 19 处字面量 `user_version` 白名单/阶梯（其中 `procedure_use_store` 的
+`!= 54` 三处是同类潜伏缺陷：v55 上 Procedure 重试谱系整体被拒）。守卫测试
+`tests/memory/test_s5c_schema_chain.py`：AST 扫描禁字面量版本集合、新迁移未登记即红、
+完整链到链首后真 `S5cStore` 落登记。可观测性：`failure_identity` 补 SQLite 结果码与
+payload-free 约束名，语料结算失败路径保留回执。另 F-ETR-5：`procedure_hint` 触发条件从
+`memory_types` 改为「工作流查询 或 Run 已绑定 TaskScope 或 显式请求 procedure」。
+具名套件 193 通过 / 20 既有红（与基线逐条一致）；Procedure schema/recovery 4 文件另 12 通过。
+[裁决与证据](../plans/2026-09-08-hm-to-a6/DECISION-S5C-CURSOR-VERSION.md)。
+
 > 2026-09-07 转主干开发：并入 `feat/typed-recall-0613`（401 矩阵 runner）。以下为合并时两路状态段的并集，各自描述当时状态。
 
 ## 2026-09-06 Applicability integration

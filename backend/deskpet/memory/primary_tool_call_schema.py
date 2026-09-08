@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 import aiosqlite
-from deskpet.memory import migrator, schema
+from deskpet.memory import migrator, schema, schema_chain
 from deskpet.memory.procedure_recovery_schema import (
     initialize_procedure_recovery_state_db, validate_procedure_recovery_state_db,
 )
@@ -30,9 +30,11 @@ def _sql():
     return (migrator.DEFAULT_MIGRATIONS_DIR / MIGRATION).read_text(encoding="utf-8")
 
 
-def validate_primary_tool_call_state_db(path):
+def validate_primary_tool_call_state_db(path, *, _expected_user_version=SCHEMA_VERSION):
     path = Path(path)
-    validate_procedure_recovery_state_db(path, _expected_user_version=SCHEMA_VERSION)
+    if _expected_user_version not in schema_chain.accepted_versions(SCHEMA_VERSION):
+        raise schema.HumanMemoryProgramEpochError("primary_tool_call_schema_invalid")
+    validate_procedure_recovery_state_db(path, _expected_user_version=_expected_user_version)
     sql = _sql()
     try:
         with sqlite3.connect(":memory:") as expected:
@@ -72,11 +74,15 @@ def validate_primary_tool_call_state_db(path):
 async def initialize_primary_tool_call_state_db(path, *, fault_inject=None):
     path = Path(path)
     version = await migrator.read_user_version(path)
-    if version == SCHEMA_VERSION:
-        validate_primary_tool_call_state_db(path)
+    if version >= SCHEMA_VERSION:
+        # Already at this step or at a registered chain successor: validate that
+        # exact published schema. An unregistered integer is a future/unpublished
+        # database, never re-interpreted as this step.
+        validator = schema_chain.domain_validator(version)
+        if validator is None:
+            raise schema.HumanMemoryProgramEpochError("human_memory_program_future_database_unsupported")
+        validator(path)
         return
-    if version > SCHEMA_VERSION:
-        raise schema.HumanMemoryProgramEpochError("human_memory_program_future_database_unsupported")
     await initialize_procedure_recovery_state_db(path)
     async with schema._human_memory_program_lock(path):
         async with aiosqlite.connect(path) as db:
