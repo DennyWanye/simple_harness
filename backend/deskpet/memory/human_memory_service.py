@@ -63,6 +63,21 @@ from deskpet.task_scope.store import CanonicalTaskScopeStore
 logger = logging.getLogger(__name__)
 SCHEDULER_WAKE_TIMEOUT_SECONDS = 0.5
 
+#: Hard upper bound on one foreground user turn, in UTF-8 **bytes**.
+#:
+#: The previous bound reused the generic 16 KiB identifier cap, which is ~5 400
+#: Chinese characters — an ordinary long Chinese instruction exceeds it, and the
+#: only signal was the opaque ``task_scope_protocol_rejected``.  The turn text is
+#: user prose, not an identifier, so it gets its own named bound and its own
+#: stable rejection code.  It is intentionally still bounded: the whole turn is
+#: hashed, stored and replayed as one sanitized evidence payload.
+#:
+#: Mirrored by ``PRIMARY_TURN_TEXT_MAX_BYTES`` in
+#: ``tauri-app/src/primary/turnText.ts``; change both together.
+FOREGROUND_TURN_TEXT_MAX_BYTES = 65_536
+#: Stable public error code for a turn above that bound.
+FOREGROUND_TURN_TEXT_TOO_LARGE = "human_memory_turn_text_too_large"
+
 
 class HumanMemoryHostServiceError(RuntimeError):
     def __init__(self, code: str) -> None:
@@ -280,7 +295,15 @@ class QueueTurnRequest:
         if self.scope_ref is not None:
             identifier(self.scope_ref, "scope_ref", 512)
         identifier(self.delivery_key, "delivery_key", 512)
-        identifier(self.text, "text", 16_384)
+        # Oversize is checked first, and with its own code: `identifier` would
+        # collapse it into the opaque class-level `task_scope_protocol_rejected`,
+        # which tells the composer nothing about why the turn was dropped.
+        if (
+            isinstance(self.text, str)
+            and len(self.text.encode("utf-8")) > FOREGROUND_TURN_TEXT_MAX_BYTES
+        ):
+            raise HumanMemoryHostServiceError(FOREGROUND_TURN_TEXT_TOO_LARGE)
+        identifier(self.text, "text", FOREGROUND_TURN_TEXT_MAX_BYTES)
         if self.disclosure_binding_ref is not None:
             identifier(self.disclosure_binding_ref, "disclosure_binding_ref", 512)
 

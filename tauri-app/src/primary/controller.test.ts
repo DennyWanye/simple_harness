@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrimaryController, type PrimaryPort } from "./controller";
 import type { PrimaryWireRequest } from "./requests";
+import { PRIMARY_TURN_TEXT_MAX_BYTES } from "./turnText";
 const bound = { type: "companion_profile_bound", payload: { profile_id: "owner", profile_generation: 1 } };
 const state = { primary_ref: "primary-real", revision: "r1", current_run: null, queued_count: 0, queued_count_truncated: false };
 const item = { message_ref: "message-1", turn_ref: "turn-1", run_ref: "run-1", delivery_key: "d1", role: "assistant", text: "真实终态文本", has_more: false, total_chars: 6 };
@@ -125,6 +126,38 @@ describe("primary durable controller", () => {
     expect(second.request_id).not.toBe(first.request_id);
     h.reply(second, { delivery_key: second.request.delivery_key, turn_ref: "turn", receipt_ref: "receipt", enqueue_sequence: 1, scope_ref: null, content_sha256: "a".repeat(64) });
     await retry; h.stop(); await tick();
+  });
+  // Incident G: an 18 393-byte Chinese turn never reached the Host.
+  it("enqueues a long turn inside the bound and names the bound above it", async () => {
+    const h = setup(); h.emit(bound); await tick();
+    const long = "目标条款：核对主清单 A 的这一组条目，并保留原始出处引用。；".repeat(215);
+    expect(new TextEncoder().encode(long).length).toBeGreaterThan(18_393);
+    const submit = h.controller.submit(long, []);
+    const sent = h.wire.at(-1)!;
+    expect(sent.operation).toBe("queue.enqueue");
+    expect(sent.request.text).toBe(long);
+    h.reply(sent, { delivery_key: sent.request.delivery_key, turn_ref: "turn", receipt_ref: "receipt",
+      enqueue_sequence: 1, scope_ref: null, content_sha256: "a".repeat(64) });
+    await submit;
+
+    const enqueues = h.wire.filter((r) => r.operation === "queue.enqueue").length;
+    const tooLong = "很".repeat(PRIMARY_TURN_TEXT_MAX_BYTES);
+    await expect(h.controller.submit(tooLong, [])).rejects.toThrow(String(PRIMARY_TURN_TEXT_MAX_BYTES));
+    // Nothing was put on the wire, and no pending delivery was left behind.
+    expect(h.wire.filter((r) => r.operation === "queue.enqueue")).toHaveLength(enqueues);
+    const after = h.controller.submit("短消息", []);
+    h.reply(h.wire.at(-1)!, { delivery_key: h.wire.at(-1)!.request.delivery_key, turn_ref: "t2", receipt_ref: "r2",
+      enqueue_sequence: 2, scope_ref: null, content_sha256: "b".repeat(64) });
+    await after;
+    h.stop();
+  });
+  it("translates the Host oversize code into a readable rejection", async () => {
+    const h = setup(); h.emit(bound); await tick();
+    const submit = h.controller.submit("hello", []);
+    h.emit({ type: "human_memory_response", request_id: h.wire.at(-1)!.request_id,
+      payload: { ok: false, operation: "queue.enqueue", error: { code: "human_memory_turn_text_too_large" } } });
+    await expect(submit).rejects.toThrow(/消息过长/);
+    h.stop();
   });
   it("does not clear draft on incomplete receipt or silently strip attachments", async () => {
     const h = setup(); h.emit(bound); await tick();
