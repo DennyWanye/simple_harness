@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import logging
 import time
+import inspect
 import re
 import json
 from dataclasses import replace
+from functools import lru_cache
 from pathlib import Path
 
 from simple_harness import thaw_json
@@ -38,6 +40,54 @@ RELATION_MEMBER_SOURCE_KIND_UNSUPPORTED = 'relation_candidate_source_kind_unsupp
 RELATION_MEMBER_TYPE_UNSUPPORTED = 'relation_candidate_memory_type_unsupported'
 RELATION_MEMBER_PAYLOAD_UNREADABLE = 'relation_candidate_payload_unreadable'
 RELATION_MEMBER_ENDPOINT_UNVERIFIABLE = 'relation_candidate_endpoint_unverifiable'
+
+# F-S1b (SDK 0.6.36).  ``check_history_visibility`` used to hand its source
+# re-validation an empty applicability set on purpose ("never reuse old runtime
+# fingerprints"), so a Procedure item was reported stale there no matter what — which
+# is why every Procedure endpoint had to be withheld before issue.  0.6.36 adds an
+# optional, explicitly-provenanced entry point for a lane with no live Run, and admits
+# a Procedure only where Memory's own immutable observation audit carries the same
+# fingerprint.  We feature-detect it rather than pin a version, so this file keeps
+# working against 0.6.34/0.6.35 (where the withholding stays in force).
+# The withheld reason names the *binding* blocker, and that is the visibility gate, not
+# endpoint resolution: SDK 0.6.35 already fixed resolution (nearest classified ancestor
+# governs), so on 0.6.35 "the SDK cannot resolve this endpoint" would be false and would
+# send the next reader to the wrong fix.  0.6.31–0.6.34 additionally could not resolve it;
+# the gate is the one fact true across every SDK that lacks the 0.6.36 entry point.
+SDK_PROCEDURE_APPLICABILITY_GATE_UNAVAILABLE = 'sdk_procedure_applicability_gate_unavailable'
+SDK_PROCEDURE_APPLICABILITY_ABSENT = 'sdk_procedure_applicability_absent'
+
+
+@lru_cache(maxsize=1)
+def sdk_offline_applicability_capable():
+    """Whether the installed Memory SDK accepts a caller-presented applicability set.
+
+    Attribute/signature detection, not a version comparison: the capability is exactly
+    "the root exports the attestation types AND the public facade takes the kwarg".
+    Absent, `_endpoint_unverifiable` keeps withholding every Procedure endpoint and
+    `check` keeps failing a batch that somehow carries one, so an older SDK degrades to
+    the 0.6.35 behaviour rather than to an unchecked one.
+
+    This probe is necessary, not sufficient: a name in a signature proves nothing about
+    what the callee does with it.  ``check`` therefore also verifies the returned
+    ``procedure_applicability`` receipt before accepting any Procedure binding, so a
+    backend that accepts the kwarg and ignores it cannot admit one.
+
+    Cached: the installed distribution cannot change inside one process, and this is
+    asked once per relation candidate and again per ``check``.
+    """
+    import simple_harness_memory as sdk
+
+    attestation = getattr(sdk, 'ProcedureApplicabilityAttestation', None)
+    provenance = getattr(sdk, 'ProcedureApplicabilityProvenance', None)
+    member = getattr(provenance, 'APPLIED_USE_FINGERPRINTS', None)
+    if attestation is None or member is None or not isinstance(member, provenance):
+        return False
+    try:
+        parameters = inspect.signature(sdk.MemoryManager.check_history_visibility).parameters
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        return False
+    return 'procedure_applicability' in parameters
 
 
 def _relation_reason(reason, *, memory_id=None, revision=None, detail=None):
@@ -314,7 +364,7 @@ class SemanticCorrectionAuthority:
         if not query:
             snapshot = {'evidence_set_key':key, 'subject':request.subject, 'candidates':[],
                 'relation_candidates':[], 'relation_candidates_unavailable':False,
-                'relation_candidate_reasons':[],
+                'relation_candidate_reasons':[], 'relation_applicability_fingerprints':[],
                 'result':None, 'prepared_at':float(self._clock())}
             await self._save(identity, request, snapshot)
             return snapshot
@@ -363,14 +413,21 @@ class SemanticCorrectionAuthority:
         for body in issued:
             body['correction_intent'] = explicit_correction_intent(body, items, issued)
             candidates.append({'candidate_key':stable_id('semantic-candidate', key, canonical_hash(body)), **body})
-        relation_candidates, relation_unavailable, relation_reasons = await self._relation_candidates(
+        (relation_candidates, relation_unavailable, relation_reasons,
+         relation_fingerprints) = await self._relation_candidates(
             request, key, principal, manager, journal, now, query)
         snapshot = dict(evidence_set_key=key, subject=request.subject, prepared_at=now, context=context.to_json(),
             plan=plan.to_json(), decision=execution.decision.to_json(), result=result.to_json(),
             result_hash=result.result_hash, candidates=candidates,
             relation_candidates=relation_candidates,
             relation_candidates_unavailable=relation_unavailable,
-            relation_candidate_reasons=relation_reasons)
+            relation_candidate_reasons=relation_reasons,
+            # F-S1b: `check` must re-verify a Procedure endpoint with the SAME
+            # applicability set the recall that issued it was bound to. The snapshot is
+            # the durable, hash-bound record of this batch, so it is the only honest
+            # place to carry them; re-deriving them at check time would be a different
+            # fact under a different clock.
+            relation_applicability_fingerprints=list(relation_fingerprints))
         await self._save(identity, request, snapshot)
         return snapshot
 
@@ -391,7 +448,9 @@ class SemanticCorrectionAuthority:
         endpoints, which do not depend on applicability at all.  The two phases are
         separated below, and every endpoint that cannot be offered leaves a named reason
         in the returned audit rows instead of vanishing.  Returns
-        ``(rows, recall_unavailable, reasons)``.
+        ``(rows, recall_unavailable, reasons, fingerprints)`` — the fingerprints being
+        exactly the set the recall below was bound to, which `prepare` persists so that
+        `check` re-verifies with the same facts (F-S1b).
         """
         from simple_harness import (RecallContext, RecallPlan, RecallBudget, LongTermMemoryType,
             RecallSelectorDomain, RecallRetrievalMode, RecallReasonCode)
@@ -440,7 +499,7 @@ class SemanticCorrectionAuthority:
             logger.warning("memory.analysis_relation_candidates_unavailable key=%s reason=%s", key,
                            RELATION_RECALL_UNAVAILABLE, exc_info=True)
             reasons.append(_relation_reason(RELATION_RECALL_UNAVAILABLE, detail=type(exc).__name__))
-            return [], True, reasons
+            return [], True, reasons, fingerprints
         rows = []
         if result.truncated:
             reasons.append(_relation_reason(RELATION_RESULT_TRUNCATED))
@@ -483,7 +542,7 @@ class SemanticCorrectionAuthority:
                         revision=getattr(selected, 'source_revision', None),
                         detail=type(exc).__name__))
                     continue
-                unverifiable = self._endpoint_unverifiable(body)
+                unverifiable = self._endpoint_unverifiable(body, fingerprints=fingerprints)
                 if unverifiable is not None:
                     reasons.append(_relation_reason(RELATION_MEMBER_ENDPOINT_UNVERIFIABLE,
                         memory_id=selected.source_ref, revision=selected.source_revision,
@@ -493,10 +552,10 @@ class SemanticCorrectionAuthority:
         if reasons:
             logger.info("memory.analysis_relation_candidate_reasons key=%s codes=%s", key,
                         ','.join(sorted({str(row['reason']) for row in reasons})))
-        return rows, False, reasons
+        return rows, False, reasons, fingerprints
 
     @staticmethod
-    def _endpoint_unverifiable(body):
+    def _endpoint_unverifiable(body, *, fingerprints):
         """Whether one existing relation endpoint can be offered at all. ``None`` = it can.
 
         Incident S, second half.  Two SDK facts, both measured, both of which used to be
@@ -504,29 +563,42 @@ class SemanticCorrectionAuthority:
         ``relation_candidates`` list:
 
         1. ``check_history_visibility`` is the right gate for a semantic candidate, but
-           the SDK deliberately hands its source re-validation *no* procedure
-           applicability ("never reuse old runtime fingerprints",
-           ``backends/history_visibility.py``), so a Procedure item is always reported
+           through 0.6.35 the SDK deliberately handed its source re-validation *no*
+           procedure applicability ("never reuse old runtime fingerprints",
+           ``backends/history_visibility.py``), so a Procedure item was always reported
            stale there and ``check()`` failed the **whole batch** with
            ``analysis_candidate_no_longer_visible``.
-        2. Even past that gate, SDK 0.6.31 cannot resolve any Procedure relation
+        2. Even past that gate, SDK 0.6.31–0.6.34 could not resolve any Procedure relation
            endpoint.  A Procedure is recallable only at ``active``/``reinforced``
            (``_cognitive_recall_state_allowed``), which takes three independent
            observations, and an observation commits a revision that carries evidence
            spans but **no** ``cognitive_classification_decisions`` row — so
-           ``_resolve_semantic_relation_payload_unlocked`` raises
+           ``_resolve_semantic_relation_payload_unlocked`` raised
            ``MemoryCorruptionError('relation endpoint classification is missing')`` on
-           the current head and kills the batch, losing every memory of that turn.
-           ``test_analysis_relation_applied`` measures it: head revision 4,
+           the current head and killed the batch, losing every memory of that turn.
+           ``test_analysis_relation_applied`` measured it: head revision 4,
            classification rows only for revision 1.
 
-        So Procedure endpoints are withheld with a named reason until the SDK can
-        resolve them (F-S1); Prospective endpoints are unaffected by both facts and
-        keep the ordinary history gate.
+        Fact 2 is fixed in SDK 0.6.35 (nearest classified ancestor governs) and fact 1 in
+        0.6.36 (this lane may present its applied-use fingerprints, and Memory corroborates
+        them against its own ``procedure_observations`` — per memory and fingerprint, not
+        per revision, so an observation of an older revision corroborates the head).  So
+        from 0.6.35 the withheld reason is the *visibility gate*, not endpoint resolution:
+        naming resolution there would be false on 0.6.35 and would send the next reader to
+        the wrong SDK fix.  The withholding is lifted **only** where the installed SDK
+        advertises the 0.6.36 entry point.  The second branch is belt-and-braces: with an
+        empty fingerprint set the SDK recall gate already drops every Procedure, so no
+        Procedure member reaches it through the production path — it exists so a future
+        caller cannot issue an endpoint this batch could not re-verify in ``check``.
+        Prospective endpoints were never affected by either fact.
         """
         if body.get('memory_type') != 'procedure':
             return None
-        return 'sdk_procedure_endpoint_unresolvable'
+        if not sdk_offline_applicability_capable():
+            return SDK_PROCEDURE_APPLICABILITY_GATE_UNAVAILABLE
+        if not fingerprints:
+            return SDK_PROCEDURE_APPLICABILITY_ABSENT
+        return None
 
     async def bind_attempt(self, request, row, snapshot, provider_request, *, db):
         # This observation and the real attempt reserve commit together. It is
@@ -586,20 +658,66 @@ class SemanticCorrectionAuthority:
             if envelope.envelope_hash != ref.content_hash:
                 raise ValueError('analysis_candidate_evidence_mismatch')
             bindings.append(HistoryEvidenceBinding(envelope, receipt))
-        for row in (*snapshot['candidates'], *snapshot.get('relation_candidates', ())):
-            if row.get('memory_type') == 'procedure':
-                # ``prepare`` withholds every Procedure endpoint (see
-                # ``_endpoint_unverifiable``), so one reaching this gate means the
-                # withholding rule and this check have drifted apart.  Fail, rather
-                # than invent a substitute gate: whoever lifts F-S1 has to design the
-                # real re-validation here, because ``check_history_visibility``
-                # structurally cannot pass a Procedure item.
+        rows = (*snapshot['candidates'], *snapshot.get('relation_candidates', ()))
+        # F-S1b.  Through SDK 0.6.35 ``check_history_visibility`` structurally could not
+        # pass a Procedure item, so a Procedure reaching this gate meant the withholding
+        # rule and this check had drifted apart and the batch had to fail.  From 0.6.36
+        # there is a real re-validation path: present the *same* applicability set the
+        # recall that issued these candidates was bound to (same *set* — the snapshot is
+        # the only persisted source, and `applied_use_fingerprints` already returns it
+        # sorted and deduplicated), with an explicit provenance that says "these uses
+        # really happened", and let Memory corroborate it against its own observation
+        # audit.  Every other gate (head/status/hash/expiry/disclosure/suppression) is
+        # unchanged.  Without the capability — or without fingerprints to present — the
+        # old fail-closed branch stands, so a snapshot prepared under a newer SDK and
+        # replayed under an older one fails rather than skipping the gate.
+        procedure_applicability = None
+        if any(row.get('memory_type') == 'procedure' for row in rows):
+            fingerprints = tuple(sorted({f for f in
+                snapshot.get('relation_applicability_fingerprints', ())
+                if isinstance(f, str) and f.strip()}))
+            if not fingerprints or not sdk_offline_applicability_capable():
                 raise ValueError('analysis_candidate_no_longer_visible')
+            from simple_harness_memory import (ProcedureApplicabilityAttestation,
+                ProcedureApplicabilityProvenance)
+            try:
+                procedure_applicability = ProcedureApplicabilityAttestation(
+                    ProcedureApplicabilityProvenance.APPLIED_USE_FINGERPRINTS, fingerprints)
+            except Exception as exc:  # noqa: BLE001 - stay inside this gate's vocabulary
+                # The SDK bounds the set at 256; the Host bound is the `LIMIT 128` in
+                # `applied_use_fingerprints`, stated in another module. Whatever the
+                # reason, an attestation we cannot build is a failed re-verification,
+                # not a stray SDK-shaped error escaping through `authorize_plan`.
+                raise ValueError('analysis_candidate_no_longer_visible') from exc
+        first_recall_binding = len(bindings)
+        for row in rows:
             bindings.append(HistoryRecallBinding(row['result_id'], row['result_hash'], row['item_id'], row['item_hash']))
+        extra = ({} if procedure_applicability is None
+                 else {'procedure_applicability': procedure_applicability})
         observed = await manager.check_history_visibility(principal=principal,
-            disclosure_context=request.disclosure_context, bindings=tuple(bindings))
+            disclosure_context=request.disclosure_context, bindings=tuple(bindings), **extra)
         if observed.subject != request.subject or tuple(r.binding_hash for r in observed.items) != tuple(_binding_hash(b) for b in bindings) or not all(r.visible for r in observed.items):
             raise ValueError('analysis_candidate_no_longer_visible')
+        if procedure_applicability is not None:
+            # The capability probe only proves a parameter *name* exists. The receipt is
+            # what proves the widening was actually paid for: a backend that accepted the
+            # kwarg and ignored it returns no receipt (or one for another attestation),
+            # and a Procedure binding that is visible without appearing in
+            # `admitted_binding_hashes` was admitted by something other than this
+            # attestation. Both are refused here rather than trusted.
+            receipt = getattr(observed, 'procedure_applicability', None)
+            if receipt is None or getattr(receipt, 'attestation_hash', None) != (
+                    procedure_applicability.attestation_hash):
+                raise ValueError('analysis_candidate_no_longer_visible')
+            admitted = set(receipt.admitted_binding_hashes)
+            for row, binding in zip(rows, bindings[first_recall_binding:], strict=True):
+                if row.get('memory_type') == 'procedure' and _binding_hash(binding) not in admitted:
+                    raise ValueError('analysis_candidate_no_longer_visible')
+            logger.info("memory.analysis_relation_applicability_admitted key=%s "
+                        "attestation=%s fingerprints=%d admitted=%d",
+                        snapshot.get('evidence_set_key'), receipt.attestation_hash,
+                        receipt.fingerprint_count, len(receipt.admitted_binding_hashes))
+        return None if procedure_applicability is None else observed.procedure_applicability
 
     @staticmethod
     def prompt(snapshot):

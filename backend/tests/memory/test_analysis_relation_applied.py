@@ -12,13 +12,17 @@
 1. 分析车道的适用性指纹来自**持久化的真实使用**，不再向「活着的 Run」提问（主干在这里
    `KeyError`，见 `test_analysis_relation_candidate_audit.py`）；SDK 的适用性门因此真的
    放行了这条流程，它出现在候选召回里；
-2. 但 SDK 0.6.31 解析不了任何 Procedure 关系端点（见 `_endpoint_unverifiable` 的两条实测），
-   所以 Host **在下发前**就把它扣下，并留下具名理由码；
-3. 扣下的代价只落在这一个端点上：这一批分析照常 `applied`，本轮其它记忆一条不丢。
+2. 这条端点能不能**下发**取决于**装着的 SDK**，两条分支都在本用例里断言：
+   * 0.6.31–0.6.35：`check_history_visibility` 对 Procedure 恒判 stale，Host 在下发前
+     按名扣下（`sdk_procedure_applicability_gate_unavailable`）。0.6.31–0.6.34 上还叠加
+     第二条（端点解析判「分类缺失」，放行会让整批分析死掉），0.6.35 已修好那一条，
+     所以扣留的理由码只能命名**可见性门**——命名端点解析在 0.6.35 上是假的；
+   * **0.6.36 起（F-S1b）**：`check_history_visibility` 接受本车道显式提交的
+     applied-use 指纹，扣留解除，端点被下发、并被持久进候选快照。
+3. 无论走哪条分支，这一批分析都照常 `applied`，本轮其它记忆一条不丢。
 
-第 2 条不是本次想要的终局，是本次量到的事实：放行它会让整批分析以
-`MemoryCorruptionError('relation endpoint classification is missing')` 死掉，比事故本身更糟。
-备忘录 `DECISION-S-RELATION-KEYERROR.md` §F-S1 记了解除条件。
+备忘录 `DECISION-S-RELATION-KEYERROR.md` §F-S1 与
+`DECISION-F-S1B-PROCEDURE-ENDPOINT-LIFT.md` 记了两条分支的由来。
 """
 from __future__ import annotations
 
@@ -78,20 +82,23 @@ def _snapshots(state):
 
 
 @pytest.mark.asyncio
-async def test_a_really_used_procedure_reaches_the_endpoint_channel_and_is_withheld_by_name(tmp_path):
+async def test_a_really_used_procedure_reaches_the_endpoint_channel(tmp_path):
     async with session(tmp_path) as ctx:
         revision = ctx.revision
         # `_cognitive_recall_state_allowed` 只让 active/reinforced 的 Procedure 参与召回，
         # SDK 的资格阶梯是 draft → eligible_for_activation → active：必须三次各自独立的
         # 真实成功执行，不能伪造次数。
+        last_use = None
         for index, expected in enumerate(("draft", "eligible_for_activation", "active"), 1):
             group, _scope = await execute(ctx, index, revision=revision)
             manager = await ctx.memory.manager()
             await ctx.memory.procedure_runtime.observe_group(group, manager)
-            use = await ctx.memory.procedure_runtime.store.use_for_run(group.terminal_source[0].run_id)
-            applied = await ctx.memory.procedure_runtime.store.journal(use["use_id"], "applied")
+            last_use = await ctx.memory.procedure_runtime.store.use_for_run(
+                group.terminal_source[0].run_id)
+            applied = await ctx.memory.procedure_runtime.store.journal(last_use["use_id"], "applied")
             assert applied["result"]["lifecycle_state"] == expected
             revision = applied["result"]["committed_revision"]
+        use = last_use
         # 每一次真实使用留下的适用性指纹，就是分析车道离线时的诚实答案。
         fingerprints = await ctx.memory.procedure_runtime.applied_use_fingerprints()
         assert use["applicability_fingerprint"] in fingerprints
@@ -113,12 +120,23 @@ async def test_a_really_used_procedure_reaches_the_endpoint_channel_and_is_withh
         snapshot = _snapshots(ctx.state)[-1]
         assert snapshot["relation_candidates_unavailable"] is False
         # SDK 的适用性门确实放行了（没有 `relation_procedure_applicability_absent`），
-        # 这条流程被召回到了，然后被 Host 按名扣下。
-        assert [row["reason"] for row in snapshot["relation_candidate_reasons"]] == [
-            sc.RELATION_MEMBER_ENDPOINT_UNVERIFIABLE]
-        withheld = snapshot["relation_candidate_reasons"][0]
-        assert withheld["memory_id"] == ctx.memory_id
-        assert withheld["detail"] == "sdk_procedure_endpoint_unresolvable"
-        assert snapshot["relation_candidates"] == []
-        # 被扣下的端点不会出现在提示体里，模型无从引用一个 SDK 解析不了的 key。
-        assert adapter.bodies[-1]["procedure_candidates"] == []
+        # 这条流程被召回到了。指纹被持久进快照，`check` 复核时用的就是这一份。
+        assert sorted(snapshot["relation_applicability_fingerprints"]) == sorted(fingerprints)
+        assert use["applicability_fingerprint"] in snapshot["relation_applicability_fingerprints"]
+        if not sc.sdk_offline_applicability_capable():
+            # 0.6.31–0.6.35：按名扣下，代价只落在这一个端点上。
+            assert [row["reason"] for row in snapshot["relation_candidate_reasons"]] == [
+                sc.RELATION_MEMBER_ENDPOINT_UNVERIFIABLE]
+            withheld = snapshot["relation_candidate_reasons"][0]
+            assert withheld["memory_id"] == ctx.memory_id
+            assert withheld["detail"] == sc.SDK_PROCEDURE_APPLICABILITY_GATE_UNAVAILABLE
+            assert snapshot["relation_candidates"] == []
+            # 被扣下的端点不会出现在提示体里，模型无从引用一个 SDK 解析不了的 key。
+            assert adapter.bodies[-1]["procedure_candidates"] == []
+            return
+        # 0.6.36 起：扣留解除，端点被下发。
+        assert snapshot["relation_candidate_reasons"] == []
+        assert [row["memory_id"] for row in snapshot["relation_candidates"]] == [ctx.memory_id]
+        assert [row["memory_type"] for row in snapshot["relation_candidates"]] == ["procedure"]
+        assert [row["candidate_key"] for row in adapter.bodies[-1]["procedure_candidates"]] == [
+            snapshot["relation_candidates"][0]["candidate_key"]]
