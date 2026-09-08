@@ -98,6 +98,43 @@ _NOTHING_TO_CLOSE_GUIDANCE = (
     "resume.update); a mutate plan is accepted on a clean scope."
 )
 
+# How many admissible evidence ids the ``refs_outside_scope`` rejection discloses.
+# Ids only (opaque uuids), never payloads; the same list the closure instruction
+# already publishes as ``allowed_evidence_refs``.
+_MAX_DISCLOSED_REFS = 16
+# Identical ``refs_outside_scope`` rejections inside one Run before the Host
+# escalates the guidance (HM-TO-A6 incident U: seven identical rejections).
+_REFS_ESCALATION_AFTER = 2
+
+_REFS_OUTSIDE_SCOPE_NEXT_STEP = (
+    "evidence_refs (and every operation's evidence_refs) must be evidence ids the "
+    "Host has already admitted for this task. They are opaque ids you cannot "
+    "derive: never send a run id, call id, effect id, envelope/receipt/binding "
+    "id, memory id, content hash, or any prefixed form of them. You never send a "
+    "content_hash — the Host resolves it. Re-send this same task_scope_update "
+    "with evidence_refs and each operation's evidence_refs drawn only from "
+    "allowed_evidence_refs below."
+)
+_REFS_OUTSIDE_SCOPE_CURRENT_TURN = (
+    " current_turn_evidence_ref is this turn's own user message: cite exactly "
+    "that id when you record what the user just stated (goal.set / goal.revise "
+    "/ decision.record)."
+)
+_REFS_OUTSIDE_SCOPE_EMPTY = (
+    "The Host has admitted no evidence for this task yet, so no task_scope_update "
+    "payload can be accepted in this Run — evidence_refs requires at least one id "
+    "and the admissible set is empty. Do not retry with other ids and do not try "
+    "to derive one. State the user's content in your final answer instead; the "
+    "Host closes the task archive itself at the end of the Run."
+)
+_REFS_OUTSIDE_SCOPE_ESCALATION = (
+    "You have now been rejected with task_scope_update_refs_outside_scope "
+    "{count} times in this Run, each time with ids that are not in the "
+    "admissible set. Stop composing new ids. Either send the payload using "
+    "allowed_evidence_refs verbatim, or stop calling task_scope_update and "
+    "finish your answer to the user."
+)
+
 TASK_SCOPE_UPDATE_DESCRIPTION = (
     "Submit the TaskScope semantic closure for this turn (call at most once, "
     "before your final answer, only after real project effects happened): "
@@ -105,7 +142,11 @@ TASK_SCOPE_UPDATE_DESCRIPTION = (
     "materially changed (goal / plan steps / decisions / status / next "
     "action), or outcome=no_mutation with a closure_reason. Every operation "
     "and the plan itself must cite evidence_refs from the closure instruction's "
-    "allowed_evidence_refs; base_revision must equal the current TaskScope "
+    "allowed_evidence_refs; if you have not been given that list, send your best "
+    "payload once and the rejection publishes the admissible ids in its own "
+    "allowed_evidence_refs — never invent an id from a run id, call id, effect "
+    "id or content hash, and never send a content_hash (the Host resolves it). "
+    "base_revision must equal the current TaskScope "
     "revision. Rejected with a stable code when nothing needs closing or the "
     "Run is not routed to a task."
     " Turn closure is not whole-task completion. A successful tool or file creation "
@@ -180,6 +221,14 @@ async def write_pre_admission_audit_tx(
         (audit_id, sdk_run_id, payload_kind, reason_code, payload_hash, float(now)),
     )
     return audit_id
+
+
+@dataclass(frozen=True, slots=True)
+class _AdmissibleRefs:
+    """The evidence ids one closure may cite, newest first, plus this turn's own."""
+
+    ordered: tuple[tuple[str, str], ...]
+    turn_ref: str | None
 
 
 class ClosureRejected(Exception):
@@ -268,10 +317,19 @@ class TaskScopeUpdateService:
             await self._audit(run_id, code, payload)
             return ToolResult.rejected(call_id, code, f"task_scope_update rejected: {code} {str(exc)[:128]}")
         except ClosureRejected as rejected:
-            await self._audit(run_id, rejected.code, payload)
+            repeats = await self._audit(run_id, rejected.code, payload)
+            detail = dict(rejected.detail)
+            if (
+                rejected.code == "task_scope_update_refs_outside_scope"
+                and repeats > _REFS_ESCALATION_AFTER
+            ):
+                # HM-TO-A6 incident U: the model re-guessed ids seven times and
+                # burned the Run.  The gate never softens — the escalation only
+                # tells it, once the audit trail proves the loop, to stop.
+                detail["escalation"] = _REFS_OUTSIDE_SCOPE_ESCALATION.format(count=repeats)
             message = f"task_scope_update rejected: {rejected.code}"
-            if rejected.detail:
-                message += " " + canonical_json(rejected.detail)
+            if detail:
+                message += " " + canonical_json(detail)
             if rejected.retryable:
                 return ToolResult.failed(call_id, rejected.code, message, retryable=True)
             return ToolResult.rejected(call_id, rejected.code, message)
@@ -311,7 +369,14 @@ class TaskScopeUpdateService:
             raise ClosureRejected("task_scope_update_scope_unbound")
         return self._Scope(scope_id, subject, f"unbound:{run_id}")
 
-    async def _audit(self, run_id: str, reason_code: str, payload: Mapping[str, Any]) -> None:
+    async def _audit(self, run_id: str, reason_code: str, payload: Mapping[str, Any]) -> int:
+        """Write the rejection's audit row; return how many this Run now has for that code.
+
+        The count is read inside the same ``BEGIN IMMEDIATE`` that wrote the row,
+        so the bounded hint escalation below is a deterministic function of the
+        audit trail itself — no new state, and every escalation is evidenced.
+        """
+
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
@@ -323,10 +388,17 @@ class TaskScopeUpdateService:
                     payload_hash=canonical_hash(_json_safe(payload)),
                     now=self._clock(),
                 )
+                row = await self._store._fetchone(
+                    db,
+                    "SELECT COUNT(*) AS repeats FROM host_pre_admission_audit "
+                    "WHERE sdk_run_id=? AND payload_kind='task_scope_update' AND reason_code=?",
+                    (run_id, reason_code),
+                )
                 await db.commit()
             except Exception:
                 await db.rollback()
                 raise
+        return int(row["repeats"]) if row is not None else 1
 
     # -- shared core (Tool path + ClosureFallback) --------------------------
 
@@ -405,13 +477,14 @@ class TaskScopeUpdateService:
                         "task_scope_update_nothing_to_close",
                         accepts=_NOTHING_TO_CLOSE_GUIDANCE,
                     )
-            linked = await db.execute(
-                "SELECT DISTINCT evidence_id,content_hash FROM task_scope_evidence_links WHERE task_scope_id=?",
-                (task_scope_id,),
+            admissible = await _admissible_refs_tx(
+                db,
+                task_scope_id=task_scope_id,
+                subject=subject,
+                sdk_run_id=run_id,
+                host_run_id=host_run_id,
             )
-            link_rows = await linked.fetchall()
-            await linked.close()
-        content_hash_by_id = {str(row["evidence_id"]): str(row["content_hash"]) for row in link_rows}
+        content_hash_by_id = dict(admissible.ordered)
         state = json.loads(str(head["state_json"]))
         status = str(state.get("status") or "active")
         if applied_before is None:
@@ -423,7 +496,19 @@ class TaskScopeUpdateService:
             | {ref for op in payload["operations"] for ref in op["evidence_refs"] if ref not in content_hash_by_id}
         )
         if outside:
-            raise ClosureRejected("task_scope_update_refs_outside_scope", refs=outside[:8])
+            # HM-TO-A6 incident U: echoing only the offending refs told the model
+            # nothing about which ids *are* citable, so it guessed run ids, call
+            # ids, effect ids, hashes and prefixed forms until the Run burned out.
+            # The admissible ids are opaque evidence ids (never payloads) and the
+            # Host already discloses exactly this list to the model in the
+            # end-of-Run closure instruction (``allowed_evidence_refs``); the
+            # rejection now discloses the same bounded list at the moment the
+            # model needs it.  The gate itself stays fail-closed.
+            raise ClosureRejected(
+                "task_scope_update_refs_outside_scope",
+                refs=outside[:8],
+                **_refs_outside_scope_disclosure(admissible),
+            )
 
         def refs(ids: Sequence[str]) -> tuple[EvidenceRef, ...]:
             unique = list(dict.fromkeys(ids))
@@ -517,6 +602,100 @@ class TaskScopeUpdateService:
             committed_revision=applied.committed_revision,
             replayed=bool(captured.get("replayed", False)),
         )
+
+
+async def _admissible_refs_tx(
+    db: aiosqlite.Connection,
+    *,
+    task_scope_id: str,
+    subject: str,
+    sdk_run_id: str,
+    host_run_id: str,
+) -> _AdmissibleRefs:
+    """Ordered ``(evidence_id, content_hash)`` pairs this closure may cite, newest first.
+
+    Two Host-computed, subject-bound sources — no model input reaches this query:
+
+    * the Run's **admitted user evidence** (``foreground_turns.evidence_id``), i.e.
+      the message currently being answered.  Evidence links are only written when
+      an event is appended (material effect, or the Run's own terminal), so a
+      TaskScope created inside this Run has *zero* linked evidence for the whole
+      Run and ``evidence_refs`` (minItems 1) would be unsatisfiable — a
+      user-stated goal would be unrecordable in the turn that stated it, which
+      design-freeze §2 explicitly does not intend (``host.turn`` is trivial only
+      so ordinary conversation cannot *force* a closure).  This is the same
+      "turn group's sanitized evidence" the Host itself uses for the turn's
+      Memory batch (``foreground_queue._append_memory_ingestion_outbox_tx``).
+    * every evidence id already linked to the scope, newest link first.
+
+    Fail-closed: the row must be bound to *this* sdk Run **and** this host Run,
+    carry this scope's subject, and its ``evidence_hash`` must equal the evidence
+    authority row's ``envelope_sha256``.  No model input reaches the query, so the
+    admissible set is a pure function of Host state.  A DB without the foreground
+    tables (unit fixtures) contributes nothing rather than widening the set.
+    """
+
+    ordered: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    turn_ref: str | None = None
+    try:
+        turn_cursor = await db.execute(
+            "SELECT t.evidence_id AS evidence_id, t.evidence_hash AS content_hash "
+            "FROM foreground_run_sdk_bindings b "
+            "JOIN foreground_runs r ON r.host_run_id=b.host_run_id "
+            "JOIN foreground_turns t ON t.turn_id=r.turn_id AND t.subject=r.subject "
+            "JOIN human_memory_evidence e ON e.evidence_id=t.evidence_id "
+            "WHERE b.sdk_run_id=? AND r.host_run_id=? AND r.subject=? "
+            "AND e.subject=? AND e.envelope_sha256=t.evidence_hash "
+            "ORDER BY t.enqueue_sequence DESC, t.evidence_id",
+            (sdk_run_id, host_run_id, subject, subject),
+        )
+        turn_rows = await turn_cursor.fetchall()
+        await turn_cursor.close()
+    except aiosqlite.OperationalError:
+        turn_rows = []
+    for row in turn_rows:
+        evidence_id = str(row["evidence_id"])
+        if evidence_id not in seen:
+            seen.add(evidence_id)
+            ordered.append((evidence_id, str(row["content_hash"])))
+            if turn_ref is None:
+                turn_ref = evidence_id
+    link_cursor = await db.execute(
+        "SELECT evidence_id,content_hash,MAX(created_at) AS linked_at "
+        "FROM task_scope_evidence_links WHERE task_scope_id=? "
+        "GROUP BY evidence_id,content_hash ORDER BY linked_at DESC, evidence_id",
+        (task_scope_id,),
+    )
+    link_rows = await link_cursor.fetchall()
+    await link_cursor.close()
+    for row in link_rows:
+        evidence_id = str(row["evidence_id"])
+        if evidence_id not in seen:
+            seen.add(evidence_id)
+            ordered.append((evidence_id, str(row["content_hash"])))
+    return _AdmissibleRefs(tuple(ordered), turn_ref)
+
+
+def _refs_outside_scope_disclosure(admissible: _AdmissibleRefs) -> dict[str, Any]:
+    """Model-facing detail of ``task_scope_update_refs_outside_scope``: ids + next step.
+
+    Ids and nothing else — no envelope, payload, title or goal text crosses this
+    boundary, and ``content_hash`` stays Host-side (the model never sends one).
+    """
+
+    disclosed = [evidence_id for evidence_id, _ in admissible.ordered[:_MAX_DISCLOSED_REFS]]
+    if not disclosed:
+        return {"allowed_evidence_refs": [], "next_step": _REFS_OUTSIDE_SCOPE_EMPTY}
+    detail: dict[str, Any] = {
+        "allowed_evidence_refs": disclosed,
+        "allowed_evidence_refs_total": len(admissible.ordered),
+        "next_step": _REFS_OUTSIDE_SCOPE_NEXT_STEP,
+    }
+    if admissible.turn_ref is not None:
+        detail["current_turn_evidence_ref"] = admissible.turn_ref
+        detail["next_step"] += _REFS_OUTSIDE_SCOPE_CURRENT_TURN
+    return detail
 
 
 def _disclosure(cls: Any, run_id: str, subject: str) -> Any:
