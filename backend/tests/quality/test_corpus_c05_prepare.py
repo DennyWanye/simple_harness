@@ -127,6 +127,31 @@ def test_missing_authored_title_is_not_filled_from_case_selection():
             assert '非原历史事实' in operational_text(batch, spec.label)
 
 
+def test_missing_authored_goal_is_composed_only_from_setup_metadata():
+    from deskpet.quality.corpus_c05 import composed_goal, operational_spec, operational_text
+    expected = {('C05-01', 'A'): '2025-11；纸质扫描', ('C05-01', 'B'): '2025-06；照片',
+                ('C05-02', 'A'): '2024春季', ('C05-02', 'B'): '2026',
+                ('C05-03', 'A'): '曾用名：展览准备', ('C05-06', 'A'): '网站整理',
+                ('C05-06', 'B'): '网站整理', ('C05-15', 'A'): '2026年8月',
+                ('C05-16', 'A'): '纸质', ('C05-16', 'B'): '数码'}
+    for key, (text, _) in SETUPS.items():
+        batch = compile_c05_setup(key, text)
+        for spec in batch.scopes:
+            goal = composed_goal(spec)
+            assert goal == expected.get((key, spec.label))
+            if spec.goal is not None:
+                assert goal is None and operational_spec(batch, spec.label).goal == spec.goal
+            if goal is not None:
+                assert operational_spec(batch, spec.label).goal == goal
+                assert '目标字段取setup已写明的日期/介质/项目/曾用名文本' in operational_text(batch, spec.label)
+            else:
+                assert '目标字段' not in operational_text(batch, spec.label)
+    # Year already in the title (C05-05) is not repeated; C05-19 goals are authored.
+    assert all(composed_goal(spec) is None for spec in SPECS['C05-05'])
+    assert [operational_spec(compile_c05_setup('C05-19', SETUPS['C05-19'][0]), s.label).goal
+            for s in SPECS['C05-19']] == ['处理笔记', '处理扫描']
+
+
 def test_history_reader_injection_keeps_default_production_reader(tmp_path):
     from deskpet.execution.primary_context import PrimaryForegroundContextPort
     from deskpet.execution.primary_history import PrimaryHistoryStore

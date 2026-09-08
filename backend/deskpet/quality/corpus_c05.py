@@ -116,11 +116,26 @@ def compile_c05_setup(case_id: str, setup_text: str) -> TaskSetupBatch:
     return TaskSetupBatch(case_id, setup_text, digest, SPECS[case_id], REQUIREMENTS[case_id])
 
 
+def composed_goal(spec: ScopeSeed) -> str | None:
+    """Authored date/medium/project/alias text carried by the only product field
+    that TaskScope creation, FTS search and scope disclosure all expose (goal).
+
+    Only when the authored goal is absent. Parts already inside the title are
+    not repeated. No value is derived from the corpus input, followup or gold.
+    """
+    if spec.goal is not None:
+        return None
+    parts = [spec.date_text, spec.project, None if spec.alias is None else '曾用名：' + spec.alias]
+    parts = [p for p in parts if p is not None and (spec.title is None or p not in spec.title)]
+    return '；'.join(parts) if parts else None
+
+
 def operational_spec(batch: TaskSetupBatch, label: str, *, phase='create') -> ScopeSeed:
     """One neutral fixture title for every missing title; never an answer label.
 
     Authored SPECS remain unchanged. Actual producer inputs explicitly identify
     this synthetic value, so it cannot be mistaken for original historical text.
+    A missing goal is composed only from authored date/project/alias metadata.
     """
     if batch != compile_c05_setup(batch.case_id, batch.setup_text):
         raise ValueError('c05_exact_batch_required')
@@ -128,6 +143,9 @@ def operational_spec(batch: TaskSetupBatch, label: str, *, phase='create') -> Sc
     if len(matches) != 1:
         raise ValueError('c05_setup_label_invalid')
     spec = matches[0]
+    goal = composed_goal(spec)
+    if goal is not None:
+        spec = replace(spec, goal=goal)
     if spec.title is None:
         spec = replace(spec, title='合成任务')
     if phase == 'before_selection' and batch.case_id == 'C05-18' and label == 'A':
@@ -143,6 +161,8 @@ def operational_text(batch: TaskSetupBatch, label: str, *, phase='create') -> st
     text = batch.setup_text
     if original.title is None:
         text += '\n[统一合成fixture元数据，非原历史事实] 未提供的任务标题统一取“合成任务”。'
+    if composed_goal(original) is not None:
+        text += '\n[统一合成fixture元数据，非原历史事实] 未提供目标的任务，目标字段取setup已写明的日期/介质/项目/曾用名文本。'
     if phase == 'before_selection':
         text += '\n[执行原setup预先声明的阶段] 现在将原任务下一步从“校对”修订为“待确认图片”。'
     return text

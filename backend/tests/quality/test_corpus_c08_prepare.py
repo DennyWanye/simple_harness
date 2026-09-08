@@ -31,7 +31,7 @@ def test_original_setup_boundary_and_unprepared_derived_cases():
         if line.startswith('**setup（模型初始不可见）：** '):
             originals[case_id] = line.split('** ', 1)[1]
     assert set(originals) == set(SETUPS) == {f'C08-{n:02}' for n in range(1, 21)}
-    assert len(FACTS) == 12
+    assert len(FACTS) == 13
     for case_id, original in originals.items():
         assert SETUPS[case_id] == (original, sha256(original.encode()).hexdigest())
         if case_id not in FACTS:

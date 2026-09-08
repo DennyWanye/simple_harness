@@ -33,6 +33,14 @@ def test_original_temporal_setup_mapping_and_defaults_are_explicit():
     boundary = compile_c11_setup('C11-14', SETUPS['C11-14'][0], scenario_clock=CLOCK)
     assert boundary.intervals[0][2] == boundary.scenario_time
     assert boundary.specs[0][4] == '旧便签'  # Known marker only; no invented private body.
+    markers = compile_c11_setup('C11-19', SETUPS['C11-19'][0], scenario_clock=CLOCK)
+    assert [spec[4] for spec in markers.specs] == ['旧费率', '旧数量上限', '旧运费优惠']
+    assert len({end for _, _, end in markers.intervals}) == 1  # one authored end: 8月底
+    assert ('A', 'known_marker_only_no_invented_value') in markers.defaults
+    reminder = compile_c11_setup('C11-16', SETUPS['C11-16'][0], scenario_clock=CLOCK)
+    assert reminder.specs[0][1] == 'prospective'
+    summary = compile_c11_setup('C11-12', SETUPS['C11-12'][0], scenario_clock=CLOCK)
+    assert ('A', 'unprepared_carrier=retained_summary_same_time_lineage') in summary.defaults
 
 
 @pytest.mark.asyncio
@@ -47,13 +55,20 @@ async def test_actual_job_nonempty_before_expiry_and_current_reopen_exclusion(tm
         assert actual['outcome'].value == 'applied' and actual['fixture_executions'] == 1
         assert actual['application'].receipt.validation_status.value == 'accepted'
         assert actual['application'].receipt.committed_at == batch.ingestion_time
-        assert len(actual['graph_before'].nodes) == 1 and actual['graph_after'].nodes == ()
+        valid_at_ingestion = [label for label, start, end in batch.intervals
+            if (start is None or start <= batch.ingestion_time) and (end is None or end > batch.ingestion_time)]
+        assert len(actual['graph_before'].nodes) == len(valid_at_ingestion) >= 1
+        assert actual['graph_after'].nodes == ()
         assert (await host.service.queue_snapshot())['turns'] == []
         operations = {op.operation_id: op for op in actual['plan'].operations}
         for label, start, end in batch.intervals:
             interval = operations[label].valid_time_interval
             assert (interval.valid_from, interval.valid_until) == (start, end)
-            assert operations[label].lifecycle_state.value == 'active'  # Time exclusion, no state rewrite.
+            kind = operations[label].memory_type.value
+            # Time exclusion, no state rewrite: an expired reminder stays 'pending'.
+            assert operations[label].lifecycle_state.value == {'semantic': 'active', 'prospective': 'pending'}[kind]
+            if kind == 'prospective':
+                assert operations[label].payload.trigger.trigger_at == end
         if case_id == 'C11-13':
             assert len(actual['labels']) == 2
             assert actual['graph_before'].nodes[0].memory_id == actual['labels']['A'].memory_id
@@ -64,9 +79,9 @@ async def test_actual_job_nonempty_before_expiry_and_current_reopen_exclusion(tm
         assert await manager.get_memory_mutation_receipt_view(principal=runtime.principal(),
             receipt_ref=actual['receipt_ref']) == actual['receipt']
         assert await HostEvidenceAuthority(host.path).read_admitted(actual['source_pair'][0].evidence_id) == actual['source_pair']
-        for predicate in {spec[3] for spec in batch.specs}:
+        for predicate, kind in {(spec[3], spec[1]) for spec in batch.specs}:
             lanes = await runtime.typed_recall(query=predicate, run_id='c11-current-'+predicate,
-                turn_ordinal=1, memory_types=('semantic',), include_short_horizon=False)
+                turn_ordinal=1, memory_types=(kind,), include_short_horizon=False)
             assert lanes.execution.result.items == (), 'expired/future history is not current recall'
     finally:
         await runtime.close()

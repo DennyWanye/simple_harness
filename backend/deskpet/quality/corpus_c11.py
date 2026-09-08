@@ -56,14 +56,30 @@ SPECS = {
  'C11-09': (('A', 'registration_deadline', '8月20日', (), 'aug21'),),
  'C11-10': (('A', 'temporary_event_location', '南桥展厅', (), 'sep01'),),
  'C11-11': (('A', 'temporary_nickname', '值班小蓝', (), 'sep01'),),
+ # The old summary carrying the same offer is a derived source this scalar
+ # fixture does not produce; recorded in UNPREPARED_CARRIERS, never faked.
+ 'C11-12': (('A', 'shipping_offer', '免邮', ('运费优惠',), 'past'),),
  'C11-13': (('A', 'temporary_quota', '200元', (), 'past'),
              ('B', 'temporary_quota', '800元', (), 'future_sep10')),
  'C11-14': (('A', 'temporary_note_marker', '旧便签', (), 'boundary'),),
  'C11-15': (('A', 'temporary_unit_price', '8元', (), 'past'),),
+ # A reminder whose validity ended; the trigger falls on the expiry instant.
+ 'C11-16': (('A', 'expired_reminder', '领取旧门票', (), 'past'),),
  'C11-17': (('A', 'temporary_food_preference', '只吃凉食', (), 'sep02'),),
  'C11-18': (('A', 'temporary_reference_exception', '允许无来源引用', ('旧项目',), 'past'),),
+ # Three authored markers with no authored numbers: the marker is the value
+ # (C11-14 precedent); "8月底" ends at the following midnight, September 1.
+ 'C11-19': (('A', 'temporary_rate', '旧费率', (), 'sep01'),
+            ('B', 'temporary_quantity_limit', '旧数量上限', (), 'sep01'),
+            ('C', 'temporary_shipping_offer', '旧运费优惠', (), 'sep01')),
  'C11-20': (('A', 'temporary_address', '西苑测试楼', (), 'aug01'),),
 }
+# Cognitive type per label; everything else is a scalar semantic value.
+KINDS = {'C11-16': {'A': 'prospective'}}
+# Derived carriers named by the original setup that this fixture cannot
+# produce. The scalar/time-state evidence remains real; readiness is partial.
+UNPREPARED_CARRIERS = {'C11-12': ('retained_summary_same_time_lineage',)}
+MARKER_ONLY = {'C11-14', 'C11-19'}
 
 
 @dataclass(frozen=True)
@@ -103,11 +119,15 @@ def compile_c11_setup(case_id, setup_text, *, scenario_clock):
             raise ValueError('c11_authored_temporal_state_differs')
         if rule == 'boundary' and end != now:
             raise ValueError('c11_exact_boundary_clock_required')
-        specs.append((label, 'semantic', 'user:self', predicate, value, qualifiers))
+        kind = KINDS.get(case_id, {}).get(label, 'semantic')
+        specs.append((label, kind, 'user:self', predicate, value, qualifiers))
         intervals.append((label, start, end))
         if rule == 'past': defaults.append((label, 'unspecified_expiry=scenario_minus_one_second'))
         elif rule != 'boundary': defaults.append((label, 'Shanghai_month_day_year_from_scenario'))
-        if case_id == 'C11-14': defaults.append((label, 'known_note_marker_only_no_invented_note_body'))
+        if case_id in MARKER_ONLY: defaults.append((label, 'known_marker_only_no_invented_value'))
+        if kind == 'prospective': defaults.append((label, 'unspecified_trigger=valid_until_instant'))
+        for carrier in UNPREPARED_CARRIERS.get(case_id, ()):
+            defaults.append((label, 'unprepared_carrier=' + carrier))
     ingestion = min(end for _, _, end in intervals if end is not None) - 1
     if ingestion < 0: raise ValueError('c11_ingestion_clock_invalid')
     values = dict(case_id=case_id, setup_text=setup_text, setup_hash=SETUPS[case_id][1],
