@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 import { PrimaryRequestError, PrimaryRequests, record, type PrimaryRequestPort } from "./requests";
+import { PRIMARY_TURN_TEXT_TOO_LARGE, turnTextRejection } from "./turnText";
 
 export interface PrimaryPort extends PrimaryRequestPort {
   state(): "connected" | "connecting" | "disconnected";
@@ -205,6 +206,10 @@ export class PrimaryController {
   };
   submit = async (text: string, attachments: Record<string, unknown>[]): Promise<void> => {
     if (attachments.length) throw new Error("主对话附件接线尚未就绪；草稿与附件已保留。");
+    // A draft the Host can never admit is rejected here, before the wire, so the
+    // user reads the bound instead of watching the message vanish.
+    const oversize = turnTextRejection(text);
+    if (oversize) throw new PrimaryRequestError(oversize);
     if (!this.client || !this.snapshot.ready || !this.snapshot.state) throw new Error("主对话尚未就绪；草稿已保留。");
     if (this.submitting) throw new Error("正在等待上一条入队确认。");
     if (this.pendingDelivery && this.pendingDelivery.text !== text) throw new Error("上一条发送结果未知，请先以原文重试确认；不会自动提交不同消息。");
@@ -231,6 +236,11 @@ export class PrimaryController {
         // Keep uncertainty on the delivery, rather than replacing it per attempt.
         delivery.uncertain ||= !(error instanceof PrimaryRequestError) || error.uncertain;
         if (!delivery.uncertain) this.pendingDelivery = null;
+      }
+      // Should the two bounds ever drift, the Host's stable oversize code still
+      // reaches the user as the same readable sentence, never as a bare code.
+      if (error instanceof PrimaryRequestError && error.message === PRIMARY_TURN_TEXT_TOO_LARGE) {
+        throw new PrimaryRequestError(turnTextRejection(delivery.text) || "消息过长，未发送；请拆分后分条发送。", error.uncertain);
       }
       throw error;
     } finally { this.submitting = false; }

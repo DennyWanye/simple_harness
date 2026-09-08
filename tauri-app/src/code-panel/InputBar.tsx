@@ -24,6 +24,7 @@ import { controlWS } from "./controlWs";
 import { SlashDropdown, type SlashCommand } from "./SlashDropdown";
 import { ArgHintBar, type ArgSchema } from "./ArgHintBar";
 import { createClientTurnIdentity } from "../ws/clientTurnIdentity";
+import { turnTextRejection } from "../primary/turnText";
 
 // 输入历史 — module-scope，跨 InputBar 实例共享 (max 50 entries)
 const _slashInputHistory: string[] = [];
@@ -149,6 +150,11 @@ export function InputBar({
   const [argHintCmd, setArgHintCmd] = useState<SlashCommand | null>(null);
   const [historyIdx, setHistoryIdx] = useState<number | null>(null);
 
+  // Incident G: an over-long draft used to be accepted here and dropped by the
+  // Host. Say so while it is still being written, not after it disappears.
+  const oversizeDraft = isPrimary ? turnTextRejection(text.trim()) : "";
+  const composerError = attachmentError || oversizeDraft;
+
   const active_sid = useSessionsStore((s) => s.active_sid);
   const sid = sessionId ?? active_sid;
   const session = useSessionsStore((s) => s.sessions[sessionId ?? s.active_sid]);
@@ -236,6 +242,11 @@ export function InputBar({
     if (primary) {
       if (t.startsWith("/")) {
         setAttachmentError("主对话命令接线尚未就绪；草稿已保留。");
+        return;
+      }
+      const oversize = turnTextRejection(t);
+      if (oversize) {
+        setAttachmentError(oversize);
         return;
       }
       submittingRef.current = true;
@@ -717,9 +728,9 @@ export function InputBar({
           ))}
         </div>
       )}
-      {attachmentError && (
-        <div role="alert" style={{ color: "#fca5a5", fontSize: 11 }}>
-          {attachmentError}
+      {composerError && (
+        <div role="alert" data-testid="composer-error" style={{ color: "#fca5a5", fontSize: 11 }}>
+          {composerError}
         </div>
       )}
       {/* 第一排：输入框独占一行 + 发送按钮（两者严格等高 INPUT_H，视觉一致）。 */}
