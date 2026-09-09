@@ -9,11 +9,26 @@
 #   file has to stay a single file so the verifier can take per-turn deltas.
 #
 # Env overrides:
-#   A6_SEND     path to send.sh helper (default: scratchpad send.sh)
-#   TF_TIMEOUT  per-turn timeout seconds (default: 480)
-#   A6_POLL     poll interval seconds (default: 5)
+#   A6_SEND        path to send.sh helper (default: scratchpad send.sh)
+#   A6_AXDUMP      path to ax_dump.sh helper (default: scratchpad ax_dump.sh)
+#   TF_FIXTURES    read fixture dir (default: $HOME/SimpleHarnessWorkSpace/twoflow-fixture)
+#   TF_TIMEOUT     per-turn timeout seconds (default: 480 = plan §4「8 分钟未见终态」)
+#   A6_POLL        poll interval seconds (default: 5)
+#   A6_UI_SETTLE   bounded wait (seconds) for a pending authorization card / 停止 to clear
+#                  before a send (default: 180)
+#   TWOFLOW_DRY_RUN=1  print the turn plan and exit; touches no DB, sends nothing
 #
 # Contains NO credentials.  Turn kinds: send / ui (@UI@) / restart (@RESTART@).
+#
+# 2026-09-09 对齐（今天的三处变更）：
+#   * 授权策略的唯一权威是 workflow.db.authorization_policy_state（MM-D1）——
+#     sdk-product-state.db 的同名表是 DDL 残留种子行，驱动**不得**读它判 auto/manual。
+#   * 读类工具（read_file/glob/grep/list_directory）现在要求目标目录已绑定；越界读走
+#     S4 绑定提案通道（F-Z1b/F-Z1c）。Auto 策略自动授予，模型需要**重路由一次**：
+#     native.log 里应出现 read_workspace_binding_revised → context_route → read。
+#     因此 T4 读的是任务托管家目录**之外**的夹具（binding_roots +1），
+#     T15 重启后再读同一夹具（binding_roots 不变）—— 这就是绑定跨重启复用的证据。
+#   * 每轮记录新增 binding_roots / binding_proposals / policy_* 三组计数。
 set -u
 
 BID="${1:?bundle-id required}"
@@ -22,20 +37,50 @@ EVIDENCE="${3:?evidence dir required}"
 PHASE="${4:?phase required: flow1|flow2|all}"
 START="${5:-}"
 
-SEND="${A6_SEND:-/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/6927d19d-804c-42ea-a91d-fd3cf836f540/scratchpad/send.sh}"
+SCRATCH="/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/6927d19d-804c-42ea-a91d-fd3cf836f540/scratchpad"
+SEND="${A6_SEND:-$SCRATCH/send.sh}"
+AXDUMP="${A6_AXDUMP:-$SCRATCH/ax_dump.sh}"
 TIMEOUT="${TF_TIMEOUT:-480}"
 POLL="${A6_POLL:-5}"
+UI_SETTLE="${A6_UI_SETTLE:-180}"
+DRY_RUN="${TWOFLOW_DRY_RUN:-0}"
+FIXDIR="${TF_FIXTURES:-$HOME/SimpleHarnessWorkSpace/twoflow-fixture}"
+FIXFILE="$FIXDIR/clips-source.md"
 
 DATA="$USERDATA/data"
 HM="$DATA/human_memory_v7.db"
 STATE="$DATA/state.db"
 PRODUCT="$DATA/sdk-product-state.db"
+# MM-D1: 授权策略的唯一权威。sdk-product-state.db 的同名表是 DDL 残留，恒为
+# auto/0/factory_default，读它会把真实的 manual 记成 auto。
+WF="$DATA/workflow.db"
 AUDIT="$DATA/operation-audit.db"
 EXEC="$DATA/simple-harness-sdk/execution-v6.sqlite3"
 PROGRESS="$EVIDENCE/twoflow-progress.jsonl"
 
-[ -x "$SEND" ] || [ -f "$SEND" ] || { echo "send helper not found: $SEND" >&2; exit 2; }
-mkdir -p "$EVIDENCE"
+if [ "$DRY_RUN" != 1 ]; then
+  [ -x "$SEND" ] || [ -f "$SEND" ] || { echo "send helper not found: $SEND" >&2; exit 2; }
+  mkdir -p "$EVIDENCE"
+fi
+
+# ---------- read fixture (deterministic; only created when missing) ----------
+# 必须落在既定 workspace 根（~/SimpleHarnessWorkSpace）的**严格后代**里, 且不能是
+# 任务托管家目录 —— 这样 T4 的 read_file 才会触发 F-Z1b 的绑定提案(Auto 自动授予)。
+# 刻意做小(< 16 KiB): 本旅程验重启, 不验分页。
+gen_fixtures() {
+  [ -s "$FIXFILE" ] && return 0
+  mkdir -p "$FIXDIR"
+  cat >"$FIXFILE" <<'EOF'
+# 霜降素材 · 原始清单（只读夹具）
+
+A-01 霜降清晨的窗台，长镜头，可用
+A-02 霜降市集的摊位，手持，待剪
+A-03 霜降夜色的路灯，固定机位，可用
+
+归档口径：成品一律放到「霜降素材 / 成片」。
+EOF
+}
+[ "$DRY_RUN" = 1 ] || gen_fixtures
 
 FLOW1_FIRST=1;  FLOW1_LAST=11
 FLOW2_FIRST=12; FLOW2_LAST=22
@@ -57,7 +102,9 @@ TURNS[2]="新建一个项目任务：霜降素材整理。"
 KIND[2]=send; HINT[2]=""
 TURNS[3]="在这个任务的工作目录里建一个 clips.md，写三行素材条目：A-01、A-02、A-03。"
 KIND[3]=send; HINT[3]=""
-TURNS[4]="把 clips.md 读回来，确认三行都在。"
+# T4 读的是任务托管家目录**之外**的夹具 -> 触发 F-Z1b 读闸门绑定提案(Auto 自动授予),
+# 期望 native.log: read_workspace_binding_revised -> context_route(重路由) -> read_file。
+TURNS[4]="请读一下 $FIXFILE 这个文件，把里面列的三条素材编号念给我听，并确认和 clips.md 里写的一致。"
 KIND[4]=send; HINT[4]=""
 TURNS[5]="记一个决定：素材编号统一用 A-序号 两段式，不再用日期前缀。"
 KIND[5]=send; HINT[5]=""
@@ -81,7 +128,8 @@ TURNS[13]="我之前做过一个跟「霜降」有关的整理任务，帮我先
 KIND[13]=send; HINT[13]=""
 TURNS[14]="就精确打开「霜降素材整理」，把它的恢复要点和已经记下的决定说给我听。"
 KIND[14]=send; HINT[14]=""
-TURNS[15]="这个任务当时留下的 clips.md 现在还在吗？读出来核对一下三行素材条目。"
+# T15 重启后再读**同一个** T4 夹具: 绑定根已在库里, 不应再出提案、binding_roots 不增。
+TURNS[15]="这个任务当时留下的 clips.md 现在还在吗？读出来核对一下三行素材条目；另外把 $FIXFILE 也再读一遍，看是不是还能读到。"
 KIND[15]=send; HINT[15]=""
 TURNS[16]="在这个任务的目录里，按我以前存的「霜降清点」流程做一遍。"
 KIND[16]=send; HINT[16]=""
@@ -124,6 +172,9 @@ counters() {
   CLOSURE_N=$(q "$STATE" "select count(*) from task_scope_closure_receipts;")
   PROCUSE_N=$(q "$STATE" "select count(*) from procedure_uses;")
   BINDREV_N=$(q "$STATE" "select count(*) from task_workspace_binding_revisions;")
+  # F-Z1b 读闸门: 越界读 -> 提案 -> (Auto)自动授予 -> 新根。跨重启复用时两者都不增。
+  BINDROOT_N=$(q "$STATE" "select count(*) from task_workspace_binding_roots;")
+  BINDPROP_N=$(q "$STATE" "select count(*) from task_workspace_binding_proposals;")
   ENV_N=$(q "$HM" "select count(*) from evidence_envelopes;")
   HEADS_N=$(q "$HM" "select count(*) from cognitive_memory_heads;")
   SEM_N=$(q "$HM" "select count(*) from cognitive_memory_heads where memory_type='semantic';")
@@ -149,6 +200,12 @@ counters() {
   [ -n "$RUNSTATE" ] || RUNSTATE="none"
   PRIMARY_ID=$(qs "$STATE" "select primary_conversation_id from human_memory_primary_conversations limit 1;")
   [ -n "$PRIMARY_ID" ] || PRIMARY_ID="none"
+  # MM-D1: 只读 workflow.db。本旅程要求 auto —— Auto 才会自动授予读闸门的绑定提案。
+  POLICY_MODE=$(qs "$WF" "select mode from authorization_policy_state limit 1;")
+  [ -n "$POLICY_MODE" ] || POLICY_MODE="unknown"
+  POLICY_GEN=$(q "$WF" "select generation from authorization_policy_state limit 1;")
+  POLICY_PROV=$(qs "$WF" "select provenance from authorization_policy_state limit 1;")
+  [ -n "$POLICY_PROV" ] || POLICY_PROV="unknown"
 }
 
 record() { # record <turn> <kind> <phase> <outcome> <elapsed> [note]
@@ -156,12 +213,13 @@ record() { # record <turn> <kind> <phase> <outcome> <elapsed> [note]
   TF_NOTE="${6:-}" TF_KIND="$2" TF_PHASE="$3" python3 - "$PROGRESS" "$1" "$4" "$5" \
       "$PRIMARY_N" "$PRIMARY_W" "$SCOPE_N" "$RUN_N" "$ROUTE_N" "$ROUTE_CREATE_N" \
       "$ROUTE_RESUME_N" "$ROUTE_NORECALL_N" "$SEARCH_N" "$OPEN_N" "$EVENT_N" "$VIEW_N" \
-      "$CLOSURE_N" "$PROCUSE_N" "$BINDREV_N" \
+      "$CLOSURE_N" "$PROCUSE_N" "$BINDREV_N" "$BINDROOT_N" "$BINDPROP_N" \
       "$ENV_N" "$HEADS_N" "$SEM_N" "$EPI_N" "$PROC_N" "$PROS_N" \
       "$PROCREC_N" "$PROSREC_N" "$PROSREG_N" "$SUPP_N" "$SUPPT_N" \
       "$TRREQ_N" "$TRRES_N" "$TRITEM_N" \
       "$AUD_GRANT_N" "$AUD_DEL_N" "$AUD_HSTREAM_N" "$AUD_HDEL_N" \
-      "$INV_N" "$EFFECT_N" "$TG_USER_N" "$PRIMARY_ID" "$RUNSTATE" <<'PY'
+      "$INV_N" "$EFFECT_N" "$TG_USER_N" "$POLICY_GEN" \
+      "$PRIMARY_ID" "$RUNSTATE" "$POLICY_MODE" "$POLICY_PROV" <<'PY'
 import json, os, sys, time
 p, turn, outcome, elapsed, *rest = sys.argv[1:]
 keys = ["primary_conversations", "primary_conversations_writable", "task_scopes",
@@ -169,6 +227,7 @@ keys = ["primary_conversations", "primary_conversations_writable", "task_scopes"
         "route_resume_existing", "route_no_recall", "task_scope_search_ops",
         "task_scope_open_ops", "task_scope_events", "task_scope_read_view_revisions",
         "task_scope_closure_receipts", "procedure_uses", "binding_revisions",
+        "binding_roots", "binding_proposals",
         "evidence_envelopes", "cognitive_memory_heads", "heads_semantic", "heads_episode",
         "heads_procedure", "heads_prospective",
         "procedure_records", "prospective_records", "prospective_scheduler_registrations",
@@ -176,12 +235,15 @@ keys = ["primary_conversations", "primary_conversations_writable", "task_scopes"
         "typed_recall_requests", "typed_recall_results", "typed_recall_result_items",
         "human_audit_grants", "human_audit_deliveries", "human_audit_host_streams",
         "human_audit_host_deliveries",
-        "provider_invocations", "execution_effects", "task_grants_user"]
+        "provider_invocations", "execution_effects", "task_grants_user",
+        "policy_generation"]
 row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "turn": int(turn),
        "kind": os.environ.get("TF_KIND", ""), "phase": os.environ.get("TF_PHASE", ""),
        "outcome": outcome, "elapsed_s": float(elapsed),
        "primary_conversation_id": rest[len(keys)],
        "last_run_state": rest[len(keys) + 1],
+       "policy_mode": rest[len(keys) + 2],
+       "policy_provenance": rest[len(keys) + 3],
        "note": os.environ.get("TF_NOTE", "")}
 row.update({k: int(v) for k, v in zip(keys, rest[:len(keys)])})
 with open(p, "a", encoding="utf-8") as fh:
@@ -197,13 +259,34 @@ terminal_reached() {
   return 1
 }
 
+# Manual run3 / A6 都见过的失败形态：上一轮留下一张没被应答的授权卡（底部
+# 『允许本次绑定/拒绝』或 SDK 弹窗『允许一次』），或发送键还是「■ 停止」，
+# 于是 send.sh 把文本填进去、点了一颗当时不存在/不生效的『发送』，
+# 结果就是 "no new Run head after two sends"。发送前先有界地等这些按钮消失。
+# 永远返回 0：等不到也照旧发送（不比今天更糟），但把原因带进 progress 的 note。
+UI_BLOCKERS='允许一次|允许本次绑定|重试完成已允许的绑定|拒绝|停止'
+
+wait_ui_send_ready() {
+  local bid="$1" i names tries
+  [ -x "$AXDUMP" ] || [ -f "$AXDUMP" ] || { echo axdump_missing; return 0; }
+  tries=$(( UI_SETTLE / 5 )); [ "$tries" -ge 1 ] || tries=1
+  for i in $(seq 1 "$tries"); do
+    names=$(bash "$AXDUMP" "$bid" AXButton 2>/dev/null | awk -F'|' '{print $2}')
+    printf '%s\n' "$names" | grep -qE "$UI_BLOCKERS" || { echo ready; return 0; }
+    sleep 5
+  done
+  echo ui_blocked; return 0
+}
+
 send_confirmed() {
-  local bid="$1" msg="$2" base="$3" i n
+  local bid="$1" msg="$2" base="$3" i n guard suffix=""
+  guard=$(wait_ui_send_ready "$bid"); [ "$guard" = ready ] || suffix=":$guard"
   "$SEND" "$bid" "$msg" >/dev/null 2>&1 || true
-  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo ok; return 0; }; done
+  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo "ok$suffix"; return 0; }; done
+  guard=$(wait_ui_send_ready "$bid"); [ "$guard" = ready ] || suffix=":$guard"
   "$SEND" "$bid" "$msg" >/dev/null 2>&1 || true
-  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo retried; return 0; }; done
-  echo send_failed; return 1
+  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo "retried$suffix"; return 0; }; done
+  echo "send_failed$suffix"; return 1
 }
 
 wait_previous_idle() {
@@ -224,15 +307,23 @@ wait_analysis_quiet() {
 }
 
 restart_pause() {
-  cat <<'EOF'
+  cat <<EOF
 === @RESTART@ 现在执行同 userdata 重启（流程一已结束）
-    1) pkill -f '<bundle 名>.app/Contents/MacOS' ; sleep 3
-       lsof -nP -iTCP:18120 -sTCP:LISTEN      # 应无输出
-    2) python scripts/native/launch_native_candidate.py --launch \
-         --source <worktree> --bundle "<…verify.app>" --installed-target <installed> \
-         --userdata <E1>/userdata \
-         --evidence-root .local-test-evidence/2026-09-09/twoflow-<sha>/ --port 18120
-       （--userdata 必须是第一次跑出来的 <E1>/userdata；新 run 目录 <E2> 只放第二段 native.log）
+    1) 杀干净（三件都要，launcher 探到任何 /Contents/MacOS/simple-harness 进程会抛
+       native_test_already_running；端口 18120 也会被残留 main.py 占住）：
+         pkill -f 'launch_native_candidate.py' ; sleep 1
+         pkill -f '/Contents/MacOS/simple-harness' ; sleep 3
+         lsof -nP -iTCP:18120 -sTCP:LISTEN | awk 'NR>1{print \$2}' | xargs -r kill
+         lsof -nP -iTCP:18120 -sTCP:LISTEN      # 应无输出
+    2) 同 userdata 重启（--userdata 走 resolve(strict=True)，必须是第一次跑出来的目录；
+       带 --userdata 时启动器不重写 llm_runtime.json，model_overrides.toml 也原样保留）：
+         "\$PY" scripts/native/launch_native_candidate.py --launch \\
+           --source <worktree> --bundle "<…/SimpleHarness Memory Verify <sha8>p18120.app>" \\
+           --installed-target <installed-h0710-m0638-s0313> \\
+           --env-file <env> --model deepseek-v4-flash --memory-probe \\
+           --userdata $USERDATA \\
+           --evidence-root <evidence-root> --port 18120
+       新 run 目录 <E2> 只多出第二段 native.log / launch.json；所有 DB 仍在 $USERDATA。
     3) 等 UI 不再显示「等待主对话就绪 / 正在重新读取…」
     输入观察结果（如 E2=<路径> pid=<新 pid> primary_id_unchanged=1）并按 Enter 继续...
 EOF
@@ -241,8 +332,34 @@ EOF
   record -1 restart restart restart 0 "$RS_NOTE"
 }
 
+dry_run_plan() {
+  echo "twoflow_driver DRY RUN: phase=$PHASE turns=$FIRST..$LAST"
+  echo "  send helper : $SEND"
+  echo "  ax dump     : $AXDUMP"
+  echo "  fixture     : $FIXFILE (读闸门绑定提案的目标, 必须在 workspace 根之下)"
+  echo "  userdata    : $USERDATA"
+  echo "  evidence    : $EVIDENCE  (progress -> $PROGRESS)"
+  echo "  policy db   : $WF (MM-D1 唯一权威; 本旅程要求 mode=auto)"
+  echo "  timeout=${TIMEOUT}s poll=${POLL}s ui_settle=${UI_SETTLE}s"
+  echo
+  printf '%-4s %-6s %-6s %-6s %s\n' T PHASE KIND CHARS TEXT
+  for (( t=FIRST; t<=LAST; t++ )); do
+    printf '%-4s %-6s %-6s %-6s %s\n' \
+      "T$t" "$(phase_of "$t")" "${KIND[$t]}" "${#TURNS[$t]}" "${TURNS[$t]}"
+    [ -n "${HINT[$t]}" ] && printf '     %-6s %-6s %-6s %s\n' "" "" "" "HINT: ${HINT[$t]}"
+  done
+  echo
+  echo "（dry run：未发送任何消息、未读任何 DB、未创建夹具、未写 progress）"
+}
+
 # ---------- main loop ----------
+if [ "$DRY_RUN" = 1 ]; then dry_run_plan; exit 0; fi
+
 echo "twoflow_driver: bundle=$BID userdata=$USERDATA evidence=$EVIDENCE phase=$PHASE turns=$FIRST..$LAST"
+echo "twoflow_driver: fixture=$FIXFILE ($(wc -c <"$FIXFILE" | tr -d ' ') bytes)"
+counters
+echo "twoflow_driver: policy(workflow.db)=$POLICY_MODE gen=$POLICY_GEN provenance=$POLICY_PROV"
+[ "$POLICY_MODE" = auto ] || echo "    !! 警告：本旅程假定 Auto 策略（读闸门提案自动授予）。当前不是 auto。"
 # Only the very first turn writes the T0 baseline; a flow2/resume run must not
 # overwrite it, otherwise the verifier's per-turn deltas lose their origin.
 if [ "$FIRST" -le "$FLOW1_FIRST" ] && [ ! -s "$PROGRESS" ]; then
@@ -273,12 +390,14 @@ for (( T=FIRST; T<=LAST; T++ )); do
   echo "=== T$T [$PH] send (${#MSG} chars)"
   START_TS=$(date +%s)
   SENT=$(send_confirmed "$BID" "$MSG" "$BASE_RUN")
-  if [ "$SENT" = send_failed ]; then
-    echo "    !! T$T send_failed: no new Run head after two sends (recorded, continuing)"
-    record "$T" send "$PH" send_failed $(( $(date +%s) - START_TS )) "send_failed"
-    continue
-  fi
-  [ "$SENT" = retried ] && echo "    warn: T$T needed a second send"
+  case "$SENT" in
+    send_failed*)
+      echo "    !! T$T $SENT: no new Run head after two sends (recorded, continuing)"
+      record "$T" send "$PH" send_failed $(( $(date +%s) - START_TS )) "$SENT"
+      continue ;;
+    retried*) echo "    warn: T$T needed a second send ($SENT)" ;;
+  esac
+  case "$SENT" in *:ui_blocked) echo "    warn: T$T 发送前授权卡/停止键未消失（有界等待耗尽）" ;; esac
 
   OUTCOME=timeout
   while :; do
