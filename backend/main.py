@@ -8208,6 +8208,22 @@ async def _build_product_sdk_runtime_stack(
     tool_authorities.add_terminal_listener(
         lambda authority: _ensure_run_route_state_memo().release(authority.run_id)
     )
+    # 事件 X-3：原生按站点内存探针。默认关闭 —— `build_memory_probe` 在
+    # `SIMPLEHARNESS_MEMORY_PROBE` 没显式打开时返回 None，这里连监听器都不注册，
+    # 也不会启动 tracemalloc / import psutil / 碰 gc.get_objects()。
+    from observability.memory_probe import install_memory_probe as _install_memory_probe
+
+    _memory_probe = _install_memory_probe(
+        registry=tool_authorities,
+        snapshot_dir=_paths.user_data_dir() / "memory-probe",
+        emit=lambda fields: logger.info("memory.probe", **dict(fields)),
+    )
+    if _memory_probe is not None:
+        logger.info(
+            "memory.probe.started",
+            every=_memory_probe.every,
+            snapshot_dir=str(_memory_probe.snapshot_dir),
+        )
     project_bindings = service_context.get("project_binding_service")
     if project_bindings is not None:
         from deskpet.sdk_adapters.runtime_paths import (
