@@ -1,0 +1,421 @@
+{
+  "schema": "twoflow-verify-v1",
+  "evidence_root": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-09/twoflow-run1/primary-ui-lc1dpujx",
+  "second_log": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-09/twoflow-run1/primary-ui-o7npp9jv/native.log",
+  "second_launch": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-09/twoflow-run1/primary-ui-o7npp9jv/launch.json",
+  "generated_at": "2026-09-09T13:57:46+08:00",
+  "turns_recorded": 13,
+  "expected_turns": 22,
+  "flow1_turns": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "flow2_turns": [
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22
+  ],
+  "ui_turns": [
+    18,
+    21
+  ],
+  "timeout_turns": [
+    12,
+    13
+  ],
+  "restart_markers": 1,
+  "primary_conversation_ids": [
+    "4d5a6efc-75d1-580e-9ca4-eb2d3d4a7dc1"
+  ],
+  "replay": {
+    "installed_target": ".local-test-evidence/2026-09-07/installed-h0710-m0638-s0313",
+    "imported": true,
+    "functions": [
+      "simple_harness.execution.provider_invocations.provider_request_from_json(request_id: RequestId, value: object)",
+      "simple_harness.execution.provider_invocations.provider_request_fingerprint(request)",
+      "simple_harness.contracts.RequestId",
+      "simple_harness.contracts.canonical_json"
+    ],
+    "error": null,
+    "module_file": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-07/installed-h0710-m0638-s0313/simple_harness/execution/provider_invocations.py"
+  },
+  "sha256": {
+    "human_memory_v7.db": "5abe91b5ec1c8f691a20c08258f105c518e4b1d662a12459aa6e568d66e41ca1",
+    "state.db": "33e67ff43fe374f5c7abaceb10fc1a17d8287743c216ebee415832227cd24d48",
+    "operation-audit.db": "5245608d1dda84d6b5cf1188adce3678909e3defd01a3a7bf8729a97a8af1cd8",
+    "execution-v6.sqlite3": "6428296f24017f2fb14a9e2392b57e9bf5d1c6879eda51633a0a62bcbdcfe909",
+    "native.log": "f15f840b1a547bf0261097bfd3330bd2ec0388b43476c4c933f92f1a6229873e",
+    "twoflow-progress.jsonl": "2e0958631b4bd192b8c5a29a30b50b14d56591a1bbf1205245f6ce082fe04393",
+    "sdk-product-state.db": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+    "workflow.db": "456465c842de26f4939e56fde0212015f7dba59a89e966d0e3c09b6adb0eac17",
+    "launch.json": "5b5062f1aff613c8392ad5842fadf316fedad5cc401f3e674471161c74e242ef",
+    "native.log(second)": "efd2e361a02487345b1d65f461e69991aa9fa5e2a7825cf2abcb2a378cb5afa1",
+    "launch.json(second)": "c843d5bb15a3fb63afa542f2526743167c5cf0f52cc2e1280fe26c8f57c6665e"
+  },
+  "items": [
+    {
+      "item": "TF-1",
+      "title": "唯一永久主对话跨重启不变",
+      "verdict": "PASS",
+      "reason": "主对话恒为 1 行且可写 1 行, ID 全程为 4d5a6efc-75d1-580e-9ca4-eb2d3d4a7dc1, 两次启动共用同一 userdata。",
+      "numbers": {
+        "primary_conversations": 1,
+        "writable": 1,
+        "distinct_ids_in_progress": [
+          "4d5a6efc-75d1-580e-9ca4-eb2d3d4a7dc1"
+        ],
+        "launch1_userdata": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-09/twoflow-run1/primary-ui-lc1dpujx/userdata",
+        "launch2_userdata": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-09/twoflow-run1/primary-ui-lc1dpujx/userdata"
+      }
+    },
+    {
+      "item": "TF-2",
+      "title": "≥20 turn 长上下文",
+      "verdict": "INCONCLUSIVE",
+      "reason": "progress 只记录到 T13/22, 脚本未跑完。",
+      "numbers": {
+        "turns_recorded": 13,
+        "expected_turns": 22,
+        "send_turns": 20,
+        "foreground_run_heads": 11,
+        "non_terminal_runs": 0,
+        "non_terminal_sample": [],
+        "bad_turns": [
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          22
+        ]
+      }
+    },
+    {
+      "item": "TF-3",
+      "title": "重启确实发生",
+      "verdict": "PASS",
+      "reason": "flow1/flow2 两阶段齐全, 两次启动 pid 93015 → 16950, 第二段日志 32847 字节。",
+      "numbers": {
+        "restart_markers": 1,
+        "restart_note": "E2=/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-09/twoflow-run1/primary-ui-o7npp9jv pid=16955 old_pid=16856 primary_id_unchanged=1 userdata_reused=1",
+        "phases_seen": [
+          "flow1",
+          "flow2"
+        ],
+        "launch1_pid": 93015,
+        "launch2_pid": 16950,
+        "second_native_log_bytes": 32847,
+        "second_log_path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-09/twoflow-run1/primary-ui-o7npp9jv/native.log"
+      }
+    },
+    {
+      "item": "TF-4",
+      "title": "两个 TaskScope",
+      "verdict": "PASS",
+      "reason": "2 个 TaskScope, 2 次 create_new 路由。",
+      "numbers": {
+        "task_scopes": 2,
+        "titles": [
+          "霜降素材整理",
+          "霜降字幕校对"
+        ],
+        "route_create_new": 2,
+        "create_scope_ids": [
+          "30ebb252-434b-53a8-be47-111edce572ee",
+          "f39f6eab-3672-51b0-8b47-ad6980b3e253"
+        ]
+      }
+    },
+    {
+      "item": "TF-5",
+      "title": "exact resume 不混任务",
+      "verdict": "INCONCLUSIVE",
+      "reason": "缺 T13/T14 进度记录, 无法把 resume 归属到恢复窗口。",
+      "numbers": {
+        "search_receipts": 3,
+        "open_receipts": 10,
+        "delta_search_T13": 0,
+        "delta_open_T14": null,
+        "route_resume_existing_total": 1,
+        "route_resume_existing_in_T13_T15": 1,
+        "resume_window": [
+          1788933309.0,
+          Infinity
+        ],
+        "resumed_titles": [
+          "霜降素材整理"
+        ]
+      }
+    },
+    {
+      "item": "TF-6",
+      "title": "跨重启类型化召回",
+      "verdict": "INCONCLUSIVE",
+      "reason": "T12 timeout/send_failed, 跨重启召回未走完。",
+      "numbers": {
+        "delta_typed_recall_requests_T12": 2,
+        "delta_typed_recall_results_T12": 2,
+        "typed_recall_requests_total": null,
+        "phase_T12": "flow2",
+        "bad_turns": [
+          12
+        ]
+      }
+    },
+    {
+      "item": "TF-7",
+      "title": "Procedure 跨重启使用",
+      "verdict": "INCONCLUSIVE",
+      "reason": "缺 procedure_records 计数, 无法判定。",
+      "numbers": {
+        "procedure_records": null,
+        "heads_procedure": null,
+        "delta_procedure_records_T9": 0,
+        "delta_procedure_uses_T16": null,
+        "procedure_uses_total": null,
+        "procedure_names": [
+          "霜降清点"
+        ]
+      }
+    },
+    {
+      "item": "TF-8",
+      "title": "Prospective 明确触发",
+      "verdict": "INCONCLUSIVE",
+      "reason": "缺 prospective_records 计数, 无法判定。",
+      "numbers": {
+        "delta_prospective_records_T10": 0,
+        "prospective_records_total": null,
+        "heads_prospective": null,
+        "trigger_kinds": [],
+        "records_without_trigger": 0
+      }
+    },
+    {
+      "item": "TF-9",
+      "title": "逻辑遗忘 append-only",
+      "verdict": "INCONCLUSIVE",
+      "reason": "T18 无计数记录, 无法判定。",
+      "numbers": {
+        "delta_suppression_directives_T18": null,
+        "delta_suppression_targets_T18": null,
+        "directives": [],
+        "user_forget_directives": 0,
+        "note_T18": "",
+        "note_says_forgot": false
+      }
+    },
+    {
+      "item": "TF-10",
+      "title": "遗忘后召回不可见",
+      "verdict": "INCONCLUSIVE",
+      "reason": "没有任何 MEMORY suppression, T18 未生效, 该项无对象。",
+      "numbers": {
+        "suppressed_refs": [],
+        "suppressed_ref_count": 0,
+        "delta_recall_items_T19": null,
+        "post_forget_items_scanned": 0,
+        "suppressed_refs_hit": [],
+        "note_T19": ""
+      }
+    },
+    {
+      "item": "TF-11",
+      "title": "原始会话文本仍在",
+      "verdict": "INCONCLUSIVE",
+      "reason": "缺 evidence_envelopes 计数, 无法判定。",
+      "numbers": {
+        "evidence_envelopes_before_T18": null,
+        "evidence_envelopes_after_T18": null,
+        "evidence_envelopes_final": null,
+        "note_T20": "",
+        "bad_turns": [
+          20
+        ]
+      }
+    },
+    {
+      "item": "TF-12",
+      "title": "受控审计面",
+      "verdict": "INCONCLUSIVE",
+      "reason": "缺 operation-audit.db 计数, 无法判定。",
+      "numbers": {
+        "human_audit_grants": null,
+        "human_audit_deliveries": null,
+        "human_audit_host_streams": null,
+        "human_audit_host_deliveries": null,
+        "host_sections": {},
+        "missing_sections": [
+          "runs",
+          "run_operations",
+          "memory_calls"
+        ],
+        "note_T21": ""
+      }
+    },
+    {
+      "item": "TF-13",
+      "title": "两个任务收口",
+      "verdict": "INCONCLUSIVE",
+      "reason": "缺 task_scope_closure_receipts 计数, 无法判定。",
+      "numbers": {
+        "task_scope_closure_receipts": null,
+        "delta_closure_T11": 1,
+        "delta_closure_T22": null,
+        "scopes_in_terminal_status": [
+          "f39f6eab-3672-51b0-8b47-ad6980b3e253:complete"
+        ]
+      }
+    },
+    {
+      "item": "TF-14",
+      "title": "物理删除禁令",
+      "verdict": "PASS",
+      "reason": "6 个计数在 14 条记录(含重启前后)中单调不减。",
+      "numbers": {
+        "tracked": [
+          "evidence_envelopes",
+          "suppression_directives",
+          "suppression_targets",
+          "task_scope_events",
+          "cognitive_memory_heads",
+          "provider_invocations"
+        ],
+        "drops": {},
+        "turns": 14
+      }
+    },
+    {
+      "item": "TF-15",
+      "title": "snapshot 重放指纹",
+      "verdict": "PASS",
+      "reason": "63/63 次请求重放指纹全等。",
+      "numbers": {
+        "provider_invocations": 63,
+        "checked": 63,
+        "mismatch": 0,
+        "mismatch_sample": []
+      }
+    },
+    {
+      "item": "TF-16",
+      "title": "读闸门绑定跨重启复用",
+      "verdict": "INCONCLUSIVE",
+      "reason": "progress 缺 binding_roots 计数(旧版驱动)——本项要求 2026-09-09 之后的 twoflow_driver.sh。",
+      "numbers": {
+        "delta_binding_roots_T4": 1,
+        "delta_binding_proposals_T4": 1,
+        "delta_binding_roots_T15": null,
+        "delta_binding_proposals_T15": null,
+        "delta_execution_effects_T4": 8,
+        "delta_execution_effects_T15": null,
+        "binding_roots_total": null,
+        "log_read_workspace_binding_revised": 1,
+        "log_path_outside_workspace_root": 1
+      }
+    },
+    {
+      "item": "TF-17",
+      "title": "授权策略=Auto(workflow.db)",
+      "verdict": "PASS",
+      "reason": "workflow.db 策略 auto(gen=0, provenance=factory_default); progress 逐轮记录 ['auto']; sdk-product-state.db 的残留行 {'mode': 'auto', 'provenance': 'factory_default'} 未被采信。",
+      "numbers": {
+        "workflow_mode": "auto",
+        "workflow_generation": 0,
+        "workflow_provenance": "factory_default",
+        "progress_policy_modes": [
+          "auto"
+        ],
+        "product_state_residue_row": {
+          "mode": "auto",
+          "provenance": "factory_default"
+        }
+      }
+    },
+    {
+      "item": "NC-T1",
+      "title": "简单改写不建档",
+      "verdict": "PASS",
+      "reason": "T6 未建/未切 TaskScope, 长期召回增量 2, no_recall 增量 1。",
+      "numbers": {
+        "delta_create_new_T6": 0,
+        "delta_task_scopes_T6": 0,
+        "delta_typed_recall_requests_T6": 2,
+        "delta_no_recall_origin_T6": 1
+      }
+    },
+    {
+      "item": "NC-T2",
+      "title": "模糊愿望不 pending",
+      "verdict": "INCONCLUSIVE",
+      "reason": "T17 无计数记录, 无法判定。",
+      "numbers": {
+        "delta_prospective_records_T17": null,
+        "delta_scheduler_registrations_T17": null,
+        "delta_heads_semantic_T17": null
+      }
+    },
+    {
+      "item": "NC-T3",
+      "title": "UI 轮不调 provider",
+      "verdict": "INCONCLUSIVE",
+      "reason": "缺 UI 轮计数, 无法判定。",
+      "numbers": {
+        "delta_provider_invocations": {
+          "18": null,
+          "21": null
+        }
+      }
+    },
+    {
+      "item": "NC-T4",
+      "title": "无凭据形状",
+      "verdict": "PASS",
+      "reason": "63 次请求全部无凭据形状命中。",
+      "numbers": {
+        "provider_invocations": 63,
+        "credential_hits": {}
+      }
+    },
+    {
+      "item": "NC-T5",
+      "title": "不产生第二条主对话",
+      "verdict": "PASS",
+      "reason": "全程恰有 1 条可写主对话, 重启未产生第二条。",
+      "numbers": {
+        "writable_now": 1,
+        "writable_over_time": "全程 ≤1"
+      }
+    }
+  ],
+  "tally": {
+    "PASS": 9,
+    "INCONCLUSIVE": 13
+  },
+  "schema_notes": [
+    "twoflow-progress.jsonl 只记录到 T13/22 —— 两个阶段未跑满, 缺轮相关项已按 INCONCLUSIVE 处理。",
+    "timeout/send_failed 轮: [12, 13](plan 第 4 节: 该轮断言降级)。",
+    "逻辑遗忘只针对记忆, 不隐藏会话记录(Host CLAUDE.md 2026-09-07 用户产品决定第 2 条); TF-10 与 TF-11 是一对断言, 只通过其一不算成立。",
+    "授权策略的唯一权威是 workflow.db.authorization_policy_state(MM-D1); sdk-product-state.db 的同名表是 DDL 残留种子行, 本核对器不采信。"
+  ]
+}
