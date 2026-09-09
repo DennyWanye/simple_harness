@@ -187,6 +187,46 @@ BUILTIN: dict[str, ModelContextInfo] = {
     # 实测比值中位 1.022 / 最高 1.148,与 flash 的 1.072 / 1.118 同一档,
     # 说明 tokenizer 密度确实共享——所以 base 用两边的 ordinal-0 证据一起看,
     # 而随轮次增长的那一块**不能**共享,pro 的高轮次样本不并入 flash。
+    #
+    # ── 2026-09-09 事件 W(F-BUDGET-BYPASS):这三个数**不再变动**,理由如下 ──
+    #
+    # HM-TO-A6 第 9 次证伪了 Incident O 的「flash 不产 reasoning / 残差会饱和」:
+    # 同型号同中转站,第 17 轮那条 Run(product-sdk-4996b84d…,14 次 provider
+    # 调用)累计 reasoning 达 38 215、单轮最高 5713。事故形态与 Incident O 相反:
+    #   ordinal   Host planned   provider input_tokens
+    #        1          20954                   13005
+    #        6          26420                   45565
+    #       14          25139                   76708   ← 窗口 32000 的 2.40 倍
+    # planned 一路贴着 effective_input_budget(26752)以下 → 一次
+    # sdk_context_budget_exceeded 都没触发,超窗请求静默发出。残差逐条可复算
+    # (误差 ≤1.6%): provider_input[n] ≈ wire[n] + tool_schema[n]
+    #   + Σ_{k<n} reasoning_tokens[k]     (中转站回灌,38215)
+    #   + Σ_{k<n} tool_call_arguments[k]  (Host 自己在 provider.py::_wire_messages
+    #     里、**在 fingerprint 与预算之后**补回的 assistant tool_calls,事件 K 的
+    #     memo 修复;request_json 里根本不存在,任何文本估算都看不见,23758)
+    #
+    # 合池 239 组真机配对重新拟合(run9 134 + run8 87 + run6 18,窗口全部钉
+    # 32000),结论是**这个模型形状本身不成立**,而不是三个数没调好:
+    #   ordinal 2(n=46): 有真实超预算的请求要被判出, 需要 ratio ≥ 1.831;
+    #                    同一 ordinal 上有真实装得下的请求, 要求 ratio ≤ 1.685。
+    #   ordinal 3(n=23): 分别是 ≥ 1.720 与 ≤ 1.664。
+    # 同型号、同中转站、同 ordinal、同窗口 —— **没有任何标量 ratio 同时满足**。
+    # 根因是隐藏质量是**可加的、逐 Run 的**(这条 Run 想了多少),不是**成比例的**;
+    # 用一个按 ordinal 走的倍率去拟它,只能在「漏判超窗」与「打死装得下的 Run」
+    # 之间挑一头。把它调大到覆盖 run9 的深轮次(需要 min(2.00+0.35*o, 6.90)),
+    # 在这 239 组上确实做到低估 0(旧口径低估 83 组、最差 0.328×,42 条真实超
+    # effective 的请求 42 条全漏判);代价是 197 条真实装得下的请求里 102 条被判超,
+    # 并且会**重新打死 Incident O 那条 Run**(run6 ordinal 6 只需要 1.4)。
+    #
+    # 所以这一轮不动这三个数,改用**实测**而不是拟合来守住边界:
+    # sdk_adapters/wire_input_budget.py 在物理发出之前,用同一条 Run 上一次真实
+    # usage 推出的 carry 做下界(carry = max(0, input−wire) + output)。
+    # 同样 239 组上:触发 40 次、40 次全部落在真实超预算的请求上、**0 次**误伤
+    # 197 条装得下的请求;真实超过**整个窗口**的 24 条请求 **24/24** 全被拦下。
+    # 剩余 2 条漏判都只超 effective 不到 2%(27188 / 26874,仍在 32000 窗口内)。
+    # 让降级(强制分页 → 裁史)也能看见这条 carry,需要改
+    # context_authority._plan_turn_messages —— 补丁与红测见
+    # plans/2026-09-08-hm-to-a6/DECISION-W-BUDGET-BYPASS.md 第 5 节。
     "deepseek-v4-flash": ModelContextInfo(
         model="deepseek-v4-flash",
         context_window=1_000_000,

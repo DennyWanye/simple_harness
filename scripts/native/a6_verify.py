@@ -86,6 +86,14 @@ RECEIPT_CONTROL_FIELDS = (
 BUDGET_EXCEEDED_RE = re.compile(
     r"sdk_context_budget_exceeded planned=(\d+) effective=(\d+)"
 )
+# 事件 W(2026-09-09): 物理发出之前的实测闸门。装配期的 sdk_context_budget_exceeded
+# 只能证明「Host 估算超了」, 这一行证明「Host 用上一轮真实 usage 量出来的下界超了」。
+WIRE_BUDGET_EXCEEDED_RE = re.compile(
+    r"sdk_provider_wire_input_budget_exceeded floor=(\d+) effective=(\d+)"
+)
+# 同一个码也是 WireInputBudgetExceeded 的 error_code, dispatch 按它结算
+# provider_invocations.error_code —— 日志之外的耐久证据。
+WIRE_INPUT_BUDGET_ERROR_CODE = "sdk_provider_wire_input_budget_exceeded"
 SDK_RUN_ID_RE = re.compile(r'"sdk_run_id":\s*"([^"]+)"|sdk_run_id=([^\s",\]]+)')
 # 溢出行本身不带 run id, 向后找最近一条带 sdk_run_id 的记录做归属。
 BUDGET_EXCEEDED_LOOKAHEAD = 40
@@ -340,6 +348,7 @@ class Invocation:
     claimed_at: float
     response_text: str
     usage: dict[str, Any]
+    error_code: str = ""
 
 
 @dataclass
@@ -422,9 +431,11 @@ class Evidence:
         cols = self.exec.columns("provider_invocations")
         resp = "response_json" if "response_json" in cols else "NULL"
         usage = "usage_json" if "usage_json" in cols else "NULL"
+        err = "error_code" if "error_code" in cols else "NULL"
         rows = self.exec.rows(
             "select invocation_id, run_id, request_id, request_fingerprint, request_json,"
-            f" state, claimed_at, {resp} as response_json, {usage} as usage_json"
+            f" state, claimed_at, {resp} as response_json, {usage} as usage_json,"
+            f" {err} as error_code"
             " from provider_invocations order by claimed_at asc, invocation_id asc"
         )
         out: list[Invocation] = []
@@ -443,6 +454,7 @@ class Evidence:
                     claimed_at=float(r["claimed_at"] or 0.0),
                     response_text=as_text(r["response_json"]),
                     usage=maybe_json(as_text(r["usage_json"])) or {},
+                    error_code=as_text(r["error_code"]),
                 )
             )
         self._invocations = out
@@ -698,6 +710,22 @@ class Evidence:
             "runs_with_control_elision_notice": len(runs),
         }
 
+    def foreground_sdk_run_ids(self) -> set[str]:
+        """`foreground_run_heads` 认领过的 sdk_run_id —— 即前台泳道的 Run。
+
+        A6 判的是**前台**这条链的有界性。工作流/后台/探针跑在同一个库里,
+        它们的窗口与预算是另一套配置, 把它们的计费混进来既会误判也会漏判。
+        取不到这张表时返回空集, 调用方按「无法分泳道」处理(fail closed)。
+        """
+        foreground: set[str] = set()
+        if self.state.has("foreground_run_heads", "sdk_run_id"):
+            with contextlib.suppress(SchemaMissing):
+                for r in self.state.rows("select sdk_run_id from foreground_run_heads"):
+                    sdk_run_id = as_text(r[0])
+                    if sdk_run_id:
+                        foreground.add(sdk_run_id)
+        return foreground
+
     def budget_exceeded_events(self) -> dict[str, Any]:
         """native.log 里的 `sdk_context_budget_exceeded`, 并归属到前台/其他 Run。
 
@@ -707,13 +735,7 @@ class Evidence:
         A6-3 的判据把「归属不到」与「归属到前台」一起记 FAIL(fail closed),
         两个计数分开给出, 读者能自己看到证据强度。
         """
-        foreground: set[str] = set()
-        if self.state.has("foreground_run_heads", "sdk_run_id"):
-            with contextlib.suppress(SchemaMissing):
-                for r in self.state.rows("select sdk_run_id from foreground_run_heads"):
-                    sdk_run_id = as_text(r[0])
-                    if sdk_run_id:
-                        foreground.add(sdk_run_id)
+        foreground = self.foreground_sdk_run_ids()
         lines = self.native_log.splitlines()
         total = fg = other = unknown = 0
         samples: list[dict[str, Any]] = []
@@ -754,12 +776,191 @@ class Evidence:
             "sdk_context_budget_exceeded_samples": samples,
         }
 
+    def wire_input_budget_events(self) -> dict[str, int]:
+        """事件 W 的实测闸门触发次数 —— 日志一路, 耐久账本一路。
+
+        日志那行不带 run 归属(拦截发生在**发出之前**), 但结算落在
+        `provider_invocations.error_code` 上: `WireInputBudgetExceeded` 覆盖了
+        基类的 `provider_request_rejected`, 所以库里认得出是哪一条 Run 的哪一次
+        被这道闸门拦下的。两个数不必相等(冷启动前的日志会缺), 分开给。
+        """
+        total = 0
+        for line in self.native_log.splitlines():
+            if WIRE_BUDGET_EXCEEDED_RE.search(line):
+                total += 1
+        foreground = self.foreground_sdk_run_ids()
+        settled = 0
+        settled_foreground = 0
+        with contextlib.suppress(SchemaMissing):
+            for inv in self.invocations():
+                if inv.error_code != WIRE_INPUT_BUDGET_ERROR_CODE:
+                    continue
+                settled += 1
+                if inv.run_id in foreground or not foreground:
+                    settled_foreground += 1
+        return {
+            "sdk_provider_wire_input_budget_exceeded_total": total,
+            "sdk_provider_wire_input_budget_settled_invocations": settled,
+            "sdk_provider_wire_input_budget_settled_foreground": settled_foreground,
+        }
+
+    def receipt_planned_by_fingerprint(self) -> dict[tuple[str, str], int]:
+        """(sdk_run_id, expected_request_fingerprint) -> planned_input_tokens。
+
+        A6-3 判「有界」时必须能把 **Host 估的** 和 **provider 计费的** 摆在
+        同一行上: 只有前者是闸门看得见的量, 只有后者是真的。
+        """
+        out: dict[tuple[str, str], int] = {}
+        if not self.state.has("run_context_snapshot_receipts", "source_revisions_json"):
+            return out
+        with contextlib.suppress(SchemaMissing):
+            for r in self.state.rows(
+                "select sdk_run_id, expected_request_fingerprint, source_revisions_json"
+                " from run_context_snapshot_receipts"
+            ):
+                blob = maybe_json(as_text(r["source_revisions_json"]))
+                if not isinstance(blob, dict):
+                    continue
+                inner = blob.get("source_revisions")
+                revisions = inner if isinstance(inner, dict) else blob
+                planned = revisions.get("planned_input_tokens")
+                if planned is None:
+                    continue
+                key = (as_text(r["sdk_run_id"]), as_text(r["expected_request_fingerprint"]))
+                out[key] = int(planned)
+        return out
+
+    def provider_billed_stats(self, effective: int, window: int) -> dict[str, Any]:
+        """provider 真实计费的输入 token 与 Host 估算的逐条对照(事件 W)。
+
+        `usage.input_tokens` 就是 provider 的 prompt_tokens(`cache_tokens` 是
+        它的子集, 见 sdk_adapters/provider.py::_sdk_provider_usage), 所以这里
+        统计的是「真的发出去并被计费的 prompt 有多大」——与
+        `sdk_context_budget_exceeded` 的 planned 是两个独立的量, 后者高估或
+        低估都不会改变前者。
+        """
+        planned_by_fp = self.receipt_planned_by_fingerprint()
+        foreground = self.foreground_sdk_run_ids()
+        billed: list[int] = []
+        other_lane_billed: list[int] = []
+        other_lane_over_eff = 0
+        other_lane_runs: set[str] = set()
+        over_eff: list[dict[str, Any]] = []
+        over_window = 0
+        under = 0
+        paired = 0
+        worst_ratio: float | None = None
+        worst_sample: dict[str, Any] = {}
+        for inv in self.invocations():
+            usage = (inv.usage or {}).get("usage")
+            if not isinstance(usage, dict):
+                continue
+            value = usage.get("input_tokens")
+            if value is None:
+                continue
+            value = int(value)
+            # 前台之外的泳道(工作流/后台/探针)另有窗口与预算, 混进来会误判;
+            # 但也不能丢: 单独计一份, 读者能自己看到那边有没有异常。
+            # 认不出前台泳道时(旧证据没有 foreground_run_heads)一律按前台算,
+            # 方向是 fail closed。
+            if foreground and inv.run_id not in foreground:
+                other_lane_billed.append(value)
+                other_lane_runs.add(inv.run_id)
+                if value > effective:
+                    other_lane_over_eff += 1
+                continue
+            billed.append(value)
+            if value > effective:
+                if len(over_eff) < 5:
+                    over_eff.append(
+                        {
+                            "sdk_run_id": inv.run_id[-8:],
+                            "request_id": inv.request_id.rsplit(":", 1)[-1],
+                            "input_tokens": value,
+                            "planned": planned_by_fp.get((inv.run_id, inv.request_fingerprint)),
+                        }
+                    )
+            if value > window:
+                over_window += 1
+            planned = planned_by_fp.get((inv.run_id, inv.request_fingerprint))
+            if planned is None:
+                continue
+            paired += 1
+            if planned < value:
+                under += 1
+                ratio = round(planned / value, 4)
+                if worst_ratio is None or ratio < worst_ratio:
+                    worst_ratio = ratio
+                    worst_sample = {
+                        "sdk_run_id": inv.run_id[-8:],
+                        "request_id": inv.request_id.rsplit(":", 1)[-1],
+                        "planned": planned,
+                        "input_tokens": value,
+                        "planned_over_billed": ratio,
+                    }
+        attempts_over_eff = sum(1 for value in billed if value > effective)
+        return {
+            "billed_lane": "foreground" if foreground else "all_runs_unattributed",
+            "billed_attempts": len(billed),
+            "max_billed_input_tokens": max(billed) if billed else 0,
+            "attempts_over_effective_budget": attempts_over_eff,
+            "attempts_over_window": over_window,
+            "attempts_over_effective_budget_samples": over_eff,
+            "planned_billed_pairs": paired,
+            "planned_under_counts_billed": under,
+            "worst_planned_over_billed": worst_ratio,
+            "worst_planned_over_billed_sample": worst_sample,
+            # 其它泳道单独报: 不参与 A6-3 判定, 但必须可见。
+            "other_lane_billed_attempts": len(other_lane_billed),
+            "other_lane_runs": len(other_lane_runs),
+            "other_lane_max_billed_input_tokens": (
+                max(other_lane_billed) if other_lane_billed else 0
+            ),
+            "other_lane_attempts_over_effective_budget": other_lane_over_eff,
+        }
+
     def same_run_bound_numbers(self) -> dict[str, Any]:
         """A6-2 / A6-3 共用的同 Run 有界化取证块(附加在既有 numbers 之后)。"""
         out: dict[str, Any] = dict(self.receipt_bound_stats())
         out.update(self.control_elision_stats())
         out.update(self.budget_exceeded_events())
+        out.update(self.wire_input_budget_events())
         return out
+
+
+def lane_note(billed: dict[str, Any]) -> str:
+    """A6-3 说明里固定追加的一句: 其它泳道的计费是什么样, 以及判的是哪条泳道。"""
+    if billed.get("billed_lane") != "foreground":
+        return (
+            " 注: 证据里没有 foreground_run_heads.sdk_run_id, 无法分泳道, "
+            "上面的计费统计包含**全部** Run(fail closed 方向)。"
+        )
+    if not billed.get("other_lane_billed_attempts"):
+        return " 判据只统前台泳道; 本次证据里没有其它泳道的 provider 调用。"
+    return (
+        f" 判据只统前台泳道; 另有 {billed['other_lane_runs']} 条其它泳道 Run 的 "
+        f"{billed['other_lane_billed_attempts']} 次调用(峰值 "
+        f"{billed['other_lane_max_billed_input_tokens']}, 超同一预算 "
+        f"{billed['other_lane_attempts_over_effective_budget']} 次)不参与本项判定。"
+    )
+
+
+def wire_gate_note(bound: dict[str, Any]) -> str:
+    """事件 W 的实测闸门这一轮有没有真的拦过 —— 拦过就必须写在说明里。
+
+    它是**修好之后**的可见证据: 拦下的那几次请求一个字节都没发出, 也因此
+    不会出现在计费统计里, 只能靠这两个数看见。
+    """
+    logged = int(bound.get("sdk_provider_wire_input_budget_exceeded_total") or 0)
+    settled = int(bound.get("sdk_provider_wire_input_budget_settled_invocations") or 0)
+    if not logged and not settled:
+        return ""
+    return (
+        f" 实测闸门 sdk_provider_wire_input_budget_exceeded 本次触发 {logged} 次"
+        f"(耐久结算 {settled} 次, 其中前台 "
+        f"{int(bound.get('sdk_provider_wire_input_budget_settled_foreground') or 0)} 次)"
+        " —— 这些请求被拦在发出之前, 不计入上面的计费统计。"
+    )
 
 
 def bound_note(bound: dict[str, Any]) -> str:
@@ -1015,11 +1216,30 @@ def item_a6_3(ev: Evidence, budget: dict[str, Any]) -> Item:
 def _item_a6_3_core(ev: Evidence, budget: dict[str, Any], bound: dict[str, Any]) -> Item:
     it = Item("A6-3", "预算内有界")
     ev.state.require("sdk_provider_attempt_audit", "input_tokens", "settled_at")
+    # 事件 W(评审): 审计行同样要按泳道过滤。工作流/后台/探针跑在同一个库里,
+    # 它们的窗口与预算是另一套配置 —— 混进来就会拿别人的 prompt 判前台的
+    # 有界性(既能误判 FAIL, 也能把前台的问题稀释掉)。审计表本身不带 run,
+    # 但带 invocation_id, 用 provider_invocations 归属。认不出前台泳道
+    # (旧证据没有 foreground_run_heads)时一律按前台算, 方向是 fail closed。
+    audit_columns = ev.state.columns("sdk_provider_attempt_audit")
+    invocation_column = "invocation_id" if "invocation_id" in audit_columns else "NULL"
     rows = ev.state.rows(
-        "select input_tokens, settled_at from sdk_provider_attempt_audit"
+        f"select {invocation_column} as invocation_id, input_tokens, settled_at"
+        " from sdk_provider_attempt_audit"
         " where input_tokens is not null order by settled_at asc"
     )
-    tokens = [int(r["input_tokens"]) for r in rows]
+    foreground_runs = ev.foreground_sdk_run_ids()
+    run_by_invocation = {inv.invocation_id: inv.run_id for inv in ev.invocations()}
+
+    def _is_foreground(row: Any) -> bool:
+        if not foreground_runs:
+            return True
+        run_id = run_by_invocation.get(as_text(row["invocation_id"]))
+        # 归属不到调用行的审计行按前台算: 少判不如多判。
+        return run_id is None or run_id in foreground_runs
+
+    tokens = [int(r["input_tokens"]) for r in rows if _is_foreground(r)]
+    other_lane_tokens = [int(r["input_tokens"]) for r in rows if not _is_foreground(r)]
     trim = ev.receipt_trim_stats()
     budget_value = int(budget["effective_input_budget"])
     plan_ceiling = int(budget["window_tokens"]) - int(budget["generation_reserve"])
@@ -1028,6 +1248,8 @@ def _item_a6_3_core(ev: Evidence, budget: dict[str, Any], bound: dict[str, Any])
     est_over = 0
     for inv in ev.invocations():
         if not inv.request:
+            continue
+        if foreground_runs and inv.run_id not in foreground_runs:
             continue
         est = text_tokens(CANONICAL_JSON(inv.request.get("messages") or []))
         est_max = max(est_max, est)
@@ -1055,9 +1277,18 @@ def _item_a6_3_core(ev: Evidence, budget: dict[str, Any], bound: dict[str, Any])
         "requests_over_budget": est_over,
         "trimmed_groups_total": trim.get("trimmed_groups_total", 0),
         "max_causal_groups_recorded": trim.get("max_causal_groups", 0),
+        # 追加在末尾: 既有键的顺序被 markdown brief 钉住。
+        "other_lane_attempt_rows": len(other_lane_tokens),
+        "other_lane_max_input_tokens": max(other_lane_tokens) if other_lane_tokens else 0,
     }
     # 同 Run 有界化取证(F-E1 / F-E2), 追加在末尾: 既有键的顺序与取值不变。
     it.numbers.update(bound)
+    # 事件 W(2026-09-09): 计费侧取证。上面所有的量都是 **Host 估的**;
+    # 只有 usage.input_tokens 是 provider 真的按之计费的 prompt。第 9 次的
+    # 事故正是两者脱钩: planned 逐轮停在 26k 以下、一次装配期溢出都没有,
+    # 而真实 prompt 长到 76708 = 窗口 32000 的 2.40 倍。
+    billed = ev.provider_billed_stats(budget_value, int(budget["window_tokens"]))
+    it.numbers.update(billed)
     # 新增判据: 只要前台 Run 真的把 context 预算撑爆过, 有界性就是伪的 ——
     # 这是**直接观测**, 不因样本不全(timeout / 未观测到整组丢弃)而降级,
     # 所以排在所有 INCONCLUSIVE 分支之前。归属不到 Run 的溢出一并记 FAIL。
@@ -1071,7 +1302,37 @@ def _item_a6_3_core(ev: Evidence, budget: dict[str, Any], bound: dict[str, Any])
             f"(总计 {bound.get('sdk_context_budget_exceeded_total', 0)} 次, 其中归属不到 Run 的 "
             f"{bound.get('sdk_context_budget_exceeded_unattributed', 0)} 次也计入), "
             f"样本 {json.dumps(bound.get('sdk_context_budget_exceeded_samples') or [], ensure_ascii=False)} "
-            "—— 请求装配越过 effective_input_budget 并抛 ContextBudgetExceeded, 有界性不成立。"
+            "—— 请求装配越过 effective_input_budget 并抛 ContextBudgetExceeded, 有界性不成立。 "
+            f"计费侧同期: {billed['attempts_over_effective_budget']}/{billed['billed_attempts']} 次调用的"
+            f" usage.input_tokens 超过 {budget_value}(其中 {billed['attempts_over_window']} 次超过整个窗口"
+            f" {budget['window_tokens']}, 峰值 {billed['max_billed_input_tokens']}), "
+            f"planned 低估 {billed['planned_under_counts_billed']}/{billed['planned_billed_pairs']} 条"
+            f"(最差 {billed['worst_planned_over_billed']})。"
+            + lane_note(billed)
+            + wire_gate_note(bound)
+        )
+        return it
+    # 事件 W: 与上面的装配期溢出同级 —— 「真的发出去并被计费的 prompt 超预算」
+    # 是**直接观测**, 它比任何估算都更强, 所以同样排在 INCONCLUSIVE 之前。
+    # 旧版把这条判据放在 timeout 分支之后, 第 9 次就因为第 17 轮记了 timeout
+    # 而整项降级为 INCONCLUSIVE, max_billed_input_tokens=76708 只作为 numbers
+    # 记下来、从未参与判定 —— 这条排序本身就是漏判通道。
+    if billed.get("attempts_over_effective_budget"):
+        it.verdict = FAIL
+        it.reason = (
+            f"[{billed['billed_lane']}] "
+            f"{billed['attempts_over_effective_budget']}/{billed['billed_attempts']} 次 provider 调用的"
+            f" usage.input_tokens 超过 effective_input_budget={budget_value}"
+            f"(峰值 {billed['max_billed_input_tokens']}, 其中 {billed['attempts_over_window']} 次"
+            f"超过整个窗口 {budget['window_tokens']}), 样本 "
+            f"{json.dumps(billed['attempts_over_effective_budget_samples'], ensure_ascii=False)}"
+            f" —— 估算侧 planned 低估了 {billed['planned_under_counts_billed']}/"
+            f"{billed['planned_billed_pairs']} 条(最差 planned/真实 = "
+            f"{billed['worst_planned_over_billed']}, "
+            f"{json.dumps(billed['worst_planned_over_billed_sample'], ensure_ascii=False)}), "
+            "请求已经发出且被计费, 有界性不成立。"
+            + lane_note(billed)
+            + wire_gate_note(bound)
         )
         return it
     if ev.timeout_turns():
@@ -1110,7 +1371,12 @@ def _item_a6_3_core(ev: Evidence, budget: dict[str, Any], bound: dict[str, Any])
     it.verdict = PASS
     it.reason = (
         f"max_input_tokens={max(tokens)} < effective_input_budget={budget_value}; "
+        f"provider 计费峰值 {billed['max_billed_input_tokens']} 亦在预算内"
+        f"({billed['billed_attempts']} 次调用, planned 低估 "
+        f"{billed['planned_under_counts_billed']} 条); "
         f"后8/前8 峰值比 {ratio} ≤ 1.6; 观测到 {trim['trimmed_groups_total']} 次整组丢弃。"
+        + lane_note(billed)
+        + wire_gate_note(bound)
     )
     return it
 
@@ -2330,38 +2596,114 @@ def item_a6_12(ev: Evidence, replay: Callable[[str, str], str] | None) -> Item:
             if len(bad_samples) < 3:
                 bad_samples.append(f"{inv.invocation_id[:12]}:fingerprint_mismatch")
 
-    receipts: dict[tuple[str, int], sqlite3.Row] = {}
+    # 事件 W(2026-09-09)重定不变量。
+    #
+    # 旧判据是**按位次**配对(第 n 条调用配第 n 号 ordinal)再要求逐 Run 行数
+    # 相等, 于是把一种合法形态判成了异常: receipt 是在 ContextAuthority 组装
+    # 完请求时提交的, 而 Run 可能在 receipt 落库之后、provider 调用被 claim
+    # 之前就死掉(第 9 次的 ef57d663 / 765be600 都死于 receipt 之后的
+    # `recall_context_use_authority_stale`)。那条 receipt 是**真的**:
+    # Host 确实组装了那个请求, 只是它从未上线。
+    #
+    # 重放证明要的是**方向性**的一一对应, 不是行数相等:
+    #   (a) 每一条 provider 调用必须有且只有一条同 Run、指纹相同的 receipt;
+    #   (b) 没有调用的 receipt 只允许是该 Run 的**末条**(snapshot_revision
+    #       最大), 且每 Run 至多一条 —— 即「组装完但整条 Run 就此终止」;
+    #   (c) 出现在中段的孤儿 receipt, 或同一 Run 出现多条, 都是 FAIL:
+    #       账本声称组装过一个既没发出、也没终止 Run 的请求。
+    # 早于 S5a 的证据目录没有 snapshot_revision 列; 那时一个 ordinal 只会有一条
+    # 回执, 用 provider_turn_ordinal 代替「第几次组装」是等价的。
+    revision_col = (
+        "snapshot_revision"
+        if ev.state.has("run_context_snapshot_receipts", "snapshot_revision")
+        else "provider_turn_ordinal"
+    )
+    receipts_by_key: dict[tuple[str, str], list[sqlite3.Row]] = {}
+    receipt_rows_by_run: dict[str, list[sqlite3.Row]] = {}
     for r in ev.state.rows(
-        "select sdk_run_id, provider_turn_ordinal, expected_request_fingerprint, payload_hash"
+        "select sdk_run_id, provider_turn_ordinal,"
+        f" {revision_col} as snapshot_revision,"
+        " expected_request_fingerprint, payload_hash"
         " from run_context_snapshot_receipts"
     ):
-        receipts[(as_text(r["sdk_run_id"]), int(r["provider_turn_ordinal"]))] = r
+        run = as_text(r["sdk_run_id"])
+        receipts_by_key.setdefault((run, as_text(r["expected_request_fingerprint"])), []).append(r)
+        receipt_rows_by_run.setdefault(run, []).append(r)
+    receipts = {
+        (as_text(r["sdk_run_id"]), int(r["provider_turn_ordinal"])): r
+        for rows in receipt_rows_by_run.values()
+        for r in rows
+    }
 
     by_run: dict[str, list[Invocation]] = {}
     for inv in invs:
         by_run.setdefault(inv.run_id, []).append(inv)
     aligned = misaligned = unmatched = 0
     payload_self = payload_bad = 0
-    count_mismatch: list[str] = []
+    matched_receipts: set[int] = set()
+    duplicate_receipts = 0
+    # 指纹**不含** request_id(``provider_request_fingerprint`` 用 "hash-only"
+    # 探针算), 所以同一条 Run 上两次逐字节相同的装配会得到同一个指纹。配对因此
+    # 是「消耗式」的: 一条 receipt 只认领一次, 两条调用要两条 receipt。
+    consumed: dict[tuple[str, str], int] = {}
     for run_id, items in by_run.items():
         items.sort(key=lambda i: (i.claimed_at, i.invocation_id))
-        n_receipts = sum(1 for k in receipts if k[0] == run_id)
-        if n_receipts != len(items):
-            count_mismatch.append(f"{run_id[-8:]}:{n_receipts}!={len(items)}")
-        for idx, inv in enumerate(items, start=1):
-            rec = receipts.get((run_id, idx))
-            if rec is None:
+        for ordinal, inv in enumerate(items, start=1):
+            key = (run_id, inv.request_fingerprint)
+            candidates = receipts_by_key.get(key) or []
+            taken = consumed.get(key, 0)
+            if taken >= len(candidates):
+                # 同 Run 里没有(还没被认领的)同指纹 receipt:
+                # 发出去的请求没有重放凭证。
                 unmatched += 1
+                if candidates:
+                    # 指纹相同的 receipt 数少于调用数 —— 一条 receipt 被两次
+                    # 调用共用, 重放证明对不上「哪一次」。
+                    duplicate_receipts += 1
+                elif receipts.get((run_id, ordinal)) is not None:
+                    # 该位次上确实有 receipt、只是指纹不同 —— 记成「错配」而不仅是
+                    # 「缺失」, 两者的修法不一样。
+                    misaligned += 1
                 continue
+            rec = candidates[taken]
+            consumed[key] = taken + 1
+            matched_receipts.add(id(rec))
+            aligned += 1
             exp = as_text(rec["expected_request_fingerprint"])
-            if exp == inv.request_fingerprint:
-                aligned += 1
-            else:
-                misaligned += 1
             if as_text(rec["payload_hash"]) == exp:
                 payload_self += 1
             else:
                 payload_bad += 1
+
+    # (b)/(c): 没有调用的 receipt 归类。
+    unsent_terminal = 0
+    orphan_mid_run: list[str] = []
+    unsent_samples: list[str] = []
+    for run_id, rows in receipt_rows_by_run.items():
+        head = max(int(r["snapshot_revision"]) for r in rows)
+        leftovers = [r for r in rows if id(r) not in matched_receipts]
+        for r in leftovers:
+            label = f"{run_id[-8:]}:rev{int(r['snapshot_revision'])}"
+            if int(r["snapshot_revision"]) == head and len(leftovers) == 1:
+                unsent_terminal += 1
+                if len(unsent_samples) < 5:
+                    unsent_samples.append(label)
+            elif len(orphan_mid_run) < 5:
+                orphan_mid_run.append(label)
+    orphan_total = sum(
+        1
+        for rows in receipt_rows_by_run.values()
+        for r in rows
+        if id(r) not in matched_receipts
+    ) - unsent_terminal
+    # 行数差本身**不再是判据**(receipt 可以合法地多出末条那一条), 但它仍是
+    # 一个读者要看的量: 这里重新按「每 Run receipt 行数 vs 调用行数」填,
+    # 而不是把 unsent 样本抄一遍。
+    count_mismatch = [
+        f"{run_id[-8:]}:{len(rows)}!={len(by_run.get(run_id, ()))}"
+        for run_id, rows in receipt_rows_by_run.items()
+        if len(rows) != len(by_run.get(run_id, ()))
+    ]
 
     it.numbers = {
         "invocations": len(invs),
@@ -2375,34 +2717,40 @@ def item_a6_12(ev: Evidence, replay: Callable[[str, str], str] | None) -> Item:
         "invocations_without_receipt": unmatched,
         "receipt_payload_hash_equals_expected": payload_self,
         "receipt_payload_hash_mismatch": payload_bad,
+        "duplicate_receipts_for_one_invocation": duplicate_receipts,
+        # 事件 W: 组装完但整条 Run 就此终止的末条 receipt —— 合法形态。
+        "unsent_terminal_receipts": unsent_terminal,
+        "unsent_terminal_receipt_samples": unsent_samples,
+        # 中段孤儿 / 同 Run 多条: 账本自称组装过一个既没发出也没终止 Run 的请求。
+        "orphan_receipts_without_invocation": orphan_total,
+        "orphan_receipt_samples": orphan_mid_run,
         "per_run_count_mismatch": count_mismatch[:5],
     }
     if not invs:
         it.verdict = INCONCLUSIVE
         it.reason = "无 provider_invocations 行, 无法重放。"
         return it
-    if replay_bad or misaligned or payload_bad:
+    if replay_bad or misaligned or payload_bad or unmatched or orphan_total or duplicate_receipts:
         it.verdict = FAIL
         it.reason = (
             f"重放不等 {replay_bad} 条; 与 receipt.expected_request_fingerprint 不等 {misaligned} 条; "
-            f"payload_hash 自洽失败 {payload_bad} 条。"
+            f"payload_hash 自洽失败 {payload_bad} 条; 无对应 receipt 的调用 {unmatched} 条; "
+            f"未配对且不是「该 Run 唯一末条」的 receipt {orphan_total} 条"
+            f"{orphan_mid_run[:3]}(中段孤儿, 或同一条 Run 出现多条未发出的 receipt); "
+            f"一条调用配到多条 receipt {duplicate_receipts} 次。"
         )
         return it
     if replay_err:
         it.verdict = INCONCLUSIVE
         it.reason = f"{replay_err} 条 request_json 无法重放({bad_samples}), 其余 {replay_ok} 条相等。"
         return it
-    if unmatched or count_mismatch:
-        it.verdict = INCONCLUSIVE
-        it.reason = (
-            f"{replay_ok} 条重放全等, 但 {unmatched} 次调用无对应 receipt / "
-            f"{len(count_mismatch)} 个 Run 的行数不匹配{count_mismatch[:3]}(疑似跑动中的活库快照)。"
-        )
-        return it
     it.verdict = PASS
     it.reason = (
         f"{replay_ok} 条 request_json 重放指纹 == request_fingerprint == "
-        f"receipt.expected_request_fingerprint, 且 payload_hash 与之恒等({payload_self} 条)。"
+        f"receipt.expected_request_fingerprint, 且 payload_hash 与之恒等({payload_self} 条); "
+        f"每条调用恰好一条同 Run 同指纹 receipt, 无中段孤儿; "
+        f"另有 {unsent_terminal} 条「组装完但 Run 就此终止」的末条 receipt"
+        f"{unsent_samples[:3]}(合法形态, 不计入不匹配)。"
     )
     return it
 
@@ -2883,7 +3231,8 @@ def selftest() -> int:
             "create table foreground_run_heads(host_run_id text primary key, current_state text,"
             " sdk_run_id text, updated_at real)",
             "create table run_context_snapshot_receipts(snapshot_id text primary key,"
-            " sdk_run_id text, provider_turn_ordinal integer, source_revisions_json text,"
+            " sdk_run_id text, provider_turn_ordinal integer, snapshot_revision integer,"
+            " source_revisions_json text,"
             " payload_hash text, expected_request_fingerprint text, recorded_at real)",
             "create table sdk_provider_attempt_audit(invocation_id text primary key,"
             " snapshot_id text, model_id text, provider_id text, context_window integer,"
@@ -2901,10 +3250,11 @@ def selftest() -> int:
                 ("h1", "COMPLETED", "run1", 100.0),
             ),
             (
-                "insert into run_context_snapshot_receipts values (?,?,?,?,?,?,?)",
+                "insert into run_context_snapshot_receipts values (?,?,?,?,?,?,?,?)",
                 (
                     "ctx-snap:run1:1",
                     "run1",
+                    1,
                     1,
                     json.dumps({"source_revisions": {"budget_tier": 8192, "causal_groups": 1, "trimmed_groups": 0}}),
                     "fp1",

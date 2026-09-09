@@ -45,6 +45,13 @@ from deskpet.sdk_adapters.tool_call_arguments import (
     canonical_tool_arguments_json,
     default_tool_call_arguments_memo,
 )
+from deskpet.sdk_adapters.wire_input_budget import (
+    ObservedInputCarryLedger,
+    WireInputBudgetExceeded,
+    check_wire_input_budget,
+    default_observed_input_carry_ledger,
+    resolve_window_tokens,
+)
 
 _PROVIDER_TOOL_CALLS_METADATA_KEY = "provider_tool_calls"
 _PROVIDER_REASONING_CONTENT_METADATA_KEY = "provider_reasoning_content"
@@ -465,6 +472,8 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         *args: Any,
         reasoning_wire: Mapping[str, object] | None = None,
         tool_call_arguments_memo: ToolCallArgumentsMemo | None = None,
+        wire_input_budget_window: int | None = None,
+        observed_input_carry: ObservedInputCarryLedger | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -473,6 +482,14 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
             tool_call_arguments_memo
             if tool_call_arguments_memo is not None
             else default_tool_call_arguments_memo()
+        )
+        # 事件 W: 这条闸门量的是**这里装配出来的 payload**,不是 request.messages
+        # —— 差别正是 _wire_messages 补回的 assistant tool_calls.arguments。
+        self._wire_input_budget_window = wire_input_budget_window
+        self._observed_input_carry = (
+            observed_input_carry
+            if observed_input_carry is not None
+            else default_observed_input_carry_ledger()
         )
         self._client = _DiagnosticPostClient(self._client, self._redactor)
 
@@ -494,6 +511,22 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         for tool in payload.get("tools", ()):
             if tool.get("type") == "function":
                 tool["function"]["strict"] = False
+        # 事件 W(2026-09-09): 物理请求成型后、任何字节离开 Host 之前的最后一道
+        # 闸门。装配期的预算闸门按 request.messages 估算,看不到上面刚补回的
+        # tool_calls.arguments,也看不到中转站回灌的 reasoning_content;这里用
+        # 同一条 Run 上一次**真实** usage 推出的 carry 做实测下界,越界即
+        # fail closed(sdk_provider_wire_input_budget_exceeded)。
+        check_wire_input_budget(
+            request_id=request.request_id,
+            payload=payload,
+            tool_specs=request.tools or (),
+            window_tokens=self._wire_input_budget_window,
+            # 请求自己带的窗口优先于适配器构造时解析的型号默认值 —— 判的必须
+            # 是这条请求**被装配时**用的那个窗口。
+            request_metadata=getattr(request, "metadata", None),
+            model_id=payload.get("model"),
+            ledger=self._observed_input_carry,
+        )
         return payload
 
     @classmethod
@@ -1031,6 +1064,7 @@ class ProductProviderAdapter:
         timeout: float = 240.0,
         pre_invoke_guard=None,
         tool_call_arguments_memo: ToolCallArgumentsMemo | None = None,
+        observed_input_carry: ObservedInputCarryLedger | None = None,
     ) -> None:
         entry = registry.get_entry(provider_id)
         if entry is None or not bool(getattr(entry, "enabled", True)):
@@ -1082,6 +1116,15 @@ class ProductProviderAdapter:
         self.reasoning_wire = reasoning_wire_fields(
             self.reasoning_capability, model_params
         )
+        # 事件 W: 闸门要的是**用户实际绑定的**窗口,所以走 llm.model_info.resolve
+        # (含 model_overrides.toml 全局层) 而不是内置表——本次事故的 32000 正是
+        # 全局 override 钉出来的。取不到窗口就整条闸门不判,见 wire_input_budget。
+        self._wire_input_budget_window = resolve_window_tokens(frozen_model)
+        self._observed_input_carry = (
+            observed_input_carry
+            if observed_input_carry is not None
+            else default_observed_input_carry_ledger()
+        )
         self._delegate = _ProductOpenAICompatibleProvider(
             client,
             base_url,
@@ -1092,6 +1135,8 @@ class ProductProviderAdapter:
             pricing_key=pricing_key,
             reasoning_wire=self.reasoning_wire,
             tool_call_arguments_memo=tool_call_arguments_memo,
+            wire_input_budget_window=self._wire_input_budget_window,
+            observed_input_carry=self._observed_input_carry,
         )
         # The response parse writes this memo, the next turn's wire assembly
         # reads it (HM-TO-A6 事件 K). Production injects nothing, so this is the
@@ -1216,6 +1261,26 @@ class ProductProviderAdapter:
                 round((time.monotonic() - started_at) * 1000),
             )
             raise asyncio.CancelledError() from None
+        except WireInputBudgetExceeded as exc:
+            # 事件 W: 请求在装配 payload 时就被实测闸门拦下,**一个字节都没发出**。
+            # ProviderRequestRejectedError 是 SDK 的 _DEFINITE_PROVIDER_FAILURES
+            # 之一,所以协调器会把它结算为确定失败而不是未知交接。
+            logger.warning(
+                "product_provider_attempt_failed "
+                "request_ref=%s elapsed_ms=%s stage=wire_input_budget "
+                "error_type=%s error_code=%s status_code=missing retryable=false "
+                "floor=%s effective=%s wire=%s carry=%s ordinal=%s",
+                request_ref,
+                round((time.monotonic() - started_at) * 1000),
+                type(exc).__name__,
+                exc.error_code,
+                exc.diagnostics.get("measured_input_floor"),
+                exc.diagnostics.get("effective_input_budget"),
+                exc.diagnostics.get("wire_input_tokens"),
+                exc.diagnostics.get("observed_carry_tokens"),
+                exc.diagnostics.get("provider_turn_ordinal"),
+            )
+            raise
         except ContractValidationError as exc:
             # OpenAI-compatible payload parsing constructs typed SDK values
             # (CallId, Message metadata, frozen JSON).  A provider-generated
@@ -1273,6 +1338,19 @@ class ProductProviderAdapter:
                 _provider_error_code(exc),
             )
             raise ProviderProtocolError(private_cause=exc) from None
+        # 事件 W: 把这一次的真实 usage 与刚才量到的 wire 配对,成为下一轮闸门的
+        # 实测底线。响应没有 usage 就不记——没有观测胜过错误的观测。
+        if response.usage is not None:
+            reasoning = getattr(response.usage, "reasoning_tokens", None)
+            self._observed_input_carry.observe_usage(
+                request.request_id,
+                input_tokens=int(response.usage.input_tokens or 0),
+                output_tokens=int(response.usage.output_tokens or 0),
+                # 只有 reasoning 是下一轮 payload 量不到的那块; 正文与
+                # tool_calls.arguments 下一轮会原样回到 wire 里(事件 K),
+                # 再加一次就是重复计价。中转站不报时传 None → 退回 output。
+                reasoning_tokens=None if reasoning is None else int(reasoning),
+            )
         await self._capture_public_tool_narration(request, response)
         logger.info(
             "product_provider_attempt_succeeded "
