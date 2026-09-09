@@ -16,7 +16,7 @@ which is a fact of the memory rather than an answer key, and without which the
 synthetic noon anchor would assert a precision the source never stated.
 """
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from hashlib import sha256
 from zoneinfo import ZoneInfo
 
@@ -123,24 +123,78 @@ def public_memory_text(spec):
     return _join_anchor(authored, text)
 
 
+def episode_interval(local, zone, precision):
+    """The SDK valid-time interval that states this episode's own precision.
+
+    F-EPI-1. `occurred_start` alone is always a minute-precise instant, so a
+    `month` memory used to hand the model an exact 12:00 anchor it could only
+    read as fact (C04-17 answered 「8月中旬」, C04-14 answered the anchor's own
+    date, C04-10 converted the epoch itself and landed two days off). The
+    precision the source actually stated is expressed here, in the SDK's own
+    `[occurred_start, occurred_end]`, which
+    `human_memory_v7.render_episode_occurred_local` renders back at exactly
+    that precision. `occurred_end` is the first instant after the occurrence.
+
+    Only `month` moves its anchor (to the first of the month): every other
+    precision keeps the anchor it has always had and merely bounds it, because
+    a span is rendered by the calendar days it covers, never by its clock time.
+    `undated` gets no upper bound at all - the memory bounds no occurrence, and
+    the fragment then carries no rendered time for the model to read.
+    """
+    start = timestamp(local, zone)
+    if precision == 'undated':
+        return start, None
+    if precision == 'minute':
+        return start, start
+    anchor = datetime.fromisoformat(local).date()
+    if precision in ('day', 'night'):
+        stop = anchor + timedelta(days=1)
+    elif precision == 'week':
+        stop = anchor + timedelta(days=7)
+    elif precision == 'month':
+        first = anchor.replace(day=1)
+        start = timestamp(datetime.combine(first, time()).isoformat(), zone)
+        stop = (first + timedelta(days=32)).replace(day=1)
+    else:
+        raise ValueError('c04_unknown_episode_precision')
+    return start, timestamp(datetime.combine(stop, time()).isoformat(), zone)
+
+
 def precision_oracle(batch):
     """Scoring-side record of what each synthetic anchor stands for.
 
     F-C04-1: this is the answer C04 measures, so it is returned to the fixture
     caller (which writes it into the post-run setup receipt) and never reaches
     a memory payload, a prompt, or any model-visible surface.
+
+    F-EPI-1: episodes additionally record `rendered_occurred_local` - what the
+    Host's own renderer will put in the recall fragment, produced by importing
+    that renderer rather than by restating its rules here. That is the string
+    the review scores an answer's date precision against; a fixture that
+    computed its own expectation would be scoring itself, not the Host.
     """
-    return {spec[0]: dict(memory_type=spec[1], authored_time_text=spec[6], precision=spec[5],
-                          anchor_local=spec[3], anchor_zone=spec[4],
-                          note='具体日时仅synthetic fixture锚点，非原文事实；精度为评分端期望值')
-            for spec in batch.specs}
+    from deskpet.memory.human_memory_v7 import render_episode_occurred_local
+
+    oracle = {}
+    for spec in batch.specs:
+        record = dict(memory_type=spec[1], authored_time_text=spec[6], precision=spec[5],
+                      anchor_local=spec[3], anchor_zone=spec[4],
+                      note='具体日时仅synthetic fixture锚点，非原文事实；精度为评分端期望值')
+        if spec[1] == 'episode':
+            payload = temporal_payload(batch, spec).to_json()
+            record.update(occurred_start=payload['occurred_start'],
+                          occurred_end=payload['occurred_end'],
+                          rendered_occurred_local=render_episode_occurred_local(payload, 'episode'))
+        oracle[spec[0]] = record
+    return oracle
 
 
 def temporal_payload(batch, spec):
     label, kind, text, local, zone, precision, authored = spec
     text = public_memory_text(spec)
     if kind == 'episode':
-        return h.EpisodeMemoryPayload(text, ('user:self',), (), (text,), (), (), timestamp(local, zone), None, None)
+        start, end = episode_interval(local, zone, precision)
+        return h.EpisodeMemoryPayload(text, ('user:self',), (), (text,), (), (), start, end, None)
     if precision == 'event':
         # An unresolved fixture trigger namespace is not an observed event or a
         # product publisher grant. No resolver/signal is installed for it.

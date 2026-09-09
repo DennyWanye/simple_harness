@@ -211,9 +211,24 @@ R5_CODE = "semantic_fallback_on_reminder_lifecycle_request"
 
 
 def test_policy_states_r5_for_the_semantic_safety_net():
+    """F-ETR-8: R5b states the same scope as a gate, not as a forbidden motive.
+
+    The old half-sentence ("never a safety net on an occurrence-plus-reminder
+    question that asks for no standing value") is the wording 6/20 C04 turns
+    still violated while the Host's own judgement matched 20/20 - three of them
+    putting `semantic` first or second, which is not how a fallback is written.
+    Both the departed wording and the new gate are pinned so neither can drift
+    back in unmeasured.
+    """
+
     text = MEMORY_TYPE_SELECTION_POLICY
-    assert "never a safety net on an occurrence-plus-reminder question" in text
-    assert "asks for no standing value" in text
+    assert "if the request names no such standing value, omit it" in text
+    assert "what happened plus which reminder you set names none" in text
+    assert "safety net" not in text
+    # R5b refines only the closing half of the `semantic` clause; the type's
+    # own definition, and rules R2-R4, are unchanged.
+    assert "semantic: facts, preferences, standing agreements" in text
+    assert "episode: only when the answer needs the past occurrence itself" in text
 
 
 @pytest.mark.parametrize("case_id,request_text,_had_semantic", C04_TURNS)

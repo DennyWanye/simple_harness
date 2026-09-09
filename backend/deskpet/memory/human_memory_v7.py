@@ -692,6 +692,122 @@ def _prospective_trigger_local(payload: Any, memory_type: str) -> str | None:
     return f"{moment.isoformat(timespec=spec)} {_CHINESE_WEEKDAYS[moment.weekday()]}"
 
 
+# F-EPI-1. The zone an episode is rendered in.
+#
+# A prospective trigger names its own IANA zone, so ``trigger_local`` renders
+# in it. ``EpisodeMemoryPayload`` has no zone field at all (title, participants,
+# goals, actions, results, impacts, occurred_start, occurred_end, thread_ref),
+# so an episode has no zone of its own to render in. The Host already tells the
+# model one zone per request - the fixed clock line of
+# ``primary_context.PrimaryContext`` ("timezone=Asia/Shanghai; today=...") -
+# and rendering an occurrence in any other zone would contradict it. This is
+# that same default, injectable for a Host configured to another zone.
+EPISODE_LOCAL_ZONE = "Asia/Shanghai"
+
+
+def _zone_or_utc(name: Any) -> Any:
+    from datetime import timezone as _utc
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    if isinstance(name, str) and name:
+        try:
+            return ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            return _utc.utc
+    return _utc.utc
+
+
+def _local_day(moment: Any) -> str:
+    return (f"{moment.year}年{moment.month}月{moment.day}日 "
+            f"{_CHINESE_WEEKDAYS[moment.weekday()]}")
+
+
+def _local_span(first: Any, last: Any, *, suffix: str = "") -> str:
+    """``first``/``last`` are inclusive local dates of one occurrence span."""
+
+    if first.year != last.year:
+        return (f"{first.year}年{first.month}月{first.day}日–"
+                f"{last.year}年{last.month}月{last.day}日{suffix}")
+    if first.month != last.month:
+        return (f"{first.year}年{first.month}月{first.day}日–"
+                f"{last.month}月{last.day}日{suffix}")
+    return f"{first.year}年{first.month}月{first.day}–{last.day}日{suffix}"
+
+
+def render_episode_occurred_local(payload: Any, memory_type: str,
+                                  *, zone_name: str = EPISODE_LOCAL_ZONE) -> str | None:
+    """Render an episode's occurrence time at the precision the memory states.
+
+    F-EPI-1 (RUN-C04-RERUN-2-REVIEW §八缺陷 1/2). A prospective fragment
+    carried a Host-rendered ``trigger_local`` and the model transcribed it
+    correctly 18/18 times; an episode fragment carried only the raw epoch
+    ``occurred_start``, and the one case where the model converted an epoch
+    itself it landed two days off (C04-10), while two more stated a precision
+    the memory never had (C04-14 ``undated`` -> a date, C04-17 ``month`` ->
+    「8月中旬」). This is the symmetric field.
+
+    The precision is not a new payload key - it is the SDK's own valid-time
+    interval ``[occurred_start, occurred_end]``, the only hash-covered temporal
+    channel an episode has:
+
+    * ``occurred_end is None`` - the memory bounds no occurrence at all. Nothing
+      is rendered, and the absence is the honest statement: "when" is unknown.
+    * ``occurred_end == occurred_start`` - a point occurrence. Rendered exactly
+      like ``trigger_local`` (local ISO time + Chinese weekday). This is what
+      ``analysis_proposal.compile_operation`` writes for a real Host-observed
+      episode.
+    * otherwise a span, ``occurred_end`` being the first instant after it. The
+      span is rendered by the calendar days it covers and never by its clock
+      times, because a span means "somewhere in these days": one day, exactly
+      seven days, a whole calendar month, a whole calendar year, or an explicit
+      inclusive range.
+
+    Returns ``None`` rather than guessing for any malformed input, exactly like
+    :func:`_prospective_trigger_local`.
+    """
+
+    from datetime import datetime, timedelta
+
+    if memory_type != "episode" or not isinstance(payload, Mapping):
+        return None
+    start = payload.get("occurred_start")
+    end = payload.get("occurred_end")
+    if isinstance(start, bool) or not isinstance(start, (int, float)):
+        return None
+    if end is None:
+        return None
+    if isinstance(end, bool) or not isinstance(end, (int, float)):
+        return None
+    start, end = float(start), float(end)
+    if end < start:
+        return None
+    zone = _zone_or_utc(zone_name)
+    try:
+        first = datetime.fromtimestamp(start, zone)
+        stop = datetime.fromtimestamp(end, zone)
+    except (OverflowError, OSError, ValueError):
+        return None
+    if end == start:
+        spec = "minutes" if (first.second, first.microsecond) == (0, 0) else "seconds"
+        return f"{first.isoformat(timespec=spec)} {_CHINESE_WEEKDAYS[first.weekday()]}"
+    last = (stop - timedelta(microseconds=1)).date()
+    begin = first.date()
+    if last < begin:
+        return None
+    days = (last - begin).days + 1
+    if days == 1:
+        return _local_day(first)
+    if begin.month == 1 and begin.day == 1 and last.month == 12 and last.day == 31:
+        if begin.year == last.year:
+            return f"{begin.year}年"
+    if begin.day == 1 and begin.year == last.year and begin.month == last.month:
+        if (last + timedelta(days=1)).month != last.month:
+            return f"{begin.year}年{begin.month}月"
+    if days == 7:
+        return _local_span(begin, last, suffix="那周")
+    return _local_span(begin, last)
+
+
 # HM-S3 「含糊冲突 contested」 disclosure (slice S3 §5.2/§5.3):
 #
 # - 「普通选择仅允许 `uncontested|resolved`；contested 只能走完整 group
@@ -851,7 +967,8 @@ def project_contested_confirmation(lanes: Any) -> dict[str, Any] | None:
     }
 
 
-def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
+def project_recall_fragments(lanes: Any, *, episode_zone: str = EPISODE_LOCAL_ZONE
+                             ) -> tuple[dict[str, Any], ...]:
     """Host second-pass eligibility + dedup over typed recall items.
 
     The SDK already gated candidates; the Host re-checks privacy class before
@@ -910,6 +1027,8 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
             str(item.selected_item.memory_type),
         )
         trigger_local = _prospective_trigger_local(public_payload, memory_type)
+        occurred_local = render_episode_occurred_local(
+            public_payload, memory_type, zone_name=episode_zone)
         fragments.append(
             {
                 "ref": item.selected_item.item_id,
@@ -925,6 +1044,10 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
                 # payload hash stays the SDK's and typed-use carrier binding
                 # keeps comparing identical bytes.
                 **({"trigger_local": trigger_local} if trigger_local is not None else {}),
+                # F-EPI-1: the episode-side twin of trigger_local, rendered at
+                # the precision the memory's own valid-time interval states and
+                # likewise beside (never inside) the SDK payload.
+                **({"occurred_local": occurred_local} if occurred_local is not None else {}),
                 "source_task_scope_ids": list(item.source_task_scope_ids),
                 "bytes": bytes_len,
                 "tokens": tokens,
@@ -986,6 +1109,7 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
 __all__ = [
     "CONTESTED_DISCLOSURE_MESSAGE",
     "CONTESTED_DISCLOSURE_REASON",
+    "EPISODE_LOCAL_ZONE",
     "HOST_SUPPORTED_FILTER_POLICIES",
     "HumanMemoryV7Runtime",
     "RecallLanes",
@@ -994,4 +1118,5 @@ __all__ = [
     "local_memory_scope",
     "project_contested_confirmation",
     "project_recall_fragments",
+    "render_episode_occurred_local",
 ]
