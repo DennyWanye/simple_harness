@@ -101,7 +101,9 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
                 raise
             if facts.get("wrap_up_injected"):
                 budget_rejections.append({"code": "sdk_context_budget_wrap_up",
-                                          "wire_count": len(wire_sizes)})
+                                          "wire_count": len(wire_sizes),
+                                          "open_group_items_dropped":
+                                              facts.get("open_group_items_dropped", 0)})
             return messages, facts
         monkeypatch.setattr(context_authority, "_plan_turn_messages", record_budget)
     await run_pages(tmp_path, monkeypatch, mode="allow", provider_context_window=context_window,
@@ -109,9 +111,17 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
     if budget_stop:
         # Wrapped up before the write batch was ever requested: no megabyte result.
         assert sizes == []
-        assert len(budget_rejections) == 1
-        assert budget_rejections[0]["code"] == "sdk_context_budget_wrap_up"
-        assert budget_rejections[0]["wire_count"] == 1
+        # 2026-09-09 事件 AG：收尾不再是「每个 Run 一次」的额度。这一档现在会收尾
+        # **两次**，而这正是修复要的形状：
+        #   第 1 轮 headroom=151（正数，装得下）——纯劝告，一条也没裁；
+        #   第 2 轮 headroom=-124（真的装不下）——动用 open group 的因果链才装下。
+        # main 上第 1 轮那次劝告会把额度用光，第 2 轮只能 raise，整轮丢失；事故
+        # ``product-sdk-015ad2fe…`` 就是这么死的（turn 13 劝告 -> turn 19 raise）。
+        assert [entry["code"] for entry in budget_rejections] == [
+            "sdk_context_budget_wrap_up", "sdk_context_budget_wrap_up"], budget_rejections
+        assert [entry["wire_count"] for entry in budget_rejections] == [0, 1]
+        assert budget_rejections[0]["open_group_items_dropped"] == 0
+        assert budget_rejections[1]["open_group_items_dropped"] > 0
     else:
         assert len(sizes) == 2 and all(size > 1024 * 1024 for size in sizes)
         assert len(wire_sizes) == 8

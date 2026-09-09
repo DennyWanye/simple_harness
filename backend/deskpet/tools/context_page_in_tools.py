@@ -29,7 +29,11 @@ CONTEXT_PAGE_IN_SCHEMA: dict[str, Any] = {
         "item id, not a page reference, and fails. If this request offers no such reference_id, do "
         "not call this tool. The \":<offset>\" tail of a reference_id is a BYTE offset into the body, "
         "not a page index and not always a multiple of page_size; never invent one — use the "
-        "summary's valid_offsets, a page's next_reference_id, or a rejection's retry_reference_id."
+        "summary's valid_offsets, a page's next_reference_id, or a rejection's retry_reference_id. "
+        # 事件 AG：第 12 次第 6 轮里用户只问「标题和总行数」，模型却翻了 13 页并把
+        # 整个 Run 的预算耗尽。descriptor 现在自带答案，工具说明必须点破这一点。
+        "A summary's excerpt is the body's first line and its text_stats gives line_count and "
+        "char_count: answer questions about a result's title or length from those, never by paging."
     ),
     "parameters": {
         "type": "object",
