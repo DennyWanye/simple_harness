@@ -101,6 +101,20 @@ class ModelContextInfo:
     # 0.0 = 未单独配置,tools 沿用 messages 的 ratio(ordinal),即旧行为;
     # 未校准型号与 deepseek-v4-flash 都走这条,行为逐 token 不变。
     input_estimate_schema_ratio: float = 0.0
+    # ── per-model 默认 reasoning 模式(事件 Y, 2026-09-09)────────────────────
+    # "default" —— 不往请求里写任何 reasoning 字段, 让型号用它自己的默认(现状)。
+    # "fast"    —— 走 provider_capabilities.reasoning_wire_fields 的 fast 档:
+    #              对 thinking_object 型号(deepseek-v4-*)= {"thinking":
+    #              {"type":"disabled"}}。真机探针实测该端点确实支持: usage 里
+    #              reasoning_tokens 消失、输入侧的 reasoning_content 连计费都
+    #              不进(prompt 4580 → 591), 工具调用照常。
+    # "thinking"—— 显式打开。
+    # 只是**默认值**: 会话自己带的 model_params(reasoning_mode/thinking/fast)
+    # 永远优先。默认 "default" = 关闭, 不改任何现有行为。
+    # 旅程/测试可以在 model_overrides.toml 里按型号钉:
+    #     [models."deepseek-v4-flash"]
+    #     reasoning_mode = "fast"
+    reasoning_mode: str = "default"
 
 
 # ─────────────────────────── 内置表（design.md D1）───────────────────────────
@@ -316,8 +330,13 @@ _OVERRIDABLE_FIELDS = frozenset(
         "input_estimate_ratio_per_turn",
         "input_estimate_ratio_max",
         "input_estimate_schema_ratio",
+        # 事件 Y: 让旅程/测试能按型号钉 thinking 开关, 不必改代码。
+        "reasoning_mode",
     }
 )
+
+#: ``reasoning_mode`` 的合法取值。别的一律当 "default"(不写任何 reasoning 字段)。
+REASONING_MODES: frozenset = frozenset({"default", "thinking", "fast"})
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
@@ -424,6 +443,21 @@ def resolve(model: str, project_root: Optional[Path] = None) -> ModelContextInfo
         info.source,
     )
     return info
+
+
+def resolve_reasoning_mode(model: str, project_root: Optional[Path] = None) -> str:
+    """该型号的默认 reasoning 模式(``default`` / ``thinking`` / ``fast``)。
+
+    走与 :func:`resolve` 同一条三层链, 所以 ``model_overrides.toml`` 的
+    ``[models."<id>"] reasoning_mode = "fast"`` 直接生效。非法值 → ``default``
+    (总函数, 绝不抛: 一个手写错的 TOML 不该让 provider 起不来)。
+    """
+
+    try:
+        mode = str(resolve(model, project_root).reasoning_mode or "").strip().lower()
+    except Exception:  # noqa: BLE001 — 元数据永远不该打断 provider 构造
+        return "default"
+    return mode if mode in REASONING_MODES else "default"
 
 
 def supported_windows_for(model: str) -> list[int]:
