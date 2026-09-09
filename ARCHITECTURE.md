@@ -4,6 +4,11 @@
 > canonical baseline。长任务 Harness、持久化、恢复与 Trace/Eval 请以
 > [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) 为准。
 
+**当前状态（2026-09-09 22:05）**：Memory SDK 钉版 **0.6.38**（`backend/pyproject.toml`）。
+产品级状态/版本总表见 [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md) 顶部，
+运行时架构基线见 [`ARCHITECTURE/ARCHITECTURE.md`](./ARCHITECTURE/ARCHITECTURE.md) 顶部「当前状态与版本」。
+本文件的部署层与目录布局本身无版本相关内容，故只标注此指针。
+
 ---
 
 ## 三层部署架构
