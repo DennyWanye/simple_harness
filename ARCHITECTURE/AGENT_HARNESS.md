@@ -2426,6 +2426,55 @@ tool_schemas / open_group / groups`），`str()` 仍为稳定码
   在基线 `34dbc82a` 上全红、本分支全绿。
   详见 [DECISION-W-BUDGET-BYPASS](../plans/2026-09-08-hm-to-a6/DECISION-W-BUDGET-BYPASS.md)。
 
+### Run 内 reasoning 回传：精确记账 + 有界回传（2026-09-09，事件 Y / F-REASONING-ECHO）
+
+生产事实：上一条里被当成「隐藏 carry」的那块质量，**绝大部分是 Host 自己回灌的**。
+`_ProductOpenAICompatibleProvider._message_payload` 把消息元数据
+`provider_reasoning_content` 逐字写进 wire payload 的 `reasoning_content`
+字段（落库的 canonical `request_json` 里没有它，所以之前只在「计费 − wire」的残差里
+看得见）。第 10a 次短旅程 T6 被拦下的那一轮：`wire=10731 carry=17143
+observed_hidden=14740 floor=27874 > 26752`，而同一条 Run 前 14 轮
+`usage.reasoning_tokens` 累计正是 **12 877**（+ 残差 1 863 = 14 740）。
+
+- **契约取证**（真机 tiny 探针，`deepseek-v4-flash`，见备忘录 §1）：
+  ① 回传**按普通输入文本计费**——同一块文本挂 `reasoning_content` 是
+  **+772.4 token/块**，挂 `content` 是 +780.0/块；
+  ② **省略它不是协议错误**——整条 5 步工具循环丢光回传、或只留最后一条，
+  都是 HTTP 200 且答案正确；
+  ③ `thinking={"type":"disabled"}` 这个端点**真的支持**（`reasoning_tokens` 消失、
+  prompt 4580 → 591、工具调用照常），而 `enable_thinking=false` 与任何未知参数
+  一样被**静默忽略**——所以「参数有效」必须由可观测效果证明。
+- **精确记账**：`wire_message_tokens` 直接把 `reasoning_content` 计进 wire；
+  `ObservedProviderTurn` 记住那一轮 payload 上量到的 `reasoning_relay_tokens`；
+  carry 的第二项改为 `max(0, new_mass − accounted)`，
+  `accounted =` 本轮 wire 上新增的回传 `+` 本轮按契约丢掉的回传。
+  事故那一轮的 `hidden` 由 **14 740 塌到 1 863**。
+  **注意这不改 floor 的总数**（仍是 27 874）——精确记账只改归属，救不了事故；
+  真正解锁那一轮的是下面的裁剪。payload 上没有 `reasoning_content` 时
+  （事件 W 的 239 组夹具、非 thinking 端点）算术与事件 W **逐 token 相同**。
+- **有界回传**：新入口 `enforce_wire_input_budget` 先裁后判，两步共用同一条算术。
+  按型号声明的 `preserve_reasoning` 分档——`tool_loop`（`deepseek-v4-*`，
+  以及所有**未声明**的型号）把最后一条 `user` 之前的回传无条件丢掉，
+  循环内的只在越界时**由老到新**丢、装得下立刻停手（最近一轮的思考最后才动）；
+  `all_turns`（kimi 系）没有无条件可丢的；`not_required` 全部可丢。
+  `payload["messages"]` 就地改写，量的与发的是同一份（用例直接断言 transport 上的 JSON）。
+  事故那一轮缺口 1 122 → 丢**最老的 2/15** 条，请求发得出去。
+  裁剪落一行只有计数的 INFO：`sdk_provider_reasoning_relay_trimmed`。
+- **终局行为不变**：回传全丢完仍越界（超的是受保护的正文），还是
+  `sdk_provider_wire_input_budget_exceeded`，一个字节都不发。溢出行的
+  `floor=/effective=` 前缀不变，`a6_verify` 的正则照旧命中；行尾追加
+  `reasoning_relay= reasoning_relay_dropped= reasoning_relay_dropped_messages=`。
+- **per-model thinking 开关**：`llm/model_info.py` 新增可覆盖字段
+  `reasoning_mode`（`default`/`thinking`/`fast`，默认 `default` = 什么都不写）。
+  走既有三层链，所以旅程/测试在**同一个** `model_overrides.toml`、**同一段**里就能钉：
+  `[models."deepseek-v4-flash"] context_window = 32000` + `reasoning_mode = "fast"`
+  → 请求带 `thinking={"type":"disabled"}`。会话自己的 `model_params`
+  （`reasoning_mode`/`thinking`/`fast`）永远优先。
+- 新增 `backend/tests/sdk_adapters/test_reasoning_relay_budget.py` **17 绿**
+  （事故形态：15 轮 assistant × 1 K 回传、wire 10 731、budget 26 752——不裁则仍越界，
+  裁后装得下）；`test_wire_input_budget.py` 29 例一条没改、全绿。
+  详见 [DECISION-Y-REASONING-ECHO](../plans/2026-09-08-hm-to-a6/DECISION-Y-REASONING-ECHO.md)。
+
 ## 2026-09-09 `task_scope_update` 可引用证据披露（HM-TO-A6 事件 U）
 
 最后更新：2026-09-09。`task_scope_update_refs_outside_scope` 从「只回显违规 ref」改为

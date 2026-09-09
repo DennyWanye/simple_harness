@@ -48,8 +48,8 @@ from deskpet.sdk_adapters.tool_call_arguments import (
 from deskpet.sdk_adapters.wire_input_budget import (
     ObservedInputCarryLedger,
     WireInputBudgetExceeded,
-    check_wire_input_budget,
     default_observed_input_carry_ledger,
+    enforce_wire_input_budget,
     resolve_window_tokens,
 )
 
@@ -471,6 +471,7 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         self,
         *args: Any,
         reasoning_wire: Mapping[str, object] | None = None,
+        reasoning_preserve: str = "tool_loop",
         tool_call_arguments_memo: ToolCallArgumentsMemo | None = None,
         wire_input_budget_window: int | None = None,
         observed_input_carry: ObservedInputCarryLedger | None = None,
@@ -478,6 +479,10 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._reasoning_wire = dict(reasoning_wire or {})
+        # 事件 Y: 这个型号的 reasoning 回传契约(``provider_capabilities`` 的
+        # ``preserve_reasoning``)决定哪些回传是无条件可丢的。未声明的型号按
+        # 最保守的 ``tool_loop`` 走。
+        self._reasoning_preserve = str(reasoning_preserve or "tool_loop")
         self._tool_call_arguments = (
             tool_call_arguments_memo
             if tool_call_arguments_memo is not None
@@ -513,10 +518,15 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                 tool["function"]["strict"] = False
         # 事件 W(2026-09-09): 物理请求成型后、任何字节离开 Host 之前的最后一道
         # 闸门。装配期的预算闸门按 request.messages 估算,看不到上面刚补回的
-        # tool_calls.arguments,也看不到中转站回灌的 reasoning_content;这里用
-        # 同一条 Run 上一次**真实** usage 推出的 carry 做实测下界,越界即
+        # tool_calls.arguments,也看不到 _message_payload 回灌的 reasoning_content;
+        # 这里用同一条 Run 上一次**真实** usage 推出的 carry 做实测下界,越界即
         # fail closed(sdk_provider_wire_input_budget_exceeded)。
-        check_wire_input_budget(
+        #
+        # 事件 Y(2026-09-09): 判之前先按型号声明的回传契约把 reasoning_content
+        # 收敛到必要范围(工具循环之外的无条件丢;循环内的只在越界时由老到新丢),
+        # 并把这块质量**直接**计进 wire —— 它一直在 Host 手里,不该继续当隐藏
+        # 质量去猜。payload["messages"] 在这里被就地改写,量的与发的是同一份。
+        enforce_wire_input_budget(
             request_id=request.request_id,
             payload=payload,
             tool_specs=request.tools or (),
@@ -526,6 +536,7 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
             request_metadata=getattr(request, "metadata", None),
             model_id=payload.get("model"),
             ledger=self._observed_input_carry,
+            reasoning_preserve=self._reasoning_preserve,
         )
         return payload
 
@@ -1041,6 +1052,39 @@ def provider_endpoint_identity(entry: Any, *, base_url: str | None = None) -> st
     ).hexdigest()
 
 
+def _reasoning_params(
+    model: str, model_params: Mapping[str, object] | None
+) -> Mapping[str, object] | None:
+    """会话的 ``model_params`` 补上该型号在 ``model_overrides.toml`` 里的默认。
+
+    事件 Y(2026-09-09):旅程/测试需要一个「关掉 thinking」的开关,但那是
+    **运行配置**,不该逼调用方改代码或改会话协议。这里只在会话**完全没有**
+    表态时(既没 ``reasoning_mode``、也没 ``thinking``/``fast``)才填,所以
+    用户在「模型与参数」面板选的东西永远赢。
+
+    默认 ``reasoning_mode = "default"`` → 返回原对象,一个字段都不加,
+    行为与事件 Y 之前逐 token 相同。
+    """
+
+    if isinstance(model_params, Mapping) and (
+        model_params.get("reasoning_mode") is not None
+        or model_params.get("thinking") is not None
+        or model_params.get("fast") is not None
+    ):
+        return model_params
+    try:
+        from llm.model_info import resolve_reasoning_mode
+
+        mode = resolve_reasoning_mode(model)
+    except Exception:  # noqa: BLE001 — 元数据永远不该打断 provider 构造
+        return model_params
+    if mode == "default":
+        return model_params
+    merged = dict(model_params or {})
+    merged["reasoning_mode"] = mode
+    return merged
+
+
 class ProductProviderAdapter:
     """One immutable provider/model/config/price snapshot for an SDK Run."""
 
@@ -1114,7 +1158,15 @@ class ProductProviderAdapter:
 
         self.reasoning_capability = declared_reasoning_capability(frozen_model)
         self.reasoning_wire = reasoning_wire_fields(
-            self.reasoning_capability, model_params
+            self.reasoning_capability,
+            _reasoning_params(frozen_model, model_params),
+        )
+        # 事件 Y: 未声明的型号按最保守的 ``tool_loop`` 走 —— 只无条件丢掉
+        # 「当前工具循环之外」的回传, 循环内的留到预算真的不够时才动。
+        self._reasoning_preserve = (
+            self.reasoning_capability.preserve_reasoning
+            if self.reasoning_capability.behavior != "unknown"
+            else "tool_loop"
         )
         # 事件 W: 闸门要的是**用户实际绑定的**窗口,所以走 llm.model_info.resolve
         # (含 model_overrides.toml 全局层) 而不是内置表——本次事故的 32000 正是
@@ -1134,6 +1186,7 @@ class ProductProviderAdapter:
             provider_id=provider_id,
             pricing_key=pricing_key,
             reasoning_wire=self.reasoning_wire,
+            reasoning_preserve=self._reasoning_preserve,
             tool_call_arguments_memo=tool_call_arguments_memo,
             wire_input_budget_window=self._wire_input_budget_window,
             observed_input_carry=self._observed_input_carry,
