@@ -44,6 +44,8 @@ from deskpet.sdk_adapters.tool_call_arguments import (
     ToolCallArgumentsMemo,
     canonical_tool_arguments_json,
     default_tool_call_arguments_memo,
+    rejected_tool_result_reason,
+    stub_rejected_tool_call_arguments,
 )
 from deskpet.sdk_adapters.wire_input_budget import (
     ObservedInputCarryLedger,
@@ -616,6 +618,7 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         restored_total = 0
         fallback_total = 0
         ambiguous_total = 0
+        stubbed_total = 0
         for index, message in enumerate(messages):
             if message.role is not MessageRole.ASSISTANT:
                 continue
@@ -639,6 +642,17 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                         fallback_total += 1
                     else:
                         restored_total += 1
+                        # 事件 AL: a call the Host already **rejected** keeps
+                        # paying for its arguments on every later turn. T17's
+                        # rejected 26 KB ``goal.set`` is what pushed the resend
+                        # past ``effective_input_budget``. The call still has to
+                        # appear (the ``tool`` message below it needs its
+                        # ``tool_calls`` entry), but its dead payload does not.
+                        if rejected_tool_result_reason(follower.content):
+                            stub = stub_rejected_tool_call_arguments(restored)
+                            if stub is not None:
+                                restored = stub
+                                stubbed_total += 1
                 followers.append(
                     {
                         "id": follower.call_id.value,
@@ -666,6 +680,16 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                 restored_total,
                 fallback_total,
                 ambiguous_total,
+            )
+        if stubbed_total:
+            # Same shape as the line above: counts only, no call id, tool name
+            # or argument value.
+            logger.info(
+                "product_provider_rejected_tool_call_arguments_stubbed "
+                "request_ref=%s stubbed=%s restored=%s",
+                _diagnostic_request_ref.get(),
+                stubbed_total,
+                restored_total,
             )
         return payloads
 
