@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import cytoscape, { type Core } from "cytoscape";
 import { graphElements } from "../primary/graphElements";
 import { graphStyle } from "../primary/graphStyle";
+import { resolvedTheme } from "../theme/applyTheme";
+import { INTERACTIVE_CLASS, buttonStyle, dark } from "../theme/components";
+import { tokens } from "../theme/tokens";
 import type { GraphEdge, GraphNode } from "../primary/graphRequests";
 
 export type GraphSelection = { kind: "node" | "edge"; id: string } | null;
@@ -25,7 +28,7 @@ export function MemoryGraphCanvas({ nodes, edges, selected, onSelect, claimIniti
   useEffect(() => { select.current = onSelect; }, [onSelect]);
   useEffect(() => {
     if (!container.current) return;
-    const cy = cytoscape({ container: container.current, elements: graphElements(nodes, edges), style: graphStyle(nodes.length),
+    const cy = cytoscape({ container: container.current, elements: graphElements(nodes, edges), style: graphStyle(nodes.length, resolvedTheme()),
       // Disconnected memories have no hierarchy: one breadth-first root row
       // crowds labels and makes fit shrink every word. Include real label bounds.
       layout: edges.length === 0
@@ -53,12 +56,12 @@ export function MemoryGraphCanvas({ nodes, edges, selected, onSelect, claimIniti
     if (selected) cy.getElementById(`${selected.kind}:${selected.id}`).select();
   }, [selected, nodes, edges]);
   return <div>
-    <div style={{ display: "flex", gap: 8, margin: "8px 0" }}>
-      <button onClick={() => { core.current?.zoom(Math.min(3, core.current.zoom() * 1.3)); reveal(); }}>放大</button>
-      <button onClick={() => { core.current?.zoom(Math.max(0.12, core.current.zoom() / 1.3)); reveal(); }}>缩小</button>
-      <button onClick={() => { core.current?.fit(undefined, 32); reveal(); }}>显示全图</button>
+    <div style={{ display: "flex", gap: tokens.space.sm, margin: `${tokens.space.sm}px 0` }}>
+      <button className={INTERACTIVE_CLASS} style={buttonStyle("ghost", "sm")} onClick={() => { core.current?.zoom(Math.min(3, core.current.zoom() * 1.3)); reveal(); }}>放大</button>
+      <button className={INTERACTIVE_CLASS} style={buttonStyle("ghost", "sm")} onClick={() => { core.current?.zoom(Math.max(0.12, core.current.zoom() / 1.3)); reveal(); }}>缩小</button>
+      <button className={INTERACTIVE_CLASS} style={buttonStyle("ghost", "sm")} onClick={() => { core.current?.fit(undefined, 32); reveal(); }}>显示全图</button>
     </div>
     <div ref={container} role="img" aria-label={`记忆关系图：${nodes.length}条记忆，${edges.length}条关系。可使用下方文字列表选择。`}
-      style={{ width: "100%", height: "min(340px, 40vh)", minWidth: 0, background: "#111827", borderRadius: 10, overflow: "hidden" }} />
+      style={{ width: "100%", height: "min(340px, 40vh)", minWidth: 0, background: dark.card, border: `1px solid ${dark.cardBorder}`, borderRadius: tokens.radius.lg, overflow: "hidden" }} />
   </div>;
 }

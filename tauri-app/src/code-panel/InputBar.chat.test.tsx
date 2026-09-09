@@ -341,8 +341,9 @@ describe("InputBar chat send", () => {
 
     render(<InputBar sessionId="default" placeholder="chat" />);
 
-    expect(screen.getByText("✓ 空闲")).toBeTruthy();
-    expect(screen.queryByText("🔧 工具执行中")).toBeNull();
+    // 2026-09-09 改版：状态药丸去 emoji，改「状态色圆点 + 文字」。
+    expect(screen.getByText("空闲")).toBeTruthy();
+    expect(screen.queryByText("工具执行中")).toBeNull();
   });
 
   it("returns to idle after the selected task reaches a failed terminal state", () => {

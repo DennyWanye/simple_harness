@@ -3,7 +3,12 @@
 
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import { applyTheme, watchSystemTheme } from './theme/applyTheme'
 import { BACKEND_PORT } from './backendPort'
+
+// 设计令牌变量表必须先于任何组件渲染注入（深浅两套镜像）。
+applyTheme();
+watchSystemTheme();
 
 // WI-T1.7 last-mile: 全局 metric emit sink。
 // ArtifactCard 按钮点击会调 window.__deskpet_metrics_emit；这里 wire 到
@@ -32,10 +37,7 @@ window.__deskpet_metrics_emit = (event: string, payload: Record<string, unknown>
 // E2E 能真触发 / 命令 autocomplete 状态机（无需 Tauri invoke 创 session）.
 const isSlashTest = window.location.hash.startsWith('#/slashtest');
 
-// The Workbench is an opaque desktop window. Paint a deterministic background
-// before React mounts so cold startup never flashes a transparent shell.
-document.body.style.backgroundColor = '#0f1218';
-document.documentElement.style.backgroundColor = '#0f1218';
+// 底色已由 applyTheme() 按当前主题刷好（冷启动不闪色），这里不再写死。
 
 // StrictMode intentionally stays disabled because duplicate effect mounts open
 // duplicate WebSocket connections and repeat heavyweight media initialization.
@@ -43,7 +45,6 @@ const root = createRoot(document.getElementById('root')!);
 
 if (isSlashTest) {
   // v2 真 UI 验证 — 独立渲染 InputBar 让浏览器 E2E 真触发 / 命令补全.
-  document.body.style.backgroundColor = '#0f1218';
   import('./code-panel/SlashTestHarness')
     .then(({ SlashTestHarness }) => root.render(<SlashTestHarness />))
     .catch((e) => {

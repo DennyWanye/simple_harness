@@ -4,23 +4,25 @@
 /**
  * Workbench 侧栏（T6/T7/T13，WB-3/WB-5/WB-11）。
  *
- * 结构：Logo → 三个主导航项（💬会话 / 🧩技能中心 / 📄产物库，会话项
+ * 结构：Logo → 三个主导航项（主对话 / 技能中心 / 产物库，会话项
  * 带 SessionList 展开区）→ 「更多」折叠组（记忆/Trace/反馈，
- * T13 自 Toolbar 迁入，点击行为=原浮层打开，能力不减）→ 底部 ⚙️设置 +
+ * T13 自 Toolbar 迁入，点击行为=原浮层打开，能力不减）→ 底部「设置」+
  * 连接状态徽章。
  *
  * 连接徽章（T13，聚合口径见 T8/useControlWsState）：ControlChannel
  * （identity_bind，prop 下传）与 controlWS（companion_action，hook 订阅）
  * 两源取最差态；已连接时按 routeKind 显示 云端/本地/已连接。
  *
- * 样式纪律（WB-11）：颜色一律取自 theme/tokens.ts 与
- * theme/components.ts 的 dark 套件，本文件零硬编码色值。
- * 当前项高亮使用 `dark.accent`。
+ * 样式纪律（WB-11 + 2026-09-09 高级感改版）：颜色一律取自
+ * theme/tokens.ts 与 theme/components.ts 的 dark 套件，本文件零硬编码
+ * 色值；图标为内联 SVG（components/Icon.tsx），不用 emoji、不引图标库。
+ * 当前项高亮 = 左侧 2px 强调条（`.sh-nav-item`）+ 强调色极淡面色，
+ * 不做大块填充；所有项统一高度 36。
  */
 import React, { useState } from "react";
 
 import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
+import { dark, INTERACTIVE_CLASS, transition } from "../theme/components";
 import type { WorkbenchView } from "./WorkbenchShell";
 import type { SessionListProps } from "./SessionList";
 import { Icon, type IconName } from "./Icon";
@@ -30,7 +32,7 @@ import {
   type ControlWsState,
 } from "../hooks/useControlWsState";
 
-export const SIDEBAR_WIDTH = 240;
+export const SIDEBAR_WIDTH = 232;
 
 export type RouteKind = "cloud" | "local" | null;
 
@@ -84,12 +86,12 @@ const CONN_DOT_COLOR: Record<ConnColor, string> = {
 
 const NAV_ITEMS: ReadonlyArray<{
   view: WorkbenchView;
-  icon: string;
+  icon: IconName;
   label: string;
 }> = [
-  { view: "chat", icon: "💬", label: "主对话" },
-  { view: "skills", icon: "🧩", label: "技能中心" },
-  { view: "artifacts", icon: "📄", label: "产物库" },
+  { view: "chat", icon: "message", label: "主对话" },
+  { view: "skills", icon: "layers", label: "技能中心" },
+  { view: "artifacts", icon: "file", label: "产物库" },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -120,10 +122,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        gap: tokens.space.xs,
-        padding: tokens.space.sm,
-        background: dark.bgSolid,
-        borderRight: `1px solid ${dark.border}`,
+        gap: tokens.space.xxs,
+        padding: `${tokens.space.md}px ${tokens.space.sm}px ${tokens.space.md}px`,
+        background: dark.panel,
+        borderRight: `1px solid ${dark.hairline}`,
         color: dark.text,
         fontFamily: tokens.font.ui,
         overflow: "hidden",
@@ -136,12 +138,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           display: "flex",
           alignItems: "center",
           gap: tokens.space.sm,
-          padding: `${tokens.space.sm}px ${tokens.space.sm}px ${tokens.space.md}px`,
+          padding: `${tokens.space.xs}px ${tokens.space.md}px ${tokens.space.xl}px`,
           fontSize: tokens.text.md.size,
-          fontWeight: tokens.weight.bold,
-          letterSpacing: 0.3,
+          fontWeight: tokens.weight.semibold,
+          letterSpacing: tokens.tracking.tight,
           color: dark.text,
-          borderBottom: `1px solid ${dark.hairline}`,
           flexShrink: 0,
         }}
       >
@@ -172,27 +173,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
             data-testid="sidebar-more-toggle"
             aria-expanded={moreOpen}
             onClick={() => setMoreOpen((open) => !open)}
+            className={INTERACTIVE_CLASS}
             style={{
               display: "flex",
               alignItems: "center",
               gap: tokens.space.sm,
               width: "100%",
+              height: tokens.controlHeight,
               boxSizing: "border-box",
-              padding: `${tokens.space.xs + 2}px ${tokens.space.md}px`,
+              padding: `0 ${tokens.space.md}px`,
               borderRadius: tokens.radius.md,
               border: "1px solid transparent",
               background: "transparent",
               color: dark.textMuted,
               fontFamily: tokens.font.ui,
-              fontSize: tokens.text.sm.size,
+              fontSize: tokens.text.base.size,
               fontWeight: tokens.weight.medium,
               textAlign: "left",
-              cursor: "pointer",
+              transition,
             }}
           >
-            <span aria-hidden style={{ fontSize: tokens.text.xs.size }}>
-              {moreOpen ? "▾" : "▸"}
-            </span>
+            <Icon
+              name="chevron-right"
+              size={14}
+              style={{
+                transform: moreOpen ? "rotate(90deg)" : "none",
+                transition: `transform ${tokens.duration.fast}ms ${tokens.easing.inOut}`,
+              }}
+            />
             更多
           </button>
           {moreOpen && (
@@ -201,8 +209,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: tokens.space.xs,
-                padding: `0 ${tokens.space.md}px ${tokens.space.xs}px`,
+                gap: tokens.space.xxs,
+                padding: `${tokens.space.xxs}px 0 ${tokens.space.xs}px ${tokens.space.md}px`,
               }}
             >
               <MoreActionButton
@@ -230,7 +238,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* 底部：设置入口 + 连接状态徽章（双源聚合，T13） */}
       <NavButton
-        icon="⚙️"
+        icon="settings"
         label="设置"
         active={view === "settings"}
         testId="nav-settings"
@@ -242,9 +250,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           display: "flex",
           alignItems: "center",
           gap: tokens.space.xs,
-          padding: `${tokens.space.xs}px ${tokens.space.sm}px`,
-          fontSize: tokens.text.xs.size,
-          color: dark.textMuted,
+          padding: `${tokens.space.sm}px ${tokens.space.md}px 0`,
+          fontSize: tokens.text.sm.size,
+          fontVariantNumeric: tokens.font.numeric,
+          color: dark.textFaint,
           flexShrink: 0,
         }}
       >
@@ -265,7 +274,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 };
 
 const NavButton: React.FC<{
-  icon: string;
+  icon: IconName;
   label: string;
   active: boolean;
   testId: string;
@@ -276,41 +285,33 @@ const NavButton: React.FC<{
     data-testid={testId}
     aria-current={active ? "page" : undefined}
     onClick={onClick}
+    className={`${INTERACTIVE_CLASS} sh-nav-item`}
     style={{
       display: "flex",
       alignItems: "center",
-      gap: tokens.space.sm,
+      gap: tokens.space.md,
       width: "100%",
+      height: tokens.controlHeight,
       boxSizing: "border-box",
-      padding: `${tokens.space.sm}px ${tokens.space.md}px`,
+      padding: `0 ${tokens.space.md}px`,
       borderRadius: tokens.radius.md,
-      border: `1px solid ${active ? dark.accent : "transparent"}`,
-      background: active ? dark.card : "transparent",
-      color: active ? dark.accent : dark.textMuted,
+      border: "1px solid transparent",
+      // 选中态：左侧 2px 强调条（.sh-nav-item::before）+ 极淡面色。
+      background: active ? dark.accentSoft : "transparent",
+      color: active ? dark.text : dark.textMuted,
       fontFamily: tokens.font.ui,
       fontSize: tokens.text.base.size,
-      fontWeight: active ? tokens.weight.semibold : tokens.weight.medium,
+      fontWeight: active ? tokens.weight.semibold : tokens.weight.regular,
       textAlign: "left",
-      cursor: "pointer",
-      transition: `background ${tokens.duration.fast}ms ${tokens.easing.inOut}, color ${tokens.duration.fast}ms ${tokens.easing.inOut}`,
+      transition,
       flexShrink: 0,
     }}
-    onMouseEnter={(e) => {
-      if (!active) {
-        e.currentTarget.style.background = dark.cardHover;
-        e.currentTarget.style.color = dark.text;
-      }
-    }}
-    onMouseLeave={(e) => {
-      if (!active) {
-        e.currentTarget.style.background = "transparent";
-        e.currentTarget.style.color = dark.textMuted;
-      }
-    }}
   >
-    <span aria-hidden style={{ fontSize: tokens.text.md.size, lineHeight: 1 }}>
-      {icon}
-    </span>
+    <Icon
+      name={icon}
+      size={16}
+      style={{ color: active ? dark.accent : "currentColor" }}
+    />
     {label}
   </button>
 );
@@ -327,30 +328,24 @@ const MoreActionButton: React.FC<{
     aria-label={title}
     title={title}
     onClick={onClick}
+    className={INTERACTIVE_CLASS}
     style={{
       display: "flex",
       alignItems: "center",
       gap: tokens.space.sm,
       width: "100%",
+      height: 32,
       boxSizing: "border-box",
-      padding: `${tokens.space.xs + 1}px ${tokens.space.sm}px`,
+      padding: `0 ${tokens.space.sm}px`,
       borderRadius: tokens.radius.md,
       border: "1px solid transparent",
       background: "transparent",
       color: dark.textMuted,
       fontFamily: tokens.font.ui,
       fontSize: tokens.text.sm.size,
-      fontWeight: tokens.weight.medium,
+      fontWeight: tokens.weight.regular,
       textAlign: "left",
-      cursor: "pointer",
-    }}
-    onMouseEnter={(event) => {
-      event.currentTarget.style.background = dark.cardHover;
-      event.currentTarget.style.color = dark.text;
-    }}
-    onMouseLeave={(event) => {
-      event.currentTarget.style.background = "transparent";
-      event.currentTarget.style.color = dark.textMuted;
+      transition,
     }}
   >
     <Icon name={icon} size={15} />
