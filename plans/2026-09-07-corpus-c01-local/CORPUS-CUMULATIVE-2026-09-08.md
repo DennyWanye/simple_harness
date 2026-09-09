@@ -231,3 +231,38 @@ Host = main **`c4605f39`**（代码与 `c9384422` 逐字相同）。本工作树
 - 20/20 例跑完，rc 全 0、stop_reason 全 None、**SETUP_BLOCKED 0**（上一轮 20/20 阻塞）；required 类型命中 40/40；多提类型 12/52（C04 单切片 23.1%）。
 - 与 09-09 02:45 的 77 例累计合并：多提类型 (26+12)/(228+52) = **38/280 = 13.6% ✅（<15%）**；required 召回 (136+40)/(136+40) = **100% ✅**；隐私 0 ✅。
 - 20 例 oracle 判定为 `PENDING_POST_TERMINAL_REVIEW`（Prospective 切片需终态后复核调度登记），复核由子代理进行，结果另记。
+
+### 追加：C04 重跑的终态复核结果（复核记录 `RUN-C04-RERUN-REVIEW.md`）
+
+- **PASS 20 / FAIL 0 / INCONCLUSIVE 0**（主代理逐例读库 + 读 trace，未起子代理）。
+  上一轮 C04 记的是"20 执行 / 19 NOT_SCORED / 1 PASS"，本轮整类恢复计量。
+- 注册形态 20/20 正确：`user_version=55` 下游标全部落在 `prospective_outbox_cursor_v52`，
+  封存表 `prospective_outbox_cursor` 零行，`s5c_cursor_successor_required` 全批零命中。
+  **F-PROSP-1 关闭**（`48617f73` 的正面验收）。
+- 生命周期两例对上期望：C04-12 rescheduled（旧 9/7 作废 → 新 9/9 09:30 登记）、
+  C04-17 cancelled（旧出发提醒作废，被取消的 rev2 未再登记）。
+- 负向要求 20/20 满足：`prospective_records` 行数 = fixture 种子数（23），
+  `prospective_trigger_events` / `timer_events` / `occurrences` 全 0，`route_effects` 每例仅 1 条读取型调用
+  ——**无新建提醒、无触发、无结算**。C04 无"含糊愿望"负控例（20 例 gold 的 required_types 一律 episode+prospective）。
+- **`trigger_local` 时刻换算的历史 FAIL 被证伪**：18 条 time trigger 逐条独立复算，
+  与 Host 渲染 18/18 逐字一致（含 Europe/London BST `+01:00` 与跨年 `2027-01-02 周六`）。
+- 由此，上一轮"required 召回 100% 里有 40/136 是 09-08 旧证据"的保留意见**可以撤销**——
+  那 40 条已换成本轮真证据。
+
+新增缺陷（详见 `RUN-C04-RERUN-REVIEW.md` §六）：
+
+1. **跑道/gold｜`backend/deskpet/quality/corpus_c04.py:temporal_payload`** 把
+   `【原时间=…；精度=…；具体日时仅synthetic fixture锚点…】` 拼进模型可见的记忆正文：
+   11/20 例复述给用户（C04-04 连"评分依据"四字都给了用户），且**直接把 precision 的答案写在被召回文本里**。
+   C04 考的就是日期精度，因此**本轮 20 例 PASS 不能用来证明日期精度能力**。记 **F-C04-1（高）**。
+2. **Host｜P4 兜底多提 `semantic`**：12/20 例多提，且 20 例 `fragments` 里**没有任何 semantic 片段**，
+   收益为零。P4 是 `DECISION-EXTRA-TYPE-RATE.md` §3.1 里唯一没有可判定规则、只挂"总纲"的形态，
+   触发与问句特征不相关（C04-08 不多提 / C04-13 多提，同一句式跨两侧）。
+   建议补 R5（semantic 收窄）。记 **F-ETR-7（高）**。
+3. **Memory SDK（低）｜`prospective_records.scheduler_registration_ref` 恒为 NULL**：
+   23/23 行为空，插入处 `backends/sqlite_v5.py:11136-11145` 硬写 None，
+   而 `backends/schema_v5.py:662-667` 的 immutable 触发器使其永远无法回填——死列，易被误读成"未登记"。记 **F-OBS-2**。
+4. **观察**：`NO_ACTIVE_GENERATION` 仍出现在 19/20 例（同期 `cognitive_vector_generation.activated=true`），
+   与上一轮 C06 的 17/19 同形态，归零仍未兑现。
+
+未被本轮计量：**Memory 0.6.37**（本轮测的是 0.6.34，`60ab03a1` 批次后才改 pin），记 **F-RERUN-2（中）**。
