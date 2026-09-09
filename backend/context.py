@@ -133,6 +133,8 @@ _VALID_SERVICES = frozenset({
     "sdk_evidence_authority",
     "sdk_memory_analysis_executor",
     "sdk_memory_ingestion_outbox",
+    # MM-D2（2026-09-09）：绑定挑战签发/决定落库后广播 content-free 显示失效，供 PrimaryWorkspaceBindings 刷新。
+    "memory_display_invalidation",
     "human_memory_host_service_factory",
     "human_memory_v7_runtime",
     "human_memory_binding_append_authority",
