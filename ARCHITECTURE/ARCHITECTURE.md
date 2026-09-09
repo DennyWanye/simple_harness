@@ -2,6 +2,28 @@
 
 # simple_harness Long-Running Agent Architecture Baseline
 
+## 当前状态与版本（2026-09-09 22:05）
+
+本节是本文件唯一的「今日状态」入口，随交付刷新；下方各 `## …（生产事实）` 章节按交付时间保留，各自描述当时状态，不回改、不删除。
+
+| 项 | 当前值 |
+|---|---|
+| Memory SDK 钉版 | **0.6.38**（`backend/pyproject.toml`、`backend/deskpet/sdk_adapters/sdk_candidate.py::SDK_MEMORY_VERSION`；钉版提交 `29a557e3` / `3308af01`） |
+| 今日 SDK 增量 | 0.6.34 向量分数同型相对 margin → 0.6.35 关系端点分类取血缘上最近的已分类祖先 → 0.6.36 离线车道可提交 Procedure 适用性指纹证明 → 0.6.37 冲突组词法准入基底扩到 head 的 `subject_entity`/`qualifiers` → **0.6.38** 租约到期降级 `authority_lease_expired`、未裁决冲突组 incumbent 进向量世代、世代自证 manifest 与 `cognitive_vector_partial` |
+| 分析协议 | v10（事件 AE：Prospective 时间触发器必须由证据文本中的时间表达落地，模糊愿望硬拒 `vague_wish`）；事件 AJ 的槽位归属修正已合入 `1373aec0` |
+| 长对话验收 HM-TO-A6 | 第 12 次整跑 **PASS 14 / FAIL 1 / INCONCLUSIVE 3**（`plans/2026-09-08-hm-to-a6/RUN-12-RESULT.md`）；A6-2 大结果分页与 NC-3 首次 PASS；第 13 次整跑已启动（`4301c72a`） |
+| Manual 模式旅程 | run6 **PASS 12 / FAIL 0 / INCONCLUSIVE 4**（`plans/2026-09-09-manual-mode-journey/RUN-06-RESULT.md`）；MM-5 Manual 多根追加首次通过 |
+| 两轮完整流程（含重启）旅程 | run1 **flow1 T1–T11 全部 COMPLETED**；重启后主对话停在「等待主对话就绪」，flow2 未跑 → **事件 AK 处理中**（`plans/2026-09-09-two-flow-journey/RUN-01-RESULT.md`） |
+| 240 条语料累计 | 多提类型 **29/271 = 10.7% ✅**、required **176/176 = 100% ✅**、隐私违规 **0 ✅**——三条阈值首次全部达标（`plans/2026-09-07-corpus-c01-local/CORPUS-CUMULATIVE-2026-09-08.md`） |
+| 401 类型化召回矩阵 | run-16 **PASS 382 / FAIL 0 / BLOCKED 19**，`EXECUTOR_UNIMPLEMENTED` 归零（`plans/2026-09-07-corpus-c01-local/TYPED-RECALL-401-RUN-10.md`） |
+| 今日合入的事件 | P、Q、R、S、T、U、V、W / W-b / W-c、X / X-2 / X-3 / X3-F4、Y、Z、AA、AB、AC、AE、AF、AG、AH、AI、AJ；F-E2/F-E3、F-Z1/F-Z1b/F-Z1c、F-S1b、F-TOK-6、MM-D1–D4、F-MMD-1、F-NC1、语料 F-C04-1/F-EPI-1/R5b、验证器三条口径。**未闭合：AK（重启后主对话就绪）** |
+| 已知阻塞 | ① 事件 AK 阻塞两轮流程旅程 flow2；② 事件 AJ 待第 13 次整跑复验；③ 延迟/Token 性能基准未做；④ AC-7 全操作审计覆盖、S6 Task 2 任务审查 UI 原生点击未验；⑤ 8192 档 token 余量为 0——任何往 `PERSONA` 或四个产品 schema description 加字的改动会直接打红预算测试 |
+
+人类记忆数字孪生计划（7 个发布单元 / 51 Task / 8 条 MUST AC）的逐项进度以 Memory SDK 仓
+`plans/2026-08-29-human-memory-digital-twin/PROGRESS-2026-09-07.md` 一~三节为准：V0·S1·S2·S4 完成，
+S3·S5 代码与契约完成待整跑复验，S6 2 ✅ / 4 🟡 / 2 🔶；AC 1 ✅（HM-AC-4）/ 7 🟡，无红。
+
+
 ## S5a Context/Route Authority（2026-09-02 生产事实）
 
 - 每个 provider turn 由 `ProductRunContextAuthority.prepare_snapshot` 重算 RunContextSnapshot：

@@ -1,3 +1,52 @@
+# 当前状态总表（2026-09-09 22:05）
+
+> 本节是本文件唯一的「今日状态」总表，随交付刷新。其下按时间倒序的「最后更新 …」条目与
+> `## …` 章节是历史记录，各自描述当时状态，不互相覆盖、不回改、不删除。
+> 计划总表（7 个发布单元 / 51 Task / 8 条 MUST AC）在 Memory SDK 仓
+> `plans/2026-08-29-human-memory-digital-twin/PROGRESS-2026-09-07.md` 一~三节，本表与之同步。
+
+## 版本与今日验收
+
+| 项 | 当前值 | 来源 |
+|---|---|---|
+| Memory SDK 钉版 | **0.6.38** | `backend/pyproject.toml`、`sdk_adapters/sdk_candidate.py::SDK_MEMORY_VERSION`；`29a557e3` / `3308af01` |
+| 今日 SDK 增量 | 0.6.34 向量相对 margin → 0.6.35 关系端点按最近已分类祖先 → 0.6.36 离线通道适用性证明 → 0.6.37 冲突组词法准入基底 → 0.6.38 租约到期降级 + incumbent 向量 + 世代自证 | Memory SDK `ARCHITECTURE/ARCHITECTURE.md` |
+| HM-TO-A6 第 12 次整跑 | **PASS 14 / FAIL 1 / INCONCLUSIVE 3**；A6-2、NC-3 首次 PASS；第 13 次已启动（`4301c72a`） | `plans/2026-09-08-hm-to-a6/RUN-12-RESULT.md` |
+| Manual 模式旅程 run6 | **PASS 12 / FAIL 0 / INCONCLUSIVE 4**；MM-5 多根追加首次通过 | `plans/2026-09-09-manual-mode-journey/RUN-06-RESULT.md` |
+| 两轮完整流程（含重启）旅程 run1 | **flow1 T1–T11 全部 COMPLETED**；重启后主对话停在「等待主对话就绪」→ **事件 AK**，flow2 未跑 | `plans/2026-09-09-two-flow-journey/RUN-01-RESULT.md` |
+| 240 条语料累计 | 多提类型 **29/271 = 10.7% ✅**、required **176/176 = 100% ✅**、隐私 **0 ✅**（三阈值首次全部达标） | `plans/2026-09-07-corpus-c01-local/CORPUS-CUMULATIVE-2026-09-08.md` |
+| 401 类型化召回矩阵 | run-16 **PASS 382 / FAIL 0 / BLOCKED 19**，`EXECUTOR_UNIMPLEMENTED` 归零 | `plans/2026-09-07-corpus-c01-local/TYPED-RECALL-401-RUN-10.md` |
+
+## 8 条 MUST AC
+
+| AC | 状态 | 今日变化与缺口 |
+|---|---|---|
+| HM-AC-1 单一主对话、永久证据、逻辑遗忘 | 🟡 | 前台链路与遗忘在 A6 / 两轮旅程 flow1 全通过；**重启后主对话就绪失败（事件 AK）**，由 ✅ 回落 |
+| HM-AC-2 工作记忆 + 四类长期记忆、混合提取 | 🟡 | 召回侧全绿；第 12 次出现事件 **AJ**（v10 下更正/争议提案全被拒）回归，修复已合入 `1373aec0`，待第 13 次复验 |
+| HM-AC-3 永久 TaskScope、单 Run、多根绑定 | 🟡 | Manual 多根追加 MM-5 首次原生 PASS；S6 Task 2 任务审查 UI 原生点击仍未验 |
+| HM-AC-4 每轮判断、类型化召回、no-recall | ✅ | C07 20/20、C01 20/20；401 FAIL 0（剩 19 格 BLOCKED 属 oracle/契约不可构造） |
+| HM-AC-5 Procedure / Prospective | 🟡 | A6-6 Procedure 形态于第 10 次短旅程首次原生通过（0.6.35/0.6.36 + F-S1b）；Prospective 时间触发 ✅（事件 AE + 协议 v10，NC-3 首次 PASS）；事件触发 ⏸（F01） |
+| HM-AC-6 动态 Context、工作记忆、展示型图谱 | 🟡 | A6-2 大结果分页首次 PASS、A6-9/A6-10 PASS；**A6-3 组装超限第 12 次 FAIL**（事件 AG/AH 已合入，待复验） |
+| HM-AC-7 全链路审计 | 🟡 | 普通对话审计与 driver 覆盖 ✅；**Host 全操作覆盖仍未验** |
+| HM-AC-8 跨仓初始化、故障矩阵、质量/延迟/Token、真 UI/provider | 🟡 | **质量门三阈值首次全部达标**、401 FAIL 0；**延迟/Token 性能基准未做**；真人旅程见上表——由 ❌ 升为 🟡 |
+
+汇总：**1 条 ✅ / 7 条 🟡，无红无橙**（2026-09-07 口径为 1 ✅ / 5 🟡 / 1 🔶 / 1 ❌）。
+粗估功能实现约 95%、真实验收约 80%。
+
+## 今日合入的事件与后续
+
+- 已合入：P、Q、R、S、T、U、V、W / W-b / W-c、X / X-2 / X-3 / X3-F4、Y、Z、AA、AB、AC、AE、AF、AG、AH、AI、AJ；
+  F-E2 / F-E3、F-Z1 / F-Z1b / F-Z1c、F-S1b、F-TOK-6、MM-D1–D4、F-MMD-1、F-NC1、
+  语料 F-C04-1 / F-EPI-1 / R5b、a6_verify 三条验证器口径、401 矩阵第三/四轮。
+- 未闭合：**AK**（重启后主对话就绪信号 / 闭合历史投影身份未就绪）——两轮流程旅程 flow2 因此未跑。
+- 待复验：**AJ**（第 13 次整跑）、AG / AH（A6-3 组装超限）。
+- 未做：延迟 / Token 性能基准（AC-8 最后一项）、AC-7 全操作审计覆盖、S6 Task 2 原生点击、
+  401 剩余 19 格、machine final gate 与 release tag（需用户授权）。
+- **全仓警告**：8192 档 token 余量为 0，任何往 `PERSONA` 或四个产品 schema 的 description 加字的车道
+  会直接打红 `test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn`。
+
+---
+
 最后更新：2026-09-09。语料 C04 复核三项 followup 收口（工作树 `worktree-corpus-epi-time`，基线 `53523794`，**未并入 main**）：**F-EPI-1**（同时消掉 F-C04-2）episode 片段补 `occurred_local`，精度由 SDK 有效时间区间 `[occurred_start, occurred_end]` 承载——`undated` 不渲染、`month` →「2026年8月」、`week` →「2026年8月24–30日那周」、`day/night` →「2026年9月4日 周五」、`minute` → `2026-09-30T16:00+08:00 周三`；渲染串挂 payload 旁，`payload_hash` 与 typed-use carrier 不变，只多一个片段键。**F-ETR-8（R5b）** 按复核逐字替换 `semantic` 子句末尾的否定动机句为可判定正向门；**但复核只核了 643 那道上限，真正卡住的是 8192 档余量闸，开工时只剩 2 个 token**——R5b 的 +5 单独就会打红它，现以同段描述里一处语义等价压缩（`is valid only with` → `requires`，−3）供给，schema 623→625，planned 5325 = effective 5325，绿；**余量现在是 0，下一个加字的车道必须先压缩**。PERSONA 因此一个字未加，`occurred_local` 的读法改由条件下发的 `temporal_hint` 承载（与 `procedure_hint` 同载体，零常驻成本）。**F-OBS-2** 核过全仓：没有任何语料复核/计分代码读 `prospective_records.scheduler_registration_ref`（死列），无可改；只在唯一容易误认的一处（`corpus_c04_prepare.py` 读的是登记 authority intent 的同名字段）加了辨析注释，保持开启、归属 SDK 侧。控制合计 **52 新增 + 191/85/20/9/54/3 回归绿**，`tests/memory`、`tests/quality` 全目录与 main 基线失败集合逐条相同（工作树环境两项除外）。**C04 全 20 例必须重跑**（episode 内容哈希全变），建议同批抽样 C01/C02/C06 各 5 例，C03/C05/C07–C12 可不跑。[裁定](../plans/2026-09-07-corpus-c01-local/DECISION-F-EPI-1-R5B.md)。
 
 最后更新：2026-09-09。HM-TO-A6 Incident R：同一 Run 内**第二次** `context_route` 卡死前台驱动（工作树 `worktree-scope-source-mismatch`，已并入 main）。第 7 次原生旅程 T6 在 SDK `run.complete` 之后连续 4 次抛 `primary_message_scope_source_mismatch` 并记 `foreground.runtime.stalled`，Run 头长期 RUNNING。用三份证据库副本 + 装机 SDK 离线复现：T6 的 18 条因果事实里**只有** `effect-1ccf1fc0…`（第 10 个 provider 轮的 `context_route`，SDK state `failed`、路由 verdict `rejected`）失败，逐句核对后唯一为假的判据是 `_verify_route_control_tx` 的 `reservation['tool_name'] is not None`。根因是生产方/校验方漂移：`harness_evidence_reservations.tool_name` 由两条都合法的路径写入——一个 Run 的**第一次** `context_route` 正是绑定准入 Scope 的那次调用，派发时还没有 scope，`ToolAdapter._reserve_evidence` 整个跳过，只有路由账本的 `ingest_ledger_fact_tx` 补预留（NULL）；而**同一 Run 内的第二次**路由此时 scope 已存在，普通工具派发路径先预留并写入 `tool_name='context_route'`。`a4117ef6` 只取样到前一种，把这个副产物写成了控制血统的正向判据；今晚的 `c70f568f`（`task_scope_search` 零命中引导 `continue_active`）第一次让模型在同一 Run 内二次调用 `context_route`，于是必然触发。修复：控制事实的预留 `tool_name` 允许 `NULL` 或 `context_route`，任何其它工具名仍拒绝（不得把物理调用改标为控制），其余 ~20 条判据一字未改、顺序未改、仍 fail-closed。可诊断性：新增 `PrimaryScopeSourceError(code, reason_code, item_ordinal)`，`str()` 仍为原稳定码，`reason_code` 只带 Host 字段名、`item_ordinal` 只带 transcript 序号；`foreground.runtime.failed` / `stalled` 两条审计线新增 `error_reason_code` / `error_reason_ordinal`，不含任何 envelope / 工具入参 / 结果字节。控制：`test_procedure_scope_sources.py` 新增 2 例（复刻三种预留形状 + 每条判据各自的 reason code），把判据改回 `is None` 后新用例立刻 FAIL；另跑 `test_procedure_scope_runtime`(1) / `test_primary_tool_causality`(5) / `test_prospective_registration_source`(7) / `test_primary_history_tool_calls`(7) / `test_current_tool_pages`(3) / `test_primary_foreground_runtime`(19) / `test_evidence_reservations`(6) 全绿，`test_primary_history_outbound` 16 绿 1 红（`[sent_unknown]`，在未改动基线 `f161f5a4` 上同样红，与本轮无关）。修复后离线复现 18 条全过。原生 A6 需重跑 T6。[裁决](../plans/2026-09-08-hm-to-a6/DECISION-SCOPE-SOURCE-MISMATCH.md)。
