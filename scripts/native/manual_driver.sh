@@ -11,7 +11,8 @@
 #   MM_FIXTURES   workspace fixture root (default: $HOME/SimpleHarnessWorkSpace)
 #   MM_OUTSIDE    real directory OUTSIDE the workspace, symlink target
 #                 (default: $HOME/SimpleHarnessManualOutside)
-#   A6_TIMEOUT    per-turn timeout seconds (default: 360)
+#   A6_TIMEOUT    per-turn timeout seconds (default: 600 —— MM-D1/D2 提到 360 短于
+#                 「绑定卡 + 工具卡」两个各自独立的 300 s 窗口串起来的实际应答时间)
 #   A6_POLL       poll interval seconds (default: 5)
 #
 # Contains NO credentials.  Turn kinds:
@@ -19,6 +20,13 @@
 #   @UI@    no message; pause and record the operator's observation note
 #   @ASK@   send, pause for the operator's UI answer (授权卡片 / 授权弹窗),
 #           then keep waiting for the terminal state
+#
+# MM-D2（2026-09-09）绑定轮硬判据：T4/T7/T8 是「必须点到底部『项目目录授权』卡片里
+# 的 允许本次绑定」的三轮。run3 整趟旅程跑完才发现这颗按钮一次都没被答成
+# （task_grants(source=user)=94 而 manual_decisions=0），原因就是驱动只看
+# last_run_state 与 task_grants，没有把 manual_decisions_allow /
+# binding_grants_manual 当判据。现在它们是硬判据：这三轮结束时任一计数没有增加，
+# 该轮记 failed 并**立即退出**（非零），不再往下跑。
 set -u
 
 BID="${1:?bundle-id required}"
@@ -29,8 +37,10 @@ START="${4:-1}"
 SEND="${A6_SEND:-/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/6927d19d-804c-42ea-a91d-fd3cf836f540/scratchpad/send.sh}"
 WS="${MM_FIXTURES:-$HOME/SimpleHarnessWorkSpace}"
 OUTSIDE="${MM_OUTSIDE:-$HOME/SimpleHarnessManualOutside}"
-TIMEOUT="${A6_TIMEOUT:-360}"
+TIMEOUT="${A6_TIMEOUT:-600}"
 POLL="${A6_POLL:-5}"
+# T4/T7/T8：必须点到「允许本次绑定」的三轮（00-PLAN.md §2）。
+BINDING_TURNS=" 4 7 8 "
 
 DATA="$USERDATA/data"
 HM="$DATA/human_memory_v7.db"
@@ -270,6 +280,45 @@ wait_analysis_quiet() { # the analysis lane settles 10–60 s after a turn
   done
 }
 
+is_binding_turn() { case "$BINDING_TURNS" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# MM-D2 判据补充：context_route 效应被 context_route_binding_authorization_required
+# 拒绝时，把该行的 challenge_ref 打进驱动日志 —— 真人据此确认底部卡片对应的是哪一次
+# 挑战（同一轮里模型可能重试 context_route，于是同时存在多张外观相近的授权面）。
+# 表在 state.db，challenge_ref 落在 detail_json.binding_challenge.challenge_ref。
+print_binding_challenges() { # print_binding_challenges <since-epoch> <label>
+  local since="$1" label="$2" rows
+  rows="$(qs "$STATE" "select i.recorded_at || ' challenge_ref=' ||
+      coalesce(json_extract(i.detail_json,'\$.binding_challenge.challenge_ref'),'<none>') ||
+      ' effect=' || i.effect_id || ' run=' || i.sdk_run_id
+    from context_route_tool_invocations i
+    where i.verdict='rejected'
+      and json_extract(i.detail_json,'\$.code')='context_route_binding_authorization_required'
+      and i.recorded_at >= $since
+    order by i.recorded_at asc;")"
+  if [ -n "$rows" ]; then
+    echo "$rows" | while IFS= read -r line; do
+      [ -n "$line" ] && echo "    [$label] context_route rejected -> $line"
+    done
+  else
+    echo "    [$label] 暂无 context_route_binding_authorization_required 拒绝行"
+  fi
+}
+
+# 绑定轮开始应答前，最多等 30 s 让挑战落库，好把 challenge_ref 先打出来。
+await_binding_challenge() { # await_binding_challenge <since-epoch> <turn>
+  local since="$1" turn="$2" i n
+  for i in $(seq 1 6); do
+    n=$(q "$STATE" "select count(*) from context_route_tool_invocations i
+      where i.verdict='rejected'
+        and json_extract(i.detail_json,'\$.code')='context_route_binding_authorization_required'
+        and i.recorded_at >= $since;")
+    [ "$n" -gt 0 ] && break
+    sleep 5
+  done
+  print_binding_challenges "$since" "T$turn"
+}
+
 # ---------- main loop ----------
 echo "manual_driver: bundle=$BID userdata=$USERDATA evidence=$EVIDENCE start=$START"
 echo "manual_driver: fixtures ws=$WS rootB=$ROOT_B rootC=$ROOT_C link=$ROOT_LINK -> $OUTSIDE"
@@ -292,6 +341,8 @@ for (( T=START; T<=LAST; T++ )); do
   wait_previous_idle
   counters
   BASE_RUN=$RUN_N
+  BASE_DEC_ALLOW=$DEC_ALLOW_N
+  BASE_GRANT_MANUAL=$GRANT_MANUAL_N
   echo "=== T$T [$K] send (${#MSG} chars)"
   START_TS=$(date +%s)
   SENT=$(send_confirmed "$BID" "$MSG" "$BASE_RUN")
@@ -304,6 +355,13 @@ for (( T=START; T<=LAST; T++ )); do
 
   UI_NOTE=""
   if [ "$K" = "ask" ]; then
+    if is_binding_turn "$T"; then
+      echo "    >>> T$T 是绑定硬判据轮，先等挑战落库并打出 challenge_ref："
+      await_binding_challenge "$START_TS" "$T"
+      echo "    >>> 本轮会同时出现两张卡：底部『项目目录授权』的 允许本次绑定（写"
+      echo "        manual_decisions/binding_grants），和 SDK 弹窗的 允许一次（写 task_grants）。"
+      echo "        两张都要答，各自 300 s 窗口独立计时。"
+    fi
     echo "    >>> T$T 需要 UI 应答：${HINT[$T]}"
     echo "    >>> 应答后输入观察结果并按 Enter（挑战 TTL 300s，务必尽快）..."
     read -r UI_NOTE || true
@@ -312,13 +370,40 @@ for (( T=START; T<=LAST; T++ )); do
   OUTCOME=timeout
   while :; do
     ELAPSED=$(( $(date +%s) - START_TS ))
-    [ "$ELAPSED" -ge "$TIMEOUT" ] && break
+    if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+      # MM-D2：超时前先打一次手动决定/绑定计数快照，区分「没答卡」与「答了但 Run 卡住」。
+      counters
+      echo "    .. T$T 超时前快照 manual_decisions_allow=$DEC_ALLOW_N (base=$BASE_DEC_ALLOW)" \
+           "binding_grants_manual=$GRANT_MANUAL_N (base=$BASE_GRANT_MANUAL)"
+      break
+    fi
     if terminal_reached "$BASE_RUN"; then OUTCOME=settled; break; fi
     sleep "$POLL"
   done
   ELAPSED=$(( $(date +%s) - START_TS ))
   [ "$OUTCOME" = timeout ] && echo "    !! T$T timed out after ${ELAPSED}s (recorded, continuing)"
   wait_analysis_quiet
+
+  if is_binding_turn "$T"; then
+    print_binding_challenges "$START_TS" "T$T"
+    counters
+    BIND_FAIL=""
+    if [ "$DEC_ALLOW_N" -le "$BASE_DEC_ALLOW" ]; then
+      BIND_FAIL="binding_not_decided"
+    elif [ "$GRANT_MANUAL_N" -le "$BASE_GRANT_MANUAL" ]; then
+      BIND_FAIL="binding_not_granted"
+    fi
+    if [ -n "$BIND_FAIL" ]; then
+      echo "    !! T$T $BIND_FAIL: manual_decisions_allow $BASE_DEC_ALLOW->$DEC_ALLOW_N," \
+           "binding_grants_manual $BASE_GRANT_MANUAL->$GRANT_MANUAL_N"
+      echo "    !! 『允许本次绑定』没有被答成 —— 硬判据不成立, 驱动在此停止 (见 MM-D2)。"
+      record "$T" "$K" failed "$ELAPSED" "$BIND_FAIL ${SENT}${UI_NOTE:+ }${UI_NOTE}"
+      echo "manual_driver: stopped at T$T ($BIND_FAIL) -> $PROGRESS"
+      exit 3
+    fi
+    echo "    ok: T$T 绑定判据成立 manual_decisions_allow=$DEC_ALLOW_N binding_grants_manual=$GRANT_MANUAL_N"
+  fi
+
   record "$T" "$K" "$OUTCOME" "$ELAPSED" "${SENT}${UI_NOTE:+ }${UI_NOTE}"
 done
 

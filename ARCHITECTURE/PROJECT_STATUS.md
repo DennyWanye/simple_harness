@@ -327,6 +327,39 @@ claim, and077 artifact is unchanged. [Contract](../plans/2026-09-06-expiry-termi
 
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-09 旅程加固三件：Manual 驱动硬判据 + F-MMD-1 注册白名单 + F-NC1 自改写路由
+
+基线 `43a8f835`，工作树 `.claude/worktrees/journey-hardening`（分支 `worktree-journey-hardening`，**未合回 main**）。
+三件互相独立的小项，本轮**未启动原生应用、未跑真实模型**。
+
+- **Manual 旅程驱动（MM-D2 的第 2/3/4/5 条）**：`scripts/native/manual_driver.sh` 把
+  `manual_decisions_allow` / `binding_grants_manual` 升级为 T4/T7/T8 的**硬判据**——
+  轮末未增加即记 `outcome=failed`（`binding_not_decided` / `binding_not_granted`）并 `exit 3`，
+  不再像 run3 那样整趟跑完才发现 `允许本次绑定` 一次都没答成；
+  `context_route` 被 `context_route_binding_authorization_required` 拒绝时把该行
+  `challenge_ref` 打进日志（绑定轮在真人应答前先打一次）；每轮超时默认 360 → **600 s**，
+  超时前先打一次手动决定/绑定计数快照。`00-PLAN.md` 的 T4/T7/T8 与 §3 写明
+  **两张卡同时出现、两张都要答、各自 300 s 独立窗口**，且 Manual 下工具卡按工具调用逐次重弹。
+  `scripts/native/manual_verify.py` 的 `policy_state()` 改读 **`workflow.db.authorization_policy_state`**
+  （MM-D1 的唯一权威，绝不回落 `sdk-product-state.db` 的 DDL 残留表），`--selftest` 现在同时建两个
+  内容相反的策略库，读错库自检立刻红；`--selftest` **16/16 PASS**，`bash -n` 通过。
+- **F-MMD-1**：新增 `backend/tests/test_main_service_registrations.py`（4 例），用 `ast` 解析
+  `backend/main.py` 的全部 `service_context.register(<name>, …)`（含两种 for 循环形态），
+  断言 ⊆ `backend/context.py::_VALID_SERVICES`。反向验证：临时删掉 `memory_display_invalidation`
+  后两条断言双双转红，恢复后全绿。
+- **F-NC1**：`backend/deskpet/execution/primary_context.py` 的 PERSONA 补一句
+  `Rewriting or shortening the user's own words needs no context tool or recall.`
+  ——A6 NC-1 要求 T3 以 `origin='no_recall'` 作答，尝试 9/10 里 flash 仍调了 `context_route`；
+  原文只说过这类改写「不是新建项目任务」，没说过**根本不必调工具**。
+  PERSONA 4419 → 4482 字符；为放下它同时做了一处同义压缩
+  （`keeps a contested value out of fragments` → `keeps it out of fragments`，被钉住的措辞未动），
+  8192 档余量 **19 → 3 token**。PERSONA 进回执哈希，逐字记录在裁定文档里。
+- 用例：新增 5 例（4 + 1 钉字）；回归 `test_context_route_tool`(35) +
+  `test_token_estimator_calibration`(54) + `test_contested_route_guard`(32) 全绿；
+  `test_current_tool_megabyte.py[4096]` 仍为既有红（已用 `git checkout` 还原基线单独复跑确认，非本轮引入）。
+  **NC-1 尚未真机复验**，下次 A6 跑之前不得声称已修。
+  [裁定](../plans/2026-09-09-manual-mode-journey/DECISION-JOURNEY-HARDENING.md)。
+
 ## 2026-09-09 语料 C04：夹具精度注记外泄修复（F-C04-1）+ 多提类型规则 R5（F-ETR-7）
 
 基线 `08881887`，工作树 `.claude/worktrees/corpus-c04-fix`（分支 `worktree-corpus-c04-fix`，**未合回 main**）。

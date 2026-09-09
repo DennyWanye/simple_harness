@@ -540,6 +540,22 @@ def test_persona_enumerates_every_context_route_the_tool_accepts() -> None:
     assert len(PERSONA) <= 4900
 
 
+def test_persona_tells_the_model_a_self_rewrite_needs_no_context_tool() -> None:
+    """F-NC1（HM-TO-A6 NC-1）：改写用户自己上一句话不得触发任何 context 工具。
+
+    NC-1 要求 T3「把我上一句话改得更简洁一点。」以 ``origin='no_recall'`` 作答，
+    但尝试 9 / 10 里 ``deepseek-v4-flash`` 仍然调了 ``context_route``，
+    origin 变成 ``context_tool``，负控不成立。原 PERSONA 只说了这类改写
+    「不是新建项目任务」（把它从 ``create_new`` 拉回 ``direct_standalone``），
+    没说**根本不需要调工具**——待改写的文本本来就在当前上下文里。
+    """
+    from deskpet.execution.primary_context import PERSONA
+
+    assert "Rewriting or shortening the user's own words needs no context tool or recall." in PERSONA
+    # 与既有的 direct_standalone 指引同段，不重复也不矛盾。
+    assert "not a new project task" in PERSONA
+
+
 # ---- HM-TO-A6 incident B：零命中搜索必须给出唯一的下一步 ----------------------
 #
 # 证据：2026-09-08 native run ``product-sdk-cba43a68…`` turn 7。真实 DeepSeek 用
