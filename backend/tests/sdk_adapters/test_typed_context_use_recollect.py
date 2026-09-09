@@ -177,6 +177,19 @@ async def test_bound_lease_is_real_and_the_fence_really_refuses_it(world):
     receipt = await world.authorize(world.fragments, attempt_id="attempt-inside-lease")
     assert receipt.result_id == world.bound.result_id
     world.clock.advance(LEASE + 5.0)  # T18: 4.96s past expiry, 12th invocation
+    if _sdk_lease_expiry_degrades():
+        # Memory 0.6.38（DECISION-2026-09-09-lease-degradation-and-incumbent-vectors）：
+        # 租约到期且逐来源复验全部通过时，围栏续发租约并签收据，只记退化码
+        # ``authority_lease_expired``，不再硬失败；事件 AA 的重收集退为兜底。
+        receipt = await world.authorize(world.fragments, attempt_id="attempt-past-lease")
+        assert receipt.result_id == world.bound.result_id
+        # 退化说明由 ``receipts.authorized_at ↔ result_json.authority_expires_at``
+        # 导出（收据本身不带 degradation 字段）：签发时刻已晚于原租约即为续发。
+        expires = getattr(world.bound, "authority_expires_at", None)
+        authorized = getattr(receipt, "authorized_at", None)
+        if expires is not None and authorized is not None:
+            assert float(authorized) >= float(expires)
+        return
     with pytest.raises(m.MemoryValidationError) as raised:
         await world.authorize(world.fragments, attempt_id="attempt-past-lease")
     assert str(raised.value) == "RECALL_AUTHORITY_STALE"
@@ -190,6 +203,15 @@ async def test_bound_lease_is_real_and_the_fence_really_refuses_it(world):
     with pytest.raises(RecallContextUseAuthorityStale) as host:
         await world.authority.authorize_recall_context_use(request)
     assert host.value.code == "recall_context_use_authority_stale"
+
+
+def _sdk_lease_expiry_degrades() -> bool:
+    import importlib.metadata as _md
+    try:
+        parts = tuple(int(x) for x in _md.version("simple-harness-memory-sdk").split(".")[:3])
+    except Exception:
+        return False
+    return parts >= (0, 6, 38)
 
 
 @pytest.mark.asyncio
