@@ -48,6 +48,10 @@ from tests.execution.test_control_result_bound import (
     HOST_RUN_ID, RUN_ID, FakeEffect, public_body,
 )
 
+# 事件 AF-2 之前 ``CONTEXT_PAGE_IN_SCHEMA["description"]`` 的 token 数（875 B / 219）。
+# 说明可以改措辞，但不许变贵——8192 档的受保护预算余量是 0。
+DESCRIPTION_TOKENS_BEFORE_AF2 = 219
+
 # 证据里 47 KB 参照件 B 的形状：整段中文，页起点几乎都不是 1024 的整数倍。
 CJK_LINE = "B-%05d 条目：秋分资料整理清单第 %d 行，校对状态待定，责任人未指派。\n"
 SOURCE_EFFECT = "effect-src" + "c" * 58
@@ -296,8 +300,14 @@ async def test_a_reference_that_is_not_in_this_request_gets_its_own_stable_code(
         await _page(scenario, 0, digest="f" * 64)
     assert str(excinfo.value) == REFERENCE_UNAVAILABLE_CODE == "primary_page_reference_unavailable"
     detail = excinfo.value.detail
-    assert detail["reason"] == "reference_not_in_this_request"
+    # 事件 AF-2：原因码并入三个一致的引用原因（`page_reference_unknown` /
+    # `page_reference_stale` / `page_reference_missing_offset`）。稳定**码**没变，
+    # 变的只是 detail 里的这个词，它不参与任何重放比对。
+    assert detail["reason"] == "page_reference_stale"
     assert "re-run the tool" in detail["next_step"]
+    # 而且必须给得出替代品：本请求现在真正可用的那条引用。
+    assert detail["available_reference_ids"] == [reference(scenario.descriptor, 0)]
+    assert detail["references_available"] == 1
     # 升级前记录的旧码仍然与它重放一致（review M1 同款兼容）。
     assert REJECTION_CODE_ALIASES[REFERENCE_UNAVAILABLE_CODE] == "primary_effect_page_not_admitted"
     assert rejection_code_matches("primary_effect_page_not_admitted", REFERENCE_UNAVAILABLE_CODE)
@@ -357,8 +367,16 @@ def test_tool_description_states_the_offset_unit():
     assert "not a page index" in description
     assert "next_reference_id" in description and "retry_reference_id" in description
     assert "valid_offsets" in description
-    # 参数说明不加字：它进 ``tool_schema_tokens``，而 8192 档的受保护预算没有余量
-    # （``test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn``）。
+    # 事件 AF-2：事故的形态是把 reference_id 抄成「前缀 + 摘要」，尾巴整段丢掉，
+    # 所以说明必须同时禁掉「发明」与「丢弃」。
+    assert "never invent or drop it" in description
+    assert 'always ends in ":<offset>"' in description
+    # 而且这句话是**换来的**不是加上去的：整段说明的 token 数不得超过事件 AF-2
+    # 之前的量（8192 档受保护预算余量为 0，见
+    # ``test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn``）。
+    from deskpet.sdk_adapters.context_partitions import text_tokens
+    assert text_tokens(description) <= DESCRIPTION_TOKENS_BEFORE_AF2
+    # 参数说明不加字：它进 ``tool_schema_tokens``，而 8192 档的受保护预算没有余量。
     parameter = CONTEXT_PAGE_IN_SCHEMA["parameters"]["properties"]["reference_id"]["description"]
     assert "offset" not in parameter
 

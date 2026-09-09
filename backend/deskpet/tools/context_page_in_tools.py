@@ -16,6 +16,14 @@ from typing import Any, Callable
 # 已记录的、只有前缀本身的拒绝仍然原样通过。
 PRIMARY_PAGE_PUBLIC_MESSAGE = "Requested primary page is unavailable."
 
+# 事件 AF-2：拒绝详情里最多列几条**本次请求仍然可用**的引用。与
+# ``execution.current_tool_pages.MAX_LISTED_REFERENCES`` 同值同理由（只在失败路径
+# 上出现，3 条足够让模型换一条真的能用的引用，又不会把回执撑大）。
+MAX_LISTED_REFERENCES = 3
+# ``context_route`` 召回片段的 ref 前缀。它是记忆条目 id，不是页引用；工具说明已经
+# 写明这一点，事故里模型仍然会拿它来调，所以拒绝要直接点名。
+RECALL_FRAGMENT_PREFIX = "recall-item:"
+
 CONTEXT_PAGE_IN_SCHEMA: dict[str, Any] = {
     "name": "context_page_in",
     # 事件 AF：offset 的单位必须由工具说明本身讲清楚。证据里模型按 1024/8192 的
@@ -26,10 +34,16 @@ CONTEXT_PAGE_IN_SCHEMA: dict[str, Any] = {
         "source_hash verbatim from a truncation marker carrying page_tool=\"context_page_in\", or "
         "from a \"[Context page-in reference: id=... hash=...]\" line; nothing else is accepted. A "
         "context_route recall fragment ref (fragments[].ref, e.g. \"recall-item:<id>:1\") is a memory "
-        "item id, not a page reference, and fails. If this request offers no such reference_id, do "
-        "not call this tool. The \":<offset>\" tail of a reference_id is a BYTE offset into the body, "
-        "not a page index and not always a multiple of page_size; never invent one — use the "
-        "summary's valid_offsets, a page's next_reference_id, or a rejection's retry_reference_id. "
+        "item id, not a page reference. If this request offers no such reference_id, do "
+        # 事件 AF-2：第 12 次 T17 的两次失败都是把 reference_id 抄成「前缀 + 摘要」、
+        # 丢掉了 ":<offset>" 尾巴，所以这里说的必须是「不许发明**也不许丢**」。新增的
+        # 2 个 token 由上一句删掉的「, and fails」（本就与「nothing else is accepted」
+        # 重复）抵掉，整段说明净变化 <= 0——8192 档的受保护预算余量是 0，见
+        # ``test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn``。
+        "not call this tool. A reference_id always ends in \":<offset>\", a BYTE offset into "
+        "the body, not a page index and not always a multiple of page_size; never invent or "
+        "drop it — use the summary's valid_offsets, a page's next_reference_id, or a "
+        "rejection's retry_reference_id. "
         # 事件 AG：第 12 次第 6 轮里用户只问「标题和总行数」，模型却翻了 13 页并把
         # 整个 Run 的预算耗尽。descriptor 现在自带答案，工具说明必须点破这一点。
         "A summary's excerpt is the body's first line and its text_stats gives line_count and "
@@ -156,6 +170,26 @@ class ContextPageInStore:
         for key in [k for k, value in self._records.items() if value.expires_at <= now]:
             self._drop(key)
 
+    def live_reference_ids(self, *, session_id: str, request_id: str, scope_id: str,
+                           limit: int = MAX_LISTED_REFERENCES) -> list[str]:
+        """本次请求里仍然可用的引用（**最新的**在前，最多 ``limit`` 条）。
+
+        事件 AF-2：只用于拒绝详情里的"下一步"。严格按 session / request / scope
+        过滤——这三者正是 :meth:`is_active` 的准入判据，所以这里绝不会把别的请求或
+        别的 scope 的引用透给模型。它不改变任何准入结果，只是把 Host 自己已经发布
+        过的东西再说一遍。
+        """
+        self.purge_expired()
+        live: list[str] = []
+        # ``_records`` 是插入序（淘汰也从头部走），所以倒着遍历就是"最新发布的在前"。
+        for record in reversed(self._records.values()):
+            if (record.session_id == session_id and record.request_id == request_id
+                    and record.scope_id == scope_id):
+                live.append(record.reference_id)
+                if len(live) >= max(0, int(limit)):
+                    break
+        return live
+
 
 def build_context_page_in_handler(
     store: ContextPageInStore,
@@ -206,8 +240,18 @@ def build_context_page_in_handler(
         source_hash = str(args.get("source_hash", "") or "").strip()
         ref = store.get(reference_id)
         if ref is None:
+            # 事件 AF-2：这是"引用解析不了"的第三条分支——既不是主页面引用，也不在
+            # 本请求的临时引用表里。升级前它只回一句不透明的
+            # ``{"error":"reference_stale"}``，模型既不知道是过期还是压根不存在，也
+            # 不知道现在能用哪一条。稳定码 ``reference_stale`` 一个字未改（审计与既
+            # 有比对都靠它），新增的只是同一个信封里的结构化原因。
             await receipt(runtime, reference_id=reference_id, kind="unknown", outcome="reference_stale")
-            return _error("reference_stale")
+            return _error("reference_stale", detail=dict(
+                _unresolved_reference_reason(args.get("reference_id")),
+                available_reference_ids=store.live_reference_ids(
+                    session_id=str(getattr(runtime, "session_id", "")),
+                    request_id=str(getattr(runtime, "request_id", "")),
+                    scope_id=str(getattr(runtime, "scope_id", "")))))
         outcome = "ok"
         content = ref.content
         if (ref.session_id != str(getattr(runtime, "session_id", ""))
@@ -251,8 +295,42 @@ def register_context_page_in(registry: object, store: ContextPageInStore, *,
     )
 
 
-def _error(code: str) -> str:
-    return json.dumps({"ok": False, "error": code, "retriable": code == "reference_stale"})
+def _error(code: str, detail: dict[str, Any] | None = None) -> str:
+    """稳定码 ``error`` 逐字不变；``detail`` 只是同一个信封里多讲的那句话（事件 AF-2）。
+
+    这条信封是 handler 的**返回值**（不是失败信封），所以它整份都抵达模型——不像
+    主页面拒绝那样只有 ``error_code`` + ``public_message`` 两个字段能穿过
+    ``sdk_adapters.tools._result``。因此结构化原因直接放在 ``detail`` 里。
+    """
+    envelope: dict[str, Any] = {"ok": False, "error": code,
+                                "retriable": code == "reference_stale"}
+    if detail:
+        envelope["detail"] = detail
+    return json.dumps(envelope, ensure_ascii=False)
+
+
+def _unresolved_reference_reason(reference_id: Any) -> dict[str, str]:
+    """引用解析不了时的结构化原因 + 下一步（不回显模型写的文本）。
+
+    三种形态各给各的下一步：召回片段 ref 被当成页引用（工具说明点名过的那种误用）、
+    形如临时引用但已过期/被淘汰（``ContextPageInStore`` 的 TTL 与字节上限，事件
+    X-2）、以及其余任何"从来就不是引用"的字符串。
+    """
+    value = reference_id if isinstance(reference_id, str) else ""
+    if value.startswith(RECALL_FRAGMENT_PREFIX):
+        return dict(reason="page_reference_unknown",
+                    next_step="this is a context_route recall fragment ref (a memory item id), "
+                              "not a page reference; its text is already in the context_route "
+                              "result, so do not page it in")
+    if len(value) == 32 and all(c in "0123456789abcdef" for c in value):
+        return dict(reason="page_reference_stale",
+                    next_step="this request-scoped reference expired or was evicted; re-run the "
+                              "tool that produced it, or use one of available_reference_ids")
+    return dict(reason="page_reference_unknown",
+                next_step="reference_id must be copied verbatim from a reference published in "
+                          "THIS request (a truncation marker with page_tool=\"context_page_in\", "
+                          "or a \"[Context page-in reference: id=... hash=...]\" line); if this "
+                          "request offers none, do not call this tool")
 
 
 # ``sdk_adapters.tools._MAX_HANDLER_PUBLIC_MESSAGE``：超出即被截断，截断后的
@@ -274,5 +352,6 @@ def _primary_page_message(detail: Any) -> str:
     return rendered if len(rendered) <= _MAX_PRIMARY_PAGE_MESSAGE else PRIMARY_PAGE_PUBLIC_MESSAGE
 
 
-__all__ = ["CONTEXT_PAGE_IN_SCHEMA", "PRIMARY_PAGE_PUBLIC_MESSAGE", "ContextPageInReference",
-           "ContextPageInStore", "build_context_page_in_handler", "register_context_page_in"]
+__all__ = ["CONTEXT_PAGE_IN_SCHEMA", "MAX_LISTED_REFERENCES", "PRIMARY_PAGE_PUBLIC_MESSAGE",
+           "RECALL_FRAGMENT_PREFIX", "ContextPageInReference", "ContextPageInStore",
+           "build_context_page_in_handler", "register_context_page_in"]
