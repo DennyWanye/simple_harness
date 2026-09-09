@@ -1,0 +1,14 @@
+{
+  "round": 3,
+  "review_mode": "diff",
+  "engine": "opus-5",
+  "based_on": "challenge-round-2-closure.json + 第 3 轮修订",
+  "findings": [
+    {"id": "product-tool-names-count-wrong", "status": "resolved", "evidence": "kernel 20→19 三份文档一致；DECISION 备忘 AC-6 措辞 76→83 已顺手改"},
+    {"id": "task6-test-site-drift", "status": "resolved", "evidence": "Task 3/6 行号逐条回源命中；三处区间毛刺（core_names :519、route_prompt :716-726、dataclass :48-108）已改"},
+    {"id": "residual-grep-whitelist-contradicts-do-not-touch", "severity": "P1", "status": "open→resolved-in-round-4-edit", "evidence": "白名单多列 scripts/perf/x2_memory_lanes_growth.py（`-w` 不命中，rc=1）；已从等式移除并改为注记；实跑 -lw：非 vendor 25（改前）= 14 改后必消失 + 11 白名单，vendor 21"},
+    {"id": "workflows-projection-immutability-assertion-breaks", "status": "resolved"},
+    {"id": "post-removal-dead-symbols", "status": "resolved"},
+    {"id": "specialist-waiver-rationale-refuted", "severity": "P1", "scope_relation": "scope-change-proposal", "status": "open→disposed-by-specialist", "evidence": "评审给出两条出口：用户批准 waiver，或只补派 cluster-residual-surface-boundary 一个 specialist。主 agent 选后者（不打扰用户）：其余三个 cluster 以第 2/3 轮 closure 的原始命令输出记 completed；residual-surface cluster 由 specialist 穷尽对齐 AC-4 白名单，结果见 specialist-residual-surface.json"}
+  ]
+}

@@ -170,7 +170,6 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         "tool_activate",
         "tool_describe",
         "tool_search",
-        "workflow_spawn",
     }
 )
 

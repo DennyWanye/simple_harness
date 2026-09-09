@@ -1,0 +1,23 @@
+{
+  "round": 2,
+  "review_mode": "diff",
+  "engine": "opus-5",
+  "based_on": "challenge-round-1-primary.json + synthesis",
+  "findings": [
+    {"id": "primary-contradiction-misidentified", "status": "resolved"},
+    {"id": "ac2-runtime-oracle-unsatisfiable", "status": "resolved"},
+    {"id": "product-tool-names-count-wrong", "severity": "P1", "status": "open→resolved-in-round-3-edit", "evidence": "closure 实跑 len(SDK_DIRECT_TOOL_KERNEL)=20（去名后 19），synthesis/plan/acceptance 误记 24→23；主 agent 复跑确认 20，已把三份文档改为 20→19，Task 2 断言改 len(K)==19"},
+    {"id": "exclusive-async-mechanism-test-gutted", "status": "resolved"},
+    {"id": "task6-test-site-drift", "severity": "P2", "status": "open→resolved-in-round-3-edit", "evidence": "closure 指出 :297（非 :296）、:228 函数名内嵌 74、Task 3 的 :23/:89-214/:329-353/:569+:572、tools.py :41-43；主 agent 逐行重取确认并改写 plan"},
+    {"id": "residual-grep-whitelist-contradicts-do-not-touch", "severity": "P1", "status": "open→resolved-in-round-3-edit", "evidence": "closure 指出白名单漏 main.py.bak2/3/4 与 scripts/perf/x2_memory_lanes_growth.py，多列三处零命中；主 agent 用 `git ls-files | xargs grep -lw workflow_spawn` 取得 26 个受跟踪命中文件，AC-4 改为精确白名单 + 改后必须消失的文件集合"},
+    {"id": "fail3-not-exercisable-by-available-userdata", "status": "resolved"},
+    {"id": "reserved-name-removal-is-a-loosening", "status": "resolved"},
+    {"id": "manifest-resign-roundtrip-newline", "status": "resolved"},
+    {"id": "ac7-baseline-scope-gap", "status": "resolved"},
+    {"id": "smoke-known-deviations-not-carried-into-oracle", "status": "resolved"},
+    {"id": "ac5-sdk-status-oracle-ambiguous", "status": "resolved"},
+    {"id": "workflows-projection-immutability-assertion-breaks", "severity": "P1", "origin": "patch-induced", "status": "open→resolved-in-round-3-edit", "evidence": "test_tool_catalog.py:148-149 嵌套写在空投影下先抛 KeyError（主 agent 复跑：write→TypeError，nested read→KeyError）；Task 6 改为 `manifest.workflows[\"x\"] = {}` 的 TypeError 断言"},
+    {"id": "post-removal-dead-symbols", "severity": "P2", "origin": "patch-induced", "status": "open→resolved-in-round-3-edit", "evidence": "execution_profiles.py 的 hashlib/json/Mapping 仅被 fingerprint 使用（grep 确认 :5/:8/:88-90）；Task 4 补删三 import；turn_preparer 的 `_profile_registry` 字段按裁决保留，记为已知残留"},
+    {"id": "specialist-waiver-rationale-refuted", "severity": "P1", "origin": "patch-induced", "status": "open→disposed", "evidence": "closure 认为四个 required cluster 中三个各留一个缺陷，跳过 specialist 的理由不成立。处置：closure 轮已用真实命令补齐了三个 cluster 的 required_evidence（基数实跑、测试行号成对核对、受跟踪文件 grep 全集），主 agent 逐条复跑确认并改写文档；不再另派 specialist，改由第 3 轮 closure 复核零 open。用户未批准 waiver 的留痕：本 run 未取得用户批准消息，如实记录为「以 closure 复核替代 specialist」，journal 中如实写明。"}
+  ]
+}

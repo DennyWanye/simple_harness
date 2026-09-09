@@ -713,17 +713,10 @@ class CompanionTurnAuthority:
                 query_hash = personal_workflow_query_hash(
                     str(getattr(turn, "text", "") or "")
                 )
-        route_prompt = (
-            ""
-            if selected is None
-            else (
-                "A frozen Personal Workflow is available for this exact turn: "
-                f"{selected.display_name}. If it is the best execution plan, call "
-                "workflow_spawn with profile_key=workflow.personal_v1 and preserve "
-                "the user's objective exactly. Trusted graph and owner fields are "
-                "host-injected; never include them in tool arguments."
-            )
-        )
+        # 2026-09-09: the model-facing spawn tool was removed, so a matched
+        # Personal Workflow no longer produces route text. Selection and the
+        # query-hash alignment invariant below are kept unchanged (Slice 2b).
+        route_prompt = ""
         preparation_payload = {
             "owner_key": identity.owner_key,
             "profile_generation": identity.owner.profile_generation,

@@ -126,7 +126,7 @@ async def test_reasoning_only_turn_is_retried_and_can_emit_tool_call():
         responses=[
             ChatResponse(
                 content="",
-                reasoning_content="I should call workflow_spawn now.",
+                reasoning_content="I should call tool_activate now.",
                 stop_reason="end_turn",
                 usage=ChatUsage(input_tokens=20, output_tokens=10),
                 model="reasoning-model",
@@ -136,13 +136,9 @@ async def test_reasoning_only_turn_is_retried_and_can_emit_tool_call():
                 reasoning_content="Calling it now.",
                 tool_calls=[
                     ToolCall(
-                        id="spawn_1",
-                        name="workflow_spawn",
-                        arguments={
-                            "profile_key": "workflow.durable_task",
-                            "objective": "finish the task",
-                            "catalog_generation": 1,
-                        },
+                        id="activate_1",
+                        name="tool_activate",
+                        arguments={"name": "ppt_create"},
                     )
                 ],
                 stop_reason="tool_use",
@@ -167,11 +163,11 @@ async def test_reasoning_only_turn_is_retried_and_can_emit_tool_call():
     assert len(llm.calls) == 2
     assert not any(isinstance(event, FinalEvent) for event in events)
     batch = next(event for event in events if isinstance(event, ToolBatchEvent))
-    assert [call.name for call in batch.tool_calls] == ["workflow_spawn"]
+    assert [call.name for call in batch.tool_calls] == ["tool_activate"]
     second_messages = llm.calls[1]["messages"]
     assert any(
         message.get("role") == "assistant"
-        and message.get("reasoning_content") == "I should call workflow_spawn now."
+        and message.get("reasoning_content") == "I should call tool_activate now."
         for message in second_messages
     )
     assert any(
@@ -183,7 +179,7 @@ async def test_reasoning_only_turn_is_retried_and_can_emit_tool_call():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("exclusive_name", ["workflow_spawn", "tool_activate"])
+@pytest.mark.parametrize("exclusive_name", ["capability_build", "tool_activate"])
 async def test_exclusive_tool_is_split_from_mixed_batch_without_model_retry(
     exclusive_name: str,
 ):
@@ -215,7 +211,7 @@ async def test_exclusive_tool_is_split_from_mixed_batch_without_model_retry(
     tools = FakeToolRegistry(
         completion_semantics={
             exclusive_name: (
-                "accepted_async" if exclusive_name == "workflow_spawn" else "sync"
+                "accepted_async" if exclusive_name == "capability_build" else "sync"
             )
         }
     )
@@ -256,8 +252,8 @@ async def test_mixed_batch_executes_only_first_exclusive_call():
                     arguments={"name": "ppt_create"},
                 ),
                 ToolCall(
-                    id="spawn_2",
-                    name="workflow_spawn",
+                    id="build_2",
+                    name="capability_build",
                     arguments={"objective": "make the deck"},
                 ),
                 ToolCall(
@@ -271,7 +267,7 @@ async def test_mixed_batch_executes_only_first_exclusive_call():
         )
     ])
     tools = FakeToolRegistry(
-        completion_semantics={"workflow_spawn": "accepted_async"}
+        completion_semantics={"capability_build": "accepted_async"}
     )
     loop = AgentLoop(llm_registry=llm, tool_registry=tools, max_iterations=2)
 
@@ -289,7 +285,7 @@ async def test_mixed_batch_executes_only_first_exclusive_call():
         for message in batch.canonical_messages
         if message.get("role") == "tool"
     }
-    assert deferred_ids == {"spawn_2", "search_3"}
+    assert deferred_ids == {"build_2", "search_3"}
 
 
 @pytest.mark.asyncio

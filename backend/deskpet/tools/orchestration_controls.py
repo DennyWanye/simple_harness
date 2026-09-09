@@ -12,7 +12,6 @@ if TYPE_CHECKING:
     from deskpet.harness.profiles import ProfileRegistry
 
 
-WORKFLOW_SPAWN = "workflow_spawn"
 WORKSPACE_PREPARE = "workspace_prepare"
 CAPABILITY_BUILD = "capability_build"
 CAPABILITY_REPAIR = "capability_repair"
@@ -20,7 +19,6 @@ EXTERNAL_ACTION_WAIT = "external_action_wait"
 PROJECT_DIRECTORY_SELECT = "project_directory_select"
 CORE_CONTROL_NAMES = frozenset(
     {
-        WORKFLOW_SPAWN,
         WORKSPACE_PREPARE,
         CAPABILITY_BUILD,
         CAPABILITY_REPAIR,
@@ -84,134 +82,6 @@ def _workspace_prepare_resources(
 ) -> tuple[ResourceSelector, ...]:
     workspace, _scope = _bound_workspace_paths(context)
     return (ResourceSelector.filesystem(workspace, "write"),)
-
-
-def workflow_spawn_schema(profiles: ProfileRegistry) -> dict[str, Any]:
-    keys = tuple(sorted(profiles.model_spawnable))
-    if not keys:
-        raise ValueError("workflow_spawn requires at least one model-spawnable profile")
-    descriptions = [
-        f"- {key}: {profiles.model_spawnable[key].description}" for key in keys
-    ]
-    return {
-        "name": WORKFLOW_SPAWN,
-        "description": (
-            "Start one durable workflow selected from the current profile catalog. "
-            "Choose by the profile descriptions, not by keywords.\n"
-            + "\n".join(descriptions)
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "profile_key": {
-                    "type": "string",
-                    "enum": list(keys),
-                    "description": "A model-spawnable key from this exact catalog generation.",
-                },
-                "objective": {
-                    "type": "string",
-                    "minLength": 1,
-                    "description": "The concrete objective for the child workflow.",
-                },
-                "plan_steps": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120,
-                    },
-                    "minItems": 2,
-                    "maxItems": 8,
-                    "description": (
-                        "For workflow.durable_task, provide 2-8 concise, "
-                        "user-readable execution steps in order. Each step "
-                        "must describe one observable outcome that can be "
-                        "completed by one coherent tool batch."
-                    ),
-                },
-                "input_refs": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "default": [],
-                },
-                "output_refs": {
-                    "type": "array",
-                    "items": {"type": "string", "minLength": 1},
-                    "default": [],
-                    "description": (
-                        "Exact workspace-relative deliverable files the child "
-                        "may create or modify. Use [] for a read-only/text-only "
-                        "child. Every durable child must declare this boundary."
-                    ),
-                },
-                "scratch_refs": {
-                    "type": "array",
-                    "items": {"type": "string", "minLength": 1},
-                    "default": [],
-                    "description": (
-                        "Optional workspace-relative temporary files or directory "
-                        "prefixes (end directories with /). They may be used while "
-                        "running but must be removed before the child completes."
-                    ),
-                },
-                "workspace_ref": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}]
-                },
-                "catalog_generation": {
-                    "type": "integer",
-                    "const": profiles.generation,
-                },
-            },
-            "required": [
-                "profile_key",
-                "objective",
-                "output_refs",
-                "catalog_generation",
-            ],
-            "additionalProperties": False,
-        },
-    }
-
-
-def _workflow_spawn_resources(profiles: ProfileRegistry):
-    """Bind delegation authority to this exact host catalog and parent scope."""
-
-    generation = int(profiles.generation)
-    profile_keys = frozenset(str(key) for key in profiles.model_spawnable)
-
-    def resolve(
-        args: dict[str, Any], context: Any
-    ) -> tuple[ResourceSelector, ...]:
-        profile_key = str(args.get("profile_key") or "").strip()
-        requested_generation = args.get("catalog_generation")
-        if (
-            profile_key not in profile_keys
-            or isinstance(requested_generation, bool)
-            or requested_generation != generation
-        ):
-            raise ValueError("workflow_spawn_catalog_binding_mismatch")
-        root_run_id = str(getattr(context, "root_run_id", "") or "").strip()
-        if not root_run_id:
-            raise ValueError("workflow_spawn_parent_binding_missing")
-        selectors = [
-            ResourceSelector(
-                "system_change",
-                f"workflow_spawn:{root_run_id}:{generation}:{profile_key}",
-                ("delegate",),
-            )
-        ]
-        raw_workspace = str(getattr(context, "workspace", "") or "").strip()
-        raw_scope = str(
-            getattr(context, "write_scope_root", "") or ""
-        ).strip()
-        if raw_workspace or raw_scope:
-            workspace, _scope = _bound_workspace_paths(context)
-            selectors.append(
-                ResourceSelector.filesystem(workspace, "read", "write")
-            )
-        return tuple(selectors)
-
-    return resolve
 
 
 def _capability_mutation_schema(
@@ -326,31 +196,6 @@ def register_orchestration_controls(registry: Any, profiles: ProfileRegistry) ->
 
     from deskpet.workflows.contracts import EffectKind, EffectPolicy
 
-    if registry.has(WORKFLOW_SPAWN):
-        if registry.dispatch_kind(WORKFLOW_SPAWN) != "delegate_control":
-            raise RuntimeError("workflow_spawn is registered by a non-control provider")
-    else:
-        registry.register(
-            WORKFLOW_SPAWN,
-            "orchestration",
-            workflow_spawn_schema(profiles),
-            _fail_closed,
-            permission_category="shell",
-            source="builtin",
-            dangerous=False,
-            concurrency_safe=False,
-            spec_version=f"profiles-{profiles.generation}",
-            effect_policy=EffectPolicy(
-                policy_id="deskpet:workflow_spawn:orchestration_delegate",
-                version="v1",
-                kind=EffectKind.OPAQUE_MANUAL,
-                max_attempts=1,
-            ),
-            resource_scope_resolver=_workflow_spawn_resources(profiles),
-            resource_scope_resolver_id="workflow-spawn-parent-scope",
-            resource_scope_resolver_version="v1",
-            dispatch_kind="delegate_control",
-        )
     if not registry.has(WORKSPACE_PREPARE):
         registry.register(
             WORKSPACE_PREPARE,
@@ -566,8 +411,6 @@ __all__ = [
     "CORE_CONTROL_NAMES",
     "EXTERNAL_ACTION_WAIT",
     "PROJECT_DIRECTORY_SELECT",
-    "WORKFLOW_SPAWN",
     "WORKSPACE_PREPARE",
     "register_orchestration_controls",
-    "workflow_spawn_schema",
 ]

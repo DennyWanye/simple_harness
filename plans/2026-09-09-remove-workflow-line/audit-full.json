@@ -1,0 +1,114 @@
+{
+  "verdict": "PASS",
+  "findings": [
+    {
+      "id": "audit-docs-gate-count",
+      "severity": "P2",
+      "status": "open",
+      "type": "docs",
+      "summary": "journal.md AC-7 行与 baseline.md「执行期追加」把八文件门记成 2 failed / 90 passed；审计员单进程复跑实为 2 failed / 91 passed（七文件 89 + 新增 test_turn_preparer_static_helpers.py 的 2 例）。失败集合与基线两条既有红逐条相同，AC-7 判定不受影响，仅数字需更正。",
+      "ac_ids": [
+        "AC-7"
+      ],
+      "scenario_ids": [],
+      "required_retest": false
+    },
+    {
+      "id": "audit-docs-ac2-stale-count",
+      "severity": "P2",
+      "status": "open",
+      "type": "docs",
+      "summary": "journal.md AC-2 证据栏写「全新 userdata 2 次 provider 请求」，那是 Task 5a 里程碑时刻的快照；跑完 10 轮后 <E1>/userdata/data 的 execution-v6.sqlite3 终态为 62 次调用（审计员复跑 assert_provider_requests.py：calls=62、workflow_spawn=0、catalog_prompt=0、AC-2(3) PASS）。应更新为终态数字，否则严重低估证据强度。",
+      "ac_ids": [
+        "AC-2"
+      ],
+      "scenario_ids": [],
+      "required_retest": false
+    },
+    {
+      "id": "audit-docs-pipeline-rationale",
+      "severity": "P2",
+      "status": "open",
+      "type": "docs",
+      "summary": "journal.md §4 写「验证 app 未启用 problem_pipeline」——结论对但理由不对：证据里的 config.toml:130 明写 [features.problem_pipeline] enabled = true，真正原因是当前 backend/main.py 全文没有 service_context.register(\"problem_pipeline\", ...)（注册代码只存在于 main.py.bak2:3088 / .bak4），context.py:275 的默认 None 恒生效。应改写理由，否则 code review P0 的分层复验论证站不住。",
+      "ac_ids": [
+        "AC-1",
+        "AC-7"
+      ],
+      "scenario_ids": [],
+      "required_retest": false
+    },
+    {
+      "id": "audit-evidence-restart-note",
+      "severity": "P2",
+      "status": "open",
+      "type": "evidence",
+      "summary": "两份 twoflow-progress.jsonl 的 restart 记录（turn=-1）note 均为空串，journal 声称的 AX「空闲 · 排队 0」观察没有落进任何证据文件，也无 AX dump 产物；重启后主对话就绪目前靠「重启后 E1 跑通 4 轮、旧 userdata 跑通 1 轮 COMPLETED」间接成立。建议后续把 AX 观察写进 restart note。",
+      "ac_ids": [
+        "AC-1"
+      ],
+      "scenario_ids": [],
+      "required_retest": false
+    },
+    {
+      "id": "audit-release-uncommitted",
+      "severity": "P2",
+      "status": "open",
+      "type": "release",
+      "summary": "plan Task 8 的最后一步「Host 单仓单个提交」尚未执行：git log 显示 HEAD 仍是基线 03de5052，全部改动在工作树；journal.md 末行仍为 VERDICT: PENDING，无终态行。文档回写（AC-8）本身已完成，仅剩提交与终态行两步收尾。",
+      "ac_ids": [
+        "AC-5",
+        "AC-8"
+      ],
+      "scenario_ids": [],
+      "required_retest": false
+    },
+    {
+      "id": "audit-leftover-dead-code",
+      "severity": "P2",
+      "status": "deferred",
+      "type": "code",
+      "summary": "删除后留下两处死代码：backend/deskpet/agent/turn_preparer.py:254 的 self._profile_registry 只写不读，backend/deskpet/harness/profiles.py:133 的 ProfileRegistry.model_spawnable 在生产代码里零消费（全仓仅 profiles.py 自身与一处测试的 launch_policy 字符串命中）。已在 journal F3 与 retro 记为 Slice 2b 清理项，不阻塞本切片。",
+      "ac_ids": [
+        "AC-4"
+      ],
+      "scenario_ids": [],
+      "required_retest": false
+    },
+    {
+      "id": "audit-t22-form-difference",
+      "severity": "P2",
+      "status": "resolved",
+      "type": "evidence",
+      "summary": "T22 形态与交付版不同（本轮答「找不到霜降字幕校对这个任务，不能标记不存在的任务完成」，交付版答「已完成」）。审计员把交付版第 1 条请求与本轮旧 userdata 第 44 条请求的 system prompt 逐行 diff，唯一差异是 Host trusted clock 的日期，tools 名字集合完全相同——模型可见输入零 delta，因果与本次删除无关，判为 provider 采样差异；该轮 last_run_state=COMPLETED 且首发成功。无需回炉。",
+      "ac_ids": [
+        "AC-1"
+      ],
+      "scenario_ids": [],
+      "required_retest": false
+    },
+    {
+      "id": "audit-procedure-exec-product-gap",
+      "severity": "P2",
+      "status": "deferred",
+      "type": "plan",
+      "summary": "T16「按我存的『霜降清点』流程做一遍」在本轮与交付版都没有落 inventory.md / inventory-backup.md（两版 procedure_uses 计数均为 0）：本轮模型报告「找不到任务工作目录，文件工具解析到 backend 仓根」，交付版报告「Run 已绑 direct_standalone 无权写该工作区」。同属「流程召回成功但执行落不了地」的既有产品缺口，acceptance 已明文列为允许偏差、且与本次删除无因果；建议纳入用户已决定的 memory/task 编排大改的验收条款。",
+      "ac_ids": [
+        "AC-1"
+      ],
+      "scenario_ids": [],
+      "required_retest": false
+    },
+    {
+      "id": "audit-problem-pipeline-noop",
+      "severity": "P2",
+      "status": "open",
+      "type": "code",
+      "summary": "审计中顺带发现的范围外问题：config.toml 里 [features.problem_pipeline] enabled = true（intent_triage / evidence_gate / self_check 全开），但当前 backend/main.py 从未注册该服务，turn_preparer.py:820 的 services.get('problem_pipeline') 恒为 None，整条七步问题处理流水线的 PRE-LOOP 编排在生产里是死代码（三份 native.log 中 problem_pipeline 字符串命中数为 0）。与本切片无关，建议单独立项跟进。",
+      "ac_ids": [],
+      "scenario_ids": [],
+      "required_retest": false
+    }
+  ],
+  "report_markdown": "## 主要矛盾判定（最先给出）\n\n- **主要矛盾对应 AC：AC-1（主流程原样跑通）与 AC-2（模型视野与代码里没有 workflow_spawn 定义）。是否真达成：是。**\n- **AC-1 实测（审计员亲自读证据）**：`primary-ui-0zda7ryu/twoflow-progress.jsonl` 共 12 行 —— baseline(T0) + flow1 的 T1/T2/T3/T5/T9/T11 + restart(-1) + flow2 的 T12/T14/T16/T22，**10 个 send 轮全部 `last_run_state=COMPLETED`、`outcome=settled`、`note=\"ok\"`**。驱动脚本 `scripts/native/twoflow_driver.sh::send_confirmed` 里 `note` 只有首发成功才写 `ok`（第二次发送写 `retried`、失败写 `send_failed`），故 **10 轮 `sends==1` 成立**；三份 driver 日志中每轮只有一条 `=== Tn send` 行，无重发。耗时 11/17/68/16/22/26 s（flow1）、17/31/127/41 s（flow2）。\n- **T12 业务终态（决定性正向结果）**：`<E1>/userdata/data/simple-harness-sdk/execution-v6.sqlite3` 第 37 条 `provider_invocations.response_json` 的 `message.content` 逐字为「你最早说过的约定是：**成品一律放到「霜降素材 / 成片」这个目录**」——不是 `completed` 空壳，是真业务答案。\n- **T14**：第 39–41 条响应显示 `continue_active` 绑定 `task_scope_id abd9430e-8a99-577d-b785-c3ee225cffc3`，并逐条复述已记决定（含「素材编号统一用 A-序号 两段式」）；`A-序号` 在响应中命中 4 行，与交付版 `primary-ui-ncw5jyyg` 的 4 行相同。\n- **文件终态**：`~/SimpleHarnessWorkSpace/task-abd9430e…/clips.md` 实存，内容 `A-01/A-02/A-03`。\n- **AC-2 实测**：审计员亲自跑 `assert_provider_requests.py`。全新 userdata：`calls=62、workflow_spawn=0、catalog_prompt=0`，`AC-2(3) PASS`；旧 userdata：`calls=45、workflow_spawn=0、catalog_prompt=0、subset_of_delivered=true`，`AC-2(3) PASS`。静态面独立复算：清单 76 条 / `workflows == {}` / 内嵌 sha == 重算 sha == `manifest.py` 常量 == `df979c0e0441…`；`SDK_DIRECT_TOOL_KERNEL` 19 且无该名；`PRODUCT_TOOL_NAMES` 83 且 `set(P) == set(manifest.tool_names) | set(HOST_COMPOSED_TOOL_NAMES)` 为 True；`_CONTROL_TOOLS`、`orchestration_controls.WORKFLOW_SPAWN` / `workflow_spawn_schema`、`ProductTurnPreparer._inject_profile_catalog`、`execution_profiles.WorkflowSpawnRequest` / `ProfileLaunchTicket`、`companion/workflows.py` 全部不存在；`turn_authority.py:719` `route_prompt = \"\"` 为无条件赋值。\n- **额外的决定性反证（审计员自建，plan 未做）**：把交付版 `primary-ui-ncw5jyyg` 第 1 条请求与旧 userdata 段第 44 条请求的 system prompt 逐行 diff，**唯一差异是 `Host trusted clock` 那一行的日期**，长度同为 4696 字符；两次调用的 tools 名字集合完全相同（12 个）。即：这次删除对**模型可见输入的 delta 为零**——这既正面坐实 AC-2③，也把后面所有「答案不同」的现象与本次改动的因果关系排除掉。\n\n## 逐条核对\n\n| AC | 覆盖任务 | 代码证据(file:line) | testcase | scenario | root run 证据 | 终态 | 状态 |\n|----|---------|--------------------|----------|----------|---------------|------|------|\n| AC-1 主流程原样跑通（决定性） | Task 5a/5b | 不适用（行为 AC；被测代码为工作树全 diff） | TC-RW-01 步骤 3–6、8 | 冷启动+flow1+重启+flow2+旧 userdata 段 | `primary-ui-0zda7ryu/{native.log,twoflow-driver-flow1b.log,twoflow-driver-flow2.log,twoflow-progress.jsonl}`、`primary-ui-6kafvuif/native.log`、`primary-ui-hcgwytes/{native.log,twoflow-driver-old-userdata.log,twoflow-progress.jsonl}`、`launcher-{1,2,3}.log` | 10/10 COMPLETED 且 sends==1；T12 答「霜降素材 / 成片」；T14 复述 A-序号；clips.md 落盘；两次重启后主对话可继续对话；三份 native.log 各有 `startup complete`，`RuntimeError`/`Application startup failed`/`Traceback` 命中数均为 0 | ✅ 完成 |\n| AC-2 模型视野与代码无定义（决定性） | Task 1/2/3/4 | `tool_catalog/real_tool_manifest.json`(tool_count 76、workflows {})、`tool_catalog/manifest.py:15,69-79`、`sdk_adapters/tool_authority.py:170-`、`sdk_adapters/tools.py:41`、`tool_catalog/providers.py:37,793`、`tools/orchestration_controls.py:15-22`、`agent/turn_preparer.py`（`_inject_profile_catalog` 已删）、`companion/turn_authority.py:716-719` | TC-RW-01 步骤 1/2/7 | 全新 userdata 62 次 + 旧 userdata 45 次 provider 请求 | 同上两库 + 审计员复跑断言脚本 | 两库均 `workflow_spawn=0`、`catalog_prompt=0`；五项静态断言全 True；`tests/test_turn_preparer_static_helpers.py::test_profile_catalog_injection_is_gone` 通过 | ✅ 完成 |\n| AC-3 冻结清单一致性 | Task 1 | `manifest.py:15`（常量）、`manifest.py:66-79`（计数 + 投影必须为空）、`manifest.py:149-`（删 `workspace_ref` 专项迁移）、`providers.py:793`、`conformance.py:211` | TC-RW-01 步骤 1、3 | 冷启动 | 审计员复跑 `load_tool_manifest()+migrate_tool_schemas()`：76 工具 / 70 迁移记录 / `workflows=={}`，无异常；两个 JSON 用 `indent=2, ensure_ascii=False`+结尾换行往返**逐字节相同**，`manifest_sha256` 仍为首键 | 三处哈希三方相等；冷启动 `startup complete` | ✅ 完成 |\n| AC-4 死壳与残留措辞删干净 | Task 2/3/4 | `execution_profiles.py`（两个 dataclass 删除、`__all__` 收缩）、`harness/profiles.py` 模块 docstring、`assembler/components/skill.py:39-42`、`turn_preparer.py` 注释；`companion/workflows.py` 已 `git rm` | TC-RW-01 步骤 2 | 静态 | 审计员在 `backend/` 亲自跑两条等式 | `-w` 等式：非 vendor **恰好 11 个**白名单文件（三个拒绝集 + `workflows/store/execution_uow.py` + `main.py` + 三个 `.bak` + `scripts/generate_harness_public_fixture.py` + 两个测试）+ vendor **21 个 wheel**；`-i` 无 `-w` 等式：非 vendor **恰好 12 个**（多 `scripts/perf/x2_memory_lanes_growth.py`）+ vendor 21。与 acceptance 白名单**逐项相等** | ✅ 完成 |\n| AC-5 边界之外零改动 | Task 5b/8 | — | TC-RW-01 步骤 8 | 旧 userdata 重启段 | `git status --porcelain` / `git diff HEAD --stat` | Host 仓 23 个改动文件（18 个 backend + 4 篇文档 + `testcase/index.md`）+ 1 个新增测试，**不含** `backend/main.py`、`backend/deskpet/workflows/`、`tauri-app/`；SDK 仓 HEAD 仍 `fd12e7dd`、`git status --porcelain` 仍只有 ` M .gitignore`；交付版旧 userdata（`primary_conversation_id` 与交付版逐字相同 `4d5a6efc…`）用最终代码重启并跑通 T12（20 s COMPLETED） | ✅ 完成 |\n| AC-6 非 ticket 委派与 ReAct 机制不回归 | Task 2/6 | `sdk_adapters/tool_authority.py`、`sdk_adapters/tools.py`；`tests/test_deskpet_agent_loop.py:182`（参数化 `capability_build`/`tool_activate`） | TC-RW-01 步骤 2 | 单测 | 审计员复跑两个排他拆批测试：3 passed | `agent`/`agent_parallel`/`spawn_subagents`/`spawn_team`/`await_subagents` 五个全部仍在 kernel 与 `PRODUCT_TOOL_NAMES`；`accepted_async` 与 `sync` 两分支各有覆盖；`projection_kind=\"workflow_progress\"`、`deny_selectors`、三个拒绝集、`RuntimeStartAdmission` 在 diff 中**零命中** | ✅ 完成 |\n| AC-7 测试基线 | Task 6/7 | `tests/test_turn_preparer_static_helpers.py`（新增，2 例） | — | pytest 单进程 | 审计员亲自单进程复跑八文件门 | **2 failed / 91 passed**；失败集合 = `test_execution_build_manifest.py::test_checked_manifest_is_canonical_and_current` + `test_provider_runtime_refresh.py::test_human_epoch_composition_registers_three_authorities`，**与基线两条既有红逐条相同**（⊆ 成立，无新增红）。另核七文件门单跑 2 failed / 89 passed，新文件单跑 2 passed | ✅ 完成（记账数字有 1 处笔误，见缺口清单） |\n| AC-8 文档回写 | Task 8 | `CHANGELOG.md` Unreleased 首条；`ARCHITECTURE/AGENT_HARNESS.md` 置顶条目；`ARCHITECTURE/AgentLoop.md` 边界句 + §7 段；`ARCHITECTURE/PROJECT_STATUS.md` 总表一行；另注册 `testcase/index.md` TC-RW-01 | — | — | `git diff HEAD -- ARCHITECTURE/ CHANGELOG.md` | 四篇齐备，均含「工具面已下线 / 图引擎与启动装配待 Slice 2 / SDK 保持 0.7.10 / 已知漂移 / F-WF-1」五要素 | ✅ 完成 |\n\n## 场景计数摘要\n\n- required scenario 总数：**4**（冷启动 + flow1、同 userdata 重启、flow2、交付版旧 userdata 重启段）；distinct 已执行数：**4**。\n- retry / continuation 数：**0**（10 轮 `note` 全为 `ok`，无 `retried` / `send_failed`；三份 driver 日志每轮各一条 send 行）。\n- PENDING / FAIL / BLOCKED 数：**0**。\n- 随机性覆盖：两次独立 App 启动（全新 userdata 的长上下文 10 轮跨重启会话 + 交付版旧 userdata 的独立启动 + 一轮），外加交付版同脚本 run 作对照基线；且已证模型可见输入零 delta。冷启动路径有覆盖（`primary-ui-0zda7ryu` 为全新 userdata，非暖重启）。\n\n## 状态一致性\n\n一致性总体良好，实测发现 **2 处数字口径偏差 + 1 处措辞不精确**：\n\n1. **`journal.md` AC-7 行与 `baseline.md`「执行期追加」**写「八文件门实测 **2 failed / 90 passed**」，审计员单进程复跑为 **2 failed / 91 passed**（七文件 89 + 新增文件 2 = 91）。失败集合一致，不影响 AC-7 判定，属记账笔误。\n2. **`journal.md` AC-2 证据栏**写「全新 userdata **2 次** provider 请求」，那是 Task 5a 里程碑时刻的快照；跑完 10 轮后该库终态为 **62 次**（断言仍 PASS）。写终态数字才对得上证据文件。\n3. **`journal.md` §4** 写「验证 app 未启用 problem_pipeline」——结论对，理由不对：证据里的 `config.toml:130` 明写 `[features.problem_pipeline] enabled = true`，真正原因是**当前 `backend/main.py` 根本没有 `service_context.register(\"problem_pipeline\", …)`**（只有 `main.py.bak2:3088` / `.bak4` 里有），`context.py:275` 的默认值 None 因此恒生效。\n4. 数字口径核对**一致**的部分：76（清单/`providers.py:793`/`conformance.py:211`/测试）、83（`PRODUCT_TOOL_NAMES`）、19（`SDK_DIRECT_TOOL_KERNEL`）、`df979c0e…`（三方相等）在 acceptance / plan / journal / CHANGELOG / AGENT_HARNESS / AgentLoop / 实际代码之间**全部对得上**；`testcase/index.md` 的 TC-RW-01 行与 testcase 正文、journal 兑现表一致。\n\n## 补丁掩盖检查\n\n**未发现绕行、特例分支或 hack。**逐份 diff 核对结论：\n\n- 全部改动都是「删定义 / 删登记 / 删提示词 / 同签哈希 / 同步计数」，没有任何 `if name == …` 特例、没有新增 try/except 吞异常、没有把断言放宽成 no-op。唯一一处断言形态变化是 `manifest.py:72-79` 把「投影必须等于两个 key」改成「投影必须为空」——这是 acceptance 明文要求的改法，且写成顶层 `if workflows: raise`，空投影下不会像原写法那样抛 KeyError（第 3 轮 closure 挑战抓到的问题已闭环）。\n- **裁决 §5 的五个「不动」项逐项复核，一字未动**：① `main.py` / `bootstrap.py` / `context.py::_VALID_SERVICES` 不在 diff；② `deskpet/workflows/` 下零文件改动；③ `turn_authority` 只把 `:716-724` 的文案置空，`personal_workflow` import 与 `personal_workflow_query_hash` 对齐不变量保留；④ `completion_semantics == \"accepted_async\"` 排他拆批机制在生产代码里零改动——diff 中出现的两处 `accepted_async` **全部在测试文件**（`tests/test_deskpet_agent_loop.py`），且把 `accepted_async` 分支从 `workflow_spawn` 换成 `capability_build` 而不是并成 `tool_activate`，**保住了 AC-6 要求的双分支覆盖**（比裁决 §5 的原措辞更严，方向正确）；⑤ `projection_kind=\"workflow_progress\"` 五处一个字符没改（`run_presenter.py`、`session_db.py`、迁移 SQL、前端两处都不在 diff）。`deny_selectors`、`PRODUCT_ROUTE_OWNED_TOOL_NAMES`、三个拒绝集文件（`capabilities/manifest.py`、`tools/prepared_snapshot.py`、`tools/skill_tools.py`）也都不在 diff。\n- 测试没有被削弱掩盖：`test_tool_catalog.py` 的计数断言 77→76、71→70、74→73、64→63、12→11 全部是真实基数下调；`closed_object_paths` 总和 71 保持不变是正确的（被删那条迁移的 `closed_object_paths` 本来就是 `[]`）；删掉的 `tests/companion/test_workflow_pack_adapter.py` 对应的被测文件 `companion/workflows.py` 已整体删除，不是删测试保绿。\n\n## code review P0 的修复核验\n\n- **真修**：`agent/turn_preparer.py:277-278` 的 `@staticmethod` 已补回；`inspect.signature` 为 `(prepared)`，`ProductTurnPreparer.__dict__[\"_has_active_skill_scope\"]` 是 `staticmethod` 实例。\n- **回归测试真入套件**：`backend/tests/test_turn_preparer_static_helpers.py` 2 例，审计员单跑 2 passed，且已并入 AC-7 的八文件门（门内 91 passed 含这 2 例）。\n- **「10 轮冒烟跑在修复前代码上」这一点，审计员独立验证其可传递性**：缺陷调用点 `turn_preparer.py:866` 位于 `:820-825` 的门之后——`pipeline = services.get('problem_pipeline')`，为 None 或未 enabled 直接 return。而当前 `backend/main.py` **全文没有任何 `problem_pipeline` 注册点**（`grep` 只命中 2390/2425 两行注释与配置读取，注册代码只存在于 `main.py.bak2:3088`/`.bak4`），`context.py:275` 默认 None 恒生效；三份 native.log 里 `problem_pipeline` 字符串命中数为 **0**，`pipeline_pre_loop_failed` 命中数也为 **0**（连告警都没触发，说明根本没进 try 块）。**结论：修复前后代码在本次冒烟路径上行为完全等价，AC-1 的 10 轮证据对最终代码有效**，`REVALIDATION_SCOPE` 的分层复验判断成立。\n\n## 已知偏差核对（acceptance 允许的两条）\n\n- **T16 不落 `inventory.md`**：本轮与交付版**同为不落**。交付版理由是「Run 已先绑 `direct_standalone`，无权限写该工作区」；本轮理由是「找不到任务工作目录，文件工具解析到 backend 仓根」。两者是同一类「流程召回成功、执行落不了地」的既有产品缺口（`procedure_uses` 计数在两版都是 0），偏差层级（不落盘）与 acceptance 写明的一致。\n- **T22 形态差异**：交付版答「已完成」，本轮答「找不到「霜降字幕校对」这个任务，不能把不存在的任务标记完成」。同源于 `TF_TURNS` 子集未跑 T7。**因果已被排除**：模型可见输入零 delta（system prompt 逐字相同、tools 集合相同），且该轮 `last_run_state=COMPLETED`、首发成功；本轮形态在诚实性上优于交付版。判为 provider 采样差异，不计回归。\n\n## plan 层缺陷清单\n\n- **无。** 8 条必须 AC 的链条都能走通，plan 的切片边界（Slice 1 只删模型面与死壳）被证明是对的：主要矛盾「守卫链同步 + 不误伤机制」在实测中确实是唯一风险点，且已闭合。\n\n## 整体可用性\n\n站在真实用户视角把原始需求的核心路径走了一遍（证据来自 `<E1>` 的 10 轮 + 两次重启）：\n\n**启动 → 记偏好(T1) → 建任务(T2，`task_scopes` 0→1) → 写文件(T3，`clips.md` 真落盘) → 记决定(T5，`heads_semantic` +1) → 记流程(T9，`procedure_records` 1、`heads_procedure` 1) → 收口(T11，`task_scope_closure_receipts` 2) → 重启(就绪，主对话可继续) → 跨重启召回(T12 逐字答对「霜降素材 / 成片」) → 精确打开任务(T14 `continue_active` 绑定并复述决定) → 总结(T22 COMPLETED)**——**整机可用，全链无断点**。\n\n唯一走不通的一环是 **T16「按我存的流程做一遍」**：流程被正确召回，但文件没写成。这一环在**交付版同样走不通**，且本次改动对模型可见输入零 delta，因此**不是本次删除引入的**，属于用户已决定要大改的 memory/task 编排范畴（acceptance 明文列为已知偏差、`F-WF-1` 与 Slice 2 之外的产品面待办）。按本切片的作用域判定，**Slice 1 的整体可用性 PASS**；同时如实标注：「保存的流程能否被真正执行」这条产品能力当前不可用，建议纳入编排大改的验收。\n\n## 缺口清单（需补完）\n\n1. `journal.md` AC-7 行 + `baseline.md`「执行期追加」的八文件门数字 `2 failed / 90 passed` → 应为 `2 failed / 91 passed`。\n2. `journal.md` AC-2 证据栏「全新 userdata 2 次 provider 请求」→ 应写终态 `62 次`（断言 PASS 不变）。\n3. `journal.md` §4「app 未启用 problem_pipeline」→ 应改成「当前 `main.py` 未注册 `problem_pipeline` 服务（配置 `enabled=true` 是空转），故缺陷路径不可达」。\n4. 两处 restart 记录的 `note` 为空串，「AX 空闲 · 排队 0」的观察没有落进任何证据文件；重启就绪目前靠「重启后 4 轮 / 1 轮 COMPLETED」间接成立。建议以后把 AX 观察写进 restart note。\n5. plan Task 8 的最后一步「Host 单仓单个提交」与 journal 文末终态行尚未完成（HEAD 仍是基线 `03de5052`，journal 末行仍是 `VERDICT: PENDING`）。\n6. 顺带发现（与本切片无关、建议单独跟进）：`[features.problem_pipeline] enabled = true` 在当前 `main.py` 下是**空转配置**，整条七步问题处理流水线（intent triage / evidence gate / self check 的 PRE-LOOP 编排）在生产里是死代码。\n7. 已记在案的 P2 死代码：`turn_preparer.py:254 self._profile_registry` 只写不读、`harness/profiles.py:133 ProfileRegistry.model_spawnable` 生产零消费（journal F3 已挂 Slice 2b）。\n\n## 完成度\n\n- **8 / 8 条必须 AC 完成 = 100%**（AC-1、AC-2 两条决定性 AC 均以真实业务终态取证，非仅 `completed` 空壳）。\n- 缺口清单里 1–5 为文档/收尾类 P2，6–7 为范围外既有问题，均不构成任一 AC 的证据缺环。\n\nVERDICT: PASS"
+}

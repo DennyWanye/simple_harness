@@ -1,5 +1,5 @@
 {
-  "manifest_sha256": "891ae13615229ee98715f8b18f39a5a045c1f995a29e984a4b86c4eaa2f310bf",
+  "manifest_sha256": "df979c0e044112338e0531d53e6d5906767b6ef0fbdaa312fec7d8f162790bc4",
   "migrations": [
     {
       "closed_object_paths": [
@@ -678,14 +678,6 @@
       "new_hash": "ab1547ab63e1b5d8fc04db149cc931b98d684880721bc0452bb4951a623dfbca",
       "old_hash": "5c70c4fde2f841b0b05571c3d5a3bacae816ba28d1ad45543b3c93d5f6e09a55",
       "spec_version": "v1.sdk-schema-2"
-    },
-    {
-      "closed_object_paths": [],
-      "disposition": "nullable_optional_string_to_optional_bounded_string",
-      "name": "workflow_spawn",
-      "new_hash": "437731fefffb51044f20a551b6bd39d17fa393d70349b844618c18441b32a923",
-      "old_hash": "f13003154bc96becc6f78d4fedb047af62456888ffb5280295e5991a129250ef",
-      "spec_version": "profiles-1.sdk-schema-2"
     },
     {
       "closed_object_paths": [

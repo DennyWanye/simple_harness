@@ -1,0 +1,71 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "AC-1",
+    "AC-2",
+    "AC-3",
+    "AC-4",
+    "AC-5",
+    "AC-6",
+    "AC-7",
+    "AC-8"
+  ],
+  "protected_assets": [
+    {
+      "id": "ASSET-1",
+      "description": "证据账本与 task scope 的 durable 数据（workflow.db 内保留表）及其表结构"
+    },
+    {
+      "id": "ASSET-2",
+      "description": "交付版 ec7b28c7 的主流程行为（启动→流程一→重启→流程二）"
+    },
+    {
+      "id": "ASSET-3",
+      "description": "当前 ReAct 在用的机制：projection_kind=workflow_progress 思考摘要、completion_semantics=accepted_async 排他拆批、deny_selectors"
+    }
+  ],
+  "trusted_assumptions": [
+    {
+      "id": "TRUST-1",
+      "description": "本机 backend/.venv、installed target、DeepSeek flash 凭据与 2026-09-09 冒烟时一致"
+    }
+  ],
+  "in_scope_failures": [
+    {
+      "id": "FAIL-1",
+      "description": "冻结清单五处守卫未同步导致启动 RuntimeError 或 migrate_tool_schemas 报 unapproved / ledger does not match"
+    },
+    {
+      "id": "FAIL-2",
+      "description": "删过头误伤 ReAct 机制（思考摘要消失、tool_activate 排他拆批丢失、直连工具集变化）"
+    },
+    {
+      "id": "FAIL-3",
+      "description": "旧 userdata 用新代码重启失败或主对话不就绪（本机旧库不含 ticket 行，该子场景不可构造，已在 acceptance 如实标注）"
+    },
+    {
+      "id": "FAIL-4",
+      "description": "spawn_subagents 等非 ticket 委派路径因共用集合被误删而回归"
+    }
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {
+      "id": "OOS-1",
+      "description": "memory / task 编排行为与相关长旅程、语料测试"
+    },
+    {
+      "id": "OOS-2",
+      "description": "main.py 启动装配、deskpet/workflows/ 图引擎、前端（Slice 2）"
+    },
+    {
+      "id": "OOS-3",
+      "description": "Harness SDK 任何改动（Slice 3，随编排大改）"
+    },
+    {
+      "id": "OOS-4",
+      "description": "SQLite 表删除或迁移；旧 bundle 与旧证据清理"
+    }
+  ],
+  "maximum_acceptable_impact": "主流程冒烟任一轮首次发送不 COMPLETED 即本次 FAIL，不得交付；回滚 = git revert Host 单个提交"
+}

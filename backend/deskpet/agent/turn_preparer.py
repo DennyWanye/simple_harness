@@ -9,7 +9,6 @@ the Task 13 cutover so a caller cannot recreate a second preference writer.
 """
 from __future__ import annotations
 import inspect
-import json
 import math
 import re
 import time
@@ -275,43 +274,6 @@ class ProductTurnPreparer:
             )
         )
 
-    def _inject_profile_catalog(self, messages: list[dict[str, Any]]) -> None:
-        profiles = self._profile_registry
-        if profiles is None:
-            return
-        visible = [
-            descriptor.compact()
-            for descriptor in profiles.model_spawnable.values()
-        ]
-        self._insert_after_system(
-            messages,
-            {
-                "role": "system",
-                "content": (
-                    "Execution profiles are model-selected. Continue in the general "
-                    "agent unless one profile below is materially better; then call "
-                    "workflow_spawn with its exact key and catalog_generation. "
-                    "Never infer a Driver from keywords. A multi-file software, game, "
-                    "or project-creation request with dependent build and validation "
-                    "steps MUST use workflow.durable_task before the first effectful "
-                    "tool call; only a short conversational answer or one independent "
-                    "tool action should stay in the general agent. If a domain name is "
-                    "ambiguous or possibly misspelled, search the capability catalog "
-                    "and verify the intended technology before running unrelated "
-                    "language or framework commands.\n"
-                    + json.dumps(
-                        {
-                            "catalog_generation": profiles.generation,
-                            "profiles": visible,
-                        },
-                        ensure_ascii=False,
-                        sort_keys=True,
-                    )
-                ),
-                "_is_execution_profile_catalog": True,
-            },
-        )
-
     @staticmethod
     def _has_active_skill_scope(prepared: PreparedTurnContext) -> bool:
         """Return whether semantic discovery already froze an active Skill.
@@ -520,7 +482,6 @@ class ProductTurnPreparer:
                         name
                         for name in (
                             "capability_search",
-                            "workflow_spawn",
                             "workspace_prepare",
                             "external_action_wait",
                             "project_directory_select",
@@ -539,8 +500,9 @@ class ProductTurnPreparer:
                     active_skill_names = self._active_skill_required_tools(bundle)
                     bundle.tool_exposure_intent = replace(
                         intent,
-                        # Durable product workflows are selected exclusively
-                        # through workflow_spawn + the frozen profile catalog.
+                        # Durable product workflows are no longer model-spawnable
+                        # (the spawn tool was removed on 2026-09-09); their
+                        # legacy/direct tools stay hidden pending followup F-WF-1.
                         # Keeping their legacy/direct tools discoverable creates
                         # a split-brain surface: the model can bypass the
                         # WorkflowDriver and call a compatibility handler whose
@@ -572,7 +534,6 @@ class ProductTurnPreparer:
             messages = [{'role': 'user', 'content': turn.text}]
         if turn.attachment_blocks:
             messages = append_user_attachment_blocks(messages, turn.attachment_blocks)
-        self._inject_profile_catalog(messages)
         prepared_context = None
         eligibility = None
         if bool(getattr(getattr(config, 'features', None), 'context_os_v1', False)):

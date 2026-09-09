@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] — Simple Harness Workbench
 
+- **删 workflow 线 · Slice 1（2026-09-09）**：模型面 `workflow_spawn` 工具下线——冻结工具清单 77→76 并重签（`MANIFEST_SHA256 = df979c0e…`），`schema_migrations.json` 同签；`SDK_DIRECT_TOOL_KERNEL` / `PRODUCT_TOOL_NAMES` /
+  `_CONTROL_TOOLS` / `core_names` 去名；删 `turn_preparer._inject_profile_catalog` 提示词、`orchestration_controls` spawn 段、
+  `execution_profiles` 的 `WorkflowSpawnRequest` / `ProfileLaunchTicket`、`companion/workflows.py`。生产装配从未注册 Workflow Driver，
+  运行时零行为变化。图引擎与 `main.py` 旧启动器（Slice 2）、Harness SDK 内 spawn 协议（Slice 3）另行处理；SDK 钉版保持 0.7.10。
+  见 `plans/2026-09-09-remove-workflow-line/`。
 - **SDK v0.1.2 切换为唯一生产 ingress**：`backend/vendor/` 纳入官方 0.1.2 wheel（对 0.1.1 纯新增，
   含 consumer adapter 层）；wheel 身份收敛为单一事实源 `deskpet/sdk_adapters/sdk_candidate.py`，
   原 6 处生产硬编码 + 测试 + `verify_sdk_wheel.py` 全部改 import。conformance 22/22、18 分片回归零新增红。

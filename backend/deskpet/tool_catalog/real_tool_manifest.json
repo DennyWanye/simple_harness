@@ -1,8 +1,8 @@
 {
-  "manifest_sha256": "891ae13615229ee98715f8b18f39a5a045c1f995a29e984a4b86c4eaa2f310bf",
+  "manifest_sha256": "df979c0e044112338e0531d53e6d5906767b6ef0fbdaa312fec7d8f162790bc4",
   "pre_cutover_count": 79,
   "schema_version": 1,
-  "tool_count": 77,
+  "tool_count": 76,
   "tools": [
     {
       "completion_semantics": "sync",
@@ -7167,155 +7167,6 @@
     {
       "completion_semantics": "sync",
       "concurrency_safe": false,
-      "context_handler_id": null,
-      "dangerous": false,
-      "dispatch_adapter_fingerprint": "028d8003176d158d0b007966a82ab008d63909ebc80827ba11121a5b3dc7ca90",
-      "dispatch_adapter_id": "builtin.function",
-      "dispatch_adapter_version": "v1",
-      "dispatch_kind": "delegate_control",
-      "effect_class": "unknown",
-      "effect_policy": {
-        "kind": "opaque_manual",
-        "max_attempts": 1,
-        "policy_id": "deskpet:workflow_spawn:orchestration_delegate",
-        "reusable_across_branches": false,
-        "version": "v1"
-      },
-      "execution_build_identity": {
-        "artifacts": [
-          [
-            "backend/deskpet/tools/build_identity.py",
-            "eda4ca89f564c31b6f569a96bd8a3d31f06c85fb13c047ab67964b89463ecbff"
-          ],
-          [
-            "backend/deskpet/tools/orchestration_controls.py",
-            "b5b863277bf98ca7615ce8dc2c953e38f6957031704f752bf27cbb7a54200438"
-          ],
-          [
-            "backend/deskpet/tools/registry.py",
-            "98c30baac2c15eb70e4e1075de3ae82c75d4f2560ddcb09f577e28f2179ba481"
-          ]
-        ],
-        "build_digest": "63f2f3a131536dc0df67b445c80c1afb3882b44a360d5478440addccdba779fc",
-        "handler_id": "core.workflow_spawn.v1",
-        "provider": "core_checked_manifest_v1",
-        "sources_manifest_hash": "959dda5a2d7b5bfa3802f4ec03fce8b4dce308190a70c5f73a763ea64b834b7d"
-      },
-      "fixture_epoch": 0,
-      "fixture_remote_name": "",
-      "fixture_spec_hash": "",
-      "fixture_spec_version": "",
-      "handler_id": "deskpet.tools.orchestration_controls:_fail_closed",
-      "idempotency": "non_idempotent",
-      "lifecycle": {
-        "commit": null,
-        "prepare": null,
-        "reconcile": null,
-        "rollback": null,
-        "stage": null,
-        "validate": null
-      },
-      "name": "workflow_spawn",
-      "outcome_parser_hash": "dc1c2950a0204d030df141a41a87e539179837c069cd0ea5b55104acc6830722",
-      "outcome_parser_id": "json_error_envelope_v1",
-      "outcome_parser_version": "v1",
-      "permission_category": "shell",
-      "permission_policy_version": "v1",
-      "requires_env": [],
-      "resource_scope_resolver_callable": "deskpet.tools.orchestration_controls:_workflow_spawn_resources.<locals>.resolve",
-      "resource_scope_resolver_id": "workflow-spawn-parent-scope",
-      "resource_scope_resolver_version": "v1",
-      "runtime_provenance_ref": "",
-      "schema": {
-        "description": "Start one durable workflow selected from the current profile catalog. Choose by the profile descriptions, not by keywords.\n- agent.general: Execute the agent.general profile.",
-        "name": "workflow_spawn",
-        "parameters": {
-          "additionalProperties": false,
-          "properties": {
-            "catalog_generation": {
-              "const": 1,
-              "type": "integer"
-            },
-            "input_refs": {
-              "default": [],
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "objective": {
-              "description": "The concrete objective for the child workflow.",
-              "minLength": 1,
-              "type": "string"
-            },
-            "output_refs": {
-              "default": [],
-              "description": "Exact workspace-relative deliverable files the child may create or modify. Use [] for a read-only/text-only child. Every durable child must declare this boundary.",
-              "items": {
-                "minLength": 1,
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "plan_steps": {
-              "description": "For workflow.durable_task, provide 2-8 concise, user-readable execution steps in order. Each step must describe one observable outcome that can be completed by one coherent tool batch.",
-              "items": {
-                "maxLength": 120,
-                "minLength": 1,
-                "type": "string"
-              },
-              "maxItems": 8,
-              "minItems": 2,
-              "type": "array"
-            },
-            "profile_key": {
-              "description": "A model-spawnable key from this exact catalog generation.",
-              "enum": [
-                "agent.general"
-              ],
-              "type": "string"
-            },
-            "scratch_refs": {
-              "default": [],
-              "description": "Optional workspace-relative temporary files or directory prefixes (end directories with /). They may be used while running but must be removed before the child completes.",
-              "items": {
-                "minLength": 1,
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "workspace_ref": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "profile_key",
-            "objective",
-            "output_refs",
-            "catalog_generation"
-          ],
-          "type": "object"
-        }
-      },
-      "schema_hash": "f13003154bc96becc6f78d4fedb047af62456888ffb5280295e5991a129250ef",
-      "source": "builtin",
-      "spec_version": "profiles-1",
-      "stable_handler_id": "core.workflow_spawn.v1",
-      "target_normalizer_version": "none",
-      "timeout_seconds": 60.0,
-      "toolset": "orchestration",
-      "visibility_scope": "global"
-    },
-    {
-      "completion_semantics": "sync",
-      "concurrency_safe": false,
       "context_handler_id": "deskpet.tools.orchestration_controls:_prepare_workspace",
       "dangerous": false,
       "dispatch_adapter_fingerprint": "424cfea4cbcc14c6d62274d97a4a19aa106543856807f25a58d50a219605ef7e",
@@ -7592,14 +7443,5 @@
       "visibility_scope": "global"
     }
   ],
-  "workflows": {
-    "workflow.deep_research": {
-      "workflow_name": "deep_research",
-      "workflow_version": "v7-sdk1"
-    },
-    "workflow.presentation": {
-      "workflow_name": "ppt_pro",
-      "workflow_version": "v2"
-    }
-  }
+  "workflows": {}
 }

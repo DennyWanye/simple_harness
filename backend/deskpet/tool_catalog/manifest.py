@@ -12,7 +12,7 @@ from typing import Any, Mapping
 from simple_harness import freeze_json, thaw_json
 
 
-MANIFEST_SHA256 = "891ae13615229ee98715f8b18f39a5a045c1f995a29e984a4b86c4eaa2f310bf"
+MANIFEST_SHA256 = "df979c0e044112338e0531d53e6d5906767b6ef0fbdaa312fec7d8f162790bc4"
 _ROOT = Path(__file__).resolve().parent
 _MANIFEST_PATH = _ROOT / "real_tool_manifest.json"
 _MIGRATIONS_PATH = _ROOT / "schema_migrations.json"
@@ -66,17 +66,17 @@ def load_tool_manifest() -> ProductToolManifest:
     if (
         raw.get("schema_version") != 1
         or raw.get("pre_cutover_count") != 79
-        or raw.get("tool_count") != 77
-        or len(tools) != 77
+        or raw.get("tool_count") != 76
+        or len(tools) != 76
         or len(names) != len(set(names))
     ):
         raise RuntimeError("real Tool manifest inventory is malformed")
     workflows = raw.get("workflows") or {}
-    if set(workflows) != {
-        "workflow.deep_research",
-        "workflow.presentation",
-    }:
-        raise RuntimeError("real Tool manifest workflow projection is malformed")
+    if workflows:
+        # 2026-09-09: the model-facing spawn tool was removed from the catalog;
+        # the projection must stay empty until the workflow engine is deleted
+        # with it (Slice 2).
+        raise RuntimeError("real Tool manifest workflow projection must be empty")
     return ProductToolManifest(
         schema_version=1,
         pre_cutover_count=79,
@@ -149,12 +149,6 @@ def _migrate_schema(item: Mapping[str, Any]) -> tuple[dict[str, Any], tuple[str,
     if name in {"window_capture", "window_focus", "window_key"}:
         properties["creation_time"].pop("exclusiveMinimum")
         properties["creation_time"]["minimum"] = 0
-    if name == "workflow_spawn":
-        properties["workspace_ref"] = {
-            "type": "string",
-            "maxLength": 4096,
-            "description": "Omit when no workspace is bound.",
-        }
     if name == "skill_invoke":
         properties["resource_path"] = {
             "type": "string",

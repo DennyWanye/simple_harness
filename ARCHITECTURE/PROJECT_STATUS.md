@@ -16,6 +16,7 @@
 | 两轮完整流程（含重启）旅程 run1 | **flow1 T1–T11 全部 COMPLETED**；重启后主对话停在「等待主对话就绪」→ **事件 AK**，flow2 未跑 | `plans/2026-09-09-two-flow-journey/RUN-01-RESULT.md` |
 | 240 条语料累计 | 多提类型 **29/271 = 10.7% ✅**、required **176/176 = 100% ✅**、隐私 **0 ✅**（三阈值首次全部达标） | `plans/2026-09-07-corpus-c01-local/CORPUS-CUMULATIVE-2026-09-08.md` |
 | 401 类型化召回矩阵 | run-16 **PASS 382 / FAIL 0 / BLOCKED 19**，`EXECUTOR_UNIMPLEMENTED` 归零 | `plans/2026-09-07-corpus-c01-local/TYPED-RECALL-401-RUN-10.md` |
+| 删 workflow 线 | **Slice 1 完成**（模型面 `workflow_spawn` 与死壳删除，清单 77→76 重签）；Slice 2（启动装配 + 图引擎 + 前端）、Slice 3（SDK spawn 协议）待编排大改 | `plans/2026-09-09-remove-workflow-line/`（裁决 `DECISION-SCOPE-SLICES.md`，验收 `journal.md`） |
 
 ## 8 条 MUST AC
 

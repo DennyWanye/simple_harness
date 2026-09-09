@@ -34,7 +34,7 @@ _PROVIDER_TOOLS = frozenset(
     {"web_search", "web_fetch", "web_crawl", "web_extract_article", "web_read_sitemap", "scrapling_fetch", "gold_price_lookup", "run_browser_task", "generate_image"}
 )
 _CONTROL_TOOLS = frozenset(
-    {"agent", "agent_parallel", "await_subagents", "capability_build", "capability_repair", "external_action_wait", "project_directory_select", "spawn_subagents", "spawn_team", "tool_activate", "workflow_spawn", "workspace_prepare"}
+    {"agent", "agent_parallel", "await_subagents", "capability_build", "capability_repair", "external_action_wait", "project_directory_select", "spawn_subagents", "spawn_team", "tool_activate", "workspace_prepare"}
 )
 _STAGED_TOOLS = frozenset(
     {"desktop_create_file", "doc_create", "doc_edit", "edit_file", "excel_create", "file_write", "move_file", "pdf_export", "ppt_create", "register_artifacts", "write_file"}
@@ -667,7 +667,7 @@ def _dispatch_kind(name: str, handler: Callable[..., Any]) -> str:
 def build_explicit_product_tool_catalog(
     dependencies: ToolCatalogDependencies,
 ) -> ExplicitProductToolCatalog:
-    """Build all 77 registrations locally; publish nothing until validation ends."""
+    """Build all 76 registrations locally; publish nothing until validation ends."""
 
     manifest = load_tool_manifest()
     schemas, migration_records = migrate_tool_schemas(manifest)
@@ -790,7 +790,7 @@ def build_explicit_product_tool_catalog(
             )
         )
     names = tuple(item.name for item in registrations)
-    if len(names) != 77 or len(set(names)) != 77 or set(names) != set(manifest.tool_names):
+    if len(names) != 76 or len(set(names)) != 76 or set(names) != set(manifest.tool_names):
         raise RuntimeError("explicit Tool registration inventory differs from manifest")
     return ExplicitProductToolCatalog(
         registrations=tuple(registrations),

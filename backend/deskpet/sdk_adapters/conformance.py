@@ -208,7 +208,7 @@ def _product_tools(root: Path):
     )
     catalog = build_explicit_product_tool_catalog(dependencies)
     registry, inventory = build_product_tool_registry(catalog.registrations)
-    if len(inventory) != 77:
+    if len(inventory) != 76:
         raise RuntimeError("real product Tool catalog is incomplete")
     return registry
 

@@ -1,0 +1,30 @@
+{
+  "round": 1,
+  "review_mode": "breadth",
+  "engine": "opus-5",
+  "coverage": {"acceptance_coverage": true, "entry_and_trust_chain": true, "data_flow_and_persistence": true, "identity_permissions_concurrency_cleanup": true, "failure_and_recovery": true, "tests_and_evidence": true, "release_and_rollback": true, "trusted_boundary_stop": true},
+  "findings": [
+    {"id": "primary-contradiction-misidentified", "severity": "P0", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-1", "AC-2", "AC-3"], "assurance_contract_ids": ["FAIL-1", "FAIL-2", "ASSET-2"], "evidence": "交付版 execution-v6.sqlite3 provider_invocations 43 条：workflow_spawn 0 次、catalog 提示词 0 次、tools 名字集合不含 workflow_spawn（主 agent 复核一致）", "status": "resolved", "resolution": "主要矛盾与最小验证动作重述；见 synthesis", "root_cause": "把已成立的前置事实当待达成目标，真实失败域（守卫链）被降为次要"},
+    {"id": "ac2-runtime-oracle-unsatisfiable", "severity": "P0", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-1", "AC-2"], "assurance_contract_ids": ["FAIL-1", "OOS-3", "ASSET-2"], "evidence": "operation-audit.db 130 次命中全为五张 SDK 表名 workflow_spawn_*，裸工具名 0；SDK 本轮不动，17→0 不可满足", "status": "resolved", "resolution": "AC-2③ 改为 provider_invocations.request_json 断言", "root_cause": "锚点未做词形拆解"},
+    {"id": "product-tool-names-count-wrong", "severity": "P1", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-2", "AC-6"], "assurance_contract_ids": ["FAIL-4", "FAIL-2"], "evidence": "PRODUCT_TOOL_NAMES=84=77+HOST_COMPOSED 7；去名后 83 非 76", "status": "resolved", "resolution": "Task 2 断言改为集合关系", "root_cause": "混淆 tool_count 与 PRODUCT_TOOL_NAMES 基数"},
+    {"id": "exclusive-async-mechanism-test-gutted", "severity": "P1", "scope_relation": "in-scope", "origin": "patch-induced", "violated_acceptance_ids": ["AC-6", "AC-7"], "assurance_contract_ids": ["FAIL-2", "ASSET-3"], "evidence": "tests/test_deskpet_agent_loop.py:216-220 三元条件按名字分发", "status": "resolved", "resolution": "参数化改 capability_build 并同步条件", "root_cause": "只按 grep 命中行下指令"},
+    {"id": "task6-test-site-drift", "severity": "P1", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-7"], "assurance_contract_ids": ["FAIL-2"], "evidence": "74 在 :283 与 :296 成对；:183；:446；test_each_of_64_ 函数名", "status": "resolved", "resolution": "Task 6 按真实行号重写", "root_cause": "行号快照过期"},
+    {"id": "residual-grep-whitelist-contradicts-do-not-touch", "severity": "P1", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-2", "AC-4"], "assurance_contract_ids": ["ASSET-3", "FAIL-2"], "evidence": "turn_preparer.py:543 注释、assembler/components/skill.py:41 注释、harness/profiles.py:5 docstring", "status": "resolved", "resolution": "三处注释改措辞并进影响清单", "root_cause": "去名清单与 grep 口径不一致"},
+    {"id": "fail3-not-exercisable-by-available-userdata", "severity": "P1", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-1", "AC-5"], "assurance_contract_ids": ["FAIL-3", "ASSET-1"], "evidence": "交付版 userdata：execution_profile_launch_tickets 0、workflow_runs 0、run_start_snapshots 无该名字", "status": "resolved", "resolution": "FAIL-3 收窄；旧 userdata 段只证启动兼容", "root_cause": "失败域前提未核实"},
+    {"id": "reserved-name-removal-is-a-loosening", "severity": "P2", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-2", "AC-4"], "assurance_contract_ids": ["FAIL-2"], "evidence": "CORE_RESERVED_TOOL_NAMES 与 _SKILL_SCOPE_WIDENING_CONTROLS 是拒绝集", "status": "resolved", "resolution": "三个拒绝集本轮不动（同 deny_selectors 原则）", "root_cause": "登记集与拒绝集未区分"},
+    {"id": "manifest-resign-roundtrip-newline", "severity": "P2", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-3"], "assurance_contract_ids": ["FAIL-1"], "evidence": "dumps(indent=2)+换行 与原文逐字节相同；hash 前须 pop manifest_sha256", "status": "resolved", "resolution": "Task 1 步骤固化", "root_cause": "内容哈希与字节不变混写"},
+    {"id": "ac7-baseline-scope-gap", "severity": "P2", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-7"], "assurance_contract_ids": ["TRUST-1"], "evidence": "基线 4 文件，AC-7 门 7 文件；补测 3 文件 24 passed", "status": "resolved", "resolution": "baseline.md 扩到 7 文件", "root_cause": "基线集合与验收集合不一致"},
+    {"id": "smoke-known-deviations-not-carried-into-oracle", "severity": "P2", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-1"], "assurance_contract_ids": ["ASSET-2"], "evidence": "SMOKE-7e64dab0 记录 T16 不落盘、T22 幻答两条已知偏差", "status": "resolved", "resolution": "Task 5b oracle 登记期望值", "root_cause": "只取结论行未取偏差"},
+    {"id": "ac5-sdk-status-oracle-ambiguous", "severity": "P2", "scope_relation": "in-scope", "origin": "pre-existing", "violated_acceptance_ids": ["AC-5"], "assurance_contract_ids": ["OOS-3"], "evidence": "SDK 仓起点 ` M .gitignore`", "status": "resolved", "resolution": "AC-5 改相对 baseline 断言", "root_cause": "绝对断言与相对断言不等价"}
+  ],
+  "clusters": {
+    "primary_contradiction": {"id": "pc-guard-chain-not-model-view", "acceptance_ids": ["AC-1", "AC-2", "AC-3"]},
+    "challenge_clusters": [
+      {"cluster_id": "cluster-value-oracle-discriminating-power", "specialty": "testability-evidence", "specialist_required": true, "disposition": "evidence obtained by main agent; specialist skipped (see synthesis)"},
+      {"cluster_id": "cluster-name-set-semantics-and-counts", "specialty": "architecture", "specialist_required": true, "disposition": "resolved in synthesis; specialist skipped"},
+      {"cluster_id": "cluster-test-realignment-fidelity", "specialty": "testability-evidence", "specialist_required": true, "disposition": "resolved in synthesis; verified by Task 6 execution"},
+      {"cluster_id": "cluster-residual-surface-boundary", "specialty": "architecture", "specialist_required": true, "disposition": "resolved in synthesis; specialist skipped"},
+      {"cluster_id": "cluster-manifest-resign-mechanics", "specialty": "data-state", "specialist_required": false, "disposition": "resolved"}
+    ]
+  }
+}

@@ -7,7 +7,7 @@
 >
 > 配套实施记录见 [`plans/2026-06-20-agent-loop-optimization/00-PLAN.md`](../plans/2026-06-20-agent-loop-optimization/00-PLAN.md)（缺陷审计、落地路线与验证结果）。
 
-> **当前边界**：`AgentLoop` 已不再是产品入口或工具/子代理 runtime；它只是 ReAct Driver 内部的 LLM、上下文与完成判断引擎。Text/Voice 统一进入 Product Venue → `RunKernel`；顶层固定 `agent.general + react`，模型需要专门长流程时显式调用 `workflow_spawn` 创建 ticket 绑定的 child。当前没有 Code/普通模式之分，多任务只是同一主 Session 下并行的多个顶层 Run。工具批次由 ReAct Driver 的 `EffectBatchExecutor` 执行。下文第 2～6 节保留 AgentLoop 内部算法说明，第 7 节是当前生产装配。
+> **当前边界**：`AgentLoop` 已不再是产品入口或工具/子代理 runtime；它只是 ReAct Driver 内部的 LLM、上下文与完成判断引擎。Text/Voice 统一进入 Product Venue → `RunKernel`；顶层固定 `agent.general + react`；模型面的 `workflow_spawn` 工具已于 2026-09-09 下线（删 workflow 线 Slice 1，见 `plans/2026-09-09-remove-workflow-line/`），生产装配从未注册 Workflow Driver，图引擎与启动装配待 Slice 2 清理。当前没有 Code/普通模式之分，多任务只是同一主 Session 下并行的多个顶层 Run。工具批次由 ReAct Driver 的 `EffectBatchExecutor` 执行。下文第 2～6 节保留 AgentLoop 内部算法说明，第 7 节是当前生产装配。
 
 ---
 
@@ -198,9 +198,17 @@ WS / Voice / Tauri
 
 所有普通顶层消息都固定进入 `agent.general` 的 ReAct Driver。Driver 调用 `AgentLoop` 获取
 provider 结果；若产生 `ToolBatchEvent`，由 Driver 交给唯一 `EffectBatchExecutor`，再把
-规范化 outcome 回填给 AgentLoop。DeepResearch、PPT、能力构建等专门流程只有在父模型
-显式调用 `workflow_spawn`、Host 签发 durable `ProfileLaunchTicket` 后才进入 ticket
-绑定的 child Driver；原先 `main.py` 内的产品 starter 不再拥有运行生命周期。
+规范化 outcome 回填给 AgentLoop。**2026-09-09 删 workflow 线 Slice 1**：模型面的
+`workflow_spawn` 工具（冻结清单条目、`SDK_DIRECT_TOOL_KERNEL` / `PRODUCT_TOOL_NAMES` /
+`_CONTROL_TOOLS` / `core_names` 登记、`_inject_profile_catalog` 提示词、
+`orchestration_controls` 的 spawn 段、`execution_profiles` 的 `WorkflowSpawnRequest` /
+`ProfileLaunchTicket` 死壳、`companion/workflows.py`）已全部删除，冻结清单 77→76 并重签
+（`MANIFEST_SHA256 = df979c0e…`）。实测交付版 43 次 provider 请求里该工具本就 0 次出现，
+生产装配只注册 react driver 与 `agent.general`。DeepResearch / PPT / durable_task 图引擎、
+`main.py` 旧 `WorkflowLauncher` 启动器、前端 workflow 面板留待 Slice 2；Harness SDK 内的
+spawn 协议（表、checkpoint 字段、public API）留待 Slice 3 随编排大改处理，SDK 钉版保持 0.7.10。
+三个拒绝集（`CORE_RESERVED_TOOL_NAMES`、`_SKILL_SCOPE_WIDENING_CONTROLS`）与 `deny_selectors`
+仍含旧名字：去名是放宽不是删除，随 followup F-WF-1 由用户决定。
 
 provider、model、capability、session/workspace 与产品配置在准备/首次 route 时冻结。Context
 OS 把本轮 `PreparedToolSet` 与 eligibility 序列化进 Run；root ReAct 与 ticket child

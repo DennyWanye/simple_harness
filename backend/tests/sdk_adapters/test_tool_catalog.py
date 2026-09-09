@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 EXPECTED_MANIFEST_SHA256 = (
-    "891ae13615229ee98715f8b18f39a5a045c1f995a29e984a4b86c4eaa2f310bf"
+    "df979c0e044112338e0531d53e6d5906767b6ef0fbdaa312fec7d8f162790bc4"
 )
 
 
@@ -128,25 +128,22 @@ async def test_real_catalog_unrelated_manifest_change_preserves_tool_execution_i
     assert "stable-handler" in str(thaw_json(result.value))
 
 
-def test_checked_in_real_manifest_has_exact_77_plus_two_projection() -> None:
+def test_checked_in_real_manifest_has_exact_76_and_empty_projection() -> None:
     from deskpet.tool_catalog import load_tool_manifest
 
     manifest = load_tool_manifest()
 
     assert manifest.manifest_sha256 == EXPECTED_MANIFEST_SHA256
     assert manifest.pre_cutover_count == 79
-    assert len(manifest.tools) == 77
-    assert tuple(sorted(manifest.workflows)) == (
-        "workflow.deep_research",
-        "workflow.presentation",
-    )
+    assert len(manifest.tools) == 76
+    assert dict(manifest.workflows) == {}
     assert "deepresearch" not in manifest.tool_names
     assert "ppt_pro" not in manifest.tool_names
     assert "ppt_create" in manifest.tool_names
     with pytest.raises(TypeError):
         manifest.tools[0]["name"] = "tampered"  # type: ignore[index]
     with pytest.raises(TypeError):
-        manifest.workflows["workflow.deep_research"]["workflow_version"] = "bad"  # type: ignore[index]
+        manifest.workflows["x"] = {}  # type: ignore[index]
 
 
 def test_schema_migrations_are_exact_closed_and_sdk_valid() -> None:
@@ -155,7 +152,7 @@ def test_schema_migrations_are_exact_closed_and_sdk_valid() -> None:
     manifest = load_tool_manifest()
     migrated, records = migrate_tool_schemas(manifest)
 
-    assert len(records) == 71
+    assert len(records) == 70
     specialized = {
         record.name
         for record in records
@@ -176,10 +173,9 @@ def test_schema_migrations_are_exact_closed_and_sdk_valid() -> None:
         "window_capture",
         "window_focus",
         "window_key",
-        "workflow_spawn",
     }
     assert all(record.old_hash != record.new_hash for record in records)
-    assert len(migrated) == 77
+    assert len(migrated) == 76
     assert sum(len(record.closed_object_paths) for record in records) == 71
 
     def assert_closed(node, path="$" ) -> None:
@@ -225,7 +221,7 @@ print(json.dumps({'loaded': loaded}))
     assert payload == {"loaded": []}
 
 
-def test_closed_ingress_legacy_main_sequence_reaches_74_without_retired_memory_tools() -> None:
+def test_closed_ingress_legacy_main_sequence_reaches_73_without_retired_memory_tools() -> None:
     backend = Path(__file__).resolve().parents[2]
     command = """
 import importlib
@@ -280,7 +276,7 @@ profiles = ProfileRegistry((ProfileSpec('agent.general', 'general', 'react', dis
 register_orchestration_controls(registry, profiles)
 register_capability_bridge_tools(registry, ToolCapabilityBridgeService(registry, ToolCapabilityScopeStore()))
 names = registry.list_tools()
-assert len(names) == 74, (len(names), names)
+assert len(names) == 73, (len(names), names)
 assert 'memory_recall' not in names
 assert 'deepresearch' in names and 'ppt_pro' in names and 'ppt_create' in names
 print(len(names))
@@ -294,7 +290,7 @@ print(len(names))
         text=True,
         env=env,
     )
-    assert result.stdout.strip() == "74"
+    assert result.stdout.strip() == "73"
 
 
 def test_sdk_registry_builder_rejects_duplicate_without_partial_publish() -> None:
@@ -422,15 +418,15 @@ print(json.dumps({
         env=env,
     )
     assert json.loads(result.stdout) == {
-        "count": 77,
+        "count": 76,
         "legacy_loaded": False,
         "config_loaded": False,
         "blocked_loaded": [],
-        "handlers": 77,
+        "handlers": 76,
     }
 
 
-def test_each_of_64_static_handler_resolutions_is_import_pure() -> None:
+def test_each_of_63_static_handler_resolutions_is_import_pure() -> None:
     from deskpet.tool_catalog import load_tool_manifest
 
     backend = Path(__file__).resolve().parents[2]
@@ -443,7 +439,7 @@ def test_each_of_64_static_handler_resolutions_is_import_pure() -> None:
         item for item in load_tool_manifest().tools
         if str(item["name"]) not in dynamic
     ]
-    assert len(descriptors) == 64
+    assert len(descriptors) == 63
     env = dict(os.environ)
     env["PYTHONPATH"] = str(backend)
     probe = """
@@ -582,10 +578,6 @@ def test_all_specialized_schema_adapters_preserve_handler_values_and_reject_inva
         with pytest.raises(ValueError, match="greater than zero"):
             adapt_model_arguments(tool_name, {"creation_time": 0})
 
-    assert adapt_model_arguments("workflow_spawn", {}) == {}
-    assert adapt_model_arguments(
-        "workflow_spawn", {"workspace_ref": "/tmp/workspace"}
-    )["workspace_ref"] == "/tmp/workspace"
 
 
 def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
@@ -771,13 +763,8 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
             ("window_key", {"pid": 1, "creation_time": 1.0, "hwnd": 1,
                             "keys": "ENTER"},
              {"pid": 1, "creation_time": 1.0, "hwnd": 1, "keys": "ENTER"}),
-            ("workflow_spawn", {"profile_key": "agent.general", "objective": "x",
-                                "output_refs": [], "catalog_generation": 1,
-                                "workspace_ref": None},
-             {"profile_key": "agent.general", "objective": "x",
-              "output_refs": [], "catalog_generation": 1}),
         )
-        assert len(cases) == 12
+        assert len(cases) == 11
         for index, (name, old_arguments, new_arguments) in enumerate(cases, 3):
             old_result = await direct(name, old_arguments)
             new_result = await sdk(name, new_arguments, index)
@@ -975,7 +962,7 @@ def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> N
     )
     registry, inventory = build_product_tool_registry(catalog.registrations)
     by_name = {item.name: item for item in inventory}
-    assert len(by_name) == 77
+    assert len(by_name) == 76
     assert {
         name
         for name, item in by_name.items()

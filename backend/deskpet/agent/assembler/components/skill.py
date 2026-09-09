@@ -36,10 +36,10 @@ from deskpet.companion.skills import PreparedSkillInvocationScopeV1
 
 logger = logging.getLogger(__name__)
 
-# These legacy Skill packs describe direct tools that are now owned by fixed
-# durable profiles. Auto-disclosing their old instructions would create two
-# conflicting product routes: the profile catalog says ``workflow_spawn``
-# while the Skill body says to call the compatibility tool directly.
+# These legacy Skill packs describe direct tools that were owned by fixed
+# durable profiles. Auto-disclosing their old instructions would tell the
+# model to call a compatibility tool whose product route is hidden
+# (followup F-WF-1 decides whether those tools reopen).
 _PROFILE_OWNED_LEGACY_TOOL_NAMES = frozenset(
     {"deepresearch", "ppt_create", "ppt_pro"}
 )

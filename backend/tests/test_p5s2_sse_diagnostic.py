@@ -217,7 +217,7 @@ async def test_stream_preserves_explicit_length_finish_reason_with_tool_call():
             _tool_call_delta(
                 0,
                 call_id="spawn-1",
-                name="workflow_spawn",
+                name="tool_activate",
                 args=json.dumps({"objective": "build slides"}),
             ),
             {
@@ -251,7 +251,7 @@ async def test_stream_preserves_explicit_length_finish_reason_with_tool_call():
             tools=[{
                 "type": "function",
                 "function": {
-                    "name": "workflow_spawn",
+                    "name": "tool_activate",
                     "parameters": {},
                 },
             }],
@@ -277,7 +277,7 @@ async def test_explicit_truncation_reason_is_not_overridden_by_tool_call(
             _tool_call_delta(
                 0,
                 call_id="call_partial",
-                name="workflow_spawn",
+                name="tool_activate",
                 args=json.dumps({"objective": "build slides"}),
             ),
             {
@@ -309,7 +309,7 @@ async def test_explicit_truncation_reason_is_not_overridden_by_tool_call(
         [{"role": "user", "content": "make slides"}],
         tools=[{
             "type": "function",
-            "function": {"name": "workflow_spawn", "parameters": {}},
+            "function": {"name": "tool_activate", "parameters": {}},
         }],
     ):
         events.append(event)

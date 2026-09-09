@@ -1,0 +1,29 @@
+{
+  "cluster_id": "cluster-residual-surface-boundary",
+  "engine": "opus-5",
+  "status": "completed",
+  "parent_finding_ids": [
+    "residual-grep-whitelist-contradicts-do-not-touch"
+  ],
+  "conclusion": "refined → 父 finding resolved；46 = 11 白名单 + 21 wheel + 14 改后必消失，白名单与实跑穷尽相等；14 文件 33 处 -nw 命中全部落在 plan 改动区间",
+  "new_findings": [
+    {
+      "id": "ac4-grep-oracle-blind-to-token-variants",
+      "severity": "P2",
+      "status": "resolved",
+      "resolution": "AC-4 追加第二条不带 -w 的大小写不敏感等式（非 vendor 12）"
+    },
+    {
+      "id": "ac4-command-nonascii-paths-skipped",
+      "severity": "P2",
+      "status": "resolved",
+      "resolution": "AC-4 命令改为 -z | xargs -0，只比对 stdout"
+    }
+  ],
+  "other_required_clusters": {
+    "cluster-value-oracle-discriminating-power": "completed by closure rounds 2-3（provider_invocations 统计、词形拆解、旧 userdata 触发条件）",
+    "cluster-name-set-semantics-and-counts": "completed by closure rounds 2-3（kernel 20/product 84/host 7/manifest 77 实跑）",
+    "cluster-test-realignment-fidelity": "completed by closure round 3（Task 3/6 行号逐条回源 + grep -nw 完整性反查）"
+  },
+  "convergence": "CONVERGED — no open in-scope P0/P1 after round 3 edits + specialist"
+}

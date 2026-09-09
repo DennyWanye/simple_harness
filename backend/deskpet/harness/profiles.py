@@ -1,9 +1,9 @@
-"""One immutable profile catalog shared by the model and Driver adapters.
+"""One immutable profile catalog shared by the Kernel and Driver adapters.
 
-``driver_kind`` and workflow bindings are host-only.  The provider receives
-only :class:`ExecutionProfileDescriptor` values and chooses a model-spawnable
-profile through ``workflow_spawn``; top-level Kernel routing never derives a
-Driver from user text.
+``driver_kind`` and workflow bindings are host-only.  The catalog resolves the
+fixed root profile (``agent.general``); the model-facing spawn surface was
+removed on 2026-09-09, and top-level Kernel routing never derives a Driver
+from user text.
 """
 
 from __future__ import annotations
