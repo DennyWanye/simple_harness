@@ -1,13 +1,13 @@
 # HM-TO-A6 第 10 次整跑结果（2026-09-09 11:20，Host 43a8f835 源码 + bundle 60ab03a1，Memory 0.6.37，flash 关闭 thinking，窗口 32000）
 
-24 轮走完（T16/T23/T24 面板 + T24 手动重发）；`a6_verify.py`：**PASS 13 / FAIL 3 / INCONCLUSIVE 2 / BLOCKED 0**（`RUN-10-a6-verify.json`；证据 `.local-test-evidence/2026-09-09/native-a6-run10/primary-ui-j5yjctfj`）。历次：第 5 次 13/1/1/3 → 第 8 次 10/3/0/5 → 第 9 次 9/6/0/3 → **第 10 次 13/3/0/2**。
+24 轮走完（T16/T23/T24 面板 + T24 手动重发）；`a6_verify.py`：**PASS 14 / FAIL 2 / INCONCLUSIVE 2 / BLOCKED 0**（事件 AB 复算后；原判 13/3/2）（`RUN-10-a6-verify.json`；证据 `.local-test-evidence/2026-09-09/native-a6-run10/primary-ui-j5yjctfj`）。历次：第 5 次 13/1/1/3 → 第 8 次 10/3/0/5 → 第 9 次 9/6/0/3 → **第 10 次 13/3/0/2**。
 
 | 项 | 第 9 次 | 第 10 次 | 归因 / 下一步 |
 |---|---|---|---|
 | A6-1 | INCONCLUSIVE | **PASS** | 22 Run 全终态、receipt ordinal 连续 |
 | A6-2 | FAIL | FAIL | 分页引用 35、翻页成功 10；ANCHOR 行未在回复出现——T6 失败（事件 Z） |
 | A6-3 | FAIL | FAIL | 组装超限 **1 次**（T6，第 9 次 4 次）；峰值 input 19849 < 26752；线上门拦下 T17（W-b） |
-| A6-4 | PASS | **FAIL** | 后缀单调违例 2（新）→ 事件 AB（已派） |
+| A6-4 | PASS | **PASS**（事件 AB 修验证器后复算） | 2 处「消失的组」是 supersede/争议撤销披露，非裁剪；A6-4 改为只管裁剪 |
 | A6-5 | INCONCLUSIVE | INCONCLUSIVE | T17（W-b）/T18（事件 AA）失败，无视图修订 |
 | A6-6 | FAIL | **PASS** | applies_to 知识边 + 本 plan 新建 procedure 节点；T16 UI 显示 7 记忆 1 关系 |
 | A6-7 | PASS | PASS | — |
