@@ -1399,3 +1399,38 @@ item id（那是模型看见的东西），`primary_dependencies` 读模型行�
 `authority_lease_expired` 降级码（比照 `authority_epoch_advanced` 签发收据 + 记日志）。控制：新增
 `backend/tests/sdk_adapters/test_typed_context_use_recollect.py` 7 例（真实 SDK / 真实 state.db /
 真实 carrier / 显式语义时钟）。[裁决](../plans/2026-09-08-hm-to-a6/DECISION-AA-AUTHORITY-STALE-RECOLLECT.md)。
+
+最后更新：2026-09-09（HM-TO-A6 验证器口径：A6-3 增长比 / A6-7 生命周期豁免 / A6-11 memory_id 归属）。
+第 11 次原生跑的三项 FAIL 全部是**验证器口径缺陷，不是 Host / SDK 缺陷**，边界事实如下。
+① **Prospective 到点推进不产生 evolution 血缘边**：已安装 SDK
+`simple-harness-memory-sdk-0.6.37-source` 的 `backends/sqlite_v5.py:7595` 起，信号判定 `APPLIED` 时走
+`_copy_cognitive_revision_unlocked(..., lifecycle_state=next_state.value,
+plan_id=_stable_id("prospective-signal-plan", authority.authority_id))` +
+`_copy_cognitive_payload_unlocked(...)`——把上一条 revision **逐字复制**一份、只改 `lifecycle_state`
+（`pending` → `triggered` / `expired`），随后写 `prospective_mutation_outbox` 与
+`prospective_trigger_event`、CAS 前进 `cognitive_memory_heads.current_revision`，**全程不写
+`cognitive_relations`**。血缘边（`relation_domain='evolution'`，kind `amends`/`contests`/`supersedes`）
+只由 revise / supersede / contest 这些**内容**通路产出（`core/mutations.py`）。所以 A6-7 只对
+「`content_hash` 真的变了」的 revision 要求血缘边；`content_hash` 与上一条逐字相同且只有
+`lifecycle_state` 变（或 `plan_id` 带 `prospective-signal-plan` 这类调度器出身）的 revision 豁免，
+内容哈希变了却没有血缘边仍判 FAIL，`content_hash` 列缺失时不给豁免（fail closed）。
+② **memory_id 在 provider context 里的合法载体**：A6-11 要挡的是**图谱结构**
+（`relation_id` / `relation_hash` / `twin_graph` / `graph_edge` / `relation_memory_id`，以及
+memory_id 落在带 `source_memory_id`/`target_memory_id`/`relation_kind`/`"edges"` 的图谱形状载荷里）。
+memory_id 出现在工具回执、历史组内工具回执、事件 V 的 `conflict_notice`、事件 Y / F-EPI-1 的召回提示，
+以及 **Prospective 到点提醒**（`role=system`、`metadata.source=prospective_inbox`、
+`trust=host_authority`，第 11 次新增形态，占 37 次命中里的 33 次）里，是这些机制本来就要求的可寻址
+回执，判 PASS 并把载体直方图写进 `numbers`；`--strict-a6-11` 保持 plan 字面语义。第 11 次全部 37 次
+命中中图谱载荷 **0** 次，`relation_id`/`relation_hash`/结构键 **0** 次。
+③ **A6-3 的「轮」是一条前台 `sdk_run_id`**，不是 `sdk_provider_attempt_audit` 的一行（一轮 ReAct
+循环有几次尝试就有几行）；逐轮峰值再扣掉该次自己那条当轮 user 消息与可观测的 reasoning 回传——
+后者按 DECISION-Y 逐字写在 wire payload 的 `reasoning_content` 上、**不进落库的 canonical
+`request_json`**，只有 `sdk_provider_wire_input_budget_exceeded` 那行日志的 `reasoning_relay=` 能看见，
+观测不到记 0（fail closed）。绝对判据（前台 `sdk_context_budget_exceeded` 为 0、
+`usage.input_tokens` 不超 `effective_input_budget`）不动且仍排在增长比之前。同一份证据上：第 11 次
+2.269 → 0.987（改判 PASS），第 9 次 4.528 → 1.727（**仍越 1.6**，绝对判据先拦，判定不变），
+第 10 次 1.466 → 1.045（判定不变）。控制：新增
+`backend/tests/native/test_a6_verify_a6_3_a6_7_a6_11_rules.py` 19 项（含 4 条负例：内容 revision 缺
+血缘边、同哈希无 lifecycle 变动、带调度器出身但内容变了、`content_hash` 列缺失；以及图谱形状载荷、
+`relation_id`、strict 模式仍 FAIL）。
+[裁决](../plans/2026-09-08-hm-to-a6/DECISION-VERIFIER-RULES-2026-09-09.md)。

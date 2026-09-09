@@ -65,6 +65,7 @@ def _evidence(
     receipts: list[dict],
     invocations: list[dict],
     progress: list[dict] | None = None,
+    foreground_runs: list[str] | None = None,
 ) -> "a6.Evidence":
     root = str(tmp_path)
     data = os.path.join(root, "userdata", "data")
@@ -82,7 +83,11 @@ def _evidence(
             " effective_ceiling integer, input_tokens integer, total_tokens integer,"
             " state text, settled_at real)",
         ],
-        [("insert into foreground_run_heads values (?,?,?,?)", ("h1", "COMPLETED", _RUN, 100.0))]
+        [
+            ("insert into foreground_run_heads values (?,?,?,?)",
+             (f"h{n}", "COMPLETED", run, 100.0 + n))
+            for n, run in enumerate(foreground_runs or [_RUN])
+        ]
         + [
             (
                 "insert into run_context_snapshot_receipts values (?,?,?,?,?,?,?,?)",
@@ -334,14 +339,21 @@ def test_a6_3_judges_the_foreground_lane_and_reports_the_others_separately(tmp_p
 
     # 17 轮前台全部装得下 —— 足够走到 PASS, 于是「另一条泳道」是这一项判定
     # 唯一的变量。
-    pairs = [_turn(n, planned=9_000, billed=8_000) for n in range(1, 18)]
+    # 一「轮」= 一条前台 sdk_run_id(2026-09-09 口径修正): A6-3 的前后 8 轮比对
+    # 按 Run 聚合, 所以 17 轮必须是 17 条 Run, 而不是同一条 Run 的 17 次尝试。
+    foreground_runs = [f"{_RUN}-{n:02d}" for n in range(1, 18)]
+    pairs = [
+        _turn(n, planned=9_000, billed=8_000, run=run)
+        for n, run in enumerate(foreground_runs, start=1)
+    ]
     receipts, invocations = _split(pairs)
     # 40 000: 既超前台的 effective_input_budget(26752), 也超 plan_ceiling ——
     # 不过滤泳道的话, A6-3 会拿工作流的 prompt 判前台链 FAIL。
     other, other_inv = _turn(1, planned=9_000, billed=40_000, run="product-sdk-workflow")
     receipts.append(other)
     invocations.append(other_inv)
-    ev = _evidence(tmp_path, receipts=receipts, invocations=invocations)
+    ev = _evidence(tmp_path, receipts=receipts, invocations=invocations,
+                   foreground_runs=foreground_runs)
     try:
         item = _a6_3(ev)
     finally:

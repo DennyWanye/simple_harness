@@ -94,6 +94,11 @@ WIRE_BUDGET_EXCEEDED_RE = re.compile(
 # 同一个码也是 WireInputBudgetExceeded 的 error_code, dispatch 按它结算
 # provider_invocations.error_code —— 日志之外的耐久证据。
 WIRE_INPUT_BUDGET_ERROR_CODE = "sdk_provider_wire_input_budget_exceeded"
+# 事件 Y(DECISION-Y-REASONING-ECHO §1): reasoning 回传逐字写在 wire payload 的
+# `reasoning_content` 上, 落库的 canonical `request_json` **没有**它。能观测到
+# 这块质量的只有 wire 记账那一行, 而它只在越界时才打印 —— 所以 A6-3 的调整项
+# 只能「观测到多少扣多少」, 观测不到时扣 0(方向 fail closed: 不替 Host 减重)。
+REASONING_RELAY_RE = re.compile(r"reasoning_relay=(\d+)")
 SDK_RUN_ID_RE = re.compile(r'"sdk_run_id":\s*"([^"]+)"|sdk_run_id=([^\s",\]]+)')
 # 溢出行本身不带 run id, 向后找最近一条带 sdk_run_id 的记录做归属。
 BUDGET_EXCEEDED_LOOKAHEAD = 40
@@ -117,6 +122,17 @@ CREDENTIAL_PATTERNS = (
 )
 
 GRAPH_STRUCTURAL_NEEDLES = ("twin_graph", "graph_edge", "relation_memory_id")
+
+# A6-7 生命周期豁免(2026-09-09)。Prospective 的到点推进不是「内容纠正」:
+# `sqlite_v5.py::_copy_cognitive_revision_unlocked` 把上一条 revision 逐字复制
+# 一份、只改 `lifecycle_state`(pending -> triggered / expired), plan_id 换成
+# `prospective-signal-plan-<authority>`, 并且**不写** evolution 血缘边 —— 它写
+# 的是 `prospective_mutation_outbox` + `prospective_trigger_event`。所以判据只
+# 对「内容真的变了」的 revision 要求血缘边。
+LIFECYCLE_PROVENANCE_PLAN_PREFIXES = (
+    "prospective-signal-plan",
+    "lifecycle-plan",
+)
 
 MANUAL_UI_TURNS = (16, 24)
 EXPECTED_TURNS = 24
@@ -987,6 +1003,130 @@ class Evidence:
             "other_lane_attempts_over_effective_budget": other_lane_over_eff,
         }
 
+    def own_user_message_tokens(self, inv: Invocation) -> int:
+        """这一次请求里**本轮用户自己那条消息**的 token 估算。
+
+        A6-3 的增长比要判的是 history/装配 质量有没有随轮次膨胀, 而不是用户
+        这一轮自己敲了多长。第 11 次的 T17 一次性发进来 18 KB 逐字目标文本,
+        它落在受保护的当轮 user 消息里(以及后续轮次里模型自己读回来的效果页),
+        既裁不掉也不该裁 —— 把它算进「增长」等于拿用户的输入长度当缺陷。
+
+        判据: role=user 且**不是**历史组包裹(`historical_causal_group` /
+        `metadata.source == primary_tool_history_v1`)的消息。历史组本身正是
+        要判的那块质量, 一个 token 都不能扣。
+        """
+        if inv.request is None:
+            return 0
+        total = 0
+        for msg in inv.request.get("messages") or []:
+            if not isinstance(msg, dict) or msg.get("role") != "user":
+                continue
+            meta = msg.get("metadata")
+            if isinstance(meta, dict) and meta.get("source") == HISTORY_MESSAGE_SOURCE:
+                continue
+            content = as_text(msg.get("content"))
+            if "historical_causal_group" in content:
+                continue
+            total += text_tokens(content)
+        return total
+
+    def reasoning_relay_observed_max(self) -> int:
+        """native.log 里能看到的 reasoning 回传峰值(观测不到时 0)。"""
+        best = 0
+        for m in REASONING_RELAY_RE.finditer(self.native_log):
+            best = max(best, int(m.group(1)))
+        return best
+
+    def turn_billing_series(self) -> dict[str, Any]:
+        """A6-3 增长比的**逐轮**序列 —— plan 写的是「后 8 轮/前 8 轮」。
+
+        旧实现拿 `sdk_provider_attempt_audit` 的**逐次尝试**行当轮次用: 一轮
+        ReAct 循环有几次就算几「轮」, 于是前 8 行全落在开头几轮的浅循环上、
+        后 8 行全落在末尾几轮的深循环里, 比的是「循环深度」而不是「轮次增长」。
+        第 11 次证据里这条口径给出 2.269, 而按真正的轮(= 一条前台 sdk_run_id)
+        聚合后是 0.999。
+
+        每轮的峰值 = 该轮各次尝试中 `usage.input_tokens` 的最大值; 调整后的
+        峰值再扣掉那一次自己的当轮 user 消息与(可观测的)reasoning 回传。
+        """
+        foreground = self.foreground_sdk_run_ids()
+        by_invocation = {inv.invocation_id: inv for inv in self.invocations()}
+        relay_max = self.reasoning_relay_observed_max()
+        rows: list[sqlite3.Row] = []
+        with contextlib.suppress(SchemaMissing):
+            columns = self.state.columns("sdk_provider_attempt_audit")
+            invocation_column = (
+                "invocation_id" if "invocation_id" in columns else "NULL"
+            )
+            reasoning_column = (
+                "reasoning_tokens" if "reasoning_tokens" in columns else "NULL"
+            )
+            rows = self.state.rows(
+                f"select {invocation_column} as invocation_id, input_tokens,"
+                f" {reasoning_column} as reasoning_tokens, settled_at"
+                " from sdk_provider_attempt_audit"
+                " where input_tokens is not null order by settled_at asc"
+            )
+        turns: dict[str, dict[str, int]] = {}
+        order: list[str] = []
+        own_max = 0
+        relay_subtracted_max = 0
+        prior_reasoning: dict[str, int] = {}
+        for r in rows:
+            inv = by_invocation.get(as_text(r["invocation_id"]))
+            run_id = inv.run_id if inv is not None else ""
+            # 归属不到调用行的审计行按前台算(与 `_item_a6_3_core` 同向)。
+            if foreground and inv is not None and run_id not in foreground:
+                continue
+            billed = int(r["input_tokens"])
+            own = self.own_user_message_tokens(inv) if inv is not None else 0
+            own_max = max(own_max, own)
+            # 观测到回传就扣「同 Run 更早尝试累计的 reasoning 输出」这个下界;
+            # 观测到 0(型号关了 thinking)就扣 0。
+            relay = prior_reasoning.get(run_id, 0) if relay_max else 0
+            relay = min(relay, max(0, billed - own))
+            relay_subtracted_max = max(relay_subtracted_max, relay)
+            key = run_id or as_text(r["invocation_id"])
+            if key not in turns:
+                turns[key] = {"raw": 0, "adjusted": 0}
+                order.append(key)
+            turns[key]["raw"] = max(turns[key]["raw"], billed)
+            turns[key]["adjusted"] = max(
+                turns[key]["adjusted"], max(0, billed - own - relay)
+            )
+            emitted = r["reasoning_tokens"]
+            if emitted is not None:
+                prior_reasoning[run_id] = prior_reasoning.get(run_id, 0) + int(emitted)
+        raw_series = [turns[k]["raw"] for k in order]
+        adjusted_series = [turns[k]["adjusted"] for k in order]
+
+        def _ratio(series: list[int]) -> tuple[int, int, float | None]:
+            if len(series) < 16:
+                return 0, 0, None
+            first = max(series[:8])
+            last = max(series[-8:])
+            return first, last, (round(last / first, 3) if first > 0 else None)
+
+        raw_first, raw_last, raw_ratio = _ratio(raw_series)
+        adj_first, adj_last, adj_ratio = _ratio(adjusted_series)
+        return {
+            "turns": len(order),
+            "raw_series": raw_series,
+            "adjusted_series": adjusted_series,
+            "raw_first8_max": raw_first,
+            "raw_last8_max": raw_last,
+            "raw_ratio": raw_ratio,
+            "adjusted_first8_max": adj_first,
+            "adjusted_last8_max": adj_last,
+            "adjusted_ratio": adj_ratio,
+            "own_user_message_tokens_max": own_max,
+            "reasoning_relay_observed_max": relay_max,
+            "reasoning_relay_tokens_subtracted_max": relay_subtracted_max,
+            "reasoning_relay_basis": (
+                "ledger_cumulative_prior_reasoning" if relay_max else "observed_zero"
+            ),
+        }
+
     def same_run_bound_numbers(self) -> dict[str, Any]:
         """A6-2 / A6-3 共用的同 Run 有界化取证块(附加在既有 numbers 之后)。"""
         out: dict[str, Any] = dict(self.receipt_bound_stats())
@@ -1324,19 +1464,40 @@ def _item_a6_3_core(ev: Evidence, budget: dict[str, Any], bound: dict[str, Any])
         if est > budget_value:
             est_over += 1
 
+    # 旧口径(逐次尝试)保留下来只作对照, 不再参与判定 —— 见
+    # `Evidence.turn_billing_series` 的 docstring 与
+    # DECISION-VERIFIER-RULES-2026-09-09.md §1。
     first8 = tokens[:8]
     last8 = tokens[-8:] if len(tokens) >= 16 else []
-    ratio = None
+    legacy_ratio = None
     if first8 and last8 and max(first8) > 0:
-        ratio = round(max(last8) / max(first8), 3)
+        legacy_ratio = round(max(last8) / max(first8), 3)
+    series = ev.turn_billing_series()
+    ratio = series["adjusted_ratio"]
 
     it.numbers = {
         "attempt_rows": len(tokens),
         "max_input_tokens": max(tokens) if tokens else 0,
-        "first8_max_input_tokens": max(first8) if first8 else 0,
-        "last8_max_input_tokens": max(last8) if last8 else 0,
+        # 前 4 个键的**位置**被 markdown brief 钉住, 但取值口径在 2026-09-09
+        # 改成了「逐轮 + 扣掉当轮自己的 user 消息与 reasoning 回传」。
+        "first8_max_input_tokens": series["adjusted_first8_max"],
+        "last8_max_input_tokens": series["adjusted_last8_max"],
         "growth_ratio_last8_over_first8": ratio,
         "growth_ratio_limit": 1.6,
+        "growth_basis": "per_turn_billed_minus_own_user_message_and_reasoning_relay",
+        "turns_with_billing": series["turns"],
+        "first8_max_turn_billed_raw": series["raw_first8_max"],
+        "last8_max_turn_billed_raw": series["raw_last8_max"],
+        "growth_ratio_raw_per_turn": series["raw_ratio"],
+        "first8_max_attempt_input_tokens": max(first8) if first8 else 0,
+        "last8_max_attempt_input_tokens": max(last8) if last8 else 0,
+        "growth_ratio_legacy_per_attempt": legacy_ratio,
+        "own_user_message_tokens_max": series["own_user_message_tokens_max"],
+        "reasoning_relay_observed_max": series["reasoning_relay_observed_max"],
+        "reasoning_relay_tokens_subtracted_max": series[
+            "reasoning_relay_tokens_subtracted_max"
+        ],
+        "reasoning_relay_basis": series["reasoning_relay_basis"],
         "window_tokens": budget["window_tokens"],
         "window_source": budget["window_source"],
         "effective_input_budget": budget_value,
@@ -1427,13 +1588,20 @@ def _item_a6_3_core(ev: Evidence, budget: dict[str, Any], bound: dict[str, Any])
         return it
     if ratio is not None and ratio > 1.6:
         it.verdict = FAIL
-        it.reason = f"后 8 轮 input_tokens 峰值是前 8 轮的 {ratio} 倍, 超过 1.6 倍上限。"
+        it.reason = (
+            f"后 8 轮调整后峰值是前 8 轮的 {ratio} 倍, 超过 1.6 倍上限"
+            f"(调整口径: 逐轮计费峰值扣掉当轮自己的 user 消息"
+            f"{series['own_user_message_tokens_max']} tok 峰值与 reasoning 回传"
+            f"{series['reasoning_relay_tokens_subtracted_max']} tok; 未调整的逐轮比 "
+            f"{series['raw_ratio']}, 旧的逐次尝试比 {legacy_ratio})。"
+        )
         return it
     if ratio is None:
         it.verdict = INCONCLUSIVE
         it.reason = (
             f"已观测到 {trim['trimmed_groups_total']} 次整组丢弃且 max_input_tokens="
-            f"{max(tokens)} < {budget_value}, 但样本不足 16 次, 无法做前后 8 轮增长比对。"
+            f"{max(tokens)} < {budget_value}, 但只有 {series['turns']} 轮有计费记录, "
+            "不足 16 轮, 无法做前后 8 轮增长比对。"
         )
         return it
     it.verdict = PASS
@@ -1442,7 +1610,9 @@ def _item_a6_3_core(ev: Evidence, budget: dict[str, Any], bound: dict[str, Any])
         f"provider 计费峰值 {billed['max_billed_input_tokens']} 亦在预算内"
         f"({billed['billed_attempts']} 次调用, planned 低估 "
         f"{billed['planned_under_counts_billed']} 条); "
-        f"后8/前8 峰值比 {ratio} ≤ 1.6; 观测到 {trim['trimmed_groups_total']} 次整组丢弃。"
+        f"后8/前8 轮调整后峰值比 {ratio} ≤ 1.6"
+        f"(未调整的逐轮比 {series['raw_ratio']}, 旧的逐次尝试比 {legacy_ratio}); "
+        f"观测到 {trim['trimmed_groups_total']} 次整组丢弃。"
         + lane_note(billed)
         + wire_gate_note(bound)
     )
@@ -1938,6 +2108,31 @@ def item_a6_6(ev: Evidence) -> Item:
     return it
 
 
+def _is_lifecycle_only_revision(previous: Any, current: Any) -> bool:
+    """这条 revision 是不是「只推进了生命周期」的那种(因此没有血缘边)。
+
+    充要条件是**内容一个字节都没变**: `content_hash` 与上一条相同。在此之上再
+    要求「lifecycle_state 真的变了」或者「plan_id 带调度器出身」, 免得把一条
+    内容相同、什么都没变的重复写入也放过去。
+
+    `content_hash` 取不到(旧证据目录没有这一列)时一律返回 False —— 认不出就
+    不给豁免, 方向 fail closed。
+    """
+    previous_hash = as_text(previous["content_hash"]) if previous is not None else ""
+    current_hash = as_text(current["content_hash"])
+    if not previous_hash or not current_hash or previous_hash != current_hash:
+        return False
+    lifecycle_moved = (
+        as_text(previous["lifecycle_state"]).lower()
+        != as_text(current["lifecycle_state"]).lower()
+    )
+    plan_id = as_text(current["plan_id"])
+    scheduler_provenance = any(
+        plan_id.startswith(prefix) for prefix in LIFECYCLE_PROVENANCE_PLAN_PREFIXES
+    )
+    return lifecycle_moved or scheduler_provenance
+
+
 def item_a6_7(ev: Evidence) -> Item:
     """A6-7: 纠正后 head 前进到新 revision, 旧 revision 只作为不可变历史留存。
 
@@ -1975,14 +2170,21 @@ def item_a6_7(ev: Evidence) -> Item:
     _HEAD_LIFECYCLES = {"active", "amended", "reinforced", "superseded",
                         "pending", "triggered", "in_progress", "rescheduled"}
     heads = ev.hm.rows("select memory_id, current_revision from cognitive_memory_heads")
+    # 生命周期豁免要的两列在早期证据目录里可能缺席; 缺了就退回「一律要求血缘边」
+    # (fail closed: 认不出生命周期推进就不给豁免)。
+    revision_columns = ev.hm.columns("cognitive_memory_revisions")
+    hash_column = "content_hash" if "content_hash" in revision_columns else "NULL"
+    plan_column = "plan_id" if "plan_id" in revision_columns else "NULL"
     multi: list[str] = []
     head_not_latest: list[tuple[str, int, int]] = []
     head_lifecycle_invalid: list[tuple[str, int, str]] = []
     missing_lineage: list[tuple[str, int]] = []
+    lifecycle_exempt: list[tuple[str, int, str]] = []
     for h in heads:
         mid = as_text(h["memory_id"])
         revs = ev.hm.rows(
-            "select revision, lifecycle_state, conflict_status from"
+            "select revision, lifecycle_state, conflict_status,"
+            f" {hash_column} as content_hash, {plan_column} as plan_id from"
             " cognitive_memory_revisions where memory_id=? order by revision asc",
             (mid,),
         )
@@ -2000,10 +2202,24 @@ def item_a6_7(ev: Evidence) -> Item:
             head_lifecycle_invalid.append(
                 (mid, cur, as_text(head_row["lifecycle_state"]))
             )
-        # 每一次 head 前进都必须留下一条 evolution 血缘边 rN -> rN-1。
+        # 每一次**内容**前进都必须留下一条 evolution 血缘边 rN -> rN-1;
+        # 纯生命周期推进(内容哈希不变, 只有 lifecycle_state 变 / 带调度器出身)
+        # 按 S3/S5c 契约本来就没有血缘边, 见 LIFECYCLE_PROVENANCE_PLAN_PREFIXES。
+        by_revision = {int(r["revision"]): r for r in revs}
         for r in revs:
             revision = int(r["revision"])
             if revision < 2:
+                continue
+            previous = by_revision.get(revision - 1)
+            if previous is not None and _is_lifecycle_only_revision(previous, r):
+                lifecycle_exempt.append(
+                    (
+                        mid,
+                        revision,
+                        f"{as_text(previous['lifecycle_state'])}->"
+                        f"{as_text(r['lifecycle_state'])}",
+                    )
+                )
                 continue
             lineage = ev.hm.rows(
                 "select 1 from cognitive_relations where relation_domain='evolution'"
@@ -2036,6 +2252,8 @@ def item_a6_7(ev: Evidence) -> Item:
         "head_not_latest_revision": head_not_latest[:3],
         "head_lifecycle_invalid": head_lifecycle_invalid[:3],
         "missing_evolution_lineage": missing_lineage[:3],
+        "lifecycle_only_revisions_exempted": len(lifecycle_exempt),
+        "lifecycle_only_revision_samples": lifecycle_exempt[:3],
         "lifecycle_states_observed": states,
         "evolution_relation_kinds": kinds,
     }
@@ -2053,12 +2271,17 @@ def item_a6_7(ev: Evidence) -> Item:
         return it
     if missing_lineage:
         it.verdict = FAIL
-        it.reason = f"{len(missing_lineage)} 个新 revision 缺少 evolution 血缘边: {missing_lineage[:3]}。"
+        it.reason = (
+            f"{len(missing_lineage)} 个**内容**新 revision 缺少 evolution 血缘边: "
+            f"{missing_lineage[:3]}(已豁免 {len(lifecycle_exempt)} 个纯生命周期推进)。"
+        )
         return it
     it.verdict = PASS
     it.reason = (
         f"{len(multi)} 条记忆出现新 revision, head 全部指向最新 revision 且其 lifecycle 合法"
-        f"(取值 {states}), 每次前进都有 evolution 血缘边(kind={kinds});"
+        f"(取值 {states}), 每次**内容**前进都有 evolution 血缘边(kind={kinds}), "
+        f"另有 {len(lifecycle_exempt)} 个纯生命周期推进按 S3/S5c 契约豁免"
+        f"{lifecycle_exempt[:3]};"
         f" 旧 revision 按 append-only 契约保持不可变快照, 不参与召回。"
     )
     return it
@@ -2670,6 +2893,125 @@ def _graph_needles(ev: Evidence) -> dict[str, set[str]]:
     return needles
 
 
+# A6-11 的「图谱形状」判据(2026-09-09)。本项要挡的是**图谱结构**进入 provider
+# context: 关系 id / 关系哈希 / 边键, 或者一个 memory_id 被放在图谱形状的载荷
+# 里(带 source_memory_id / target_memory_id / relation_kind ... 的对象)。
+# memory_id 出现在 **工具回执**、事件 V 的 `conflict_notice`、事件 Y / F-EPI-1
+# 的召回提示、以及 Prospective 到点提醒(`prospective_inbox`)里, 是这些机制
+# 本来就要求的可寻址回执, 不是图谱投影。
+GRAPH_SHAPED_PAYLOAD_KEYS = (
+    "twin_graph",
+    "graph_edge",
+    "relation_memory_id",
+    "relation_id",
+    "relation_hash",
+    "relation_kind",
+    "relation_domain",
+    "source_memory_id",
+    "target_memory_id",
+    "source_revision",
+    "target_revision",
+    '"edges"',
+)
+# 命中点前后各取这么多字符做「形状」判断: 够覆盖包住 memory_id 的那个 JSON
+# 对象, 又不至于把同一条消息里另一段无关文本算进来。
+GRAPH_SHAPE_WINDOW = 1200
+
+
+def _graph_shaped_around(content: str, needle: str) -> str:
+    """命中点附近是否是图谱形状的载荷; 是就返回命中的那个键, 否则空串。"""
+    index = 0
+    while True:
+        index = content.find(needle, index)
+        if index < 0:
+            return ""
+        window = content[
+            max(0, index - GRAPH_SHAPE_WINDOW) : index + len(needle) + GRAPH_SHAPE_WINDOW
+        ]
+        for key in GRAPH_SHAPED_PAYLOAD_KEYS:
+            if key in window:
+                return key
+        index += len(needle)
+
+
+def _memory_id_carriers(
+    inv: Invocation, values: Sequence[str]
+) -> tuple[dict[str, int], list[dict[str, str]]]:
+    """把一次请求里的 memory_id 命中按「谁带进来的」归类。
+
+    返回 (直方图, 结构性命中样本)。直方图的键形如
+    ``tool_result`` / ``history_group_tool_result`` / ``system:prospective_inbox``
+    / ``user`` / ``assistant``; 图谱形状的命中一律归到 ``graph_payload:<键>``,
+    并且只有它们才让本项 FAIL。
+    """
+    histogram: dict[str, int] = {}
+    structural: list[dict[str, str]] = []
+    if inv.request is None:
+        # 请求体解析不出来就没法归类 —— 按结构性命中记(fail closed)。
+        histogram["unparsable_request"] = len(values)
+        structural.extend(
+            {"invocation_id": inv.invocation_id[:12], "carrier": "unparsable_request",
+             "memory_id": v[-12:]}
+            for v in values[:3]
+        )
+        return histogram, structural
+    for msg in inv.request.get("messages") or []:
+        if not isinstance(msg, dict):
+            continue
+        content = as_text(msg.get("content"))
+        role = as_text(msg.get("role")) or "unknown"
+        meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+        source = as_text(meta.get("source"))
+        for value in values:
+            if not value or value not in content:
+                continue
+            shaped = _graph_shaped_around(content, value)
+            if shaped:
+                carrier = f"graph_payload:{shaped}"
+                structural.append(
+                    {
+                        "invocation_id": inv.invocation_id[:12],
+                        "role": role,
+                        "source": source,
+                        "key": shaped,
+                        "memory_id": value[-12:],
+                    }
+                )
+            elif role == "tool":
+                carrier = f"tool_result:{source}" if source else "tool_result"
+            elif role == "system":
+                carrier = f"system:{source}" if source else "system"
+            elif role == "user" and "historical_causal_group" in content:
+                carrier = (
+                    "history_group_tool_result"
+                    if _in_history_group_tool_message(content, value)
+                    else "history_group_user_or_assistant"
+                )
+            else:
+                carrier = role
+            histogram[carrier] = histogram.get(carrier, 0) + 1
+    return histogram, structural
+
+
+def _in_history_group_tool_message(content: str, value: str) -> bool:
+    """历史组包裹里, 这个 memory_id 是不是只出现在组内的 role=tool 消息上。"""
+    start = content.find("{")
+    if start < 0:
+        return False
+    in_tool = False
+    for obj in json_objects(content, start):
+        if not isinstance(obj, dict) or obj.get("kind") != "historical_causal_group":
+            continue
+        for m in obj.get("messages") or []:
+            if not isinstance(m, dict) or value not in as_text(m.get("content")):
+                continue
+            if m.get("role") == "tool":
+                in_tool = True
+            else:
+                return False
+    return in_tool
+
+
 def _memory_id_only_in_tool_results(inv: Invocation, values: Iterable[str]) -> bool:
     """判断 memory_id 命中是否只出现在 tool 回执内容里(模型自己调用工具的回声)。"""
     if inv.request is None:
@@ -2716,17 +3058,23 @@ def item_a6_11(ev: Evidence, strict: bool) -> Item:
     structural_samples: list[str] = []
     memory_hits_tool_only = True
     memory_hit_values: set[str] = set()
+    carriers: dict[str, int] = {}
+    structural_memory_hits: list[dict[str, str]] = []
     for inv in invs:
         text = inv.request_json_text
         for key in ("relation_id", "relation_hash"):
             found = [v for v in needles[key] if v and v in text]
             hits[key] += len(found)
-        mem_found = [v for v in needles["memory_id"] if v and v in text]
+        mem_found = sorted(v for v in needles["memory_id"] if v and v in text)
         if mem_found:
             hits["memory_id"] += len(mem_found)
             memory_hit_values.update(mem_found)
             if not _memory_id_only_in_tool_results(inv, mem_found):
                 memory_hits_tool_only = False
+            histogram, structural = _memory_id_carriers(inv, mem_found)
+            for carrier, count in histogram.items():
+                carriers[carrier] = carriers.get(carrier, 0) + count
+            structural_memory_hits.extend(structural)
         for key in GRAPH_STRUCTURAL_NEEDLES:
             if key in text:
                 hits["structural"] += 1
@@ -2755,6 +3103,9 @@ def item_a6_11(ev: Evidence, strict: bool) -> Item:
         "hits_relation_hash": hits["relation_hash"],
         "hits_memory_id": hits["memory_id"],
         "hits_memory_id_only_in_tool_results": memory_hits_tool_only,
+        "memory_id_hit_histogram": dict(sorted(carriers.items())),
+        "memory_id_hits_in_graph_payload": len(structural_memory_hits),
+        "memory_id_graph_payload_samples": structural_memory_hits[:3],
         "hits_graph_structural_keys": hits["structural"],
         "structural_samples": structural_samples,
         "ui_turn_invocation_delta": ui_delta,
@@ -2766,24 +3117,35 @@ def item_a6_11(ev: Evidence, strict: bool) -> Item:
         return it
     bad_ui = [k for k, v in ui_delta.items() if isinstance(v, int) and v != 0]
     unknown_ui = [k for k, v in ui_delta.items() if v is None]
+    # 本项判的是「**图谱结构**不进入 provider context」。memory_id 出现在工具
+    # 回执、事件 V 的 conflict_notice、事件 Y / F-EPI-1 的召回提示、以及
+    # Prospective 到点提醒里, 是这些机制本来就要求的可寻址回执 —— 直方图照报,
+    # 但不判 FAIL。只有落在图谱形状载荷里的 memory_id 才与 relation_id /
+    # relation_hash / 结构键同级。
     hard = hits["relation_id"] + hits["relation_hash"] + hits["structural"]
     if strict:
         hard += hits["memory_id"]
-    elif hits["memory_id"] and not memory_hits_tool_only:
-        hard += hits["memory_id"]
+    else:
+        hard += len(structural_memory_hits)
     if hard:
         it.verdict = FAIL
         it.reason = (
             f"request_json 命中图谱标识: relation_id={hits['relation_id']}, "
             f"relation_hash={hits['relation_hash']}, 结构键={hits['structural']}, "
-            f"memory_id={hits['memory_id']}(严格模式={strict})。"
+            f"图谱形状载荷里的 memory_id={len(structural_memory_hits)}"
+            f"{json.dumps(structural_memory_hits[:3], ensure_ascii=False)}, "
+            f"memory_id 命中合计={hits['memory_id']}(严格模式={strict}), "
+            f"载体分布={json.dumps(dict(sorted(carriers.items())), ensure_ascii=False)}。"
         )
         return it
     note = ""
     if hits["memory_id"]:
         note = (
-            f" 注: 有 {hits['memory_id']} 次 memory_id 命中, 但全部落在 tool 回执内容里"
-            "(模型自己调用工具后的返回值回声), 非图谱投影; --strict-a6-11 下会判 FAIL。"
+            f" 注: 有 {hits['memory_id']} 次 memory_id 命中, 载体分布 "
+            f"{json.dumps(dict(sorted(carriers.items())), ensure_ascii=False)} —— "
+            "全部是回执/通知类载体(工具回执、conflict_notice、召回提示、"
+            "Prospective 到点提醒), 没有一次落在图谱形状载荷里, 非图谱投影; "
+            "--strict-a6-11 下会判 FAIL。"
         )
     if bad_ui:
         it.verdict = FAIL
