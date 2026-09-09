@@ -66,9 +66,14 @@ from deskpet.workflows.effects import PreparedToolCall
 # bound workspace root.  Every name is PROJECT_EFFECT with route and TaskScope
 # REQUIRED, so the SDK react barrier + Host TaskExecutionEnvelope + EffectGate
 # guard each physical effect.  Read-class Tools (read_file/file_read/glob/
-# file_glob/grep/file_grep/list_directory/doc_read) keep the SDK default and
-# stay subject only to the workspace projection filter.  ``task_scope_update``
-# joins as a direct NON_PROJECT_EFFECT kernel Tool in Task 3.
+# file_glob/grep/file_grep/list_directory/doc_read) keep the SDK default
+# (NON_PROJECT_EFFECT, route/TaskScope OPTIONAL) so the frozen record contract
+# and the describe->activate nonce/hash chain are unchanged; since F-Z1 the
+# four Run-workspace read Tools are instead admitted per call by
+# ``deskpet.sdk_adapters.read_gate.WorkspaceReadGate`` (durable context_route
+# task decision -> verified S4 binding root -> path containment).
+# ``task_scope_update`` joins as a direct NON_PROJECT_EFFECT kernel Tool in
+# Task 3.
 PROJECT_EFFECT_TOOL_NAMES: tuple[str, ...] = (
     "write_file",
     "file_write",
@@ -105,6 +110,28 @@ SDK_TOOL_EXECUTION_POLICY_OVERRIDES: dict[str, tuple[str, str, str]] = {
 }
 
 
+
+# S5b design-freeze §1 + F-Z1: the read-class built-ins that read *inside* the
+# bound workspace root.  They keep the SDK default execution policy (their
+# frozen record and describe->activate hash chain are unchanged), and are
+# admitted per call by ``read_gate.WorkspaceReadGate``: a durable
+# ``context_route`` task decision, that route's exact binding root, and path
+# containment inside it.  Exactly the four whose target is a single ``path``
+# argument and whose handlers consume the projected workspace root; every other
+# read-class Tool (``file_read``/``file_glob``/``file_grep``/``doc_read``)
+# stays ``requires_project`` and is dropped from a projectless projection.
+PROJECT_READ_TOOL_NAMES: tuple[str, ...] = (
+    "read_file",
+    "glob",
+    "grep",
+    "list_directory",
+)
+
+# Names a ``primary_route_capable`` projectless Run may still expose: both
+# families are exposed-then-gated-at-call-time, never unbound.
+_PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES: frozenset[str] = frozenset(
+    (*PROJECT_EFFECT_TOOL_NAMES, *PROJECT_READ_TOOL_NAMES)
+)
 
 SDK_TOOL_AUTHORITY_RECORD_KIND = "deskpet.sdk-tool-authority"
 
@@ -702,10 +729,17 @@ class SdkRunToolAuthorityRegistry:
             if projectless_admission not in {"safe", "requires_project"}:
                 raise ValueError(f"{name}.projectless_admission is invalid")
             effect_class, manifest_dangerous = frozen_tool_effect(name, inventory_item)
+            # ``task_scope_id is None`` is the frozen ``primary_route_capable``
+            # fact.  Such a Run may carry the two call-gated families and
+            # nothing else: PROJECT_EFFECT (react barrier + envelope +
+            # EffectGate) and the F-Z1 read family (WorkspaceReadGate).
             if (
                 normalized_workspace_resolution["kind"] == "projectless"
                 and projectless_admission != "safe"
-                and not (task_scope_id is None and name in PROJECT_EFFECT_TOOL_NAMES)
+                and not (
+                    task_scope_id is None
+                    and name in _PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES
+                )
             ):
                 raise RuntimeError("projectless_catalog_contains_project_tool")
             function_schema = {
@@ -1508,6 +1542,16 @@ PROJECT_EFFECT_ROUTE_NEXT_ACTION = (
 #   * the Run is unrouted -> context_route now so the *next* Run is scoped, and
 #     stop searching in this one;
 #   * nothing of the kind can ever be reached here -> say so and stop.
+#
+# F-Z1 (2026-09-09) closed the asymmetry the incident-Z memo recorded as a
+# followup: ``read_file``/``glob``/``grep``/``list_directory`` are now exposed
+# in a ``primary_route_capable`` projectless Run behind a call-time gate
+# (``read_gate.WorkspaceReadGate``), exactly as the write family is exposed
+# behind the react barrier + TaskExecutionEnvelope + EffectGate.  So the
+# "unrouted" branch below no longer says "from the next Run": routing inside
+# this Run is what unlocks both families here.  The branch still exists for
+# every read/write capability the projection genuinely left out (``doc_read``,
+# ``file_read``, MCP filesystem tools, …).
 WORKSPACE_READ_TOOL_NAMES: tuple[str, ...] = (
     "read_file",
     "file_read",
@@ -1569,8 +1613,10 @@ _UNSCOPED_ALTERNATIVES_ACTION = (
     "This capability is not bound to the Run workspace and cannot be activated "
     "in this Run. Do not retry tool_activate for it. Workspace file tools that "
     "ARE activatable in this Run: {names} — reach them via tool_describe -> "
-    "tool_activate; project file effects such as edit_file/write_file require "
-    "calling context_route first so the task scope and workspace root are bound."
+    "tool_activate; both reading and writing a task workspace require calling "
+    "context_route first (create_new / resume_existing / continue_active) so "
+    "the task scope and workspace root are bound, and both work in this same "
+    "Run once that route is committed."
 )
 _UNSCOPED_PREPARE_ACTION = (
     "This Run is bound to a task whose workspace root is not prepared, so no "
@@ -1582,14 +1628,16 @@ _UNSCOPED_PREPARE_ACTION = (
     "directory."
 )
 _UNSCOPED_UNROUTED_ACTION = (
-    "This Run is not bound to a task, so its tool projection was frozen without "
-    "any workspace file capability, and no action inside this Run can widen it. "
-    "Do not retry tool_activate and do not call tool_search for file tools "
-    "again — the result will not change. Call context_route once "
-    "(create_new / resume_existing / continue_active) to bind the task: the "
-    "workspace file tools become activatable from the next Run of this "
-    "conversation. In this Run, answer the user with what you already have and "
-    "say which part needs the bound task workspace."
+    "This Run is not bound to a task, and this particular capability was left "
+    "out of the projection frozen at Run start, so no action inside this Run "
+    "can activate it. Do not retry tool_activate for it and do not call "
+    "tool_search for it again — the result will not change. Call context_route "
+    "once (create_new / resume_existing / continue_active) to bind the task, "
+    "then use the built-in workspace file tools this Run already exposes: they "
+    "are gated per call on the bound task workspace, so they start working in "
+    "this same Run as soon as the route is committed. If none of them fits, "
+    "answer the user with what you already have and say which part needs the "
+    "bound task workspace."
 )
 _UNSCOPED_UNREACHABLE_ACTION = (
     "No workspace file capability of this kind can be activated in this Run, "

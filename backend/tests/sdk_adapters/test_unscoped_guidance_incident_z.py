@@ -63,9 +63,14 @@ from tests.sdk_adapters.test_tool_activate_unavailable_disclosure import (
 
 RUN_ID = "product-sdk-incident-z"
 READ_FILE = "builtin:read_file"
+# F-Z1 admits read_file/glob/grep/list_directory into a route-capable
+# projectless Run behind the call-time WorkspaceReadGate.  ``file_read`` is the
+# read-class Tool that stays ``requires_project`` and is still dropped there,
+# so it is the one that exercises the ``workspace_unscoped`` guidance now.
+UNSCOPED_READ = "builtin:file_read"
 WORKSPACE_PREPARE = "builtin:workspace_prepare"
 # 事件 Z 第 6 轮用户原话（截断到断言需要的部分）。
-INCIDENT_QUERY = "read_file"
+INCIDENT_QUERY = "read file"
 
 # 与证据里 turn 6 的 capability 集合同构：读类 + 写类 + 直连内核。
 _TOOLS: tuple[tuple[str, str, str], ...] = (
@@ -75,12 +80,14 @@ _TOOLS: tuple[tuple[str, str, str], ...] = (
     ("context_route", "safe", "context"),
     ("read_file", "requires_project", "async"),
     ("list_directory", "requires_project", "async"),
+    ("file_read", "requires_project", "async"),
     ("edit_file", "requires_project", "async"),
     ("write_file", "requires_project", "async"),
     ("workspace_prepare", "requires_project", "control"),
 )
 _DESCRIPTIONS = {
     "read_file": "Read a UTF-8 text file from the Run workspace. read file text.",
+    "file_read": "Read a workspace document by path. read file text.",
     "list_directory": "List a directory inside the Run workspace. read file.",
     "edit_file": "Edit a file inside the Run workspace. write file.",
     "write_file": "Write a file inside the Run workspace. write file.",
@@ -215,13 +222,43 @@ class _ProjectlessRun:
 # --------------------------------------------------------------------------
 
 
-def test_incident_z_projection_drops_read_tools_and_keeps_project_effects() -> None:
+def test_incident_z_projection_now_carries_the_gated_read_family() -> None:
+    """F-Z1：能路由的 projectless Run 里读类与写类**同时**在投影内。
+
+    事件 Z 当时的断言是 ``read_file`` / ``list_directory`` 被裁掉（Run 能写不能读）。
+    F-Z1 把这条不对称关掉：这四个读类工具照样暴露，但每次**调用**都要过
+    ``WorkspaceReadGate``（durable context_route 任务决定 → 该路由的精确绑定根 →
+    路径包含性）。不在这四个之内的读类（``file_read``）仍是 ``requires_project``，
+    仍被裁掉、仍走 ``workspace_unscoped`` 指引。
+    """
+
     run = _ProjectlessRun(routed=False)
-    assert "read_file" not in run.visible
-    assert "list_directory" not in run.visible
-    # 证据 capability_snapshot 里确实有这几个。
+    assert {"read_file", "list_directory"} <= run.visible
+    # 证据 capability_snapshot 里确实有这几个；写类一条不少。
     assert {"edit_file", "write_file", "workspace_prepare"} <= run.visible
-    assert run.registry.unavailable_reason(RUN_ID, READ_FILE) == "workspace_unscoped"
+    assert run.registry.unavailable_reason(RUN_ID, READ_FILE) is None
+    # 未纳入 F-Z1 读闸门的读类工具仍被裁。
+    assert "file_read" not in run.visible
+    assert run.registry.unavailable_reason(RUN_ID, UNSCOPED_READ) == "workspace_unscoped"
+
+
+@pytest.mark.asyncio
+async def test_read_file_is_activatable_in_the_unrouted_run() -> None:
+    """事件 Z 第 6 轮那一步现在能走通：describe -> activate 不再被拒。"""
+
+    run = _ProjectlessRun(routed=False)
+    described = _value(await run.invoke("tool_describe", {"capability_id": READ_FILE}))
+    assert described["activatable"] is True
+    assert described.get("availability_reason") in (None, "")
+    result = await run.invoke(
+        "tool_activate",
+        {
+            "capability_id": READ_FILE,
+            "schema_hash": described["schema_hash"],
+            "describe_nonce": described["describe_nonce"],
+        },
+    )
+    assert result.outcome is ToolOutcome.SUCCEEDED, result.public_message
 
 
 # --------------------------------------------------------------------------
@@ -230,13 +267,15 @@ def test_incident_z_projection_drops_read_tools_and_keeps_project_effects() -> N
 
 
 @pytest.mark.asyncio
-async def test_activate_read_file_rejection_names_route_not_itself() -> None:
+async def test_activate_unscoped_read_rejection_names_the_gated_reads_not_itself() -> None:
     run = _ProjectlessRun(routed=False)
-    described = _value(await run.invoke("tool_describe", {"capability_id": READ_FILE}))
+    described = _value(
+        await run.invoke("tool_describe", {"capability_id": UNSCOPED_READ})
+    )
     result = await run.invoke(
         "tool_activate",
         {
-            "capability_id": READ_FILE,
+            "capability_id": UNSCOPED_READ,
             "schema_hash": described["schema_hash"],
             "describe_nonce": described["describe_nonce"],
         },
@@ -247,19 +286,33 @@ async def test_activate_read_file_rejection_names_route_not_itself() -> None:
     payload_next = message.split("(availability_reason=workspace_unscoped).", 1)[1]
 
     # (a) 事件 Z 的自指句消失：next_action 不得再把被拒的能力当成出路。
-    assert "read_file" not in payload_next
+    assert "file_read" not in payload_next
     assert "Use the built-in workspace file tools instead" not in message
 
-    # (b) 未绑定任务的 Run：唯一能执行的一步是 context_route，且必须说明它对
-    #     本 Run 无效（投影在 Run 起始冻结），否则模型会原地重试。
+    # (b) 本 Run 真能走的一步：同类（读↔读）里确实暴露着的那几个。
+    assert "builtin:read_file" in payload_next
+    assert "builtin:list_directory" in payload_next
+    # (c) F-Z1 之后读与写同口径：先 context_route，本 Run 内即可用。
     assert "context_route" in payload_next
-    assert "next Run" in payload_next
-    assert "frozen" in payload_next
-
-    # (c) 明确关掉事件 Z 的两个循环：tool_activate 重试与 tool_search 刷屏。
+    assert "this same Run" in payload_next
     assert "Do not retry tool_activate" in payload_next
-    assert "do not call tool_search" in payload_next
-    assert "answer the user with what you already have" in payload_next.lower()
+
+
+def test_unrouted_branch_no_longer_defers_reads_to_the_next_run() -> None:
+    """事件 Z 的「下一个 Run 才能用」在 F-Z1 之后是错的，必须改口。"""
+
+    facts = RunAvailabilityFacts(
+        routed=False, workspace_bound=False, exposed_tool_names=frozenset()
+    )
+    action = unavailable_capability_next_action(
+        "workspace_unscoped", capability_id=UNSCOPED_READ, facts=facts
+    )
+    assert "next Run" not in action
+    assert "context_route" in action
+    assert "this same Run" in action
+    assert "Do not retry tool_activate" in action
+    assert "do not call tool_search" in action
+    assert "answer the user with what you already have" in action.lower()
 
 
 @pytest.mark.asyncio
@@ -325,22 +378,22 @@ async def test_search_hit_carries_reason_and_the_same_next_step() -> None:
     run = _ProjectlessRun(routed=False)
     value = _value(await run.invoke("tool_search", {"query": INCIDENT_QUERY}))
     by_id = {item["capability_id"]: item for item in value["matches"]}
-    assert READ_FILE in by_id, value
-    hit = by_id[READ_FILE]
+    assert UNSCOPED_READ in by_id, value
+    hit = by_id[UNSCOPED_READ]
     assert hit["activatable"] is False
     assert hit["availability_reason"] == "workspace_unscoped"
     assert "context_route" in hit["next_action"]
-    assert "do not call tool_search" in hit["next_action"]
+    assert "builtin:read_file" in hit["next_action"]
     # 页级提示走同一条文案，模型翻页也读不到自指句。
     assert value["unavailable_count"] >= 1
     assert "Use the built-in workspace file tools instead" not in value["next_action"]
-    assert "do not call tool_search" in value["next_action"]
+    assert "context_route" in value["next_action"]
 
 
 @pytest.mark.asyncio
 async def test_describe_hit_carries_reason_and_the_same_next_step() -> None:
     run = _ProjectlessRun(routed=False)
-    value = _value(await run.invoke("tool_describe", {"capability_id": READ_FILE}))
+    value = _value(await run.invoke("tool_describe", {"capability_id": UNSCOPED_READ}))
     assert value["activatable"] is False
     assert value["availability_reason"] == "workspace_unscoped"
     assert "Do not call tool_activate for this capability_id." in value["next_action"]
