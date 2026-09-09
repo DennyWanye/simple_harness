@@ -100,7 +100,13 @@ def _compile_contest(raw, span, *, item, candidates):
     slot = (str(body.get("subject_entity") or ""), str(body.get("predicate") or ""))
     if slot != (old["subject_entity"], old["predicate"]):
         raise legacy.AnalysisProposalRejected(CONTEST_SLOT_MISMATCH)
-    if legacy._strings(body.get("qualifiers")) != tuple(old.get("qualifiers", ())):
+    # Event AJ: a CONTEST never writes the model's qualifiers — the payload below is built
+    # from the incumbent's, and the SDK pins the slot besides.  So an omitted list is not an
+    # assertion about the slot and must not cost the whole contest (HM-TO-A6 attempt 12 lost
+    # A6-8 to exactly that).  A non-empty list that differs still is an assertion, and is
+    # still refused.
+    contested_qualifiers = legacy._strings(body.get("qualifiers"))
+    if contested_qualifiers and contested_qualifiers != tuple(old.get("qualifiers", ())):
         raise legacy.AnalysisProposalRejected(CONTEST_SLOT_MISMATCH, reason="qualifiers")
     value = str(body.get("object_value") or "")
     if not value or value == old["object_value"] or value not in span.exact_quote:

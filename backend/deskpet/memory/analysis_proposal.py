@@ -432,14 +432,27 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
                 raise AnalysisProposalRejected('analysis_explicit_correction_intent_missing')
             if sum(c.get('correction_intent') is not None and c['correction_intent']['evidence_id'] == approval['evidence_id'] and c['correction_intent']['exact_quote'] == approval['exact_quote'] for c in candidates) != 1:
                 raise AnalysisProposalRejected('analysis_correction_candidate_ambiguous')
-            same_slot = [c for c in candidates if (c["payload"]["subject_entity"], c["payload"]["predicate"]) == (old["subject_entity"], old["predicate"])]
-            if len(same_slot) != 1:
-                raise AnalysisProposalRejected("analysis_correction_candidate_ambiguous")
+            # Event AJ: the target is identified by the Host's own grammar, never by the
+            # predicate.  Both grammars bind the *old value* — the template embeds it
+            # verbatim, and ``_discriminating_anchor`` only yields an anchor no other
+            # candidate's value contains — and the count just above already proves exactly
+            # one issued candidate carries an intent for this sentence.  The predicate is a
+            # free-form string the model minted when the memory was first written, with no
+            # Host registry behind it, so two unrelated facts can land in one slot
+            # (HM-TO-A6 attempt 12: ``user:self · workflow_environment_preference`` held both
+            # the Python version and the archive directory).  Counting that collision as
+            # ambiguity refused a correction the Host had uniquely grounded and left the
+            # memory at revision 1.
             if (payload.subject_entity, payload.predicate) != (old["subject_entity"], old["predicate"]):
                 raise AnalysisProposalRejected("analysis_correction_slot_mismatch")
             if payload.object_value not in span.exact_quote or payload.object_value == old["object_value"]:
                 raise AnalysisProposalRejected("analysis_correction_new_value_not_supported")
-            if tuple(payload.qualifiers) != tuple(old.get('qualifiers', ())):
+            # Host owns the slot, model owns the replacement: qualifiers are the incumbent's
+            # decoration, so an omitted list is not an assertion and inherits them.  A
+            # non-empty list that differs *is* an assertion about the slot, and is refused.
+            if not tuple(payload.qualifiers):
+                payload = replace(payload, qualifiers=tuple(old.get('qualifiers', ())))
+            elif tuple(payload.qualifiers) != tuple(old.get('qualifiers', ())):
                 raise AnalysisProposalRejected('analysis_correction_qualifiers_mismatch')
             privacy = PrivacyClass(candidate['privacy_class'])
             attributes = tuple(InformationAttribute(a) for a in candidate['information_attributes'])
