@@ -13,6 +13,7 @@
  * contract (snake_case fields) is frozen in types/messages.ts.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 
 import { Icon } from "./Icon";
 import { EmbedderStatusCard } from "./EmbedderStatusCard";
@@ -218,7 +219,7 @@ export function SettingsPanel({
         {/* ================ 自动模式 (P4-S21 #13) ================ */}
         <section style={sectionStyle}>
           <h3 style={h3Style}>权限</h3>
-          <AutoModeToggle getChannel={getChannel} lastMessage={lastMessage} />
+          <AutoModeToggle getChannel={getChannel} />
           <ChatTurnTimeoutSetting getChannel={getChannel} />
         </section>
 
@@ -439,76 +440,174 @@ function UpdateSection() {
 // ----------------------------------------------------------------------
 // P4-S21 #13 — Auto mode toggle.
 //
-// The backend policy is authoritative; localStorage is only a display cache
-// while reconnecting. Auto handles only requests classified as auto-eligible:
-// deny, confirm-only, health and platform gates remain in force.
+// MM-D4（2026-09-09）：复选框只渲染后端权威策略（workflow.db 的
+// CapabilityStore，见 backend/main.py `_authorization_policy_snapshot`）。
+// 快照到达前 `policy === null` = 加载中：复选框 disabled 且不勾选，任何
+// 点击都不会被解释成对某个默认值的翻转。localStorage 只写不读，仅为
+// CapabilityCenterPanel 的显示缓存保鲜——它不再参与本开关的初始状态。
+// Auto 只处理策略判定可自动放行的请求：deny、健康与平台闸门仍然生效。
 // ----------------------------------------------------------------------
-function AutoModeToggle({
+export interface AuthorizationPolicyView {
+  mode: "auto" | "manual";
+  generation: number;
+  provenance: string;
+}
+
+export function buildAutoModeGetMessage(requestId: string) {
+  return {
+    type: "permission_auto_mode_get",
+    request_id: requestId,
+    payload: {},
+  };
+}
+
+/** MM-D4：写入必须显式携带目标模式，而不是「翻转我以为的当前值」。 */
+export function buildAutoModeSetMessage(enabled: boolean, requestId: string) {
+  return {
+    type: "permission_auto_mode_set",
+    request_id: requestId,
+    payload: { enabled },
+  };
+}
+
+export function readAutoModePolicy(
+  message: IncomingMessage,
+): AuthorizationPolicyView | null {
+  if (message.type !== "permission_auto_mode_response") return null;
+  const payload = (message.payload ?? {}) as {
+    enabled?: unknown;
+    mode?: unknown;
+    generation?: unknown;
+    provenance?: unknown;
+  };
+  const mode: "auto" | "manual" =
+    payload.mode === "auto" || payload.mode === "manual"
+      ? payload.mode
+      : payload.enabled
+        ? "auto"
+        : "manual";
+  const generation = Number(payload.generation);
+  return {
+    mode,
+    generation: Number.isFinite(generation) && generation >= 0 ? generation : 0,
+    provenance:
+      typeof payload.provenance === "string" ? payload.provenance : "unknown",
+  };
+}
+
+export function AutoModeToggle({
   getChannel,
-  lastMessage,
 }: {
   getChannel: () => ControlChannel | null;
-  lastMessage: IncomingMessage | null;
 }) {
-  const [enabled, setEnabled] = useState<boolean>(() => {
-    try {
-      const cached = localStorage.getItem("deskpet.auto_mode");
-      return cached === null ? true : cached === "true";
-    }
-    catch { return true; }
-  });
+  // null = 尚未拿到权威快照（加载中）。绝不用默认值占位。
+  const [policy, setPolicy] = useState<AuthorizationPolicyView | null>(null);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
+  const policyRef = useRef<AuthorizationPolicyView | null>(null);
+
+  const nextRequestId = useCallback((kind: "get" | "set") => {
+    requestSeqRef.current += 1;
+    return `permission-auto-mode-${kind}-${requestSeqRef.current}`;
+  }, []);
+
+  const applyPolicy = useCallback((next: AuthorizationPolicyView) => {
+    // 代次单调：CAS 只会让 generation 递增，落后的快照（例如写入
+    // 途中到达的旧 get 回执）不得把界面拉回写前状态。
+    const current = policyRef.current;
+    if (current && next.generation < current.generation) return;
+    policyRef.current = next;
+    setPolicy(next);
+    try {
+      localStorage.setItem("deskpet.auto_mode", String(next.mode === "auto"));
+    } catch {
+      /* localStorage full / disabled — 后端仍是权威，非致命 */
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let attempts = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let unsubMessage: (() => void) | null = null;
+    let unsubState: (() => void) | null = null;
 
-    const requestBackendState = () => {
+    const requestCurrentPolicy = (ch: ControlChannel) => {
+      if (cancelled) return;
+      // ControlChannel.send() 在 socket 未 OPEN 时静默丢帧并返回 false
+      // （ws/ControlChannel.ts），旧实现只捕获异常 → get 被丢掉后永不重发，
+      // 界面就一直停在默认值上。这里必须检查返回值并重试。
+      let sent = false;
+      try {
+        sent = ch.send(buildAutoModeGetMessage(nextRequestId("get")));
+      } catch {
+        sent = false;
+      }
+      if (!sent) {
+        retryTimer = setTimeout(() => requestCurrentPolicy(ch), 500);
+      }
+    };
+
+    const attach = () => {
       if (cancelled) return;
       const ch = getChannel();
       if (!ch) {
-        if (attempts++ < 10) timer = setTimeout(requestBackendState, 250);
+        retryTimer = setTimeout(attach, 500);
         return;
       }
-      try {
-        ch.send({ type: "permission_auto_mode_get", payload: {} });
-      } catch {
-        if (attempts++ < 10) timer = setTimeout(requestBackendState, 250);
-      }
+      unsubMessage?.();
+      unsubState?.();
+      unsubMessage = ch.onMessage((msg: IncomingMessage) => {
+        const next = readAutoModePolicy(msg);
+        if (!next) return;
+        applyPolicy(next);
+        setPending(false);
+        setErr(null);
+      });
+      unsubState = ch.onStateChange((state) => {
+        if (state === "connected") requestCurrentPolicy(ch);
+      });
+      // 重连/重挂载时通道已缓存了每种类型的最新一帧，先用它渲染。
+      const cached = ch.getLatestMessage("permission_auto_mode_response");
+      const cachedPolicy = cached ? readAutoModePolicy(cached) : null;
+      if (cachedPolicy) applyPolicy(cachedPolicy);
+      requestCurrentPolicy(ch);
     };
 
-    requestBackendState();
+    attach();
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
+      if (retryTimer) clearTimeout(retryTimer);
+      unsubMessage?.();
+      unsubState?.();
     };
-  }, [getChannel]);
+  }, [applyPolicy, getChannel, nextRequestId]);
 
-  useEffect(() => {
-    if (lastMessage?.type !== "permission_auto_mode_response") return;
-    const next = Boolean(lastMessage.payload?.enabled);
-    setEnabled(next);
-    setPending(false);
-    try { localStorage.setItem("deskpet.auto_mode", String(next)); }
-    catch { /* localStorage full / disabled - non-fatal */ }
-  }, [lastMessage]);
+  const onToggle = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      // 加载中不可交互（input disabled），这里再兜一层：没有权威快照
+      // 就不写。写入携带用户实际想要的目标模式，而不是 !enabled。
+      if (!policyRef.current) return;
+      const target = event.target.checked;
+      setErr(null);
+      setPending(true);
+      try {
+        const ch = getChannel();
+        if (!ch) throw new Error("控制通道未连接");
+        if (!ch.send(buildAutoModeSetMessage(target, nextRequestId("set")))) {
+          throw new Error("控制通道未连接");
+        }
+      } catch (e) {
+        setErr(String(e));
+        setPending(false);
+      }
+    },
+    [getChannel, nextRequestId],
+  );
 
-  const onToggle = useCallback(() => {
-    setErr(null);
-    setPending(true);
-    const next = !enabled;
-    try {
-      const ch = getChannel();
-      if (!ch) throw new Error("控制通道未连接");
-      ch.send({ type: "permission_auto_mode_set", payload: { enabled: next } });
-      setEnabled(next);
-    } catch (e) {
-      setErr(String(e));
-      setPending(false);
-    }
-  }, [enabled, getChannel]);
+  const loading = policy === null;
+  const checked = policy?.mode === "auto";
+  const disabled = loading || pending;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -518,20 +617,32 @@ function AutoModeToggle({
           alignItems: "center",
           gap: 8,
           fontSize: 13,
-          cursor: pending ? "default" : "pointer",
-          opacity: pending ? 0.6 : 1,
+          cursor: disabled ? "default" : "pointer",
+          opacity: disabled ? 0.6 : 1,
         }}
       >
         <input
           type="checkbox"
-          checked={enabled}
+          data-testid="permission-auto-mode"
+          checked={checked}
           onChange={onToggle}
-          disabled={pending}
+          disabled={disabled}
         />
         <span>
           自动模式（推荐）：自动处理符合策略的请求
         </span>
       </label>
+      <span
+        data-testid="permission-auto-mode-status"
+        style={{ fontSize: 11, color: dark.textMuted }}
+      >
+        {loading
+          ? "正在读取授权策略…"
+          : pending
+            ? "保存中…"
+            : `当前：${policy.mode === "auto" ? "自动" : "手动"}` +
+              `（策略代次 ${policy.generation} · ${policy.provenance}）`}
+      </span>
       <p style={{ fontSize: 11, color: dark.textMuted, margin: 0, lineHeight: 1.5 }}>
         开启后，读写文件、运行命令、联网、技能安装等 Agent 工具权限会直接放行；
         能力安装/生成卡片会标记“Auto 已授权”以便审计，不再弹 Simple Harness 授权窗口。

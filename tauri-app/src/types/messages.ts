@@ -41,9 +41,19 @@ export interface ChatTurnTimeoutResponse {
   payload: { minutes: number };
 }
 
+/** MM-D4：授权策略快照。后端每次都从 workflow.db 的 CapabilityStore
+ * （权威）重读后回发，写入后回发的也是落盘后的状态。`enabled` 为旧字段，
+ * 保留兼容；`mode`/`generation`/`provenance` 为 MM-D4 新增，前端据此渲染。 */
 export interface PermissionAutoModeResponse {
   type: "permission_auto_mode_response";
-  payload: { enabled: boolean };
+  request_id?: string;
+  payload: {
+    enabled: boolean;
+    mode?: "auto" | "manual";
+    generation?: number;
+    provenance?: string;
+    authoritative?: boolean;
+  };
 }
 
 // WI-1B-2 压缩可观测 — 上下文压缩命中时后端推送（仅 features.ctx_observability
