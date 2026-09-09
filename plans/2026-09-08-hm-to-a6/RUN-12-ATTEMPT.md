@@ -11,3 +11,4 @@
 ## 无探针版（run12，19:00 起）T6 → 事件 AG
 
 T6 读路径全通（提案 → 重路由 → `read_file` 成功），事件 AF 的 `next_offset` 也被模型正确跟随——但 `PAGE_BYTES=1024` 让 40 KB 文件要翻 ~40 页，翻到第 13 页时开放分组把预算挤爆（`planned=27202`），事件 Z 的收尾指令未触发（`wrap_up_injected=0`）→ Run FAILED。→ **事件 AG**（页大小提到 4 KiB + 描述符带 line_count/char_count/首行，让「标题和总行数」不必翻页；收尾指令在开放分组溢出时也要触发）已派子代理。T8（参照件 B）31 s 完成。
+- T11（ANCHOR-ALPHA）FAILED：`grep` 对**文件路径**连续 4 次 `tool_failed`（回执只说「Tool execution failed」），模型退回逐页翻 12 页后预算耗尽（`planned=26756`，仅超 4）→ **事件 AH**（grep/glob 支持文件路径；tool_failed 带稳定原因码）已派子代理。两轮完整流程旅程就绪分支已合入（`288e1887`）。
