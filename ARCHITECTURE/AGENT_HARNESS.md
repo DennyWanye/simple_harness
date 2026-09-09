@@ -1,3 +1,5 @@
+2026-09-09 事件 AH（HM-TO-A6 第 12 次尝试 turn 11）：`grep` 对**文件**路径连挂 4 次 `tool_failed` / "Tool execution failed."，模型退而以 1 KiB 分页硬读 40 KB 夹具打光预算。真因不是异常而是两件事叠加——两个 handler 唯一的目标判据是 `if not root.is_dir()`（目录是唯一合法目标），以及无 `error_code` 的错误信封在 `_result` 被压成通用 `tool_failed` 而 `ToolResult.failed` 不携带 `value`（拒因既不到模型也不到日志）。裁决：`grep`/`glob` 的 `path` 可为目录或**单个文件**；遍历结果逐条复判越根（结清 F-Z1 遗留 3，`escaped_results`）；`tool_failed` 一律带「异常类名 + 净化后有界原因」进 `public_message` 与 `product_tool.failed reason=`，路径整体折叠成 `<path>`。[裁决备忘](../plans/2026-09-08-hm-to-a6/DECISION-AH-GREP-FILE-PATH.md)。
+
 2026-09-09 F-Z1c（HM-TO-A6 短段 12a 第 6 轮）：F-Z1b 的读侧提案通道在生产上**一次都没走通**——三次读 `a6-fixture/` 全部以 `workspace_binding_invocation_origin_stale` 被拒且 `binding_proposal=-`（提案从未产生）。两个「合法状态」相撞：① `context_route` 从不回填 `foreground_runs.task_scope_id`（该字段只来自入队 turn 的 `scope_ref`，证据 run12a 里 8/8 全 NULL），所以 continue_active 的 Run 也一律走 `_append_auto` 的 `_PrimaryBindingTarget` 首绑分支；② 读闸门跑在 `ProductEffectExecutor.execute` 捕获 origin **之前**，`active_product_foreground_origin()` 必为 None，而 `_verify_primary_target` 无条件复核 origin、`origin is None` 即判「过期」——与 `_append_auto` 顶层 `if origin is not None` 的口径自相矛盾。裁决：origin 检查区分「缺席」与「不符」（`_verify_captured_invocation_origin`：捕获到的一律逐字段核 `host_run_id`/`sdk_run_id`/`owner_id`/`generation` 且 `current` 不得为 None，缺席则跳过），其余证明——Run 归属、未挂 scope、sdk 绑定、CLAIMED/RUNNING、租约未过期、durable 提案证据 join——一条不放宽，reclaim 老 worker 与「已完成 effect 上下文回落 bootstrap」两条负例照旧拒。顺带修掉 `BoundReadContext.primary_root` 按**哈希**排序取首根的确定性缺陷（回执的 `root_identity_hashes` 是 `tuple(sorted(...))` 集合摘要，第二条根落库后主根有一半概率翻成刚提案的目录，既有多根用例是掷硬币），改按 `task_workspace_binding_roots.first_binding_set_revision` 的追加顺序。[裁决备忘](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1C-READ-ORIGIN-STALE.md)。
 
 2026-09-09 F-Z1b（A6 第 11 次整跑第 6 轮）：F-Z1 的读闸门判据没错但**没有出口**——样例目录 `a6-fixture/` 不在任务唯一的托管家目录里，读被 `path_outside_workspace_root` 拒且无下一步；写侧同样的越界会进 S4 绑定提案（manual 出『项目目录授权』卡片、auto 落授权）。本轮把读侧接进**同一条**权威：Host 确定性算出候选根（符号链接解析后最近的已存在目录祖先，既定 workspace 根本身 / 公共父目录 → S4 码 `workspace_root_too_broad`，解析后离开既定 workspace → `path_outside_workspace_root`），调 `HumanMemoryHostService.append_binding` 走 create_new 同一入口，manual 下补一行与路由工具同形的 `context_route_tool_invocations` 拒绝行使卡片原样出现。**同调用 vs 重试钉死为「永远不是同一次调用」**：读权威是路由回执所指的那一版 revision、EffectGate 更要求 head 等于回执 revision，绑定一动就必须先 `context_route route=continue_active` 刷新回执再重发读（这一步同时修好写侧 supersede）。`bound_root` 的「恰好一条根」放宽为多根。[裁决备忘](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1B-READ-BINDING-PROPOSAL.md)。
@@ -3023,6 +3025,48 @@ F-Z1b 落地后，HM-TO-A6 短段 12a 第 6 轮的三次 `read_file` 仍然全�
   33 passed（连跑三次稳定）；create_new runtime + workspace bindings + manual 卡片 seam
   31 passed；route authority + route tool + projections search 57 passed。
   详见 [DECISION-F-Z1C-READ-ORIGIN-STALE](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1C-READ-ORIGIN-STALE.md)。
+
+### 2026-09-09（事件 AH）：`grep`/`glob` 接受文件路径，`tool_failed` 必须带得动原因
+
+HM-TO-A6 第 12 次尝试 turn 11：F-Z1b 已把 `a6-fixture/` 绑成第二条根、读闸门也照常放行，
+但 `grep {"path":"…/qiufen-checklist-a.md","pattern":"ANCHOR-ALPHA","output_mode":"content",
+"context":2}` **连挂 4 次**（`error_code=tool_failed` / `public_message="Tool execution failed."`，
+`native.log` 只有 `product_tool.failed tool=grep code=tool_failed`、无 traceback），模型改用
+`context_page_in` 以 1 KiB 为单位硬读 40 KB 夹具，预算打光。
+
+- **真因不是异常**：两个 handler 唯一的目标判据是 `if not root.is_dir()`，**目录是唯一合法
+  目标**，文件路径必拒 —— 全程没有异常抛出，所以「没有 traceback」不是日志丢了，是本来
+  就没有。任务书里另三个假设经离线真装配复现全部排除：参数无 `..`、传的是绝对路径、
+  F-Z1c 的 `_ordered_root_hashes` 主根投影与本例无关（`read_target_violation` 对**显式 path**
+  返回的是 `containing_root(value, roots)`，即包含该路径的那条根）。
+- **信息蒸发**：无 `error_code` 的错误信封在 `sdk_adapters/tools.py::_result` 走默认分支压成
+  `tool_failed` + "Tool execution failed."，而 `ToolResult.failed` **不携带 `value`** —— payload
+  里的拒因到不了模型，`product_tool.failed` 又只记 code，也到不了日志。两头皆盲。
+- **改动**：新增 `deskpet/tools/code_tools/_search_scope.py`（目标解析 / 越根复判 / 稳定码），
+  `grep` 与 `glob` 的 `path` 现在可以是目录（遍历）或**单个文件**（搜这一个文件；`glob` 的
+  pattern 退化为按文件名匹配，不匹配是零结果而非错误），工具描述与 `path` 参数描述同步写明。
+  结果沿用既有大结果分页（超 `DEFAULT_LARGE_RESULT_BYTES` 走 `primary_settled_effect_v1` +
+  `context_page_in`），截断时另给 `next_action`。
+- **F-Z1 遗留 3 就地结清**：遍历结果逐条按 `within_root`（与 `read_gate.path_within_root` 同
+  语义）复判，越根丢弃并计入 `escaped_results`。CPython 3.12 实测两条真实逃逸路径都堵上：
+  根内**文件**链接指向根外（`rglob` 直接产出）、根内**目录**链接 + 显式 `escape/*.md`（`**`
+  本身不下钻）。判据在 `deskpet/tools/` 内重写而非 import 读闸门，避免 `tools` 反向依赖
+  `sdk_adapters`。
+- **`tool_failed` 不得再是一句空话（全工具生效）**：`_result` 的默认分支改为「异常类名
+  （handler 可选给 `error_type`）+ 净化后的自然语言」拼一条有界原因，同时进 `public_message`
+  与 `product_tool.failed` 新增的 `reason=` 字段；净化先过 `redact_sensitive_text`（与
+  `observability/log_redaction` 同一套规则）再把路径整体折叠成 `<path>`，压到 240 字节，
+  「稳定码与日志字段永不含路径」的既有口径不动；连一句话都拿不到时给
+  `NO_REASON_FAILURE_MESSAGE`（明说换个参数再试、别重复同一次调用）。
+- **稳定码**：`path_not_found` / `not_a_searchable_target` / `path_unreadable` /
+  `pattern_required` / `pattern_invalid` / `glob_invalid` / `search_root_missing`，
+  `public_message` 一律「为什么 + 下一步」且不含路径。
+- 决定性测试：`tests/sdk_adapters/test_grep_file_path_read_gate_ah.py` 14 例（复用 F-Z1 的真
+  装配：真 v45 `state.db`、真 `WorkspaceBindingAuthorityStore`、真路由决定行、真
+  `WorkspaceReadGate`）。回归（单进程、点名文件）：glob/grep + os_tools + build manifest 等
+  140 passed / 1 skipped；`tests/sdk_adapters`（排除 `test_composition.py`）58 failed，与基线
+  `d1471525` 的一次性 worktree **逐行相同**。
+  详见 [DECISION-AH-GREP-FILE-PATH](../plans/2026-09-08-hm-to-a6/DECISION-AH-GREP-FILE-PATH.md)。
 
 ## 历史阶段索引
 

@@ -7,6 +7,13 @@ We deliberately don't shell out to ripgrep — keeps the frozen bundle
 binary-free + cross-platform identical. For typical project sizes
 (< 100k lines) Python regex over read_text is plenty fast (sub-second).
 
+``path`` may name **either** a directory (walked) **or** a single file
+(searched on its own). 事件 AH（HM-TO-A6 第 12 次尝试，turn 11）：模型对
+``a6-fixture/qiufen-checklist-a.md`` 连打 4 次 ``grep``，每次都撞上这里
+唯一的 ``if not root.is_dir()`` 守卫，拒因又被 ``_result`` 压成
+``tool_failed`` / "Tool execution failed."，模型只好改用 1 KiB 分页硬读
+40 KB 文件把预算打光。文件目标是模型最自然的用法，必须直接支持。
+
 Three output modes (matches the Claude Code shape so prompts transfer):
 
   * ``files_with_matches`` — just paths (the default)
@@ -14,13 +21,22 @@ Three output modes (matches the Claude Code shape so prompts transfer):
   * ``count`` — paths + total match count per file
 
 Filters:
-  * ``glob`` — restrict to files matching this glob (e.g. ``"*.py"``)
+  * ``glob`` — restrict to files matching this glob (e.g. ``"*.py"``);
+    on a single-file target it filters that one file by name
   * ``case_insensitive`` — pass IGNORECASE to ``re.compile``
   * ``multiline`` — pass DOTALL + MULTILINE so ``.`` crosses newlines
   * ``context`` — N lines before/after each match (only for ``content``)
 
 Caps: 100 files scanned, 250 result lines emitted. Truncation flag
-returned in the JSON so the LLM can re-query with a tighter scope.
+returned in the JSON so the LLM can re-query with a tighter scope; the
+body itself travels through the same large-result paging every settled
+tool result uses (``primary_settled_effect_v1`` + ``context_page_in``
+above ``DEFAULT_LARGE_RESULT_BYTES``), so the caps bound the *scan*, not
+the model's ability to read what came back.
+
+F-Z1 遗留 3：根内指向根外的目录符号链接会被 ``rglob`` 跟随，遍历结果因此
+可能落在搜索根外。每条结果在这里按 ``within_root`` 复判一次，越根的结果
+被丢弃并计入 ``escaped_results``。
 """
 from __future__ import annotations
 
@@ -32,6 +48,16 @@ from typing import Any
 
 from ..capabilities import ToolExecutionContext
 from ..context_adapter import legacy_execution_context
+from ._search_scope import (
+    GLOB_INVALID,
+    PATTERN_INVALID,
+    PATTERN_REQUIRED,
+    SEARCH_ROOT_MISSING,
+    glob_name_matches,
+    resolve_search_target,
+    search_error,
+    within_root,
+)
 
 log = logging.getLogger(__name__)
 
@@ -42,15 +68,20 @@ _MAX_RESULT_LINES = 250
 _MAX_FILE_BYTES = 5_000_000
 
 
-def _iter_files(root: Path, file_glob: str | None) -> list[Path]:
-    """Yield candidate files under root, optionally filtered by glob."""
+def _iter_files(root: Path, file_glob: str | None) -> tuple[list[Path], int]:
+    """``(candidate files under root, results dropped for leaving root)``."""
     if file_glob:
         candidates = list(root.rglob(file_glob))
     else:
         candidates = list(root.rglob("*"))
     files: list[Path] = []
+    escaped = 0
     for p in candidates:
         if not p.is_file():
+            continue
+        # F-Z1 遗留 3：``rglob`` 跟随根内的目录符号链接，结果可能在根外。
+        if not within_root(p, root):
+            escaped += 1
             continue
         try:
             if p.stat().st_size > _MAX_FILE_BYTES:
@@ -63,7 +94,7 @@ def _iter_files(root: Path, file_glob: str | None) -> list[Path]:
         key=lambda f: f.stat().st_mtime if f.exists() else 0,
         reverse=True,
     )
-    return files
+    return files, escaped
 
 
 def _safe_read(p: Path) -> str | None:
@@ -82,19 +113,21 @@ def grep_tool(
 ) -> str:
     pattern = args.get("pattern")
     if not pattern or not isinstance(pattern, str):
-        return json.dumps({"error": "pattern (regex) is required"})
+        return search_error("grep", PATTERN_REQUIRED)
 
     context = legacy_execution_context(args, task_id, execution_context)
     path = args.get("path") or context.workspace
     if not path:
-        return json.dumps({"error": "no path provided and no project_root injected"})
-    root = Path(path).expanduser().resolve()
-    if not root.is_dir():
-        return json.dumps({"error": f"path is not a directory: {root}"})
+        return search_error("grep", SEARCH_ROOT_MISSING)
+    target, kind, failure = resolve_search_target(str(path))
+    if failure is not None:
+        code, error_type = failure
+        return search_error("grep", code, error_type=error_type)
+    assert target is not None  # resolve_search_target 恰有一侧被置上
 
     file_glob = args.get("glob")
     if file_glob is not None and not isinstance(file_glob, str):
-        return json.dumps({"error": "glob must be string"})
+        return search_error("grep", GLOB_INVALID)
 
     output_mode = args.get("output_mode", "files_with_matches")
     if output_mode not in {"files_with_matches", "content", "count"}:
@@ -108,14 +141,25 @@ def grep_tool(
 
     try:
         regex = re.compile(pattern, flags)
-    except re.error as e:
-        return json.dumps({"error": f"invalid regex: {e}"})
+    except re.error:
+        # ``type(re.error()).__name__`` 在 3.12 是裸的 ``error``；模型看到
+        # "pattern_invalid: error" 毫无信息量，钉成限定名。
+        log.warning("grep pattern rejected: re.error")
+        return search_error("grep", PATTERN_INVALID, error_type="re.error")
 
-    context = max(0, int(args.get("context") or 0))
+    context_lines = max(0, int(args.get("context") or 0))
 
-    files = _iter_files(root, file_glob)
-    truncated_files = len(files) > _MAX_FILES
-    files = files[:_MAX_FILES]
+    if kind == "file":
+        # 单文件目标：这个文件**就是**搜索集，根即它自身，越根无从谈起。
+        root = target
+        files = [target] if glob_name_matches(target.name, file_glob) else []
+        escaped = 0
+        truncated_files = False
+    else:
+        root = target
+        files, escaped = _iter_files(root, file_glob)
+        truncated_files = len(files) > _MAX_FILES
+        files = files[:_MAX_FILES]
 
     matches_by_file: dict[str, list[tuple[int, str]]] = {}
     counts: dict[str, int] = {}
@@ -147,12 +191,12 @@ def grep_tool(
         counts[str(f)] = cnt
         if output_mode == "content":
             # With context: capture surrounding lines per match.
-            if context > 0:
+            if context_lines > 0:
                 lines = text.splitlines()
                 expanded: list[tuple[int, str]] = []
                 for line_no, _line in file_matches:
-                    start = max(0, line_no - 1 - context)
-                    end = min(len(lines), line_no + context)
+                    start = max(0, line_no - 1 - context_lines)
+                    end = min(len(lines), line_no + context_lines)
                     for off in range(start, end):
                         expanded.append((off + 1, lines[off]))
                 # Dedupe consecutive duplicate lines (overlapping ctx)
@@ -173,11 +217,18 @@ def grep_tool(
     out: dict[str, Any] = {
         "pattern": pattern,
         "root": str(root),
+        "target_kind": kind,
         "files_scanned": len(files),
         "files_with_matches": len(counts),
         "truncated_files": truncated_files,
         "truncated_lines": truncated_lines,
+        "escaped_results": escaped,
     }
+    if truncated_files or truncated_lines:
+        out["next_action"] = (
+            "Result truncated. Narrow with a tighter pattern, a glob filter, "
+            "or a path naming one file, then call grep again."
+        )
 
     if output_mode == "files_with_matches":
         out["files"] = sorted(counts.keys())

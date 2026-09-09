@@ -30,6 +30,7 @@ from simple_harness.tools import (
 from simple_harness.tools.executor import EffectExecution, EffectExecutor
 
 from deskpet.sdk_adapters.effect_gate import EffectGateRejected
+from deskpet.security.sensitive_text import redact_sensitive_text
 
 logger = logging.getLogger(__name__)
 
@@ -797,6 +798,86 @@ class ProductEffectExecutor(EffectExecutor):
 _SAFE_HANDLER_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_HANDLER_PUBLIC_MESSAGE = 2048
 
+# --- 事件 AH：``tool_failed`` 不得再是一句空话 --------------------------------
+# HM-TO-A6 第 12 次尝试 turn 11：``grep`` 对一个**文件**路径连挂 4 次，handler
+# 返回的是 ``{"error": "path is not a directory: <path>"}``——没有 ``error_code``
+# 就走下面的默认分支，压成 ``tool_failed`` + "Tool execution failed."。
+# ``ToolResult.failed`` **不带 value**，于是拒因既没到模型（payload 被丢弃），
+# 也没进日志（只记 code）。模型无从自纠，改用 1 KiB 分页硬读 40 KB 文件，预算打光。
+#
+# 因此默认分支也必须产出一条**有界、去路径、去密钥**的原因：异常类名
+# （handler 可选给 ``error_type``）+ 净化后的自然语言，同时进 ``public_message``
+# 与 ``product_tool.failed`` 的 warning 日志。净化复用仓库既有的
+# ``redact_sensitive_text``（与 ``observability/log_redaction`` 同一套规则），
+# 路径再额外整体折叠成 ``<path>``——稳定码与日志字段永不含路径是既定口径
+# （``tools/file_tools._err`` / ``tests/os_tools/test_file_tools_rejection_codes.py``）。
+_PATH_LIKE = re.compile(r"(?:[A-Za-z]:[\\/]|~(?=[\\/])|\.{0,2}/)[^\s'\"()\[\],;]*")
+_MAX_FAILURE_REASON = 240
+_FAILURE_TEXT_KEYS = ("public_message", "error", "message", "hint", "detail", "reason")
+NO_REASON_FAILURE_MESSAGE = (
+    "Tool execution failed and the handler reported no reason (tool_failed). "
+    "Re-read the tool schema, change at least one argument, and try once more; "
+    "do not repeat the identical call."
+)
+
+
+def _sanitized_failure_text(value: Any) -> str:
+    """有界、去密钥、去路径的失败原因散文；拿不到就是空串。"""
+
+    text = ""
+    if isinstance(value, Mapping):
+        for key in _FAILURE_TEXT_KEYS:
+            item = value.get(key)
+            if isinstance(item, str) and item.strip():
+                text = item.strip()
+                break
+            if isinstance(item, Mapping):
+                nested = item.get("message")
+                if isinstance(nested, str) and nested.strip():
+                    text = nested.strip()
+                    break
+    elif isinstance(value, str):
+        text = value.strip()
+    if not text:
+        return ""
+    text = _PATH_LIKE.sub("<path>", redact_sensitive_text(text))
+    return " ".join(text.split())[:_MAX_FAILURE_REASON]
+
+
+def _failure_error_type(value: Any) -> str:
+    """handler 自报的异常类名（``OSError`` / ``re.error`` …），无则空串。"""
+
+    if not isinstance(value, Mapping):
+        return ""
+    declared = value.get("error_type")
+    if isinstance(declared, str) and declared.strip():
+        return declared.strip()[:64]
+    error = value.get("error")
+    if isinstance(error, Mapping):
+        nested = error.get("type")
+        if isinstance(nested, str) and nested.strip():
+            return nested.strip()[:64]
+    return ""
+
+
+def _failure_reason(value: Any) -> str:
+    """``<异常类>: <净化散文>`` —— 可直接进日志字段的一行原因。"""
+
+    parts = [item for item in (_failure_error_type(value), _sanitized_failure_text(value)) if item]
+    return ": ".join(parts) if parts else "-"
+
+
+def failure_log_reason(raw: Any) -> str:
+    """``product_tool.failed`` 的 ``reason=`` 字段（永不含路径/密钥）。"""
+
+    value = raw
+    if isinstance(raw, str):
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            value = raw
+    return _failure_reason(value)
+
 
 def _result(raw: Any) -> ToolResult:
     call_id = active_product_tool_call_id()
@@ -815,10 +896,10 @@ def _result(raw: Any) -> ToolResult:
     ):
         error = value.get("error")
         code = "tool_failed"
-        message = "Tool execution failed."
+        message = ""
         if isinstance(error, Mapping):
             code = str(error.get("code") or code)
-            message = str(error.get("message") or message)
+            message = str(error.get("message") or "")
         declared_code = value.get("error_code")
         if isinstance(declared_code, str) and _SAFE_HANDLER_ERROR_CODE.fullmatch(
             declared_code
@@ -827,7 +908,16 @@ def _result(raw: Any) -> ToolResult:
             declared_message = value.get("public_message")
             if isinstance(declared_message, str) and declared_message.strip():
                 message = declared_message.strip()[:_MAX_HANDLER_PUBLIC_MESSAGE]
-        return ToolResult.failed(call_id, code, message)
+        if not message.strip():
+            # 事件 AH：没有 handler 自报的 public_message 时，也必须给出**有界、
+            # 去路径**的原因，而不是那句谁也无法据以自纠的 "Tool execution failed."。
+            reason = _failure_reason(value)
+            message = (
+                f"Tool execution failed ({reason})."
+                if reason != "-"
+                else NO_REASON_FAILURE_MESSAGE
+            )
+        return ToolResult.failed(call_id, code, message[:_MAX_HANDLER_PUBLIC_MESSAGE])
     return ToolResult.succeeded(call_id, value)
 
 
@@ -1038,9 +1128,10 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
             # 字段拼进 message：本项目 structlog 的 foreign_pre_chain 没有
             # ExtraAdder，``extra=`` 的字段在渲染阶段会被整体丢弃（独立审查 F-5 实测）。
             logger.warning(
-                "product_tool.failed tool=%s code=%s",
+                "product_tool.failed tool=%s code=%s reason=%s",
                 registration.name,
                 result.error_code,
+                failure_log_reason(raw),
             )
         return result
 
