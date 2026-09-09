@@ -1,6 +1,6 @@
 # HM-TO-A6 第 11 次整跑结果（2026-09-09 14:45，Host 26fd6f6f 源码 + bundle 3f30a17b，Memory 0.6.37，flash 关闭 thinking，窗口 32000）
 
-24 轮走完；`a6_verify.py`：**PASS 12 / FAIL 5 / BLOCKED 1 / INCONCLUSIVE 0**（`RUN-11-a6-verify.json`；证据 `.local-test-evidence/2026-09-09/native-a6-run11/primary-ui-9izlp1ao`）。与第 10 次（14/2/2）相比：三处修复被证实，同时 s5c 修复让 NC-3 首次被真实计量而暴露新缺陷，另有两处验证器口径需修。
+24 轮走完；`a6_verify.py`：**PASS 16 / FAIL 1 / BLOCKED 1 / INCONCLUSIVE 0**（事件 AC + 验证器口径修正后复算；原判 12/5/1）（`RUN-11-a6-verify.json`；证据 `.local-test-evidence/2026-09-09/native-a6-run11/primary-ui-9izlp1ao`）。与第 10 次（14/2/2）相比：三处修复被证实，同时 s5c 修复让 NC-3 首次被真实计量而暴露新缺陷，另有两处验证器口径需修。
 
 | 项 | 第 10 次 | 第 11 次 | 说明 |
 |---|---|---|---|
