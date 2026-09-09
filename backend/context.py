@@ -135,6 +135,8 @@ _VALID_SERVICES = frozenset({
     "sdk_memory_ingestion_outbox",
     # MM-D2（2026-09-09）：绑定挑战签发/决定落库后广播 content-free 显示失效，供 PrimaryWorkspaceBindings 刷新。
     "memory_display_invalidation",
+    # F-Z1（2026-09-09）：读工具调用期门（WorkspaceReadGate）。
+    "sdk_workspace_read_gate",
     "human_memory_host_service_factory",
     "human_memory_v7_runtime",
     "human_memory_binding_append_authority",
