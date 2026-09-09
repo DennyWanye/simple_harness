@@ -77,8 +77,49 @@ def _pre_fix_estimate(sample: dict) -> int:
 # ── the estimator itself ─────────────────────────────────────────────────────
 
 
-def test_text_tokens_counts_cjk_at_one_token_each() -> None:
-    assert text_tokens("汉" * 100) == 100
+@pytest.mark.parametrize(
+    ("cjk_chars", "expected"),
+    # ceil(chars * 10 / 13) — spelled out rather than recomputed, so a change to
+    # CJK_CHARS_PER_TOKEN has to be made here too, in the open.
+    [(0, 0), (1, 1), (13, 10), (14, 11), (100, 77), (1_000, 770), (4_962, 3_817)],
+)
+def test_text_tokens_prices_cjk_at_the_measured_density(
+    cjk_chars: int, expected: int
+) -> None:
+    """事件 W-c: one token per CJK character was a guess, and an expensive one.
+
+    Measured against the real DeepSeek tokenizer on the thinking-disabled pairs
+    (billed input carries no hidden re-injected reasoning there, so billed ≈
+    wire): 1.54–2.04 characters per token.  1.3 is the conservative end of that
+    band — every observed pair is still over-priced by ≥18% — and it removes the
+    1.35× pathology that killed HM-TO-A6 attempt 11 turn 17.
+    """
+
+    assert text_tokens("汉" * cjk_chars) == expected
+
+
+def test_text_tokens_folds_a_json_escape_back_into_the_character() -> None:
+    """The incident's dominant term: ``ensure_ascii`` turned 汉 into six ASCII.
+
+    ``ToolCallArgumentsMemo.canonical_tool_arguments_json`` serialises the
+    model's echoed arguments with ``ensure_ascii=True``, so every Chinese
+    character reaches the wire as ``\\uXXXX``.  V0 charged that ``6/4 = 1.5``
+    tokens against a measured 0.60 — 14 901 of the incident's 31 246 tokens were
+    this one mistake.  The escape is worth exactly the character it encodes.
+    """
+
+    assert text_tokens("\\u6c49" * 100) == text_tokens("汉" * 100) == 77
+    # A non-CJK escape is left alone: it really is six characters of ASCII.
+    assert text_tokens("\\u0041" * 10) == text_tokens("x" * 60) == 15
+    # Mixed, and the two classes still add up rather than double-count.
+    assert text_tokens("汉" * 13 + "\\u6c49" * 13 + "x" * 8) == 20 + 2
+
+
+def test_text_tokens_never_reads_a_truncated_escape_as_a_character() -> None:
+    """A literal that only looks like an escape stays plain text."""
+
+    assert text_tokens("\\u6c4") == text_tokens("x" * 5)
+    assert text_tokens("\\uZZZZ") == text_tokens("x" * 6)
 
 
 def test_text_tokens_keeps_the_frozen_non_cjk_density() -> None:

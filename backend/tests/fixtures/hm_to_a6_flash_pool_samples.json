@@ -30,6 +30,7 @@
    "misses_over_window": 0,
    "worst_floor_above_real_billing": 1769
   },
+  "note": "这一块是 239 组全量在**事件 W-b 口径**下的实测值(字符类公式为 W-c 之前的「CJK 1 token/字」)。样本里没有留下重算全量所需的另外 174 组, 所以不随 W-c 重述; 65 条样本在新口径下的判据见 sample_verdicts_after_w_c。",
   "over_budget_hidden_by_the_current_calibration": 42,
   "pairs": 239,
   "pairs_by_evidence": {
@@ -110,6 +111,17 @@
    "max_ratio_that_spares_a_fitting_request": 1.729,
    "min_ratio_to_flag_an_over_budget_request": 1.695
   }
+ },
+ "sample_verdicts_after_w_c": {
+  "fires": 29,
+  "fires_on_fitting_requests": 0,
+  "floor_above_real_billing": 3,
+  "floor_above_real_billing_without_a_carry": 0,
+  "misses_over_budget": 7,
+  "misses_over_window": 0,
+  "note": "事件 W-c 之后, 用真代码把这 65 条样本重放一遍的判据(``test_the_sample_verdicts_after_w_c_are_recorded``逐条复算, 不读这里的数)。与 W-b 口径相比: 误伤仍是 **0/29**, 真超整个 32000 窗口的请求仍 **一条不漏**; 「floor 反超真实计费」由 6 降到 3, 而且降掉的正好是三条 ordinal 1(carry=0) —— 它们当初反超的原因就是 CJK 被按 1 token/字 记, 这一条修的就是它。代价是漏判由 6 升到 7(新增 run9-b0dc8632-t6), 全部仍在物理窗口内, 由装配期的倍率与有序降级去接。",
+  "samples": 65,
+  "worst_floor_above_real_billing": 1342
  },
  "samples": [
   {
@@ -213,7 +225,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 14638
+   "wire_input_tokens": 13092
   },
   {
    "cumulative_reasoning_tokens_before": 0,
@@ -304,7 +316,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 4720
+   "wire_input_tokens": 4718
   },
   {
    "cumulative_reasoning_tokens_before": 0,
@@ -330,7 +342,7 @@
    "provider_reasoning_tokens": 6836,
    "provider_turn_ordinal": 1,
    "selected_for": [
-    "floor_above_the_real_billing"
+    "floor_above_the_real_billing_before_w_c"
    ],
    "state": "succeeded",
    "tools": [
@@ -395,7 +407,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 10224
+   "wire_input_tokens": 9081
   },
   {
    "cumulative_reasoning_tokens_before": 0,
@@ -498,7 +510,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 8617
+   "wire_input_tokens": 8327
   },
   {
    "cumulative_reasoning_tokens_before": 0,
@@ -530,7 +542,7 @@
    "provider_reasoning_tokens": 2065,
    "provider_turn_ordinal": 1,
    "selected_for": [
-    "floor_above_the_real_billing"
+    "floor_above_the_real_billing_before_w_c"
    ],
    "state": "succeeded",
    "tools": [
@@ -595,7 +607,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 11408
+   "wire_input_tokens": 10087
   },
   {
    "cumulative_reasoning_tokens_before": 0,
@@ -746,7 +758,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 12767
+   "wire_input_tokens": 12447
   },
   {
    "cumulative_reasoning_tokens_before": 0,
@@ -790,7 +802,7 @@
    "provider_reasoning_tokens": 5713,
    "provider_turn_ordinal": 1,
    "selected_for": [
-    "floor_above_the_real_billing"
+    "floor_above_the_real_billing_before_w_c"
    ],
    "state": "succeeded",
    "tools": [
@@ -855,7 +867,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 13095
+   "wire_input_tokens": 11787
   },
   {
    "cumulative_reasoning_tokens_before": 6836,
@@ -891,7 +903,7 @@
     "input_tokens": 9414,
     "output_tokens": 11575,
     "reasoning_tokens": 6836,
-    "wire_tokens": 10224
+    "wire_tokens": 9081
    },
    "provider_input_tokens": 21046,
    "provider_output_tokens": 1713,
@@ -964,7 +976,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 10336
+   "wire_input_tokens": 9188
   },
   {
    "cumulative_reasoning_tokens_before": 10595,
@@ -1060,7 +1072,7 @@
     "input_tokens": 13683,
     "output_tokens": 10765,
     "reasoning_tokens": 10595,
-    "wire_tokens": 12767
+    "wire_tokens": 12447
    },
    "provider_input_tokens": 27188,
    "provider_output_tokens": 2205,
@@ -1132,7 +1144,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 14613
+   "wire_input_tokens": 14249
   },
   {
    "cumulative_reasoning_tokens_before": 3959,
@@ -1264,7 +1276,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15874
+   "wire_input_tokens": 15537
   },
   {
    "cumulative_reasoning_tokens_before": 12697,
@@ -1378,7 +1390,7 @@
     "input_tokens": 27188,
     "output_tokens": 2205,
     "reasoning_tokens": 2102,
-    "wire_tokens": 14613
+    "wire_tokens": 14249
    },
    "provider_input_tokens": 30805,
    "provider_output_tokens": 4999,
@@ -1451,7 +1463,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15557
+   "wire_input_tokens": 15193
   },
   {
    "cumulative_reasoning_tokens_before": 6003,
@@ -1529,7 +1541,7 @@
     "input_tokens": 22832,
     "output_tokens": 2253,
     "reasoning_tokens": 2044,
-    "wire_tokens": 15874
+    "wire_tokens": 15537
    },
    "provider_input_tokens": 24305,
    "provider_output_tokens": 366,
@@ -1602,7 +1614,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15623
+   "wire_input_tokens": 15229
   },
   {
    "cumulative_reasoning_tokens_before": 6645,
@@ -1746,7 +1758,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 16080
+   "wire_input_tokens": 14620
   },
   {
    "cumulative_reasoning_tokens_before": 1575,
@@ -1914,7 +1926,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 16123
+   "wire_input_tokens": 15727
   },
   {
    "cumulative_reasoning_tokens_before": 1537,
@@ -2064,7 +2076,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 11579
+   "wire_input_tokens": 11361
   },
   {
    "cumulative_reasoning_tokens_before": 17480,
@@ -2178,7 +2190,7 @@
     "input_tokens": 30805,
     "output_tokens": 4999,
     "reasoning_tokens": 4783,
-    "wire_tokens": 15557
+    "wire_tokens": 15193
    },
    "provider_input_tokens": 36150,
    "provider_output_tokens": 3140,
@@ -2250,7 +2262,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15591
+   "wire_input_tokens": 15298
   },
   {
    "cumulative_reasoning_tokens_before": 6265,
@@ -2334,7 +2346,7 @@
     "input_tokens": 24305,
     "output_tokens": 366,
     "reasoning_tokens": 262,
-    "wire_tokens": 15623
+    "wire_tokens": 15229
    },
    "provider_input_tokens": 20745,
    "provider_output_tokens": 164,
@@ -2406,7 +2418,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 12078
+   "wire_input_tokens": 11735
   },
   {
    "cumulative_reasoning_tokens_before": 11555,
@@ -2490,7 +2502,7 @@
     "input_tokens": 23199,
     "output_tokens": 9833,
     "reasoning_tokens": 4910,
-    "wire_tokens": 16080
+    "wire_tokens": 14620
    },
    "provider_input_tokens": 33200,
    "provider_output_tokens": 6952,
@@ -2562,7 +2574,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 16167
+   "wire_input_tokens": 14707
   },
   {
    "cumulative_reasoning_tokens_before": 3631,
@@ -2725,7 +2737,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15251
+   "wire_input_tokens": 14932
   },
   {
    "cumulative_reasoning_tokens_before": 13670,
@@ -2815,7 +2827,7 @@
     "input_tokens": 33200,
     "output_tokens": 6952,
     "reasoning_tokens": 2115,
-    "wire_tokens": 16167
+    "wire_tokens": 14707
    },
    "provider_input_tokens": 39682,
    "provider_output_tokens": 5541,
@@ -2887,7 +2899,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15797
+   "wire_input_tokens": 14353
   },
   {
    "cumulative_reasoning_tokens_before": 4178,
@@ -2989,7 +3001,7 @@
     "input_tokens": 21923,
     "output_tokens": 627,
     "reasoning_tokens": 547,
-    "wire_tokens": 15251
+    "wire_tokens": 14932
    },
    "provider_input_tokens": 23041,
    "provider_output_tokens": 570,
@@ -3061,7 +3073,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15525
+   "wire_input_tokens": 15253
   },
   {
    "cumulative_reasoning_tokens_before": 8445,
@@ -3188,7 +3200,7 @@
    "provider_reasoning_tokens": 2110,
    "provider_turn_ordinal": 6,
    "selected_for": [
-    "first_turn_the_measured_floor_would_stop"
+    "over_budget_the_measured_floor_cannot_see"
    ],
    "state": "succeeded",
    "tools": [
@@ -3253,7 +3265,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15385
+   "wire_input_tokens": 15110
   },
   {
    "cumulative_reasoning_tokens_before": 18539,
@@ -3355,7 +3367,7 @@
     "input_tokens": 39682,
     "output_tokens": 5541,
     "reasoning_tokens": 4869,
-    "wire_tokens": 15797
+    "wire_tokens": 14353
    },
    "provider_input_tokens": 45565,
    "provider_output_tokens": 5192,
@@ -3427,7 +3439,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 16008
+   "wire_input_tokens": 14564
   },
   {
    "cumulative_reasoning_tokens_before": 4475,
@@ -3541,7 +3553,7 @@
     "input_tokens": 23041,
     "output_tokens": 570,
     "reasoning_tokens": 297,
-    "wire_tokens": 15525
+    "wire_tokens": 15253
    },
    "provider_input_tokens": 24625,
    "provider_output_tokens": 190,
@@ -3613,7 +3625,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 16001
+   "wire_input_tokens": 15797
   },
   {
    "cumulative_reasoning_tokens_before": 4111,
@@ -3829,7 +3841,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15918
+   "wire_input_tokens": 15730
   },
   {
    "cumulative_reasoning_tokens_before": 10555,
@@ -3967,7 +3979,7 @@
     "input_tokens": 27534,
     "output_tokens": 2289,
     "reasoning_tokens": 2110,
-    "wire_tokens": 15385
+    "wire_tokens": 15110
    },
    "provider_input_tokens": 28466,
    "provider_output_tokens": 896,
@@ -4039,7 +4051,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 13352
+   "wire_input_tokens": 13077
   },
   {
    "cumulative_reasoning_tokens_before": 23299,
@@ -4153,7 +4165,7 @@
     "input_tokens": 45565,
     "output_tokens": 5192,
     "reasoning_tokens": 4760,
-    "wire_tokens": 16008
+    "wire_tokens": 14564
    },
    "provider_input_tokens": 50955,
    "provider_output_tokens": 3734,
@@ -4225,7 +4237,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 16156
+   "wire_input_tokens": 14712
   },
   {
    "cumulative_reasoning_tokens_before": 3200,
@@ -4423,7 +4435,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15552
+   "wire_input_tokens": 15368
   },
   {
    "cumulative_reasoning_tokens_before": 6809,
@@ -4585,7 +4597,7 @@
     "input_tokens": 25711,
     "output_tokens": 2852,
     "reasoning_tokens": 2698,
-    "wire_tokens": 15918
+    "wire_tokens": 15730
    },
    "provider_input_tokens": 28086,
    "provider_output_tokens": 3260,
@@ -4659,7 +4671,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15946
+   "wire_input_tokens": 15721
   },
   {
    "cumulative_reasoning_tokens_before": 26810,
@@ -4779,7 +4791,7 @@
     "input_tokens": 50955,
     "output_tokens": 3734,
     "reasoning_tokens": 3511,
-    "wire_tokens": 16156
+    "wire_tokens": 14712
    },
    "provider_input_tokens": 54118,
    "provider_output_tokens": 5077,
@@ -4851,7 +4863,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15691
+   "wire_input_tokens": 14294
   },
   {
    "cumulative_reasoning_tokens_before": 5155,
@@ -5061,7 +5073,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 11155
+   "wire_input_tokens": 11058
   },
   {
    "cumulative_reasoning_tokens_before": 4502,
@@ -5199,7 +5211,7 @@
     "input_tokens": 24592,
     "output_tokens": 1388,
     "reasoning_tokens": 1302,
-    "wire_tokens": 15552
+    "wire_tokens": 15368
    },
    "provider_input_tokens": 26087,
    "provider_output_tokens": 293,
@@ -5271,7 +5283,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15476
+   "wire_input_tokens": 15286
   },
   {
    "cumulative_reasoning_tokens_before": 26993,
@@ -5403,7 +5415,7 @@
     "input_tokens": 54118,
     "output_tokens": 5077,
     "reasoning_tokens": 183,
-    "wire_tokens": 15691
+    "wire_tokens": 14294
    },
    "provider_input_tokens": 59299,
    "provider_output_tokens": 5049,
@@ -5475,7 +5487,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15788
+   "wire_input_tokens": 14391
   },
   {
    "cumulative_reasoning_tokens_before": 4599,
@@ -5625,7 +5637,7 @@
     "input_tokens": 26087,
     "output_tokens": 293,
     "reasoning_tokens": 97,
-    "wire_tokens": 15476
+    "wire_tokens": 15286
    },
    "provider_input_tokens": 26976,
    "provider_output_tokens": 726,
@@ -5702,7 +5714,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15962
+   "wire_input_tokens": 15769
   },
   {
    "cumulative_reasoning_tokens_before": 8430,
@@ -5941,7 +5953,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 13257
+   "wire_input_tokens": 13092
   },
   {
    "cumulative_reasoning_tokens_before": 5874,
@@ -6187,7 +6199,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 12846
+   "wire_input_tokens": 12770
   },
   {
    "cumulative_reasoning_tokens_before": 31882,
@@ -6343,7 +6355,7 @@
     "input_tokens": 59299,
     "output_tokens": 5049,
     "reasoning_tokens": 4889,
-    "wire_tokens": 15788
+    "wire_tokens": 14391
    },
    "provider_input_tokens": 65454,
    "provider_output_tokens": 2237,
@@ -6415,7 +6427,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15929
+   "wire_input_tokens": 14585
   },
   {
    "cumulative_reasoning_tokens_before": 5174,
@@ -6583,7 +6595,7 @@
     "input_tokens": 26976,
     "output_tokens": 726,
     "reasoning_tokens": 575,
-    "wire_tokens": 15962
+    "wire_tokens": 15769
    },
    "provider_input_tokens": 27526,
    "provider_output_tokens": 1520,
@@ -6660,7 +6672,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15247
+   "wire_input_tokens": 15022
   },
   {
    "cumulative_reasoning_tokens_before": 10562,
@@ -6828,7 +6840,7 @@
     "input_tokens": 26874,
     "output_tokens": 2566,
     "reasoning_tokens": 2132,
-    "wire_tokens": 13257
+    "wire_tokens": 13092
    },
    "provider_input_tokens": 29171,
    "provider_output_tokens": 134,
@@ -6905,7 +6917,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 13020
+   "wire_input_tokens": 12877
   },
   {
    "cumulative_reasoning_tokens_before": 6821,
@@ -7091,7 +7103,7 @@
     "input_tokens": 23672,
     "output_tokens": 1102,
     "reasoning_tokens": 947,
-    "wire_tokens": 12846
+    "wire_tokens": 12770
    },
    "provider_input_tokens": 25017,
    "provider_output_tokens": 1299,
@@ -7163,7 +7175,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 13024
+   "wire_input_tokens": 12945
   },
   {
    "cumulative_reasoning_tokens_before": 33946,
@@ -7331,7 +7343,7 @@
     "input_tokens": 65454,
     "output_tokens": 2237,
     "reasoning_tokens": 2064,
-    "wire_tokens": 15929
+    "wire_tokens": 14585
    },
    "provider_input_tokens": 67994,
    "provider_output_tokens": 5993,
@@ -7403,7 +7415,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 16164
+   "wire_input_tokens": 14820
   },
   {
    "cumulative_reasoning_tokens_before": 6384,
@@ -7577,7 +7589,7 @@
     "input_tokens": 27526,
     "output_tokens": 1520,
     "reasoning_tokens": 1210,
-    "wire_tokens": 15247
+    "wire_tokens": 15022
    },
    "provider_input_tokens": 28712,
    "provider_output_tokens": 167,
@@ -7654,7 +7666,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 14981
+   "wire_input_tokens": 14778
   },
   {
    "cumulative_reasoning_tokens_before": 9645,
@@ -7923,7 +7935,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 12578
+   "wire_input_tokens": 12449
   },
   {
    "cumulative_reasoning_tokens_before": 7926,
@@ -8127,7 +8139,7 @@
     "input_tokens": 25017,
     "output_tokens": 1299,
     "reasoning_tokens": 1105,
-    "wire_tokens": 13024
+    "wire_tokens": 12945
    },
    "provider_input_tokens": 30221,
    "provider_output_tokens": 1239,
@@ -8199,7 +8211,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 16124
+   "wire_input_tokens": 15969
   },
   {
    "cumulative_reasoning_tokens_before": 34817,
@@ -8373,7 +8385,7 @@
     "input_tokens": 67994,
     "output_tokens": 5993,
     "reasoning_tokens": 871,
-    "wire_tokens": 16164
+    "wire_tokens": 14820
    },
    "provider_input_tokens": 73673,
    "provider_output_tokens": 2700,
@@ -8445,7 +8457,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15799
+   "wire_input_tokens": 14502
   },
   {
    "cumulative_reasoning_tokens_before": 9986,
@@ -8655,7 +8667,7 @@
     "input_tokens": 25923,
     "output_tokens": 533,
     "reasoning_tokens": 341,
-    "wire_tokens": 12578
+    "wire_tokens": 12449
    },
    "provider_input_tokens": 29373,
    "provider_output_tokens": 2059,
@@ -8732,7 +8744,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 14937
+   "wire_input_tokens": 14738
   },
   {
    "cumulative_reasoning_tokens_before": 9084,
@@ -8954,7 +8966,7 @@
     "input_tokens": 30221,
     "output_tokens": 1239,
     "reasoning_tokens": 1158,
-    "wire_tokens": 16124
+    "wire_tokens": 15969
    },
    "provider_input_tokens": 29450,
    "provider_output_tokens": 706,
@@ -9026,7 +9038,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 14310
+   "wire_input_tokens": 14227
   },
   {
    "cumulative_reasoning_tokens_before": 37225,
@@ -9212,7 +9224,7 @@
     "input_tokens": 73673,
     "output_tokens": 2700,
     "reasoning_tokens": 2408,
-    "wire_tokens": 15799
+    "wire_tokens": 14502
    },
    "provider_input_tokens": 76537,
    "provider_output_tokens": 1154,
@@ -9284,7 +9296,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 16029
+   "wire_input_tokens": 14732
   },
   {
    "cumulative_reasoning_tokens_before": 5633,
@@ -9548,7 +9560,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 11725
+   "wire_input_tokens": 11697
   },
   {
    "cumulative_reasoning_tokens_before": 38215,
@@ -9746,7 +9758,7 @@
     "input_tokens": 76537,
     "output_tokens": 1154,
     "reasoning_tokens": 990,
-    "wire_tokens": 16029
+    "wire_tokens": 14732
    },
    "provider_input_tokens": 76708,
    "provider_output_tokens": 1199,
@@ -9821,7 +9833,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 15228
+   "wire_input_tokens": 13999
   },
   {
    "cumulative_reasoning_tokens_before": 7094,
@@ -10025,7 +10037,7 @@
     "input_tokens": 21323,
     "output_tokens": 1527,
     "reasoning_tokens": 1461,
-    "wire_tokens": 11725
+    "wire_tokens": 11697
    },
    "provider_input_tokens": 23315,
    "provider_output_tokens": 555,
@@ -10097,7 +10109,7 @@
      "other_chars": 918
     }
    ],
-   "wire_input_tokens": 12123
+   "wire_input_tokens": 12092
   },
   {
    "cumulative_reasoning_tokens_before": 13490,
@@ -10408,7 +10420,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 13988
+   "wire_input_tokens": 13806
   },
   {
    "cumulative_reasoning_tokens_before": 7490,
@@ -10624,7 +10636,7 @@
     "input_tokens": 23315,
     "output_tokens": 555,
     "reasoning_tokens": 396,
-    "wire_tokens": 12123
+    "wire_tokens": 12092
    },
    "provider_input_tokens": 24292,
    "provider_output_tokens": 56,
@@ -10701,7 +10713,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 12416
+   "wire_input_tokens": 12385
   },
   {
    "cumulative_reasoning_tokens_before": 13500,
@@ -10947,7 +10959,7 @@
     "input_tokens": 32345,
     "output_tokens": 153,
     "reasoning_tokens": 10,
-    "wire_tokens": 13988
+    "wire_tokens": 13806
    },
    "provider_input_tokens": 32790,
    "provider_output_tokens": 619,
@@ -11024,7 +11036,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 14153
+   "wire_input_tokens": 13971
   },
   {
    "cumulative_reasoning_tokens_before": 7512,
@@ -11258,7 +11270,7 @@
     "input_tokens": 24292,
     "output_tokens": 56,
     "reasoning_tokens": 22,
-    "wire_tokens": 12416
+    "wire_tokens": 12385
    },
    "provider_input_tokens": 24953,
    "provider_output_tokens": 290,
@@ -11335,7 +11347,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 12879
+   "wire_input_tokens": 12820
   },
   {
    "cumulative_reasoning_tokens_before": 14063,
@@ -11593,7 +11605,7 @@
     "input_tokens": 32790,
     "output_tokens": 619,
     "reasoning_tokens": 563,
-    "wire_tokens": 14153
+    "wire_tokens": 13971
    },
    "provider_input_tokens": 33510,
    "provider_output_tokens": 2685,
@@ -11670,7 +11682,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 14267
+   "wire_input_tokens": 14081
   },
   {
    "cumulative_reasoning_tokens_before": 7737,
@@ -11916,7 +11928,7 @@
     "input_tokens": 24953,
     "output_tokens": 290,
     "reasoning_tokens": 225,
-    "wire_tokens": 12879
+    "wire_tokens": 12820
    },
    "provider_input_tokens": 25848,
    "provider_output_tokens": 340,
@@ -11993,7 +12005,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 13381
+   "wire_input_tokens": 13319
   },
   {
    "cumulative_reasoning_tokens_before": 16636,
@@ -12269,7 +12281,7 @@
     "input_tokens": 33510,
     "output_tokens": 2685,
     "reasoning_tokens": 2573,
-    "wire_tokens": 14267
+    "wire_tokens": 14081
    },
    "provider_input_tokens": 37697,
    "provider_output_tokens": 3135,
@@ -12346,7 +12358,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 15330
+   "wire_input_tokens": 15118
   },
   {
    "cumulative_reasoning_tokens_before": 8005,
@@ -12604,7 +12616,7 @@
     "input_tokens": 25848,
     "output_tokens": 340,
     "reasoning_tokens": 268,
-    "wire_tokens": 13381
+    "wire_tokens": 13319
    },
    "provider_input_tokens": 27483,
    "provider_output_tokens": 460,
@@ -12681,7 +12693,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 14572
+   "wire_input_tokens": 14507
   },
   {
    "cumulative_reasoning_tokens_before": 19664,
@@ -12969,7 +12981,7 @@
     "input_tokens": 37697,
     "output_tokens": 3135,
     "reasoning_tokens": 3028,
-    "wire_tokens": 15330
+    "wire_tokens": 15118
    },
    "provider_input_tokens": 41276,
    "provider_output_tokens": 2034,
@@ -13046,7 +13058,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 15641
+   "wire_input_tokens": 15468
   },
   {
    "cumulative_reasoning_tokens_before": 8385,
@@ -13322,7 +13334,7 @@
     "input_tokens": 27483,
     "output_tokens": 460,
     "reasoning_tokens": 380,
-    "wire_tokens": 14572
+    "wire_tokens": 14507
    },
    "provider_input_tokens": 27030,
    "provider_output_tokens": 1504,
@@ -13399,7 +13411,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 13468
+   "wire_input_tokens": 13403
   },
   {
    "cumulative_reasoning_tokens_before": 9825,
@@ -13687,7 +13699,7 @@
     "input_tokens": 27030,
     "output_tokens": 1504,
     "reasoning_tokens": 1440,
-    "wire_tokens": 13468
+    "wire_tokens": 13403
    },
    "provider_input_tokens": 28829,
    "provider_output_tokens": 3116,
@@ -13764,7 +13776,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 13756
+   "wire_input_tokens": 13687
   },
   {
    "cumulative_reasoning_tokens_before": 12853,
@@ -14070,7 +14082,7 @@
     "input_tokens": 28829,
     "output_tokens": 3116,
     "reasoning_tokens": 3028,
-    "wire_tokens": 13756
+    "wire_tokens": 13687
    },
    "provider_input_tokens": 32508,
    "provider_output_tokens": 1413,
@@ -14147,7 +14159,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 14181
+   "wire_input_tokens": 14112
   },
   {
    "cumulative_reasoning_tokens_before": 14155,
@@ -14471,7 +14483,7 @@
     "input_tokens": 32508,
     "output_tokens": 1413,
     "reasoning_tokens": 1302,
-    "wire_tokens": 14181
+    "wire_tokens": 14112
    },
    "provider_input_tokens": 35339,
    "provider_output_tokens": 1691,
@@ -14548,7 +14560,7 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 14963
+   "wire_input_tokens": 14894
   },
   {
    "cumulative_reasoning_tokens_before": 15727,
@@ -14890,7 +14902,7 @@
     "input_tokens": 35339,
     "output_tokens": 1691,
     "reasoning_tokens": 1572,
-    "wire_tokens": 14963
+    "wire_tokens": 14894
    },
    "provider_input_tokens": 38456,
    "provider_output_tokens": 982,
@@ -14967,8 +14979,23 @@
      "other_chars": 402
     }
    ],
-   "wire_input_tokens": 15981
+   "wire_input_tokens": 15878
   }
  ],
- "source": ".local-test-evidence/2026-09-09/native-a6-run9|run8|run6"
+ "selected_for_glossary": {
+  "first_turn_the_measured_floor_would_stop": "该 Run 里第一次被这道闸门拦下的那一轮。",
+  "floor_above_the_real_billing": "回放里 measured_input_floor 高过真实计费的样本(W-c 之后只剩 3 条, 全部带 carry)。",
+  "floor_above_the_real_billing_before_w_c": "W-b 口径下反超、而 W-c 修好之后不再反超的三条 ordinal 1 —— 它们当初反超的原因就是 CJK 被按 1 token/字 记。留在夹具里作为 W-c 的正向证据。",
+  "history_trim_makes_the_undiscounted_carry_stale": "上一轮之后 payload 变小, 不打折的 carry 已经过期。",
+  "over_budget_the_measured_floor_cannot_see": "真实超 effective 但仍在 32000 窗口内、实测下界够不着的漏判。"
+ },
+ "source": ".local-test-evidence/2026-09-09/native-a6-run9|run8|run6",
+ "wire_formula": {
+  "cjk_chars_per_token": 1.3,
+  "json_unicode_escape_of_a_cjk_char": "folded back into the one CJK character it encodes",
+  "non_cjk_chars_per_token": 4,
+  "note": "事件 W-c(2026-09-09)。wire_input_tokens 与 previous_turn.wire_tokens 是 Host 口径的**派生量**,不是原始观测:公式一变就必须按夹具自己的字符类计数一起重述,否则「本轮按新公式、上一轮按旧公式」会在回放里伪造出一次裁史信号。本次重述了 44 条 previous_turn(上一轮本身也是样本,逐条按新公式重算);另有 14 条的上一轮不在样本里,其 wire_tokens 仍是旧口径的记录值 —— 那只会让回放里的 carry 比生产更小(闸门更松),不会掩盖任何一次真实超窗。",
+  "previous_turns_left_on_the_old_formula": 14,
+  "restated_previous_turns": 44
+ }
 }

@@ -2532,6 +2532,58 @@ observed_hidden=14740 floor=27874 > 26752`，而同一条 Run 前 14 轮
   裁后装得下）；`test_wire_input_budget.py` 29 例一条没改、全绿。
   详见 [DECISION-Y-REASONING-ECHO](../plans/2026-09-08-hm-to-a6/DECISION-Y-REASONING-ECHO.md)。
 
+### CJK 估算过高打死一条装得下的 Run：以观测校正估算（2026-09-09，事件 W-c）
+
+生产事实（两条互补的改动；`carry` 的三档取数与 `preserve_reasoning` 分档一个都没动）：
+
+- **`context_partitions.text_tokens` 按实测给 CJK 计价**。旧口径「1 个 CJK 字 = 1 token」
+  不是 tokenizer 事实，是没人量过。两段法实测（先在 CJK 占比 < 0.5% 的 30 组上定
+  ASCII 密度 = **3.26 字/token**，再在带中文的组上解 CJK 项）得 **1.54–2.04 字/token**；
+  取保守端 **1.3 字/token**（`ceil(chars × 10 / 13)`，整数运算，装配 lane 与 wire lane
+  逐 token 一致），对每条观测仍高估 ≥18%，方向合乎冻结 oracle 的
+  `token_underestimate_allowed: false`。非 CJK 的 `/4` **不动**。
+- **JSON `\uXXXX` 转义的 CJK 折回原字再计价**。
+  `ToolCallArgumentsMemo.canonical_tool_arguments_json` 走 `json.dumps` 的默认
+  `ensure_ascii=True`，模型回显的每个汉字以 6 个 ASCII 上线，旧口径按 `6/4 = 1.5 token`
+  记，实测 **0.601 token/转义**（与原样汉字的 0.594 同一档，中转站套模板前会把参数
+  JSON 解回来）。事故那条请求 31 246 里有 **14 901** 出自这一个常数。
+- **`wire_input_budget` 用上一轮的实测校正本轮的估算**。当且仅当同一条 Run 的上一轮
+  `observed_hidden == 0` **且** `observed_input < observed_wire` 时，取
+  `wire_ratio_observed = clamp(observed_input / observed_wire, 0.5, 1.0)`，
+  `wire_estimate_corrected = ceil(wire × ratio)`，用它（而不是 `wire`）与
+  `effective_input_budget` 比。两条前提缺一不可：有隐藏质量时这个比值混着两种成因；
+  反向的那一半正是 `hidden_tokens`，已由 `carry` 承担。**没有观测（本 Run 第一次调用）
+  时 `corrected == wire`，闸门仍然 fail closed。** 回执与溢出日志各多两项
+  `wire_ratio_observed=` / `wire_corrected=`；`floor=/effective=/wire=` 前缀不变，
+  `a6_verify` 的正则照旧命中。裁剪循环 `_measured_floor` 走同一条算术。
+- **连带重拟 `deepseek-v4-pro` 的三元组**：`1.50 / 1.25 / 7.10` → **`1.50 / 1.60 / 8.00`**
+  （schema 仍 1.30）。倍率的分母是 `text_tokens`，分母变小就必须跟着抬，否则真会低估
+  （未重拟前 `run5-54747d49-t5` 估 54 497 对真实 54 683）。逐 ordinal 实测上界按夹具
+  自己的字符类计数重述后，涨幅**精确地跟着 CJK 占比走**（30–39% CJK 的那条 Run 涨
+  11.5–19.8%，其余全池只涨 0.3–2.5%）。重拟后 36 条样本零低估、最紧一条余量 +10.7%。
+  `deepseek-v4-flash` 的 `1.25 / 0.35 / 1.65` **不动**（174 组上仍零低估，
+  最紧余量 +12.7% → +9.6%）。
+
+事故（HM-TO-A6 第 11 次尝试 11 第 17 轮，`deepseek-v4-flash`、thinking 关、窗口钉 32000）：
+一段 18 KB 中文目标文本被估成 **31 246** token（`effective=26752`）而拒发，`carry=0`、
+`observed_hidden=0` —— W-b 那条线工作正常，拦截完全来自文本估算；按实测密度外推真发出去约计费 22.7 K。
+上一轮的观测（Host 估 22 066 / provider 计 17 058）给出 `ratio = 0.7731`，
+`ceil(31246 × 0.7731) = 24 155 ≤ 26 752`，请求发得出去。
+
+- **群体判据**（65 条真机样本，真代码重放）：误伤 **0/29** 不变、真超整个 32000 窗口的
+  **0 漏**不变、事故 Run 仍在 ordinal 4 被拦；「floor 反超真实计费」由 6 降到 **3**，
+  降掉的正好是那三条 `carry=0` 的 ordinal 1（它们反超的原因就是 CJK 被按 1 token/字 记）；
+  漏判超 effective 由 6 升到 7，全部仍在物理窗口内。
+- **夹具里的派生量随公式一起重述**：`wire_input_tokens` 与 `previous_turn.wire_tokens`
+  是 Host 口径的派生量而非原始观测，公式一变必须一起重算，否则「本轮新公式、上一轮
+  旧公式」会在回放里**伪造出一次裁史信号**并把 carry 打折掉。
+- `test_wire_input_budget.py` **41 绿**（+7）、`test_token_estimator_calibration.py`
+  **62 绿**（+8；56 个用例函数，CJK 单元表参数化 7 组）、`test_reasoning_relay_budget.py`
+  **19 绿**（不变）；`scripts/benchmark/hm_benchmark.py` 的兜底副本 `_fallback_text_tokens`
+  同步改成同一条公式，`tests/quality/test_hm_benchmark.py` 改成直接拿 Host 实现对账
+  （**11 绿**）。四个文件单进程 **133 passed**。
+  详见 [DECISION-W-BUDGET-BYPASS §W-c](../plans/2026-09-08-hm-to-a6/DECISION-W-BUDGET-BYPASS.md)。
+
 ### 历史组消失的两条通路：A6-4 后缀单调只管裁剪（2026-09-09，事件 AB / A6-SUFFIX-MONOTONIC）
 
 生产事实（**装配侧一行未改**，改的是判据）：一个 `historical_causal_group` 进不了下一次

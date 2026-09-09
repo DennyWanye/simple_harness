@@ -104,6 +104,33 @@ run8 87 + run6 18,``request_json`` 逐条重放,见 memo §3.1)这条线触发 *
 thinking 开关与响应侧的 ``reasoning_content`` 是两条独立证据,任一条说「没有」,
 就没有可加的新质量。给一个不存在的东西记一笔账不叫保守,叫算错 —— 而这道闸门
 一响,这次尝试就结束了。
+
+事件 W-c(HM-TO-A6 第 11 次尝试 11 的第 17 轮,2026-09-09)打的是另一半:
+``carry`` 已经是实测了,``wire`` 还不是。
+
+    sdk_provider_wire_input_budget_exceeded floor=31246 effective=26752
+    wire=31246 carry=0 observed_input=17058 observed_wire=22066 observed_hidden=0
+
+``carry=0``、``observed_hidden=0`` —— W-b 那条线工作正常,这次拦截**完全**来自
+文本估算本身。要记录的是一段 18 KB 的中文目标文本,模型又把它原样回显成两次
+工具调用参数;``ToolCallArgumentsMemo`` 按 ``ensure_ascii=True`` 序列化,于是
+每个汉字以 ``\\uXXXX`` 六个 ASCII 字符上线,V0 的 ``/4`` 把它记成 **1.5 token**,
+而实测只值 **0.60**。31 246 里 14 901 是这么来的。按实测密度外推,真发出去
+大约计费 22.7 K —— 装得下。
+
+同一条 Run 的上一轮已经把答案摆在账本里了:Host 估 22 066,provider 计
+17 058,``hidden=0``。**估算与观测冲突时以观测为准** ——
+:attr:`ObservedProviderTurn.wire_ratio_observed` 取 ``input/wire``(钳在
+``[0.5, 1.0]``),:meth:`ObservedProviderTurn.corrected_wire_tokens` 用它修正本轮的
+估算,回执与日志落 ``wire_ratio_observed`` / ``wire_estimate_corrected``。
+本例 ``ceil(31246 × 17058 / 22066) = 24155 ≤ 26752``,请求照常发出。
+
+两条前提缺一不可,理由都在 :attr:`ObservedProviderTurn.wire_ratio_observed` 里。
+没有观测(本 Run 第一次调用)时 ``corrected == wire``,闸门仍然 fail-closed。
+
+估算本身也修了(``context_partitions.text_tokens``:CJK 按 1.3 字/token,
+``\\uXXXX`` 折回它编码的那个字),但那是**估算**,永远只能逼近;这条实测线才是
+边界。两者叠加后 65 条群体样本的判据不回退,见 memo §W-c。
 """
 
 from __future__ import annotations
@@ -137,6 +164,13 @@ CARRY_BASIS_OUTPUT_FALLBACK = "output_fallback"
 #: 同 (Run, 型号) 上根本没有观测 —— carry 恒为 0, 三档一个都没走。
 CARRY_BASIS_NO_OBSERVATION = "no_observation"
 
+#: 实测收缩比的下限(事件 W-c)。观测说「上一轮的文本估算比真实计费高一倍以上」
+#: 时不再照单全收: 那多半不是 tokenizer 密度, 而是上一轮 payload 里有本轮没有的
+#: 东西(裁史、换页), 拿它去打折本轮的估算会把闸门开得太大。一半是工程下限,
+#: 不是拟合出来的 —— 239 组真机配对里实测比值最低 0.773, 离 0.5 还有很大余量。
+WIRE_RATIO_OBSERVED_FLOOR_NUM = 1
+WIRE_RATIO_OBSERVED_FLOOR_DEN = 2
+
 
 class WireInputBudgetExceeded(ProviderRequestRejectedError):
     """本次物理请求的**实测**输入下界越过了 effective_input_budget。
@@ -156,8 +190,12 @@ class WireInputBudgetExceeded(ProviderRequestRejectedError):
         super().__init__(public_message=WireInputBudgetExceeded.error_code)
         # 数字一律收敛成 int; 只有 ``carry_basis`` 这类**判据名**是字符串
         # (事件 W-b)—— 回执里光有数字看不出这次的 carry 是怎么来的。
+        # 事件 W-c 又多一个真正的**分数** ``wire_ratio_observed``: 它是比值,
+        # 收敛成 int 就只剩 0 与 1, 回执里什么也说明不了, 所以 float 原样保留。
         self.diagnostics: dict[str, object] = {
-            key: value if isinstance(value, str) else int(value)  # type: ignore[arg-type]
+            key: value
+            if isinstance(value, (str, float))
+            else int(value)  # type: ignore[arg-type]
             for key, value in diagnostics.items()
         }
 
@@ -249,6 +287,51 @@ class ObservedProviderTurn:
         """``accounted=0`` 的 carry —— 保留给只关心上界的调用方。"""
 
         return self.carry_before_trim(0)
+
+    @property
+    def wire_ratio_observed(self) -> tuple[int, int] | None:
+        """上一轮实测到的「文本估算 → 真实计费」收缩比, 或 ``None``(没有收缩)。
+
+        事件 W-c。这道闸门的 ``wire`` 是**估算**, 不是观测: ``text_tokens`` 按
+        字符类给出一个与 provider tokenizer 无关的数。同一条 Run 的上一轮已经
+        把这两个数同时摆在 Host 手里了 —— 那一轮 Host 估了
+        ``wire_tokens``, provider 实际计了 ``input_tokens``。
+
+        只在**两个条件同时成立**时它才是可用的实测:
+
+        * ``hidden_tokens == 0`` —— 计费没有超过 Host 量到的 wire, 也就是说
+          上一轮的 prompt 里没有任何 Host 看不见的质量。有隐藏质量时这个比值
+          混着两种成因(密度偏差 + 隐藏注入), 拿它打折就是拿一个被隐藏质量压低
+          过的比值去缩本轮的估算, 方向危险。
+        * ``input_tokens < wire_tokens`` —— 估算确实比计费高。反向的那一半正是
+          ``hidden_tokens``, 已经由 ``carry`` 承担, 这里不重复。
+
+        返回的是**整数分数**而不是 float: 下游要用它算一个与硬预算比较的整数,
+        两条 lane(闸门与裁剪循环)必须逐 token 一致。
+        """
+
+        wire = max(0, int(self.wire_tokens))
+        billed = max(0, int(self.input_tokens))
+        if wire <= 0 or self.hidden_tokens != 0 or billed >= wire:
+            return None
+        if billed * WIRE_RATIO_OBSERVED_FLOOR_DEN < wire * WIRE_RATIO_OBSERVED_FLOOR_NUM:
+            return (WIRE_RATIO_OBSERVED_FLOOR_NUM, WIRE_RATIO_OBSERVED_FLOOR_DEN)
+        return (billed, wire)
+
+    def corrected_wire_tokens(self, wire_tokens: int) -> int:
+        """按上一轮的实测收缩比修正本轮的 wire 估算(没有观测就原样返回)。
+
+        观测是这个 (Run, 型号, payload 结构) 上关于「Host 的字符类估算与
+        provider tokenizer 差多少」的**唯一实测**, 而这道闸门是终局的 ——
+        一响这次尝试就结束。估算与观测冲突时以观测为准。
+        """
+
+        wire = max(0, int(wire_tokens))
+        ratio = self.wire_ratio_observed
+        if ratio is None:
+            return wire
+        num, den = ratio
+        return -(-wire * num // den)
 
     def discount_for_wire(self, carry: int, wire_tokens: int) -> int:
         """按本轮 payload 相对上一轮的收缩比给 carry 打折。
@@ -732,9 +815,17 @@ def check_wire_input_budget(
     )
     carry_before_trim = 0 if observed is None else observed.carry_before_trim(accounted)
     carry = 0 if observed is None else observed.discount_for_wire(carry_before_trim, wire)
-    floor = wire + carry
+    # 事件 W-c: 估算与观测冲突时以观测为准。没有观测(本 Run 第一次调用)时
+    # ``corrected == wire``, 闸门仍然 fail-closed —— 与本条规则出现之前逐 token 相同。
+    corrected = wire if observed is None else observed.corrected_wire_tokens(wire)
+    ratio = None if observed is None else observed.wire_ratio_observed
+    floor = corrected + carry
     facts: dict[str, object] = {
         "wire_input_tokens": wire,
+        # 事件 W-c 回执两件套: 实测收缩比, 以及按它修正之后真正拿去比预算的估算。
+        # 没有可用观测时比值记 1.0、修正值等于 wire —— 一眼看得出这次没有打折。
+        "wire_ratio_observed": 1.0 if ratio is None else round(ratio[0] / ratio[1], 4),
+        "wire_estimate_corrected": corrected,
         "observed_carry_tokens": carry,
         "measured_input_floor": floor,
         "effective_input_budget": effective,
@@ -780,13 +871,16 @@ def check_wire_input_budget(
         # a6_verify 按这一行判据统计。
         _LOG.warning(
             "sdk_provider_wire_input_budget_exceeded floor=%d effective=%d "
-            "wire=%d carry=%d carry_before_trim=%d observed_input=%d "
+            "wire=%d wire_corrected=%d wire_ratio_observed=%.4f carry=%d "
+            "carry_before_trim=%d observed_input=%d "
             "observed_output=%d observed_hidden=%d observed_wire=%d "
             "window=%d ordinal=%d reasoning_relay=%d reasoning_relay_dropped=%d "
             "reasoning_relay_dropped_messages=%d carry_basis=%s",
             floor,
             effective,
             wire,
+            corrected,
+            facts["wire_ratio_observed"],
             carry,
             facts["observed_carry_before_trim"],
             facts["observed_input_tokens"],
@@ -818,7 +912,7 @@ def _measured_floor(
     accounted = _accounted_new_mass(
         observed, wire_reasoning=wire_reasoning, dropped_tokens=dropped_tokens
     )
-    return int(wire) + observed.discount_for_wire(
+    return observed.corrected_wire_tokens(wire) + observed.discount_for_wire(
         observed.carry_before_trim(accounted), wire
     )
 
@@ -934,6 +1028,8 @@ __all__ = [
     "ObservedProviderTurn",
     "REASONING_CONTENT_KEY",
     "ReasoningRelayDecision",
+    "WIRE_RATIO_OBSERVED_FLOOR_DEN",
+    "WIRE_RATIO_OBSERVED_FLOOR_NUM",
     "WireInputBudgetExceeded",
     "check_wire_input_budget",
     "default_observed_input_carry_ledger",

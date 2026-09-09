@@ -15,6 +15,7 @@ fails closed instead of shipping an oversized payload.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -102,6 +103,55 @@ class ContextBudgetExceeded(RuntimeError):
 # Non-CJK characters per token.  Unchanged from the frozen V0 formula on
 # purpose (see the note above); the per-model calibration carries the density.
 NON_CJK_CHARS_PER_TOKEN = 4
+
+# ── CJK density (事件 W-c, 2026-09-09) ───────────────────────────────────────
+#
+# V0 priced one CJK character at one token.  That is not a tokenizer fact, it is
+# the absence of one: nobody had measured it.  HM-TO-A6 attempt 11 turn 17 sent
+# the bill for that guess — an 18 KB Chinese goal text, echoed twice by the model
+# as tool-call arguments, was estimated at 31 246 wire tokens against an
+# effective budget of 26 752 and refused, while extrapolating the payload at the
+# measured densities below puts its real bill at ≈ 22.7 K.  The turn died on the
+# arithmetic, not on the window.
+#
+# Measured against the real DeepSeek tokenizer on 174 provider pairs whose Runs
+# ran with thinking disabled end to end (run6/run8/run9/run10/run11, so the
+# billed ``input_tokens`` carries *no* hidden re-injected reasoning and
+# ``billed ≈ wire``; ``request_json`` replayed with the responses' own
+# ``tool_calls.arguments`` restored, which reproduces the two receipts the
+# incident logged — 22 066 and 31 246 — to within 0.1%):
+#
+#   * isolate the plain non-CJK density on the 30 pairs below 0.5% CJK →
+#     3.26 chars/token (median; p10 3.05, p90 3.92) — the ``/4`` constant is
+#     already a mild *under*-count there, and stays untouched by design.
+#   * solve the CJK term on the pairs that actually carry Chinese →
+#     **1.54 – 2.04 chars per token** (run11 t1 1.684 over 4 962 CJK chars,
+#     run10 t1 1.541 over 5 738, two run11 pairs 2.016 / 2.039 over 2 307).
+#
+# 1.3 is the conservative end of that measurement: it over-prices every observed
+# pair by ≥18%, so the estimate stays an over-estimate in the direction the
+# frozen oracle demands (``token_underestimate_allowed: false``) while removing
+# the 1.35× pathology.  Integer arithmetic (``ceil(chars * 10 / 13)``) keeps it
+# deterministic — no float rounding between the assembly lane and the wire fence.
+CJK_CHARS_PER_TOKEN = 1.3
+_CJK_TOKENS_NUM = 10
+_CJK_TOKENS_DEN = 13
+
+#: A JSON ``\uXXXX`` escape.  ``ToolCallArgumentsMemo.canonical_tool_arguments_json``
+#: serialises with ``ensure_ascii=True``, so every Chinese character the model
+#: echoed back as a tool-call argument reaches the wire as **six ASCII
+#: characters** — and V0 charged it ``6/4 = 1.5`` tokens, four times its measured
+#: cost.  That single term was 14 901 of the incident's 31 246 tokens.
+#:
+#: Measured cost of an escaped CJK character (incident Run, ordinal 1 → 2:
+#: +4 940 escapes, +5 884 plain chars, +4 776 billed tokens; plain at 3.26
+#: chars/token accounts for 1 806, leaving 2 970 for the escapes) =
+#: **0.601 tokens**, i.e. 1.66 escapes/token — indistinguishable from the raw
+#: character's 0.594 (1.684 chars/token).  The relay decodes the arguments JSON
+#: before templating, so the glyph is what gets tokenised either way.  Fold the
+#: escape back into the character it encodes, then price it as CJK.
+_JSON_UNICODE_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
+
 # The ``tools`` array's own JSON envelope per entry
 # (``{"type":"function","function":{...}}``): structurally certain, the Host
 # writes it itself.  Per-*message* framing is deliberately not a constant here —
@@ -110,21 +160,52 @@ NON_CJK_CHARS_PER_TOKEN = 4
 WIRE_TOOL_SPEC_OVERHEAD_TOKENS = 8
 
 
-def text_tokens(value: object) -> int:
-    """Shared CJK-aware token estimator (the chat lane formula, verbatim).
+def cjk_tokens(cjk_chars: int) -> int:
+    """CJK characters → tokens at the measured density, rounded up.
 
-    CJK counts one token per character, the rest rounds up at
-    ``NON_CJK_CHARS_PER_TOKEN``.  ``token_underestimate_allowed`` is ``false``
-    in the frozen oracle, so the rounding direction is always up — and what a
-    text-shaped figure structurally cannot see (tool schemas, wire framing,
-    provider-injected content) is added by the callers rather than smuggled into
-    this constant.
+    Integer arithmetic on purpose: this figure is compared against a hard budget
+    on two different lanes (assembly and the wire fence), and the two must agree
+    to the token.  Evidence: see ``CJK_CHARS_PER_TOKEN``.
+    """
+
+    return -(-max(0, int(cjk_chars)) * _CJK_TOKENS_NUM // _CJK_TOKENS_DEN)
+
+
+def text_tokens(value: object) -> int:
+    """Shared CJK-aware token estimator (the chat lane formula).
+
+    CJK counts at ``CJK_CHARS_PER_TOKEN`` characters per token, the rest rounds
+    up at ``NON_CJK_CHARS_PER_TOKEN``.  ``token_underestimate_allowed`` is
+    ``false`` in the frozen oracle, so both constants sit on the conservative
+    side of their own measurement — and what a text-shaped figure structurally
+    cannot see (tool schemas, wire framing, provider-injected content) is added
+    by the callers rather than smuggled into them.
+
+    事件 W-c: a JSON ``\\uXXXX`` escape of a CJK character is folded back into the
+    single character it encodes before either constant is applied.  Charging it
+    as six ASCII characters was not conservative, it was wrong by 4× — see
+    ``_JSON_UNICODE_ESCAPE``.
     """
 
     text = str(value or "")
-    cjk = sum(1 for char in text if "\u3400" <= char <= "\u9fff")
-    non_cjk = max(0, len(text) - cjk)
-    return cjk + (non_cjk + NON_CJK_CHARS_PER_TOKEN - 1) // NON_CJK_CHARS_PER_TOKEN
+    escaped_cjk = 0
+    if "\\u" in text:
+
+        def _fold(match: "re.Match[str]") -> str:
+            nonlocal escaped_cjk
+            code = int(match.group(1), 16)
+            if 0x3400 <= code <= 0x9FFF:
+                escaped_cjk += 1
+                # Its six characters are now accounted for as one CJK character.
+                return ""
+            return match.group(0)
+
+        text = _JSON_UNICODE_ESCAPE.sub(_fold, text)
+    literal_cjk = sum(1 for char in text if "\u3400" <= char <= "\u9fff")
+    non_cjk = max(0, len(text) - literal_cjk)
+    return cjk_tokens(literal_cjk + escaped_cjk) + (
+        non_cjk + NON_CJK_CHARS_PER_TOKEN - 1
+    ) // NON_CJK_CHARS_PER_TOKEN
 
 
 @dataclass(frozen=True, slots=True)

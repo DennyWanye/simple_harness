@@ -32,11 +32,35 @@ def test_percentile_nearest_rank() -> None:
 
 
 def test_text_tokens_fallback_matches_host_formula() -> None:
-    # 与 context_partitions.text_tokens 逐字一致：CJK 每字 1 token，其余每 4 字符 1 token
+    """兜底副本必须与 Host 的 ``text_tokens`` 逐 token 相同。
+
+    事件 W-c(2026-09-09)：CJK 由「每字 1 token」改成 1.3 字/token
+    (``ceil(chars * 10 / 13)``)，JSON ``\\uXXXX`` 转义的 CJK 先折回它编码的那个
+    字符；非 CJK 的 4 字符/token 不变。这条用例直接拿 Host 的实现对账，
+    所以下次再改口径时，漂移会在这里当场红掉，而不是让基准线悄悄量错一个数。
+    """
+
+    from deskpet.sdk_adapters.context_partitions import text_tokens
+
+    for sample in (
+        "",
+        "abcd",
+        "abcde",
+        "记住三件事",
+        "记住 abcd",
+        "汉" * 100,
+        "\\u6c49" * 100,
+        "\\u0041" * 10,
+        "汉" * 13 + "\\u6c49" * 13 + "x" * 8,
+        "\\u6c4",
+        "\\uZZZZ",
+    ):
+        assert hb._fallback_text_tokens(sample) == text_tokens(sample), repr(sample)
+    # 数值锚点，免得两边一起漂。
     assert hb._fallback_text_tokens("") == 0
     assert hb._fallback_text_tokens("abcd") == 1
-    assert hb._fallback_text_tokens("记住三件事") == 5
-    assert hb._fallback_text_tokens("记住 abcd") == 2 + (6 + 3) // 4
+    assert hb._fallback_text_tokens("记住三件事") == 4
+    assert hb._fallback_text_tokens("汉" * 100) == 77
     assert hb._fallback_effective_input_budget(32000) == 26752
     assert hb._fallback_budget_window(1_000_000) == 32768
 

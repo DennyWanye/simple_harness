@@ -171,9 +171,21 @@ BUILTIN: dict[str, ModelContextInfo] = {
         compact_at_pct=0.75,
         recall_sweet_tokens=384_000,
         supported_windows=(128_000, 400_000, 1_000_000),
+        # 2026-09-09 事件 W-c 重拟(1.50/1.25/7.10 → 1.50/1.60/8.00,schema 仍 1.30):
+        # 这三个数是**倍率**,它们的分母是 `text_tokens` 给出的字符类估算。W-c 把
+        # CJK 从 1 token/字改成 1.3 字/token、并把 `\uXXXX` 折回原字之后,分母变小了,
+        # 同一批 423 组配对上「不低估」所需的倍率就必然变大 —— 不跟着抬就会真的低估
+        # (未重拟前 run5-54747d49-t5 估 54497 对真实 54683)。
+        # 逐 ordinal 的实测上界按夹具自己的字符类计数重述(见
+        # tests/fixtures/hm_to_a6_pro_pool_samples.json 的
+        # measured_max_needed_message_ratio_by_ordinal):CJK 占比 30–39% 的那条 Run
+        # (run5-54747d49)涨了 11.5–19.8%,其余全池只涨 0.3–2.5% —— 涨幅精确地跟着
+        # CJK 占比走,这本身就是 W-c 的旁证。新的实测平台 7.127(ordinal 5),仍按
+        # ≥10% 工程余量取 max=8.00;ordinal 0 的上界 1.2662 → base 保持 1.50。
+        # 重拟后 36 条样本零低估,最紧一条余量 +10.7%(旧口径 +10.4%),口径未放松。
         input_estimate_ratio=1.50,
-        input_estimate_ratio_per_turn=1.25,
-        input_estimate_ratio_max=7.10,
+        input_estimate_ratio_per_turn=1.60,
+        input_estimate_ratio_max=8.00,
         input_estimate_schema_ratio=1.30,
     ),
     # 2026-09-09 Incident O: flash 之前直接沿用 pro 的三元组,但两者的残差成分
@@ -241,6 +253,21 @@ BUILTIN: dict[str, ModelContextInfo] = {
     # 让降级(强制分页 → 裁史)也能看见这条 carry,需要改
     # context_authority._plan_turn_messages —— 补丁与红测见
     # plans/2026-09-08-hm-to-a6/DECISION-W-BUDGET-BYPASS.md 第 5 节。
+    #
+    # ── 2026-09-09 事件 W-c(CJK 估算):这三个数**仍然不动**,改的是分母 ──
+    #
+    # 第 11 次第 17 轮死在文本估算上,而不是死在这三个倍率上:一段 18 KB 中文
+    # 被估成 31 246 token(effective 26 752)而拒发,按实测密度外推真发出去约 22.7 K。
+    # 成因在 `sdk_adapters/context_partitions.py::text_tokens`,不在这里 ——
+    # 那里把一个 CJK 字记 1 token(实测 1.54–2.04 字/token),并且把工具调用
+    # 参数里 `ensure_ascii` 转义出来的 `\uXXXX` 当成 6 个 ASCII 记 1.5 token
+    # (实测 0.60)。两处已按 174 组 thinking 关闭的真机配对重拟:CJK 1.3 字/
+    # token、转义折回原字。倍率是「Host 看不见的质量」的校准量,字符密度是
+    # 「Host 看得见的质量」的计价口径,两件事不该互相补偿 —— 这与 Incident P
+    # 把 schema 从 messages 的倍率里拆出来是同一条理由。
+    #
+    # 重拟之后,本表这三个数在同一批 174 组上仍然零低估:校准后的估算/实测
+    # 中位由 1.459 降到 1.435,最紧的一条余量由 +12.7% 降到 +9.6%,方向不变。
     "deepseek-v4-flash": ModelContextInfo(
         model="deepseek-v4-flash",
         context_window=1_000_000,

@@ -60,6 +60,8 @@ from deskpet.sdk_adapters.wire_input_budget import (
     provider_turn_ordinal,
     run_key,
     thinking_disabled,
+    WIRE_RATIO_OBSERVED_FLOOR_DEN,
+    WIRE_RATIO_OBSERVED_FLOOR_NUM,
     wire_message_tokens,
     wire_request_tokens,
 )
@@ -217,7 +219,10 @@ def test_restored_tool_call_arguments_are_invisible_to_a_message_text_estimate()
 
     assert on_the_wire[0]["tool_calls"][0]["function"]["arguments"] != "{}"
     assert seen_by_the_planner < 20
-    assert really_sent > seen_by_the_planner + 2000
+    # 2 400 个汉字, 事件 W-c 之后按 1.3 字/token 计价(``canonical_tool_arguments_json``
+    # 的 ``ensure_ascii`` 转义在 ``text_tokens`` 里被折回原字, 所以这里量到的与
+    # 直接写中文一致)。缺口的量级没变: 装配期看得见的是 0, wire 上是一千多。
+    assert really_sent > seen_by_the_planner + 1800
 
 
 def test_run_key_and_ordinal_come_from_the_request_id() -> None:
@@ -344,6 +349,11 @@ WB_PREVIOUS_OUTPUT = 4_860
 WB_WIRE = 21_997
 WB_OLD_FLOOR = 26_857
 WB_THINKING_DISABLED = {"thinking": {"type": "disabled"}}
+# 事件 W-c: 同一组数字里本来就藏着一次实测 —— 上一轮 Host 估 12 874、provider
+# 计 12 360、hidden=0, 也就是文本估算比真实计费高了 4.0%。这一轮的估算按这个
+# 实测比值修正: ceil(21997 × 12360 / 12874)。
+WB_WIRE_RATIO = 12_360 / 12_874
+WB_WIRE_CORRECTED = -(-WB_WIRE * WB_PREVIOUS_INPUT // WB_PREVIOUS_WIRE)
 
 
 def _wb_payload(tokens: int, *, thinking: dict | None = None) -> dict:
@@ -429,7 +439,12 @@ def test_a_turn_with_thinking_disabled_never_pays_for_the_echoed_arguments() -> 
     )
     assert facts["carry_basis"] == CARRY_BASIS_NO_REASONING
     assert facts["observed_carry_tokens"] == 0
-    assert facts["measured_input_floor"] == WB_WIRE
+    # 事件 W-c: 上一轮的 (wire, 计费) 就是这个 (Run, 型号, payload 结构) 上关于
+    # 「字符类估算比 provider tokenizer 高多少」的实测, 这一轮照它打折。
+    assert facts["wire_input_tokens"] == WB_WIRE
+    assert facts["wire_ratio_observed"] == round(WB_WIRE_RATIO, 4) < 1.0
+    assert facts["wire_estimate_corrected"] == WB_WIRE_CORRECTED == 21_119
+    assert facts["measured_input_floor"] == WB_WIRE_CORRECTED
     assert facts["measured_input_floor"] <= facts["effective_input_budget"] == EFFECTIVE
     # 事件 W 的兜底会把它打死: 这就是那 105 个 token 的回归判据。
     assert WB_WIRE + WB_PREVIOUS_OUTPUT == WB_OLD_FLOOR > EFFECTIVE
@@ -449,15 +464,41 @@ def test_a_thinking_enabled_turn_still_charges_the_measured_reasoning() -> None:
     assert observed.carry_basis == CARRY_BASIS_REASONING_TOKENS
     assert observed.new_mass_tokens == WB_PREVIOUS_OUTPUT
 
+    facts = check_wire_input_budget(
+        request_id=f"{WB_RUN}:provider-turn:2",
+        payload=_wb_payload(WB_WIRE),
+        window_tokens=WINDOW,
+        ledger=ledger,
+    )
+    # 4 860 个 token 的思考照样**全额**记进 carry —— 这一档是实测, W-c 不碰它。
+    assert facts["carry_basis"] == CARRY_BASIS_REASONING_TOKENS
+    assert facts["observed_carry_tokens"] == WB_PREVIOUS_OUTPUT
+    assert (
+        facts["measured_input_floor"]
+        == WB_WIRE_CORRECTED + WB_PREVIOUS_OUTPUT
+        == WB_OLD_FLOOR - (WB_WIRE - WB_WIRE_CORRECTED)
+    )
+    # 事件 W-c 之前这条会被打死(26 857 > 26 752), 而它超出预算的那 105 个 token
+    # 完全落在文本估算自己多算的 878 个里面。修正之后它装得下 —— 这不是把闸门
+    # 调松, 是把一个算错的数改对: carry 一个 token 都没少收。
+    assert WB_OLD_FLOOR > EFFECTIVE >= facts["measured_input_floor"]
+
+    # 而真正需要 fail closed 的形态一点没变: 思考量再大一档就越界, 一个字节不发。
+    ledger_deep = _wb_ledger(
+        thinking=None, reasoning_tokens=WB_PREVIOUS_OUTPUT + 6_000, reasoning_content_seen=True
+    )
     with pytest.raises(WireInputBudgetExceeded) as raised:
         check_wire_input_budget(
             request_id=f"{WB_RUN}:provider-turn:2",
             payload=_wb_payload(WB_WIRE),
             window_tokens=WINDOW,
-            ledger=ledger,
+            ledger=ledger_deep,
         )
     assert raised.value.diagnostics["carry_basis"] == CARRY_BASIS_REASONING_TOKENS
-    assert raised.value.diagnostics["measured_input_floor"] == WB_OLD_FLOOR
+    assert (
+        raised.value.diagnostics["measured_input_floor"]
+        == WB_WIRE_CORRECTED + WB_PREVIOUS_OUTPUT + 6_000
+    )
 
 
 def test_a_relay_that_hides_the_count_keeps_the_conservative_fallback() -> None:
@@ -473,15 +514,17 @@ def test_a_relay_that_hides_the_count_keeps_the_conservative_fallback() -> None:
     assert observed.carry_basis == CARRY_BASIS_OUTPUT_FALLBACK
     assert observed.new_mass_tokens == WB_PREVIOUS_OUTPUT
 
-    with pytest.raises(WireInputBudgetExceeded) as raised:
-        check_wire_input_budget(
-            request_id=f"{WB_RUN}:provider-turn:2",
-            payload=_wb_payload(WB_WIRE),
-            window_tokens=WINDOW,
-            ledger=ledger,
-        )
-    assert raised.value.diagnostics["carry_basis"] == CARRY_BASIS_OUTPUT_FALLBACK
-    assert raised.value.diagnostics["measured_input_floor"] == WB_OLD_FLOOR
+    facts = check_wire_input_budget(
+        request_id=f"{WB_RUN}:provider-turn:2",
+        payload=_wb_payload(WB_WIRE),
+        window_tokens=WINDOW,
+        ledger=ledger,
+    )
+    # 保守回退仍然按整个 output 记账(这一档 W-c 同样不碰), 只是它加在**修正后**
+    # 的估算上 —— 两件事各归各: carry 猜的是隐藏质量, ratio 修的是量得到的那部分。
+    assert facts["carry_basis"] == CARRY_BASIS_OUTPUT_FALLBACK
+    assert facts["observed_carry_tokens"] == WB_PREVIOUS_OUTPUT
+    assert facts["measured_input_floor"] == WB_WIRE_CORRECTED + WB_PREVIOUS_OUTPUT
 
 
 def test_the_thinking_switch_alone_settles_the_branch_without_the_response() -> None:
@@ -687,6 +730,177 @@ def test_a_blocked_request_leaves_no_dangling_wire_record() -> None:
     assert ledger.carry_tokens("product-sdk-r:provider-turn:3", model=MODEL) == 32_551
 
 
+# ── 事件 W-c: 估算与观测冲突时, 以观测为准 ───────────────────────────────────
+#
+# 第 11 次尝试 11 的第 17 轮, 回执逐字:
+#   floor=31246 effective=26752 wire=31246 carry=0 carry_before_trim=0
+#   observed_input=17058 observed_output=5015 observed_hidden=0
+#   observed_wire=22066 ordinal=5 carry_basis=no_reasoning
+# carry=0、hidden=0 —— W-b 那条线工作正常, 这次拦截**完全**来自文本估算。
+# 而同一条 Run 的上一轮已经把答案摆在账本里: 22 066 估对 17 058 计, 高了 29.4%。
+
+WC_RUN = "product-sdk-818b2801"
+WC_PREVIOUS_WIRE = 22_066
+WC_PREVIOUS_INPUT = 17_058
+WC_PREVIOUS_OUTPUT = 5_015
+WC_WIRE = 31_246
+
+
+def _wc_ledger(
+    *,
+    previous_wire: int = WC_PREVIOUS_WIRE,
+    previous_input: int = WC_PREVIOUS_INPUT,
+    reasoning_tokens: int | None = None,
+    reasoning_content_seen: bool = False,
+    thinking: dict | None = WB_THINKING_DISABLED,
+) -> ObservedInputCarryLedger:
+    """按生产路径灌进事故那条 Run 的 ordinal 4(走真的 check + observe_usage)。"""
+
+    ledger = ObservedInputCarryLedger()
+    previous = f"{WC_RUN}:provider-turn:4"
+    check_wire_input_budget(
+        request_id=previous,
+        payload=_wb_payload(previous_wire, thinking=thinking),
+        window_tokens=WINDOW,
+        ledger=ledger,
+    )
+    ledger.observe_usage(
+        previous,
+        input_tokens=previous_input,
+        output_tokens=WC_PREVIOUS_OUTPUT,
+        reasoning_tokens=reasoning_tokens,
+        reasoning_content_seen=reasoning_content_seen,
+    )
+    return ledger
+
+
+def test_the_incident_request_goes_out_once_the_observation_corrects_the_estimate() -> None:
+    """W-c 的回归判据: 同一组数字, 事故那条请求现在发得出去。"""
+
+    ledger = _wc_ledger()
+    observed = ledger.last(f"{WC_RUN}:provider-turn:5", model=MODEL)
+    assert observed is not None
+    assert observed.hidden_tokens == 0
+    assert observed.carry_basis == CARRY_BASIS_NO_REASONING
+    assert observed.wire_ratio_observed == (WC_PREVIOUS_INPUT, WC_PREVIOUS_WIRE)
+
+    facts = check_wire_input_budget(
+        request_id=f"{WC_RUN}:provider-turn:5",
+        payload=_wb_payload(WC_WIRE, thinking=WB_THINKING_DISABLED),
+        window_tokens=WINDOW,
+        ledger=ledger,
+    )
+    assert facts["wire_input_tokens"] == WC_WIRE == 31_246
+    assert facts["observed_carry_tokens"] == 0
+    assert facts["wire_ratio_observed"] == round(WC_PREVIOUS_INPUT / WC_PREVIOUS_WIRE, 4)
+    assert facts["wire_estimate_corrected"] == 24_155
+    assert facts["measured_input_floor"] == 24_155 <= EFFECTIVE == 26_752
+    # 修正前就是事故本身: 31 246 > 26 752, 这一轮直接死。
+    assert WC_WIRE > EFFECTIVE
+
+
+def test_the_correction_needs_both_no_hidden_mass_and_an_over_estimate() -> None:
+    """两条前提各自都是必要的 —— 少一条就不打折, 闸门退回只看 wire。"""
+
+    # 有隐藏质量(计费高过 wire): 这个比值混着两种成因, 不能拿来缩估算。
+    hidden = ObservedProviderTurn(
+        wire_tokens=WC_PREVIOUS_WIRE, input_tokens=WC_PREVIOUS_WIRE + 1, output_tokens=0
+    )
+    assert hidden.hidden_tokens > 0
+    assert hidden.wire_ratio_observed is None
+    assert hidden.corrected_wire_tokens(WC_WIRE) == WC_WIRE
+
+    # 估算本来就不高于计费: 高出来的那一半正是 hidden, 由 carry 承担, 不重复。
+    exact = ObservedProviderTurn(
+        wire_tokens=WC_PREVIOUS_WIRE, input_tokens=WC_PREVIOUS_WIRE, output_tokens=0
+    )
+    assert exact.wire_ratio_observed is None
+    assert exact.corrected_wire_tokens(WC_WIRE) == WC_WIRE
+
+
+def test_the_correction_is_clamped_at_half() -> None:
+    """观测说「估算是计费的三倍」时不照单全收 —— 那多半是裁史, 不是密度。"""
+
+    wild = ObservedProviderTurn(wire_tokens=30_000, input_tokens=6_000, output_tokens=0)
+    assert wild.hidden_tokens == 0
+    assert wild.wire_ratio_observed == (
+        WIRE_RATIO_OBSERVED_FLOOR_NUM,
+        WIRE_RATIO_OBSERVED_FLOOR_DEN,
+    )
+    assert wild.corrected_wire_tokens(31_247) == 15_624  # ceil(31247 / 2)
+
+
+def test_without_an_observation_the_gate_still_fails_closed_on_the_raw_estimate() -> None:
+    """本 Run 第一次调用: 没有可打折的观测, 口径与 W-c 出现之前逐 token 相同。"""
+
+    with pytest.raises(WireInputBudgetExceeded) as raised:
+        check_wire_input_budget(
+            request_id=f"{WC_RUN}:provider-turn:1",
+            payload=_wb_payload(WC_WIRE, thinking=WB_THINKING_DISABLED),
+            window_tokens=WINDOW,
+            ledger=ObservedInputCarryLedger(),
+        )
+    diagnostics = raised.value.diagnostics
+    assert diagnostics["carry_basis"] == CARRY_BASIS_NO_OBSERVATION
+    assert diagnostics["wire_ratio_observed"] == 1.0
+    assert diagnostics["wire_estimate_corrected"] == diagnostics["wire_input_tokens"] == WC_WIRE
+    assert diagnostics["measured_input_floor"] == WC_WIRE
+
+
+def test_a_thinking_on_turn_is_untouched_by_the_correction() -> None:
+    """thinking 开着、计费高过 wire —— W-c 的两条前提都不成立, 一切照事件 W。
+
+    这是「不该动的形态一动没动」的判据: 同一条 Run、同样的 payload, 只是上一轮
+    真的想过并且计费超过了 Host 量到的 wire。carry 按 reasoning 实测, 估算不打折,
+    floor 与 W-b 口径逐 token 相同。
+    """
+
+    ledger = _wc_ledger(
+        previous_input=WC_PREVIOUS_WIRE + 3_000,
+        reasoning_tokens=4_000,
+        reasoning_content_seen=True,
+        thinking=None,
+    )
+    observed = ledger.last(f"{WC_RUN}:provider-turn:5", model=MODEL)
+    assert observed is not None
+    assert observed.reasoning_disabled is False
+    assert observed.carry_basis == CARRY_BASIS_REASONING_TOKENS
+    assert observed.hidden_tokens == 3_000
+    assert observed.wire_ratio_observed is None
+
+    with pytest.raises(WireInputBudgetExceeded) as raised:
+        check_wire_input_budget(
+            request_id=f"{WC_RUN}:provider-turn:5",
+            payload=_wb_payload(WC_WIRE),
+            window_tokens=WINDOW,
+            ledger=ledger,
+        )
+    diagnostics = raised.value.diagnostics
+    assert diagnostics["wire_ratio_observed"] == 1.0
+    assert diagnostics["wire_estimate_corrected"] == WC_WIRE
+    # carry = hidden 3000 + reasoning 4000, 一个 token 都没少收。
+    assert diagnostics["observed_carry_tokens"] == 7_000
+    assert diagnostics["measured_input_floor"] == WC_WIRE + 7_000
+
+
+def test_the_correction_and_the_trim_discount_compose_on_the_same_arithmetic() -> None:
+    """裁史打折压 carry, 实测比值压估算 —— 两件不同的事, 各压各的那一项。"""
+
+    ledger = _wc_ledger()
+    smaller = WC_PREVIOUS_WIRE // 2
+    facts = check_wire_input_budget(
+        request_id=f"{WC_RUN}:provider-turn:5",
+        payload=_wb_payload(smaller, thinking=WB_THINKING_DISABLED),
+        window_tokens=WINDOW,
+        ledger=ledger,
+    )
+    # carry 本来就是 0(hidden=0 + no_reasoning), 所以裁史那一支没有可压的;
+    # 估算这一支照常按实测比值压。
+    assert facts["observed_carry_tokens"] == facts["observed_carry_before_trim"] == 0
+    assert facts["wire_estimate_corrected"] == -(-smaller * WC_PREVIOUS_INPUT // WC_PREVIOUS_WIRE)
+    assert facts["measured_input_floor"] == facts["wire_estimate_corrected"]
+
+
 # ── 3. 真机证据: 把 239 组的代表样本用真代码重放一遍 ─────────────────────────
 
 
@@ -808,8 +1022,13 @@ def test_the_floor_stays_below_the_real_billing_except_on_the_recorded_outliers(
         for sample, facts in replayed
         if sample["id"] in actual and facts["observed_carry_tokens"] > 0
     }
-    # 一半以上的反超与 carry 无关: 那是首轮, 文本估算自己就比真实计费高。
-    assert len(with_a_carry) < len(actual)
+    # 事件 W-c 之前这里断言的是「一半以上的反超与 carry 无关 —— 那是首轮, 文本估算
+    # 自己就比真实计费高」。那三条 ordinal 1 的反超**正是 CJK 被按 1 token/字 记**
+    # 造成的, W-c 把它修掉之后它们全部消失: 剩下的三条**每一条**都带 carry, 也就是
+    # 说这道闸门反超真实计费时, 已经只可能是「上一轮的隐藏质量这一轮没有全部回来」,
+    # 不再有文本估算自己造出来的那一类。
+    assert with_a_carry == actual
+    assert all(int(s["provider_turn_ordinal"]) > 1 for s in _tagged(pool, "floor_above_the_real_billing"))
 
 
 def test_no_scalar_ratio_can_satisfy_this_evidence(pool: dict) -> None:
@@ -833,15 +1052,20 @@ def test_no_scalar_ratio_can_satisfy_this_evidence(pool: dict) -> None:
             hi[ordinal] = min(hi.get(ordinal, 99.0), needed)
     contradictory = {o for o in lo.keys() & hi.keys() if lo[o] > hi[o]}
     assert {2, 3, 4, 6, 7} <= contradictory
-    assert round(lo[2], 3) >= 1.83 and round(hi[2], 3) <= 1.69
-    # 与夹具记的 239 组全量结论同号(样本只是全量的下界视角)。
+    # 事件 W-c 重述了 wire 的字符类口径, 两条边界跟着走了 2~3%; 矛盾本身没变号。
+    assert round(lo[2], 3) >= 1.87 and round(hi[2], 3) <= 1.73
+    # 与夹具记的 239 组全量结论同号。**不能**逐 ordinal 对齐两边: 记录表是 239 组
+    # 在**事件 W-b 口径**(CJK 1 token/字)下算的, 这里的 contradictory 是 65 条样本
+    # 在 W-c 口径下算的 —— 两个总体、两套字符类公式, 某个 ordinal 在一边有矛盾而
+    # 另一边没有并不说明任何事。同号的意思是: 两边都在同一批核心 ordinal 上无解。
     recorded = pool["ratio_model_conflict_by_ordinal"]
-    for ordinal in contradictory:
-        bounds = recorded[str(ordinal)]
-        assert (
-            bounds["min_ratio_to_flag_an_over_budget_request"]
-            > bounds["max_ratio_that_spares_a_fitting_request"]
-        )
+    recorded_contradictory = {
+        int(ordinal)
+        for ordinal, bounds in recorded.items()
+        if bounds["min_ratio_to_flag_an_over_budget_request"]
+        > bounds["max_ratio_that_spares_a_fitting_request"]
+    }
+    assert {2, 3, 4, 6, 7} <= recorded_contradictory
 
 
 def test_the_current_calibration_hides_the_over_budget_requests(pool: dict) -> None:
@@ -889,6 +1113,57 @@ def test_the_fixture_carries_only_raw_observations(pool: dict) -> None:
                 "reasoning_tokens",
                 "wire_tokens",
             }
+
+
+def test_the_sample_verdicts_after_w_c_are_recorded(
+    pool: dict, replayed: list[tuple[dict, dict]]
+) -> None:
+    """事件 W-c 的「群体判据不回退」这句话, 逐条复算出来对账。
+
+    读的是回放结果, 不是夹具里的汇总数 —— 夹具那一块只是把结论写下来供 memo 引用。
+    三条不能动的:误伤 0、真超整个窗口 0 漏、事故 Run 仍在 ordinal 4 被拦下
+    (后两条另有专门用例)。会动的两条也在这里明账: 「floor 反超真实计费」由 W-b 的
+    6 降到 3, 漏判由 6 升到 7 且全部仍在物理窗口内。
+    """
+
+    recorded = pool["sample_verdicts_after_w_c"]
+    assert recorded["samples"] == len(pool["samples"]) == 65
+
+    fired = [(s, f) for s, f in replayed if f["fired"]]
+    missed = [(s, f) for s, f in replayed if not f["fired"]]
+    assert len(fired) == recorded["fires"]
+    assert (
+        len([1 for s, _ in fired if s["provider_input_tokens"] <= EFFECTIVE])
+        == recorded["fires_on_fitting_requests"]
+        == 0
+    )
+    assert (
+        len([1 for s, _ in missed if s["provider_input_tokens"] > WINDOW])
+        == recorded["misses_over_window"]
+        == 0
+    )
+    assert (
+        len([1 for s, _ in missed if s["provider_input_tokens"] > EFFECTIVE])
+        == recorded["misses_over_budget"]
+    )
+
+    above = [
+        (s, f) for s, f in replayed if f["measured_input_floor"] > s["provider_input_tokens"]
+    ]
+    assert len(above) == recorded["floor_above_real_billing"]
+    assert (
+        max(f["measured_input_floor"] - s["provider_input_tokens"] for s, f in above)
+        == recorded["worst_floor_above_real_billing"]
+    )
+    # W-c 修掉的正是这一类: 首轮没有 carry, 反超只可能来自文本估算自己。
+    assert (
+        len([1 for _, f in above if f["observed_carry_tokens"] == 0])
+        == recorded["floor_above_real_billing_without_a_carry"]
+        == 0
+    )
+    # 与 W-b 口径的对照(memo §W-c 引的就是这两个差值)。
+    before = pool["population"]["measured_floor"]
+    assert recorded["floor_above_real_billing"] < before["floor_above_real_billing"]
 
 
 def test_the_recorded_population_is_internally_consistent(pool: dict) -> None:
