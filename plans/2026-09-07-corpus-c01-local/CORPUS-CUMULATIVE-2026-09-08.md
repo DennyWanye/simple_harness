@@ -224,3 +224,10 @@ Host = main **`c4605f39`**（代码与 `c9384422` 逐字相同）。本工作树
 - **当前 HEAD `f161f5a4` 的压缩版 PERSONA / `context_route` schema**：本轮测的是压缩前文本。
   `DECISION-TERMINATION-AND-PERSONA-ROUTES.md` §3.3 已有先例——压缩时删两句话就让 C05-05 的修复整个失效，
   因此压缩版必须另跑一次才能确认收益是否保住。记 **F-RERUN-1**。
+
+## 2026-09-09 08:45 追加：C04 重跑（s5c 游标版本修复后）
+
+- 组合：Host `a0a869f4`（含 s5c 迁移链修复 `48617f73`）、Memory 0.6.34、deepseek-v4-flash；证据 `.local-test-evidence/2026-09-09/corpus-c04-flash/run-01`。
+- 20/20 例跑完，rc 全 0、stop_reason 全 None、**SETUP_BLOCKED 0**（上一轮 20/20 阻塞）；required 类型命中 40/40；多提类型 12/52（C04 单切片 23.1%）。
+- 与 09-09 02:45 的 77 例累计合并：多提类型 (26+12)/(228+52) = **38/280 = 13.6% ✅（<15%）**；required 召回 (136+40)/(136+40) = **100% ✅**；隐私 0 ✅。
+- 20 例 oracle 判定为 `PENDING_POST_TERMINAL_REVIEW`（Prospective 切片需终态后复核调度登记），复核由子代理进行，结果另记。
