@@ -1354,3 +1354,46 @@ v6/v7/v8 用原始提案 id 校验，端点被拒时关系带着悬空依赖进 
 Host 接受 8/9、3/3，`finish=length` 1/9、0/3，指代字面值 0/12；v8 对照臂提关系 0/11。
 A6-6 的判据按义务原文改写（`00-PLAN.md`、`scripts/native/a6_verify.py` 同步）：出处是 **SDK 仓 `simple-harness-memory-sdk` 的 `plans/2026-08-29-human-memory-digital-twin/acceptance.md`「测试义务矩阵」HM-TO-A6 行**（第 162 行），它对本项的要求逐字只有「clean-wheel public API 在同一 plan 创建节点与 relation memory」；同文件更紧的两句——HM-S12 场景行（第 135 行）「clean-wheel public API 创建**两个** canonical nodes + 一条 relation memory」与 HM-TO-A2 行（第 158 行）「clean-wheel public API 在同一原子 plan 正向创建**两个端点**及一条 `applies_to` Semantic relation」——那条「两个 canonical node」义务由 **HM-TO-A2 的 clean-wheel oracle**（SDK 公共 API 直接造两个端点，不经分析车道）履行，本次原生跑不重复证明，是否真被覆盖记为 F-T6。新判据是「**relation_kind='applies_to'** + relation memory 自身由本 plan 新建（revision 行 plan_id/plan_hash 与关系行一致且 relation_memory_id 在 heads 中）+ **target 端点由本 plan 新建且 `cognitive_memory_heads.memory_type='procedure'`** + 两端 exact revision 均可解析」；**不能**松成「至少一个端点」——那样「本轮再造一条同值 semantic 当 source + 连一条旧流程当 target」也会 PASS，正是事件 L 要消灭的重复槽位。控制：新增 `backend/tests/native/test_a6_verify_a6_6.py` 11 项（`--selftest` 夹具的 heads 表补 `memory_type` 列，A6-6 在自检里从 schema 缺失变为可达），`test_analysis_proposal_v9.py` 增至 27 项（含 v3..v8 线格式 sha256 金值与「关系排在端点之前只拒关系」）；§3 的真实模型复算驱动提交为 `scripts/native/a6_replay_t15.py`（凭据路径参数化，密钥不打印不入库）。理由与两端形态的取舍见
 [裁决](../plans/2026-09-08-hm-to-a6/DECISION-T-RELATION-FORM.md)。
+
+最后更新：2026-09-09（HM-TO-A6 事件 AA：用途围栏的有界重采）。
+被绑定的定型召回带一段 **Host 自己定的 60 秒授权租约**（`human_memory_v7.typed_recall` 的
+`RecallContext.expires_at = moment + 60`，SDK `sqlite_v5.py:4104/4302` 原样取作
+`result.authority_expires_at`，再与逐 item 过期时间取 min）。第 10 次整跑 T18 的 12 次 provider
+调用横跨 65 秒，前 11 次正常签出 `recall_context_use_receipts`，第 12 次在租约后 4.96 秒命中
+`sqlite_v5.py:4813-4824` 的 `effective_now >= result.authority_expires_at` 而抛
+`RECALL_AUTHORITY_STALE` → `RecallContextUseAuthorityStale` → 整 Run 定性失败；epoch 两端都是 9、
+7 条被绑定记忆全程 r1 且 `content_hash` 未变、无 suppression —— **值没有变，只是时钟走过了租约**。
+0.6.28（epoch 只跟踪可能改变资格的事件）与 0.6.29（epoch 前进改由逐来源重校验裁定）已经把
+epoch 那一支修好（本次证据：`recall_authority_events` 仅 10 行、`recall_context_use_receipts` 28 行），
+剩下的租约那一支是 Host 可修的。
+
+边界口径：**用途围栏本身不可在原地重试**——`simple_harness/execution/context_use.py::
+ProviderContextUseGrantV1` 会用 `receipt.validate_request(intent.request(attempt))` 把收据逐字段钉死在
+intent 的 `result_id/result_hash/decision_*/item_bindings/snapshot_manifest_hash` 上，请求一旦进入
+`dispatch._authorize_context_use`，result 身份已冻结。**唯一能重新绑定的位置是 Host 的
+`snapshot_intents`**。因此 `typed_context_use.py` 在组装每一次 provider 请求时检查被绑定召回的租约
+（余量 `CONTEXT_USE_LEASE_MARGIN_SECONDS=10`，覆盖 snapshot 之后的 Memory 授权与 Harness
+`validate_handoff` 两道时间检查），不足则用**同一个召回计划、同一个 `AdmittedRecallContext`、
+独立 `idempotency_purpose=context-route-use-recollect`** 重采一次（`MAX_CONTEXT_USE_RECOLLECTS=16`，
+每 generation 一条独立耐久 SDK 请求），只有当每个被绑定 fragment 都能在重采结果里找到
+`(source_ref, source_revision, public_payload_hash)` **逐字相等**的 item 时才改绑：只换 authority
+binding，payload/payload_hash/disclosure/evidence_refs/fragment_id 一字节不动，并写一行
+`context_use_recollections`（域链 **v56**，`primary/048_context_use_recollections_v56.sql` +
+`context_use_recollect_schema.py`，只追加、带恢复围栏与恢复表登记，`reason_code=context_use_recollected`）。
+任何一条对不上即 fail closed，抛稳定码 `recall_context_use_source_superseded`（新增，进 `RunFaultMemo`
+→ `run_terminal.public_payload.error_code`）；`recall_context_use_authority_stale` 退化为兜底
+（无重采计划的旧 carrier、预算用尽、Memory 不可用，以及组装之后授权之前来源才变的那一格）。
+重放确定性由「SDK 持久化重采请求 + Host 持久化改绑映射」两半保证：`consumed_occurrences` 只按耐久
+grant 的 `view.requests[*].(result_id, result_hash)` 反查 Host 回执复现绑定，认不到就抛
+`typed_use_recollection_receipt_missing`，绝不在校验路径上再采一次；返回的 consumed 集合仍按**原始**
+item id（那是模型看见的东西），`primary_dependencies` 读模型行为不变。模型可见的 `context_route`
+工具回执一个字节不动，`display["history_binding"]` 仍对着**原始**绑定校验。
+
+仍属 SDK 的两条：① Harness `MandatoryContextRejectionV1.reason` 只允许
+`pending_prospective_occurrence`，所以「来源真的变了」这一支还只能失败整轮（拿到独立稳定码、进终局
+证据），要变成模型可动作的重路由必须在 SDK 增加 `recall_context_use_superseded` 并接进
+`react_loop._reserve_context_repair`；② `effective_now >= result.authority_expires_at` 与同一事务里的
+逐来源重校验语义重叠，租约到期挡不住任何一条已经失效的来源，只能挡住跑得久的正常回合，建议降级为
+`authority_lease_expired` 降级码（比照 `authority_epoch_advanced` 签发收据 + 记日志）。控制：新增
+`backend/tests/sdk_adapters/test_typed_context_use_recollect.py` 7 例（真实 SDK / 真实 state.db /
+真实 carrier / 显式语义时钟）。[裁决](../plans/2026-09-08-hm-to-a6/DECISION-AA-AUTHORITY-STALE-RECOLLECT.md)。

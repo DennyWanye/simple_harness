@@ -94,6 +94,8 @@ DOMAIN_SCHEMA_STEPS: dict[int, tuple[str, str, str]] = {
          "validate_procedure_recovery_state_db", "initialize_procedure_recovery_state_db"),
     55: ("deskpet.memory.primary_tool_call_schema",
          "validate_primary_tool_call_state_db", "initialize_primary_tool_call_state_db"),
+    56: ("deskpet.memory.context_use_recollect_schema",
+         "validate_context_use_recollect_state_db", "initialize_context_use_recollect_state_db"),
 }
 
 

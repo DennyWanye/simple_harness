@@ -806,6 +806,13 @@ class ContextRouteToolService:
         if self._typed_use_authority is not None:
             carrier = await self._typed_use_authority.build_carrier(
                 execution=execution, projected=fragments, admitted=admitted, effect_id=effect_id,
+                # Event AA: the exact Host-authored recall behind this binding,
+                # so the context-use fence can re-collect it (same plan, its own
+                # idempotency purpose) when the bound authority lease runs out
+                # mid-turn instead of failing the whole Run.
+                recall_plan=dict(query=query, memory_types=memory_types,
+                                 include_short_horizon=include_short_horizon,
+                                 turn_ordinal=turn_ordinal),
             )
         refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
         procedure_hint = await self._procedure_hint(

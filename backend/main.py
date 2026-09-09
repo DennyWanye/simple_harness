@@ -8502,8 +8502,11 @@ async def _build_product_sdk_runtime_stack(
         raise RuntimeError("procedure_public_sdk_successor_required")
     await initialize_procedure_recovery_state_db(_state_db_path)
     # 2026-09-08 HM-TO-A6 F-K1: v55 side record of assistant tool-call arguments.
-    from deskpet.memory.primary_tool_call_schema import initialize_primary_tool_call_state_db
-    await initialize_primary_tool_call_state_db(_state_db_path)
+    # v56 chains onto v55; initializing the head installs every earlier step.
+    from deskpet.memory.context_use_recollect_schema import (
+        initialize_context_use_recollect_state_db,
+    )
+    await initialize_context_use_recollect_state_db(_state_db_path)
     projected_registrations = (*projected_registrations,
         procedure_use_registration(_human_memory_v7.procedure_runtime),
         procedure_discovery_registration(_human_memory_v7.procedure_runtime))
@@ -8517,6 +8520,7 @@ async def _build_product_sdk_runtime_stack(
         _typed_use_authority = await ProductTypedContextUseAuthority.create(
             state_path=_state_db_path, memory_runtime=_human_memory_v7,
             stack_getter=lambda: _sdk_runtime_stack, ledger=_typed_ledger, terminal_sink=_typed_sink,
+            fault_sink=_ensure_run_fault_memo(),
         )
     service_context.register("sdk_typed_context_use_authority", _typed_use_authority)
 
