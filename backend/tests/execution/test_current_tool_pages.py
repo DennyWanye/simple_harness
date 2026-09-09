@@ -188,28 +188,20 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
         await service.enqueue_turn(QueueTurnRequest(None, "large-source", "Create a project and write its file"))
         await run()
         if expected_budget_stop:
-            assert stack.read_run_terminal_evidence(holder.first_run).state == "failed"
+            # Incident Z (2026-09-09): this tier used to end the Run with
+            # ``sdk_context_budget_exceeded`` -> ``react_termination_limits``
+            # and the user got nothing.  The budget wrap-up now injects one
+            # deterministic instruction and keeps the turn's protected parts
+            # plus the user message, so the Run *completes* with an answer that
+            # says what it could not do.  Everything the failure guaranteed
+            # still holds: no write batch was ever requested, so no TaskScope
+            # was routed and no closure receipt exists.
+            assert stack.read_run_terminal_evidence(holder.first_run).state == "completed"
             assert await queue.current_snapshot(runtime.subject) is None
             async with aiosqlite.connect(state) as db:
                 rows = await (await db.execute("SELECT outcome,reason_code FROM task_scope_closure_receipts WHERE sdk_run_id=?",
                     (holder.first_run,))).fetchall()
-                # Incident N (2026-09-08): with the tool schemas charged to
-                # protected_tokens the 4096 tier stops one provider turn earlier
-                # — before the write batch routes a TaskScope — so there is no
-                # closure receipt at all.  A larger window that ever stops here
-                # would already have left the pending one.  What must never
-                # appear is a settled/closed receipt.
-                assert rows == ([] if provider_context_window == 4096
-                                else [("pending", "closure_run_not_completed")]), rows
-            before = len(holder.sent)
-            await runtime.close()
-            await stack.close()
-            holder.runtime, holder.stack, holder.queue = await build(tmp_path, state, provider, dynamic=True,
-                binding_authority=authority, configured_root=configured, page_in_store=pages,
-                provider_context_window=provider_context_window)
-            assert holder.stack.read_run_terminal_evidence(holder.first_run).state == "failed"
-            assert not await holder.runtime._drive_once()
-            assert len(holder.sent) == before
+                assert rows == [], rows
             return
         assert holder.responses and "EXACT_PAGE_TAIL" in holder.responses[0]["content"]
         if mode == "forget_after_page":

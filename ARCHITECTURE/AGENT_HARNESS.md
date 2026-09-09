@@ -2607,6 +2607,45 @@ seq 19「更正一下：校对脚本我现在统一用 Python 3.13，不是 3.12
   `test_primary_workspace_binding_ui.py`(7) 共 19 例全绿。
   详见 [DECISION-MM-D1-D2](../plans/2026-09-09-manual-mode-journey/DECISION-MM-D1-D2.md)。
 
+### 2026-09-09（事件 Z）：`workspace_unscoped` 指引按 Run 事实分支 + 预算收尾（wrap-up）
+
+证据 `.local-test-evidence/2026-09-09/native-a6-run10/primary-ui-j5yjctfj/`
+（Run `product-sdk-6ad6a40a…`，HM-TO-A6 第 10 次尝试第 6 轮，21 次 provider 调用）。
+
+- **投影事实**：Run 起始未绑定 TaskScope 时 `resolution_kind="projectless"` 且
+  `primary_route_capable=True`，`filter_sdk_catalog_for_workspace` 只豁免
+  `projectless_admission=="safe"` 与 `PROJECT_EFFECT_TOOL_NAMES`。于是这类 Run
+  **暴露** `write_file`/`edit_file`/`run_shell`/`workspace_prepare`，**裁掉**
+  `read_file`/`glob`/`grep`/`list_directory`（`requires_project`）。投影在 Run 起始
+  一次性冻结，Run 内任何动作（含 `context_route`、`workspace_prepare`）都不会让它变宽。
+- **已修（指引）**：`unavailable_capability_next_action` 不再是静态表，改为按
+  `RunAvailabilityFacts`（`routed` / `workspace_bound` / `exposed_tool_names`，
+  由 `SdkRuntimeCapabilityBridgeAdapter` 从 Run 权威现取）分四支给出**这个 Run 真能执行**
+  的下一步：同类替代 / 先 `builtin:workspace_prepare` 无参调用一次 / 先 `context_route`
+  且明说下一个 Run 才生效并停止搜索 / 不可达并直接作答。事件 Z 那句
+  “Use the built-in workspace file tools instead (for example builtin:read_file …)”
+  （让模型激活刚被拒的那一个）已删除；`next_action` 结构上不会出现被拒的 capability_id，
+  读被拒也绝不推荐写工具。同一条文案覆盖 `tool_activate` 拒绝回执、`tool_search`
+  逐条与页级提示、`tool_describe` 提示。
+- **已修（预算）**：装配降级新增第 5 级「收尾」。既有降级（强制分页 + 历史裁到 0 组）
+  之后 `budget_headroom < 1200 token`（一个 react 步 ≈ 915 token 上取整，源自
+  `open_group=20574 token / 45 条`）时，Host 注入**一条**确定性 Host 权威 SYSTEM 指令
+  （稳定 id `context_budget_wrap_up`，形状同语义闭包指令），只保留本轮 protected 与
+  open group 开头的 USER 消息，回执记 `wrap_up_injected` /
+  `open_group_items_dropped`，日志记 `sdk_context_budget_wrap_up`。**每个 Run 只收尾
+  一次**；模型仍调工具则下一轮走原路、按今天 `ContextBudgetExceeded` 失败关闭。
+  指令逐字节确定并进入 `provider_request_fingerprint`，重放性质不变；收尾必发生在
+  react 限额（25 轮 / 50 次工具 / 600 秒）之内（事件 Z 死在第 21 轮、第 66 秒）。
+- **未做（记 F-Z1）**：`projectless + primary_route_capable` 下「能写不能读」的不对称
+  未消除。读类没有写类那样的调用时闸门（react barrier + TaskExecutionEnvelope +
+  EffectGate），直接放开等于无工作区根读任意路径；`workspace_prepare` 隐式/自动激活也
+  被否掉（它只 `mkdir`，治不了本事故，且会绕开 describe→activate 的三段哈希链）。
+- 决定性测试：`backend/tests/sdk_adapters/test_unscoped_guidance_incident_z.py`（7 例）、
+  `backend/tests/execution/test_context_budget_wrap_up.py`（5 例）；
+  `test_current_tool_pages.py` / `test_current_tool_megabyte.py` 的 4096 档由
+  「失败关闭」改钉「收尾并完成」。详见
+  [DECISION-Z-UNSCOPED-GUIDANCE-WRAP-UP](../plans/2026-09-08-hm-to-a6/DECISION-Z-UNSCOPED-GUIDANCE-WRAP-UP.md)。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |

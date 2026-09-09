@@ -91,20 +91,27 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
         from deskpet.sdk_adapters.context_partitions import ContextBudgetExceeded
         actual_plan = context_authority._plan_turn_messages
         def record_budget(*args, **kwargs):
+            # Incident Z: the same seam now sees the wrap-up instead of the
+            # raise.  Record both, so a regression back to the fail-closed
+            # behaviour is visible here rather than only in the Run state.
             try:
-                return actual_plan(*args, **kwargs)
+                messages, facts = actual_plan(*args, **kwargs)
             except ContextBudgetExceeded as error:
                 budget_rejections.append({"code": str(error), "wire_count": len(wire_sizes)})
                 raise
+            if facts.get("wrap_up_injected"):
+                budget_rejections.append({"code": "sdk_context_budget_wrap_up",
+                                          "wire_count": len(wire_sizes)})
+            return messages, facts
         monkeypatch.setattr(context_authority, "_plan_turn_messages", record_budget)
     await run_pages(tmp_path, monkeypatch, mode="allow", provider_context_window=context_window,
                     write_chunks=chunks, expected_budget_stop=budget_stop)
     if budget_stop:
-        # Stopped before the write batch was ever requested: no megabyte result.
+        # Wrapped up before the write batch was ever requested: no megabyte result.
         assert sizes == []
         assert len(budget_rejections) == 1
-        assert budget_rejections[0]["code"] == "sdk_context_budget_exceeded"
-        assert budget_rejections[0]["wire_count"] == len(wire_sizes) == 3
+        assert budget_rejections[0]["code"] == "sdk_context_budget_wrap_up"
+        assert budget_rejections[0]["wire_count"] == 1
     else:
         assert len(sizes) == 2 and all(size > 1024 * 1024 for size in sizes)
         assert len(wire_sizes) == 8

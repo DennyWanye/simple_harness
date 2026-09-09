@@ -1487,18 +1487,122 @@ PROJECT_EFFECT_ROUTE_NEXT_ACTION = (
     "and tool_activate for this capability again. Under direct_standalone or "
     "memory_standalone it can never run; do not call it by name either."
 )
+# HM-TO-A6 incident Z (2026-09-09 native run product-sdk-6ad6a40a…, turn 6) is
+# the third shape on this same surface, and the first where the guidance itself
+# was the defect.  A projectless Run that could still route (``task_scope_id``
+# None at Run start) exposes the PROJECT_EFFECT file tools but *not* the
+# read-class ones — ``read_file``/``glob``/``grep``/``list_directory`` are
+# ``requires_project`` and the Run-start projection drops them.  The model asked
+# for ``builtin:read_file``, was refused ``workspace_unscoped``, and the static
+# text told it to "use the built-in workspace file tools instead (for example
+# builtin:read_file …)" — i.e. to activate the exact capability that had just
+# been refused, while naming no step that this Run could actually take.  It then
+# issued 16 more ``tool_search`` calls until the assembly budget closed the Run.
+#
+# The projection is frozen at Run start and no in-Run action can widen it, so
+# the honest next step depends on the Run's own frozen facts:
+#   * some capability of the same class IS activatable here -> name those, and
+#     only those (never the refused id);
+#   * the Run is routed but its workspace root was never prepared -> prepare it
+#     once, then activate;
+#   * the Run is unrouted -> context_route now so the *next* Run is scoped, and
+#     stop searching in this one;
+#   * nothing of the kind can ever be reached here -> say so and stop.
+WORKSPACE_READ_TOOL_NAMES: tuple[str, ...] = (
+    "read_file",
+    "file_read",
+    "list_directory",
+    "glob",
+    "file_glob",
+    "grep",
+    "file_grep",
+    "doc_read",
+)
+WORKSPACE_WRITE_TOOL_NAMES: tuple[str, ...] = (
+    "write_file",
+    "file_write",
+    "edit_file",
+    "move_file",
+    "file_organize",
+    "workspace_prepare",
+)
+WORKSPACE_PREPARE_CAPABILITY = "builtin:workspace_prepare"
+
+
+@dataclass(frozen=True, slots=True)
+class RunAvailabilityFacts:
+    """The Run-start facts the ``workspace_unscoped`` guidance may depend on.
+
+    Everything here is frozen at Run start, which is exactly why the guidance
+    can promise what it promises: no in-Run action changes any of it.
+    """
+
+    routed: bool = False
+    workspace_bound: bool = False
+    exposed_tool_names: frozenset[str] = frozenset()
+
+    def alternatives_for(self, capability_id: str) -> tuple[str, ...]:
+        """Capabilities of the refused one's own class that this Run can activate.
+
+        A read request must never be answered with ``edit_file``: naming a write
+        tool as the substitute for ``read_file`` is the same class of wrong
+        answer as naming ``read_file`` itself.
+        """
+
+        name = str(capability_id).rpartition(":")[2]
+        if name in WORKSPACE_READ_TOOL_NAMES:
+            family: tuple[str, ...] = WORKSPACE_READ_TOOL_NAMES
+        elif name in WORKSPACE_WRITE_TOOL_NAMES:
+            family = WORKSPACE_WRITE_TOOL_NAMES
+        else:
+            # A non-builtin (MCP) capability has no product class; every
+            # workspace file tool this Run exposes is a candidate.
+            family = (*WORKSPACE_READ_TOOL_NAMES, *WORKSPACE_WRITE_TOOL_NAMES)
+        return tuple(
+            f"builtin:{item}"
+            for item in family
+            if item != name and item in self.exposed_tool_names
+        )
+
+
+_UNSCOPED_ALTERNATIVES_ACTION = (
+    "This capability is not bound to the Run workspace and cannot be activated "
+    "in this Run. Do not retry tool_activate for it. Workspace file tools that "
+    "ARE activatable in this Run: {names} — reach them via tool_describe -> "
+    "tool_activate; project file effects such as edit_file/write_file require "
+    "calling context_route first so the task scope and workspace root are bound."
+)
+_UNSCOPED_PREPARE_ACTION = (
+    "This Run is bound to a task whose workspace root is not prepared, so no "
+    "workspace file capability is scoped to it. Do not retry tool_activate for "
+    "this capability. Call tool_describe and then tool_activate for "
+    f"{WORKSPACE_PREPARE_CAPABILITY}, call it once with no arguments, and then "
+    "activate the workspace file tool you need. If workspace_prepare is refused "
+    "too, stop calling tools and tell the user this task has no bound project "
+    "directory."
+)
+_UNSCOPED_UNROUTED_ACTION = (
+    "This Run is not bound to a task, so its tool projection was frozen without "
+    "any workspace file capability, and no action inside this Run can widen it. "
+    "Do not retry tool_activate and do not call tool_search for file tools "
+    "again — the result will not change. Call context_route once "
+    "(create_new / resume_existing / continue_active) to bind the task: the "
+    "workspace file tools become activatable from the next Run of this "
+    "conversation. In this Run, answer the user with what you already have and "
+    "say which part needs the bound task workspace."
+)
+_UNSCOPED_UNREACHABLE_ACTION = (
+    "No workspace file capability of this kind can be activated in this Run, "
+    "and the projection was frozen at Run start, so no action inside this Run "
+    "can widen it. Do not retry tool_activate and do not call tool_search for "
+    "file tools again. Answer the user with what you already have and say that "
+    "reading or writing local files needs a task workspace bound to this "
+    "conversation first."
+)
 UNAVAILABLE_CAPABILITY_NEXT_ACTIONS: Mapping[str, str] = {
     PROJECT_EFFECT_ROUTE_REASON: PROJECT_EFFECT_ROUTE_NEXT_ACTION,
-    "workspace_unscoped": (
-        "This capability is not bound to the Run workspace and cannot be "
-        "activated in this Run. Do not retry tool_activate for it. Use the "
-        "built-in workspace file tools instead (for example builtin:read_file, "
-        "builtin:list_directory, builtin:grep, builtin:edit_file, "
-        "builtin:write_file) via tool_describe -> tool_activate; project file "
-        "effects such as edit_file/write_file require calling context_route "
-        "first so the task scope and workspace root are bound."
-    ),
 }
+WORKSPACE_UNSCOPED_REASON = "workspace_unscoped"
 # One SDK search page when the Host re-ranks descriptor-only matches.
 MAX_SDK_SEARCH_PAGE = int(MAX_SEARCH_RESULTS)
 _DEFAULT_UNAVAILABLE_NEXT_ACTION = (
@@ -1508,9 +1612,32 @@ _DEFAULT_UNAVAILABLE_NEXT_ACTION = (
 )
 
 
-def unavailable_capability_next_action(reason: str) -> str:
+def unavailable_capability_next_action(
+    reason: str,
+    *,
+    capability_id: str = "",
+    facts: RunAvailabilityFacts | None = None,
+) -> str:
+    """One executable next step for a capability this Run cannot activate.
+
+    Never names ``capability_id`` itself as the way forward (incident Z), and
+    never names a capability this Run also reports unavailable.
+    """
+
+    reason = str(reason)
+    if reason == WORKSPACE_UNSCOPED_REASON:
+        if facts is None:
+            return _UNSCOPED_UNREACHABLE_ACTION
+        alternatives = facts.alternatives_for(capability_id)
+        if alternatives:
+            return _UNSCOPED_ALTERNATIVES_ACTION.format(names=", ".join(alternatives))
+        if facts.routed and not facts.workspace_bound:
+            return _UNSCOPED_PREPARE_ACTION
+        if not facts.routed:
+            return _UNSCOPED_UNROUTED_ACTION
+        return _UNSCOPED_UNREACHABLE_ACTION
     return UNAVAILABLE_CAPABILITY_NEXT_ACTIONS.get(
-        str(reason), _DEFAULT_UNAVAILABLE_NEXT_ACTION
+        reason, _DEFAULT_UNAVAILABLE_NEXT_ACTION
     )
 
 
@@ -1535,6 +1662,36 @@ class SdkRuntimeCapabilityBridgeAdapter:
     def _binding(self) -> tuple[RunId, CatalogRunToolExposure]:
         run_id = RunId(self._context_getter().run_id)
         return run_id, self._authorities.resolve_exposure(run_id)
+
+    def _availability_facts(self, run_id: RunId) -> RunAvailabilityFacts:
+        """Run-start facts behind the ``workspace_unscoped`` guidance.
+
+        Incident Z: the guidance must describe *this* Run, so it is derived from
+        the frozen authority rather than from a static table.  A Run without an
+        authority record (restart, or a bridge wired without one) falls back to
+        the "cannot be reached here" text, which is never wrong.
+        """
+
+        try:
+            authority = self._authorities.resolve(run_id)
+        except KeyError:
+            return RunAvailabilityFacts()
+        work = authority.task_work_context
+        return RunAvailabilityFacts(
+            routed=getattr(work, "task_scope_id", None) is not None,
+            workspace_bound=bool(getattr(work, "workspace_root", None)),
+            exposed_tool_names=frozenset(str(name) for name in authority.specs),
+        )
+
+    def unavailable_next_action(self, capability_id: str, reason: str) -> str:
+        """Model-facing next step for a refusal, shaped by this Run's facts."""
+
+        run_id = RunId(self._context_getter().run_id)
+        return unavailable_capability_next_action(
+            reason,
+            capability_id=str(capability_id),
+            facts=self._availability_facts(run_id),
+        )
 
     def _route_blocked_capabilities(self, run_id: RunId) -> frozenset[str]:
         """PROJECT_EFFECT capability ids that this Run's route can never run."""
@@ -1576,6 +1733,7 @@ class SdkRuntimeCapabilityBridgeAdapter:
         # every built-in file tool in UI-B.  Re-rank on the Host side (stable
         # partition, SDK order preserved within each group) and paginate the
         # re-ranked list so cursor semantics stay consistent.
+        facts = self._availability_facts(run_id)
         activatable: list[dict[str, Any]] = []
         descriptor_only: list[dict[str, Any]] = []
         sdk_cursor = 0
@@ -1592,7 +1750,14 @@ class SdkRuntimeCapabilityBridgeAdapter:
                             **value,
                             "activatable": False,
                             "availability_reason": reason,
-                            "next_action": unavailable_capability_next_action(reason),
+                            # Incident Z: the model looped on tool_search because
+                            # the per-match hint told it to activate the very
+                            # capability the same page reported unavailable.
+                            "next_action": unavailable_capability_next_action(
+                                reason,
+                                capability_id=str(value.get("capability_id") or ""),
+                                facts=facts,
+                            ),
                         }
                     )
             if page.next_cursor is None:
@@ -1612,11 +1777,18 @@ class SdkRuntimeCapabilityBridgeAdapter:
         if unavailable_count:
             result["unavailable_count"] = unavailable_count
             reasons = sorted({str(item["availability_reason"]) for item in matches if "availability_reason" in item})
+            first = next(
+                str(item.get("capability_id") or "")
+                for item in matches
+                if str(item.get("availability_reason") or "") == reasons[0]
+            )
             result["next_action"] = (
                 f"{unavailable_count} match(es) carry availability_reason "
                 f"({', '.join(reasons)}) and cannot be activated in this Run; "
                 "prefer matches without availability_reason. "
-                + unavailable_capability_next_action(reasons[0])
+                + unavailable_capability_next_action(
+                    reasons[0], capability_id=first, facts=facts
+                )
             )
         return result
 
@@ -1657,7 +1829,11 @@ class SdkRuntimeCapabilityBridgeAdapter:
             value["availability_reason"] = reason
             value["next_action"] = (
                 "Do not call tool_activate for this capability_id. "
-                + unavailable_capability_next_action(reason)
+                + unavailable_capability_next_action(
+                    reason,
+                    capability_id=str(descriptor["capability_id"]),
+                    facts=self._availability_facts(run_id),
+                )
             )
             return value
         value["activatable"] = True
