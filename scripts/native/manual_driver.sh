@@ -98,15 +98,15 @@ TURNS[4]="新建第二个项目任务：手动模式核验二号。"
 KIND[4]="ask"
 HINT[4]="在主对话底部『项目目录授权』卡片里点 AXButton『允许本次绑定』（5 分钟内！）。输入观察结果（如 card=pending decided=allow）"
 
-TURNS[5]="在二号任务里，把一号任务那份 auto-note.md 读出来给我看。"
+TURNS[5]="在二号任务里，用 read_file 工具（不要用 shell 命令、不要反复搜索工具）把一号任务那份 auto-note.md 读出来给我看。"
 KIND[5]="ask"
 HINT[5]="工具授权弹窗（标题应为『读取文件』）点 AXButton『允许一次』。输入观察结果（如 popup=读取文件 decided=allow）"
 
-TURNS[6]="把那份 auto-note.md 删掉。"
+TURNS[6]="把那份 auto-note.md 删掉（直接用已激活的文件工具，不要再搜索工具）。"
 KIND[6]="ask"
 HINT[6]="工具授权弹窗点 AXButton『拒绝』（不要点允许）。输入观察结果（如 popup=写入文件 decided=deny）"
 
-TURNS[7]="我在 $ROOT_B 放了资料，把这个目录也纳入二号任务的工作范围，然后列出它里面的文件。"
+TURNS[7]="我在 $ROOT_B 放了资料，把这个目录也纳入二号任务的工作范围，然后用 list_directory 工具列出它里面的文件。"
 KIND[7]="ask"
 HINT[7]="『项目目录授权』卡片点『允许本次绑定』。输入观察结果（如 card=pending decided=allow revision=2）"
 
