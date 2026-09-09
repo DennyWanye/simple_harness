@@ -192,7 +192,9 @@ echo "a6_driver: bundle=$BID userdata=$USERDATA evidence=$EVIDENCE start=$START"
 echo "a6_driver: fixtures A=$FA B=$FB GOAL=$GOAL ($(wc -c <"$GOAL") bytes)"
 record 0 baseline 0 >/dev/null
 
-for (( T=START; T<=LAST; T++ )); do
+# A6_TURNS="1 4 7 15" runs only those turns (targeted short journeys after a fix); default = START..LAST.
+if [[ -n "${A6_TURNS:-}" ]]; then TURN_LIST=( $A6_TURNS ); else TURN_LIST=( $(seq "$START" "$LAST") ); fi
+for T in "${TURN_LIST[@]}"; do
   MSG="${TURNS[$T]}"
   if [[ "$MSG" == @UI@* ]]; then
     echo "=== T$T [MANUAL UI] ${MSG#@UI@}"
