@@ -15,7 +15,18 @@ import React, { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { tokens } from "../theme/tokens";
-import { bannerStyle, buttonStyle, cardStyle, dark } from "../theme/components";
+import {
+  INTERACTIVE_CLASS,
+  bannerStyle,
+  buttonStyle,
+  cardStyle,
+  dark,
+  emptyState,
+  metaText,
+  titleText,
+  viewHeader,
+} from "../theme/components";
+import { Icon, type IconName } from "../components/Icon";
 
 /** 与 src-tauri/src/artifact_ops.rs 的 ArtifactListEntry 对应。 */
 export interface ArtifactListEntry {
@@ -28,16 +39,12 @@ export interface ArtifactListEntry {
 
 // ─── 展示辅助（对齐 ArtifactCard 的 File 子卡语义） ──────────
 
-function extIcon(name: string): string {
+/** 文件类型 → 内联线性图标（不引图标库、不用 emoji）。 */
+function extIcon(name: string): IconName {
   const ext = name.toLowerCase().split(".").pop() ?? "";
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) {
-    return "🖼️";
-  }
-  if (ext === "pdf") return "📕";
-  if (["ppt", "pptx"].includes(ext)) return "📊";
-  if (["xls", "xlsx", "csv", "tsv"].includes(ext)) return "📈";
-  if (["doc", "docx", "md", "txt", "rtf"].includes(ext)) return "📝";
-  return "📄";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return "grid";
+  if (["ppt", "pptx", "xls", "xlsx", "csv", "tsv"].includes(ext)) return "layers";
+  return "file";
 }
 
 function humanSize(bytes: number): string {
@@ -122,6 +129,9 @@ const ArtifactRow: React.FC<{ entry: ArtifactListEntry }> = ({ entry }) => {
       <div
         data-testid="artifact-name"
         style={{
+          display: "flex",
+          alignItems: "center",
+          gap: tokens.space.sm,
           fontWeight: tokens.weight.semibold,
           color: dark.text,
           fontSize: tokens.text.md.size,
@@ -129,13 +139,13 @@ const ArtifactRow: React.FC<{ entry: ArtifactListEntry }> = ({ entry }) => {
           wordBreak: "break-all",
         }}
       >
-        {extIcon(entry.name)} {entry.name}
+        <Icon name={extIcon(entry.name)} size={16} style={{ color: dark.textMuted }} />
+        {entry.name}
       </div>
       <div
         style={{
-          color: dark.textMuted,
-          fontSize: tokens.text.xs.size,
-          marginBottom: tokens.space.sm,
+          ...metaText,
+          marginBottom: tokens.space.md,
         }}
       >
         {humanSize(entry.size)} · {formatModified(entry.modified_at)}
@@ -152,8 +162,9 @@ const ArtifactRow: React.FC<{ entry: ArtifactListEntry }> = ({ entry }) => {
           data-testid="artifact-action-open"
           disabled={pending}
           aria-busy={pending && current?.id === "open"}
+          className={INTERACTIVE_CLASS}
           style={{
-            ...buttonStyle("secondary", "sm"),
+            ...buttonStyle("ghost", "sm"),
             cursor: pending ? "wait" : "pointer",
           }}
           onClick={() => void run("open")}
@@ -165,8 +176,9 @@ const ArtifactRow: React.FC<{ entry: ArtifactListEntry }> = ({ entry }) => {
           data-testid="artifact-action-show_in_folder"
           disabled={pending}
           aria-busy={pending && current?.id === "show_in_folder"}
+          className={INTERACTIVE_CLASS}
           style={{
-            ...buttonStyle("secondary", "sm"),
+            ...buttonStyle("ghost", "sm"),
             cursor: pending ? "wait" : "pointer",
           }}
           onClick={() => void run("show_in_folder")}
@@ -179,9 +191,8 @@ const ArtifactRow: React.FC<{ entry: ArtifactListEntry }> = ({ entry }) => {
           data-testid="artifact-action-status"
           role={current.status === "error" ? "alert" : "status"}
           style={{
+            ...metaText,
             marginTop: tokens.space.sm,
-            fontSize: tokens.text.xs.size,
-            lineHeight: 1.45,
             color: statusColor(current.status),
             wordBreak: "break-all",
           }}
@@ -235,26 +246,10 @@ export const ArtifactsView: React.FC = () => {
         fontFamily: tokens.font.ui,
       }}
     >
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: tokens.space.md,
-          padding: `${tokens.space.lg}px ${tokens.space.lg}px ${tokens.space.md}px`,
-          borderBottom: `1px solid ${dark.hairline}`,
-          flexShrink: 0,
-        }}
-      >
-        <div>
-          <h2 style={{ margin: 0, fontSize: tokens.text.xl.size }}>产物库</h2>
-          <p
-            style={{
-              margin: `${tokens.space.xxs}px 0 0`,
-              color: dark.textMuted,
-              fontSize: tokens.text.sm.size,
-            }}
-          >
+      <header style={viewHeader}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 style={titleText}>产物库</h1>
+          <p style={{ ...metaText, margin: `${tokens.space.xs}px 0 0` }}>
             任务生成的文件，按修改时间倒序
             {entries && entries.length > 0 ? ` · 共 ${entries.length} 项` : ""}
           </p>
@@ -262,7 +257,8 @@ export const ArtifactsView: React.FC = () => {
         <button
           type="button"
           data-testid="artifacts-refresh"
-          style={buttonStyle("secondary", "sm")}
+          className={INTERACTIVE_CLASS}
+          style={buttonStyle("ghost", "md")}
           onClick={() => void refresh()}
         >
           刷新
@@ -274,7 +270,7 @@ export const ArtifactsView: React.FC = () => {
           flex: 1,
           minHeight: 0,
           overflowY: "auto",
-          padding: tokens.space.lg,
+          padding: `${tokens.space.xl}px ${tokens.space.xl}px`,
         }}
       >
         {error ? (
@@ -290,40 +286,25 @@ export const ArtifactsView: React.FC = () => {
         ) : null}
 
         {entries === null ? (
-          <div
-            style={{
-              padding: tokens.space.xxl,
-              textAlign: "center",
-              color: dark.textMuted,
-              fontSize: tokens.text.sm.size,
-            }}
-          >
+          <div style={emptyState}>
+            <span className="bp-spinner" aria-hidden />
             加载中…
           </div>
         ) : entries.length === 0 ? (
-          <div
-            data-testid="artifacts-empty"
-            style={{
-              padding: tokens.space.xxl,
-              border: `1px dashed ${dark.borderStrong}`,
-              borderRadius: tokens.radius.lg,
-              textAlign: "center",
-              color: dark.textMuted,
-              fontSize: tokens.text.sm.size,
-              lineHeight: 1.6,
-            }}
-          >
+          <div data-testid="artifacts-empty" style={emptyState}>
+            <Icon name="file" size={28} strokeWidth={1.2} style={{ color: dark.textFaint }} />
             <div
               style={{
                 color: dark.text,
                 fontSize: tokens.text.md.size,
-                fontWeight: tokens.weight.medium,
-                marginBottom: tokens.space.xs,
+                fontWeight: tokens.weight.semibold,
               }}
             >
               暂无产物
             </div>
-            任务生成的文件会出现在这里；消息流中的产物卡片不受影响。
+            <p style={{ margin: 0, maxWidth: 420 }}>
+              任务生成的文件会出现在这里；消息流中的产物卡片不受影响。
+            </p>
           </div>
         ) : (
           <ul
@@ -331,8 +312,9 @@ export const ArtifactsView: React.FC = () => {
             style={{
               display: "grid",
               gap: tokens.space.sm,
-              margin: 0,
+              margin: "0 auto",
               padding: 0,
+              maxWidth: 760,
             }}
           >
             {entries.map((entry) => (

@@ -25,6 +25,9 @@ import { SlashDropdown, type SlashCommand } from "./SlashDropdown";
 import { ArgHintBar, type ArgSchema } from "./ArgHintBar";
 import { createClientTurnIdentity } from "../ws/clientTurnIdentity";
 import { turnTextRejection } from "../primary/turnText";
+import { Icon } from "../components/Icon";
+import { INTERACTIVE_CLASS, dark, transition } from "../theme/components";
+import { tokens } from "../theme/tokens";
 
 // 输入历史 — module-scope，跨 InputBar 实例共享 (max 50 entries)
 const _slashInputHistory: string[] = [];
@@ -61,7 +64,6 @@ function readTextFile(file: File): Promise<string> {
 }
 
 // 输入框与唯一主操作按钮严格等高。
-const INPUT_H = 44;
 
 function pushHistory(entry: string) {
   if (!entry.startsWith("/")) return;
@@ -190,11 +192,17 @@ export function InputBar({
     [],
   );
 
-  // Auto-grow textarea
+  // Auto-grow textarea。空草稿时清掉内联高度，交给 minHeight（36）——
+  // 首帧布局未稳时读到的 scrollHeight 会把空输入框撑成多行。
   useEffect(() => {
-    if (!taRef.current) return;
-    taRef.current.style.height = "auto";
-    taRef.current.style.height = Math.min(taRef.current.scrollHeight, 120) + "px";
+    const el = taRef.current;
+    if (!el) return;
+    if (!text) {
+      el.style.height = "";
+      return;
+    }
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 148) + "px";
   }, [text]);
 
   // 计算当前 filter + candidates
@@ -668,14 +676,24 @@ export function InputBar({
   })();
   return (
     <div
+      // 悬浮输入卡片：一层 hairline + 12 圆角，聚焦时描边转强调色。
+      // 发送按钮内嵌在卡片里，不再是并排的第三个方块。
       style={{
-        position: "relative",  // for absolute SlashDropdown
-        borderTop: "1px solid rgba(255,255,255,0.06)",
-        background: "rgba(15, 18, 28, 0.55)",
-        padding: "12px 14px",
+        position: "relative", // for absolute SlashDropdown
+        background: dark.card,
+        border: `1px solid ${dark.borderStrong}`,
+        borderRadius: tokens.radius.lg,
+        padding: tokens.space.sm,
         display: "flex",
         flexDirection: "column",
-        gap: 8,
+        gap: tokens.space.sm,
+        transition,
+      }}
+      onFocusCapture={(event) => {
+        event.currentTarget.style.borderColor = tokens.color.accent.border;
+      }}
+      onBlurCapture={(event) => {
+        event.currentTarget.style.borderColor = dark.borderStrong;
       }}
     >
       {argHintCmd && (
@@ -688,7 +706,7 @@ export function InputBar({
       {attachments.length > 0 && (
         <div
           data-testid="attachment-list"
-          style={{ display: "flex", flexWrap: "wrap", gap: 6 }}
+          style={{ display: "flex", flexWrap: "wrap", gap: tokens.space.xs }}
         >
           {attachments.map((attachment) => (
             <span
@@ -696,19 +714,21 @@ export function InputBar({
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 6,
-                padding: "5px 8px",
-                borderRadius: 8,
-                background: "rgba(37,99,235,0.16)",
-                color: "#bfdbfe",
-                fontSize: 11,
+                gap: tokens.space.xs + 2,
+                padding: "3px 8px",
+                borderRadius: tokens.radius.pill,
+                background: "transparent",
+                border: `1px solid ${dark.borderStrong}`,
+                color: dark.textMuted,
+                fontSize: tokens.text.sm.size,
               }}
             >
-              📄 {attachment.name}
+              {attachment.name}
               <button
                 type="button"
                 aria-label={`移除附件 ${attachment.name}`}
                 disabled={inputDisabled}
+                className={INTERACTIVE_CLASS}
                 onClick={() =>
                   setAttachments((current) =>
                     current.filter((item) => item.id !== attachment.id),
@@ -718,8 +738,8 @@ export function InputBar({
                   border: 0,
                   padding: 0,
                   background: "transparent",
-                  color: "#93c5fd",
-                  cursor: "pointer",
+                  color: dark.textFaint,
+                  lineHeight: 1,
                 }}
               >
                 ×
@@ -729,12 +749,12 @@ export function InputBar({
         </div>
       )}
       {composerError && (
-        <div role="alert" data-testid="composer-error" style={{ color: "#fca5a5", fontSize: 11 }}>
+        <div role="alert" data-testid="composer-error" style={{ color: dark.danger, fontSize: tokens.text.sm.size }}>
           {composerError}
         </div>
       )}
-      {/* 第一排：输入框独占一行 + 发送按钮（两者严格等高 INPUT_H，视觉一致）。 */}
-      <div style={{ display: "flex", gap: 8, alignItems: "stretch", position: "relative" }}>
+      {/* 输入行：附件 · 文本域 · 发送，三者内嵌在同一张卡片里。 */}
+      <div style={{ display: "flex", gap: tokens.space.xs, alignItems: "flex-end", position: "relative" }}>
         <SlashDropdown
           candidates={candidates}
           selectedIdx={selectedIdx}
@@ -743,22 +763,24 @@ export function InputBar({
         <label
           aria-label="附加文本文件"
           title="附加文本文件"
+          className={INTERACTIVE_CLASS}
           style={{
-            alignSelf: "flex-end",
-            height: INPUT_H,
-            minWidth: INPUT_H,
+            height: tokens.controlHeight,
+            minWidth: tokens.controlHeight,
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 12,
-            background: "rgba(255,255,255,0.05)",
-            color: disabled ? "rgba(148,163,184,0.45)" : "#cbd5e1",
+            border: "1px solid transparent",
+            borderRadius: tokens.radius.md,
+            background: "transparent",
+            color: disabled ? dark.textFaint : dark.textMuted,
             cursor: disabled ? "not-allowed" : "pointer",
             boxSizing: "border-box",
+            flexShrink: 0,
+            transition,
           }}
         >
-          📎
+          <Icon name="folder" size={16} />
           <input
             ref={fileInputRef}
             data-testid="text-attachment-input"
@@ -792,19 +814,18 @@ export function InputBar({
           style={{
             flex: 1,
             resize: "none",
-            background: "rgba(255,255,255,0.05)",
-            color: "#e8edf6",
-            border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 12,
-            // 上下 padding 撑到与发送按钮同高(INPUT_H=44)：minHeight 44 - border2 - padding(11*2)=20 行高区。
-            padding: "11px 14px",
-            fontSize: 13,
-            lineHeight: 1.45,
-            fontFamily: "inherit",
-            minHeight: INPUT_H,
-            maxHeight: 132,
-            boxSizing: "border-box",
+            background: "transparent",
+            color: dark.text,
+            border: 0,
             outline: "none",
+            borderRadius: 0,
+            padding: `${tokens.space.sm}px ${tokens.space.xs}px`,
+            fontSize: tokens.text.md.size,
+            lineHeight: tokens.text.md.lh,
+            fontFamily: tokens.font.ui,
+            minHeight: tokens.controlHeight,
+            maxHeight: 148,
+            boxSizing: "border-box",
           }}
         />
         <button
@@ -814,36 +835,39 @@ export function InputBar({
             text.trim() ? void send() : inflight ? stop() : undefined
           }
           disabled={inputDisabled || (!inflight && !text.trim())}
+          className={`${INTERACTIVE_CLASS}${text.trim() ? " sh-accent-fill" : ""}`}
           style={{
-            alignSelf: "flex-end",
-            height: INPUT_H,
+            height: tokens.controlHeight,
             background: text.trim()
-              ? "#2563eb"
+              ? tokens.color.accent.bg
+              : "transparent",
+            color: text.trim()
+              ? tokens.color.accent.on
               : inflight
-                ? "#dc2626"
-                : "rgba(255,255,255,0.07)",
-            color: text.trim() || inflight ? "#fff" : "rgba(148,163,184,0.7)",
-            border: "none",
-            borderRadius: 12,
-            padding: "0 20px",
-            fontSize: 13,
-            fontWeight: 600,
+                ? dark.danger
+                : dark.textFaint,
+            border: text.trim() ? "1px solid transparent" : `1px solid ${dark.borderStrong}`,
+            borderRadius: tokens.radius.md,
+            padding: `0 ${tokens.space.lg}px`,
+            fontSize: tokens.text.base.size,
+            fontWeight: tokens.weight.semibold,
             cursor: inflight || text.trim() ? "pointer" : "not-allowed",
             flexShrink: 0,
             boxSizing: "border-box",
+            transition,
           }}
         >
           {text.trim() ? "发送" : inflight ? "■ 停止" : "发送"}
         </button>
       </div>
-      {/* 第二排只解释当前发送目标；新话题与语音入口位于消息页标题栏。 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {/* 第二排：低调的单行 meta（12 / 次级色）。 */}
+      <div style={{ display: "flex", alignItems: "center", gap: tokens.space.md, padding: `0 ${tokens.space.xs}px` }}>
         {continuationTarget && (
           <span
             data-testid="continuation-target"
             style={{
-              color: "#bfdbfe",
-              fontSize: 11,
+              color: tokens.color.accent.fg,
+              fontSize: tokens.text.sm.size,
               whiteSpace: "nowrap",
             }}
           >
@@ -855,22 +879,22 @@ export function InputBar({
             marginLeft: "auto",
             display: "flex",
             alignItems: "center",
-            gap: 12,
-            fontSize: 11,
-            color: "#94a3b8",
+            gap: tokens.space.md,
+            fontSize: tokens.text.sm.size,
+            fontVariantNumeric: tokens.font.numeric,
+            color: dark.textFaint,
             minWidth: 0,
           }}
         >
           <StatusPill status={status} />
           <span
             style={{
-              opacity: 0.55,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
             }}
           >
-            {primary ? "Enter 发送 · Shift+Enter 换行 · 附件与命令尚待接通" : "Enter 发送 · Shift+Enter 换行 · 📎 文本附件 · / 命令"}
+            {primary ? "Enter 发送 · Shift+Enter 换行 · 附件与命令尚待接通" : "Enter 发送 · Shift+Enter 换行 · 文本附件 · / 命令"}
           </span>
         </div>
       </div>
@@ -879,15 +903,21 @@ export function InputBar({
 }
 
 function StatusPill({ status }: { status: string }) {
+  // 状态色只用于状态，且不做填充色块 —— 只染一个 6px 圆点。
   const map: Record<string, { label: string; color: string }> = {
-    idle: { label: "✓ 空闲", color: "#86efac" },
-    thinking: { label: "⏳ 思考中", color: "#fde68a" },
-    running: { label: "🔧 工具执行中", color: "#67e8f9" },
-    permission: { label: "🔒 等待授权", color: "#f59e0b" },
-    error: { label: "✗ 错误", color: "#fca5a5" },
+    idle: { label: "空闲", color: dark.success },
+    thinking: { label: "思考中", color: dark.warning },
+    running: { label: "工具执行中", color: dark.info },
+    permission: { label: "等待授权", color: dark.warning },
+    error: { label: "错误", color: dark.danger },
   };
-  const m = map[status] ?? { label: status, color: "#94a3b8" };
-  return <span style={{ color: m.color }}>{m.label}</span>;
+  const m = map[status] ?? { label: status, color: dark.textFaint };
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: dark.textMuted, whiteSpace: "nowrap" }}>
+      <span aria-hidden style={{ width: 6, height: 6, borderRadius: "50%", background: m.color, flexShrink: 0 }} />
+      {m.label}
+    </span>
+  );
 }
 
 // Exports for test

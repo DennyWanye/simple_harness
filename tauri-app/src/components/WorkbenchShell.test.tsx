@@ -28,13 +28,8 @@ import { controlWS } from "../code-panel/controlWs";
 // vitest 未开 globals — testing-library 的自动 cleanup 不生效，手动挂。
 afterEach(cleanup);
 
-// jsdom 把 hex 色值规格化为 rgb() — 断言前统一转换（色值仍单源自
-// theme/components.ts 的 dark 套件，测试内零硬编码色值）。
-function hexToRgb(hex: string): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
-}
-const ACCENT_RGB = hexToRgb(dark.accent);
+// 2026-09-09 改版：令牌以 CSS 变量下发（`var(--sh-*, 兜底)`），jsdom 原样
+// 保留字符串；断言直接比对令牌值，测试内仍零硬编码色值。
 
 import {
   WorkbenchShell,
@@ -97,35 +92,35 @@ describe("WorkbenchShell 视图切换（WB-3）", () => {
     expect(screen.queryByTestId("view-settings")).toBeNull();
   });
 
-  it("当前项高亮使用 dark.accent 且带 aria-current", () => {
+  it("当前项高亮：aria-current + 左侧 2px 强调条 + 强调色极淡面色", () => {
     render(<Harness />);
     const chatBtn = screen.getByTestId("nav-chat");
     const skillsBtn = screen.getByTestId("nav-skills");
 
+    // 2026-09-09「克制的高级感」：选中态不再靠整块强调色文字/填充，
+    // 改为 `.sh-nav-item` 的左侧 2px 强调条 + accentSoft 面色 + 正文色。
     expect(chatBtn.getAttribute("aria-current")).toBe("page");
-    expect(chatBtn.style.color).toBe(ACCENT_RGB);
-    expect(skillsBtn.getAttribute("aria-current")).toBeNull();
-    expect(skillsBtn.style.color).not.toBe(ACCENT_RGB);
+    expect(chatBtn.className).toContain("sh-nav-item");
+    expect(chatBtn.style.background).toBe(dark.accentSoft);
+    expect(chatBtn.style.color).toBe(dark.text);
 
-    // 非激活项 hover 高亮/还原（不改变激活态语义）。
-    fireEvent.mouseEnter(skillsBtn);
-    expect(skillsBtn.style.color).toBe(hexToRgb(dark.text));
-    fireEvent.mouseLeave(skillsBtn);
-    expect(skillsBtn.style.color).toBe(hexToRgb(dark.textMuted));
-    // 激活项 hover 不改色。
-    fireEvent.mouseEnter(chatBtn);
-    fireEvent.mouseLeave(chatBtn);
-    expect(chatBtn.style.color).toBe(ACCENT_RGB);
+    expect(skillsBtn.getAttribute("aria-current")).toBeNull();
+    expect(skillsBtn.style.background).toBe("transparent");
+    expect(skillsBtn.style.color).toBe(dark.textMuted);
+
+    // 所有项统一高度 36，hover/active/focus 由 CSS 三态负责（不再挂 JS）。
+    expect(chatBtn.style.height).toBe("36px");
+    expect(skillsBtn.className).toContain("sh-interactive");
 
     fireEvent.click(skillsBtn);
     expect(skillsBtn.getAttribute("aria-current")).toBe("page");
-    expect(skillsBtn.style.color).toBe(ACCENT_RGB);
+    expect(skillsBtn.style.background).toBe(dark.accentSoft);
     expect(chatBtn.getAttribute("aria-current")).toBeNull();
   });
 });
 
 describe("WorkbenchShell 紧凑尺寸样式（WB-3 min 800×560）", () => {
-  it("侧栏固定 240px，内容区 flex:1 + min-width:0，壳不出横向滚动", () => {
+  it("侧栏固定宽度，内容区 flex:1 + min-width:0，壳不出横向滚动", () => {
     render(<Harness />);
 
     const sidebar = screen.getByTestId("workbench-sidebar");

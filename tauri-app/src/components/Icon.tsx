@@ -43,6 +43,8 @@ export type IconName =
   | "pin"
   | "edit"
   | "grid"
+  | "file"
+  | "layers"
   | "user";
 
 type Props = {
@@ -186,6 +188,18 @@ const PATHS: Record<IconName, ReactElement> = {
       <rect x="13" y="4" width="7" height="7" rx="1.6" />
       <rect x="4" y="13" width="7" height="7" rx="1.6" />
       <rect x="13" y="13" width="7" height="7" rx="1.6" />
+    </>
+  ),
+  file: (
+    <>
+      <path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5L13.5 3Z" />
+      <path d="M13.5 3v5.5H19M8.5 13h7M8.5 16.5h4.5" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 3 8.5 4.6L12 12.2 3.5 7.6 12 3Z" />
+      <path d="m4.5 12 7.5 4 7.5-4M4.5 16.4 12 20.4l7.5-4" />
     </>
   ),
   user: (

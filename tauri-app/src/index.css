@@ -1,49 +1,47 @@
-/* Simple Harness Workbench shell + P4-S20-UI design system. */
+/* Simple Harness Workbench shell — 2026-09-09「克制的高级感」设计系统。
+
+   颜色一律取 `--sh-*` 变量；变量表由 theme/tokens.ts 生成、
+   theme/applyTheme.ts 注入 <style id="sh-theme">，深浅两套镜像。
+   本文件只写形状、状态与动效，不写死任何色值。 */
 
 html, body, #root {
   margin: 0;
   padding: 0;
-  background: #0f1218;
+  background: var(--sh-bg, #0E1013);
+  color: var(--sh-text, #E8E5DF);
   overflow: hidden;
   width: 100%;
   height: 100%;
   /* Block accidental text selection on the application shell.
      Without this, double-clicking the empty area selects every absolute-
-     positioned child within the click radius — and the ::selection rule
-     below paints them all in semi-transparent blue, which looks like
-     "the entire window flashed blue". Inputs/textareas/code panels
+     positioned child within the click radius. Inputs/textareas/code panels
      re-enable selection via the rule below. */
   user-select: none;
   -webkit-user-select: none;
-  /* Font stack: 中文优先 */
+  /* 字体栈：系统原生优先，中文 PingFang */
   font-family:
-    "Inter",
+    -apple-system,
+    "SF Pro Text",
     "PingFang SC",
+    system-ui,
+    "Segoe UI",
     "Microsoft YaHei UI",
-    "Microsoft YaHei",
     "Helvetica Neue",
     Arial,
     sans-serif,
     "Apple Color Emoji",
     "Segoe UI Emoji";
-  /* Better text rendering */
+  font-size: 13px;
+  line-height: 1.6;
+  /* 中文标点与数字用等宽数字，避免跳动 */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  /* Disable text auto-zoom */
   -webkit-text-size-adjust: 100%;
 }
 
-/* Re-allow text selection inside content surfaces. The blanket
-   `user-select: none` on #root is what kills the "double-click → blue
-   flash" UX bug; we still want the user to be able to select chat
-   transcripts, settings input values, code blocks, etc.
-
-   Element selectors cover bare HTML; class selectors cover React
-   components that explicitly opt in via `className="bp-selectable"`.
-   The `[role="dialog"] *` rule lets the user freely select any text
-   inside any modal panel (Settings, Memory, ContextTrace, etc.) —
-   modals are the obvious "I want to copy this" surface. */
+/* Re-allow text selection inside content surfaces. */
 input, textarea, [contenteditable="true"], pre, code,
 .bp-selectable, .bp-selectable *,
 [role="dialog"], [role="dialog"] *,
@@ -53,11 +51,6 @@ input, textarea, [contenteditable="true"], pre, code,
   cursor: text;
 }
 
-/* Chat-bubble surfaces: DialogBar (the latest assistant line over the
-   pet), UserBubble (the 2-second echo of what the user typed/said),
-   and ChatHistoryPanel (the full transcript modal) — all need to be
-   user-selectable so the user can copy quotes / commands / file paths
-   the LLM emits.  Override the blanket #root rule for these. */
 .bp-chat-bubble, .bp-chat-bubble *,
 .bp-dialog-bar, .bp-dialog-bar *,
 .bp-user-bubble, .bp-user-bubble * {
@@ -65,9 +58,9 @@ input, textarea, [contenteditable="true"], pre, code,
   -webkit-user-select: text !important;
 }
 
-/* Selection color — accent blue */
+/* 选区色 —— 唯一强调色的极淡填充 */
 ::selection {
-  background: rgba(59, 130, 246, 0.3);
+  background: var(--sh-selection, rgba(127, 178, 170, 0.26));
   color: inherit;
 }
 
@@ -75,46 +68,96 @@ input, textarea, [contenteditable="true"], pre, code,
 .bp-dialog-bar::selection, .bp-dialog-bar *::selection,
 .bp-user-bubble::selection, .bp-user-bubble *::selection,
 [data-bp-selectable]::selection, [data-bp-selectable] *::selection {
-  background: rgba(125, 211, 252, 0.48);
-  color: #ffffff;
+  background: var(--sh-selection, rgba(127, 178, 170, 0.26));
+  color: inherit;
+}
+
+/* ── 统一交互三态 ───────────────────────────────────────────────
+   所有可点元素挂 `.sh-interactive`（theme/components.ts 的
+   INTERACTIVE_CLASS）即得 hover/active/focus-visible + 明确 cursor。 */
+
+.sh-interactive {
+  cursor: pointer;
+}
+.sh-interactive:disabled,
+.sh-interactive[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+.sh-interactive:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--sh-raised, #232830);
+}
+.sh-interactive:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--sh-card, #1C2026);
+}
+
+/* 焦点环 —— 键盘可见，鼠标不打扰 */
+.sh-interactive:focus-visible,
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--sh-accent, #7FB2AA);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* 强调实心按钮的 hover/active 用同色深浅，不换色相 */
+.sh-accent-fill:hover:not(:disabled) {
+  background-color: var(--sh-accent-hover, #93C3BB) !important;
+}
+.sh-accent-fill:active:not(:disabled) {
+  background-color: var(--sh-accent-press, #6A9C95) !important;
+}
+
+/* 侧栏项：选中态用左侧 2px 强调条 + 面色，不做大块填充 */
+.sh-nav-item {
+  position: relative;
+}
+.sh-nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--sh-accent, #7FB2AA);
+}
+
+/* 可折叠工具条：整行可点 */
+.sh-tool-row {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
 }
 
 .deskpet-copy-message-btn {
   transition:
-    background 120ms ease,
+    background-color 120ms ease,
     border-color 120ms ease,
     color 120ms ease,
-    opacity 120ms ease,
-    transform 120ms ease,
-    box-shadow 120ms ease;
+    opacity 120ms ease;
 }
 
 .deskpet-copy-message-btn:hover:not(:disabled) {
   opacity: 1 !important;
-  transform: none;
-  box-shadow: none;
-}
-
-.deskpet-copy-message-btn:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: none;
+  background-color: var(--sh-raised, #232830) !important;
 }
 
 .deskpet-copy-message-btn:focus-visible {
-  outline: 2px solid rgba(125, 211, 252, 0.72);
+  outline: 2px solid var(--sh-accent, #7FB2AA);
   outline-offset: 2px;
 }
 
-.deskpet-copy-message-btn--blue:hover:not(:disabled) {
-  background: rgba(125, 211, 252, 0.10) !important;
-}
-
+.deskpet-copy-message-btn--blue:hover:not(:disabled),
 .deskpet-copy-message-btn--dark:hover:not(:disabled),
 .deskpet-copy-message-btn--muted:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.10) !important;
+  background-color: var(--sh-raised, #232830) !important;
 }
 
-/* Custom scrollbar — slim + neutral */
+/* 滚动条 —— 细、无轨道 */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -123,18 +166,18 @@ input, textarea, [contenteditable="true"], pre, code,
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
+  background: var(--sh-scroll-thumb, rgba(255, 255, 255, 0.14));
   border-radius: 4px;
-  transition: background 120ms;
+  transition: background-color 120ms;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.6);
+  background: var(--sh-scroll-thumb-hover, rgba(255, 255, 255, 0.24));
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-/* P4-S20-UI: shared keyframes used by token-based components */
+/* ── 共享 keyframes ─────────────────────────────────────────── */
 
 @keyframes bp-fade-in {
   from { opacity: 0; }
@@ -142,121 +185,101 @@ input, textarea, [contenteditable="true"], pre, code,
 }
 
 @keyframes bp-pop-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes bp-slide-up {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Spinner (used by buttons + loading states) */
+@keyframes bp-slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 右侧抽屉进场 */
+@keyframes sh-drawer-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
 @keyframes bp-spin {
   to { transform: rotate(360deg); }
 }
 
-/* Soft pulse — status dots (recording / thinking) */
 @keyframes bp-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.45; transform: scale(0.82); }
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
 }
 
-/* Button hover/active utility classes — applied via className */
+/* ── 按钮 hover/active 工具类（className 挂载） ───────────────── */
 
 .bp-btn-primary:hover:not(:disabled) {
-  background: #2563eb !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
-  transform: translateY(-1px);
+  background-color: var(--sh-accent-hover, #93C3BB) !important;
 }
 .bp-btn-primary:active:not(:disabled) {
-  background: #1d4ed8 !important;
-  transform: translateY(0);
+  background-color: var(--sh-accent-press, #6A9C95) !important;
 }
 
 .bp-btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.09) !important;
-  border-color: rgba(148, 163, 184, 0.34) !important;
+  background-color: var(--sh-raised, #232830) !important;
+  border-color: var(--sh-hairline-strong, rgba(255, 255, 255, 0.14)) !important;
 }
 .bp-btn-secondary:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background-color: var(--sh-card, #1C2026) !important;
 }
 
 .bp-btn-danger:hover:not(:disabled) {
-  background: #dc2626 !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+  background-color: var(--sh-raised, #232830) !important;
 }
 
 .bp-btn-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background-color: var(--sh-raised, #232830) !important;
 }
 
 .bp-btn-icon:hover:not(:disabled) {
-  background: rgba(28, 32, 45, 0.96) !important;
-  border-color: rgba(148, 163, 184, 0.32) !important;
-  transform: translateY(-1px);
-}
-.bp-btn-icon:active:not(:disabled) {
-  transform: translateY(0);
+  background-color: var(--sh-raised, #232830) !important;
 }
 
-/* Input focus ring */
-.bp-input:focus {
-  border-color: #3b82f6 !important;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-}
-
-/* Chat input (dark, on the pet shell glass input row) */
-.bp-chat-input::placeholder {
-  color: rgba(148, 163, 184, 0.62);
-}
-.bp-chat-input:focus {
-  border-color: rgba(96, 165, 250, 0.62) !important;
-  background: rgba(255, 255, 255, 0.09) !important;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
-}
-.bp-chat-input:disabled {
-  opacity: 0.7;
-}
-
-/* Dark-panel input (memory / settings / feedback …) */
-.bp-dark-input::placeholder {
-  color: rgba(148, 163, 184, 0.55);
-}
+/* 输入焦点环 */
+.bp-input:focus,
+.bp-chat-input:focus,
 .bp-dark-input:focus {
-  border-color: rgba(96, 165, 250, 0.62) !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+  border-color: var(--sh-accent-border, rgba(127, 178, 170, 0.34)) !important;
+  box-shadow: 0 0 0 3px var(--sh-focus-ring, rgba(127, 178, 170, 0.32));
 }
 
-/* Card hover */
+.bp-chat-input::placeholder,
+.bp-dark-input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: var(--sh-text-3, #736F69);
+}
+
+.bp-chat-input:disabled {
+  opacity: 0.6;
+}
+
+/* 卡片 hover */
 .bp-card:hover {
-  border-color: rgba(148, 163, 184, 0.28) !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.20);
+  border-color: var(--sh-hairline-strong, rgba(255, 255, 255, 0.14)) !important;
 }
 
-/* Spinner element */
+/* Spinner */
 .bp-spinner {
   display: inline-block;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(148, 163, 184, 0.3);
-  border-top-color: #3b82f6;
+  border: 2px solid var(--sh-hairline-strong, rgba(255, 255, 255, 0.14));
+  border-top-color: var(--sh-accent, #7FB2AA);
   border-radius: 50%;
   animation: bp-spin 0.8s linear infinite;
   vertical-align: middle;
 }
 
-/* Tab hover */
+/* 下划线 tab hover */
 .bp-tab:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-}
-.bp-tab-active:hover {
-  background: #2563eb !important;
+  color: var(--sh-text, #E8E5DF) !important;
 }
 
-/* ── 子代理并发进度卡片动画（SubagentProgressPanel） ───────────────────
-   出现淡入 + running 图标/状态点脉冲。仅运行态用动画，终态静止省 GPU。 */
+/* ── 子代理并发进度卡片动画（SubagentProgressPanel） ─────────── */
 @keyframes deskpet-subagent-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -266,7 +289,7 @@ input, textarea, [contenteditable="true"], pre, code,
   50%      { opacity: 0.35; }
 }
 .deskpet-subagent-card {
-  animation: deskpet-subagent-in 0.22s ease-out;
+  animation: deskpet-subagent-in 160ms ease-out;
 }
 .deskpet-subagent-pulse {
   display: inline-block;
@@ -274,4 +297,136 @@ input, textarea, [contenteditable="true"], pre, code,
 }
 .deskpet-subagent-dot {
   animation: deskpet-subagent-pulse 1.1s ease-in-out infinite;
+}
+
+/* ── `.sh-prose`：面板内"裸元素"的统一排版 ────────────────────
+   记忆抽屉/审计/任务这些信息密集面板里有大量未内联样式的
+   button / input / details / pre。这里一次性给它们同一套克制外观，
+   内联样式（theme/components.ts 的工厂）仍然优先级更高。 */
+
+.sh-prose {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--sh-text-2, #A7A29A);
+}
+.sh-prose h2,
+.sh-prose h3,
+.sh-prose h4 {
+  margin: 16px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--sh-text, #E8E5DF);
+}
+.sh-prose p {
+  margin: 0 0 8px;
+}
+.sh-prose ul,
+.sh-prose dl {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.sh-prose ul[aria-label] {
+  list-style: none;
+  padding-left: 0;
+}
+.sh-prose li {
+  margin-bottom: 6px;
+}
+.sh-prose dt {
+  color: var(--sh-text-3, #736F69);
+  font-size: 12px;
+}
+.sh-prose dd {
+  margin: 0 0 6px;
+  color: var(--sh-text, #E8E5DF);
+}
+.sh-prose label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sh-text-2, #A7A29A);
+}
+.sh-prose button {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--sh-hairline-strong, rgba(255, 255, 255, 0.14));
+  background: transparent;
+  color: var(--sh-text, #E8E5DF);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.sh-prose button:hover:not(:disabled) {
+  background: var(--sh-raised, #232830);
+}
+.sh-prose button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.sh-prose button[aria-pressed="true"] {
+  border-color: var(--sh-accent-border, rgba(127, 178, 170, 0.34));
+  background: var(--sh-accent-soft, rgba(127, 178, 170, 0.13));
+  color: var(--sh-text, #E8E5DF);
+}
+.sh-prose input,
+.sh-prose select,
+.sh-prose textarea {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--sh-hairline-strong, rgba(255, 255, 255, 0.14));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+.sh-prose input:focus,
+.sh-prose select:focus {
+  border-color: var(--sh-accent-border, rgba(127, 178, 170, 0.34));
+}
+.sh-prose details {
+  margin: 6px 0;
+}
+.sh-prose summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--sh-text-3, #736F69);
+}
+.sh-prose summary:hover {
+  color: var(--sh-text-2, #A7A29A);
+}
+.sh-prose pre,
+.sh-prose code {
+  font-family: "SF Mono", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+.sh-prose pre {
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255, 255, 255, 0.075));
+  border-radius: 8px;
+  padding: 10px;
+  margin: 6px 0;
+}
+.sh-prose form {
+  margin-bottom: 12px;
+}
+
+/* ── 无障碍：减少动态效果时关闭所有过渡与动画 ─────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

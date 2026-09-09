@@ -396,7 +396,7 @@ function SortableRow({
         <button
           type="button"
           onClick={() => onDelete(provider.id)}
-          style={{ ...rowBtn, color: "#b91c1c" }}
+          style={{ ...rowBtn, color: dark.danger }}
           data-testid={`provider-delete-btn-${provider.id}`}
         >
           删除
@@ -839,8 +839,8 @@ const selectStyle: React.CSSProperties = {
 const addBtnStyle: React.CSSProperties = {
   padding: "4px 10px",
   borderRadius: 4,
-  border: "1px solid #2563eb",
-  background: "#2563eb",
+  border: "1px solid transparent",
+  background: dark.accent,
   color: "white",
   fontSize: 12,
   cursor: "pointer",
@@ -849,9 +849,10 @@ const addBtnStyle: React.CSSProperties = {
 const errorStyle: React.CSSProperties = {
   fontSize: 12,
   padding: "5px 8px",
-  background: "rgba(127,29,29,0.18)",
-  color: "#fca5a5",
-  border: "1px solid rgba(248,113,113,0.28)",
+  background: "transparent",
+  color: dark.danger,
+  border: `1px solid ${dark.borderStrong}`,
+  borderLeft: `2px solid ${dark.danger}`,
   borderRadius: 4,
   marginBottom: 6,
 };

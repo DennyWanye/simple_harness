@@ -20,7 +20,8 @@ import { EmbedderStatusCard } from "./EmbedderStatusCard";
 import { ModelContextCard } from "./ModelContextCard";
 import { SettingsProviders } from "./SettingsProviders";
 import { formatUpdaterError } from "./updaterError";
-import { dark } from "../theme/components";
+import { dark, titleText, transition } from "../theme/components";
+import { tokens } from "../theme/tokens";
 import type {
   DailyBudgetStatus,
   IncomingMessage,
@@ -132,24 +133,9 @@ export function SettingsPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <header style={headerStyle}>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 32,
-                height: 32,
-                borderRadius: 10,
-                background: "rgba(79,147,255,0.15)",
-                color: "#7fb0ff",
-              }}
-            >
-              <Icon name="settings" size={18} />
-            </span>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, letterSpacing: 0.2 }}>
-              设置
-            </h2>
+          <span style={{ display: "flex", alignItems: "center", gap: tokens.space.md }}>
+            <Icon name="settings" size={18} style={{ color: dark.textMuted }} />
+            <h2 style={titleText}>设置</h2>
           </span>
           {!isPage && (
             <button
@@ -392,7 +378,7 @@ function UpdateSection() {
       {phase === "downloading" && (
         <div style={statusStyle}>
           正在下载并安装{pct !== null ? ` … ${pct}%` : "…"}
-          <div style={{ marginTop: 6, color: dark.textMuted, fontSize: 11.5 }}>
+          <div style={{ marginTop: 6, color: dark.textMuted, fontSize: tokens.text.sm.size }}>
             安装时 Simple Harness 会自动关闭，请稍候它重新启动。
           </div>
         </div>
@@ -403,7 +389,7 @@ function UpdateSection() {
       )}
 
       {phase === "error" && (
-        <div style={{ ...statusStyle, borderColor: "rgba(248,113,113,0.32)", background: "rgba(127,29,29,0.18)", color: "#fca5a5" }}>
+        <div style={{ ...statusStyle, borderLeft: `2px solid ${dark.danger}`, color: dark.danger }}>
           {errMsg}
         </div>
       )}
@@ -648,7 +634,7 @@ export function AutoModeToggle({
         能力安装/生成卡片会标记“Auto 已授权”以便审计，不再弹 Simple Harness 授权窗口。
         关闭后恢复逐项确认。这个开关不等于 Windows 管理员权限，也不会绕过系统级限制。
       </p>
-      {err && <span style={{ color: "#fca5a5", fontSize: 11 }}>{err}</span>}
+      {err && <span style={{ color: dark.danger, fontSize: tokens.text.sm.size }}>{err}</span>}
     </div>
   );
 }
@@ -792,7 +778,7 @@ export function ChatTurnTimeoutSetting({
       >
         {status}
       </span>
-      {err && <span style={{ color: "#fca5a5", fontSize: 11 }}>{err}</span>}
+      {err && <span style={{ color: dark.danger, fontSize: tokens.text.sm.size }}>{err}</span>}
     </div>
   );
 }
@@ -836,8 +822,8 @@ function DangerZoneSection() {
   }, [includeModels]);
 
   return (
-    <section style={{ ...sectionStyle, borderTop: "1px solid rgba(248,113,113,0.28)" }}>
-      <h3 style={{ ...h3Style, color: "#fca5a5" }}>危险区</h3>
+    <section style={{ ...sectionStyle, borderTop: `1px solid ${dark.borderStrong}` }}>
+      <h3 style={{ ...h3Style, color: dark.danger }}>危险区</h3>
       <p style={hintStyle}>
         "完全卸载" 会清除 Simple Harness 当前解析到的用户数据目录（配置、SQLite、日志）。
         ⚠️ 若为 portable 安装（数据实际在安装目录的 <code>userdata/</code>）或你
@@ -864,7 +850,7 @@ function DangerZoneSection() {
         </span>
       </label>
       {err && (
-        <div role="alert" style={{ ...statusStyle, color: "#fca5a5" }}>
+        <div role="alert" style={{ ...statusStyle, color: dark.danger }}>
           {err}
         </div>
       )}
@@ -876,9 +862,9 @@ function DangerZoneSection() {
           disabled={busy}
           style={{
             ...btnStyle,
-            background: "#b91c1c",
+            background: dark.danger,
             color: "white",
-            borderColor: "#b91c1c",
+            borderColor: dark.danger,
           }}
         >
           {busy ? "删除中…" : "完全卸载（清除用户数据）"}
@@ -1084,7 +1070,7 @@ function DataDirSection() {
     return (
       <section style={sectionStyle}>
         <h3 style={h3Style}>数据目录</h3>
-        <div style={{ ...statusStyle, color: "#fca5a5" }}>
+        <div style={{ ...statusStyle, color: dark.danger }}>
           加载失败：{loadErr}
         </div>
       </section>
@@ -1145,7 +1131,7 @@ function DataDirSection() {
       </div>
 
       {setting.externally_pinned && (
-        <div role="status" style={{ ...statusStyle, color: "#fde68a" }}>
+        <div role="status" style={{ ...statusStyle, color: dark.warning }}>
           当前目录由启动环境变量固定。为避免显示“已保存”但重启仍被覆盖，应用内切换已禁用。
         </div>
       )}
@@ -1207,9 +1193,9 @@ function DataDirSection() {
           disabled={busy || setting.externally_pinned}
           style={{
             ...btnStyle,
-            background: "#2563eb",
+            background: dark.accent,
             color: "white",
-            borderColor: "#2563eb",
+            borderColor: dark.accent,
           }}
           data-testid="data-dir-apply"
         >
@@ -1239,16 +1225,17 @@ function DataDirSection() {
           role="status"
           style={{
             ...statusStyle,
-            background: "rgba(16,185,129,0.12)",
-            border: "1px solid rgba(110,231,183,0.28)",
-            color: "#a7f3d0",
+            background: "transparent",
+            border: `1px solid ${dark.borderStrong}`,
+            borderLeft: `2px solid ${dark.success}`,
+            color: dark.success,
           }}
         >
           {opMsg}
         </div>
       )}
       {opErr && (
-        <div role="alert" style={{ ...statusStyle, color: "#fca5a5" }}>
+        <div role="alert" style={{ ...statusStyle, color: dark.danger }}>
           {opErr}
         </div>
       )}
@@ -1261,47 +1248,42 @@ function DataDirSection() {
 const overlayStyle: React.CSSProperties = {
   position: "fixed",
   inset: 0,
-  background: "rgba(8,11,20,0.55)",
-  backdropFilter: "blur(6px)",
-  WebkitBackdropFilter: "blur(6px)",
+  background: dark.scrim,
   display: "grid",
   placeItems: "center",
-  padding: 12,
+  padding: tokens.space.md,
   zIndex: 1000,
-  animation: "bp-fade-in 200ms cubic-bezier(0.16,1,0.3,1)",
+  animation: `bp-fade-in ${tokens.duration.base}ms ${tokens.easing.out}`,
 };
 
 const panelStyle: React.CSSProperties = {
-  background: dark.bg,
-  padding: "0 22px 22px",
-  borderRadius: 18,
-  width: "min(94vw, 540px)",
+  background: dark.panel,
+  padding: `0 ${tokens.space.xl}px ${tokens.space.xl}px`,
+  borderRadius: tokens.radius.lg,
+  width: "min(94vw, 560px)",
   boxSizing: "border-box",
   maxHeight: "92vh",
   overflowY: "auto",
   overflowX: "hidden",
   color: dark.text,
-  border: `1px solid ${dark.borderStrong}`,
-  boxShadow:
-    "0 32px 70px rgba(8,11,20,0.45), 0 4px 14px rgba(8,11,20,0.18)",
-  fontFamily:
-    '"Inter","PingFang SC","Microsoft YaHei UI",sans-serif',
-  animation: "bp-pop-in 260ms cubic-bezier(0.16,1,0.3,1)",
+  border: `1px solid ${dark.hairline}`,
+  boxShadow: tokens.shadow.overlay,
+  fontFamily: tokens.font.ui,
+  animation: `bp-pop-in ${tokens.duration.base}ms ${tokens.easing.out}`,
 };
 
 // T11 page variant：填满工作台内容区（无模态圆角/边框/阴影/弹入动画），
 // 自身滚动；宽度上限交给内容区布局。
 const pagePanelStyle: React.CSSProperties = {
   background: dark.bgSolid,
-  padding: "0 22px 22px",
+  padding: `0 ${tokens.space.xl}px ${tokens.space.xxl}px`,
   width: "100%",
   height: "100%",
   boxSizing: "border-box",
   overflowY: "auto",
   overflowX: "hidden",
   color: dark.text,
-  fontFamily:
-    '"Inter","PingFang SC","Microsoft YaHei UI",sans-serif',
+  fontFamily: tokens.font.ui,
 };
 
 const headerStyle: React.CSSProperties = {
@@ -1311,11 +1293,9 @@ const headerStyle: React.CSSProperties = {
   position: "sticky",
   top: 0,
   zIndex: 2,
-  margin: "0 -22px 8px",
-  padding: "16px 22px",
-  background: "rgba(20,22,31,0.94)",
-  backdropFilter: "blur(8px)",
-  WebkitBackdropFilter: "blur(8px)",
+  margin: `0 -${tokens.space.xl}px ${tokens.space.lg}px`,
+  padding: `${tokens.space.lg}px ${tokens.space.xl}px`,
+  background: dark.panel,
   borderBottom: `1px solid ${dark.hairline}`,
 };
 
@@ -1323,29 +1303,31 @@ const closeBtnStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  width: 30,
-  height: 30,
-  background: dark.card,
+  width: tokens.controlHeight,
+  height: tokens.controlHeight,
+  background: "transparent",
   border: `1px solid ${dark.border}`,
-  borderRadius: 9,
+  borderRadius: tokens.radius.md,
   cursor: "pointer",
   color: dark.textMuted,
+  transition,
 };
 
 const sectionStyle: React.CSSProperties = {
   borderTop: `1px solid ${dark.hairline}`,
-  paddingTop: 16,
-  marginTop: 16,
+  paddingTop: tokens.space.xl,
+  marginTop: tokens.space.xl,
   display: "grid",
-  gap: 9,
+  gap: tokens.space.md,
+  maxWidth: 760,
 };
 
 const h3Style: React.CSSProperties = {
   margin: 0,
-  fontSize: 13,
+  fontSize: tokens.text.md.size,
   color: dark.text,
-  fontWeight: 700,
-  letterSpacing: 0.2,
+  fontWeight: tokens.weight.semibold,
+  letterSpacing: tokens.tracking.tight,
 };
 
 
@@ -1356,36 +1338,41 @@ const btnRowStyle: React.CSSProperties = {
 };
 
 const btnStyle: React.CSSProperties = {
-  padding: "7px 14px",
-  borderRadius: 9,
-  border: `1px solid ${dark.border}`,
-  background: dark.card,
+  height: tokens.controlHeight,
+  padding: `0 ${tokens.space.lg}px`,
+  borderRadius: tokens.radius.md,
+  border: `1px solid ${dark.borderStrong}`,
+  background: "transparent",
   color: dark.text,
-  fontSize: 12,
-  fontWeight: 600,
+  fontFamily: tokens.font.ui,
+  fontSize: tokens.text.base.size,
+  fontWeight: tokens.weight.medium,
   cursor: "pointer",
-  transition: "background 120ms ease, border-color 120ms ease",
+  transition,
+  boxSizing: "border-box",
 };
 
+/** 每屏只有一个主按钮用实心强调色。 */
 const primaryBtnStyle: React.CSSProperties = {
   ...btnStyle,
-  border: "1px solid #2563eb",
-  background: "#2563eb",
-  color: "#ffffff",
+  border: "1px solid transparent",
+  background: dark.accent,
+  color: dark.onAccent,
+  fontWeight: tokens.weight.semibold,
 };
 
 const statusStyle: React.CSSProperties = {
-  fontSize: 12,
-  padding: "7px 10px",
-  background: dark.inset,
+  fontSize: tokens.text.sm.size,
+  padding: `${tokens.space.sm}px ${tokens.space.md}px`,
+  background: dark.card,
   border: `1px solid ${dark.insetBorder}`,
-  borderRadius: 9,
-  lineHeight: 1.5,
+  borderRadius: tokens.radius.md,
+  lineHeight: tokens.text.sm.lh,
 };
 
 const hintStyle: React.CSSProperties = {
-  fontSize: 11.5,
+  fontSize: tokens.text.sm.size,
   color: dark.textMuted,
   margin: 0,
-  lineHeight: 1.6,
+  lineHeight: tokens.text.sm.lh,
 };

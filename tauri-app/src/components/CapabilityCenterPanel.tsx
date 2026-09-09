@@ -23,7 +23,15 @@ import {
   type CapabilityOperationAction,
 } from "../types/capabilities";
 import type { ControlChannel } from "../ws/ControlChannel";
-import { dark } from "../theme/components";
+import {
+  INTERACTIVE_CLASS,
+  dark,
+  emptyState as emptyStateStyle,
+  metaText,
+  titleText,
+  transition,
+} from "../theme/components";
+import { tokens } from "../theme/tokens";
 import { CapabilityOperationCard } from "./CapabilityOperationCard";
 
 type CapabilityChannel = Pick<ControlChannel, "send" | "onMessage">;
@@ -84,12 +92,13 @@ const HEALTH_LABEL: Record<CapabilityDescriptor["health"], string> = {
   unknown: "待确认",
 };
 
+/** 状态色只用于状态，不当装饰色。 */
 const HEALTH_COLOR: Record<CapabilityDescriptor["health"], string> = {
-  healthy: "#059669",
-  degraded: "#d97706",
-  unavailable: "#dc2626",
-  validating: "#0284c7",
-  unknown: "#64748b",
+  healthy: dark.success,
+  degraded: dark.warning,
+  unavailable: dark.danger,
+  validating: dark.info,
+  unknown: dark.textFaint,
 };
 
 function readCachedAuthorizationMode(): CapabilityAuthorizationMode {
@@ -241,7 +250,7 @@ export function CapabilityCenterPanel({
       >
         <header style={headerStyle}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18 }}>能力中心</h2>
+            <h2 style={titleText}>能力中心</h2>
             <p style={subtitleStyle}>
               查看可用能力、运行健康与安装/生成进度
             </p>
@@ -250,6 +259,7 @@ export function CapabilityCenterPanel({
             <button
               type="button"
               onClick={onOpenLegacySkillStore}
+              className={INTERACTIVE_CLASS}
               style={secondaryButtonStyle}
             >
               打开旧 Skill Store
@@ -279,7 +289,7 @@ export function CapabilityCenterPanel({
           <span>
             进度来源：工作流推送
           </span>
-          {!channel ? <span style={{ color: "#fbbf24" }}>离线快照</span> : null}
+          {!channel ? <span style={{ color: dark.warning }}>离线快照</span> : null}
         </div>
 
         <nav aria-label="能力中心视图" style={tabsStyle}>
@@ -287,6 +297,7 @@ export function CapabilityCenterPanel({
             type="button"
             aria-selected={tab === "capabilities"}
             onClick={() => setTab("capabilities")}
+            className="bp-tab"
             style={tabButtonStyle(tab === "capabilities")}
           >
             能力 ({capabilities.length})
@@ -295,6 +306,7 @@ export function CapabilityCenterPanel({
             type="button"
             aria-selected={tab === "operations"}
             onClick={() => setTab("operations")}
+            className="bp-tab"
             style={tabButtonStyle(tab === "operations")}
           >
             操作 ({operations.length})
@@ -399,7 +411,7 @@ export function CapabilityCenterPanel({
                     <span
                       style={{
                         color: HEALTH_COLOR[capability.health],
-                        fontSize: 11,
+                        fontSize: tokens.text.sm.size,
                       }}
                     >
                       {HEALTH_LABEL[capability.health]}
@@ -614,7 +626,7 @@ function CapabilityDetail({
               onClick={() => onMutation(action, capability)}
               style={{
                 ...secondaryButtonStyle,
-                color: action === "uninstall" ? "#fca5a5" : dark.text,
+                color: action === "uninstall" ? dark.danger : dark.text,
               }}
             >
               {action === "install"
@@ -638,9 +650,8 @@ const backdropStyle: CSSProperties = {
   zIndex: 9997,
   display: "grid",
   placeItems: "center",
-  padding: 20,
-  background: "rgba(15,23,42,0.48)",
-  backdropFilter: "blur(3px)",
+  padding: tokens.space.xl,
+  background: dark.scrim,
 };
 const panelStyle: CSSProperties = {
   width: "min(920px, 96vw)",
@@ -648,11 +659,11 @@ const panelStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   overflow: "hidden",
-  border: `1px solid ${dark.borderStrong}`,
-  borderRadius: 14,
-  background: dark.bg,
+  border: `1px solid ${dark.hairline}`,
+  borderRadius: tokens.radius.lg,
+  background: dark.panel,
   color: dark.text,
-  boxShadow: "0 24px 70px rgba(0,0,0,0.48)",
+  boxShadow: tokens.shadow.overlay,
 };
 /**
  * page variant（D5 宿主模式）：无 fixed/backdrop，flex 填满工作台内容区；
@@ -674,52 +685,58 @@ const headerStyle: CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
   justifyContent: "space-between",
-  gap: 12,
-  padding: "17px 18px 12px",
+  gap: tokens.space.md,
+  padding: `${tokens.space.lg}px ${tokens.space.xl}px ${tokens.space.md}px`,
 };
 const subtitleStyle: CSSProperties = {
-  margin: "3px 0 0",
-  color: dark.textMuted,
-  fontSize: 12,
-  lineHeight: 1.5,
+  ...metaText,
+  margin: `${tokens.space.xs}px 0 0`,
 };
 const statusBarStyle: CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
   justifyContent: "space-between",
-  gap: 8,
-  padding: "8px 18px",
+  gap: tokens.space.sm,
+  padding: `${tokens.space.sm}px ${tokens.space.xl}px`,
   borderTop: `1px solid ${dark.hairline}`,
   borderBottom: `1px solid ${dark.hairline}`,
-  background: dark.inset,
+  background: "transparent",
   color: dark.textMuted,
-  fontSize: 11,
+  fontSize: tokens.text.sm.size,
+  fontVariantNumeric: tokens.font.numeric,
 };
 const tabsStyle: CSSProperties = {
   display: "flex",
-  gap: 4,
-  padding: "9px 18px 0",
+  gap: tokens.space.lg,
+  padding: `${tokens.space.sm}px ${tokens.space.xl}px 0`,
+  borderBottom: `1px solid ${dark.hairline}`,
 };
+/** 下划线 tab：选中态 2px 强调下划线 + 正文色，不换色相。 */
 const tabButtonStyle = (active: boolean): CSSProperties => ({
   border: 0,
-  borderBottom: active ? "2px solid #2563eb" : "2px solid transparent",
-  padding: "7px 10px",
+  borderBottom: `2px solid ${active ? dark.accent : "transparent"}`,
+  height: tokens.controlHeight,
+  padding: 0,
   background: "transparent",
-  color: active ? "#67e8f9" : dark.textMuted,
+  color: active ? dark.text : dark.textMuted,
   cursor: "pointer",
-  fontWeight: active ? 700 : 500,
+  fontFamily: tokens.font.ui,
+  fontSize: tokens.text.base.size,
+  fontWeight: active ? tokens.weight.semibold : tokens.weight.medium,
+  transition,
 });
 const noticeStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   gap: 8,
-  margin: "8px 18px 0",
-  padding: "7px 9px",
-  border: "1px solid rgba(96,165,250,0.30)",
-  borderRadius: 7,
-  background: "rgba(37,99,235,0.14)",
-  color: "#bfdbfe",
-  fontSize: 11,
+  margin: `${tokens.space.md}px ${tokens.space.xl}px 0`,
+  padding: `${tokens.space.sm}px ${tokens.space.md}px`,
+  border: `1px solid ${dark.hairline}`,
+  borderLeft: `2px solid ${dark.accent}`,
+  borderRadius: tokens.radius.md,
+  background: "transparent",
+  color: dark.textMuted,
+  fontSize: tokens.text.sm.size,
 };
 const bodyGridStyle: CSSProperties = {
   minHeight: 0,
@@ -729,24 +746,22 @@ const bodyGridStyle: CSSProperties = {
   // CJK/长词被逐字断行。列表行自带 ellipsis，200px 仍可读。
   gridTemplateColumns: "minmax(200px, 0.38fr) minmax(0, 0.62fr)",
   gap: 0,
-  marginTop: 8,
-  borderTop: `1px solid ${dark.hairline}`,
 };
 const listPaneStyle: CSSProperties = {
   minHeight: 0,
   display: "flex",
   flexDirection: "column",
-  gap: 10,
-  padding: 14,
+  gap: tokens.space.md,
+  padding: tokens.space.lg,
   borderRight: `1px solid ${dark.hairline}`,
-  background: dark.inset,
+  background: "transparent",
 };
 const detailPaneStyle: CSSProperties = {
   minWidth: 0,
   minHeight: 0,
   overflowY: "auto",
-  padding: 20,
-  background: "rgba(5,8,15,0.24)",
+  padding: tokens.space.xl,
+  background: "transparent",
 };
 const operationListStyle: CSSProperties = {
   flex: 1,
@@ -755,48 +770,53 @@ const operationListStyle: CSSProperties = {
   // 与能力列表同类：钉死轨道下限，防操作卡片长 token 在 min 尺寸下撑宽
   gridTemplateColumns: "minmax(0, 1fr)",
   alignContent: "start",
-  gap: 10,
+  gap: tokens.space.md,
   overflowY: "auto",
-  padding: 18,
-  marginTop: 8,
-  borderTop: `1px solid ${dark.hairline}`,
+  padding: tokens.space.xl,
 };
 const fieldLabelStyle: CSSProperties = {
   display: "grid",
-  gap: 4,
+  gap: tokens.space.xs,
   color: dark.textMuted,
-  fontSize: 11,
-  fontWeight: 600,
+  fontSize: tokens.text.sm.size,
+  fontWeight: tokens.weight.medium,
 };
 const inputStyle: CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  border: `1px solid ${dark.border}`,
-  borderRadius: 7,
-  padding: "7px 8px",
+  border: `1px solid ${dark.borderStrong}`,
+  borderRadius: tokens.radius.md,
+  height: tokens.controlHeight,
+  padding: `0 ${tokens.space.md}px`,
   background: dark.card,
   color: dark.text,
-  font: "inherit",
+  fontFamily: tokens.font.ui,
+  fontSize: tokens.text.base.size,
+  outline: "none",
+  transition,
 };
 const capabilityListItemStyle = (active: boolean): CSSProperties => ({
   width: "100%",
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  gap: 8,
-  padding: "9px 10px",
-  border: active ? "1px solid #60a5fa" : `1px solid ${dark.cardBorder}`,
-  borderRadius: 8,
-  background: active ? "rgba(37,99,235,0.18)" : dark.card,
+  gap: tokens.space.sm,
+  padding: `${tokens.space.sm}px ${tokens.space.md}px`,
+  border: `1px solid ${active ? dark.accentBorder : dark.cardBorder}`,
+  borderRadius: tokens.radius.md,
+  background: active ? dark.accentSoft : dark.card,
   color: dark.text,
   cursor: "pointer",
+  textAlign: "left",
+  transition,
 });
 const ellipsisStyle: CSSProperties = {
   display: "block",
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-  fontSize: 12,
+  fontSize: tokens.text.base.size,
+  fontWeight: tokens.weight.medium,
 };
 const listMetaStyle: CSSProperties = {
   display: "block",
@@ -804,62 +824,63 @@ const listMetaStyle: CSSProperties = {
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-  color: dark.textMuted,
-  fontSize: 10,
+  color: dark.textFaint,
+  fontSize: tokens.text.sm.size,
 };
 const detailGridStyle: CSSProperties = {
   display: "grid",
   // 1fr 的隐式 min 是 auto（= 值列最长单词宽）；min 尺寸下改用
   // minmax(0,1fr) 让值列可收窄，配合 overflowWrap 断长 token
   gridTemplateColumns: "72px minmax(0, 1fr)",
-  gap: "9px 12px",
+  gap: `${tokens.space.md}px ${tokens.space.lg}px`,
   margin: 0,
-  fontSize: 12,
+  fontSize: tokens.text.base.size,
   overflowWrap: "anywhere",
 };
 const manifestValueStyle: CSSProperties = {
   marginTop: 3,
   color: dark.textMuted,
-  fontSize: 11,
-  lineHeight: 1.55,
+  fontSize: tokens.text.sm.size,
+  lineHeight: tokens.text.sm.lh,
   overflowWrap: "anywhere",
 };
 const manifestListStyle: CSSProperties = {
   display: "grid",
   gap: 6,
-  margin: "5px 0 0",
-  paddingLeft: 20,
+  margin: `${tokens.space.xs}px 0 0`,
+  paddingLeft: tokens.space.xl,
   color: dark.textMuted,
-  fontSize: 11,
-  lineHeight: 1.5,
+  fontSize: tokens.text.sm.size,
+  lineHeight: tokens.text.sm.lh,
 };
 const emptyStyle: CSSProperties = {
-  padding: 18,
-  border: `1px dashed ${dark.borderStrong}`,
-  borderRadius: 8,
-  color: dark.textFaint,
-  textAlign: "center",
-  fontSize: 12,
+  ...emptyStateStyle,
+  padding: `${tokens.space.xxl}px ${tokens.space.lg}px`,
 };
 const secondaryButtonStyle: CSSProperties = {
-  border: `1px solid ${dark.border}`,
-  borderRadius: 7,
-  padding: "6px 9px",
-  background: dark.card,
+  border: `1px solid ${dark.borderStrong}`,
+  borderRadius: tokens.radius.md,
+  height: 28,
+  padding: `0 ${tokens.space.md}px`,
+  background: "transparent",
   color: dark.text,
   cursor: "pointer",
-  fontSize: 11,
+  fontFamily: tokens.font.ui,
+  fontSize: tokens.text.sm.size,
+  fontWeight: tokens.weight.medium,
+  transition,
 };
 const iconButtonStyle: CSSProperties = {
-  width: 30,
-  height: 30,
+  width: tokens.controlHeight,
+  height: tokens.controlHeight,
   border: `1px solid ${dark.border}`,
-  borderRadius: 7,
-  background: dark.card,
+  borderRadius: tokens.radius.md,
+  background: "transparent",
   color: dark.textMuted,
   cursor: "pointer",
-  fontSize: 20,
+  fontSize: tokens.text.lg.size,
   lineHeight: 1,
+  transition,
 };
 const inlineDismissStyle: CSSProperties = {
   border: 0,

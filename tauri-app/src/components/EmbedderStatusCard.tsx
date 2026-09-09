@@ -7,6 +7,7 @@ import type {
   EmbedderStatusResponse,
   IncomingMessage,
 } from "../types/messages";
+import { dark } from "../theme/components";
 
 type Props = {
   getChannel: () => ControlChannel | null;
@@ -79,11 +80,11 @@ export function EmbedderStatusCard({ getChannel }: Props) {
     <div
       data-testid="embedder-status-card"
       style={{
-        border: "1px solid #2d3748",
+        border: `1px solid ${dark.cardBorder}`,
         borderRadius: "6px",
         padding: "8px 10px",
         marginTop: "8px",
-        background: "rgba(15,23,42,0.4)",
+        background: dark.card,
       }}
     >
       <div
@@ -100,8 +101,8 @@ export function EmbedderStatusCard({ getChannel }: Props) {
           onClick={refresh}
           style={{
             background: "transparent",
-            color: "#cbd5e1",
-            border: "1px solid #475569",
+            color: dark.text,
+            border: `1px solid ${dark.borderStrong}`,
             borderRadius: "3px",
             padding: "1px 6px",
             fontSize: "10px",
@@ -114,14 +115,14 @@ export function EmbedderStatusCard({ getChannel }: Props) {
 
       {status.kind === "loading" && (
         <>
-          <Badge color="#64748b" label={checking ? "读取状态…" : "加载中…"} />
+          <Badge color={dark.textFaint} label={checking ? "读取状态…" : "加载中…"} />
           <PathLine path={modelPath} />
         </>
       )}
 
       {status.kind === "cold" && (
         <>
-          <Badge color="#64748b" label="按需加载" />
+          <Badge color={dark.textFaint} label="按需加载" />
           <Hint>模型已配置，首次语义请求时加载。</Hint>
           <PathLine path={modelPath} />
         </>
@@ -129,7 +130,7 @@ export function EmbedderStatusCard({ getChannel }: Props) {
 
       {status.kind === "failed" && (
         <>
-          <Badge color="#ef4444" label="加载失败" />
+          <Badge color={dark.danger} label="加载失败" />
           <Hint>下次语义请求可重试；刷新仅查看状态。{status.reason}</Hint>
           <PathLine path={modelPath} />
         </>
@@ -137,7 +138,7 @@ export function EmbedderStatusCard({ getChannel }: Props) {
 
       {status.kind === "real" && (
         <>
-          <Badge color="#10b981" label={`${modelName} 已就绪 ✓`} />
+          <Badge color={dark.success} label={`${modelName} 已就绪 ✓`} />
           <Hint>模型已加载，可处理语义嵌入请求。</Hint>
           <PathLine path={status.modelPath} />
         </>
@@ -145,7 +146,7 @@ export function EmbedderStatusCard({ getChannel }: Props) {
 
       {status.kind === "mock" && (
         <>
-          <Badge color="#f59e0b" label="Mock 模式 ⚠" />
+          <Badge color={dark.warning} label="Mock 模式 ⚠" />
           <Hint>
             当前使用模拟嵌入，语义搜索能力受限。请检查已选择模型的本地资源配置。
           </Hint>
@@ -155,7 +156,7 @@ export function EmbedderStatusCard({ getChannel }: Props) {
 
       {status.kind === "error" && (
         <>
-          <Badge color="#94a3b8" label="未启动" />
+          <Badge color={dark.textFaint} label="未启动" />
           <Hint>后端提示：{status.reason}</Hint>
         </>
       )}
@@ -189,7 +190,7 @@ function Hint({ children }: { children: React.ReactNode }) {
     <div
       style={{
         fontSize: "11px",
-        color: "#cbd5e1",
+        color: dark.text,
         marginTop: "4px",
         lineHeight: 1.5,
       }}
@@ -207,7 +208,7 @@ function PathLine({ path }: { path: string }) {
     <div
       style={{
         fontSize: "10px",
-        color: "#64748b",
+        color: dark.textFaint,
         marginTop: "3px",
         fontFamily: "monospace",
         wordBreak: "break-all",

@@ -4,7 +4,8 @@ import type { PrimaryPort } from "../primary/controller";
 import { GraphRequests, type MemoryGraphView } from "../primary/graphRequests";
 import { MemoryGraphCanvas, type GraphSelection } from "./MemoryGraphCanvas";
 import { memoryTypeLabels } from "../primary/graphElements";
-import { dark } from "../theme/components";
+import { INTERACTIVE_CLASS, buttonStyle, dark, metaText } from "../theme/components";
+import { tokens } from "../theme/tokens";
 
 const labels: Record<string, string> = {
   active: "有效", draft: "草稿", candidate: "候选", pending: "待触发", completed: "已完成",
@@ -36,21 +37,22 @@ export function PrimaryMemoryGraph({ port, primaryRef, verifiedOwnerKey, ready, 
   const node = selected?.kind === "node" ? nodes.find((n) => n.node_id === selected.id) : undefined;
   const edge = selected?.kind === "edge" ? edges.find((e) => e.edge_id === selected.id) : undefined;
   return <section aria-label="记忆关系" style={{ minWidth: 0 }}>
-    <p>查看已保存记忆之间的关系。此图只供你查看；排列位置不表示重要程度或推理结果。</p>
-    <button disabled={!state.ready || state.loading} onClick={() => void client.refresh()}>刷新关系</button>
+    <p style={{ ...metaText, margin: `0 0 ${tokens.space.md}px` }}>查看已保存记忆之间的关系。此图只供你查看；排列位置不表示重要程度或推理结果。</p>
+    <button className={INTERACTIVE_CLASS} style={buttonStyle("ghost", "sm")}
+      disabled={!state.ready || state.loading} onClick={() => void client.refresh()}>刷新关系</button>
     {!state.ready && <p role="status">等待当前连接身份确认</p>}
     {state.loading && <p role="status">正在读取记忆关系…</p>}
     {state.error && <p role="alert">{state.error}</p>}
     {state.ready && !state.loading && !state.graph && !state.error && <p role="status">有一项忘记操作尚未确认，请返回记忆列表处理。</p>}
     {ready && verifiedOwnerKey && state.ready && state.graph && <>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, margin: "12px 0" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: tokens.space.md, margin: `${tokens.space.md}px 0` }}>
         <label>筛选当前视图 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="按记忆内容筛选" /></label>
         <label>记忆类型 <select value={type} onChange={(event) => setType(event.target.value)}>
           <option value="">全部类型</option>{Object.entries(memoryTypeLabels).map(([key, value]) => <option key={key} value={key}>{value}</option>)}
         </select></label>
       </div>
       {(state.graph.truncated.nodes || state.graph.truncated.edges) && <p role="status">当前仅展示部分记忆与关系；筛选只作用于当前视图。</p>}
-      <p>{nodes.length} 条记忆 · {edges.length} 条关系。虚线表示候选或推断，橙色边框表示争议。</p>
+      <p style={{ ...metaText, margin: `${tokens.space.sm}px 0` }}>{nodes.length} 条记忆 · {edges.length} 条关系。虚线表示候选或推断，橙色边框表示争议。</p>
       {nodes.length ? <MemoryGraphCanvas nodes={nodes} edges={edges} selected={selected} onSelect={setSelected} claimInitialReveal={claimInitialReveal} /> : <p>当前没有符合条件的记忆关系可展示。</p>}
       <details open><summary>文字视图与键盘选择</summary>
         <ul aria-label="图中记忆">{nodes.map((n) => <li key={n.node_id}>
@@ -64,7 +66,7 @@ export function PrimaryMemoryGraph({ port, primaryRef, verifiedOwnerKey, ready, 
           </button>
         </li>)}</ul>
       </details>
-      {(node || edge) && <aside aria-label="选中记忆详情" style={{ padding: 12, background: dark.card, borderRadius: 8, overflowWrap: "anywhere" }}>
+      {(node || edge) && <aside aria-label="选中记忆详情" style={{ padding: tokens.space.md, background: dark.card, border: `1px solid ${dark.cardBorder}`, borderRadius: tokens.radius.lg, overflowWrap: "anywhere" }}>
         {node && <>
           <h3>{node.label}</h3>
           <dl><dt>类型与状态</dt><dd>{memoryTypeLabels[node.memory_type]} · {label(node.lifecycle_state)}</dd>
