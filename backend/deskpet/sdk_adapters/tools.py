@@ -20,6 +20,7 @@ from simple_harness import CallId, JsonValue, thaw_json
 from simple_harness.tools import (
     FunctionTool,
     ToolCall,
+    ToolCallState,
     ToolContext,
     ToolOutcome,
     ToolRegistry,
@@ -31,6 +32,10 @@ from simple_harness.tools.executor import EffectExecution, EffectExecutor
 from deskpet.sdk_adapters.effect_gate import EffectGateRejected
 
 logger = logging.getLogger(__name__)
+
+# 事件 X：`ProductToolsAdapter._run_calls` 的兜底上限（见 _trim_run_calls）。
+# 前台是 FIFO 单 Run，这个值只对不触发 Tool authority 终态的历史入口起作用。
+_MAX_TRACKED_RUNS = 64
 
 PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
     ["agent", "agent_parallel", "agent_reach_doctor", "agent_reach_read", "app_discover", "app_launch", "await_subagents", "capability_build", "capability_repair", "context_page_in", "desktop_create_file", "doc_create", "doc_edit", "doc_read", "download_file", "edit_file", "excel_create", "external_action_wait", "fetch_tool_result", "file_glob", "file_grep", "file_organize", "file_read", "file_write", "generate_image", "glob", "gold_price_lookup", "grep", "image_ocr", "list_directory", "context_route", "prospective_ack", "procedure_use", "procedure_discover", "memory_forget", "memory_read", "memory_recall", "memory_search", "memory_write", "move_file", "office_pick_file", "pdf_export", "ppt_create", "process_list", "process_start", "process_stop", "process_wait", "project_directory_select", "project_group_send", "read_file", "register_artifacts", "run_browser_task", "run_shell", "scrapling_fetch", "screen_capture", "screen_click", "screen_key", "screen_move", "screen_scroll", "screen_type", "skill_invoke", "spawn_subagents", "spawn_team", "skill_install", "task_scope_search", "task_scope_update", "todo_complete", "todo_write", "tool_activate", "tool_describe", "tool_search", "web_crawl", "web_extract_article", "web_fetch", "web_read_sitemap", "web_search", "window_capture", "window_focus", "window_key", "window_list", "workflow_spawn", "workspace_prepare", "workspace_recall", "write_file"]
@@ -233,6 +238,10 @@ class ProductToolsAdapter(ToolRegistry):
         super().__init__(tools)
         self._execution_identities = dict(execution_identities or {})
         self._run_authorities: object | None = None
+        # 事件 X：SDK ``ToolRegistry._calls`` 只增不减（见 release_run_calls）。
+        # 这里按 Run 记住本进程发过的 call id，Run 终态时据此归还已结算的本地
+        # 认领。键是 SDK run id 字符串，值是该 Run 的 CallId 集合。
+        self._run_calls: dict[str, set[CallId]] = {}
 
     def validate(self, call):
         """接住 schema 校验失败，转交产品包装层变成模型可见拒绝。
@@ -262,7 +271,60 @@ class ProductToolsAdapter(ToolRegistry):
             and self._run_authorities is not authorities
         ):
             raise RuntimeError("product Tool authority registry is already bound")
+        already_bound = self._run_authorities is authorities
         self._run_authorities = authorities
+        if already_bound:
+            return
+        listen = getattr(authorities, "add_terminal_listener", None)
+        if callable(listen):
+            listen(lambda authority: self.release_run_calls(authority.run_id))
+
+    def release_run_calls(self, run_id: object) -> int:
+        """归还一个终态 Run 已结算的本地 Tool 认领，返回释放条数。
+
+        事件 X（2026-09-09 后端内存增长）：冻结 SDK 的 ``ToolRegistry`` 在
+        ``invoke`` 里把每次调用记进 ``_calls``，但只有 ``allow_confirmed_not_started``
+        才会删；产品侧这个 registry 是每个 SDK runtime stack 一份的长生命周期
+        对象，于是进程活多久、``_calls`` 就攒多久——每条 ``_CallRecord`` 还吊着
+        已完成的 ``asyncio.Task``（协程帧、拷贝的 contextvars Context、
+        ``ToolContext``/``TaskExecutionEnvelope``）和整份 ``ToolResult`` 载荷
+        （tool_search 结果、分页内容、文件读取……）。原生旅程里这就是每回合几百
+        MB 的 MALLOC_SMALL 增长。
+
+        Run 到终态时（``SdkRunToolAuthorityRegistry.mark_terminal`` 的监听器）
+        释放：此时该 Run 的终态回执已落库，本地认领不再有仲裁价值。仍在
+        RUNNING 的记录一律不动——取消由 SDK 自己的 ``close_call`` 负责，
+        ``allow_confirmed_not_started`` 也会再拦一道。确定性/回执/重放不受影响：
+        ``_calls`` 完全是进程内状态，不参与任何持久化或指纹。
+        """
+
+        value = str(getattr(run_id, "value", run_id))
+        call_ids = self._run_calls.pop(value, None)
+        if not call_ids:
+            return 0
+        states = self.calls
+        released = 0
+        for call_id in call_ids:
+            if states.get(call_id) in (None, ToolCallState.RUNNING):
+                continue
+            self.allow_confirmed_not_started(call_id)
+            released += 1
+        return released
+
+    def _trim_run_calls(self, current_run_id: str) -> None:
+        """终态监听器之外的兜底上限，覆盖不经 Tool authority 的历史入口。
+
+        没有 Run authority 的旧聊天入口不会触发 ``mark_terminal``，那条路上
+        ``_calls`` 依旧只增不减。这里按插入顺序保留最近 ``_MAX_TRACKED_RUNS``
+        个 Run，更早的 Run 只归还其**已结算**的认领（RUNNING 一律不动），所以
+        它既不会打断在飞的调用，也不会让任何入口无界增长。
+        """
+
+        while len(self._run_calls) > _MAX_TRACKED_RUNS:
+            stale = next(iter(self._run_calls))
+            if stale == current_run_id:  # 不淘汰正在进行的 Run
+                return
+            self.release_run_calls(stale)
 
     def register_dynamic(self, tool: FunctionTool, *, execution_identity: str) -> None:
         if not isinstance(tool, FunctionTool):
@@ -332,6 +394,9 @@ class ProductToolsAdapter(ToolRegistry):
                 != context.request_id.value
             ):
                 raise RuntimeError("sdk_tool_context_identity_mismatch")
+        # 事件 X：记住 call → Run 归属，Run 终态时才知道该归还哪些本地认领。
+        self._run_calls.setdefault(context.run_id.value, set()).add(call.call_id)
+        self._trim_run_calls(context.run_id.value)
         token = _current_call_id.set(call.call_id)
         context_token = _current_tool_context.set(context)
         try:
