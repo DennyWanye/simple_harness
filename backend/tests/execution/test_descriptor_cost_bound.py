@@ -37,10 +37,11 @@ from simple_harness.contracts.messages import Message, MessageRole
 from deskpet.execution.current_tool_pages import (
     CONTROL_TOOLS, MARKER, PAGE_SAVING_DIVISOR, PAGE_SIZE, PAGE_WORTH_MIN_BYTES, PREFIX,
     PrimaryContextPageUnavailable, SUMMARY_EXCERPT_BYTES, SUMMARY_MIN_BYTES,
-    _settled_tool_tokens, current_tool_allowance, page_starts, reference, source_content, summary,
-    verify_request, worth_paging,
+    LEGACY_PAGE_SIZE, TITLE_EXCERPT_BYTES,
+    _settled_tool_tokens, current_tool_allowance, legacy_af_summary, page_starts, reference,
+    source_content, summary, verify_request, worth_paging,
 )
-from deskpet.execution.primary_context_pages import PAGE_BYTES
+from deskpet.execution.primary_context_pages import PAGE_BYTES, _excerpt
 from deskpet.sdk_adapters.context_partitions import effective_input_budget, text_tokens
 from deskpet.task_scope.protocol import canonical_hash
 
@@ -532,3 +533,105 @@ async def test_incident_shape_of_sixteen_small_searches_fits_once_descriptors_ar
     # 6) Deterministic: same Run state, same bytes.
     again = await projector(request, messages)
     assert [m.content for m in again] == [m.content for m in await projector(request, messages)]
+
+
+# --------------------------------------------------------------------------
+# 6. 事件 AG：文本结果的描述符自带「标题和总行数」，页大小提到 4096
+# --------------------------------------------------------------------------
+#
+# 证据 `.local-test-evidence/2026-09-09/native-a6-run12/primary-ui-z9j48osx/`
+# （失败 Run ``product-sdk-015ad2fe…``）：用户只问一份 40 003 B 文件的「标题和
+# 总行数」，模型顺着 next_offset 翻了 13 页（offset 0/1024/2046/3069/…/12278）
+# 还不到三分之一，第 19 次装配就以
+# ``sdk_context_budget_exceeded planned=27202 effective=26752 protected=8403``
+# 打死了整个 Run。这一节钉住两件事：那一问现在不用翻页就能答，而真要翻的时候
+# 页数只有原来的四分之一。
+
+AG_TITLE = "# 秋分资料整理清单"
+# 事故那份参照件是 40 003 B；这个行数把公共正文压在同一量级。
+AG_LINES = 405
+AG_LINE = "B-%05d 条目：秋分资料整理清单第 %d 行，校对状态待定，责任人未指派。"
+
+
+def _text_body(*, lines, title=AG_TITLE):
+    """一份「文件正文」形状的公共结果：value.content 是多行文本。"""
+    rows = ([title] if title else []) + [AG_LINE % (i, i) for i in range(lines)]
+    text = "\n".join(rows) + "\n"
+    return text, public_body({"path": "/tmp/fixture.md", "content": text})
+
+
+def _text_descriptor(content, *, effect_id="effect-" + "c" * 60):
+    effect = FakeEffect(effect_id=effect_id, tool_name="read_file",
+                        raw_call_id="call_00_" + "d" * 24,
+                        value=json.loads(content)["value"])
+    stack = FakeStack({effect_id: effect})
+    return source_content(stack.read_primary_effect_page_facts(RUN_ID, effect_id), min_bytes=0)
+
+
+def test_a_text_result_answers_title_and_line_count_without_paging():
+    """事故那一问——「标题和总行数」——现在由描述符本身回答。"""
+    text, content = _text_body(lines=AG_LINES)
+    assert 40_000 < len(content.encode()) < 41_000
+    descriptor, content = _text_descriptor(content)
+    wire = json.loads(summary(descriptor, content))
+
+    # (a) 标题就是 excerpt：不必翻任何一页。
+    assert wire["excerpt"] == AG_TITLE
+    # (b) 总行数与字符数是确定的正文投影（口径同 ``wc -l``：末尾换行不多算一行）。
+    assert wire["text_stats"]["line_count"] == AG_LINES + 1 == text.count("\n")
+    assert wire["text_stats"]["char_count"] == len(text)
+    # (c) 字节数还是那个字节数——它量的是 JSON 封套，既不是行数也不是字符数，
+    #     这正是升级前无法回答那一问的原因。
+    assert wire["source"]["content_bytes"] == len(content.encode()) != len(text)
+    # (d) 加了统计之后仍然在 F-E3 的每条描述符 token 上限之内。
+    assert text_tokens(summary(descriptor, content)) <= DESCRIPTOR_TOKEN_CEILING
+
+
+def test_the_title_excerpt_never_costs_more_than_the_prefix_it_replaces():
+    """``text_tokens`` 给 CJK 每字一 token；标题的字节上界必须把这一点算进去。"""
+    assert TITLE_EXCERPT_BYTES == 96
+    # 96 B 的中文 = 32 字 = 32 token，与它取代的 128 B ASCII 前缀（128/4）等价。
+    long_title = "长" * 400
+    _, content = _text_body(lines=200, title=long_title)
+    descriptor, content = _text_descriptor(content)
+    wire = json.loads(summary(descriptor, content))
+    assert len(wire["excerpt"].encode()) <= TITLE_EXCERPT_BYTES
+    assert text_tokens(wire["excerpt"]) <= SUMMARY_EXCERPT_BYTES // 4
+    assert text_tokens(summary(descriptor, content)) <= DESCRIPTOR_TOKEN_CEILING
+
+
+def test_a_body_without_a_text_payload_is_unchanged():
+    """非文本结果一个字节都没变：excerpt 仍是 F-E3 的字节前缀，没有 text_stats。"""
+    _, facts = _facts(body_bytes=6_598)
+    descriptor, content = source_content(facts, min_bytes=0)
+    wire = json.loads(summary(descriptor, content))
+    assert "text_stats" not in wire
+    assert content.encode().startswith(wire["excerpt"].encode())
+    assert len(wire["excerpt"].encode()) == SUMMARY_EXCERPT_BYTES
+
+
+def test_the_incident_body_needs_ten_pages_instead_of_forty():
+    """页大小 1024 -> 4096：同一份 40 KB 正文从 ~40 页降到 10 页。"""
+    _, content = _text_body(lines=AG_LINES)
+    descriptor, content = _text_descriptor(content)
+    before = page_starts(content, LEGACY_PAGE_SIZE)
+    after = page_starts(content)
+    assert len(before) >= 39 and len(after) <= 11
+    assert json.loads(summary(descriptor, content))["page_count"] == len(after)
+    assert json.loads(summary(descriptor, content))["page_size"] == PAGE_SIZE == 4096
+    # 每一页仍然首尾相接覆盖整份正文，不重不漏。
+    assert "".join(_excerpt(content, offset) for offset in after) == content
+
+
+def test_the_pre_ag_wire_shape_is_still_a_deterministic_function_of_the_body():
+    """只读兼容形态必须冻结在升级前的形状：1024 的页大小、没有 text_stats。"""
+    _, content = _text_body(lines=AG_LINES)
+    descriptor, content = _text_descriptor(content)
+    old = json.loads(legacy_af_summary(descriptor, content))
+    assert old["page_size"] == LEGACY_PAGE_SIZE == 1024
+    assert old["page_count"] == len(page_starts(content, LEGACY_PAGE_SIZE))
+    assert "text_stats" not in old
+    assert content.encode().startswith(old["excerpt"].encode())
+    # 准入键在两种形态下完全相同——所以接受旧形态不放宽任何权限。
+    assert old["reference_id"] == json.loads(summary(descriptor, content))["reference_id"]
+    assert legacy_af_summary(descriptor, content) == legacy_af_summary(descriptor, content)

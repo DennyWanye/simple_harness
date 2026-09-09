@@ -14,7 +14,8 @@ from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 
 from deskpet.execution.primary_context_pages import (
-    HISTORY_PREFIX, HISTORY_SUFFIX, PREFIX, PrimaryContextPageReader, _excerpt, project_history_group,
+    HISTORY_PREFIX, HISTORY_SUFFIX, PAGE_BYTES, PREFIX, PrimaryContextPageReader, _excerpt,
+    project_history_group,
     verify_history_projections,
 )
 from deskpet.memory.human_memory_service import QueueTurnRequest
@@ -31,11 +32,13 @@ LARGE = "中文边界" * 1400 + "A" * 1300 + "EXACT_PAGE_TAIL"
 @pytest.mark.asyncio
 async def test_utf8_page_oracle_and_no_invented_source():
     # Independent bytes oracle: walk the actual returned boundary, preserving
-    # the complete original stream, including characters split by byte 1024.
+    # the complete original stream, including characters split by the page size
+    # (2026-09-09 事件 AG：页大小 1024 -> 4096，这个 oracle 与页大小无关，只跟着
+    # ``PAGE_BYTES`` 走——它验的是「按实际返回字节数前进就不重不漏」这个性质）。
     offset, chunks = 0, []
     while offset < len(LARGE.encode()):
         piece = _excerpt(LARGE, offset)
-        assert 0 < len(piece.encode()) <= 1024
+        assert 0 < len(piece.encode()) <= PAGE_BYTES
         chunks.append(piece)
         offset += len(piece.encode())
     assert "".join(chunks) == LARGE

@@ -8,7 +8,7 @@ from types import MappingProxyType
 import aiosqlite
 
 from deskpet.execution.primary_context_pages import (
-    PAGE_BYTES, PrimaryContextPageUnavailable, _excerpt, _sha,
+    EXCERPT_BYTES, LEGACY_PAGE_BYTES, PAGE_BYTES, PrimaryContextPageUnavailable, _excerpt, _sha,
 )
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, redact_credential_shapes
@@ -100,13 +100,21 @@ PAGE_WORTH_MIN_BYTES = SUMMARY_MIN_BYTES * PAGE_SAVING_DIVISOR
 # 受理口径一字未改——任何落在码点边界且在正文内的 offset 仍然被接受，只有这样
 # 已记录的成功页（其中 8192 / 16384 / 40960 都不在规范页链上）才能原样重放。
 PAGE_SIZE = PAGE_BYTES
+# 事件 AG：升级前的页大小 / 升级前的描述符页起点上界。两者只在**只读兼容**里出现
+# （``legacy_af_summary``、``admitted_current_page(page_bytes=...)`` 的重放路径），
+# 活路径永远只用 ``PAGE_SIZE`` 与 ``DESCRIPTOR_OFFSET_LIMIT``。
+LEGACY_PAGE_SIZE = LEGACY_PAGE_BYTES
+LEGACY_DESCRIPTOR_OFFSET_LIMIT = 8
 # 页起点清单的上界：前 N 个 + 最后一个。48 页的正文列 17 个数字约 100 B，
 # 远在 ``_MAX_HANDLER_PUBLIC_MESSAGE``（2048）之内。
 MAX_LISTED_OFFSETS = 16
-# 描述符里顺带印全量页起点的上界（页数 ≤ 此值时才印）。8 个 offset 约 45 B，
-# 是 F-E3 字节预算里付得起的；再多就只印 page_size + page_count，让模型按
-# 页大小自己推，或在被拒时从拒绝详情里拿完整清单。
-DESCRIPTOR_OFFSET_LIMIT = 8
+# 描述符里顺带印全量页起点的上界（页数 ≤ 此值时才印）。事件 AG 把页大小提到 4096
+# 之后，同样的「≤8 页」覆盖到 32 KB 的正文，offset 也从 4 位数变 5 位数，再叠上
+# ``text_stats`` 就把 descriptor 顶到 F-E3 的 150 token 上限之外。收到 4：按新页大小
+# 它仍然覆盖到 16 KB 正文（旧口径是 8 KB），清单反而更宽，字节却回到原量级。
+# 超过它就只印 page_size + page_count，模型按页大小自己推，或在被拒时从拒绝详情里
+# 拿完整清单。
+DESCRIPTOR_OFFSET_LIMIT = 4
 # 拒绝详情里为了算"本 Run 已准入过的最高页"最多回溯多少个 context_page_in 效果。
 # 只走失败路径，且每个都要重算一次公共审计事实，所以给一个小而确定的上界。
 MAX_SCANNED_PAGE_EFFECTS = 8
@@ -128,7 +136,7 @@ def rejection_code_matches(recorded, derived):
     return recorded == derived or REJECTION_CODE_ALIASES.get(derived) == recorded
 
 
-def page_starts(content):
+def page_starts(content, page_size=None):
     """本正文按 ``context_page_in`` 规范翻页时的全部页起点（精确，非估算）。
 
     从 0 开始反复调用 ``_excerpt`` 并按**实际返回的字节数**前进——和
@@ -140,10 +148,11 @@ def page_starts(content):
     覆盖整份正文且不重不漏，因此拿来当"下一步"是安全的。
     """
     raw = content.encode("utf-8")
+    size = PAGE_SIZE if page_size is None else int(page_size)
     starts, offset = [], 0
     while offset < len(raw):
         starts.append(offset)
-        step = len(raw[offset:offset + PAGE_SIZE].decode("utf-8", errors="ignore").encode("utf-8"))
+        step = len(raw[offset:offset + size].decode("utf-8", errors="ignore").encode("utf-8"))
         if step <= 0:  # 防御：起点在码点边界上时不可能发生，但绝不允许死循环
             break
         offset += step
@@ -324,6 +333,89 @@ def _summary_excerpt(content):
     return content.encode("utf-8")[:SUMMARY_EXCERPT_BYTES].decode("utf-8", errors="ignore")
 
 
+# --- 事件 AG：文本结果的确定性统计 ---------------------------------------
+# 第 12 次第 6 轮里用户要的只是一份 40 003 B 文件的「标题和总行数」。descriptor 有
+# ``content_bytes``，却没有任何一个字段能回答这两个问题——``content_bytes`` 是 JSON
+# 封套的字节数，既不是行数也不是字符数——于是模型只能顺着 ``next_offset`` 一页页
+# 翻，13 页之后整个 Run 被预算打死，用户一个字也没拿到。
+#
+# 这里补的是纯确定性、O(len)、不引入任何新权威的正文投影：把公共正文当 JSON 解开，
+# 取 ``value``（或 ``value`` 里第一个公共文本字段）作为「这份结果的文本」，数出它的
+# 行数与字符数；正文以标题开头时，把标题本身当作 excerpt。读的是与 ``content_hash``
+# 完全同一份公共正文，不碰任何私有字段，也不改变任何准入判断。
+TEXT_STATS_KEYS = ("content", "text", "body", "output", "stdout")
+# 首行摘录的字节上界。刻意比 ``SUMMARY_EXCERPT_BYTES``（128）小：``text_tokens`` 给
+# 中日韩每个字符算一个 token，96 B 的中文正好是 32 个字符 = 32 token，与它替换掉的
+# 那段 128 B ASCII JSON 前缀（128/4 = 32 token）等价。也就是说标题永远不会比它取代
+# 的 excerpt 更贵，descriptor 的 token 上限因此不依赖正文用的是哪种文字。
+TITLE_EXCERPT_BYTES = 96
+
+
+def _text_payload(content):
+    """公共正文里那份「人类可读文本」，没有就是 None。纯函数，永不抛。"""
+    try:
+        body = json.loads(content)
+    except ValueError:
+        return None
+    if not isinstance(body, Mapping):
+        return None
+    value = body.get("value")
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Mapping):
+        for key in TEXT_STATS_KEYS:
+            candidate = value.get(key)
+            if isinstance(candidate, str):
+                return candidate
+    return None
+
+
+def _first_line(text):
+    """首个非空行（去掉两端空白），没有就是 None。"""
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+def _title(content):
+    """文本载荷的首个非空行（有界）；正文里没有文本载荷时是 None。
+
+    事件 AG 的原始口径是「正文以 Markdown 标题开头时才印首行」。实测否掉了这个
+    限制：不以标题开头的文本结果会**同时**付掉 128 B 的 JSON 前缀和 ``text_stats``，
+    descriptor 涨到 665 B / 166 token，越过 F-E3 的 150 token 上限；改成「文本载荷
+    一律印首行」之后同一形态是 573 B / 143 token，而且首行比那段固定 JSON 封套
+    信息量更高（前 73 B 是
+    ``{"error_code":null,"outcome":"succeeded","public_message":null,"value":{"``）。
+    判据仍然窄而确定——首个非空行、按字节截断、纯函数——``summary`` 因此仍然是正文
+    的确定函数，``verify_request`` 的逐字节相等比对不受影响。
+    """
+    text = _text_payload(content)
+    first = _first_line(text) if isinstance(text, str) else None
+    if first is None:
+        return None
+    return first.encode("utf-8")[:TITLE_EXCERPT_BYTES].decode("utf-8", errors="ignore")
+
+
+def _text_stats(content):
+    """``{"line_count", "char_count"}``，或 None（这份正文里没有文本载荷）。
+
+    ``line_count`` 按 ``\n`` 数，末尾换行不额外算一行——和 ``wc -l`` 的口径一致，
+    也是模型问「总行数」时期待的那个数。
+    """
+    text = _text_payload(content)
+    if not isinstance(text, str) or not text:
+        return None
+    body = text[:-1] if text.endswith("\n") else text
+    return dict(line_count=body.count("\n") + 1, char_count=len(text))
+
+
+def _descriptor_excerpt(content):
+    """事件 AG 的 excerpt：文本结果印首行（标题），否则维持 F-E3 的字节前缀。"""
+    return _title(content) or _summary_excerpt(content)
+
+
 def summary(descriptor, content):
     """The retained wire form of one paged settled body (F-E3 bounded shape).
 
@@ -357,22 +449,48 @@ def summary(descriptor, content):
     它就是全部页起点，模型一次就能读完，不必先撞一次拒绝。大正文不印清单，
     页起点由拒绝详情或每页的 ``next_reference_id`` 给。
     """
-    starts = page_starts(content)
+    return _wire_summary(descriptor, content, page_size=PAGE_SIZE,
+                         offset_limit=DESCRIPTOR_OFFSET_LIMIT, stats=True)
+
+
+def _wire_summary(descriptor, content, *, page_size, offset_limit, stats):
+    """``summary`` 与它的只读兼容形态共用的唯一渲染器（参数化的只有形状，不是权威）。"""
+    starts = page_starts(content, page_size)
     wire = dict(kind=MARKER,
         source=dict(effect_id=descriptor["effect_id"], tool_name=descriptor["tool_name"],
                     content_bytes=descriptor["content_bytes"]),
-        excerpt=_summary_excerpt(content),
+        excerpt=_descriptor_excerpt(content) if stats else _summary_excerpt(content),
         # 读完整份正文需要的 ``context_page_in`` 次数，精确值。
-        page_count=len(starts), page_size=PAGE_SIZE,
+        page_count=len(starts), page_size=page_size,
         reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
         page_tool="context_page_in")
-    if len(starts) <= DESCRIPTOR_OFFSET_LIMIT and starts != list(range(0, len(content.encode("utf-8")), PAGE_SIZE)):
+    if stats:
+        text_stats = _text_stats(content)
+        if text_stats is not None:
+            wire["text_stats"] = text_stats
+    if len(starts) <= offset_limit and starts != list(range(0, len(content.encode("utf-8")), page_size)):
         # 只在清单**带信息**时才印：单字节正文的页起点就是 page_size 的整数倍，
         # 已经被 page_size + page_count 完全决定，再印一遍是白花字节（F-E3 的
         # 每条描述符 token 上限没有余量）。真正需要它的恰好是事件 AF 的形态——
         # 多字节正文的页起点不是整数倍，光靠步长推一定推错。
         wire["valid_offsets"] = starts
     return canonical_json(wire)
+
+
+def legacy_af_summary(descriptor, content):
+    """事件 AG 之前的线上形态（页大小 1024、无 ``text_stats``）：只读兼容，永不再产出。
+
+    理由与 :func:`legacy_summary` / :func:`legacy_bounded_summary` 一模一样
+    （review M1）：``primary_dependencies.check_runtime_dependencies`` 每一轮都会
+    对此前每个 ``context_page_in`` 效果重跑一遍 ``verify_request``，而升级瞬间还在
+    飞的 Run，其**已持久化**的父请求里存的正是这个形态。不接受它，一次纯粹的页
+    容量升级会把这些 Run 永久判成 ``summary_mismatch``。
+
+    接受它不放宽任何权限：两种形态都是同一对重新推导出的 ``(descriptor, content)``
+    的确定函数，``canonical_hash(descriptor)`` 这个准入键在两种形态下完全相同。
+    """
+    return _wire_summary(descriptor, content, page_size=LEGACY_PAGE_SIZE,
+                         offset_limit=LEGACY_DESCRIPTOR_OFFSET_LIMIT, stats=False)
 
 
 def legacy_bounded_summary(descriptor, content):
@@ -391,7 +509,7 @@ def legacy_bounded_summary(descriptor, content):
         source=dict(effect_id=descriptor["effect_id"], tool_name=descriptor["tool_name"],
                     content_bytes=descriptor["content_bytes"]),
         excerpt=_summary_excerpt(content),
-        pages=-(-int(descriptor["content_bytes"]) // PAGE_BYTES),
+        pages=-(-int(descriptor["content_bytes"]) // LEGACY_PAGE_SIZE),
         reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
         page_tool="context_page_in"))
 
@@ -419,7 +537,8 @@ def legacy_summary(descriptor, content):
     exact byte equality against authority, and both yield the same
     ``canonical_hash(descriptor)`` admission key.
     """
-    return canonical_json(dict(kind=MARKER, source=descriptor, excerpt=_excerpt(content),
+    return canonical_json(dict(kind=MARKER, source=descriptor,
+        excerpt=_excerpt(content, page_bytes=EXCERPT_BYTES),
         reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
         page_tool="context_page_in"))
 
@@ -551,6 +670,7 @@ def verify_request(stack, run_id, messages):
                                                  if isinstance(claimed, Mapping) else None), min_bytes=0)
         _require(descriptor["run_id"] == run_id, "foreign_source")
         _require(message.content in (summary(descriptor, content),
+                                     legacy_af_summary(descriptor, content),
                                      legacy_bounded_summary(descriptor, content),
                                      legacy_summary(descriptor, content))
                  and message.name == descriptor["tool_name"]
@@ -638,7 +758,7 @@ async def _reject_bad_offset(*, db, stack, sdk_run_id, digest, content, offset, 
     raise PrimaryContextPageUnavailable("primary_page_offset_invalid", detail)
 
 
-async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, arguments):
+async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, arguments, page_bytes=None):
     _require(isinstance(arguments, Mapping) and set(arguments) == {"reference_id", "source_hash"}
              and all(isinstance(v, str) for v in arguments.values()), "arguments")
     ref = arguments["reference_id"]
@@ -677,7 +797,9 @@ async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, argu
     await _reject_bad_offset(db=db, stack=stack, sdk_run_id=sdk_run_id, digest=digest,
                              content=content, offset=offset,
                              before_sequence=order[page_effect.effect_id.value])
-    page = _excerpt(content, offset)
+    # ``page_bytes`` 只在重放旧 Run 时被显式传成 ``LEGACY_PAGE_SIZE``（事件 AG）；
+    # 准入、顺序、hash 校验全部在它之前完成，且完全不看它。
+    page = _excerpt(content, offset, page_bytes)
     end = offset + len(page.encode())
     return dict(ok=True, kind="primary_current_tool_page_v1", reference_id=ref, source=descriptor,
         source_hash=descriptor["content_hash"], offset=offset, content=page, page_hash=_sha(page),

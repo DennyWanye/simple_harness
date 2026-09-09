@@ -31,10 +31,12 @@ from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness import CallId
 
 from deskpet.execution.current_tool_pages import (
-    DESCRIPTOR_OFFSET_LIMIT, MARKER, PAGE_SIZE, PREFIX, REFERENCE_UNAVAILABLE_CODE,
+    DESCRIPTOR_OFFSET_LIMIT, MARKER, MAX_LISTED_OFFSETS, PAGE_SIZE, PREFIX,
+    REFERENCE_UNAVAILABLE_CODE,
     REJECTION_CODE_ALIASES, PrimaryContextPageUnavailable, _listed_offsets,
     admitted_current_page, legacy_bounded_summary, legacy_summary, page_starts,
-    reference, rejection_code_matches, source_content, summary, verify_request,
+    legacy_af_summary, reference, rejection_code_matches, source_content, summary,
+    verify_request, LEGACY_PAGE_SIZE,
 )
 from deskpet.execution.primary_context_pages import PAGE_BYTES, _excerpt
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
@@ -167,7 +169,12 @@ def test_the_incident_shape_is_reproduced_by_construction():
 # --------------------------------------------------------------------------
 
 def test_descriptor_publishes_the_offset_unit_and_the_exact_page_count():
-    for lines in (60, 520):
+    # 2026-09-09 事件 AG：页大小 1024 -> 4096，同一份正文的页数掉到四分之一，
+    # 所以这里的取样点也跟着走——60 行（2 页、页起点恰好是页大小的整数倍，清单
+    # 没信息量所以不印）、150 行（4 页、页起点不是整数倍，清单印全）、520 行
+    # （事故里那份 47 KB 参照件，13 页 > 上限，不印）。三种分支都要走到。
+    listed_branches = set()
+    for lines in (60, 150, 520):
         value = cjk_value(lines)
         effect = FakeEffect(effect_id=SOURCE_EFFECT, tool_name="read_file",
                             raw_call_id="call_00_" + "d" * 24, value=value)
@@ -179,12 +186,16 @@ def test_descriptor_publishes_the_offset_unit_and_the_exact_page_count():
         assert wire["page_size"] == PAGE_SIZE == PAGE_BYTES
         assert wire["page_count"] == len(starts)
         assert "pages" not in wire
-        if len(starts) <= DESCRIPTOR_OFFSET_LIMIT:
-            # 多字节正文的页起点推不出来，所以小正文直接把清单印全。
-            assert starts != list(range(0, descriptor["content_bytes"], PAGE_SIZE))
+        # 印清单的判据与产线完全一致：页数在上限内**且**清单带信息
+        # （页起点不是页大小的整数倍，那正是多字节正文推不出来的那一种）。
+        listed = (len(starts) <= DESCRIPTOR_OFFSET_LIMIT
+                  and starts != list(range(0, descriptor["content_bytes"], PAGE_SIZE)))
+        listed_branches.add(listed)
+        if listed:
             assert wire["valid_offsets"] == starts
         else:
             assert "valid_offsets" not in wire
+    assert listed_branches == {True, False}, "两个分支都要被取样点走到"
 
 
 def test_descriptor_omits_offsets_that_page_size_already_determines():
@@ -199,9 +210,14 @@ def test_descriptor_omits_offsets_that_page_size_already_determines():
     assert page_starts(content) == list(range(0, descriptor["content_bytes"], PAGE_SIZE))
 
 
-def test_the_two_earlier_wire_shapes_are_still_verifiable(tmp_path):
-    """升级不得把还在飞的 Run 判死：F-E3 形态与 F-E3 之前的形态都仍然过。"""
-    for wire in (summary, legacy_bounded_summary, legacy_summary):
+def test_the_three_earlier_wire_shapes_are_still_verifiable(tmp_path):
+    """升级不得把还在飞的 Run 判死：升级前的每一种线上形态都仍然过。
+
+    2026-09-09 事件 AG 追加了第三种——``legacy_af_summary``，也就是「页大小 1024、
+    没有 text_stats」的那一版。它必须继续被 ``verify_request`` 接受，否则一次纯粹
+    的页容量升级会把升级瞬间还在飞的 Run 全部判成 ``summary_mismatch``。
+    """
+    for wire in (summary, legacy_af_summary, legacy_bounded_summary, legacy_summary):
         scenario = _scenario(tmp_path, lines=60, wire=wire)
         found = verify_request(scenario.stack, RUN_ID, scenario.stack.request_messages)
         assert list(found) == [canonical_hash(scenario.descriptor)]
@@ -213,8 +229,12 @@ def test_the_two_earlier_wire_shapes_are_still_verifiable(tmp_path):
 
 @pytest.mark.asyncio
 async def test_offset_off_a_character_boundary_is_rejected_with_the_page_starts(tmp_path):
-    scenario = _scenario(tmp_path, lines=520)
+    # 事件 AG：页大小提到 4096 之后，事故那份 47 KB 正文只剩 13 页，装不满
+    # 「前 16 个 + 最后一个」这条界。要钉住有界性就得给一份真的超过 17 页的正文
+    # （800 行 ≈ 79 KB / 20 页），否则这条断言会退化成恒真。
+    scenario = _scenario(tmp_path, lines=800)
     starts = page_starts(scenario.content)
+    assert len(starts) > MAX_LISTED_OFFSETS + 1
     bad = mid_codepoint(scenario.content, 2048, 4096)
     with pytest.raises(PrimaryContextPageUnavailable) as excinfo:
         await _page(scenario, bad)
@@ -228,7 +248,7 @@ async def test_offset_off_a_character_boundary_is_rejected_with_the_page_starts(
     assert detail["content_bytes"] == len(scenario.content.encode("utf-8"))
     # 有界：前 16 个 + 最后一个。
     assert detail["valid_offsets"] == _listed_offsets(starts)
-    assert len(detail["valid_offsets"]) == 17 < len(starts)
+    assert len(detail["valid_offsets"]) == MAX_LISTED_OFFSETS + 1 == 17 < len(starts)
     assert detail["valid_offsets"][-1] == starts[-1]
     # 没有任何一页读过时，下一步就是从头翻。
     assert detail["next_offset"] == 0
@@ -341,3 +361,76 @@ def test_tool_description_states_the_offset_unit():
     # （``test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn``）。
     parameter = CONTEXT_PAGE_IN_SCHEMA["parameters"]["properties"]["reference_id"]["description"]
     assert "offset" not in parameter
+
+
+# --------------------------------------------------------------------------
+# 5. 事件 AG：页大小 1024 -> 4096，准入身份与重放一个字节都不许变
+# --------------------------------------------------------------------------
+
+
+def test_the_page_size_upgrade_does_not_touch_which_offsets_are_admitted():
+    """页大小只决定「一页返回多少字节」，绝不决定「哪个 offset 可以受理」。
+
+    事故里已记录的成功页（8192 / 16384 / 40960 之类）都不在新页链上；受理口径若
+    随页大小变，这些页就永远读不回来了。
+    """
+    content = public_body(cjk_value(520))
+    raw = content.encode("utf-8")
+    boundaries = [o for o in range(len(raw)) if (raw[o] & 0xC0) != 0x80]
+    assert page_starts(content) != page_starts(content, LEGACY_PAGE_SIZE)
+    for offset in (boundaries[0], boundaries[len(boundaries) // 2], boundaries[-1]):
+        # 旧页链上的起点、以及任何一个码点边界，两种页大小下都照样读得出来。
+        assert _excerpt(content, offset) == raw[offset:offset + PAGE_BYTES].decode(
+            "utf-8", errors="ignore")
+        assert _excerpt(content, offset, LEGACY_PAGE_SIZE) == raw[
+            offset:offset + LEGACY_PAGE_SIZE].decode("utf-8", errors="ignore")
+    # 旧页大小算出来的每一个页起点，在新页大小下仍然是合法 offset。
+    for offset in page_starts(content, LEGACY_PAGE_SIZE):
+        assert _excerpt(content, offset)
+
+
+def test_the_reference_and_the_admission_digest_are_page_size_free():
+    """引用 = ``canonical_hash(descriptor)`` + 字节 offset，描述符里没有页大小。"""
+    effect = FakeEffect(effect_id=SOURCE_EFFECT, tool_name="read_file",
+                        raw_call_id="call_00_" + "d" * 24, value=cjk_value(520))
+    descriptor, content = source_content(
+        Stack({SOURCE_EFFECT: effect}, ()).read_primary_effect_page_facts(RUN_ID, SOURCE_EFFECT),
+        min_bytes=0)
+    assert "page_size" not in descriptor and "page_count" not in descriptor
+    # 升级前后同一个 offset 的引用逐字节相同——已持久化的引用全部照样解析。
+    for offset in (0, 1024, 2046, 12278):
+        assert reference(descriptor, offset) == PREFIX + canonical_hash(descriptor) + ":" + str(offset)
+    assert canonical_hash(descriptor) == json.loads(
+        legacy_af_summary(descriptor, content))["reference_id"].removeprefix(PREFIX).split(":")[0]
+
+
+@pytest.mark.asyncio
+async def test_a_page_recorded_before_the_upgrade_replays_byte_for_byte(tmp_path):
+    """事件 AG 的重放兼容：``page_bytes=LEGACY_PAGE_SIZE`` 重算出升级前那一页。"""
+    scenario = _scenario(tmp_path, lines=520)
+    await _identities(scenario.path, scenario.rows)
+    ref = reference(scenario.descriptor, 0)
+    async with aiosqlite.connect(scenario.path) as db:
+        db.row_factory = aiosqlite.Row
+        args = {"reference_id": ref, "source_hash": scenario.descriptor["content_hash"]}
+        fresh = await admitted_current_page(db=db, stack=scenario.stack, run=scenario.run,
+            sdk_run_id=RUN_ID, page_effect=scenario.caller, arguments=args)
+        old = await admitted_current_page(db=db, stack=scenario.stack, run=scenario.run,
+            sdk_run_id=RUN_ID, page_effect=scenario.caller, arguments=args,
+            page_bytes=LEGACY_PAGE_SIZE)
+    assert len(fresh["content"].encode("utf-8")) == PAGE_BYTES == 4096
+    assert len(old["content"].encode("utf-8")) == LEGACY_PAGE_SIZE == 1024
+    # 准入身份完全一致；不同的只有「这一页多少字节」和由它决定的下一页。
+    assert fresh["reference_id"] == old["reference_id"] == ref
+    assert fresh["source"] == old["source"] and fresh["source_hash"] == old["source_hash"]
+    assert fresh["next_reference_id"] != old["next_reference_id"]
+    assert fresh["content"].startswith(old["content"])
+
+
+def test_the_upgrade_cuts_the_incident_turn_from_forty_pages_to_ten():
+    """事故的算术：40 003 B 的正文按 1 KiB 要翻 ~40 次，按 4 KiB 只要 10 次。"""
+    content = public_body(cjk_value(405))
+    assert 40_000 < len(content.encode("utf-8")) < 41_000
+    before, after = page_starts(content, LEGACY_PAGE_SIZE), page_starts(content)
+    assert len(before) >= 40 and len(after) <= 11
+    assert len(before) >= 3 * len(after)

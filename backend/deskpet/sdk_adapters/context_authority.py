@@ -1551,25 +1551,40 @@ class ProductRunContextAuthority:
         # (``sdk_task_execution_root_authority_ambiguous``); not offering the
         # Tools keeps the model from walking into it.
         self._binding_store = binding_store
-        # Incident Z: the wrap-up instruction is injected at most once per Run.
-        # Process-local by design — losing it across a restart only means the
-        # Run may wrap up once more, which is the fail-safe direction; the
-        # message itself is deterministic and travels in the persisted request.
+        # Incident Z / 事件 AG: which Runs have already been told to wrap up.
+        # Observability only — see ``_should_wrap_up`` for why it is no longer a
+        # gate.  Process-local; the instruction itself is deterministic and
+        # travels in the persisted request.
         self._wrap_up_runs: set[str] = set()
 
     def _should_wrap_up(self, run_key: str, headroom: int) -> bool:
-        """Fire the budget wrap-up for this Run at most once.
+        """Fire the budget wrap-up on every turn that cannot afford another step.
 
         Below one react step of headroom the turn cannot make progress, so the
-        Host stops asking the model to.  If the model calls a tool anyway, the
-        next turn of the same Run gets the plain plan and fails closed exactly
-        as before — which is what keeps this bounded, and keeps it well inside
-        the react turn/wall limits (25 turns / 600 s) that back it up.
+        Host stops asking the model to.
+
+        2026-09-09 事件 AG——这里原本还有一道「每个 Run 只收尾一次」的闩。证据
+        ``.local-test-evidence/2026-09-09/native-a6-run12/primary-ui-z9j48osx/``
+        显示它正是第 12 次第 6 轮丢掉整个 Run 的原因：
+
+            turn=13 headroom=1003 threshold=1200 open_group_items_dropped=0
+
+        第 13 轮的余量是 **1003（正数，装得下）**，只是低于阈值，于是收尾指令作为
+        「劝告」注入——什么也没裁（``open_group_items_dropped=0``），却把这个 Run
+        唯一的一次收尾额度用掉了。模型没听，继续 ``context_page_in``；第 14–18 轮
+        余量 1078 / 95 / 2316 / 1105 / 373 全都低于阈值，却因为闩而 ``wrap_up_
+        injected=0``；到第 19 轮真正超了 450 token 时，闩再次拒绝，走 else 分支
+        原样 raise ``sdk_context_budget_exceeded`` -> ``react_termination_limits``。
+        也就是说：一次**没有产生任何降级**的劝告，换掉了后面那次**本该救命**的收尾。
+
+        闩的初衷是「有界」，但这个界本来就有别人在管：react 的 25 轮 / 600 s 上限。
+        收尾指令是确定性的、约 120 token 的 SYSTEM 消息，每轮重发既幂等又便宜；
+        真正要防的从来不是重发，而是「余量不够时还假装能继续」。另外，闩是**进程
+        本地**状态，等于让第 N 轮的请求取决于本进程此前处理过哪些轮——这本身就是
+        重放上的隐患，去掉它之后同一轮的计划只由这一轮的输入决定。
         """
 
         if headroom >= CONTEXT_BUDGET_WRAP_UP_HEADROOM_TOKENS:
-            return False
-        if run_key in self._wrap_up_runs:
             return False
         self._wrap_up_runs.add(run_key)
         return True
@@ -1718,10 +1733,11 @@ class ProductRunContextAuthority:
         # schemas + this Run's own open turn) can still raise, and the raise then
         # carries the breakdown that says which piece is too big.
         pages_forced = 0
+        control_stubs_forced = 0
+        full_trim = False
         messages, assembly_facts = _plan(
             source_messages, exact_sources, full_trim=False, probe_only=True
         )
-        control_stubs_forced = 0
         if assembly_facts.get("budget_headroom", 0) < 0:
             before = _current_tool_page_facts(source_messages)
             try:
@@ -1750,23 +1766,36 @@ class ProductRunContextAuthority:
 
             # Step 3: trim history to zero groups.  Probe first, because what
             # that leaves decides whether this turn can still make progress.
+            full_trim = True
             messages, assembly_facts = _plan(
                 source_messages, exact_sources, full_trim=True, probe_only=True
             )
-            headroom = int(assembly_facts.get("budget_headroom", 0))
-            run_key = request.run_id.value
-            if self._should_wrap_up(run_key, headroom):
-                # Step 4 (Incident Z): less than one react step of room left —
-                # including the case that used to raise.  Inject the single
-                # deterministic wrap-up instruction, keep this turn's protected
-                # parts plus the user's own message, and let the model answer.
-                # Once per Run: if the model calls a tool anyway, the next turn
-                # takes the plain step-3 plan and fails closed exactly as before,
-                # well inside the react turn/wall limits that backstop it.
-                messages, assembly_facts = _plan(
-                    source_messages, exact_sources, full_trim=True,
-                    wrap_up=context_budget_wrap_up_message(),
-                )
+        # Step 4 (Incident Z / 事件 AG): wrap up instead of walking into a turn
+        # that cannot exist.
+        #
+        # 事件 AG 之前这一步整个嵌在上面那个 ``headroom < 0`` 分支里，也就是「只有
+        # 有界计划已经装不下时才考虑收尾」。第 12 次第 6 轮的证据显示这道门开得太
+        # 晚：第 14–18 轮的最终余量分别是 1078 / 95 / 2316 / 1105 / 373——四轮都在
+        # 一个 react 步（1200）以下，请求却都装得下，于是这个分支根本不进，模型被
+        # 照常邀请「再翻一页」，第 19 轮就以超出 450 token 打死了整个 Run。
+        #
+        # 判据因此改成：**在所有降级步骤跑完之后**，只要计划仍然装不下，或者余量
+        # 已经不够下一个 react 步，就收尾。装不下的那一支照旧动用 open group 的
+        # 因果链（``wrap_up_injected`` / ``open_group_items_dropped`` 进收据）。
+        run_key = request.run_id.value
+        headroom = int(assembly_facts.get("budget_headroom", 0))
+        if self._should_wrap_up(run_key, headroom):
+            wrap_up = context_budget_wrap_up_message()
+            planned, facts = _plan(source_messages, exact_sources,
+                                   full_trim=full_trim, wrap_up=wrap_up, probe_only=True)
+            if int(facts.get("budget_headroom", 0)) < 0 and not full_trim:
+                # 收尾指令自身也要 ~120 token。它把一个本来刚好装下的计划顶出去时，
+                # 这里才补上「历史清零」这一步——而不是反过来先把历史交出去。
+                full_trim = True
+                planned, facts = _plan(source_messages, exact_sources,
+                                       full_trim=True, wrap_up=wrap_up, probe_only=True)
+            if int(facts.get("budget_headroom", 0)) >= 0:
+                messages, assembly_facts = planned, facts
                 _LOG.warning(
                     "sdk_context_budget_wrap_up run=%s turn=%s headroom=%d "
                     "threshold=%d open_group_items_dropped=%d",
@@ -1777,10 +1806,10 @@ class ProductRunContextAuthority:
                     assembly_facts.get("open_group_items_dropped", 0),
                 )
             else:
-                # Step 5: nothing left to spend and no wrap-up available — raise
-                # with the breakdown, as before.
+                # Step 5: 连「只剩受保护部分 + 用户这句话 + 收尾指令」都装不下，
+                # 那就是不可约的部分本身超预算——照旧 fail closed，并带上分解。
                 messages, assembly_facts = _plan(
-                    source_messages, exact_sources, full_trim=True
+                    source_messages, exact_sources, full_trim=True, wrap_up=wrap_up
                 )
         probe = ProviderRequest(
             RequestId("hash-only"),

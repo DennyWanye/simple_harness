@@ -3024,6 +3024,46 @@ F-Z1b 落地后，HM-TO-A6 短段 12a 第 6 轮的三次 `read_file` 仍然全�
   31 passed；route authority + route tool + projections search 57 passed。
   详见 [DECISION-F-Z1C-READ-ORIGIN-STALE](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1C-READ-ORIGIN-STALE.md)。
 
+### 2026-09-09（事件 AG）：翻页页大小 1024 → 4096 + 描述符自带行数/标题 + 收尾判定移出「已经装不下」分支
+
+HM-TO-A6 第 12 次第 6 轮（证据 `.local-test-evidence/2026-09-09/native-a6-run12/primary-ui-z9j48osx/`，
+失败 Run `product-sdk-015ad2fe…`）：用户只问一份 40 003 B 参照件的**「标题和总行数」**，模型顺着
+事件 AF 的 `next_offset` 链翻了 13 页（offset 0/1024/2046/…/12278）还不到三分之一，第 19 次装配以
+`sdk_context_budget_exceeded planned=27202 effective=26752 protected=8403 open_group=18799 full_trim=True`
+→ `react_termination_limits` 结束，用户一个字也没拿到。两个独立缺陷叠加：
+
+- **页太小 + 描述符答不了那一问**。40 003 B ÷ 1 KiB ≈ 40 次 `context_page_in`，每次在 open group 里
+  留下一条约 1.8 KB 的 control 结果（F-E2 只能省略**较旧**的，最新一条永远保留），光这一串就超过
+  32 K 窗口。而描述符里唯一的尺寸字段 `content_bytes` 量的是 JSON 封套字节数，既不是行数也不是字符数。
+  **裁决**：`PAGE_BYTES` 1024 → **4096**（同一份正文 40 页 → 10 页；不取 8192 是因为最新一次翻页的
+  control 结果不可省略，8 KiB 中文约 2 730 token 会常驻吃掉 10 % 以上有效预算）；`summary()` 对**文本
+  结果**加 `text_stats={line_count,char_count}` 并把 `excerpt` 换成正文首行。实测：事故那一形态从
+  581 B/146 tok 降到 **512 B/129 tok**，最坏形态 148 tok，仍在 F-E3 的 150 token 上限内；非文本正文
+  逐字节不变。配套 `TITLE_EXCERPT_BYTES=96`（96 B 中文 = 32 token，与它取代的 128 B ASCII 前缀等价，
+  于是描述符成本不依赖正文用哪种文字）、`DESCRIPTOR_OFFSET_LIMIT` 8 → 4。
+  **准入身份与重放一个字节都没变**：引用是 `canonical_hash(descriptor)+":"+字节 offset`，descriptor 里
+  没有页大小；`_excerpt`/`_offset_reason` 的受理口径一字未改（已记录的 8192/16384/40960 之类的成功页
+  照样读得回来）；新增只读兼容形态 `legacy_af_summary`（1024、无 `text_stats`），
+  `admitted_current_page`/`admitted_page` 加 `page_bytes` 形参供 `primary_dependencies` 在新页大小对不上
+  时重算一次；start 快照里的两处摘录改用冻结常量 `EXCERPT_BYTES=1024` 与页大小解耦，历史页描述符因此
+  **不加**统计字段。三种旧形态与 `main` 的输出经实测逐字节相同。
+- **收尾（事件 Z）在最该触发的那一轮没触发**。根因不在 `_plan_turn_messages`，而在调用方的两道门：
+  ① 收尾判定整个嵌在 `budget_headroom < 0` 分支里，而第 14–18 轮最终余量 1078/95/2316/1105/373 **都装
+  得下**，分支根本不进，`wrap_up_injected=0`，模型被照常邀请「再翻一页」；② 第 13 轮
+  （`headroom=1003`，**正数**）注入了一次什么也没裁的劝告（`open_group_items_dropped=0`），却把「每个
+  Run 只收尾一次」的闩用光，第 19 轮真的超 450 token 时闩再次拒绝，走 else 分支原样 raise。
+  **裁决**：收尾判定移到所有降级步骤**之后**、每一轮都走的位置——计划仍装不下**或**余量 < 一个 react 步
+  （1200）即收尾；去掉一次性闩（收尾指令是确定性的约 120 token SYSTEM 消息，重发幂等且便宜，真正的界是
+  react 的 25 轮/600 s；闩还是进程本地状态，让第 N 轮的计划取决于本进程处理过哪些轮，本身就是重放隐患）；
+  收尾自身的 token 成本被算进降级序（顶出计划时才补「历史清零」，再不够才 raise 并带完整分解）；装不下
+  时照旧交出 open group 的因果链，只留前导 USER 消息，`wrap_up_injected` / `open_group_items_dropped`
+  进收据。
+- 决定性测试（单进程、点名文件）：`test_page_offset_guidance` 16 + `test_descriptor_cost_bound` 15 +
+  `test_context_budget_wrap_up` 7 + `test_current_tool_megabyte` 3 + `test_current_tool_pages` 3 +
+  `test_control_result_bound` 6 = **50 passed**（改动前 35 passed + 4 failed）。事故的两条复现用例在
+  `main` 上红：`_should_wrap_up('product-sdk-015ad2fe', -451)` 返回 False。
+  详见 [DECISION-AG-PAGE-SIZE-WRAP-UP](../plans/2026-09-08-hm-to-a6/DECISION-AG-PAGE-SIZE-WRAP-UP.md)。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |

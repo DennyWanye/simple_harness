@@ -390,20 +390,35 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             continue
         if row["tool_name"] == "context_page_in":
             if value.get("kind") == "primary_current_tool_page_v1":
-                from deskpet.execution.current_tool_pages import admitted_current_page
+                from deskpet.execution.current_tool_pages import LEGACY_PAGE_SIZE, admitted_current_page
                 expected = await admitted_current_page(db=db, stack=stack, run=run,
                     sdk_run_id=sdk_run_id, page_effect=fact, arguments=thaw_json(fact.arguments))
                 if value != expected:
-                    raise ValueError("primary_current_page_effect_result_mismatch")
+                    # 2026-09-09 事件 AG：页大小 1024 -> 4096 是一次纯容量升级。准入
+                    # 身份（``canonical_hash(descriptor)`` + 字节 offset）一个字没变，
+                    # 变的只有一页返回多少字节，所以升级瞬间还在飞的 Run 里已记录的
+                    # 1 KiB 页必须仍然按旧页大小重算得一模一样——否则一次扩容会把它们
+                    # 永久判死（理由与 ``legacy_summary`` 完全一致）。只在新页大小对不
+                    # 上时才多算这一次，稳态零成本。
+                    legacy = await admitted_current_page(db=db, stack=stack, run=run,
+                        sdk_run_id=sdk_run_id, page_effect=fact, arguments=thaw_json(fact.arguments),
+                        page_bytes=LEGACY_PAGE_SIZE)
+                    if value != legacy:
+                        raise ValueError("primary_current_page_effect_result_mismatch")
                 # Original start and every earlier output source are already
                 # included by this ordered reader; never assert a fake S1.
                 continue
             if value.get("kind") == "primary_tool_history_page_v1":
-                from deskpet.execution.primary_context_pages import admitted_page
+                from deskpet.execution.primary_context_pages import LEGACY_PAGE_BYTES, admitted_page
                 expected = await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
                     start=start, arguments=thaw_json(fact.arguments))
                 if value != expected:
-                    raise ValueError("primary_page_effect_result_mismatch")
+                    # 事件 AG，同上：历史页也只是"一页多少字节"变了。
+                    legacy = await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
+                        start=start, arguments=thaw_json(fact.arguments), page_bytes=LEGACY_PAGE_BYTES)
+                    if value != legacy:
+                        raise ValueError("primary_page_effect_result_mismatch")
+                    expected = legacy
                 source = expected["source"]
                 evidence.append(dict(evidence_id=source["evidence_id"], envelope_hash=source["envelope_hash"]))
                 continue
