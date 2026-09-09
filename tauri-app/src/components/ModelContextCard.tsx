@@ -11,6 +11,7 @@ import type {
   ModelContextResolved,
   ModelContextSetAck,
 } from "../types/messages";
+import { dark } from "../theme/components";
 
 type Props = {
   getChannel: () => ControlChannel | null;
@@ -225,11 +226,11 @@ export function ModelContextCard({ getChannel }: Props) {
     <div
       data-testid="model-context-card"
       style={{
-        border: "1px solid #2d3748",
+        border: `1px solid ${dark.cardBorder}`,
         borderRadius: "6px",
         padding: "8px 10px",
         marginTop: "8px",
-        background: "rgba(15,23,42,0.4)",
+        background: dark.card,
       }}
     >
       <div
@@ -246,9 +247,9 @@ export function ModelContextCard({ getChannel }: Props) {
           value={model}
           onChange={(e) => onModelChange(e.target.value)}
           style={{
-            background: "rgba(15,23,42,0.6)",
-            color: "#cbd5e1",
-            border: "1px solid #475569",
+            background: dark.card,
+            color: dark.text,
+            border: `1px solid ${dark.borderStrong}`,
             borderRadius: "3px",
             padding: "1px 4px",
             fontSize: "11px",
@@ -270,11 +271,11 @@ export function ModelContextCard({ getChannel }: Props) {
       </div>
 
       {state.kind === "loading" && (
-        <div style={{ fontSize: "11px", color: "#64748b" }}>加载中…</div>
+        <div style={{ fontSize: "11px", color: dark.textFaint }}>加载中…</div>
       )}
 
       {state.kind === "error" && (
-        <div style={{ fontSize: "11px", color: "#f59e0b" }}>
+        <div style={{ fontSize: "11px", color: dark.warning }}>
           后端提示：{state.reason}
         </div>
       )}
@@ -282,7 +283,7 @@ export function ModelContextCard({ getChannel }: Props) {
       {state.kind === "ready" && (
         <>
           <div
-            style={{ fontSize: "11px", color: "#cbd5e1", lineHeight: 1.6 }}
+            style={{ fontSize: "11px", color: dark.text, lineHeight: 1.6 }}
           >
             <div>
               上下文总长度：
@@ -357,7 +358,7 @@ export function ModelContextCard({ getChannel }: Props) {
               data-testid="model-context-save"
               onClick={onSave}
               style={{
-                background: "#10b981",
+                background: dark.success,
                 color: "white",
                 border: "none",
                 borderRadius: "3px",
@@ -372,7 +373,7 @@ export function ModelContextCard({ getChannel }: Props) {
               data-testid="context-compaction-model-save"
               onClick={onCompactionModelSave}
               style={{
-                background: "#2563eb",
+                background: dark.accent,
                 color: "white",
                 border: "none",
                 borderRadius: "3px",
@@ -384,12 +385,12 @@ export function ModelContextCard({ getChannel }: Props) {
               保存压缩模型
             </button>
             {saveMsg && (
-              <span style={{ fontSize: "10px", color: "#94a3b8" }}>
+              <span style={{ fontSize: "10px", color: dark.textFaint }}>
                 {saveMsg}
               </span>
             )}
             {compactionSaveMsg && (
-              <span style={{ fontSize: "10px", color: "#94a3b8" }}>
+              <span style={{ fontSize: "10px", color: dark.textFaint }}>
                 {compactionSaveMsg}
               </span>
             )}
@@ -397,7 +398,7 @@ export function ModelContextCard({ getChannel }: Props) {
           <div
             style={{
               fontSize: "10px",
-              color: "#64748b",
+              color: dark.textFaint,
               marginTop: "6px",
               lineHeight: 1.5,
             }}
@@ -425,10 +426,10 @@ function fmtTokens(n: number): string {
 function SourceBadge({ source }: { source: string }) {
   const color =
     source === "project"
-      ? "#10b981"
+      ? dark.success
       : source === "global"
-        ? "#f59e0b"
-        : "#64748b";
+        ? dark.warning
+        : dark.textFaint;
   const label =
     source === "project"
       ? "项目覆盖"
@@ -454,9 +455,9 @@ function SourceBadge({ source }: { source: string }) {
 }
 
 const inputStyle: React.CSSProperties = {
-  background: "rgba(15,23,42,0.6)",
-  color: "#e2e8f0",
-  border: "1px solid #475569",
+  background: dark.card,
+  color: dark.text,
+  border: `1px solid ${dark.borderStrong}`,
   borderRadius: "3px",
   padding: "2px 6px",
   fontSize: "11px",

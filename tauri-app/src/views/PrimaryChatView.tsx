@@ -249,8 +249,12 @@ function PrimaryMessageRow({ message, controller }: { message: PrimaryMessage; c
         : isUser || isAssistant
           ? null
           : <div style={{ ...metaText, color: skin.accent, fontWeight: tokens.weight.semibold, marginBottom: tokens.space.xs }}>{label}</div>}
-      {(!isTool || toolOpen) && <MarkdownMessage>{isTool ? tool!.body : message.text}</MarkdownMessage>}
-      {(!isTool || toolOpen) && body}
+      {/* 气泡整体右对齐，但气泡内正文始终左对齐 —— 右对齐的多行中文
+          会出现锯齿状左边缘，正是"难看"的来源。 */}
+      {(!isTool || toolOpen) && <div style={{ textAlign: "left" }}>
+        <MarkdownMessage>{isTool ? tool!.body : message.text}</MarkdownMessage>
+        {body}
+      </div>}
     </article>
   </div>;
 }

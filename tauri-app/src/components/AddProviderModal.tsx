@@ -21,6 +21,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import type { Provider } from "./SettingsProviders";
 import { dark } from "../theme/components";
+import { tokens } from "../theme/tokens";
 
 export interface ProviderDraft {
   id: string;
@@ -460,7 +461,7 @@ export function AddProviderModal({
                     padding: "3px 6px",
                     border: `1px solid ${dark.border}`,
                     borderRadius: 4,
-                    background: draft.default_model === m ? "rgba(37,99,235,0.18)" : dark.card,
+                    background: draft.default_model === m ? dark.accentSoft : dark.card,
                   }}
                 >
                   <label
@@ -482,7 +483,7 @@ export function AddProviderModal({
                     style={{
                       background: "transparent",
                       border: "none",
-                      color: "#b91c1c",
+                      color: dark.danger,
                       cursor: "pointer",
                       fontSize: 11,
                     }}
@@ -565,7 +566,7 @@ export function AddProviderModal({
 const overlayStyle: React.CSSProperties = {
   position: "fixed",
   inset: 0,
-  background: "rgba(0,0,0,0.5)",
+  background: dark.scrim,
   display: "grid",
   placeItems: "center",
   padding: 8,
@@ -582,7 +583,7 @@ const modalStyle: React.CSSProperties = {
   overflowY: "auto",
   overflowX: "hidden",
   color: dark.text,
-  boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+  boxShadow: tokens.shadow.overlay,
   display: "grid",
   gap: 8,
 };
@@ -607,14 +608,14 @@ const inputStyle: React.CSSProperties = {
 
 const errStyle: React.CSSProperties = {
   fontSize: 11,
-  color: "#fca5a5",
+  color: dark.danger,
 };
 
 const saveBtn: React.CSSProperties = {
   padding: "5px 12px",
   borderRadius: 4,
-  border: "1px solid #2563eb",
-  background: "#2563eb",
+  border: "1px solid transparent",
+  background: dark.accent,
   color: "white",
   fontSize: 12,
   cursor: "pointer",
@@ -633,9 +634,9 @@ const cancelBtn: React.CSSProperties = {
 const smallAddBtn: React.CSSProperties = {
   padding: "3px 10px",
   borderRadius: 4,
-  border: "1px solid #2563eb",
+  border: `1px solid ${dark.accentBorder}`,
   background: dark.card,
-  color: "#2563eb",
+  color: dark.accentText,
   fontSize: 11,
   cursor: "pointer",
 };

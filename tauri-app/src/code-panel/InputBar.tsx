@@ -192,11 +192,17 @@ export function InputBar({
     [],
   );
 
-  // Auto-grow textarea
+  // Auto-grow textarea。空草稿时清掉内联高度，交给 minHeight（36）——
+  // 首帧布局未稳时读到的 scrollHeight 会把空输入框撑成多行。
   useEffect(() => {
-    if (!taRef.current) return;
-    taRef.current.style.height = "auto";
-    taRef.current.style.height = Math.min(taRef.current.scrollHeight, 120) + "px";
+    const el = taRef.current;
+    if (!el) return;
+    if (!text) {
+      el.style.height = "";
+      return;
+    }
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 148) + "px";
   }, [text]);
 
   // 计算当前 filter + candidates
