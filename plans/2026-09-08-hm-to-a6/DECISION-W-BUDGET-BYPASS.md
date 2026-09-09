@@ -1051,7 +1051,14 @@ flash 的三元组（1.25 / 0.35 / 1.65）**不动**：174 组 thinking 关闭�
 
 `backend/tests/sdk_adapters/test_reasoning_relay_budget.py`（19 条）不变，全绿。
 
-三个文件一次 pytest：**122 passed**。
+`scripts/benchmark/hm_benchmark.py::_fallback_text_tokens`（Host 包导不进来时的
+兜底副本）同步改成同一条公式 —— 它的注释一直写着「与 `context_partitions.text_tokens`
+逐字一致」，不跟着改就是基准线量的不是生产在量的那个数。
+`backend/tests/quality/test_hm_benchmark.py::test_text_tokens_fallback_matches_host_formula`
+改成**直接拿 Host 的实现对账**（11 个样本逐条相等）＋ 数值锚点，下次再改口径时
+漂移会在这里当场红掉。
+
+四个文件一次 pytest：**133 passed**（41 + 19 + 62 + 11）。
 
 ### W-c.9 边界与待办
 

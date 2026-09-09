@@ -2523,7 +2523,10 @@ observed_hidden=14740 floor=27874 > 26752`，而同一条 Run 前 14 轮
   是 Host 口径的派生量而非原始观测，公式一变必须一起重算，否则「本轮新公式、上一轮
   旧公式」会在回放里**伪造出一次裁史信号**并把 carry 打折掉。
 - `test_wire_input_budget.py` **41 绿**（+7）、`test_token_estimator_calibration.py`
-  **62 绿**（+8；56 个用例函数，CJK 单元表参数化 7 组）、`test_reasoning_relay_budget.py` **19 绿**（不变），单进程 **122 passed**。
+  **62 绿**（+8；56 个用例函数，CJK 单元表参数化 7 组）、`test_reasoning_relay_budget.py`
+  **19 绿**（不变）；`scripts/benchmark/hm_benchmark.py` 的兜底副本 `_fallback_text_tokens`
+  同步改成同一条公式，`tests/quality/test_hm_benchmark.py` 改成直接拿 Host 实现对账
+  （**11 绿**）。四个文件单进程 **133 passed**。
   详见 [DECISION-W-BUDGET-BYPASS §W-c](../plans/2026-09-08-hm-to-a6/DECISION-W-BUDGET-BYPASS.md)。
 
 ### 历史组消失的两条通路：A6-4 后缀单调只管裁剪（2026-09-09，事件 AB / A6-SUFFIX-MONOTONIC）

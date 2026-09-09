@@ -49,10 +49,30 @@ _GENERATION_RESERVE: dict[int, int] = {4096: 1024, 8192: 2048, 32768: 4096}
 _SUPPORTED_WINDOWS: tuple[int, ...] = (4096, 8192, 32768)
 
 
+#: 事件 W-c(2026-09-09): 与 ``context_partitions.text_tokens`` **逐字一致**的镜像。
+#: CJK 按 1.3 字/token(``ceil(chars * 10 / 13)``), JSON ``\\uXXXX`` 转义的 CJK 先折回
+#: 它编码的那个字符, 其余按 4 字符/token。这里是 Host 包导不进来时的兜底, 一旦与
+#: 上游漂移, 基准线量的就不是生产在量的那个数 —— tests/quality/test_hm_benchmark.py
+#: 的 test_text_tokens_fallback_matches_host_formula 逐条钉住。
+_FALLBACK_JSON_UNICODE_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
+
+
 def _fallback_text_tokens(value: object) -> int:
     text = str(value or "")
-    cjk = sum(1 for char in text if "㐀" <= char <= "鿿")
-    return cjk + max(0, len(text) - cjk + 3) // 4
+    escaped_cjk = 0
+    if "\\u" in text:
+
+        def _fold(match: "re.Match[str]") -> str:
+            nonlocal escaped_cjk
+            code = int(match.group(1), 16)
+            if 0x3400 <= code <= 0x9FFF:
+                escaped_cjk += 1
+                return ""
+            return match.group(0)
+
+        text = _FALLBACK_JSON_UNICODE_ESCAPE.sub(_fold, text)
+    cjk = sum(1 for char in text if "\u3400" <= char <= "\u9fff")
+    return -(-(cjk + escaped_cjk) * 10 // 13) + max(0, len(text) - cjk + 3) // 4
 
 
 def _fallback_budget_window(window_tokens: int) -> int:
