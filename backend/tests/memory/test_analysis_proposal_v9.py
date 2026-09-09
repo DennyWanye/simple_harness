@@ -74,14 +74,16 @@ def _bind(case, operations):
 
 # ------------------------------------------------------------------ protocol identity
 def test_v9_is_current_and_every_persisted_protocol_still_resolves():
+    """v10（事件 AE）接手 current 之后，v9 自己的协议身份仍必须原样可解析。"""
+    from deskpet.memory import analysis_proposal_v10 as v10
     case = compilation()
-    assert analysis_protocol.PROMPT_VERSION == v9.PROMPT_VERSION == "host-analysis-prompt/v9"
-    assert analysis_protocol.RESULT_SCHEMA_VERSION == v9.RESULT_SCHEMA_VERSION
-    assert analysis_protocol.POLICY_VERSION == v9.POLICY_VERSION
+    assert v9.PROMPT_VERSION == "host-analysis-prompt/v9"
     # v9 adds one Host admission rule, so the validator id moves with it.
-    assert analysis_protocol.VALIDATOR_VERSION == v9.VALIDATOR_VERSION == "host-analysis-validator/v5"
-    assert v9.VALIDATOR_VERSION != v8.VALIDATOR_VERSION
-    for protocol in (v3, v4, v5, v5_1, v6, v7, v8, v9):
+    assert v9.VALIDATOR_VERSION == "host-analysis-validator/v5" != v8.VALIDATOR_VERSION
+    # current 已经是 v10；v9 不再是当前协议，但每一个持久化协议都还认得出来。
+    assert analysis_protocol.PROMPT_VERSION == v10.PROMPT_VERSION != v9.PROMPT_VERSION
+    assert analysis_protocol.VALIDATOR_VERSION == v10.VALIDATOR_VERSION != v9.VALIDATOR_VERSION
+    for protocol in (v3, v4, v5, v5_1, v6, v7, v8, v9, v10):
         assert analysis_protocol.protocol_for_request(_request(case, protocol)) is protocol
 
 

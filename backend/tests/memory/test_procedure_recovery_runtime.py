@@ -62,14 +62,23 @@ async def session(tmp_path, provider=None, *, risk_level="low", with_discovery=F
         await ctx.memory.close()
 
 
-async def execute(ctx, index, *, scope_id=None, revision=None):
+TURN_TEXT = "执行记录和备份两步。"
+
+
+async def execute(ctx, index, *, scope_id=None, revision=None, text=TURN_TEXT):
+    """``text`` 是这一轮用户消息的原文，也就是分析车道拿到的唯一证据项。
+
+    事件 AE 之后它成了一个真参数：分析协议 v10 要求 prospective 的 ``time`` 触发能被引文里
+    的时间表达接地，所以一个「本轮要造提醒」的用例必须让用户真的说出时间
+    （见 ``test_analysis_relation_prospective_applied``）。默认值一字未改。
+    """
     if scope_id is None:
         scope = await ctx.service.create_task_scope(CreateTaskScopeRequest(
             f"recovery-scope-{index}", "写记录和备份", "Write both files", f"recovery-create-{index}"))
         scope_id = scope["scope_ref"]
         await bind_scope_root(ctx.state, scope_id, ctx.root, tag=f"recovery-root-{index}")
     ctx.provider.configure(scope_id, ctx.memory_id, revision or ctx.revision, index)
-    await ctx.service.enqueue_turn(QueueTurnRequest(None, f"recovery-turn-{index}", "执行记录和备份两步。"))
+    await ctx.service.enqueue_turn(QueueTurnRequest(None, f"recovery-turn-{index}", text))
     await ctx.runtime.after_enqueue(subject=local_owner_auth().subject)
     await asyncio.wait_for(ctx.runtime.drain(), 30)
     assert ctx.runtime.last_error is None

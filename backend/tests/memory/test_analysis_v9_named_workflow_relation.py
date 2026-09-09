@@ -24,7 +24,7 @@ import json
 
 import pytest
 
-from deskpet.memory import analysis_proposal_v9 as v9
+from deskpet.memory import analysis_protocol
 from tests.memory.test_semantic_correction import memory_env
 from tests.sdk_adapters import s5b_closure_harness as ch
 from tests.sdk_adapters import s5b_memory_harness as mh
@@ -118,15 +118,18 @@ async def test_turn15_creates_the_flow_node_and_the_applies_to_edge_in_one_plan(
     try:
         assert await menv.worker.run_once() == "delivered"
         assert await mh.run_job(menv) == "applied"
-        # The v9 wire really carried both channels; the target channel was empty, which is
-        # exactly why branch ② (create the node here) is the reachable one — F-L1.
+        # The lane's wire really carried both channels; the target channel was empty, which is
+        # exactly why branch ② (create the node here) is the reachable one — F-L1.  The version
+        # asserted is whatever protocol the lane is currently configured with (v9 when this test
+        # was written, v10 since event AE inherited branch ②) — pinning a literal here would only
+        # measure the protocol table, which `test_analysis_proposal_v10` already pins.
         [body] = adapter.bodies
         assert body["procedure_candidates"] == []
         assert [c["semantic"]["object_value"] for c in body["semantic_candidates"]] == [VALUE]
         [(request_json,)] = await mh.memory_rows(menv,
             "SELECT request_json FROM analysis_batches WHERE state='applied' "
             "ORDER BY rowid DESC LIMIT 1")
-        assert f'"{v9.PROMPT_VERSION}"' in request_json
+        assert f'"{analysis_protocol.PROMPT_VERSION}"' in request_json
 
         # 1) exactly one applies_to edge.
         relations = await mh.memory_rows(menv,
