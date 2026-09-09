@@ -36,6 +36,13 @@ DATA="$USERDATA/data"
 HM="$DATA/human_memory_v7.db"
 STATE="$DATA/state.db"
 PRODUCT="$DATA/sdk-product-state.db"
+# MM-D1（2026-09-09）：授权策略（auto/manual、generation、provenance）的唯一权威是
+# workflow.db 的 authorization_policy_state（CapabilityStore 持有，设置页勾选框走
+# _set_authorization_auto_mode -> compare_and_set_policy_mode 写它）。
+# sdk-product-state.db 里同名的表是复用 CAPABILITY_SCHEMA_SQL 建库时带出来的
+# DDL 残留（含 INSERT OR IGNORE 的 auto/0/factory_default 种子行），生产路径从不写它，
+# 读它会永远看到 mode=auto gen=0 —— run3 的 policy_mode=auto 就是这么来的。
+WF="$DATA/workflow.db"
 AUDIT="$DATA/operation-audit.db"
 EXEC="$DATA/simple-harness-sdk/execution-v6.sqlite3"
 PROGRESS="$EVIDENCE/manual-progress.jsonl"
@@ -176,12 +183,12 @@ counters() {
   TG_USER_N=$(q "$PRODUCT" "select count(*) from task_grants where source='user';")
   TG_AUTO_N=$(q "$PRODUCT" "select count(*) from task_grants where source='policy:auto';")
   SAGA_N=$(q "$PRODUCT" "select count(*) from authorization_sagas;")
-  POLICY_MODE=$(qs "$PRODUCT" "select mode from authorization_policy_state where singleton_id=1;")
+  POLICY_MODE=$(qs "$WF" "select mode from authorization_policy_state where singleton_id=1;")
   [ -n "$POLICY_MODE" ] || POLICY_MODE="unknown"
-  POLICY_GEN=$(q "$PRODUCT" "select coalesce(generation,0) from authorization_policy_state where singleton_id=1;")
-  POLICY_PROV=$(qs "$PRODUCT" "select provenance from authorization_policy_state where singleton_id=1;")
+  POLICY_GEN=$(q "$WF" "select coalesce(generation,0) from authorization_policy_state where singleton_id=1;")
+  POLICY_PROV=$(qs "$WF" "select provenance from authorization_policy_state where singleton_id=1;")
   [ -n "$POLICY_PROV" ] || POLICY_PROV="unknown"
-  POLICY_RECEIPT=$(q "$PRODUCT" "select case when user_set_receipt_ref is null or user_set_receipt_ref='' then 0 else 1 end from authorization_policy_state where singleton_id=1;")
+  POLICY_RECEIPT=$(q "$WF" "select case when user_set_receipt_ref is null or user_set_receipt_ref='' then 0 else 1 end from authorization_policy_state where singleton_id=1;")
   INV_N=$(q "$EXEC" "select count(*) from provider_invocations;")
   EFFECT_N=$(q "$EXEC" "select count(*) from execution_effects;")
   ENV_N=$(q "$HM" "select count(*) from evidence_envelopes;")

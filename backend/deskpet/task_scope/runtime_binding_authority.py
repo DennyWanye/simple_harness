@@ -76,12 +76,20 @@ class WorkspaceBindingRuntimeAuthority:
         configured_workspace_root: str | Path | None = None,
         home_directory: str | Path | None = None,
         clock_millis=None,  # type: ignore[no-untyped-def]
+        display_invalidation: object | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._subject = subject
         self._foreground = foreground
         self._policy = policy
         self._clock_millis = clock_millis or (lambda: int(time.time() * 1000))
+        # MM-D2（2026-09-09）：Manual 绑定挑战写进 ``task_workspace_manual_challenges``
+        # 之后，没有任何一条路径通知前台。``PrimaryWorkspaceBindings`` 卡片没有轮询，
+        # 只在 tool_result / 窗口 focus / 连接变化时重读；决定提交后也只有发起决定的
+        # 那一个客户端知道。挑战 TTL 只有 300 s，靠这些巧合刷新会让用户根本看不到该点
+        # 的卡片，效应就 fail-closed 过期了（run3 T4）。这里给出一个纯通知 seam：
+        # 只广播「该重读了」，绝不携带内容、绝不参与授权判定，失败也不回滚业务写入。
+        self._display_invalidation = display_invalidation
         # 首次绑定的 bootstrap（用户 2026-09-03 决定）：AUTO 模式下 Agent 可以在任务
         # 启动**之前**把既定 workspace 下的目录绑给任务域，不需要用户授权；非 AUTO
         # 模式仍走弹窗确认。这里登记 pre-admission 的绑定上下文，使 store 的
@@ -99,6 +107,17 @@ class WorkspaceBindingRuntimeAuthority:
             current_run_authority=self,
             manual_authorization_authority=self,
         )
+
+    async def _notify_display(self) -> None:
+        """Content-free 'binding cards changed' hint; never an authority signal."""
+
+        changed = getattr(self._display_invalidation, "changed", None)
+        if changed is None:
+            return
+        try:
+            await changed()
+        except Exception:  # noqa: BLE001 - a refresh hint never undoes a commit
+            return
 
     async def append_binding(
         self,
@@ -219,6 +238,7 @@ class WorkspaceBindingRuntimeAuthority:
             not_before_millis=now,
             expires_at_millis=now + 300_000,
         )
+        await self._notify_display()
         return self._challenge_result(challenge)
 
     async def manual_binding_read_context(self, *, subject: str) -> Mapping[str, object]:
@@ -257,6 +277,7 @@ class WorkspaceBindingRuntimeAuthority:
             decided_at_millis=int(self._clock_millis()),
         )
         if resolved is WorkspaceBindingAuthorizationDecision.DENY:
+            await self._notify_display()
             return {
                 "status": "denied",
                 "challenge_ref": challenge.challenge_id,
@@ -268,6 +289,7 @@ class WorkspaceBindingRuntimeAuthority:
             proposal, challenge, receipt
         )
         binding = await self._store.append_binding(proposal, grant)
+        await self._notify_display()
         return {
             **self._binding_result(binding, status="bound"),
             "decision_ref": receipt.receipt_id,

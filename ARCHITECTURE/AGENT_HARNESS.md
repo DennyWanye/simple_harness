@@ -2464,6 +2464,55 @@ tool_schemas / open_group / groups`），`str()` 仍为稳定码
   `OperationalError` 收窄为只吞 `no such table`、加宽查询补 `task_scope_id` 谓词、新增跨 Run 绑定用例、
   升级断言改为逐字匹配、空集合分支补 `allowed_evidence_refs_total: 0`）。
 
+## 2026-09-09 Manual 模式授权策略权威与目录授权卡片可见性（MM-D1 / MM-D2）
+
+最后更新：2026-09-09。来自 Manual 模式真人旅程 run3
+（`.local-test-evidence/2026-09-09/native-manual-run3/primary-ui-sil305gb/`）的两条发现。
+
+- **MM-D1：授权策略只有一个权威 = `workflow.db.authorization_policy_state`**
+  （`CapabilityStore`，`backend/deskpet/capabilities/store.py:385-400, 9224-9300`；
+  设置页勾选框走 `main.py:_set_authorization_auto_mode` → `compare_and_set_policy_mode`）。
+  `sdk-product-state.db` 里的同名表**不是镜像也不是遗留态**，而是
+  `product_state/schema.py:19-35` 复用 `CAPABILITY_SCHEMA_SQL` 建库时带出的 DDL 残留
+  （连 `INSERT OR IGNORE` 的 `auto/0/factory_default` 种子行一起带出），生产路径从不写它。
+  run3 记录里 `policy_mode=auto gen=0` 全程失真，是 `scripts/native/manual_driver.sh`
+  读错库；已改读 `workflow.db`。
+  **不得**新增任何直接读 product-state 那张表的读者：
+  `product_state/task_grants.py:_assert_current_policy` 的无 provider 回落分支只服务
+  测试/一致性夹具，生产组装（`main.py:8703-8711`）永远注入
+  `policy_generation_provider`；在 `generation>0` 的真实库上走回落分支会把所有
+  TaskGrant 判成 `TaskGrantConflict`。
+
+- **MM-D2：Manual 下一次 `context_route` 绑定授权需要用户答两张互不相干的卡**。
+  绑定卡（`<section aria-label="项目目录授权">` → `允许本次绑定` →
+  `task_workspace_manual_decisions` → `binding_grants(source=manual)` → `binding_revisions`，
+  TTL 300 s，`runtime_binding_authority.py:218`）与 SDK 的工具授权弹窗
+  （`允许一次` → `task_grants(source=user)`，TTL 300 s，`tool_authority.py:2013`）
+  **是两条完全独立的通道**，落在两个不同的库里，彼此不知道对方存在。
+  T4：07:21:21 签发挑战 → 效应 fail-closed → 模型 +3.7 s 自行重试又挂一张工具卡 →
+  两张都没被答 → 07:26:20/07:26:24 双双到期 → 07:26:46 Run FAILED。
+  run3 全程 `task_grants(user)=94` 而 `manual_decisions=0`、`binding_grants(manual)=0`：
+  **`允许本次绑定` 一次都没被点到过**。
+- **应答绑定卡不会驱动 Run（结构性缺陷，未根治）**：
+  `decide_manual_binding` 写完 decision/grant/binding revision 就返回，
+  没有任何路径重试那个已失败的效应或唤醒 Run；能否继续取决于模型是否自愿重调
+  `context_route`，而重调又要用户在**另一个** 300 s 窗口里答一张新工具卡。
+  根治形状（未做）：对照 F06 给 provider 做的
+  `waiting_runs_blocked_on_provider` + `ProviderReconciliationPort`，
+  为授权补一条 wait-blocker，allow 落库后**只重驱一次**且仍走完整 EffectGate。
+- **本次已修（可见性）**：`WorkspaceBindingRuntimeAuthority` 新增可选
+  `display_invalidation`，在挑战签发后、allow/deny 决定落库后各广播一次 content-free 的
+  `human_memory_changed`（`main.py` 注册 `memory_display_invalidation` 并注入）。
+  在此之前全后端只有 memory ingestion outbox 与 primary cognitive controls 会广播它，
+  而 `PrimaryWorkspaceBindings` 没有轮询——卡片首次出现只能靠 `tool_result` 的顺序巧合，
+  决定提交后其他客户端完全不刷新。通知失败被吞、绝不回滚提交、绝不参与授权判定；
+  **fail-closed 语义未放宽**（未应答 → 到期 → 效应失败，永不执行）。
+- 用例 `backend/tests/task_scope/test_manual_binding_display_seam.py` **5 例**（全绿），
+  含 T4 形状的"无人应答 → 到期 → decisions/grants/revisions 全 0"与 MM-D1 的权威断言；
+  回归 `test_runtime_binding_authority.py`(5) + `test_task_grant_clock_seam.py`(7) +
+  `test_primary_workspace_binding_ui.py`(7) 共 19 例全绿。
+  详见 [DECISION-MM-D1-D2](../plans/2026-09-09-manual-mode-journey/DECISION-MM-D1-D2.md)。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |
