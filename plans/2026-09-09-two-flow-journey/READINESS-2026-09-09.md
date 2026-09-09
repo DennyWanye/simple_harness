@@ -4,6 +4,7 @@
 - 目的：把 `00-PLAN.md` / `twoflow_driver.sh` / `twoflow_verify.py` 对齐到今天（2026-09-09）
   已经落地的口径，使 A6 第 12 次整跑一结束就能立刻起跑本旅程
 - 本轮**没有启动原生应用**（18120 上正在跑 A6），全部结论来自静态核对、脚本自检与单元用例
+- 本分支就绪提交：`fe0cae1a` → 下文命令里的 `<host-sha8>` 取 **`fe0cae1a`**，即 evidence-root 用 `.local-test-evidence/2026-09-09/twoflow-fe0cae1a/`
 
 ---
 
