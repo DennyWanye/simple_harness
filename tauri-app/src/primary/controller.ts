@@ -64,8 +64,14 @@ export class PrimaryController {
   private pendingDelivery: { text: string; delivery_key: string; uncertain: boolean } | null = null;
   private submitting = false;
   private controlling = false;
+  // 事件 AK：后端在闭合历史补读超时/失败时仍下发就绪帧并附一个稳定码。
+  // 主对话照常可用，但这条降级必须一直可见，不能被下一次成功读取抹掉。
+  private degradedCode = "";
   private port: PrimaryPort;
   constructor(port: PrimaryPort) { this.port = port; }
+  private readNotice() {
+    return this.degradedCode ? `历史补读未完成（${this.degradedCode}）；可稍后刷新状态。` : "";
+  }
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private update(patch: Partial<PrimarySnapshot>) {
@@ -151,10 +157,24 @@ export class PrimaryController {
       if (!payload.profile_id || !payload.profile_generation || this.port.state() !== "connected") return;
       if (this.owner !== owner) this.invalidate(true, "正在读取主对话…");
       this.owner = owner;
+      // 事件 AK：后端在超时/依赖缺失时仍会下发就绪帧，并带一个稳定码。
+      // 主对话照常可用，但要把「历史补读未完成」明说出来，而不是让用户
+      // 面对一份可能不完整的历史却毫无提示。
+      this.degradedCode = typeof payload.projection_degraded_code === "string"
+        ? String(payload.projection_degraded_code) : "";
       if (!this.snapshot.ready) {
-        this.update({ ready: true, notice: "正在读取主对话…" });
+        this.update({ ready: true, notice: this.degradedCode ? this.readNotice() : "正在读取主对话…" });
         void this.refresh();
+      } else if (this.degradedCode) {
+        this.update({ notice: this.readNotice() });
       }
+      return;
+    }
+    // 事件 AK：签名 bind 被拒时前端此前完全无声，UI 停在「等待主对话就绪」。
+    // App 侧仍按既有退避重试，这里只负责把稳定码显示出来。
+    if (message.type === "companion_control_error" && !this.snapshot.ready) {
+      const code = typeof payload.code === "string" && payload.code ? payload.code : "companion_control_error";
+      this.update({ error: `主对话身份绑定被拒绝（${code}）；正在重试。` });
       return;
     }
     if (["companion_projection_retracted", "human_memory_privacy_changed", "human_memory_invalidated", "human_memory_changed"].includes(String(message.type))) {
@@ -189,7 +209,7 @@ export class PrimaryController {
       if (page.primary_ref !== state.primary_ref) throw new Error("主对话历史归属不匹配");
       if (page.revision !== state.revision) throw new Error("历史读取期间状态已变化，请刷新。");
       const messages = parseMessages(page);
-      this.update({ state, primaryRef: state.primary_ref, messages, nextCursor: typeof page.next_cursor === "string" ? page.next_cursor : null, notice: "", error: "", viewEpoch: this.snapshot.viewEpoch + 1 });
+      this.update({ state, primaryRef: state.primary_ref, messages, nextCursor: typeof page.next_cursor === "string" ? page.next_cursor : null, notice: this.readNotice(), error: "", viewEpoch: this.snapshot.viewEpoch + 1 });
       if (state.current_run || state.queued_count) {
         if (this.followups < 12) { ++this.followups; this.scheduleRefresh(); }
         else this.update({ notice: "自动补读已暂停；运行可能仍在继续，可手动刷新状态。" });

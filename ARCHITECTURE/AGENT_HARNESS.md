@@ -3112,6 +3112,49 @@ HM-TO-A6 第 12 次第 6 轮（证据 `.local-test-evidence/2026-09-09/native-a6
   `main` 上红：`_should_wrap_up('product-sdk-015ad2fe', -451)` 返回 False。
   详见 [DECISION-AG-PAGE-SIZE-WRAP-UP](../plans/2026-09-08-hm-to-a6/DECISION-AG-PAGE-SIZE-WRAP-UP.md)。
 
+### 2026-09-09（事件 AK）：同 userdata 重启不可发送——短时索引静默死循环 + 就绪帧无界等待
+
+两轮完整流程旅程（S6 Task 7 / HM-AC-8）第二段：`--userdata` 指向第一段目录重启后，
+`product_sdk_runtime_ready` / `reconcile.recovered` 都打了，`profile_bindings` 也在
+`05:53:37.612Z`（控制通道连上后 46 ms）写成 `status='ready'`——**耐久绑定成功**——但 UI 三分多钟
+停在「等待主对话就绪」，flow2 两次发送都 `no new Run head`，`foreground_run_heads` 停在 11，
+全程零报错。证据 `.local-test-evidence/2026-09-09/twoflow-run1/`
+（`primary-ui-o7npp9jv/native.log`、`primary-ui-lc1dpujx/userdata/data/{companion,state}.db`）。
+
+- **根因（重放）**：`PrimaryShortIndexWorker.step()` 把「纯读扫描」和「单组注册」压在同一个
+  `operation_timeout=5 s` 里。注册是「读 + 三次 SDK 写」（`ingest_committed_evidence` + `admit_evidence_source`
+  + `register_conversation_evidence`），重启冷启（embedder 预热 51 s、SDK 写道争用）实测单组 6 s 以上：
+  超时 → `TimeoutError` 落进 `blocked` → key 进不了 `pending` → **永远进不了 `_confirmed`** → 下一趟整表重扫
+  再摄入同一条 USER 证据再超时。日志侧只有 SDK 的 `memory.evidence_ingestion_replayed`
+  （3.5 分钟 38 条 / 11 个不同 envelope，其中两条各 15 / 14 次、每 ~7 s 交替），**Host 侧一行都没有**。
+  第一段进程从 `05:36:50` 起同一条 envelope 每 7.7 s 复现一次直到结束，表现为六轮「second send（retried）」。
+  排除投递外发箱：`state.db.memory_ingestion_outbox` 11 行全 `delivered/attempts=1`，重启后未动。
+  与 HM-TO-A6 同类——那次只堵了「超内联上限」这一个成因，通用超时路径仍敞着。
+- **根因（就绪）**：前端 `snapshot.ready` 的唯一来源是 `companion_profile_bound`
+  （`tauri-app/src/primary/controller.ts`），而该帧在 `companion_profile_bind` 处理链
+  `freeze() → _ensure_companion_inbox_route() → bind_and_drain()` **跑完之后**才发；后两个 await 无界，
+  写道被上面的循环霸占时可以卡任意久。异常有兜底日志，**卡住没有**——所以现场一条日志都没有。
+- **裁决**：① 单组注册独立预算 `SHORT_INDEX_REGISTRATION_TIMEOUT_SECONDS=30`（>= 实测 6 s 的 5 倍，
+  由一致性用例绑死），与扫描的 5 s 解耦；② 失败的组按 `host_run_id` 有界指数退避
+  （30 s→600 s 封顶）并打 `memory_short_index_group_blocked` 稳定码日志，`ShortIndexStep` 增补
+  `groups_backed_off`——**第一次失败不退避**（丢一次 ack 必须下一趟重放，既有语义），
+  `ConversationRegistrationUnavailable` 不进退避（它全在第一次写之前，不重摄入）；
+  ③ bind 收尾链收进 `_settle_companion_bind_projection(..., timeout_seconds=10)`，永不抛，超时降级成
+  `companion_projection_bind_drain_timeout` 并把 `projection_degraded_code` 塞进 `companion_profile_bound`，
+  **就绪帧无条件下发**（就绪的耐久事实是 `profile_bindings.status='ready'`，闭合历史抽干只是补历史，
+  未抽干的通知由 `wake_repair` 追平）；④ `companion_projection_history_closed_identity_unready` 补结构化收据
+  （`reason`/`code`/`durable_binding_present`/`durable_binding_status`/`awaits`）——它**每次启动都会打**、
+  不是故障，本次事故里曾被误读成根因。
+- **决定性测试**（单进程、点名文件）：`tests/memory/test_short_index_restart_replay.py` 3 例
+  （重启到达稳态 + 每条已提交证据至多重摄入一次 + 稳态后零摄入；注册超时的稳定码与退避窗口内零摄入；
+  预算 vs 实测一致性）、`tests/companion/test_restart_identity_ready.py` 5 例，共 **8 passed**；
+  前端 `src/primary` + `src/auth` **104 passed**、`tsc -b --noEmit` 干净。修复前离线探针：
+  8 趟扫描 = 8 次重摄入（不收敛、零日志）；修复后 8 趟 = 2 次。
+  基线口径：`test_short_index_worker.py`（11 failed/5 passed）与 `test_memory_ingestion_outbox.py`
+  （8 failed/10 passed/1 skipped）在主干与本 worktree **失败集合逐条相同**，原因是本机 venv 缺 WeMM 权重
+  （`short_horizon_embedder_required`），与本改动无关。
+  详见 [DECISION-AK-RESTART-READY](../plans/2026-09-09-two-flow-journey/DECISION-AK-RESTART-READY.md)。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |

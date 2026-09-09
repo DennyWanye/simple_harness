@@ -647,3 +647,14 @@ simple_harness 的用户界面现在以暗色为默认外观。主窗口背景�
   S-SRV-1～S-SRV-5 Windows 真机矩阵全部 PASS。长上下文任务按阶段显示且工具归属正确，
   child 失败时顶层明确显示“主 Agent 已接管并完成”，停止后的晚到结果不会恢复运行态或污染
   另一 Session。
+- 2026-09-09（事件 AK）主对话就绪与降级可读性：`PrimaryChatView` 的「等待主对话就绪」由
+  `canSend = snapshot.ready && snapshot.state !== null` 决定，而 `snapshot.ready` 的**唯一**来源是
+  控制通道上的 `companion_profile_bound`。同 userdata 重启事故里后端因无界等待发不出这一帧，
+  UI 就永远停在这句且没有任何提示。本轮前端两处改动（`tauri-app/src/primary/controller.ts`）：
+  ① `companion_profile_bound` 带 `projection_degraded_code` 时照常进入 ready，并把
+  「历史补读未完成（<稳定码>）；可稍后刷新状态。」写进 `notice`，且**后续成功读取不会把它抹掉**
+  （新增 `readNotice()`，`refresh()` 成功分支改用它而不是清空）；② 新增 `companion_control_error` 分支——
+  未就绪时把稳定码写进 `error`（「主对话身份绑定被拒绝（<code>）；正在重试。」），已就绪时不覆盖读态，
+  重试仍由 `App.tsx` 的既有有界退避负责。回归：`src/primary` + `src/auth` **104 passed**、
+  `tsc -b --noEmit` PASS；`controller.test.ts` 新增 3 例覆盖降级就绪帧、被拒显码、已就绪不被覆盖。
+  详见 [DECISION-AK-RESTART-READY](../plans/2026-09-09-two-flow-journey/DECISION-AK-RESTART-READY.md)。
