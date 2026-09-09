@@ -642,3 +642,165 @@ payload），只有回灌的 reasoning 是新增且量不到的。
   `DECISION-TOKEN-ESTIMATOR.md` §3 的 F-TOK-1 条目——pro 的
   `min(1.50+1.25·ordinal, 7.10)` 大概率有同样的问题，只是它的生产窗口是 1M，
   多估还够不着边界，所以还没炸。
+
+---
+
+## §W-b. `reasoning_tokens` 缺席 ≠ 「中转站不报」（2026-09-09，第 10 次尝试 10 第 17 轮）
+
+### W-b.1 事故
+
+`deepseek-v4-flash`，`reasoning_mode = "fast"`（事件 Y 的开关）→ 请求带
+`thinking={"type":"disabled"}`。同一条 Run 的第 2 次 provider 调用被这道
+**终局**闸门打死：
+
+```
+sdk_provider_wire_input_budget_exceeded floor=26857 effective=26752 wire=21997
+  carry=4860 carry_before_trim=4860 observed_input=12360 observed_output=4860
+  observed_hidden=0 observed_wire=12874 window=32000 ordinal=2 reasoning_relay=0
+```
+
+超出 **105** 个 token。证据：
+
+- `.local-test-evidence/2026-09-09/native-a6-run10/primary-ui-j5yjctfj/native.log:1570`
+  （上面那一行）与 `:1571`（`stage=wire_input_budget`）、`:1573`
+  （`sdk_run_driver_failed`）。
+- 同目录 `userdata/data/simple-harness-sdk/execution-v6.sqlite3`
+  `provider_invocations`，Run `product-sdk-93683c34…` 共 **2** 条：
+  - `provider-turn:1` — `usage = {"input_tokens": 12360, "output_tokens": 4860,
+    "reasoning_tokens": null, …}`；`response_json.message.metadata` 是 **空的**
+    （没有 `provider_reasoning_content`），即响应里连 `reasoning_content` 都没有；
+  - `provider-turn:2` — `error_code = sdk_provider_wire_input_budget_exceeded`，
+    `response_json` 为 `NULL`（一个字节都没发出去）。
+  - 注：`reasoning_tokens` 在这条 Run 里是 **absent → null**，不是 `0`；两者在
+    这次修复里走的是同一档（见 W-b.3 的第一行：给了计数就按计数）。
+
+### W-b.2 根因
+
+事件 W 的 carry 规则（MUST-FIX 2）写的是：
+
+> `usage` 没给 `reasoning_tokens` 时（不是所有中转站都给）才退回
+> `output_tokens` —— 那是保守方向，宁可多算。
+
+这句话默认了「缺 key」只有一种成因：**中转站不报**。事件 Y 给了第二种：
+**这一轮根本没有思考**。`thinking` 被关掉时 `usage` 里当然没有
+`reasoning_tokens`，于是兜底把 `output_tokens = 4860` 当成隐藏质量记进 carry —— 而
+那 4860 个 token 是上一轮 tool-call 的 `arguments`（把 18 KB 目标文本原样回声了
+一遍），`_wire_messages` 这一轮**已经把它补回 payload**，所以它就在
+`wire = 21997` 里面。等于把同一块质量算了两遍。
+
+这不是「保守」。事件 W 自己的原则是：floor 必须是**下界**；把一份不存在的质量
+加进下界，它就不再是下界，而是又一个估算——而且这道闸门一响，这次尝试就结束了
+（`observed_hidden=0` 已经说明这一轮真的没有任何量不到的残差）。
+
+### W-b.3 规则（`ObservedProviderTurn.carry_basis`）
+
+| `carry_basis` | 条件 | `new_mass` | 含义 |
+| --- | --- | --- | --- |
+| `reasoning_tokens` | `usage.reasoning_tokens is not None` | 该计数 | 唯一的实测档；`0` 也是计数 |
+| `no_reasoning` | 请求发的是 `thinking={"type":"disabled"}`，**或**（没有计数 **且** 响应消息里没有 `reasoning_content`） | `0` | 这一轮确实没有思考，`carry = hidden` only |
+| `output_fallback` | 没有计数，但响应**有** `reasoning_content` | `output_tokens` | 真正的「中转站不报」，保留保守估算 |
+
+判据是「**这一轮到底有没有思考**」，不是「`usage` 里有没有那个 key」。两条证据
+互相独立、方向一致地只用来**证否**：
+
+- **请求侧**（硬事实）：将要发出的那份 payload 上有没有
+  `thinking={"type":"disabled"}` —— `wire_input_budget.thinking_disabled(payload)`。
+  读 payload 而不是会话的 `model_params`，理由与事件 Y 相同：量的与发的必须是
+  同一份；落库的 canonical `request_json` 里**没有**这个字段（W-b.1 逐条查过），
+  所以只有 wire payload 看得见它。kimi 系 `fast` 只降 `reasoning_effort`、不关
+  思考，因此**不**落进这一档。
+- **响应侧**：`response.message.metadata["provider_reasoning_content"]` 有没有值
+  —— 那是 `_parse_response` 从原始 `message.reasoning_content` 逐字抄下来的，
+  `_extract_public_progress` / `_retain_tool_calls_in_message` 都原样带过。
+
+任一条说「没有」就没有可加的新质量；只有两条都不说话（有思考文本、缺计数）才轮
+得到 `output_tokens`。
+
+### W-b.4 接线与回执
+
+- `ObservedProviderTurn` 增两个字段：`reasoning_disabled`（请求侧）、
+  `reasoning_content_seen`（响应侧）。
+- `ObservedInputCarryLedger.record_wire(..., reasoning_disabled=)` —— thinking 开关
+  只有装配 payload 的那一刻知道，和 wire 一起记进 `_pending`；
+  `observe_usage(..., reasoning_content_seen=)` —— 响应回来时才知道。配对语义与
+  事件 W 完全一致（没有配对的 wire 就不记）。
+- `check_wire_input_budget` 自己调 `thinking_disabled(payload)` 后再 `record_wire`，
+  所以这条接线不需要调用方配合，走这道闸门的每一条请求都自动带上。
+- 回执/日志多一列 **`carry_basis`**：`reasoning_tokens` / `no_reasoning` /
+  `output_fallback`，外加没有观测时的 `no_observation`（carry 恒为 0，三档一个
+  都没走）。`WireInputBudgetExceeded.diagnostics` 因此从 `dict[str, int]` 放宽成
+  `dict[str, object]`：数字仍然一律收敛成 `int`，只有判据名是字符串——光有数字
+  看不出这次的 carry 是实测、是零、还是估算。
+
+修复后同一形态：`carry = hidden = 0` → `floor = wire = 21997 ≤ 26752`，发得出去。
+
+### W-b.5 对事件 W 群体结论的影响
+
+**没有影响。** 夹具 `hm_to_a6_flash_pool_samples.json` 的 65 组样本里，7 组没有
+`previous_turn`（ordinal 1，carry 恒为 0），其余 **58 组的 `previous_turn.
+reasoning_tokens` 全部有值** —— 一组都不落进兜底分支。§3.1 的
+36/36、0/197、24/24 以及「floor 高过真实计费」由 28 降到 6 这些数字逐条不变
+（run9/run8/run6 都是 thinking 打开的跑，本来就有计数）。这次改的只是
+**计数缺席时**那一条岔路。
+
+### W-b.6 测试
+
+`backend/tests/sdk_adapters/test_wire_input_budget.py`（29 → **34** 条）：
+
+- `test_the_thinking_switch_is_read_off_the_payload_that_will_be_sent` —— 判据取自
+  将要发出的 payload；`DISABLED` 大小写、`{"reasoning_effort": "low"}`（kimi fast）、
+  `{"thinking": "disabled"}`（不是 Mapping）逐个钉住。
+- `test_a_turn_with_thinking_disabled_never_pays_for_the_echoed_arguments` ——
+  **事故形态**：上一轮 wire 12874 / input 12360 / output 4860 / 无计数 / 无思考文本，
+  这一轮 wire 21997 → `carry_basis = no_reasoning`、`carry = 0`、`floor = 21997`
+  ≤ 26752，**不拦**；并把 `21997 + 4860 == 26857 > 26752` 写成回归判据。
+  账本走的是 `check_wire_input_budget` 这条生产路径（`record_wire` 的真调用方），
+  所以「thinking 开关有没有被记下来」也在覆盖面里。
+- `test_a_thinking_enabled_turn_still_charges_the_measured_reasoning` —— 同一组数字、
+  usage 给了计数：一切照事件 W，`floor = 26857`，该拦还是拦。
+- `test_a_relay_that_hides_the_count_keeps_the_conservative_fallback` —— 有
+  `reasoning_content`、没有计数：仍然退回 `output_tokens`，仍然拦。
+- `test_the_thinking_switch_alone_settles_the_branch_without_the_response` ——
+  两条证据的**优先级**：请求侧关了思考就够了；反过来，有计数就永远按计数。
+- `test_the_carry_charges_the_relayed_reasoning_not_the_whole_output`（事件 W 的
+  MUST-FIX 2 判据）改成显式三档，`silent` 那一半补上 `reasoning_content_seen=True`
+  —— 它测的一直是「中转站不报」，现在把这个前提写出来了。
+- `test_without_an_observation_the_gate_is_exactly_the_wire_estimate` 补一条
+  `carry_basis == no_observation`。
+
+`backend/tests/sdk_adapters/test_reasoning_relay_budget.py`（17 → **19** 条）：
+
+- `test_a_thinking_disabled_run_never_carries_its_own_echoed_output` —— 端到端，走真的
+  `_request_payload` + 真的响应解析：`model_overrides.toml` 里
+  `reasoning_mode = "fast"` → 第 1 次调用的 wire 带 `thinking={"type":"disabled"}`、
+  响应 usage **没有** `completion_tokens_details`、message 没有 `reasoning_content`
+  （逐字段对照 W-b.1 的真机记录）→ 账本记下 `reasoning_disabled=True` /
+  `reasoning_content_seen=False` / `carry_basis=no_reasoning` / `carry=0` → 第 2 次
+  调用（wire 21997）**真的发了出去**（`len(sent) == 2`）。请求侧、响应侧两条接线
+  断任意一条，这条用例就红。
+- `test_an_uncounted_relay_still_falls_back_to_the_whole_output` —— 第三档的端到端：
+  响应带 `reasoning_content`、usage 没有计数、请求也没关思考 → 账本记下
+  `reasoning_content_seen=True` / `carry_basis=output_fallback` / `new_mass=700`。
+  这条是 `_parse_response` 写进 `message.metadata` 的那条元数据唯一的端到端判据。
+
+红/绿双向验过：把 `carry_basis` 临时改回事件 W 的两档规则，上述用例中的 3 条
+立刻转红（`test_a_turn_with_thinking_disabled_never_pays_for_the_echoed_arguments`、
+`test_the_thinking_switch_alone_settles_the_branch_without_the_response`、
+`test_a_thinking_disabled_run_never_carries_its_own_echoed_output`），恢复后
+两个文件 **53 passed**（34 + 19，改前 29 + 17 = 46）。
+
+### W-b.7 边界与待办
+
+- **F-W-b-1**：`reasoning_content_seen` 记的是「响应里有没有思考文本」，不是
+  「有多少」。`output_fallback` 那一档仍然是拿整个 `output_tokens` 当上界（正文与
+  `arguments` 照样算两遍）。真要收紧，得让 Host 自己量一遍回传文本的 token 数
+  —— 事件 Y 的 `wire_reasoning_tokens` 已经有这个能力，缺的是把**本轮响应**的
+  那块也量下来存进观测。今天不做：这一档在真机上还没见过（65 组样本里 0 组）。
+- **F-W-b-2**：`thinking` 是 DeepSeek 系端点的私有字段。别的中转站关思考可能
+  另有写法（甚至只在 `model` 名字里）。今天只认 `thinking={"type":"disabled"}` ——
+  认不出就退回响应侧那条证据（没有 `reasoning_content` 一样落 `no_reasoning`），
+  所以认漏只会少一次**请求侧**的确认，不会误判成 `output_fallback`。
+- 与 F-W-3（冷启动重建 carry）合流时注意：从 `provider_invocations` 重建观测，
+  `reasoning_disabled` 得从**当时那份 wire payload** 取，而库里的 canonical
+  `request_json` 没有这个字段（W-b.1）——只能靠响应侧那条证据，即重建出来的观测
+  最多退化到 `no_reasoning` / `output_fallback` 两档，不会退化到「多算」以外的方向。

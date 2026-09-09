@@ -678,6 +678,196 @@ def test_the_session_model_params_always_beat_the_file(tmp_path, monkeypatch) ->
     }
 
 
+def _uncounted_reasoning_response(prompt_tokens: int, completion_tokens: int):
+    """真正的「中转站不报」: 有 ``reasoning_content``, 但 usage 里没有计数。"""
+
+    import httpx
+
+    return httpx.Response(
+        200,
+        json={
+            "id": "x",
+            "model": "deepseek-v4-flash",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "ok",
+                        "reasoning_content": "想了想",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_uncounted_relay_still_falls_back_to_the_whole_output(
+    tmp_path, monkeypatch
+) -> None:
+    """响应**有**思考文本、usage 没有计数 → 仍然走保守兜底(事件 W-b 第三档)。
+
+    走真的响应解析: ``reasoning_content_seen`` 读的是 ``_parse_response`` 写进
+    ``message.metadata`` 的那条元数据, 这一条是它唯一的端到端判据。
+    """
+
+    import httpx
+    from simple_harness import RequestId
+    from simple_harness.contracts.messages import Message, MessageRole
+    from simple_harness.providers import CancelToken, ProviderRequest
+
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
+    from deskpet.sdk_adapters.wire_input_budget import CARRY_BASIS_OUTPUT_FALLBACK
+
+    _pin_window(tmp_path, monkeypatch)
+    run = f"{RUN}uncounted"
+    ledger = ObservedInputCarryLedger()
+    transport = httpx.MockTransport(lambda r: _uncounted_reasoning_response(9_000, 700))
+    async with httpx.AsyncClient(transport=transport) as client:
+        adapter = ProductProviderAdapter(
+            _Registry(),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda *_: (1, 1, "price-v1"),
+            observed_input_carry=ledger,
+        )
+        # 没配 reasoning_mode → 不写 thinking, 请求侧那条证据不说话。
+        assert adapter.reasoning_wire == {}
+        await adapter.invoke(
+            ProviderRequest(
+                RequestId(f"{run}:provider-turn:1"),
+                (Message(MessageRole.USER, _tokens(8_000)),),
+            ),
+            cancel=CancelToken(),
+        )
+
+    observed = ledger.last(f"{run}:provider-turn:2", model=MODEL)
+    assert observed is not None
+    assert observed.reasoning_disabled is False
+    assert observed.reasoning_content_seen is True
+    assert observed.reasoning_tokens is None
+    assert observed.carry_basis == CARRY_BASIS_OUTPUT_FALLBACK
+    assert observed.new_mass_tokens == 700
+
+
+def _no_reasoning_response(prompt_tokens: int, completion_tokens: int):
+    """关掉思考的那一轮真机长什么样(第 10 次尝试 10 第 17 轮, 逐字段核对过)。
+
+    ``usage`` 里**没有** ``completion_tokens_details``(所以 SDK 解析出的
+    ``reasoning_tokens`` 是 ``None``), ``message`` 里也没有 ``reasoning_content``
+    —— 两条证据都说「这一轮没有思考」。
+    """
+
+    import httpx
+
+    return httpx.Response(
+        200,
+        json={
+            "id": "x",
+            "model": "deepseek-v4-flash",
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_thinking_disabled_run_never_carries_its_own_echoed_output(
+    tmp_path, monkeypatch
+) -> None:
+    """事件 W-b 端到端: fast 模式的第二轮必须发得出去。
+
+    真机(第 10 次尝试 10 的第 17 轮): 第 1 次调用计费 input=12360 / output=4860,
+    usage 里没有 reasoning_tokens, 响应里也没有 reasoning_content。事件 W 的
+    兜底把那 4860 当成隐藏质量, 第 2 次调用 floor=26857 越过 effective=26752,
+    **超出 105** —— 而那 4860 个 token 正是这一轮 wire=21997 里回灌的
+    tool_calls.arguments, 被算了两遍。
+
+    这一条走的是真的 ``_request_payload`` + 真的响应解析: thinking 开关从
+    payload 记进账本、``reasoning_content`` 的缺席从响应记进账本, 两条接线
+    只要断一条, 第二轮就会被打死。
+    """
+
+    import json as _json
+
+    import httpx
+    from simple_harness import RequestId
+    from simple_harness.contracts.messages import Message, MessageRole
+    from simple_harness.providers import CancelToken, ProviderRequest
+
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
+    from deskpet.sdk_adapters.wire_input_budget import CARRY_BASIS_NO_REASONING
+
+    _pin_window(tmp_path, monkeypatch, extra='reasoning_mode = "fast"\n')
+    sent: list[dict] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        sent.append(_json.loads(request.content.decode()))
+        return _no_reasoning_response(12_360, 4_860)
+
+    run = f"{RUN}wb"
+    ledger = ObservedInputCarryLedger()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        adapter = ProductProviderAdapter(
+            _Registry(),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda *_: (1, 1, "price-v1"),
+            observed_input_carry=ledger,
+        )
+        assert adapter.reasoning_wire == {"thinking": {"type": "disabled"}}
+        await adapter.invoke(
+            ProviderRequest(
+                RequestId(f"{run}:provider-turn:1"),
+                (Message(MessageRole.USER, _tokens(12_874)),),
+            ),
+            cancel=CancelToken(),
+        )
+        observed = ledger.last(f"{run}:provider-turn:2", model=MODEL)
+        assert observed is not None
+        # 请求侧: payload 上的 thinking 开关被记下来了。
+        assert observed.reasoning_disabled is True
+        # 响应侧: 没有 reasoning_content, 也没有 reasoning_tokens。
+        assert observed.reasoning_content_seen is False
+        assert observed.reasoning_tokens is None
+        assert observed.carry_basis == CARRY_BASIS_NO_REASONING
+        assert observed.wire_tokens == 12_874
+        assert observed.output_tokens == 4_860
+        # carry 只剩 hidden = max(0, 12360 − 12874) = 0。
+        assert observed.hidden_tokens == 0
+        assert observed.carry_tokens == 0
+
+        # 第 2 轮: wire 21997, 事件 W 的兜底会把 floor 抬到 26857 > 26752。
+        await adapter.invoke(
+            ProviderRequest(
+                RequestId(f"{run}:provider-turn:2"),
+                (Message(MessageRole.USER, _tokens(21_997)),),
+            ),
+            cancel=CancelToken(),
+        )
+
+    # 两次都真的发出去了 —— 第 2 次不再被那 105 个 token 打死。
+    assert len(sent) == 2
+    assert sent[0]["thinking"] == {"type": "disabled"}
+    assert sent[1]["thinking"] == {"type": "disabled"}
+    assert 21_997 + 4_860 > 26_752
+
+
 def test_an_illegal_reasoning_mode_degrades_to_default(tmp_path, monkeypatch) -> None:
     """手写错的 TOML 不该让 provider 起不来。"""
 

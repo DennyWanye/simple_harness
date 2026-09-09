@@ -56,7 +56,8 @@ planned 都停在 26k 以下,provider 却一路计到 **76 708**(窗口的 2.40 
 却谁也量不到的那一块。把整个 ``output_tokens`` 加上去等于把正文与入参各算两遍:
 239 组真机配对里有 **28 组**因此让 "floor" 超过了真实计费(最多 +1769),
 它就不再是下界而是又一个估算。``usage`` 没给 ``reasoning_tokens`` 时(不是所有
-中转站都给)才退回 ``output_tokens`` —— 那是保守方向,宁可多算。
+中转站都给)才退回 ``output_tokens`` —— 那是保守方向,宁可多算。**这句被事件
+W-b 收窄了**:「没给计数」不一定等于「中转站不报」,见下。
 
 *为什么要乘 payload 的收缩比*:隐藏质量是挂在**产生它的那几轮 assistant 消息**上
 的;装配期一旦裁史或强制分页,那几轮连同它们的 reasoning 一起离开了 payload,
@@ -78,6 +79,31 @@ run8 87 + run6 18,``request_json`` 逐条重放,见 memo §3.1)这条线触发 *
 分页 → 裁史),能救一条 Run;这里是最后一道、只在 **物理发出之前** 拦截,
 拦到就是这次尝试失败。所以它的阈值必须是**实测下界**而不是保守估算——宁可
 让 ratio 先把 Run 降级掉,也不要在这里替 ratio 背误判。
+
+事件 W-b(HM-TO-A6 第 10 次尝试 10 的第 17 轮,2026-09-09)推翻上面
+「``usage`` 没给 ``reasoning_tokens`` 时才退回 ``output_tokens`` —— 那是保守
+方向」的一个反例:``reasoning_mode = "fast"`` 把 ``thinking={"type":"disabled"}``
+发上去之后,这一轮**本来就没有思考** —— ``usage`` 里没有 ``reasoning_tokens``
+不是「中转站不报」,而是「没有这块质量」。退回 ``output_tokens`` 于是把上一轮的
+``tool_calls.arguments``(4860 token,回灌的 18 KB 目标文本)当成隐藏质量,而
+那 4860 个 token **这一轮已经在 wire 里**(``_wire_messages`` 补回的正是它):
+``floor=26857`` 越过 ``effective=26752``,超出 **105** —— 一个真的装得下的请求
+(``wire=21997``)被这道终局闸门打死。
+
+所以 ``new_mass`` 的取数分三档,逐次记进回执的 ``carry_basis``:
+
+* ``reasoning_tokens`` —— ``usage`` 给了计数,按计数。唯一的实测档。
+* ``no_reasoning`` —— 这一轮**确实没有** reasoning:请求发的是
+  ``thinking={"type":"disabled"}``,**或者** ``usage`` 没给计数**且**响应消息里
+  也没有 ``reasoning_content``。``carry = hidden`` only(本例 hidden = 计费 −
+  已记账的 wire ≈ 0),不加任何新质量。
+* ``output_fallback`` —— 响应**有** ``reasoning_content`` 却没有计数(真正的
+  「中转站不报」)。只有这一档保留 ``output_tokens`` 的保守估算。
+
+判据是「这一轮有没有思考」,不是「``usage`` 里有没有那个 key」:请求侧的
+thinking 开关与响应侧的 ``reasoning_content`` 是两条独立证据,任一条说「没有」,
+就没有可加的新质量。给一个不存在的东西记一笔账不叫保守,叫算错 —— 而这道闸门
+一响,这次尝试就结束了。
 """
 
 from __future__ import annotations
@@ -99,6 +125,18 @@ _MAX_TRACKED_RUNS = 256
 
 _PROVIDER_TURN_SEPARATOR = ":provider-turn:"
 
+#: wire payload 上关掉思考的那个私有字段(``reasoning_wire_fields`` 写的就是它)。
+_THINKING_KEY = "thinking"
+_THINKING_DISABLED = "disabled"
+
+#: ``carry`` 里「上一轮新增质量」那一项的取数依据(事件 W-b)。进回执与日志,
+#: 一眼看得出这次的 carry 是实测、是零、还是保守估算。
+CARRY_BASIS_REASONING_TOKENS = "reasoning_tokens"
+CARRY_BASIS_NO_REASONING = "no_reasoning"
+CARRY_BASIS_OUTPUT_FALLBACK = "output_fallback"
+#: 同 (Run, 型号) 上根本没有观测 —— carry 恒为 0, 三档一个都没走。
+CARRY_BASIS_NO_OBSERVATION = "no_observation"
+
 
 class WireInputBudgetExceeded(ProviderRequestRejectedError):
     """本次物理请求的**实测**输入下界越过了 effective_input_budget。
@@ -114,9 +152,14 @@ class WireInputBudgetExceeded(ProviderRequestRejectedError):
     #: 覆盖 ``code`` 本身没有用: 那是实例 slot, 会被 ``__init__`` 盖掉。
     error_code = "sdk_provider_wire_input_budget_exceeded"
 
-    def __init__(self, **diagnostics: int) -> None:
+    def __init__(self, **diagnostics: object) -> None:
         super().__init__(public_message=WireInputBudgetExceeded.error_code)
-        self.diagnostics: dict[str, int] = {k: int(v) for k, v in diagnostics.items()}
+        # 数字一律收敛成 int; 只有 ``carry_basis`` 这类**判据名**是字符串
+        # (事件 W-b)—— 回执里光有数字看不出这次的 carry 是怎么来的。
+        self.diagnostics: dict[str, object] = {
+            key: value if isinstance(value, str) else int(value)  # type: ignore[arg-type]
+            for key, value in diagnostics.items()
+        }
 
     def __str__(self) -> str:
         return WireInputBudgetExceeded.error_code
@@ -134,6 +177,14 @@ class ObservedProviderTurn:
     #: 有了它,``hidden_tokens`` 才真的只剩「结构上看不见」的残差,
     #: 而不再把 Host 自己写上去的那块也算成隐藏质量。
     reasoning_relay_tokens: int = 0
+    #: 那一轮的**响应**里真的带回了 ``reasoning_content``(事件 W-b)。
+    #: ``usage`` 没给 ``reasoning_tokens`` 时,这一条是「到底有没有思考」的
+    #: 第二条独立证据 —— 没有它,``output_tokens`` 的保守回退会把上一轮的
+    #: ``tool_calls.arguments`` 再算一遍。
+    reasoning_content_seen: bool = False
+    #: 那一轮的**请求**是带着 ``thinking={"type":"disabled"}`` 发出去的。
+    #: 这是请求侧的证据: 端点被明确关掉了思考, 响应里不可能有 reasoning。
+    reasoning_disabled: bool = False
 
     @property
     def hidden_tokens(self) -> int:
@@ -142,13 +193,33 @@ class ObservedProviderTurn:
         return max(0, int(self.input_tokens) - int(self.wire_tokens))
 
     @property
+    def carry_basis(self) -> str:
+        """``new_mass_tokens`` 这一次按哪一档取数(事件 W-b,见模块 docstring)。
+
+        ``usage`` 给了计数就按计数;没给,就看**这一轮到底有没有思考** ——
+        请求关掉了 thinking、或者响应里连 ``reasoning_content`` 都没有,那就是
+        真的没有(``no_reasoning``);只有「有思考文本、缺计数」才是中转站不报,
+        才轮得到 ``output_tokens`` 的保守回退。
+        """
+
+        if self.reasoning_tokens is not None:
+            return CARRY_BASIS_REASONING_TOKENS
+        if self.reasoning_disabled or not self.reasoning_content_seen:
+            return CARRY_BASIS_NO_REASONING
+        return CARRY_BASIS_OUTPUT_FALLBACK
+
+    @property
     def new_mass_tokens(self) -> int:
         """这一轮的产出里,下一轮 payload 有可能量不到的那部分(上界)。
 
         正文与 ``tool_calls.arguments`` 下一轮都会原样回到 payload 里,而
         :func:`wire_request_tokens` 量的就是那个 payload —— 再加一次就是重复
-        计价。剩下的只有 ``reasoning_content``。中转站不报 ``reasoning_tokens``
-        时退回整个 ``output_tokens``(保守方向)。
+        计价。剩下的只有 ``reasoning_content``。
+
+        事件 W-b:``reasoning_tokens`` 缺席**不一定**等于「中转站不报」——
+        ``thinking={"type":"disabled"}`` 的那一轮压根没有思考。三档见
+        :attr:`carry_basis`;``no_reasoning`` 那一档新质量恒为 0,
+        ``carry`` 只剩 :attr:`hidden_tokens`。
 
         事件 Y 之后这只是**上界**:下一轮 payload 里凡是 Host 自己量到的回传
         (``reasoning_relay_tokens`` 的增量)、或 Host 按契约主动丢掉的那部分,
@@ -156,9 +227,12 @@ class ObservedProviderTurn:
         「计了费、谁也量不到」的那一块(端点自己回灌时就落在这里)。
         """
 
-        if self.reasoning_tokens is None:
-            return max(0, int(self.output_tokens))
-        return max(0, int(self.reasoning_tokens))
+        basis = self.carry_basis
+        if basis == CARRY_BASIS_REASONING_TOKENS:
+            return max(0, int(self.reasoning_tokens or 0))
+        if basis == CARRY_BASIS_NO_REASONING:
+            return 0
+        return max(0, int(self.output_tokens))
 
     def unmeasured_new_mass(self, accounted_tokens: int) -> int:
         """``new_mass`` 里没被本轮 payload 交代掉的那部分。"""
@@ -233,7 +307,8 @@ class ObservedInputCarryLedger:
         self._max_runs = max(1, int(max_runs))
         self._lock = threading.Lock()
         self._turns: dict[tuple[str, str], ObservedProviderTurn] = {}
-        self._pending: dict[str, tuple[int, str, int]] = {}
+        # (wire, model, 已量到的回传, 这次请求是否关掉了 thinking)
+        self._pending: dict[str, tuple[int, str, int, bool]] = {}
 
     def record_wire(
         self,
@@ -242,6 +317,7 @@ class ObservedInputCarryLedger:
         *,
         model: object = "",
         reasoning_relay_tokens: int = 0,
+        reasoning_disabled: bool = False,
     ) -> None:
         """记下「这一次物理请求 Host 量到的 wire」,等 usage 回来配对。
 
@@ -252,6 +328,10 @@ class ObservedInputCarryLedger:
         ``model`` 一起记下来:观测按 ``(Run, 型号)`` 存,同一条 Run 中途换了
         绑定型号(不同 tokenizer、不同 reasoning 行为)时不会拿旧型号的 carry
         判新型号的请求。
+
+        ``reasoning_disabled`` 是**请求侧**的事实(payload 上的
+        ``thinking={"type":"disabled"}``),只有装配 payload 的这一刻知道,所以
+        和 wire 一起记 —— 它决定下一轮 ``carry`` 走哪一档(事件 W-b)。
         """
 
         key = str(getattr(request_id, "value", request_id) or "")
@@ -262,6 +342,7 @@ class ObservedInputCarryLedger:
                 max(0, int(wire_tokens)),
                 str(model or ""),
                 max(0, int(reasoning_relay_tokens)),
+                bool(reasoning_disabled),
             )
             while len(self._pending) > self._max_runs:
                 self._pending.pop(next(iter(self._pending)))
@@ -273,11 +354,17 @@ class ObservedInputCarryLedger:
         input_tokens: int,
         output_tokens: int,
         reasoning_tokens: int | None = None,
+        reasoning_content_seen: bool = False,
     ) -> ObservedProviderTurn | None:
         """把真实 usage 与同一次请求的 wire 配对,成为本 Run 的最新观测。
 
         没有配对的 wire(没走过 :meth:`record_wire`)就**不记**:hidden 会
         变成整条 prompt,下一轮直接误伤。宁可没有观测。
+
+        ``reasoning_content_seen`` 是**响应侧**的事实:这次回来的 assistant
+        消息里到底有没有思考文本。``usage`` 缺 ``reasoning_tokens`` 时,它和
+        ``record_wire`` 记下的 thinking 开关一起决定 carry 走哪一档
+        (事件 W-b)。默认 ``False`` = 没观测到思考。
         """
 
         key = str(getattr(request_id, "value", request_id) or "")
@@ -290,7 +377,7 @@ class ObservedInputCarryLedger:
             recorded = self._pending.pop(key, None)
             if recorded is None:
                 return None
-            wire, model, relayed = recorded
+            wire, model, relayed, disabled = recorded
             turn = ObservedProviderTurn(
                 wire_tokens=wire,
                 input_tokens=max(0, int(input_tokens)),
@@ -299,6 +386,8 @@ class ObservedInputCarryLedger:
                     None if reasoning_tokens is None else max(0, int(reasoning_tokens))
                 ),
                 reasoning_relay_tokens=relayed,
+                reasoning_content_seen=bool(reasoning_content_seen),
+                reasoning_disabled=disabled,
             )
             slot = (run, model)
             self._turns.pop(slot, None)
@@ -342,6 +431,26 @@ def _text_tokens(value: object) -> int:
 #: ``provider_reasoning_content`` 写到这里,DeepSeek thinking 模式的工具循环
 #: 靠它认出上一轮的思考(事件 Y)。
 REASONING_CONTENT_KEY = "reasoning_content"
+
+
+def thinking_disabled(payload: Mapping[str, object]) -> bool:
+    """这条 payload 是不是带着 ``thinking={"type":"disabled"}`` 发出去的。
+
+    读的是**将要发出的那份 payload**(``_request_payload`` 已经
+    ``payload.update(self._reasoning_wire)``),不是会话的 ``model_params`` ——
+    量的与发的必须是同一份。落库的 canonical ``request_json`` 里没有这个字段,
+    所以只有这里看得见(事件 Y 的 ``reasoning_wire_fields`` 写的就是它)。
+
+    关掉思考 = 这一轮不可能产出 reasoning,``usage`` 里缺 ``reasoning_tokens``
+    因此不是「中转站不报」(事件 W-b)。
+    """
+
+    if not isinstance(payload, Mapping):
+        return False
+    thinking = payload.get(_THINKING_KEY)
+    if not isinstance(thinking, Mapping):
+        return False
+    return str(thinking.get("type") or "").strip().lower() == _THINKING_DISABLED
 
 
 def message_reasoning_tokens(message: Mapping[str, object]) -> int:
@@ -588,7 +697,7 @@ def check_wire_input_budget(
     model_id: object = None,
     ledger: ObservedInputCarryLedger | None = None,
     reasoning_relay: ReasoningRelayDecision | None = None,
-) -> dict[str, int]:
+) -> dict[str, object]:
     """物理发出之前的最后一道闸门。返回本次的实测账,越界则抛。
 
     窗口取不到 → 直接放行(见 :func:`resolve_window_tokens`)。没有同 (Run, 型号)
@@ -600,6 +709,10 @@ def check_wire_input_budget(
     把本轮实际执行的回传策略带进回执。payload 上一个 ``reasoning_content``
     都没有时(夹具回放、非 thinking 端点),这两项都是 0,这条线的算术与事件 W
     逐 token 相同。
+
+    事件 W-b:回执多一条 ``carry_basis``,说明 carry 里「上一轮新增质量」那一项
+    是实测(``reasoning_tokens``)、是零(``no_reasoning``)、还是保守估算
+    (``output_fallback``);没有观测时是 ``no_observation``。
     """
 
     window = window_tokens_from_metadata(request_metadata) or window_tokens
@@ -620,7 +733,7 @@ def check_wire_input_budget(
     carry_before_trim = 0 if observed is None else observed.carry_before_trim(accounted)
     carry = 0 if observed is None else observed.discount_for_wire(carry_before_trim, wire)
     floor = wire + carry
-    facts = {
+    facts: dict[str, object] = {
         "wire_input_tokens": wire,
         "observed_carry_tokens": carry,
         "measured_input_floor": floor,
@@ -645,9 +758,19 @@ def check_wire_input_budget(
         "reasoning_relay_contract_dropped_messages": max(
             0, int(relay.contract_dropped_messages)
         ),
+        # 事件 W-b: carry 的「新增质量」那一项按哪一档取的数。
+        "carry_basis": (
+            CARRY_BASIS_NO_OBSERVATION if observed is None else observed.carry_basis
+        ),
     }
     book.record_wire(
-        request_id, wire, model=model, reasoning_relay_tokens=wire_reasoning
+        request_id,
+        wire,
+        model=model,
+        reasoning_relay_tokens=wire_reasoning,
+        # 事件 W-b: 这次请求关没关思考, 只有这份 payload 知道 —— 记下来,
+        # 下一轮 usage 回来配对时才判得出「缺计数」到底是哪一档。
+        reasoning_disabled=thinking_disabled(payload),
     )
     if floor > effective:
         # 这一次不会发出去, 所以也不会有 usage 来配对: 立刻把 pending 收回,
@@ -660,7 +783,7 @@ def check_wire_input_budget(
             "wire=%d carry=%d carry_before_trim=%d observed_input=%d "
             "observed_output=%d observed_hidden=%d observed_wire=%d "
             "window=%d ordinal=%d reasoning_relay=%d reasoning_relay_dropped=%d "
-            "reasoning_relay_dropped_messages=%d",
+            "reasoning_relay_dropped_messages=%d carry_basis=%s",
             floor,
             effective,
             wire,
@@ -675,6 +798,7 @@ def check_wire_input_budget(
             facts["reasoning_relay_tokens"],
             facts["reasoning_relay_dropped"],
             facts["reasoning_relay_dropped_messages"],
+            facts["carry_basis"],
         )
         raise WireInputBudgetExceeded(**facts)
     return facts
@@ -709,7 +833,7 @@ def enforce_wire_input_budget(
     model_id: object = None,
     ledger: ObservedInputCarryLedger | None = None,
     reasoning_preserve: str = "tool_loop",
-) -> dict[str, int]:
+) -> dict[str, object]:
     """事件 Y:先按契约把 ``reasoning_content`` 的回传收敛到必要范围,再判闸门。
 
     两步是**同一条**算术(:func:`_measured_floor` 与
@@ -802,6 +926,10 @@ def enforce_wire_input_budget(
 
 
 __all__ = [
+    "CARRY_BASIS_NO_OBSERVATION",
+    "CARRY_BASIS_NO_REASONING",
+    "CARRY_BASIS_OUTPUT_FALLBACK",
+    "CARRY_BASIS_REASONING_TOKENS",
     "ObservedInputCarryLedger",
     "ObservedProviderTurn",
     "REASONING_CONTENT_KEY",
@@ -816,6 +944,7 @@ __all__ = [
     "reasoning_relay_order",
     "resolve_window_tokens",
     "run_key",
+    "thinking_disabled",
     "window_tokens_from_metadata",
     "wire_message_tokens",
     "wire_reasoning_tokens",
