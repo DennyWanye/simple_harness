@@ -256,3 +256,38 @@ describe("primary durable controller", () => {
     await expect(detail).resolves.toMatchObject({ text: "😀汉", next_offset: 4 }); h.stop();
   });
 });
+
+// 事件 AK（同 userdata 重启）：后端在闭合历史补读超时时仍会下发就绪帧并带稳定码；
+// 签名 bind 被拒时前端此前完全无声，UI 永远停在「等待主对话就绪」。
+describe("事件 AK 重启就绪", () => {
+  it("降级的就绪帧照样进入 ready，并把稳定码说出来", async () => {
+    const h = setup();
+    h.emit({ type: "companion_profile_bound", payload: {
+      profile_id: "owner", profile_generation: 1,
+      projection_degraded_code: "companion_projection_bind_drain_timeout" } });
+    await tick();
+    const snap = h.controller.getSnapshot();
+    expect(snap.ready).toBe(true);
+    expect(snap.state).not.toBeNull();
+    expect(snap.notice).toContain("companion_projection_bind_drain_timeout");
+    h.stop();
+  });
+  it("绑定被拒时显示稳定码而不是静默等待", async () => {
+    const h = setup();
+    h.emit({ type: "companion_control_error", payload: { code: "auth_snapshot_mismatch" } });
+    await tick();
+    const snap = h.controller.getSnapshot();
+    expect(snap.ready).toBe(false);
+    expect(snap.error).toContain("auth_snapshot_mismatch");
+    h.stop();
+  });
+  it("已就绪后的控制错误不覆盖主对话读态", async () => {
+    const h = setup();
+    h.emit(bound); await tick();
+    expect(h.controller.getSnapshot().ready).toBe(true);
+    h.emit({ type: "companion_control_error", payload: { code: "auth_snapshot_mismatch" } });
+    await tick();
+    expect(h.controller.getSnapshot().error).toBe("");
+    h.stop();
+  });
+});

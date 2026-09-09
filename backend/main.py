@@ -1865,8 +1865,31 @@ async def _initialize_companion_projection_services() -> None:
     )
     try:
         frozen = _companion_identity_gate.freeze()
-    except Exception:
-        logger.info("companion_projection_history_closed_identity_unready")
+    except Exception as unready_exc:  # noqa: BLE001
+        # 2026-09-09 事件 AK：这条日志在每一次启动（全新与重启）都会出现——
+        # 身份门要等主窗口那次签名 bind 才能 freeze，它**不是**故障。此前它
+        # 只有一个事件名，重启事故里被误读成根因。补上收据：耐久绑定是否已经
+        # 存在（即"这是一次重启"）、以及门未就绪的确切原因，让下一次现场
+        # 一眼能分清「等签名 bind」和「依赖真的缺失」。
+        durable_binding = None
+        try:
+            durable_binding = _companion_store.get_profile_binding(
+                device_scope="desktop"
+            )
+        except Exception:  # noqa: BLE001 - observability must never fail startup
+            durable_binding = None
+        logger.info(
+            "companion_projection_history_closed_identity_unready",
+            reason=type(unready_exc).__name__,
+            code=str(getattr(unready_exc, "code", None) or ""),
+            durable_binding_present=durable_binding is not None,
+            durable_binding_status=(
+                str(durable_binding["status"])
+                if durable_binding is not None
+                else None
+            ),
+            awaits="companion_profile_bind",
+        )
     else:
         try:
             await notifications.bind_and_drain(frozen)
@@ -11693,6 +11716,62 @@ async def _bind_companion_inbox_route(
     return True
 
 
+# 2026-09-09 事件 AK：同 userdata 重启后 UI 停在「等待主对话就绪」。
+# 前端唯一的就绪输入是 `companion_profile_bound`
+# （`tauri-app/src/primary/controller.ts:148-158`），而这一帧是在
+# `companion_profile_bind` 处理链**跑完之后**才发的。链上的
+# `_ensure_companion_inbox_route` + `bind_and_drain` 是两个无界 await：
+# 重启时 Host 短时索引重放正以高占空比霸占 SDK 写道（见
+# `deskpet/memory/short_index_worker.py` 事件 AK 注释），它们可以卡任意久，
+# 于是耐久绑定已经是 ready（`profile_bindings.status='ready'`，实测
+# 05:53:37.612Z），UI 却永远收不到就绪帧，也没有任何日志或报错。
+#
+# 就绪信号不能依赖闭合历史投影：身份门已经 bind，绑定行已经 ready，
+# 投影抽干只是补历史。给它一个明确的预算，超时就走既有的失败分支
+# （稳定码 + 日志），**照常发就绪帧**，让 UI 立刻可用；未抽干的通知
+# 由 `CompanionNotificationService.wake_repair` 继续追平。
+COMPANION_BIND_PROJECTION_TIMEOUT_SECONDS = 10.0
+COMPANION_BIND_PROJECTION_TIMEOUT_CODE = "companion_projection_bind_drain_timeout"
+
+
+async def _settle_companion_bind_projection(
+    frozen_identity: Any,
+    *,
+    ensure_route: Any,
+    notification_service: Any,
+    timeout_seconds: float = COMPANION_BIND_PROJECTION_TIMEOUT_SECONDS,
+) -> tuple[str | None, str | None]:
+    """Bounded post-bind projection settle; returns ``(session_id, failure_code)``.
+
+    Never raises: readiness is already durable once the coordinator marked the
+    binding ready, so a slow or missing projection dependency must degrade to a
+    stable code, not to an unbounded wait on the identity socket.
+    """
+
+    try:
+        async with asyncio.timeout(float(timeout_seconds)):
+            session_id = await ensure_route(frozen_identity)
+            if notification_service is not None:
+                await notification_service.bind_and_drain(frozen_identity)
+            return str(session_id), None
+    except TimeoutError:
+        logger.warning(
+            "companion_projection_bind_drain_failed",
+            error="TimeoutError",
+            code=COMPANION_BIND_PROJECTION_TIMEOUT_CODE,
+            timeout_seconds=float(timeout_seconds),
+        )
+        return None, COMPANION_BIND_PROJECTION_TIMEOUT_CODE
+    except Exception as exc:  # noqa: BLE001 - stable public failure projection
+        code = str(getattr(exc, "code", None) or type(exc).__name__)
+        logger.warning(
+            "companion_projection_bind_drain_failed",
+            error=type(exc).__name__,
+            code=code,
+        )
+        return None, code
+
+
 async def _ensure_companion_inbox_route(
     frozen_identity: Any,
 ) -> str:
@@ -14332,34 +14411,41 @@ async def control_channel(ws: WebSocket):
                             msg_type, strict_raw
                         )
                     if msg_type == "companion_profile_bind":
+                        # 事件 AK：这一段必须有界。就绪帧在其后无条件下发，
+                        # 失败只降级成稳定码，不再让 UI 无限期停在
+                        # 「等待主对话就绪」。
                         try:
                             _bound_identity = _companion_identity_gate.freeze()
-                            _inbox_session_id = (
-                                await _ensure_companion_inbox_route(
-                                    _bound_identity
-                                )
-                            )
-                            response = {
-                                **response,
-                                "payload": {
-                                    **dict(response.get("payload", {})),
-                                    "session_id": _inbox_session_id,
-                                },
-                            }
-                            if _companion_notification_service is not None:
-                                await _companion_notification_service.bind_and_drain(
-                                    _bound_identity
-                                )
-                        except Exception as _drain_exc:  # noqa: BLE001
+                        except Exception as _freeze_exc:  # noqa: BLE001
                             logger.warning(
                                 "companion_projection_bind_drain_failed",
-                                error=type(_drain_exc).__name__,
-                                code=getattr(
-                                    _drain_exc,
-                                    "code",
-                                    str(_drain_exc),
+                                error=type(_freeze_exc).__name__,
+                                code=str(
+                                    getattr(_freeze_exc, "code", None)
+                                    or type(_freeze_exc).__name__
                                 ),
                             )
+                        else:
+                            (
+                                _inbox_session_id,
+                                _projection_code,
+                            ) = await _settle_companion_bind_projection(
+                                _bound_identity,
+                                ensure_route=_ensure_companion_inbox_route,
+                                notification_service=(
+                                    _companion_notification_service
+                                ),
+                            )
+                            _bind_payload = dict(response.get("payload", {}))
+                            if _inbox_session_id is not None:
+                                _bind_payload["session_id"] = _inbox_session_id
+                            if _projection_code is not None:
+                                # 稳定码随就绪帧一起到前端，UI 可读地说明
+                                # 「历史补读未完成」，而不是静默。
+                                _bind_payload["projection_degraded_code"] = (
+                                    _projection_code
+                                )
+                            response = {**response, "payload": _bind_payload}
                         # Harness startup can discover recoverable Runs before
                         # the main window finishes its signed identity bind.
                         # That attempt correctly fails closed; wake the
