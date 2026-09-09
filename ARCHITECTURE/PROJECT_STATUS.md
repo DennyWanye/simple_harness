@@ -327,6 +327,42 @@ claim, and077 artifact is unchanged. [Contract](../plans/2026-09-06-expiry-termi
 
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-09 语料 C04：夹具精度注记外泄修复（F-C04-1）+ 多提类型规则 R5（F-ETR-7）
+
+基线 `08881887`，工作树 `.claude/worktrees/corpus-c04-fix`（分支 `worktree-corpus-c04-fix`，**未合回 main**）。
+来自 `RUN-C04-RERUN-REVIEW.md` 的两条高优先级缺陷。
+
+- **F-C04-1（跑道/gold）**：`backend/deskpet/quality/corpus_c04.py:temporal_payload` 把
+  `【原时间=…；精度=…；具体日时仅synthetic fixture锚点，非原文事实或评分答案】`
+  拼进**模型可见**的记忆正文 —— 11/20 例复述给用户（C04-04 写出「评分」二字），
+  且 `精度=day/week/month/night/undated` 正是 C04 这一类的考点答案，18/20 例的种子记忆带此注记。
+  现拆成两半：精度标签与「synthetic 锚点」免责语移进新的 `precision_oracle(batch)`，
+  经 `open_c04_fixture` → `corpus_scoring_session` 的 `setup_receipt.precision_oracle` 只落**worker 退出后**的证据；
+  **原文自己的时间措辞**（`9月4日` / `上次` / `8月24–30周`）仍留在正文（最长重叠拼接，不出现 `夜间夜间`），
+  否则合成的 12:00 锚点会替原文断言一个它从未说过的精度。prospective 正文不加时间（由 trigger 承载）。
+  合成锚点、`SETUPS`/`SCENARIO_CLOCKS`/sha256、生命周期路径一字未改。
+- **F-ETR-7（Host）**：`DECISION-EXTRA-TYPE-RATE.md` §3.1 的 P4「兜底加 `semantic`」是唯一没有可判定规则的形态，
+  在 C04 重跑上 12/20 命中且**零 `semantic` 片段**返回。补 **R5（semantic 收窄）**：
+  「发生了什么 + 我已定了什么提醒」且不问任何长期值的生命周期回顾轮，不得把 `semantic` 当兜底。
+  模型可见正文进 `context_route` schema（600 → 623 wire token，钉死上限 643 未动）；
+  Host 侧 `selection_policy_departures(memory_types, request=None)` 新增确定性咨询码
+  `semantic_fallback_on_reminder_lifecycle_request`（只观测，不拒绝/不过滤/不改写）。
+  全语料 **240/240** 条 provider_input 实测：恰好命中 20 条 C04、其它类别 0 条，
+  gold 需要 `semantic` 的 C01/C02/C03/C06 零命中。
+- **指标预测（非实测）**：累计多提率 38/280 = 13.6% → **26/268 = 9.7%**；required 召回仍 100%。
+  **重跑前不得声称 C04 的日期精度能力已验证**；必跑 C04 全 20 例。
+- 用例：新增 `backend/tests/quality/test_corpus_c04_payload_text.py`(85)，
+  改 `test_corpus_c04_prepare.py`(20，原断言注记存在的三行已反转)、
+  `tests/memory/test_recall_selection_policy.py`(84，+11 个用例函数含 20 条真实 turn 与 5 条负控)；
+  回归 `test_model_recall_selection`/`test_recall_selection_failure_audit`/`test_model_short_recall`(38)、
+  `test_context_route_tool`(34)、`test_corpus_prospective_settlement`+`test_context_route_prospective_runtime`(8)、
+  `test_corpus_scoring_trace`+`test_corpus_supported_case_ids`(3)，共 **272 绿**；
+  `test_current_tool_megabyte.py[4096]` 仍为既有红（`wire_count 1 != 3`，与 F-ETR-4 记录一致）。
+- 一并记录未修：**F-OBS-2** —— `prospective_records.scheduler_registration_ref` 恒 NULL（23/23），
+  SDK `backends/sqlite_v5.py:11136-11145` 硬写 `None` + `schema_v5.py:662-667` 的 immutable 触发器 = 死列，
+  只读证据审查会误读成「没登记上」；属 Memory SDK 侧（删列或改视图派生），本工作树不动。
+  [裁定](../plans/2026-09-07-corpus-c01-local/DECISION-F-C04-1-F-ETR-7.md)。
+
 ## 2026-09-09 MM-D1/MM-D2：Manual 授权策略权威 + 目录授权卡片可见性（run3 复盘）
 
 基线 `a0a869f4`，工作树 `.claude/worktrees/manual-auth`（分支 `worktree-manual-auth`，**未合回 main**），

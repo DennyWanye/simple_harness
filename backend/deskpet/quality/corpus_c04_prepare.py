@@ -9,7 +9,8 @@ from deskpet.memory.evidence_authority import HostEvidenceAuthority
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.human_memory_service import build_foreground_turn_evidence
 from deskpet.memory.memory_ingestion_outbox import build_worker_config
-from deskpet.quality.corpus_c04 import TemporalSetupBatch, compile_c04_setup, SCENARIO_CLOCKS, temporal_payload
+from deskpet.quality.corpus_c04 import (TemporalSetupBatch, compile_c04_setup, SCENARIO_CLOCKS,
+    precision_oracle, temporal_payload)
 from deskpet.quality.corpus_fixture_delivery import CONFIG_HASH
 from deskpet.quality.corpus_setup_jobs import FixtureSetupExecutor, SetupFixtureDeliveryAuthority
 from deskpet.task_scope.protocol import canonical_hash
@@ -153,7 +154,11 @@ async def open_c04_fixture(*, path, memory_path, principal, authority_ref, batch
                     and r.authority.intent.target_revision == 2
                     and r.authority.intent.transition_to.value == 'rescheduled' for r in accepted):
                 raise ValueError('c04_new_rescheduled_registration_not_acked')
+        # F-C04-1: the precision expectation leaves the fixture here, on the
+        # scoring side of the run, instead of inside the memory text the model
+        # reads. The caller writes it into the post-run setup receipt only.
         yield manager, dict(batch=batch, clock=clock, labels=labels, graph=graph,
+            precision_oracle=precision_oracle(batch),
             source_pair=(source, proof), ingestion_receipt=ingestion,
             application=application, request=repository.request, plan=executor.executed_plan,
             fixture_executions=executor.executions, signals='not_requested',

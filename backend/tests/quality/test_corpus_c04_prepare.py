@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 
 import pytest
 import simple_harness_memory as m
-from deskpet.quality.corpus_c04 import SETUPS, SCENARIO_CLOCKS, compile_c04_setup, temporal_payload
+from deskpet.quality.corpus_c04 import (SETUPS, SCENARIO_CLOCKS, SCORING_METADATA_MARKERS,
+    compile_c04_setup, temporal_payload)
 from deskpet.quality.corpus_c04_prepare import open_c04_fixture
 from deskpet.memory.conversation_registration import PrimaryConversationAuthority
 from tests.memory.test_primary_read_api import setup, AUTH
@@ -82,6 +83,12 @@ async def test_c04_actual_public_time_setup(tmp_path, monkeypatch, case_id):
             # Actual ACKed invalidation prevents the old schedule grant; new
             # schedule is later. No fabricated TIME_DUE or external success.
             assert await time_source.prepare_due(now=old_due, limit=10) == ()
+        # F-C04-1: the precision annotation used to be asserted *inside* these
+        # payloads. It is scoring metadata for the very thing C04 measures, so
+        # what is pinned now is that no readback carries it and that the
+        # scoring side still holds the expectation.
         for spec in batch.specs:
-            if spec[5] not in {'minute', 'event'}:
-                assert '非原文事实或评分答案' in str(temporal_payload(batch, spec).to_json())
+            rendered = str(temporal_payload(batch, spec).to_json())
+            for marker in SCORING_METADATA_MARKERS:
+                assert marker.lower() not in rendered.lower(), (spec, marker)
+            assert actual['precision_oracle'][spec[0]]['precision'] == spec[5]

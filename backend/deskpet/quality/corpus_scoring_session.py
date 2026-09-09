@@ -407,7 +407,10 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                     ("source_pair", "labels", "setup_hash", "outcome", "fixture_executions",
                      "manifest_hash", "plan", "ingestion_receipt", "application", "request",
                      "source_limits", "lifecycle", "graph_before", "graph_after",
-                     "classification", "fixture_defaults")
+                     # C04 precision expectations (F-C04-1): scoring-side record
+                     # of what each synthetic anchor stands for, written after
+                     # the worker exits; never a model input.
+                     "classification", "fixture_defaults", "precision_oracle")
                     if name in seed})
                 if case_id.startswith("C07-"):
                     outcome["setup_receipt"].update(wire({name: seed[name] for name in
