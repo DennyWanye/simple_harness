@@ -273,3 +273,64 @@ Host = main **`c4605f39`**（代码与 `c9384422` 逐字相同）。本工作树
 - 20/20 rc 0；required 40/40 = 100%；多提类型 **6/46 = 13.0%**（上轮 12/52 = 23.1%；R5 让 14 例只提 `[episode, prospective]`，6 例仍多提 `semantic`——R5 是模型可见条款 + Host 观察码，不是硬门）。
 - 累计（77 例 + 本轮 20 例）：多提 (26+6)/(228+46) = **32/274 = 11.7% ✅**；required 100% ✅；隐私待复核。
 - 终态复核（精度答案是否仍泄露、日期精度是否真实测得、R5 12→6 的剩余形态）由子代理进行，另记。
+
+### 追加：C04 第二次重跑的终态复核结果（复核记录 `RUN-C04-RERUN-2-REVIEW.md`）
+
+- **gold 口径：PASS 20 / FAIL 0 / INCONCLUSIVE 0**；
+  **日期精度口径（本轮首次可计量）：PASS 17 / FAIL 3**（C04-10 / C04-14 / C04-17）。
+  主代理逐例读库 + 读 trace，未起子代理；DB 一律连 `-wal`/`-shm` 整套拷贝后只读打开。
+- **批中 HEAD 变动不影响本轮**：09:12–09:21 之间 HEAD 动过三次，改的全是
+  `scripts/native/a6_verify.py` / native 测试 / 文档 / plans，**`backend/deskpet/**` 一字未动**。
+- 注册形态 20/20 正确：`user_version=55`，游标全部落 `prospective_outbox_cursor_v52`（C04-12/17 各 3 行），
+  封存表 0 行，`s5c_cursor_successor_required` / `IntegrityError` / `ProspectiveSetupNotReady` 全批零命中；
+  HM 侧 24 条登记事件、state 侧 48 行 `prepared`→`applied` 成对落地。
+- 生命周期两例与上一轮**逐 hash 一致**：C04-12 rescheduled（`…7be9d7` 作废 → `…dd48b6` 新登记，
+  `lifecycle_state=rescheduled`）、C04-17 cancelled（旧出发提醒作废，rev2 未再登记）。
+- 负向要求 20/20 满足：`prospective_records` 23 行 = 种子数，trigger/timer/occurrence 三表全 0，
+  `route_effects` **每例恰好 1 条 `context_route`**（上一轮的 2 例路由噪声归零）。
+- `trigger_local` 独立复算 **18/18 逐字一致**（含 Europe/London BST 与跨年 2027-01-02 周六），
+  2 条 event trigger 为 `None`；该历史缺陷在 0.6.37 上二次确认未复发。
+- **隐私：0 违规**。C04 **无** `privacy_allowed=false`、**无** `no_recall=true` 用例（机械确认，与此前一致）；
+  20 例片段 `privacy_class` 全 `personal`，无第三方披露。
+
+**F-C04-1 裁定：关闭。** 对 20 例的全部模型可见文本（provider `request_json.messages` + 12 个工具 schema、
+`response_json`、transcript assistant 轮）扫 `精度/夹具/锚点/评分/原时间` 及
+`原文/gold/oracle/fixture/synthetic/precision/scoring` 共 11 个词——**输入、输出、终答三面一律 0 命中**
+（上一轮是 11/20 例复述给用户）。全树残留仅在
+`execution.json:.setup_receipt.precision_oracle.*.note` 及其在 `review-packet.json` 的副本、
+`config.toml` 注释、gold 原文表——**均非模型可见**。
+日期精度**首次被真正计量**：17/20 例守住原文精度（`week` 只说周、`month` 只说月、`night` 只说夜间），
+3 例越界且**三例的越界都来自 episode 片段里那个精确到分钟的 `occurred_start`**。
+
+**F-ETR-7 裁定：关闭，残留转 F-ETR-8。** R5 实测把 C04 多提 12/52 = 23.1% → **6/46 = 13.0%**，
+required 100% 未受损。6 个残留例（C04-04/09/12/13/18/20）**全部**带 Host 咨询码
+`semantic_fallback_on_reminder_lifecycle_request`；把判据函数 `indicates_reminder_lifecycle_request`
+直接跑在本轮 20 条模型 `query` 与 20 条用户原话上，**均 20/20 命中**
+→ **残留不是 R5 未覆盖的请求形态，而是措辞/自查缺口**：R5 是整段策略里唯一一条以否定动机
+（"never a **safety net**"）表述的规则，而 6 例里有 3 例把 `semantic` 排在首位/次位（不是追加在末尾），
+模型并不认为自己在兜底。跨两轮成员 churn（7 例消失、1 例新增、5 例交集）说明还有 ≥1 例量级的采样噪声。
+
+新增/更新缺陷（详见 `RUN-C04-RERUN-2-REVIEW.md` §八）：
+
+1. **F-EPI-1（中，首选）｜Host 渲染不对称**：prospective 片段由 Host 渲染 `trigger_local`，
+   episode 片段只有裸 epoch `occurred_start`、无本地化字段。实证后果：模型转述 Host 已渲染时刻的 18 条
+   **零错误**，而唯一一处自己拿 epoch 换算的 C04-10 **算错 2 天**（`2026-09-05T10:00` → 答成"2026-09-03 左右"）。
+   建议补一个与 `trigger_local` 对称、按原文精度渲染的字段（`undated` 省略）——同时消掉 F-C04-2。
+2. **F-C04-2（中）｜跑道**：episode 合成锚点仍以精确 `occurred_start` 进入模型可见片段，
+   `undated`/`month` 精度的记忆照样带一个确定到分钟的时间。在 F-EPI-1 落地前，
+   **不得声称"原文只有『上次』时模型能保持不确定"已验证**。
+3. **F-ETR-8（中）｜R5b**：把 R5 的否定动机句换成可判定的正向门
+   （`; if the request names no such standing value, omit it - what happened plus which reminder you set names none.`）；
+   实测 `context_route` schema **623 → 628 wire token**，上限 643 未动。收益是预测，须再跑一轮计量。
+4. **F-OBS-2（低）｜Memory SDK**：`prospective_records.scheduler_registration_ref` 恒为 NULL（23/23），
+   **0.6.37 上未修复，二次确认，保持开启**。
+5. **观察改写｜`NO_ACTIVE_GENERATION` 归因定位**：该码出现在 18/20 例，未出现的 C04-16/C04-18
+   恰是全批仅有的两例 `include_short_horizon=false`（18/18 对 2/2，无例外），
+   同期 `cognitive_vector_generation` 20/20 `activated=true`。→ 该码来自**短时程车道**，与类型化召回无关；
+   `DECISION-PROSPECTIVE-PROCEDURE-RECALL.md` §3.3 的"应归零"期待应改写为
+   "短时程无活跃代时是否应该降级"，不再当作未兑现的修复。
+
+**F-RERUN-2 关闭**：本轮即 Memory **0.6.37** 的计量（注册 20/20、`trigger_local` 18/18、无新增回归）。
+
+累计（复核后口径）：**多提 32/274 = 11.7% ✅（残留 6，全部 `semantic`、全部零命中）；
+required 176/176 = 100% ✅；隐私 0 ✅**。上一轮 C04 的 12/52 由本轮 6/46 **取代**（夹具已改，两者不同源，不可相加）。
