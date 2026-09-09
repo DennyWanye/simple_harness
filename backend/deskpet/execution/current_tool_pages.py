@@ -108,6 +108,10 @@ LEGACY_DESCRIPTOR_OFFSET_LIMIT = 8
 # 页起点清单的上界：前 N 个 + 最后一个。48 页的正文列 17 个数字约 100 B，
 # 远在 ``_MAX_HANDLER_PUBLIC_MESSAGE``（2048）之内。
 MAX_LISTED_OFFSETS = 16
+# 事件 AF-2：引用本身解析不了时，拒绝详情里最多列几条**本次请求真正可用**的页引用。
+# 3 条约 270 B（引用 = 21 B 前缀 + 64 位摘要 + ":0"），连同下一步文字仍远在
+# ``_MAX_HANDLER_PUBLIC_MESSAGE``（2048）之内，而且只出现在失败路径上。
+MAX_LISTED_REFERENCES = 3
 # 描述符里顺带印全量页起点的上界（页数 ≤ 此值时才印）。事件 AG 把页大小提到 4096
 # 之后，同样的「≤8 页」覆盖到 32 KB 的正文，offset 也从 4 位数变 5 位数，再叠上
 # ``text_stats`` 就把 descriptor 顶到 F-E3 的 150 token 上限之外。收到 4：按新页大小
@@ -747,6 +751,10 @@ async def _reject_bad_offset(*, db, stack, sdk_run_id, digest, content, offset, 
                   page_count=len(starts), content_bytes=len(content.encode("utf-8")),
                   valid_offsets=_listed_offsets(starts),
                   offsets_listed=len(_listed_offsets(starts)),
+                  # 事件 AF-2：把"有效范围"写死在详情里。``valid_offsets`` 是可执行
+                  # 的**子集**（页链上的起点），这一对才是受理口径的完整边界：任何
+                  # 落在码点边界上的 offset 都在 ``[0, content_bytes)`` 内被受理。
+                  valid_offset_range=[0, max(len(content.encode("utf-8")) - 1, 0)],
                   next_step="offset is a BYTE offset into the source body and must be one of "
                             "valid_offsets; retry context_page_in with retry_reference_id")
     next_offset = await _admitted_next_offset(db=db, stack=stack, sdk_run_id=sdk_run_id,
@@ -758,16 +766,82 @@ async def _reject_bad_offset(*, db, stack, sdk_run_id, digest, content, offset, 
     raise PrimaryContextPageUnavailable("primary_page_offset_invalid", detail)
 
 
+def _request_references(stack, sdk_run_id, page_effect):
+    """本次请求里**真正可用**的页引用：``digest -> reference_id``（第 0 页）。
+
+    只走拒绝路径。权威面与活路径完全相同——``read_primary_effect_page_facts`` 拿到
+    这次调用的父请求，``verify_request`` 把请求里的每一条摘要按公共审计/效果事实
+    逐字节重建一遍——所以列出来的每一条都是模型现在就能用的引用，不是从模型写的
+    请求文本里抄回去的。任何一步读不出权威事实就返回空清单：提示永远不得改变这
+    次调用的结果（与 ``_admitted_next_offset`` 同一条纪律）。
+    """
+    try:
+        _, _, _, parent_request = stack.read_primary_effect_page_facts(
+            sdk_run_id, page_effect.effect_id.value)
+        found = verify_request(stack, sdk_run_id, parent_request.messages)
+    except Exception:  # noqa: BLE001 — 提示永远不得改变这次调用的结果
+        return {}
+    return {digest: reference(descriptor) for digest, (descriptor, _) in found.items()}
+
+
+def _listed_references(available):
+    """可用引用清单的有界投影：**最新的** ``MAX_LISTED_REFERENCES`` 条，新的在前。
+
+    ``verify_request`` 按消息顺序重建，所以映射里最后一条就是本请求里最新那份被
+    分页的结果——模型十有八九要的正是它。清单因此从尾部取，而不是从头部。
+    """
+    return list(available.values())[-MAX_LISTED_REFERENCES:][::-1]
+
+
+def _unresolvable_reference_detail(ref, *, stack, sdk_run_id, page_effect):
+    """事件 AF-2：引用**根本解析不了**时的可执行下一步。
+
+    第 12 次 T17 的确切形态（证据 ``.local-test-evidence/2026-09-09/native-a6-run12/
+    primary-ui-z9j48osx/`` 的 ``execution-v6.sqlite3``，两次 ``context_page_in``）：
+    模型把摘要里的 ``reference_id`` 抄成
+    ``primary-effect-page:v1:<64 位摘要>``——**丢掉了 ":<offset>" 尾巴**。
+    ``split(":")`` 因此只解出一段，稳定码 ``primary_effect_page_reference`` 落地，
+    ``public_message`` 只有一句「Requested primary page is unavailable.」：模型既
+    不知道少了什么，也不知道该拿哪条引用重试，于是转去 tool_search 空转。
+
+    详情里只放**权威推导出的纯数据**（本请求可用的引用、可直接重试的完整引用），
+    绝不回显模型写的文本——与 ``PrimaryContextPageUnavailable.detail`` 的口径一致。
+    """
+    available = _request_references(stack, sdk_run_id, page_effect)
+    detail = dict(available_reference_ids=_listed_references(available),
+                  references_available=len(available))
+    digest = ref.removeprefix(PREFIX).split(":")[0] if ref.startswith(PREFIX) else None
+    if digest in available:
+        # 摘要认得这条来源，缺的只是 offset 尾巴——给一条可以直接复制去重试的引用。
+        detail["reason"] = "page_reference_missing_offset"
+        detail["retry_reference_id"] = available[digest]
+        detail["next_step"] = ('a reference_id ends with ":<byte offset>"; this one does not '
+                               "parse. Retry context_page_in with retry_reference_id")
+        return detail
+    detail["reason"] = "page_reference_unknown"
+    detail["next_step"] = ("reference_id must be copied verbatim (offset tail included) from a "
+                           "primary_settled_effect_v1 summary in THIS request; retry with one of "
+                           "available_reference_ids, or re-run the tool that produced the result")
+    return detail
+
+
 async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, arguments, page_bytes=None):
     _require(isinstance(arguments, Mapping) and set(arguments) == {"reference_id", "source_hash"}
              and all(isinstance(v, str) for v in arguments.values()), "arguments")
     ref = arguments["reference_id"]
+    # 事件 AF-2：稳定码 ``primary_effect_page_reference`` 一个字未改（两条旧分支
+    # ——``split``/``int`` 抛 ValueError 与 ``_require(..., "reference")``——本来就
+    # 产出同一个码），合并成一次抛出只是为了让它能带上 ``detail``。
     try:
         digest, raw_offset = ref.removeprefix(PREFIX).split(":")
         offset = int(raw_offset)
-    except ValueError as exc:
-        raise PrimaryContextPageUnavailable("primary_effect_page_reference") from exc
-    _require(ref.startswith(PREFIX) and str(offset) == raw_offset, "reference")
+        parsed = ref.startswith(PREFIX) and str(offset) == raw_offset
+    except ValueError:
+        parsed = False
+    if not parsed:
+        raise PrimaryContextPageUnavailable("primary_effect_page_reference",
+            _unresolvable_reference_detail(ref, stack=stack, sdk_run_id=sdk_run_id,
+                                           page_effect=page_effect))
     actual, _, _, parent_request = stack.read_primary_effect_page_facts(sdk_run_id, page_effect.effect_id.value)
     _require(actual == page_effect and actual.tool_name == "context_page_in", "caller_mismatch")
     found = verify_request(stack, sdk_run_id, parent_request.messages)
@@ -775,8 +849,14 @@ async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, argu
         # 事件 AF (c)：这不是"offset 不对"，是"这条引用在本次请求里根本不在了"
         # ——正文这轮走了原文、消息被裁掉、或者引用来自另一个 Run。给一个不同的
         # 稳定码和一条可执行的下一步，而不是让模型继续换 offset 重试。
+        # 事件 AF-2：同一条拒绝额外带上本请求**现在**可用的引用清单（前 3 条），
+        # 这样"换一步走"是可执行的，而不只是一句劝告。
+        # ``found`` 已经是权威重建的结果，直接投影，不再重跑一遍 ``verify_request``。
+        available = {d: reference(descriptor) for d, (descriptor, _) in found.items()}
         raise PrimaryContextPageUnavailable(REFERENCE_UNAVAILABLE_CODE, dict(
-            reason="reference_not_in_this_request",
+            reason="page_reference_stale",
+            available_reference_ids=_listed_references(available),
+            references_available=len(available),
             next_step="this reference is not available in this request; re-run the tool that "
                       "produced the result, or copy reference_id/source_hash from a "
                       "primary_settled_effect_v1 summary present in THIS request"))

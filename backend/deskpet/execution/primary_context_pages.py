@@ -222,10 +222,19 @@ async def admitted_page(*, db, stack, run, sdk_run_id, start, arguments, page_by
     try:
         digest, raw_offset = ref.removeprefix(PREFIX).split(":")
         offset = int(raw_offset)
-    except ValueError as exc:
-        raise PrimaryContextPageUnavailable("primary_page_reference_invalid") from exc
-    if not ref.startswith(PREFIX) or str(offset) != raw_offset or len(digest) != 64:
-        raise PrimaryContextPageUnavailable("primary_page_reference_invalid")
+        parsed = ref.startswith(PREFIX) and str(offset) == raw_offset and len(digest) == 64
+    except ValueError:
+        parsed = False
+    if not parsed:
+        # 事件 AF-2：历史页引用与当前 Run 页引用同一种手误（丢掉 ":<offset>" 尾巴、
+        # 或把召回片段 ref 当成页引用）。稳定码一个字未改；详情是**静态**的形状说明
+        # ——这里没有一份已重建好的请求投影可以据以列出"现在可用的引用"，重跑
+        # ``verify_history_projections`` 只为了做提示不值得（见备忘"残余风险"）。
+        raise PrimaryContextPageUnavailable("primary_page_reference_invalid", dict(
+            reason="page_reference_unknown",
+            next_step='a page reference_id is "' + PREFIX + '<64-hex>:<byte offset>"; copy it '
+                      "verbatim (offset tail included) from a page reference published in THIS "
+                      "request, and never pass a recall fragment ref such as recall-item:<id>:1"))
     metadata = start.get("input", {}).get("context_metadata", {})
     if metadata.get("root_run_id") != run["host_run_id"]:
         raise PrimaryContextPageUnavailable("primary_page_run_mismatch")
@@ -241,7 +250,13 @@ async def admitted_page(*, db, stack, run, sdk_run_id, start, arguments, page_by
             if canonical_hash(descriptor) == digest:
                 found.append((descriptor, source["content"]))
     if len(found) != 1:
-        raise PrimaryContextPageUnavailable("primary_page_not_admitted")
+        # 事件 AF-2：引用形态合法但这条来源在本次请求的历史投影里已经不在了
+        # （被裁掉、这轮走了原文，或引用来自另一个 Run）。换 offset 重试永远不会
+        # 成功，所以拒绝必须说出"换一步走"。
+        raise PrimaryContextPageUnavailable("primary_page_not_admitted", dict(
+            reason="page_reference_stale", sources_matching_reference=len(found),
+            next_step="this history page is not admitted in this request; re-run the tool that "
+                      "produced the result, or copy a reference_id published in THIS request"))
     descriptor, content = found[0]
     if arguments["source_hash"] != descriptor["content_hash"]:
         raise PrimaryContextPageUnavailable("primary_page_hash_mismatch")
