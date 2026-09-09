@@ -2475,6 +2475,51 @@ observed_hidden=14740 floor=27874 > 26752`，而同一条 Run 前 14 轮
   裁后装得下）；`test_wire_input_budget.py` 29 例一条没改、全绿。
   详见 [DECISION-Y-REASONING-ECHO](../plans/2026-09-08-hm-to-a6/DECISION-Y-REASONING-ECHO.md)。
 
+### 历史组消失的两条通路：A6-4 后缀单调只管裁剪（2026-09-09，事件 AB / A6-SUFFIX-MONOTONIC）
+
+生产事实（**装配侧一行未改**，改的是判据）：一个 `historical_causal_group` 进不了下一次
+请求，有两条互不相干的通路，只有第一条归 A6-4 管。
+
+- **裁剪** —— 上限/预算压力下丢整组，三处实现**全部只从头部丢**：
+  `execution/primary_context.py::prepare` 的 `complete.pop(0)`、
+  `sdk_adapters/context_partitions.py::trim_causal_groups`/`assemble` 的 `kept.pop(candidates[0])`、
+  `sdk_adapters/context_authority.py` 降级第二步的 `groups.pop(remaining[0])`。
+- **披露撤销** —— `execution/primary_history.py::PrimaryHistoryStore.read` 末尾的
+  `policy.check_evidence_ids`（`memory/primary_visibility.py`）对该组终态证据的
+  `visibility_dependencies` 做**传递**判定，任一依赖不可见则整组撤下，
+  `prepare` 根本收不到它。纠正（supersede）／争议／遗忘因此可以从序列的**任意位置**
+  拿走一组——这正是 A6-7 / A6-8 / A6-10 要求的行为，不是「裁剪破坏因果链」。
+
+第 10 次原生跑（`native-a6-run10`，Host `43a8f835`）的两对「违例」全属第二条通路：
+seq 19「更正一下：校对脚本我现在统一用 Python 3.13，不是 3.12」跑完后，seq 20 的请求丢掉
+`46f2e6ae…`（seq 15，`recall` 依赖 3 条）；seq 21 之后 seq 22 丢掉 `304ae965…`
+（seq 20，`recall` 3 条 + `procedure_draft` 1 条）。全程留着的 `961ed286…`（seq 13）是三组里
+**唯一 `recall` 为空**的那一组。四次请求的回执 `trimmed_groups` / `groups_trimmed_for_budget`
+**都是 0**，`budget_headroom` 还有 14 739 / 17 589 / 14 136 / 17 655——**没有裁剪压力，也没有裁剪**；
+全跑 90 条回执里真裁过组的只有两条 FAILED Run（`6ad6a40a2b48…`、`ba0ebb83534f…`）。
+
+- **判据修正**（`scripts/native/a6_verify.py`）：`item_a6_4` 只对「排在某个幸存组之后却消失」的组
+  记违例，且必须同时排除撤销才放行——① 该次请求的回执明确说 `trimmed_groups == 0`
+  （**裁过就必须守后缀**，哪怕消失的组带 recall 依赖），② 消失的那组确实有可撤销的披露依赖
+  （`recall`/`short_horizon`/`procedure_drafts` 任一非空）。新增两个取数口
+  `Evidence.receipt_group_trims_by_fingerprint()`（按 `expected_request_fingerprint` ↔
+  `request_fingerprint` 配对，第 10 次 **89/89 全配上**；表缺失或该指纹无回执一律返回 `None`，
+  **「不知道」不等于「知道是 0」**，不放行）与 `Evidence.revocable_history_sources()`。
+- **报告可复核**：`numbers` 新增 `budget_trim_transitions`、`disclosure_withdrawn_groups`、
+  `disclosure_withdrawal_sample`、`suffix_violation_sample`（各留 4 条，含两侧 Run、两侧组序列、
+  乱序消失的组、该次请求的 `trimmed_groups`）——凭什么放行写在报告里。
+- **控制**：新增 `backend/tests/native/test_a6_verify_a6_4.py` **5 例**，在基线 `255f3aad` 上全红、
+  本分支全绿；三条负例守住牙齿（真裁过而乱序、消失的组无撤销通路、回执无从归因，一律 FAIL）。
+  七份真机证据（run6–run10b）用新判据复算无一回归，run10 由 **FAIL 转 PASS**；
+  `--selftest` 18 项可执行；`backend/tests/native/` + `tests/execution/test_control_result_bound.py`
+  + `test_descriptor_cost_bound.py` 单进程 **81 passed**。
+- **followup**：F-AB-1 把「本次 `PrimaryHistoryStore.read` 交出的可见组列表」也落进
+  `run_context_snapshot_receipts.source_revisions`（今天只落了 `history_sources` 这个结果），
+  A6-4 便可回到「同一次请求内保留的组是可见组的后缀」这一贴合 `prepare` 契约的判据，
+  不再依赖启发式；F-AB-2 随之撤掉「有无 recall 依赖」这个撤销通路代理（纯 `evidence` 依赖
+  被遗忘时它偏严，方向 fail closed，可接受）。
+  详见 [DECISION-AB-SUFFIX-MONOTONIC](../plans/2026-09-08-hm-to-a6/DECISION-AB-SUFFIX-MONOTONIC.md)。
+
 ## 2026-09-09 `task_scope_update` 可引用证据披露（HM-TO-A6 事件 U）
 
 最后更新：2026-09-09。`task_scope_update_refs_outside_scope` 从「只回显违规 ref」改为

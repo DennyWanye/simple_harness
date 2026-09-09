@@ -830,6 +830,74 @@ class Evidence:
                 out[key] = int(planned)
         return out
 
+    def receipt_group_trims_by_fingerprint(self) -> dict[tuple[str, str], int] | None:
+        """(sdk_run_id, expected_request_fingerprint) -> 这次请求丢掉的**整组**数。
+
+        事件 AB(2026-09-09): A6-4 的后缀单调只管**裁剪**这一条通路。要把它和
+        「披露撤销」分开, 就得知道某一次请求到底有没有裁过组 —— 这个数只有
+        Host 自己的回执有(`source_revisions.trimmed_groups` = planner 上限丢组
+        + 预算丢组, `groups_trimmed_for_budget` 是其中的预算那半)。取两者较大
+        者(fail closed 方向: 只要哪一半说裁过, 就按裁过算)。
+
+        回执表本身缺失时返回 ``None`` —— 「不知道」和「知道是 0」必须区分开,
+        否则会把无从归因的消失一律当成合法撤销。
+        """
+        if not self.state.has(
+            "run_context_snapshot_receipts",
+            "sdk_run_id",
+            "expected_request_fingerprint",
+            "source_revisions_json",
+        ):
+            return None
+        out: dict[tuple[str, str], int] = {}
+        with contextlib.suppress(SchemaMissing):
+            for r in self.state.rows(
+                "select sdk_run_id, expected_request_fingerprint, source_revisions_json"
+                " from run_context_snapshot_receipts"
+            ):
+                blob = maybe_json(as_text(r["source_revisions_json"]))
+                if not isinstance(blob, dict):
+                    continue
+                inner = blob.get("source_revisions")
+                revisions = inner if isinstance(inner, dict) else blob
+                dropped = 0
+                for field in ("trimmed_groups", "groups_trimmed_for_budget"):
+                    value = revisions.get(field)
+                    if isinstance(value, int):
+                        dropped = max(dropped, int(value))
+                key = (as_text(r["sdk_run_id"]), as_text(r["expected_request_fingerprint"]))
+                out[key] = max(out.get(key, 0), dropped)
+        return out
+
+    def revocable_history_sources(self) -> dict[str, bool]:
+        """history 组的 source_ref -> 它的披露是否**可被撤销**。
+
+        一个历史组进不了下一次请求, 除了被裁, 还有一条完全不同的通路:
+        `PrimaryHistoryStore.read` 里的 `check_evidence_ids` 判它不可见, 组装器
+        根本没见过它。会让这件事发生的, 是该组终态证据自己声明的
+        `visibility_dependencies` 里那些**会被遗忘/纠正(supersede)/争议**改写的
+        依赖 —— recall 绑定、short_horizon、procedure_draft。只带 evidence 依赖
+        (recall 为空)的组没有这条通路, 它要是从中间消失就只能是裁剪。
+        """
+        out: dict[str, bool] = {}
+        if not self.state.has("human_memory_evidence", "evidence_id", "payload_json"):
+            return out
+        with contextlib.suppress(SchemaMissing):
+            for r in self.state.rows(
+                "select evidence_id, payload_json from human_memory_evidence"
+            ):
+                payload = maybe_json(as_text(r["payload_json"]))
+                if not isinstance(payload, dict):
+                    continue
+                deps = payload.get("visibility_dependencies")
+                if not isinstance(deps, dict):
+                    continue
+                out[as_text(r["evidence_id"])] = any(
+                    bool(deps.get(field))
+                    for field in ("recall", "short_horizon", "procedure_drafts")
+                )
+        return out
+
     def provider_billed_stats(self, effective: int, window: int) -> dict[str, Any]:
         """provider 真实计费的输入 token 与 Host 估算的逐条对照(事件 W)。
 
@@ -1390,7 +1458,7 @@ def item_a6_4(ev: Evidence, budget: dict[str, Any]) -> Item:
     orphan_top_level = 0
     orphan_in_group = 0
     parsed = 0
-    seq_by_run: dict[str, list[tuple[float, list[str]]]] = {}
+    seq_by_run: dict[str, list[tuple[float, str, str, list[str]]]] = {}
     for inv in ev.invocations():
         if not inv.request:
             continue
@@ -1400,7 +1468,8 @@ def item_a6_4(ev: Evidence, budget: dict[str, Any]) -> Item:
         if len(groups) > groups_max:
             over_group_requests += 1
         seq_by_run.setdefault(inv.run_id, []).append(
-            (inv.claimed_at, [g.source_ref for g in groups])
+            (inv.claimed_at, inv.run_id, inv.request_fingerprint,
+             [g.source_ref for g in groups])
         )
         # 组内: tool 消息之前必须有同组的 assistant
         for g in groups:
@@ -1419,20 +1488,73 @@ def item_a6_4(ev: Evidence, budget: dict[str, Any]) -> Item:
             elif role == "tool" and not seen_assistant:
                 orphan_top_level += 1
 
-    # 后缀单调: 相邻两次请求里, 存活的旧 source_ref 必须是上一次序列的连续后缀
+    # 后缀单调: 相邻两次请求里, 被**裁剪**掉的旧组必须是最老的那几组。
+    #
+    # 2026-09-09 事件 AB(plans/2026-09-08-hm-to-a6/DECISION-AB-SUFFIX-MONOTONIC.md):
+    # 一个历史组从下一次请求里消失, 有两条互不相干的通路 ——
+    #   1) **裁剪**: 上限/预算压力下丢整组。三处实现全部只从头部丢
+    #      (`primary_context.prepare` 的 `complete.pop(0)`、
+    #       `context_partitions.trim_causal_groups` 的 `candidates[0]`、
+    #       `context_authority` 降级第二步的 `groups.pop(remaining[0])`),
+    #      所以「存活的旧组是上一次的连续后缀」正是本项要守的判据;
+    #   2) **披露撤销**: 遗忘 / 纠正(supersede) / 争议让该组终态证据的
+    #      `visibility_dependencies` 不再可见, `PrimaryHistoryStore.read` 直接
+    #      不把它交出来, 组装器根本没有机会「裁」它。这条通路可以从任意位置
+    #      拿走一组, 而且**正是** A6-7/A6-8/A6-10 要求的行为。
+    # 旧判据把两条通路混成一条, 于是把合法的撤销读成「裁剪破坏了因果链」。
+    # 现在只有在能排除撤销时才记违例, 排除的两个条件都取自证据本身:
+    #   * 这次请求的回执说它确实裁过组(`trimmed_groups`>0) —— 裁过就必须守后缀;
+    #   * 或者消失的那一组根本没有可撤销的披露依赖(recall/short_horizon/
+    #     procedure_draft 全空) —— 没有撤销通路, 消失只能是裁剪。
+    # 回执表缺失时按「不知道」处理, 只剩第二个条件, 方向仍然是 fail closed。
+    trims = ev.receipt_group_trims_by_fingerprint()
+    revocable = ev.revocable_history_sources()
     suffix_violations = 0
     trims_observed = 0
+    budget_trim_transitions = 0
+    withdrawn_groups = 0
+    violation_samples: list[dict[str, Any]] = []
+    withdrawal_samples: list[dict[str, Any]] = []
     ordered = sorted(
         (t for seqs in seq_by_run.values() for t in seqs), key=lambda x: x[0]
     )
-    for (_, prev), (_, cur) in zip(ordered, ordered[1:]):
+    for (_, prev_run, _, prev), (_, cur_run, cur_fp, cur) in zip(ordered, ordered[1:]):
         if not prev:
             continue
-        survivors = [r for r in prev if r in set(cur)]
-        if len(survivors) < len(prev):
-            trims_observed += 1
-            if prev[len(prev) - len(survivors):] != survivors:
-                suffix_violations += 1
+        cur_set = set(cur)
+        survivors = [r for r in prev if r in cur_set]
+        if len(survivors) == len(prev):
+            continue
+        trims_observed += 1
+        # None = 这次请求没有可归因的回执(表缺失或指纹配不上) —— 「不知道」不是
+        # 「知道是 0」, 不知道就不放行。
+        trimmed_here = None if trims is None else trims.get((cur_run, cur_fp))
+        if trimmed_here:
+            budget_trim_transitions += 1
+        if prev[len(prev) - len(survivors):] == survivors:
+            continue
+        # 违反后缀的, 只是那些「排在某个幸存组之后却消失了」的组。
+        head = prev.index(survivors[0]) if survivors else len(prev)
+        offenders = [r for r in prev[head:] if r not in cur_set]
+        explained = [
+            r for r in offenders if trimmed_here == 0 and revocable.get(r, False)
+        ]
+        pair = {
+            "prev_run_id": prev_run,
+            "cur_run_id": cur_run,
+            "prev_groups": list(prev),
+            "cur_groups": list(cur),
+            "dropped_out_of_order": offenders,
+            "cur_request_trimmed_groups": trimmed_here,
+        }
+        if len(explained) == len(offenders):
+            withdrawn_groups += len(explained)
+            if len(withdrawal_samples) < 4:
+                withdrawal_samples.append(pair)
+            continue
+        suffix_violations += 1
+        if len(violation_samples) < 4:
+            violation_samples.append(pair)
 
     it.numbers = {
         "requests_parsed": parsed,
@@ -1442,17 +1564,28 @@ def item_a6_4(ev: Evidence, budget: dict[str, Any]) -> Item:
         "orphan_tool_messages_top_level": orphan_top_level,
         "orphan_tool_messages_in_group": orphan_in_group,
         "trim_transitions_observed": trims_observed,
+        "budget_trim_transitions": budget_trim_transitions,
+        "disclosure_withdrawn_groups": withdrawn_groups,
+        "disclosure_withdrawal_sample": withdrawal_samples,
         "suffix_monotonicity_violations": suffix_violations,
+        "suffix_violation_sample": violation_samples,
     }
     if parsed == 0:
         it.verdict = INCONCLUSIVE
         it.reason = "无可解析的 request_json, 无法检查因果链。"
         return it
+    withdrawal_note = (
+        f" 另有 {withdrawn_groups} 组是**披露撤销**(遗忘/纠正/争议改写了它的"
+        " visibility_dependencies, 该次请求回执 trimmed_groups=0), 不属于裁剪, 不计违例。"
+        if withdrawn_groups
+        else ""
+    )
     if orphan_top_level or orphan_in_group or over_group_requests or suffix_violations:
         it.verdict = FAIL
         it.reason = (
             f"孤立 tool 消息 顶层={orphan_top_level}/组内={orphan_in_group}; "
             f"组数超 {groups_max} 的请求={over_group_requests}; 后缀单调违例={suffix_violations}。"
+            + withdrawal_note
         )
         return it
     if trims_observed == 0:
@@ -1465,7 +1598,8 @@ def item_a6_4(ev: Evidence, budget: dict[str, Any]) -> Item:
     it.verdict = PASS
     it.reason = (
         f"{parsed} 次请求无孤立 tool 消息, 组数峰值 {max_groups} ≤ {groups_max}, "
-        f"{trims_observed} 次裁剪全部满足从头部丢组的后缀单调。"
+        f"{trims_observed} 次整组消失(其中 {budget_trim_transitions} 次该请求回执确实"
+        f"裁过组)全部满足从头部丢组的后缀单调。" + withdrawal_note
     )
     return it
 
