@@ -1401,8 +1401,18 @@ class ProductProviderAdapter:
                 output_tokens=int(response.usage.output_tokens or 0),
                 # 只有 reasoning 是下一轮 payload 量不到的那块; 正文与
                 # tool_calls.arguments 下一轮会原样回到 wire 里(事件 K),
-                # 再加一次就是重复计价。中转站不报时传 None → 退回 output。
+                # 再加一次就是重复计价。中转站不报时传 None。
                 reasoning_tokens=None if reasoning is None else int(reasoning),
+                # 事件 W-b: 「缺 reasoning_tokens」有两种成因 —— 中转站不报,
+                # 或这一轮压根没思考。这条元数据是 _parse_response 从原始
+                # message.reasoning_content 逐字抄下来的(_extract_public_
+                # progress / _retain_tool_calls_in_message 都原样带过),所以
+                # 它就是响应侧「到底有没有思考」的直接证据。
+                reasoning_content_seen=bool(
+                    response.message.metadata.get(
+                        _PROVIDER_REASONING_CONTENT_METADATA_KEY
+                    )
+                ),
             )
         await self._capture_public_tool_narration(request, response)
         logger.info(

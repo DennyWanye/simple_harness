@@ -43,17 +43,23 @@ from simple_harness.contracts import CallId
 from simple_harness.contracts.messages import Message, MessageRole
 
 from deskpet.sdk_adapters.context_partitions import (
+    NON_CJK_CHARS_PER_TOKEN,
     WIRE_TOOL_SPEC_OVERHEAD_TOKENS,
     text_tokens,
 )
 from deskpet.sdk_adapters.tool_call_arguments import ToolCallArgumentsMemo
 from deskpet.sdk_adapters.wire_input_budget import (
+    CARRY_BASIS_NO_OBSERVATION,
+    CARRY_BASIS_NO_REASONING,
+    CARRY_BASIS_OUTPUT_FALLBACK,
+    CARRY_BASIS_REASONING_TOKENS,
     ObservedInputCarryLedger,
     ObservedProviderTurn,
     WireInputBudgetExceeded,
     check_wire_input_budget,
     provider_turn_ordinal,
     run_key,
+    thinking_disabled,
     wire_message_tokens,
     wire_request_tokens,
 )
@@ -254,6 +260,8 @@ def test_without_an_observation_the_gate_is_exactly_the_wire_estimate() -> None:
     assert facts["observed_carry_tokens"] == 0
     assert facts["measured_input_floor"] == facts["wire_input_tokens"] == 1000
     assert facts["effective_input_budget"] == EFFECTIVE
+    # 一档都没走过 —— 回执要说得出这一点(事件 W-b)。
+    assert facts["carry_basis"] == CARRY_BASIS_NO_OBSERVATION
 
 
 def test_the_measured_carry_fails_the_request_closed_before_it_is_sent() -> None:
@@ -302,14 +310,207 @@ def test_the_carry_charges_the_relayed_reasoning_not_the_whole_output() -> None:
         wire_tokens=10_000, input_tokens=21_000, output_tokens=6_000, reasoning_tokens=800
     )
     assert turn.hidden_tokens == 11_000
+    assert turn.carry_basis == CARRY_BASIS_REASONING_TOKENS
     assert turn.new_mass_tokens == 800
     assert turn.carry_tokens == 11_800
-    # 中转站不报 reasoning_tokens 时才退回 output(保守方向, 宁可多算)。
+    # 事件 W-b: 「缺计数」只有在**确实有思考文本**时才退回 output(保守方向,
+    # 宁可多算)—— 那才是「中转站不报」。
     silent = ObservedProviderTurn(
-        wire_tokens=10_000, input_tokens=21_000, output_tokens=6_000, reasoning_tokens=None
+        wire_tokens=10_000,
+        input_tokens=21_000,
+        output_tokens=6_000,
+        reasoning_tokens=None,
+        reasoning_content_seen=True,
     )
+    assert silent.carry_basis == CARRY_BASIS_OUTPUT_FALLBACK
     assert silent.new_mass_tokens == 6_000
     assert silent.carry_tokens == 17_000
+
+
+# ── 事件 W-b: 「缺 reasoning_tokens」到底是哪一档 ─────────────────────────────
+#
+# 第 10 次尝试 10 的第 17 轮: reasoning_mode="fast" → thinking={"type":"disabled"},
+# 关掉思考的那一轮 usage 里当然没有 reasoning_tokens。事件 W 的兜底把它当成
+# 「中转站不报」, 退回 output_tokens=4860 —— 而那 4860 个 token 是上一轮
+# tool_calls.arguments 里回灌的 18 KB 目标文本, **这一轮已经在 wire 里**。
+# floor=26857 越过 effective=26752, 超出 105, 一个装得下的请求被终局打死。
+#
+# 下面三条共用同一组数字, 只有「这一轮到底有没有思考」的证据不同。
+
+WB_RUN = "product-sdk-93683c34"
+WB_PREVIOUS_WIRE = 12_874
+WB_PREVIOUS_INPUT = 12_360
+WB_PREVIOUS_OUTPUT = 4_860
+WB_WIRE = 21_997
+WB_OLD_FLOOR = 26_857
+WB_THINKING_DISABLED = {"thinking": {"type": "disabled"}}
+
+
+def _wb_payload(tokens: int, *, thinking: dict | None = None) -> dict:
+    """恰好 ``tokens`` 个 token 的 payload(可带 thinking 开关)。"""
+
+    payload = _payload(
+        [{"role": "user", "content": _text(0, int(tokens) * NON_CJK_CHARS_PER_TOKEN)}]
+    )
+    if thinking is not None:
+        payload.update(thinking)
+    assert wire_request_tokens(payload) == int(tokens)
+    return payload
+
+
+def _wb_ledger(
+    *,
+    thinking: dict | None,
+    reasoning_tokens: int | None,
+    reasoning_content_seen: bool,
+) -> ObservedInputCarryLedger:
+    """按**生产路径**灌进第 17 轮那条 Run 的第 1 次调用。
+
+    走的是 ``check_wire_input_budget``(它才是 ``record_wire`` 的调用方), 所以
+    「payload 上的 thinking 开关有没有被记下来」也在判据的覆盖面里 —— 直接塞
+    dataclass 会把这条接线跳过去。
+    """
+
+    ledger = ObservedInputCarryLedger()
+    previous = f"{WB_RUN}:provider-turn:1"
+    check_wire_input_budget(
+        request_id=previous,
+        payload=_wb_payload(WB_PREVIOUS_WIRE, thinking=thinking),
+        window_tokens=WINDOW,
+        ledger=ledger,
+    )
+    ledger.observe_usage(
+        previous,
+        input_tokens=WB_PREVIOUS_INPUT,
+        output_tokens=WB_PREVIOUS_OUTPUT,
+        reasoning_tokens=reasoning_tokens,
+        reasoning_content_seen=reasoning_content_seen,
+    )
+    return ledger
+
+
+def test_the_thinking_switch_is_read_off_the_payload_that_will_be_sent() -> None:
+    """判据来自**将要发出的那份 payload**, 不是会话的 model_params。
+
+    落库的 canonical ``request_json`` 里没有 ``thinking`` 字段(第 10 次的
+    ``provider_invocations`` 逐条查过), 所以只有 wire payload 看得见它。
+    """
+
+    assert thinking_disabled({"thinking": {"type": "disabled"}}) is True
+    assert thinking_disabled({"thinking": {"type": "DISABLED"}}) is True
+    assert thinking_disabled({"thinking": {"type": "enabled"}}) is False
+    # kimi 系的 fast 只是降 effort, 思考照做 —— 不能当成「没有思考」。
+    assert thinking_disabled({"reasoning_effort": "low"}) is False
+    assert thinking_disabled({}) is False
+    assert thinking_disabled({"thinking": "disabled"}) is False
+
+
+def test_a_turn_with_thinking_disabled_never_pays_for_the_echoed_arguments() -> None:
+    """事故形态: 关了思考 + 没有回传文本 → carry 只剩 hidden, 请求发得出去。"""
+
+    ledger = _wb_ledger(
+        thinking=WB_THINKING_DISABLED,
+        reasoning_tokens=None,
+        reasoning_content_seen=False,
+    )
+    observed = ledger.last(f"{WB_RUN}:provider-turn:2", model=MODEL)
+    assert observed is not None
+    assert observed.reasoning_disabled is True
+    assert observed.carry_basis == CARRY_BASIS_NO_REASONING
+    # hidden = 计费 12360 − 已记账的 wire 12874 → 0(计费比 wire 还低)。
+    assert observed.hidden_tokens == 0
+    assert observed.new_mass_tokens == 0
+
+    facts = check_wire_input_budget(
+        request_id=f"{WB_RUN}:provider-turn:2",
+        payload=_wb_payload(WB_WIRE, thinking=WB_THINKING_DISABLED),
+        window_tokens=WINDOW,
+        ledger=ledger,
+    )
+    assert facts["carry_basis"] == CARRY_BASIS_NO_REASONING
+    assert facts["observed_carry_tokens"] == 0
+    assert facts["measured_input_floor"] == WB_WIRE
+    assert facts["measured_input_floor"] <= facts["effective_input_budget"] == EFFECTIVE
+    # 事件 W 的兜底会把它打死: 这就是那 105 个 token 的回归判据。
+    assert WB_WIRE + WB_PREVIOUS_OUTPUT == WB_OLD_FLOOR > EFFECTIVE
+
+
+def test_a_thinking_enabled_turn_still_charges_the_measured_reasoning() -> None:
+    """同一组数字, 但 usage 给了计数: 一切照事件 W, 该拦还是拦。"""
+
+    ledger = _wb_ledger(
+        thinking=None,
+        reasoning_tokens=WB_PREVIOUS_OUTPUT,
+        reasoning_content_seen=True,
+    )
+    observed = ledger.last(f"{WB_RUN}:provider-turn:2", model=MODEL)
+    assert observed is not None
+    assert observed.reasoning_disabled is False
+    assert observed.carry_basis == CARRY_BASIS_REASONING_TOKENS
+    assert observed.new_mass_tokens == WB_PREVIOUS_OUTPUT
+
+    with pytest.raises(WireInputBudgetExceeded) as raised:
+        check_wire_input_budget(
+            request_id=f"{WB_RUN}:provider-turn:2",
+            payload=_wb_payload(WB_WIRE),
+            window_tokens=WINDOW,
+            ledger=ledger,
+        )
+    assert raised.value.diagnostics["carry_basis"] == CARRY_BASIS_REASONING_TOKENS
+    assert raised.value.diagnostics["measured_input_floor"] == WB_OLD_FLOOR
+
+
+def test_a_relay_that_hides_the_count_keeps_the_conservative_fallback() -> None:
+    """真正的「中转站不报」: 有思考文本、没有计数 → 仍然退回 output(宁可多算)。"""
+
+    ledger = _wb_ledger(
+        thinking=None,
+        reasoning_tokens=None,
+        reasoning_content_seen=True,
+    )
+    observed = ledger.last(f"{WB_RUN}:provider-turn:2", model=MODEL)
+    assert observed is not None
+    assert observed.carry_basis == CARRY_BASIS_OUTPUT_FALLBACK
+    assert observed.new_mass_tokens == WB_PREVIOUS_OUTPUT
+
+    with pytest.raises(WireInputBudgetExceeded) as raised:
+        check_wire_input_budget(
+            request_id=f"{WB_RUN}:provider-turn:2",
+            payload=_wb_payload(WB_WIRE),
+            window_tokens=WINDOW,
+            ledger=ledger,
+        )
+    assert raised.value.diagnostics["carry_basis"] == CARRY_BASIS_OUTPUT_FALLBACK
+    assert raised.value.diagnostics["measured_input_floor"] == WB_OLD_FLOOR
+
+
+def test_the_thinking_switch_alone_settles_the_branch_without_the_response() -> None:
+    """两条证据互相独立: 请求侧关了思考, 响应侧就算「看见过」也不算数。
+
+    真机上这两条不会同时出现(关了思考就没有 reasoning_content), 钉住的是
+    **优先级**: thinking 开关是请求侧的硬事实, 不该被响应侧的观测翻掉。
+    """
+
+    disabled = ObservedProviderTurn(
+        wire_tokens=WB_PREVIOUS_WIRE,
+        input_tokens=WB_PREVIOUS_INPUT,
+        output_tokens=WB_PREVIOUS_OUTPUT,
+        reasoning_tokens=None,
+        reasoning_content_seen=True,
+        reasoning_disabled=True,
+    )
+    assert disabled.carry_basis == CARRY_BASIS_NO_REASONING
+    assert disabled.carry_tokens == disabled.hidden_tokens == 0
+    # 反过来: usage 给了计数, 关不关思考都按计数走(实测永远赢)。
+    counted = ObservedProviderTurn(
+        wire_tokens=WB_PREVIOUS_WIRE,
+        input_tokens=WB_PREVIOUS_INPUT + 900,
+        output_tokens=WB_PREVIOUS_OUTPUT,
+        reasoning_tokens=7,
+        reasoning_disabled=True,
+    )
+    assert counted.carry_basis == CARRY_BASIS_REASONING_TOKENS
+    assert counted.new_mass_tokens == 7
 
 
 def test_a_history_trim_discounts_the_carry_instead_of_killing_the_request() -> None:
