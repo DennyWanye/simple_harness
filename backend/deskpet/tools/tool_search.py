@@ -43,9 +43,21 @@ _ACTIVATION_NEXT_ACTIONS: dict[str, str] = {
         "Call tool_describe again for this capability_id and copy the "
         "top-level schema_hash and describe_nonce exactly into tool_activate."
     ),
+    # Event AI: a describe_nonce is bound to the Run exposure revision, and a
+    # successful tool_activate bumps that revision — so every OTHER nonce held
+    # at the same time goes stale the moment one activation lands.  A model that
+    # describes three capabilities and then activates all three in one turn can
+    # only ever land the first, and the old text ("call tool_describe again")
+    # sent it straight back into the same batch, which is exactly the
+    # describe→activate loop event AI recorded.  Name the one-at-a-time rule.
     "catalog_describe_nonce_invalid": (
-        "The describe_nonce is stale or wrong. Call tool_describe again and "
-        "copy the top-level describe_nonce exactly into tool_activate."
+        "The describe_nonce is stale or wrong. Only one tool_activate can "
+        "succeed per turn: a successful activation invalidates every other "
+        "describe_nonce you are holding. Activate ONE capability_id at a "
+        "time — call tool_describe for it and copy the top-level "
+        "describe_nonce into a single tool_activate, then describe the next "
+        "one in a later turn. Capabilities you already activated stay "
+        "available; do not activate them again."
     ),
     "catalog_capability_not_found": (
         "Do not retry guessed capability ids. Call tool_search with a short "

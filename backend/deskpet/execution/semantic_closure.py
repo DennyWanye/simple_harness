@@ -17,7 +17,8 @@ Dirty state (design-freeze §2)
       ``effect_class=project_effect`` (outcome unknown at Run terminal) →
       material (Task 2 review F-2: the file may already be written)
     * ``harness.provider_invocation`` / ``harness.context_snapshot`` /
-      ``harness.route_decision`` / ``harness.run_terminal`` → trivial
+      ``harness.route_decision`` / ``harness.context_use_recollection`` /
+      ``harness.run_terminal`` → trivial
     * ``mutation.plan`` (the closure itself) → trivial
 
 Closure receipts (v46 ``task_scope_closure_receipts``)
@@ -67,6 +68,9 @@ TRIVIAL_EVENT_KINDS: frozenset[str] = frozenset(
         "harness.provider_invocation",
         "harness.context_snapshot",
         "harness.route_decision",
+        # Event AI: the bounded re-collection receipt re-binds a recall the
+        # model already holds; it changes no project state, so it is trivial.
+        "harness.context_use_recollection",
         "harness.run_terminal",
         "mutation.plan",
     }

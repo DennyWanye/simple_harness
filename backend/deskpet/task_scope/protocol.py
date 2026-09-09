@@ -38,9 +38,15 @@ _PLAN_KEYS = {
     "source_turn_id", "disclosure_context", "evidence_refs", "idempotency_key",
 }
 _OPERATION_KEYS = {"operation_id", "kind", "value", "evidence_refs", "reason_code"}
+# Mirror of ``deskpet.execution.evidence_ingress.RESERVATION_KINDS`` — the S4
+# canonical-archive evidence vocabulary.  A kind admitted by the reservation but
+# refused here would strand a reserved sequence forever, so the two sets are
+# pinned equal by ``tests/task_scope/test_protocol_evidence_kinds.py``.
+# ``context_use_recollection``: event AA's bounded re-collection receipt (event
+# AI added it here — it had shipped in the ledger but in neither vocabulary).
 _EXECUTION_KINDS = {
     "provider_invocation", "tool_invocation", "context_snapshot",
-    "route_decision", "run_terminal",
+    "route_decision", "context_use_recollection", "run_terminal",
 }
 _MUTATION_KINDS = {
     "goal.set", "goal.revise", "scope.include", "scope.exclude",
