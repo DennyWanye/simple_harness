@@ -36,3 +36,7 @@
 ## 事件 AA 结论（合入 `3fbdf021`）
 
 T18 的根因不是 epoch 推进，而是 Host 给召回权威设的 **60 s 租约**在 12 次调用的长轮里到期（超 4.96 s），SDK 四个 stale 判据里只有租约一条成立（7 个来源逐字节未变）。修复：快照期租约 <10 s 时同计划重收集，逐字节复核后重绑（`context_use_recollections`，域链 v56）；来源真变则 `recall_context_use_source_superseded` 失败关闭。SDK 侧 followup：租约到期应降为 `authority_lease_expired` 退化码而非硬 stale（与逐来源复验冗余）；Harness `MandatoryContextRejectionV1.reason` 枚举需扩到 superseded 才能变成模型可见的重路由。
+
+## 事件 Z 结论（合入 `b76a7bd9`）与新发现 F-Z1
+
+事件 Z 更正了我的前提：第 9 次 T6 并非靠 `workspace_prepare` 让 `read_file` 可用——`workspace_prepare` 只 mkdir。真因：模型在 Run 内才路由，`ProductForegroundToolPort.freeze` 在 Run 开始时看到 `task_scope_id is None`，投影只保留 projectless-safe 工具 + 项目效果工具（write/edit/run_shell/workspace_prepare），**把 read_file/glob/grep/list_directory 全部去掉**——第 9/10 次所有 Run 的能力快照都没有 read_file，A6-2 在结构上不可达（模型只能 `run_shell cat` 被 16 KiB 截断或循环搜索）。已合入：拒绝文案按 Run 事实给可执行下一步；预算见底注入一次 `context_budget_wrap_up` 收尾。**F-Z1**（读工具的调用期门：投影里露出读工具，调用时要求 Run 已绑定含该路径的工作区根，越界/未绑定失败关闭）已派子代理——它是 A6-2 的真正前置。
