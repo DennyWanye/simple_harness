@@ -2355,6 +2355,77 @@ tool_schemas / open_group / groups`），`str()` 仍为稳定码
   `test_token_estimator_calibration.py` 新增 13 例共 **54 绿**。
   详见 [DECISION-TOKEN-ESTIMATOR §Incident P](../plans/2026-09-08-hm-to-a6/DECISION-TOKEN-ESTIMATOR.md)。
 
+### 超窗请求静默发出：实测输入下界取代拟合倍率（2026-09-09，事件 W / F-BUDGET-BYPASS）
+
+生产事实：物理请求在**离开 Host 之前**多了一道**实测**闸门
+（`backend/deskpet/sdk_adapters/wire_input_budget.py`，在
+`_ProductOpenAICompatibleProvider._request_payload` 里、payload 成型之后调用）。
+越界即 fail closed，错误码 **`sdk_provider_wire_input_budget_exceeded`**（异常类
+`WireInputBudgetExceeded` 继承 SDK 的 `ProviderRequestRejectedError`——
+`_DEFINITE_PROVIDER_FAILURES` 之一，所以结算为确定失败而非未知交接——但**覆盖**了
+基类的 `provider_request_rejected`，于是 `dispatch` 把这个码写进
+`provider_invocations.error_code`，库里认得出是哪条 Run 的哪一次被拦）。
+
+- **为什么需要它**：HM-TO-A6 第 9 次（`deepseek-v4-flash`，窗口经全局
+  `model_overrides.toml` 钉在 32000 → `effective=26752`）里 **134 次调用有 37 次**
+  真实计费超预算、**24 次超过整个窗口**，峰值 **76 708 = 窗口的 2.40 倍**，
+  而装配期的 `sdk_context_budget_exceeded` **一次都没为它们触发**。
+  逐条复算（误差 ≤1.6%）：`provider_input ≈ wire + tool_schema
+  + Σ 前几轮 reasoning_tokens + Σ 前几轮 tool_call_arguments`。
+  后一项尤其要记住：那是 **Host 自己**在 `_wire_messages` 里补回的 assistant
+  `tool_calls.arguments`（事件 K 的 memo 修复），拼进 payload 的时刻在
+  **fingerprint 与预算检查之后**，所以它既不在 `request.messages` 里、
+  也不在落库的 `request_json` 里——任何基于文本的估算都不可能看见它。
+- **闸门口径**：`carry = max(0, 上一轮 input_tokens − 上一轮 wire) + 上一轮
+  reasoning_tokens`，再乘 `min(1, 本轮 wire ÷ 上一轮 wire)`；
+  `floor = 本轮装配好的 payload 的 wire token（含补回的 tool_calls）+ carry`。
+  两处口径都是「让它真的是**下界**」所必需的：上一轮的正文与
+  `tool_calls.arguments` 本轮**已经在 payload 里**（闸门量的就是补回 arguments 之后的
+  payload），再加一遍就是重复计价；而装配期一裁史，产生隐藏质量的那几轮 assistant
+  消息就连同它们的 reasoning 一起离开了 payload，账本里的 carry 已经过期——
+  payload 自己的收缩比是这道闸门唯一看得见的裁史信号（裁史事实落在**回执**里，
+  `ProviderRequest.metadata` 上没有：239 组真机配对全是 `{}`）。
+  这是**观测**不是估算：在合池 239 组（run9 134 + run8 87 + run6 18，逐条重放
+  `request_json` 复算）上触发 36 次、**36/36** 命中真实超预算、**0/197** 误伤，
+  真超**整个窗口**的 **24/24** 全拦下；漏判 6 条全部仍在 32000 物理窗口内。
+  评审前的口径（carry 加整个 output、不打折）触发 40 次，但有 **28/239** 组的
+  "floor" 反超真实计费（最多 +1769）——那就不是下界；改后只剩 6 组，其中 3 组是
+  ordinal 1（carry=0，超的是文本估算自身）。事故那条 Run 仍在 ordinal 4 被拦
+  （floor 28 196 对真实 33 200）。
+- **为什么不重拟 `deepseek-v4-flash` 的倍率**：同型号、同中转站、同 ordinal、同窗口上，
+  「判出真实超预算」与「不误伤真实装得下」对倍率的要求**没有交集**——
+  16 个可判 ordinal 里 **7 个严格无解**（ordinal 2 要求 ≥1.831 且 ≤1.685）。
+  隐藏质量是**可加、逐 Run** 的，不是成比例的。硬调到覆盖深轮次
+  （`min(2.00+0.35·ordinal, 6.90)`）确实能做到低估 0 / 42 条全判出，
+  代价是 197 条装得下的请求里 102 条被判超，并会**重新打死 Incident O 修好的那条 Run**。
+  所以 `llm/model_info.py` 的三元组**保持 `min(1.25+0.35·ordinal, 1.65)` 不变**，
+  只把证据与结论写进注释。边界改由实测守。
+- **已知边界**：这道闸门只 fail closed、不降级。要让 Incident O 的有序降级
+  （强制分页 → 裁史）也看见 carry，需要把它送进
+  `context_authority._plan_turn_messages`（F-E3 车道，补丁与红测见备忘 §5）；
+  届时收缩比这个代理信号可以换成真事实（F-W-5）。
+  账本是进程内的、键为 `(run_key, target.model)`，冷启动续聊的第一轮没有观测（F-W-3）；
+  不带 `:provider-turn:` 的 request_id 一律**没有** Run 归属（不再退化成整串当 Run）。
+  窗口优先取请求自己带的 `metadata.budget.context_window`，取不到才用型号窗口。
+- **A6-3 只判前台泳道**：`provider_billed_stats` / `sdk_provider_attempt_audit` /
+  估算侧计数都按 `foreground_run_heads.sdk_run_id` 过滤，其它泳道（工作流/后台/探针）
+  另有窗口与预算配置，单独记 `other_lane_*` 并在说明里给出，不参与判定；
+  认不出泳道的旧证据一律按前台算（fail closed）。闸门本身的可见证据有两路：
+  native.log 那一行，以及 `provider_invocations.error_code` 上的耐久结算
+  （被拦下的请求没有 usage，在计费统计里一个数都不会动）。
+- **A6-12 不变量**：`run_context_snapshot_receipts` 与 `provider_invocations`
+  的对应关系由「逐 Run 行数相等」改为**方向性**判据——每条调用恰好一条同 Run
+  同指纹回执；没有调用的回执只允许是该 Run 的**末条**且每 Run 至多一条
+  （「组装完但 Run 就此终止」，第 9 次的两条都死于回执之后的
+  `recall_context_use_authority_stale`）；中段孤儿一律 FAIL。
+  第 9 次据此由 INCONCLUSIVE 转 **PASS**。
+- 证据夹具 `backend/tests/fixtures/hm_to_a6_flash_pool_samples.json` 只落**原始观测**
+  （字符类计数 + 计费三元 + 同 Run 上一轮的观测），carry/floor 这类派生量一概不落——
+  群体判据全部由用例把观测灌进真账本、过真闸门复算出来。新增
+  `test_wire_input_budget.py` 29 例 + `test_a6_verify_budget_bypass.py` 12 例，
+  在基线 `34dbc82a` 上全红、本分支全绿。
+  详见 [DECISION-W-BUDGET-BYPASS](../plans/2026-09-08-hm-to-a6/DECISION-W-BUDGET-BYPASS.md)。
+
 ## 2026-09-09 `task_scope_update` 可引用证据披露（HM-TO-A6 事件 U）
 
 最后更新：2026-09-09。`task_scope_update_refs_outside_scope` 从「只回显违规 ref」改为
