@@ -327,6 +327,29 @@ claim, and077 artifact is unchanged. [Contract](../plans/2026-09-06-expiry-termi
 
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-09 MM-D1/MM-D2：Manual 授权策略权威 + 目录授权卡片可见性（run3 复盘）
+
+基线 `a0a869f4`，工作树 `.claude/worktrees/manual-auth`（分支 `worktree-manual-auth`，**未合回 main**），
+提交 `7cfdac7c`。来自 Manual 模式真人旅程 run3 的两条发现。
+
+- **MM-D1（驱动缺陷，非产品缺陷）**：授权策略唯一权威 = `workflow.db.authorization_policy_state`
+  （`CapabilityStore`）。`sdk-product-state.db` 里的同名表是 `product_state/schema.py`
+  复用 `CAPABILITY_SCHEMA_SQL` 建库时带出的 DDL 残留，生产从不写它。
+  `scripts/native/manual_driver.sh` 读错库导致 run3 全程记 `policy_mode=auto gen=0`；已改读
+  `workflow.db`，并在 `product_state/task_grants.py` 标注回落分支只服务夹具。
+- **MM-D2（产品缺陷，部分修复）**：Manual 下一次 `context_route` 绑定授权需要用户答**两张**
+  互不相交、TTL 各自独立的卡（底部「项目目录授权 / 允许本次绑定」写 `state.db`；SDK 弹窗
+  「允许一次」写 `sdk-product-state.db`）。run3 全程 `task_grants(user)=94` 而
+  `manual_decisions=0`、`binding_grants(manual)=0` —— 绑定卡一次都没被答成，T4 双 TTL 耗尽后 FAILED。
+  本次修可见性放大器：挑战签发与 allow/deny 决定各广播一次 content-free 的
+  `human_memory_changed`（此前无人广播，卡片又无轮询）。fail-closed 未放宽。
+  **未根治**：应答绑定卡不会重驱已失败的效应（需前台 Run 授权 wait-blocker，
+  该片代码本轮由 `worktree-mem-growth` 持有），留作 MM-D2-R。
+- 用例 `backend/tests/task_scope/test_manual_binding_display_seam.py` 5 例；
+  回归 `test_runtime_binding_authority.py`(5) + `test_task_grant_clock_seam.py`(7) +
+  `test_primary_workspace_binding_ui.py`(7)，共 24 例全绿。本轮**未启动原生应用**。
+  [裁定](../plans/2026-09-09-manual-mode-journey/DECISION-MM-D1-D2.md)。
+
 ## 2026-09-09 F-S1b：Procedure 关系端点扣留解除，A6-6 Procedure 形态端到端可达
 
 基线 `dbf967fc`，工作树 `.claude/worktrees/f-s1b`（分支 `worktree-f-s1b`，已 `git merge main` 到 `1e7043e9`，

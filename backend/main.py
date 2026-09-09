@@ -3084,6 +3084,7 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
         foreground=foreground,
         policy=policy,
         configured_workspace_root=configured_workspace_root,
+        display_invalidation=service_context.get("memory_display_invalidation"),
     )
     recovery = build_recovery_lifecycle_port(
         db_path=_state_db_path,
@@ -3363,6 +3364,11 @@ async def lifespan(app: FastAPI):
     from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
 
     memory_display_invalidation = MemoryDisplayInvalidation(_broadcast_control)
+    # MM-D2（2026-09-09）：Manual 目录授权卡片也要靠这条 content-free 失效广播刷新，
+    # 所以它必须在 service_context 里可被 _activate_human_memory_host_ports 取到。
+    service_context.register(
+        "memory_display_invalidation", memory_display_invalidation
+    )
     service_context.register(
         "human_memory_host_service_factory",
         (

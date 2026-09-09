@@ -223,6 +223,15 @@ class DurableTaskGrantAuthority:
             raise TaskGrantConflict("TaskGrant version or policy generation drifted")
 
     def _assert_current_policy(self, policy_generation: int) -> None:
+        # MM-D1（2026-09-09）：授权策略的唯一权威是 workflow.db 的
+        # ``authorization_policy_state``（CapabilityStore 持有；设置页的
+        # ``_set_authorization_auto_mode`` 只 CAS 它）。sdk-product-state.db 里
+        # 同名的表是 ``CAPABILITY_SCHEMA_SQL`` 被 ``_product_capability_schema``
+        # 复用建库时带出来的 DDL 残留，连同 ``INSERT OR IGNORE`` 的
+        # ``auto/0/factory_default`` 种子行，生产路径从不写它。
+        # 生产组装（backend/main.py 的 ProductAuthorizationAdapter）永远注入
+        # ``policy_generation_provider``，因此下面那条 SELECT 只是**测试/一致性
+        # 夹具**的兜底；任何真实读者都不得把这张表当作策略权威。
         if self._policy_generation_provider is not None:
             current = int(self._policy_generation_provider())
             if current != policy_generation:
