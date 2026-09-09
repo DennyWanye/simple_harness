@@ -32,3 +32,8 @@
 | **T7** | failed `binding_not_decided`（141 s） | MM-D3 生效：`task_scope_search` 命中 `is_active=true` 且活跃任务正是二号，`continue_active` 正确；模型随后用 `task_scope_update` 把「纳入工作范围」记成语义 scope 修订（revision 2），**从未调用 list_directory**——`tool_describe` 显示 `workspace_unscoped`（Run 开始冻结的投影没有读工具），而目录绑定提案（`propose_manual_binding`）只在文件工具调用触及未绑定路径时才会产生 → MM-5 被 **F-Z1** 阻塞（与 A6-2 同一前置） |
 
 结论：Manual 旅程 T7+ 等 F-Z1（读工具调用期门）合入后再跑；届时 T6 由循环点「拒绝」。
+
+## run6（17:00 起，Host 864aaad6+ 源码 + bundle 3f30a17b 含 MM-D4）
+
+- T3：**MM-D4 原生验证通过**——打开设置时复选框初始为 1（与后端 auto 一致），点一次即 `manual/gen 1/user_explicit`（此前需要两次）。
+- T4 起由自动应答循环推进（T6 点「拒绝」）；T7 看 F-Z1/Z1b/Z1c 后 list_directory 是否触发 root B 的绑定提案。
