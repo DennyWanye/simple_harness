@@ -8590,7 +8590,10 @@ async def _build_product_sdk_runtime_stack(
                 "exact expected_source_hash: a new active Scope receives an explicit "
                 "binding to the original single root under current policy. Without "
                 "reuse_workspace_of, create_new uses a separate new directory. Search hits never "
-                "authorize; only this tool commits a route."
+                "authorize; only this tool commits a route. When the user names a task that is not "
+                "the active one (a search hit with is_active=false), route resume_existing with its "
+                "exact task_scope_id: continue_active would bind this Run to the active task, and a "
+                "Run binds one scope and can never rebind."
             ),
             input_schema=CONTEXT_ROUTE_SCHEMA,
             handler=context_route_handler,
@@ -8613,6 +8616,9 @@ async def _build_product_sdk_runtime_stack(
                 "not need this tool at all: call "
                 "context_route(route=continue_active) directly. Do not repeat a "
                 "query that returned zero candidates. "
+                "Each hit carries is_active: only the is_active=true hit is what "
+                "continue_active would select; a task the user named that comes "
+                "back is_active=false must be routed with resume_existing. "
                 "For an active task, pass its exact task_scope_id to "
                 "context_route(route=resume_existing). For completed candidates, "
                 "use create_new with reuse_workspace_of "

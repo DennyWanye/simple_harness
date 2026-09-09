@@ -409,7 +409,16 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             raise ValueError("scope_search_candidates_missing")
         for item in candidates:
             package = item.get("scope_disclosure")
-            if not isinstance(package, Mapping) or item != {"task_scope_id":package["task_scope_id"], "source_id":package["source_id"], "source_hash":package["source_hash"], "scope_disclosure":package}:
+            # MM-D3: ``is_active`` is the Host's own route-ledger cursor, not
+            # scope content. It carries no disclosure and is deliberately NOT
+            # re-derived here — the active cursor moves independently of the
+            # package, so a later re-read is a different fact, not a check.
+            # Admit exactly one boolean annotation; every content field below
+            # stays an exact re-derivation of the verified package.
+            content = {key: value_ for key, value_ in item.items() if key != "is_active"}
+            if (not isinstance(package, Mapping)
+                    or not isinstance(item.get("is_active", False), bool)
+                    or content != {"task_scope_id":package["task_scope_id"], "source_id":package["source_id"], "source_hash":package["source_hash"], "scope_disclosure":package}):
                 raise ValueError("scope_search_candidate_unverified")
             scope_proof = await verify_scope_disclosure(db_path=host_path, package=package, subject=run["subject"], stack=stack)
             evidence.extend(scope_proof["evidence"])

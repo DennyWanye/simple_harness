@@ -12,3 +12,5 @@
 | **T7** | **failed `binding_not_decided`**（251 s，Run COMPLETED） | 模型先 `task_scope_search 二号任务` 却路由 `continue_active`（当前活跃任务是一号），再 `resume_existing` 二号被拒 `task_scope_conflict`（一个 Run 只能绑一个 scope），随后 `task_scope_update` 又被拒，最终向用户解释「本 Run 绑在一号任务」而未提出 root B 的绑定 → **MM-D3**：点名任务 ≠ 活跃任务时的路由选择与 `task_scope_conflict` 拒绝文案缺可执行下一步（同 B/U/Z 模式） |
 
 `manual_verify.py` 对本段的判定见上方输出（部分项因未跑完记 INCONCLUSIVE）。下一次：MM-D3 修复后从 T1 重跑。
+
+> MM-D3 已裁决与修复：[DECISION-MM-D3-NAMED-TASK-ROUTE.md](DECISION-MM-D3-NAMED-TASK-ROUTE.md)（搜索命中标注 `is_active` + `route_hint`；`task_scope_conflict` 补 `bound/requested` 与下一步；同 Run 不允许改绑）。run5 从 T1 重跑，T7 措辞不变。
