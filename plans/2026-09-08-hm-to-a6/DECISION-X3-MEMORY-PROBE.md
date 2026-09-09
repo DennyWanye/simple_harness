@@ -110,6 +110,8 @@ SIMPLEHARNESS_MEMORY_PROBE=1 SIMPLEHARNESS_MEMORY_PROBE_EVERY=1 \
   backend/.venv/bin/python backend/main.py
 ```
 
+> **下表的默认值已被 §X3-F4.5 取代**（`EVERY` 1→3、`FRAMES` 25→5、`CENSUS` 开→关），保留在这里只为了读懂第 12 次整跑的现场。
+
 | 变量 | 默认 | 含义 |
 |---|---|---|
 | `SIMPLEHARNESS_MEMORY_PROBE` | 关 | `1/true/yes/on` 才开 |
@@ -191,3 +193,172 @@ python scripts/native/memory_probe_report.py --log native.log \
 | **X3-F1** | **本轮只交付装置，没有跑原生**（纪律：不启动原生 app）。X2-F2 仍然开着，下一次原生旅程必须带 `--memory-probe` 起，收工后跑 `memory_probe_report.py` 并把三张表贴进 X2-F2 的收口备忘。 |
 | **X3-F2** | 快照体积在真 backend 里未知（本轮空进程 ~290 KB/份）。若 30 份把证据目录撑爆，用 `SIMPLEHARNESS_MEMORY_PROBE_KEEP` 调小，或 `..._EVERY` 调大。原生跑前建议先看一眼头两份的大小。 |
 | **X3-F3** | 挂点是 `SdkRunToolAuthorityRegistry` 的**全部** Run 终态，不只前台 Run；若某次旅程里后台 Run 也走这个 registry，`terminal_seq` 会比人眼数的"回合数"多。报告表里 `terminal_seq` 与 `probe_seq` 同时打出来就是为了让这件事看得见；真需要严格只数前台时，改挂 `foreground.runtime.closure_settled` 那条缝即可（本轮没做，因为多数几个终态不影响"每回合增长"的量级判断）。 |
+
+---
+
+# §X3-F4：探针把事件循环打死了 —— 采样移线程 + 默认降成本
+
+- 日期：2026-09-09
+- 分支：`worktree-mem-probe-2`（未合并）
+- 触发：**HM-TO-A6 第 12 次整跑（attempt 12）带 `--memory-probe` 起，30 秒内报废**。
+  证据 `.local-test-evidence/2026-09-09/native-a6-run12/probe-aborted-primary-ui-m07qhcxg/`
+  下的 `native.log` / `a6-driver.log`：T1 用了 **50 s**（正常 ~9 s），嵌入追平批
+  `Batches: 100%|…| 1/1 [00:55<00:00]` 用了 **55 s**（正常 ~0.3 s），随后 T2、T3
+  连续 `send_failed: no new Run head after two sends` —— backend 不再接新回合。
+- 触碰文件：`backend/observability/memory_probe.py`（重写，387 → 561）、
+  `scripts/native/memory_probe_report.py`（+119）、
+  `scripts/native/launch_native_candidate.py`（flags，+18）、
+  `backend/tests/test_memory_probe.py`（15 → **28 例**）、
+  `backend/tests/native/test_memory_probe_report.py`（10 → **16 例**）。
+  **`backend/main.py` 本轮未动**（见 §X3-F4.6 的取舍）。
+
+## X3-F4.1 结论先行
+
+§X3-F1 的装置在**空进程**上是对的（采样 ~0.4 s、快照 290 KB），在**真 backend**
+上是错的。两笔成本叠在一起，而且**两笔都落在事件循环上**：
+
+1. `tracemalloc.start(25)` 让 embedder/torch 那条深栈上的**每一次分配**都要记
+   25 帧栈；WeMM 追平批是几十万次小分配，于是 0.3 s → 55 s。
+2. 终态监听器**同步**在事件循环上做 `filter_traces()` + `statistics()` + 快照落盘
+   + `gc.get_objects()` 普查。1–5 GB 堆上这是**几十秒**，WebSocket / 前台运行时
+   在这几十秒里完全饿死 —— 前端两次发送都没等到新的 Run 头。
+
+## X3-F4.2 离线复现（本轮实测，`backend/.venv/bin/python`，Python 3.12.14，macOS 15）
+
+### (a) 栈深对**分配路径**的成本
+
+在 18 层深的调用栈上分配 24 万个小对象（dict + list + str + tuple，≈ 64 MiB 被追踪）：
+
+| tracemalloc | 分配耗时 | 相对关掉 | 进程 RSS |
+|---|---|---|---|
+| **关** | **0.075 s** | 1.0× | 87 MB |
+| `start(5)` | 0.326 s | **4.3×** | 161 MB |
+| `start(25)` | **0.987 s** | **13.2×** | 161 MB |
+
+25 帧比 5 帧再贵 **3.0×**，而多出来的 20 帧对"哪一行在涨"没有任何增量价值
+（报告表按 `lineno` 分组，只用顶帧）。→ **默认帧深 25 → 5**。
+
+### (b) 1 GiB 堆上一次采样各步骤的耗时
+
+堆长到 RSS = 1024 MB（163 万个被追踪对象）后逐步计时：
+
+| 步骤 | 耗时 | 处置 |
+|---|---|---|
+| `snapshot.filter_traces(5 个 Filter)` | **66.1 s** | **删掉**（见 X3-F4.3） |
+| `snapshot.statistics("lineno")` | 17.6 s（滤后 15.9 s） | 移到后台线程 |
+| `tracemalloc.take_snapshot()` | 0.72 s | 移到后台线程 |
+| `snapshot.dump()` | 1.27 s（**71.7 MB/份**） | 移到后台线程 |
+| `gc.get_objects()` + 类型普查（tracemalloc 开着） | **6.57 s** | **默认关** |
+| 同一份普查，tracemalloc 关着（707 万对象） | 0.60 s | 对照：贵的是 tracemalloc 在场 |
+| `resource.getrusage()` 取 RSS | **0.3 µs** | 每个终态都打 |
+| `psutil.Process().memory_info()`（句柄缓存） | 1.2 µs | 每个终态都打 |
+| `tracemalloc.get_traced_memory()` | 0.08 µs | 每个终态都打 |
+
+**旧实现每个终态在事件循环上的总账 ≈ 0.72 + 66.1 + 15.9 + 1.27 + 6.57 ≈ 90.6 s。**
+这就是 T1 50 s、T2/T3 发不出去的全部解释；`filter_traces` 一个人就占 73%。
+
+## X3-F4.3 重新设计（零干扰）
+
+| 决定 | 取法 |
+|---|---|
+| **监听器只投递** | `observe_terminal` / `record_terminal` 只做两件事：打一行廉价 `memory.probe.rss`，再往**单槽队列**投一次采样请求，然后立刻返回。事件循环上**再也不做 tracemalloc 的任何重活**。 |
+| **专用采样线程** | `memory-probe-sampler`（daemon）。`take_snapshot()` 是线程安全的；`statistics()` 是纯 Python，会按 `switchinterval` 让出 GIL，所以 asyncio 在采样期间照常跑。 |
+| **请求合并** | 同时最多**一次**采样在飞。采样期间来的终态**被丢弃、不排队**，打一行 `memory.probe.skipped` 带累计计数 `skipped_total`。旅程永远不会因为探针而变慢，最坏情况只是少几个采样点。 |
+| **删掉 `filter_traces()`** | 它要排掉 tracemalloc / 本模块 / importlib 自身的分配，代价 66 s。改成在 `statistics("lineno")` **之后**按顶帧文件名筛（结果只有几十行，成本 ≈ 0），语义等价 —— 表本来就按顶帧的 `file:line` 分组。 |
+| **默认帧深 5** | `SIMPLEHARNESS_MEMORY_PROBE_FRAMES`，13.2× → 4.3×。 |
+| **gc 普查默认关** | `SIMPLEHARNESS_MEMORY_PROBE_CENSUS=1` 才开（1 GiB 堆上 6.5 s/次）。 |
+| **默认 `EVERY` 1 → 3** | 全量采样每 3 个终态一次。 |
+| **每终态一行廉价 RSS** | `memory.probe.rss`：`resource.getrusage` 的峰值 RSS + 缓存 psutil 句柄的当前 RSS + `get_traced_memory()`，**没有** tracemalloc 快照。即使全量采样被节流，旅程也**一定**拿得到逐回合 RSS 曲线 —— 这正是 X2-F2 最需要的那条线。 |
+
+新增两个事件名：`memory.probe.rss`（每终态）、`memory.probe.skipped`（被丢的请求）。
+
+## X3-F4.4 修复前后（同一台机、同一个 1 GiB 被追踪堆、6 个终态）
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| 事件循环上每终态耗时 | **≈ 90.6 s**（25 帧、每终态全量、含普查） | **0.129 ms**（最大值；均值 0.054 ms） |
+| 探针自报 `listener_us` | —（旧行没有这个字段） | 最大 **106 µs** |
+| 分配路径相对无探针 | **13.2×** | **4.3×** |
+| 6 个终态的产出 | 6 次全量采样（全在循环上） | 6 行 `rss`、**1** 次全量采样、5 次 `skipped` |
+| 一次全量采样耗时 | 90.6 s（**事件循环**） | 19.3 s（**后台线程**；快照 0.90 s + `statistics` 16.4 s + 落盘 1.72 s） |
+
+**事件循环侧成本降了约 7×10⁵ 倍**，而每回合的 RSS 曲线一条不少。
+
+## X3-F4.5 发射端：`--memory-probe-light`（推荐的旅程模式）
+
+```bash
+python scripts/native/launch_native_candidate.py … --launch \
+    --memory-probe-light        # 每终态 RSS + 每 6 个终态一次 5 帧快照，普查关
+```
+
+| 发射端旗标 | 展开成 |
+|---|---|
+| `--memory-probe-light` | `SIMPLEHARNESS_MEMORY_PROBE=1`、`..._EVERY=6`、`..._FRAMES=5`、`..._CENSUS=0` |
+| `--memory-probe` | 同上但 `..._EVERY=3` |
+| `--memory-probe-every N` | 覆盖上面两者的 `EVERY`（显式优先） |
+| `--memory-probe-frames N` | 栈深，默认 5 |
+| `--memory-probe-census` | 打开 gc 普查；与 `--memory-probe-light` 互斥（`parser.error`） |
+
+`launch.json` 里多记 `memory_probe_mode`（`light`/`full`/`null`）、
+`memory_probe_frames`、`memory_probe_census`；六个 `SIMPLEHARNESS_MEMORY_PROBE*`
+变量在 spawn 前**一律先 `pop`**（原来只 pop 两个），保证跑与跑之间确定。
+
+环境变量默认值表（§4.2 那张表的现值）：
+
+| 变量 | 旧默认 | **新默认** |
+|---|---|---|
+| `SIMPLEHARNESS_MEMORY_PROBE` | 关 | 关 |
+| `SIMPLEHARNESS_MEMORY_PROBE_EVERY` | 1 | **3** |
+| `SIMPLEHARNESS_MEMORY_PROBE_FRAMES` | 25 | **5** |
+| `SIMPLEHARNESS_MEMORY_PROBE_KEEP` | 30 | 30 |
+| `SIMPLEHARNESS_MEMORY_PROBE_TOP` | 15 | 15 |
+| `SIMPLEHARNESS_MEMORY_PROBE_CENSUS` | **开** | **关** |
+
+## X3-F4.6 一个刻意的取舍：类别放在 `probe_event` 字段里
+
+`main.py` 的发射是 `logger.info("memory.probe", **fields)` —— 事件名写死在调用点。
+本轮**约定不动 `main.py`**，所以三种行在 structlog 里的 `event` 仍然都是
+`memory.probe`，真正的类别放在**字段** `probe_event` 上
+（`memory.probe` / `memory.probe.rss` / `memory.probe.skipped`）。
+`native.log` 里 `grep memory.probe.rss` 照样命中，报告脚本 `probe_kind()`
+**先看 `probe_event`、退回看 `event`**，所以 X3-F4 之前的日志也照读不误。
+→ 见 **X3-F5**。
+
+## X3-F4.7 报告脚本
+
+新增两段输出（原来的四段全部保留）：
+
+- **抬头**多打 `N full, M rss, K skipped` 与 `frames=` / `census=`；有 `skipped`
+  时额外一行提示把 `..._EVERY` 调大；
+- **`## per-terminal RSS`**：`term / rss_kb / Δrss_kb / rss_max_kb / tm_cur_kb /
+  tm_peak_kb / sampling / skipped / listener_us / run_id`，一行一个终态；
+- **`## per-terminal summary`**：逐终态 RSS 增量的条数/总量/均值/中位数/最大值，
+  外加**监听器在事件循环上的最大与平均耗时**（这条就是 X3-F4 的现场看门狗：
+  只要它还在几十微秒，探针就没在拖旅程）。
+
+`--log` 里只有 `rss` 行、一条全量行都没有时，脚本**仍然退 0** 并出曲线表
+（旧行为是退 1）；两种行都没有才退 1。
+
+## X3-F4.8 测试
+
+| 文件 | 例数 | 新增覆盖 |
+|---|---|---|
+| `backend/tests/test_memory_probe.py` | 15 → **28** | ① **时间有界的回归**：在 tracemalloc 追踪下堆出 30 万个对象后，6 次 `observe_terminal` 的**墙钟**最大值 `< 50 ms`，且自报 `listener_us < 50000`（旧实现在这个规模上要好几秒）；② 采样确实在**另一条线程**上（emit 里记 `threading.get_ident()`，全量行的 ident ≠ 调用方，且 `thread == "memory-probe-sampler"`）；③ **合并/丢弃计数**：用一个卡在 emit 里的闸门把采样线程按住，再打 3 个终态 → 恰好 1 条全量行、3 条 `skipped`（`skipped_total == [1,2,3]`）、rss 行的 `sampling == [queued, skipped, skipped, skipped]`；④ 环境变量解析（新默认 5/3/关、`LIGHT_EVERY=6` 等显式覆盖、`""/not-a-number/0/-3` 四种坏值回落默认）；⑤ 两种行的**字段集合逐字断言**（rss 12 键 / 全量 27 键）；⑥ 关闭时**不起采样线程**；⑦ `stop()` 把线程 join 干净；⑧ emit 抛异常不许穿透到调用方；⑨ 原有的零成本、无载荷、快照有界、`shorten_location` 用例全部保留 |
+| `backend/tests/native/test_memory_probe_report.py` | 10 → **16** | 夹具日志混入 `rss` 与 `skipped` 行后的分桶与排序、`probe_kind()` 对**没有 `probe_event` 的老日志**回落到 `event`、`rss_table` 表头与逐格数值、`rss_summary` 的增量汇总与 `listener_us` 汇总、没有 rss 行时的显式提示、**只有 rss 行的日志也退 0 并出曲线**；`main()` 全文断言升级为 `3 full, 3 rss, 1 skipped` + `throttled:` 提示；往返用例改成 `EVERY=1` + `wait_idle()` 逐条等采样落地（否则会被合并掉，这本身就证明合并生效） |
+
+一次单进程执行（`backend/.venv/bin/python -m pytest`，工作目录 `backend/`）：
+
+| 套件 | 结果 |
+|---|---|
+| `tests/test_memory_probe.py` | **28 passed** |
+| `tests/native/test_memory_probe_report.py` | **16 passed** |
+| 两者合并单进程 | **44 passed in 2.24s** |
+
+## X3-F4.9 Followup
+
+| 编号 | 内容 |
+|---|---|
+| **X3-F5** | 三种探针行的 structlog `event` 现在都是 `memory.probe`，类别在 `probe_event` 字段里（因为本轮约定不动 `main.py`）。下一次允许动 `main.py` 时，把发射改成 `logger.info(fields.pop("probe_event") or "memory.probe", **fields)` 即可让事件名自己分开；报告脚本的 `probe_kind()` **已经**两种都认，改完不需要再动脚本。 |
+| **X3-F6** | **§X3-F2 现在有数了：1 GiB 被追踪堆上一份快照 71.7 MB**（空进程是 290 KB）。`KEEP` 默认 30 → 最坏 2.1 GB 落在 `<userdata>/memory-probe/`。原生跑前务必看一眼头两份大小；`--memory-probe-light` 下一场 24 回合旅程只出 4 份，但若堆到 5 GB，单份可能上 300 MB。建议原生跑加 `SIMPLEHARNESS_MEMORY_PROBE_KEEP=8`（本轮没改默认值，因为它是 §X3-F1 定过的数，改默认要另立决定）。 |
+| **X3-F7** | 一次全量采样在后台线程上仍然要 **19 s / 1 GiB 堆**，其中 16.4 s 是纯 Python 的 `statistics("lineno")`（会让出 GIL，但会把整个进程的 Python 吞吐压掉约一半）。`--memory-probe-light`（每 6 个终态）+ 请求合并已经把它摊薄到可接受，但**堆到 5 GB 时单次采样可能上 100 s**，那时 `skipped` 会变多。判据写在报告抬头：`skipped` 占了大多数终态就把 `..._EVERY` 再调大；每回合曲线由 `memory.probe.rss` 兜底，不会因此丢。 |
+| **X3-F8** | 本轮**仍然没有跑原生**（纪律：一个旅程正在跑）。X2-F2 与 §X3-F1 依旧开着：下一次原生旅程用 **`--memory-probe-light`** 起，收工后跑 `memory_probe_report.py`，先看 `## per-terminal summary` 里的 `listener cost on the event loop`（应当是几十微秒）确认探针没干扰，再看六张表。 |

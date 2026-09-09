@@ -33,6 +33,7 @@ report = _load()
 def _probe(seq, *, terminal, rss, rss_delta, traced, traced_delta, sites, types, baseline=False):
     return {
         "event": "memory.probe",
+        "probe_event": "memory.probe",
         "level": "info",
         "timestamp": f"2026-09-09T10:0{seq}:00Z",
         "probe_seq": seq,
@@ -52,6 +53,41 @@ def _probe(seq, *, terminal, rss, rss_delta, traced, traced_delta, sites, types,
         "type_census_delta": types,
         "snapshot": f"turn-{seq}.snap",
         "sample_ms": 12.5,
+        "frames": 5,
+        "census": True,
+    }
+
+
+def _rss(terminal, *, rss, rss_delta, sampling="idle", skipped_total=0):
+    """X3-F4 起每个终态一条的廉价行；发射端把类别放在 `probe_event` 里。"""
+
+    return {
+        "event": "memory.probe",
+        "probe_event": "memory.probe.rss",
+        "level": "info",
+        "terminal_seq": terminal,
+        "every": 1,
+        "run_id": f"run-{terminal}",
+        "rss_kb": rss,
+        "rss_delta_kb": rss_delta,
+        "rss_max_kb": rss,
+        "tracemalloc_current_kb": 1000 * terminal,
+        "tracemalloc_peak_kb": 1000 * terminal + 50,
+        "sampling": sampling,
+        "skipped_total": skipped_total,
+        "listener_us": 41.5,
+    }
+
+
+def _skipped(terminal, *, skipped_total):
+    return {
+        "event": "memory.probe",
+        "probe_event": "memory.probe.skipped",
+        "level": "info",
+        "terminal_seq": terminal,
+        "run_id": f"run-{terminal}",
+        "skipped_total": skipped_total,
+        "reason": "sample_in_flight",
     }
 
 
@@ -82,6 +118,11 @@ def fixture_log(tmp_path) -> Path:
                    types=["bytes 1300"])
         ),
         '{"event": "sdk.run.terminal", "level": "info"}',
+        json.dumps(_rss(2, rss=520000, rss_delta=260000, sampling="queued")),
+        json.dumps(_rss(1, rss=260000, rss_delta=None, sampling="queued")),
+        json.dumps(_rss(3, rss=790000, rss_delta=270000, sampling="skipped",
+                        skipped_total=1)),
+        json.dumps(_skipped(3, skipped_total=1)),
     ]
     path = tmp_path / "native.log"
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
@@ -130,10 +171,75 @@ def test_cumulative_types(fixture_log):
     assert body[1] == ["300", "dict"]
 
 
+def test_reads_and_orders_rss_and_skipped_lines(fixture_log):
+    buckets = report.read_records(fixture_log)
+    assert [record["probe_seq"] for record in buckets[report.PROBE_EVENT]] == [1, 2, 3]
+    rss_lines = buckets[report.PROBE_RSS_EVENT]
+    assert [record["terminal_seq"] for record in rss_lines] == [1, 2, 3]
+    assert [record["sampling"] for record in rss_lines] == ["queued", "queued", "skipped"]
+    assert [record["terminal_seq"] for record in buckets[report.PROBE_SKIPPED_EVENT]] == [3]
+
+
+def test_probe_kind_falls_back_to_event_for_pre_x3f4_logs():
+    """X3-F4 之前的日志没有 `probe_event`，只有 `event`，必须还认得出来。"""
+
+    assert report.probe_kind({"event": "memory.probe"}) == report.PROBE_EVENT
+    assert report.probe_kind({"event": "memory.probe.started"}) is None
+    assert (
+        report.probe_kind({"event": "memory.probe", "probe_event": "memory.probe.rss"})
+        == report.PROBE_RSS_EVENT
+    )
+
+
+def test_rss_table_shows_the_per_terminal_curve(fixture_log):
+    rows = report.rss_table(report.read_records(fixture_log)[report.PROBE_RSS_EVENT])
+    assert rows[0].split() == [
+        "term", "rss_kb", "Δrss_kb", "rss_max_kb", "tm_cur_kb", "tm_peak_kb",
+        "sampling", "skipped", "listener_us", "run_id",
+    ]
+    assert rows[2].split()[:4] == ["1", "260000", "-", "260000"]
+    assert rows[3].split()[:4] == ["2", "520000", "260000", "520000"]
+    assert rows[4].split()[6:8] == ["skipped", "1"]
+
+
+def test_rss_summary_uses_every_terminal(fixture_log):
+    lines = report.rss_summary(report.read_records(fixture_log)[report.PROBE_RSS_EVENT])
+    assert "per-terminal RSS: 2 deltas, total 530000 KiB" in lines[0]
+    assert "listener cost on the event loop: max 41.5 us" in lines[1]
+
+
+def test_rss_table_is_explicit_when_absent():
+    rows = report.rss_table([])
+    assert "no memory.probe.rss lines" in rows[-1]
+
+
+def test_main_accepts_a_log_with_only_rss_lines(tmp_path, capsys):
+    """全量采样一次都没落地（被节流/被 KEEP 掐掉）时，每回合曲线仍然要出。"""
+
+    path = tmp_path / "native.log"
+    path.write_text(
+        "\n".join(
+            json.dumps(_rss(term, rss=100000 * term, rss_delta=None if term == 1 else 100000))
+            for term in (1, 2, 3)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert report.main(["--log", str(path)]) == 0
+    printed = capsys.readouterr().out
+    assert "0 full, 3 rss, 0 skipped" in printed
+    assert "## per-terminal RSS" in printed
+    assert "(no non-baseline probes)" in printed
+
+
 def test_render_and_main(fixture_log, capsys):
     assert report.main(["--log", str(fixture_log), "--top", "5"]) == 0
     printed = capsys.readouterr().out
-    assert "memory.probe records: 3" in printed
+    assert "memory.probe records: 3 full, 3 rss, 1 skipped" in printed
+    assert "frames=5" in printed and "census=True" in printed
+    assert "throttled: 1 sample requests dropped" in printed
+    assert "## per-terminal RSS" in printed
+    assert "## per-terminal summary" in printed
     assert "## per-probe growth" in printed
     assert "## summary" in printed
     assert "## top 5 cumulative growth sites" in printed
@@ -198,7 +304,12 @@ def test_round_trip_real_probe_lines(tmp_path, capsys):
         emit=lambda fields: lines.append(
             json.dumps({"event": "memory.probe", "level": "info", **dict(fields)})
         ),
-        env={"SIMPLEHARNESS_MEMORY_PROBE": "1", "SIMPLEHARNESS_MEMORY_PROBE_FRAMES": "6"},
+        env={
+            "SIMPLEHARNESS_MEMORY_PROBE": "1",
+            "SIMPLEHARNESS_MEMORY_PROBE_EVERY": "1",
+            "SIMPLEHARNESS_MEMORY_PROBE_FRAMES": "6",
+            "SIMPLEHARNESS_MEMORY_PROBE_CENSUS": "1",
+        },
     )
     assert probe is not None
     try:
@@ -206,6 +317,8 @@ def test_round_trip_real_probe_lines(tmp_path, capsys):
         for ordinal in range(3):
             ballast.extend(bytearray(20000) for _ in range(64))
             probe.record_terminal(f"run-{ordinal}")
+            # 采样在后台线程上；逐条等它落地，否则会被合并成一次。
+            assert probe.wait_idle(timeout=30)
         assert len(ballast) == 192
     finally:
         probe.stop()
@@ -216,7 +329,7 @@ def test_round_trip_real_probe_lines(tmp_path, capsys):
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     assert report.main(["--log", str(path), "--top", "5"]) == 0
     printed = capsys.readouterr().out
-    assert "memory.probe records: 3" in printed
+    assert "memory.probe records: 3 full, 3 rss, 0 skipped" in printed
     assert "test_memory_probe_report.py:" in printed  # ballast 的分配站点被归因到本文件
     parsed = report.read_probe_lines(path)
     assert [record["probe_seq"] for record in parsed] == [1, 2, 3]

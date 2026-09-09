@@ -10,12 +10,17 @@
         --snapshot-old <userdata>/memory-probe/turn-4.snap \\
         --snapshot-new <userdata>/memory-probe/turn-18.snap
 
-三张表：
+四张表：
 
+0. **每终态 RSS 曲线**（X3-F4 起）：`memory.probe.rss` 行，每个 Run 终态一条，
+   只有 RSS / tracemalloc 计数器，没有 tracemalloc 快照 —— 即使全量采样被节流，
+   旅程也一定拿得到逐回合 RSS；
 1. **每回合增长**：RSS / tracemalloc current / gc 对象数，及其相对上一次探针的增量；
 2. **累计增长最大的分配站点**：把每次探针的 `top_sites` 增量按 `file:line` 求和
    （第一条 `baseline` 探针不计入，它是绝对量不是增量）；
-3. **累计增长最大的 gc 类型**。
+3. **累计增长最大的 gc 类型**（`SIMPLEHARNESS_MEMORY_PROBE_CENSUS=1` 才有）。
+
+`memory.probe.skipped` 行（采样在飞时被丢掉的请求）只在抬头汇总里出现。
 
 `--snapshot-old/--snapshot-new` 给的是探针写下的 `tracemalloc` 快照，用官方
 `Snapshot.compare_to` 做一次跨回合的完整比对（日志里的 top 15 之外的站点也能看见）。
@@ -31,12 +36,32 @@ from pathlib import Path
 from typing import Any
 
 PROBE_EVENT = "memory.probe"
+PROBE_RSS_EVENT = "memory.probe.rss"
+PROBE_SKIPPED_EVENT = "memory.probe.skipped"
 
 
-def read_probe_lines(path: Path) -> list[dict[str, Any]]:
+def probe_kind(record: dict[str, Any]) -> str | None:
+    """探针行的类别。
+
+    发射端 `main.py` 把每条探针记录当 structlog kwargs 打在固定的 `memory.probe`
+    事件名下，所以真正的类别在 `probe_event` 字段里；X3-F4 之前的日志没有这个
+    字段，退回看 `event`（那时只有全量行）。
+    """
+
+    kind = record.get("probe_event") or record.get("event")
+    if kind in (PROBE_EVENT, PROBE_RSS_EVENT, PROBE_SKIPPED_EVENT):
+        return str(kind)
+    return None
+
+
+def read_records(path: Path) -> dict[str, list[dict[str, Any]]]:
     """`native.log` 一行一条 JSON（structlog JSONRenderer）；非 JSON 行直接跳过。"""
 
-    probes: list[dict[str, Any]] = []
+    buckets: dict[str, list[dict[str, Any]]] = {
+        PROBE_EVENT: [],
+        PROBE_RSS_EVENT: [],
+        PROBE_SKIPPED_EVENT: [],
+    }
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
             line = line.strip()
@@ -46,10 +71,21 @@ def read_probe_lines(path: Path) -> list[dict[str, Any]]:
                 record = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(record, dict) and record.get("event") == PROBE_EVENT:
-                probes.append(record)
-    probes.sort(key=lambda record: _int(record.get("probe_seq")) or 0)
-    return probes
+            if not isinstance(record, dict):
+                continue
+            kind = probe_kind(record)
+            if kind is not None:
+                buckets[kind].append(record)
+    buckets[PROBE_EVENT].sort(key=lambda record: _int(record.get("probe_seq")) or 0)
+    for kind in (PROBE_RSS_EVENT, PROBE_SKIPPED_EVENT):
+        buckets[kind].sort(key=lambda record: _int(record.get("terminal_seq")) or 0)
+    return buckets
+
+
+def read_probe_lines(path: Path) -> list[dict[str, Any]]:
+    """只要全量 `memory.probe` 行（老调用方与老日志的兼容入口）。"""
+
+    return read_records(path)[PROBE_EVENT]
 
 
 def _int(value: Any) -> int | None:
@@ -86,6 +122,62 @@ def parse_census(entry: str) -> tuple[str, int] | None:
 
 def _cell(value: Any, width: int) -> str:
     return ("-" if value is None else str(value)).rjust(width)
+
+
+def rss_table(rss_lines: list[dict[str, Any]]) -> list[str]:
+    """X3-F4 的廉价逐终态 RSS 行：全量采样被节流时唯一还在的每回合曲线。"""
+
+    header = (
+        f"{'term':>5} {'rss_kb':>10} {'Δrss_kb':>10} {'rss_max_kb':>11} "
+        f"{'tm_cur_kb':>10} {'tm_peak_kb':>11} {'sampling':>9} {'skipped':>8} "
+        f"{'listener_us':>12}  run_id"
+    )
+    rows = [header, "-" * len(header)]
+    for record in rss_lines:
+        rows.append(
+            " ".join(
+                (
+                    _cell(_int(record.get("terminal_seq")), 5),
+                    _cell(_int(record.get("rss_kb")), 10),
+                    _cell(_int(record.get("rss_delta_kb")), 10),
+                    _cell(_int(record.get("rss_max_kb")), 11),
+                    _cell(_int(record.get("tracemalloc_current_kb")), 10),
+                    _cell(_int(record.get("tracemalloc_peak_kb")), 11),
+                    _cell(record.get("sampling"), 9),
+                    _cell(_int(record.get("skipped_total")), 8),
+                    _cell(record.get("listener_us"), 12),
+                )
+            )
+            + "  "
+            + str(record.get("run_id"))
+        )
+    if len(rows) == 2:
+        rows.append(
+            "(no memory.probe.rss lines - pre-X3-F4 log, or the probe was off)"
+        )
+    return rows
+
+
+def rss_summary(rss_lines: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    deltas = [_int(record.get("rss_delta_kb")) for record in rss_lines]
+    deltas = [value for value in deltas if value is not None]
+    if deltas:
+        total = sum(deltas)
+        ordered = sorted(deltas)
+        lines.append(
+            f"per-terminal RSS: {len(deltas)} deltas, total {total} KiB "
+            f"({total / 1024:.1f} MiB), mean {total / len(deltas):.1f} KiB/terminal, "
+            f"median {ordered[len(ordered) // 2]} KiB, max {max(deltas)} KiB"
+        )
+    costs = [record.get("listener_us") for record in rss_lines]
+    costs = [float(value) for value in costs if isinstance(value, (int, float))]
+    if costs:
+        lines.append(
+            f"listener cost on the event loop: max {max(costs):.1f} us, "
+            f"mean {sum(costs) / len(costs):.1f} us over {len(costs)} terminals"
+        )
+    return lines or ["per-terminal RSS: no samples"]
 
 
 def growth_table(probes: list[dict[str, Any]]) -> list[str]:
@@ -204,18 +296,35 @@ def render(
     *,
     top: int,
     snapshots: tuple[Path, Path] | None = None,
+    rss_lines: list[dict[str, Any]] | None = None,
+    skipped: list[dict[str, Any]] | None = None,
 ) -> str:
+    rss_lines = rss_lines or []
+    skipped = skipped or []
     blocks: list[str] = []
-    if not probes:
+    if not probes and not rss_lines:
         return (
             "no memory.probe lines found — run the journey with "
-            "scripts/native/launch_native_candidate.py --memory-probe"
+            "scripts/native/launch_native_candidate.py --memory-probe-light"
         )
-    every = probes[0].get("every")
+    head = probes[0] if probes else rss_lines[0]
+    every = head.get("every")
+    terminals = (rss_lines or probes)[-1].get("terminal_seq")
     blocks.append(
-        f"memory.probe records: {len(probes)}  "
-        f"every={every}  terminals_covered={probes[-1].get('terminal_seq')}"
+        f"memory.probe records: {len(probes)} full, {len(rss_lines)} rss, "
+        f"{len(skipped)} skipped  every={every}  "
+        f"frames={head.get('frames')}  census={head.get('census')}  "
+        f"terminals_covered={terminals}"
     )
+    if skipped:
+        last = skipped[-1]
+        blocks.append(
+            f"throttled: {len(skipped)} sample requests dropped while a sample was "
+            f"in flight (skipped_total={last.get('skipped_total')}); "
+            f"raise SIMPLEHARNESS_MEMORY_PROBE_EVERY if this is most terminals"
+        )
+    blocks.append("\n## per-terminal RSS\n" + "\n".join(rss_table(rss_lines)))
+    blocks.append("\n## per-terminal summary\n" + "\n".join(rss_summary(rss_lines)))
     blocks.append("\n## per-probe growth\n" + "\n".join(growth_table(probes)))
     blocks.append("\n## summary\n" + "\n".join(summary(probes)))
     blocks.append(
@@ -248,9 +357,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.snapshot_old is None
         else (args.snapshot_old.resolve(strict=True), args.snapshot_new.resolve(strict=True))
     )
-    probes = read_probe_lines(args.log.resolve(strict=True))
-    print(render(probes, top=max(1, args.top), snapshots=snapshots))
-    return 0 if probes else 1
+    buckets = read_records(args.log.resolve(strict=True))
+    probes = buckets[PROBE_EVENT]
+    rss_lines = buckets[PROBE_RSS_EVENT]
+    print(
+        render(
+            probes,
+            top=max(1, args.top),
+            snapshots=snapshots,
+            rss_lines=rss_lines,
+            skipped=buckets[PROBE_SKIPPED_EVENT],
+        )
+    )
+    return 0 if (probes or rss_lines) else 1
 
 
 if __name__ == "__main__":
