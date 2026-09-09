@@ -7724,7 +7724,7 @@ requires-dist = [
     { name = "selectolax", specifier = ">=0.3" },
     { name = "sentence-transformers", specifier = ">=5.7" },
     { name = "silero-vad", specifier = ">=5.1.2,<6" },
-    { name = "simple-harness-memory-sdk", path = "vendor/simple_harness_memory_sdk-0.6.37-py3-none-any.whl" },
+    { name = "simple-harness-memory-sdk", path = "vendor/simple_harness_memory_sdk-0.6.38-py3-none-any.whl" },
     { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.7.10-py3-none-any.whl" },
     { name = "simple-harness-service-sdk", extras = ["realtime"], path = "vendor/simple_harness_service_sdk-0.3.13-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
@@ -7745,8 +7745,8 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "simple-harness-memory-sdk"
-version = "0.6.37"
-source = { path = "vendor/simple_harness_memory_sdk-0.6.37-py3-none-any.whl" }
+version = "0.6.38"
+source = { path = "vendor/simple_harness_memory_sdk-0.6.38-py3-none-any.whl" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "numpy" },
@@ -7755,7 +7755,7 @@ dependencies = [
     { name = "structlog" },
 ]
 wheels = [
-    { filename = "simple_harness_memory_sdk-0.6.37-py3-none-any.whl", hash = "sha256:09c9ef33792125efe4d60c2579c17e4be8afc97d5b533a89a68674f4960f762b" },
+    { filename = "simple_harness_memory_sdk-0.6.38-py3-none-any.whl", hash = "sha256:fc69e067801667f2e004c3fd9dcc75dbe96e6d75c6cd7ac7a983dcdf80bfd49c" },
 ]
 
 [package.metadata]
