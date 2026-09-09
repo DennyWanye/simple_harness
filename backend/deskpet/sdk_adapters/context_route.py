@@ -86,6 +86,25 @@ _WORKSPACE_REUSE_NEW_RUN = (
     "This request did not reopen the completed task or edit its files."
 )
 
+# F-EPI-1. Episodes whose memory bounds no occurrence carry no ``occurred_local``
+# (``human_memory_v7.render_episode_occurred_local``), and the raw
+# ``occurred_start`` beside them is a minute-precise anchor the memory never
+# claimed. Silence there is what C04-10 and C04-14 answered with a computed date
+# (one of them two days off), so the Host says once, and only on a recall that
+# actually returned such a fragment, what the absence means. It costs nothing on
+# every other turn - unlike a PERSONA sentence, which is protected mass on every
+# request and whose 8192-tier headroom is exhausted (see
+# tests/sdk_adapters/test_token_estimator_calibration.py).
+_TEMPORAL_HINT = {
+    "reason": "episode_fragment_states_no_occurrence_time",
+    "next": "answer_without_inventing_a_date",
+    "message": "occurred_local is the Host-rendered occurrence time at the precision the memory "
+               "actually states; report it as written and never recompute a date from occurred_start. "
+               "An episode fragment carrying no occurred_local records no occurrence time at all: "
+               "describe when it happened only in that memory's own words, and state no date, month "
+               "or weekday for it.",
+}
+
 _PROCEDURE_HINT = {
     "reason": "typed_recall_returns_only_applicable_procedures",
     "next": "procedure_discover",
@@ -104,7 +123,7 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
             "type": "array", "minItems": 0, "maxItems": 4,
             "items": {"type": "string", "enum": list(REQUESTABLE_MEMORY_TYPES)},
             "description": ("Required for memory_standalone. " + MEMORY_TYPE_SELECTION_POLICY
-                            + " An empty list is valid only with include_short_horizon=true. "
+                            + " An empty list requires include_short_horizon=true. "
                               "Selection grants no permission to disclose or execute."),
         },
         "include_short_horizon": {
@@ -905,6 +924,7 @@ class ContextRouteToolService:
         procedure_hint = await self._procedure_hint(
             run_id=run_id, query=query, memory_types=memory_types, fragments=fragments,
         )
+        temporal_hint = self._temporal_hint(fragments)
         return await self._commit_receipt(
             run_id=run_id,
             raw_call_id=raw_call_id,
@@ -928,6 +948,8 @@ class ContextRouteToolService:
                 # the receipt hash and typed-use public_result_hash cover; the
                 # ContextRouteReceipt itself is untouched.
                 **({"procedure_hint": procedure_hint} if procedure_hint else {}),
+                # F-EPI-1: same carrier, same receipt hash; see _temporal_hint.
+                **({"temporal_hint": temporal_hint} if temporal_hint else {}),
             },
         )
 
@@ -946,6 +968,20 @@ class ContextRouteToolService:
             _LOG.warning("context_route_procedure_hint_scope_unavailable run_id=%s", run_id)
             return False
         return decision is not None
+
+    @staticmethod
+    def _temporal_hint(fragments) -> dict[str, Any] | None:
+        """Explain an episode fragment that states no occurrence time.
+
+        Pure function of what this recall actually returned: no query text, no
+        DB read, no per-case expectation. A recall that returned no such
+        fragment is byte-identical to the pre-F-EPI-1 receipt.
+        """
+
+        if any(fragment["memory_type"] == "episode" and "occurred_local" not in fragment
+               for fragment in fragments):
+            return dict(_TEMPORAL_HINT)
+        return None
 
     async def _procedure_hint(
         self, *, run_id: str, query: str, memory_types: tuple[str, ...], fragments,

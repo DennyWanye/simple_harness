@@ -144,6 +144,16 @@ async def open_c04_fixture(*, path, memory_path, principal, authority_ref, batch
         if consumer is not None:
             await consumer.run_once()
             intent = old_registration.authority.intent
+            # F-OBS-2: this `scheduler_registration_ref` is the registration
+            # *authority intent's* own field and is always populated. It is not
+            # `prospective_records.scheduler_registration_ref`, which the Memory
+            # SDK writes as NULL and its immutable triggers then make
+            # unbackfillable (backends/sqlite_v5.py:11136-11145 plus
+            # backends/schema_v5.py:662-667) - a dead column, twice confirmed on
+            # 0.6.37. No corpus reviewer or scorer reads that column; a
+            # read-only evidence review must not read "ref is empty" there as
+            # "the reminder was never registered". The live source of truth is
+            # `prospective_scheduler_registrations.scheduler_registration_ref`.
             invalidation = await registrations.accepted_invalidation(memory_id=intent.target_memory_id,
                 revision=intent.target_revision, registration_revision=intent.registration_revision,
                 registration_ref=intent.scheduler_registration_ref)

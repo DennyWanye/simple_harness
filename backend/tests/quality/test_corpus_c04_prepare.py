@@ -45,12 +45,29 @@ async def test_c04_actual_public_time_setup(tmp_path, monkeypatch, case_id):
             assert payloads['P'].trigger.event_authority_ref.startswith('corpus:unobserved-event:')
             assert not actual['event_publisher_bound']
             assert next(op for op in actual['plan'].operations if op.operation_id == 'P').lifecycle_state.value == 'pending'
+        # F-EPI-1: the episode's own valid-time interval now states the precision
+        # the source stated, and `precision_oracle` records what the Host will
+        # render from it. `occurred_start` moves only for `month`.
         if case_id == 'C04-07':
             assert payloads['E'].occurred_start == datetime(2026, 8, 20, 4, tzinfo=timezone.utc).timestamp()
+            assert payloads['E'].occurred_end == datetime(2026, 8, 20, 16, tzinfo=timezone.utc).timestamp()
+            assert actual['precision_oracle']['E']['rendered_occurred_local'] == '2026年8月20日 周四'
             assert batch.ingestion_time == datetime(2026, 9, 5, 4, tzinfo=timezone.utc).timestamp()
             assert payloads['E'].occurred_start < batch.ingestion_time < batch.scenario_time
+        if case_id == 'C04-10':
+            # `undated`: no bounded occurrence, so no rendered time at all.
+            assert payloads['E'].occurred_end is None
+            assert actual['precision_oracle']['E']['rendered_occurred_local'] is None
+        if case_id == 'C04-17':
+            # `month`: the only precision that re-anchors, to the first of it.
+            assert payloads['E'].occurred_start == datetime(2026, 7, 31, 16, tzinfo=timezone.utc).timestamp()
+            assert payloads['E'].occurred_end == datetime(2026, 8, 31, 16, tzinfo=timezone.utc).timestamp()
+            assert actual['precision_oracle']['E']['rendered_occurred_local'] == '2026年8月'
         if case_id == 'C04-15':
             assert payloads['E'].occurred_start == datetime(2026, 9, 30, 8, tzinfo=timezone.utc).timestamp()
+            assert payloads['E'].occurred_end == payloads['E'].occurred_start
+            assert actual['precision_oracle']['E']['rendered_occurred_local'] == (
+                '2026-09-30T16:00+08:00 周三')
             assert batch.ingestion_time == datetime(2026, 9, 30, 9, tzinfo=timezone.utc).timestamp()
             assert batch.scenario_time == datetime(2026, 9, 30, 10, tzinfo=timezone.utc).timestamp()
         if case_id == 'C04-06':

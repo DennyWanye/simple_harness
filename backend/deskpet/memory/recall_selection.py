@@ -11,8 +11,9 @@ HOST_DEFAULT_MEMORY_TYPES = ("semantic", "episode", "procedure")
 MEMORY_TYPE_SELECTION_POLICY = (
     "Request only types that can hold the answer; extras return nothing and spend the budget. "
     "semantic: facts, preferences, standing agreements - use alone for \"what is my "
-    "habit/format/unit/agreement\", including when worded \"as I said before\"; never a "
-    "safety net on an occurrence-plus-reminder question that asks for no standing value. "
+    "habit/format/unit/agreement\", including when worded \"as I said before\"; if the "
+    "request names no such standing value, omit it - what happened plus which reminder you "
+    "set names none. "
     "episode: only when the answer needs the past occurrence itself - what happened, when, with "
     "whom, how it ended; a past reference alone is not such a question. "
     "prospective: only for a future intention, reminder, deadline or trigger; scheduling words "
@@ -69,6 +70,16 @@ def indicates_workflow_request(text) -> bool:
 # the 20 C04 turns and nothing else; in particular no request whose gold
 # requires `semantic` (C01/C02/C03/C06) matches, because every one of those
 # names a standing value.
+#
+# F-ETR-8 (R5b, RUN-C04-RERUN-2-REVIEW 6.4): R5's model-visible half was the one
+# clause in this policy stated as a forbidden *motive* ("never a safety net"),
+# while every other clause is a decidable gate ("only when..."). Its 20/20
+# request-shape coverage was already complete, yet 6 of 20 C04 turns still added
+# `semantic` - and 3 of those put it first or second in the list, which is not
+# how a fallback is written. The Host judgement was never the gap; a rule the
+# model cannot self-check against was. R5b keeps the identical scope and states
+# it as the same kind of gate as R1-R4: name a standing value, or omit the type.
+# The marker sets below are unchanged - the rule they encode did not move.
 OCCURRENCE_REQUEST_MARKERS = (
     "回顾", "上次", "那次", "昨天", "上月", "上个", "最近一次", "结果", "为什么",
     "问题", "发现", "缺", "漏", "完成", "怎么样", "出了", "延期", "取消", "返工",
