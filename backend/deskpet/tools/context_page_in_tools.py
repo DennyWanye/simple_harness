@@ -50,33 +50,67 @@ class ContextPageInReference:
 
 
 class ContextPageInStore:
-    """Bounded ephemeral authority; references never cross request scopes."""
+    """Bounded ephemeral authority; references never cross request scopes.
 
-    def __init__(self, *, ttl_seconds: float = 300.0, max_refs: int = 512) -> None:
+    事件 X-2：上限必须同时按**条数**与**字节**设。页内容是模型可能 page-in 的整
+    份召回片段/工具结果，单条可以很大；只按 512 条设界时最坏情况能在进程里常驻
+    几百 MB（事件 X 的 followup X-F3）。字节预算与条数预算都用同一条"按插入顺序
+    淘汰最旧"规则，TTL 不变。单条大于整份预算时不拒绝——该引用正是本次请求刚发布
+    给模型的那一条，淘汰掉其余后仍然收下它，下一次 ``put`` 会把它挤走。
+    """
+
+    DEFAULT_MAX_BYTES = 8 * 1024 * 1024
+
+    def __init__(self, *, ttl_seconds: float = 300.0, max_refs: int = 512,
+                 max_bytes: int = DEFAULT_MAX_BYTES) -> None:
         self._ttl = max(1.0, float(ttl_seconds))
         self._max = max(1, int(max_refs))
+        self._max_bytes = max(1, int(max_bytes))
         self._records: dict[str, ContextPageInReference] = {}
+        self._sizes: dict[str, int] = {}
+        self._bytes = 0
         self._active: set[str] = set()
         self.primary_reader = None  # composed Host reader; never an in-memory grant
         # Optional durable payload-free issue/consume receipts (operation-audit.db, G1).
         self.receipt_ledger = None
 
+    @property
+    def retained_bytes(self) -> int:
+        """当前常驻的页内容字节数（UTF-8）。"""
+        return self._bytes
+
+    @property
+    def max_bytes(self) -> int:
+        return self._max_bytes
+
+    def _drop(self, reference_id: str) -> None:
+        self._records.pop(reference_id, None)
+        self._bytes -= self._sizes.pop(reference_id, 0)
+        if self._bytes < 0:  # 防御：任何路径都不允许把预算算成负数
+            self._bytes = 0
+        self._active.discard(reference_id)
+
     def put(self, *, kind: str, source: str, content: str, session_id: str,
             request_id: str, scope_id: str) -> ContextPageInReference:
         self.purge_expired()
-        while len(self._records) >= self._max:
-            evicted = next(iter(self._records))
-            self._records.pop(evicted)
-            self._active.discard(evicted)
+        content = str(content)
+        encoded = content.encode("utf-8")
+        size = len(encoded)
+        while self._records and (
+            len(self._records) >= self._max or self._bytes + size > self._max_bytes
+        ):
+            self._drop(next(iter(self._records)))
         ref = ContextPageInReference(
             reference_id=uuid.uuid4().hex,
             kind=str(kind), source=str(source),
-            source_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            source_hash=hashlib.sha256(encoded).hexdigest(),
             session_id=str(session_id), request_id=str(request_id),
-            scope_id=str(scope_id), content=str(content),
+            scope_id=str(scope_id), content=content,
             expires_at=time.monotonic() + self._ttl,
         )
         self._records[ref.reference_id] = ref
+        self._sizes[ref.reference_id] = size
+        self._bytes += size
         if self.receipt_ledger is not None:
             self.receipt_ledger.record_sync(
                 phase="issued", reference_id=ref.reference_id, kind=ref.kind, source=ref.source,
@@ -106,8 +140,7 @@ class ContextPageInStore:
     def purge_expired(self) -> None:
         now = time.monotonic()
         for key in [k for k, value in self._records.items() if value.expires_at <= now]:
-            self._records.pop(key, None)
-            self._active.discard(key)
+            self._drop(key)
 
 
 def build_context_page_in_handler(

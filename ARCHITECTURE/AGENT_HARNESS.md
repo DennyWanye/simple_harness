@@ -2678,8 +2678,54 @@ seq 19「更正一下：校对脚本我现在统一用 Python 3.13，不是 3.12
   `tests/execution/` 全目录失败集合与主干逐条 diff 一致，未引入新失败。
   详见 [DECISION-X-BACKEND-MEMORY-GROWTH](../plans/2026-09-08-hm-to-a6/DECISION-X-BACKEND-MEMORY-GROWTH.md)。
 - **已知未做**：SDK 侧 `ToolRegistry` 自身的回收（X-F1）、原生旅程定量复测（X-F2）、
-  分页缓存改字节预算（X-F3）、`main.py` 的 `_sdk_unavailable_tool_authority_runs`（X-F4）、
-  打开 agent memory 后的同样测量（X-F5）。
+  `main.py` 的 `_sdk_unavailable_tool_authority_runs`（X-F4）。
+  X-F3（分页缓存改字节预算）与 X-F5（打开 memory 车道后的同样测量）已由**事件 X-2** 收口，
+  见下一节。
+
+## 2026-09-09 打开 memory 车道后的每回合保留（HM-TO-A6 事件 X-2：事件 X 的 X-F5 收口）
+
+- **动机**：事件 X 的离线复现跑在 `memory=None` 上（followup X-F5），ingestion 出站箱、
+  分析出站箱、`HumanMemoryV7` 认知写入、typed recall、短程向量索引、SDK agent memory
+  这几条车道一条都没被覆盖；原生仍每回合涨 250–300 MB（attempt 11：turn 15 后端 RSS
+  5143 MB，`vmmap` MALLOC_SMALL 4.5 GB）。
+- **离线复现**：`test_primary_foreground_runtime.build(dynamic=True)` 的真实 runtime +
+  SDK stack，外加 `MemoryManager.build_development`（SDK agent memory）、生产的
+  `compose_human_memory_runtime`（真实认知库 + `HostMemoryAnalysisExecutor` + typed recall +
+  prospective/procedure 车道）、生产的 `MemoryAnalysisLane`（ingestion outbox → 短程索引 →
+  job runner）每回合驱到空闲；analysis provider 是返回**合法 v9 提案**的确定性 adapter，
+  每回合真的写一条认知记忆；短程向量车道用与 WeMM 同形状（2048 维 / l2）的确定性稠密夹具
+  embedder（真 2B 模型超出本轮进程预算；hash/mock 会被 `build_kwargs` 按生产口径丢弃）。
+- **结论一：健康回合上 memory 车道不泄漏**。12–14 回合连驱，暖机后 tracemalloc 每回合净保留
+  **5.0 KiB**（其中 3.3 KiB 是测量脚本自身的 gc 普查），RSS turn 6 之后走平（225 → 261 MiB），
+  gc 类型普查里 `Task`/`Context`/`hamt`/`ExecutionLease`/`CancelToken` **均无增长**，
+  SDK kernel 的 `_leases`/`_fences`/`_cancels`/`_heartbeats` 每回合末恒为 0，
+  `ToolRegistry.calls` 恒为 0（事件 X 的修复在车道打开后仍成立）。
+- **结论二：找到一条新的真泄漏，在冻结 SDK 里**（`simple_harness/runtime/kernel.py:3033` 与 `:2205`）。
+  `_cancel_run` / `_process_cancel_command` 非 workflow 分支只在 `run_id in _live.active_run_ids()` 时才走
+  `_drive` 的 `finally` 释放路径；Run 已 parked（waiting 在 provider blocker 上）时它自己调
+  `_terminalize_cancelled` 就返回，**从不调 `_release_runtime_lease` / `_drop_local_authority`**
+  （workflow 分支是调了的）。于是每个这样被取消的 Run 永久留下 1 条 `ExecutionLease`、
+  1 个 `CancelToken`、**一个永不结束的 heartbeat `asyncio.Task`**（连同它复制的整份 contextvars
+  `Context`），并持续对已终态 Run 续租。生产触发路径正是 F06 的
+  `provider_unknown_exhausted → _ingress.cancel()`。宿主公开面没有可归还的 API →
+  记 followup **X2-F1**（附精确要求）。
+- **本轮 Host 侧修复（X-F3 收口）**：`ContextPageInStore` 的上限从"只按条数（512）"改为
+  **条数 + 字节（默认 8 MiB）双预算**，淘汰与 TTL 过期共用一条按插入顺序的 `_drop()`；
+  单条大于整份预算时不拒绝（它正是本次请求刚发布给模型的那一条）。生产里
+  `context_request_planner._bind_page_in_candidate` 会把**每个** `trim_policy=page_in`
+  召回片段整份塞进这个进程内存储，模型最多 page-in 一个，其余全部常驻 —— 只按条数设界时
+  最坏能常驻几百 MB。**没有**引入周期性 `gc.collect()`。
+- **回归**：`backend/tests/execution/test_primary_runtime_memory_growth.py` 由 1 例增到 **2 例**
+  （事件 X 原例原样保留）。新例连驱 12 回合、每回合发布一份 3 MiB「已准备但未 page-in」的大页，
+  断言终态恰好 `{"COMPLETED": 12}`、ingestion 12 条 `delivered`、页存常驻 ≤ 16 MiB、
+  每回合净保留 < 512 KiB。主干红（页存 `[3,6,…,36] MiB`、**3193.9 KiB/回合**），
+  修复后绿（页存恒 `6.0 MiB`、**118.3 KiB/回合**）。
+- **未解释的部分**：离线（含全部 memory 车道、1 MiB 工具载荷、2048 维向量车道）RSS 走平，
+  **解释不了**原生的 250–300 MB/回合；X-F2 的原生定量复测仍是唯一能定这笔账的手段。
+  另记 X2-F3（Memory SDK 认知向量精确扫描缓存 `_ExactVectorGenerationCache` 有 `size_bytes`
+  却无字节上限，实测 +7.1 KiB/回合、O(记忆条数×维度×4B)，报 0.6.39）、X2-F4（真 WeMM
+  未纳入测量）、X2-F5（离线无 FastAPI/WebSocket，广播缓冲未覆盖）。
+  详见 [DECISION-X2-MEMORY-LANES-GROWTH](../plans/2026-09-08-hm-to-a6/DECISION-X2-MEMORY-LANES-GROWTH.md)。
 
 ### 2026-09-09（F-Z1）：读类文件工具的调用时工作区闸门 `WorkspaceReadGate`
 
