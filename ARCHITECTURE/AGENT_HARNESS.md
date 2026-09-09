@@ -2393,6 +2393,37 @@ tool_schemas / open_group / groups`），`str()` 仍为稳定码
   `OperationalError` 收窄为只吞 `no such table`、加宽查询补 `task_scope_id` 谓词、新增跨 Run 绑定用例、
   升级断言改为逐字匹配、空集合分支补 `allowed_evidence_refs_total: 0`）。
 
+## 2026-09-09 每回合工具认领随 Run 终态归还（HM-TO-A6 事件 X：后端内存增长）
+
+- **现象**：原生旅程里后端进程每个 provider 回合稳定 +250 MB（Manual run3 七回合 0.94 → 2.86 GB），
+  24 回合旅程叠加语料批次时 app 家族到 17.4 GB。后端 2.7 GB 时的 `vmmap -summary` 显示
+  **MALLOC_SMALL 2.1 GB 常驻**、MALLOC_LARGE 仅 31 MB —— 是 Python 对象堆积，不是模型权重。
+- **根因**：冻结 SDK 的 `ToolRegistry.invoke()` 把每次工具调用记进 `_calls`，而**只有**
+  `allow_confirmed_not_started()` 会删；结算成功的调用永不出表。产品侧 `ProductToolsAdapter`
+  继承它、由 `ports_factory` 每个 runtime stack 建一次，**生命周期 = 后端进程生命周期**，
+  于是每条 `_CallRecord` 连同已完成的 `asyncio.Task`（协程栈帧 + Task 复制的整个 contextvars
+  `Context` hamt）和整份 `ToolResult` 载荷被永久保留。`_ForegroundEffectBinding`、
+  asyncio 的 Task WeakSet 等次级保留都挂在这同一个根上。
+- **产品侧释放，不改 site-packages**：`ProductToolsAdapter` 在 `invoke()` 记住
+  `call_id → sdk_run_id`，在 `bind_run_authorities()` 里挂上
+  `SdkRunToolAuthorityRegistry.add_terminal_listener`（与 route-state memo、project-binding
+  释放同一个 Run 终态钩子），终态时 `release_run_calls()` 只对**非 RUNNING** 的记录调用公开的
+  `allow_confirmed_not_started()`。另加 `_MAX_TRACKED_RUNS = 64` 兜底，覆盖不经 Tool authority
+  终态的历史聊天入口。`_calls` 是纯进程内状态，不参与持久化/指纹/回执/重放，确定性与回放不变。
+  **没有**引入周期性 `gc.collect()`。
+- **其余候选结构经探针确认已有界**：`SdkRunToolAuthorityRegistry` 的四张按 Run 表、
+  `ToolCapabilityScopeStore`、`ForegroundEffectAdmissionGate._bindings` 在终态后探针恒为 0；
+  `ContextPageInStore` 是 512 条 / 300s TTL 的合法有界缓存（按条数而非字节设限，记为 followup）。
+- **回归**：`backend/tests/execution/test_primary_runtime_memory_growth.py` **1 例**——
+  离线连驱 12 回合（不启动原生 app、不连真 provider），每回合 3 次工具调用含 `tool_search`
+  与分页 + `context_page_in`，按 tracemalloc 断言每回合净保留 < 48 KiB。
+  主干红（**151.5 KiB/回合**，认领数 `[2,4,…,24]`），修复后绿（**13.2 KiB/回合**，认领数恒 0）。
+  `tests/execution/` 全目录失败集合与主干逐条 diff 一致，未引入新失败。
+  详见 [DECISION-X-BACKEND-MEMORY-GROWTH](../plans/2026-09-08-hm-to-a6/DECISION-X-BACKEND-MEMORY-GROWTH.md)。
+- **已知未做**：SDK 侧 `ToolRegistry` 自身的回收（X-F1）、原生旅程定量复测（X-F2）、
+  分页缓存改字节预算（X-F3）、`main.py` 的 `_sdk_unavailable_tool_authority_runs`（X-F4）、
+  打开 agent memory 后的同样测量（X-F5）。
+
 ## 历史阶段索引
 
 | 阶段 | 目的 | 结果文档 |
