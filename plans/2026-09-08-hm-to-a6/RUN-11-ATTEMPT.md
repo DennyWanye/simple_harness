@@ -7,3 +7,8 @@
 ## T6（14:05）：读门首次生效，但 fixture 在任务根之外 → F-Z1b
 
 `workspace_read_denied tool=read_file reason=path_outside_workspace_root` ×3（read_file ×1、list_directory ×2）。读门按 F-Z1 正确失败关闭：任务唯一已验证根是托管目录 `task-<id>/`，而 fixture 在 `SimpleHarnessWorkSpace/a6-fixture/`。但读门没有像效果路径那样走 S4 多根绑定提案（Auto 下策略自动授予、Manual 下弹绑定卡），模型无路可走。→ **F-Z1b**（读越界进入同一绑定提案权威）已派子代理。本次 A6-2 仍不可达；旅程继续用于验证 AA/W-b/Z/X 与关系/争议段。
+
+## T15–T17（14:20）
+
+- T15 关系边再次落地（`applies_to`/knowledge），T16 图谱 12 记忆 1 关系。
+- **T17 goal.set 成功**（事件 U 生效：`task_scope_update` 应用了 18 KB 目标），但第 5 次调用被线上门拦下：`wire=31246 carry=0`（W-b 生效，携带量为 0），纯粹是文本估算对中文过高——上一轮实际计费 17058 而估算 ≈31 K（CJK 估算约 1.6–1.8×）。→ **W-c**（估算器 CJK 感知 + 用同 Run 上一轮的实测比例校正）已派子代理。
