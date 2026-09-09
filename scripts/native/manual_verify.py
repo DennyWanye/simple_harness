@@ -11,7 +11,8 @@
 
 <E> 需包含:
     userdata/data/state.db                          绑定权威表
-    userdata/data/sdk-product-state.db              authorization_policy_state / task_grants
+    userdata/data/workflow.db                       authorization_policy_state(唯一权威)
+    userdata/data/sdk-product-state.db              task_grants / authorization_sagas
     userdata/data/human_memory_v7.db
     userdata/data/operation-audit.db
     userdata/data/simple-harness-sdk/execution-v6.sqlite3
@@ -114,12 +115,21 @@ class Evidence(A6Evidence):
         self.paths.pop("a6-progress.jsonl", None)
         self.paths[PROGRESS_NAME] = os.path.join(self.root, PROGRESS_NAME)
         self.paths["sdk-product-state.db"] = os.path.join(data, "sdk-product-state.db")
+        # MM-D1(2026-09-09): 授权策略(auto/manual, generation, provenance)的唯一权威是
+        # workflow.db 的 authorization_policy_state —— CapabilityStore 建在
+        # workflow_service.execution_uow 上, 设置页勾选框走 _set_authorization_auto_mode
+        # -> compare_and_set_policy_mode 写它。sdk-product-state.db 里的同名表是复用
+        # CAPABILITY_SCHEMA_SQL 建库带出的 DDL 残留(含 auto/0/factory_default 种子行),
+        # 生产从不写它; 读它会永远看到 mode=auto gen=0(run3 记录失真的根因)。
+        self.paths["workflow.db"] = os.path.join(data, "workflow.db")
         self.progress = self._read_progress(self.paths[PROGRESS_NAME])
         self.product = RoDb(self.paths["sdk-product-state.db"], "sdk-product-state.db")
+        self.workflow = RoDb(self.paths["workflow.db"], "workflow.db")
 
     def close(self) -> None:
         super().close()
         self.product.close()
+        self.workflow.close()
 
     # ---- 逐轮计数 ----
     def counter_rows(self) -> dict[int, dict[str, Any]]:
@@ -213,16 +223,18 @@ class Evidence(A6Evidence):
         return [(int(r[0] or 0), int(r[1] or 0)) for r in rows]
 
     def policy_state(self) -> dict[str, Any]:
-        if not self.product.has(
+        # MM-D1: 只读 workflow.db。绝不回落读 sdk-product-state.db 的残留表 ——
+        # 那张表恒为 auto/0/factory_default, 回落会把 FAIL 洗成 PASS。
+        if not self.workflow.has(
             "authorization_policy_state", "mode", "generation", "provenance"
         ):
-            raise SchemaMissing("sdk-product-state.db.authorization_policy_state 缺表/列")
-        rows = self.product.rows(
+            raise SchemaMissing("workflow.db.authorization_policy_state 缺表/列")
+        rows = self.workflow.rows(
             "select mode, generation, provenance, user_set_receipt_ref"
             " from authorization_policy_state where singleton_id=1"
         )
         if not rows:
-            raise SchemaMissing("authorization_policy_state 无单例行")
+            raise SchemaMissing("workflow.db.authorization_policy_state 无单例行")
         r = rows[0]
         return {
             "mode": as_text(r[0]),
@@ -1089,19 +1101,34 @@ def selftest() -> int:
              ("rej1", "run1", "workspace_binding_identity_drift", 100.0)),
         ],
     )
+    policy_ddl = (
+        "create table authorization_policy_state(singleton_id integer primary key,"
+        " mode text, generation integer, updated_at real, provenance text,"
+        " schema_generation integer, user_set_receipt_ref text)"
+    )
+    # MM-D1 自检形状: 两个库都有 authorization_policy_state, 但内容相反 ——
+    # workflow.db 是真轨迹(auto->manual->auto, generation=2, user_explicit),
+    # sdk-product-state.db 是 DDL 残留种子行(恒 auto/0/factory_default/NULL)。
+    # 校验器若读错库, MM-1 会立刻退化成 INCONCLUSIVE(generation<2), 自检就红。
+    make(
+        os.path.join(parent, "workflow.db"),
+        [policy_ddl],
+        [
+            ("insert into authorization_policy_state values (?,?,?,?,?,?,?)",
+             (1, "auto", 2, 100.0, "user_explicit", 2, "receipt-abc")),
+        ],
+    )
     make(
         os.path.join(parent, "sdk-product-state.db"),
         [
-            "create table authorization_policy_state(singleton_id integer primary key,"
-            " mode text, generation integer, updated_at real, provenance text,"
-            " schema_generation integer, user_set_receipt_ref text)",
+            policy_ddl,
             "create table task_grants(task_grant_id text primary key, root_run_id text,"
             " source text, policy_generation integer)",
             "create table authorization_sagas(authorization_id text primary key, state text)",
         ],
         [
             ("insert into authorization_policy_state values (?,?,?,?,?,?,?)",
-             (1, "auto", 2, 100.0, "user_explicit", 2, "receipt-abc")),
+             (1, "auto", 0, 90.0, "factory_default", 2, None)),
             ("insert into task_grants values (?,?,?,?)", ("tg1", "run1", "policy:auto", 0)),
             ("insert into task_grants values (?,?,?,?)", ("tg2", "run2", "user", 1)),
             ("insert into task_grants values (?,?,?,?)", ("tg3", "run3", "policy:auto", 2)),

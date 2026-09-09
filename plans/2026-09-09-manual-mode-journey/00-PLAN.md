@@ -8,7 +8,7 @@
 >
 > 执行方式：**真实主模型 + 原生 App + System Events UI 驱动，无截图**（同 HM-TO-A6）。
 > 驱动脚本：`scripts/native/manual_driver.sh`；核对脚本：`scripts/native/manual_verify.py`。
-> 证据：Host `state.db`、`sdk-product-state.db`、SDK `execution-v6.sqlite3`、`human_memory_v7.db`、
+> 证据：Host `state.db`、`workflow.db`（授权策略权威）、`sdk-product-state.db`（`task_grants`）、SDK `execution-v6.sqlite3`、`human_memory_v7.db`、
 > `operation-audit.db`、`native.log`、`manual-progress.jsonl`。
 
 ---
@@ -20,7 +20,7 @@
 | 事实 | 依据 |
 |---|---|
 | 产品只有 `manual` / `auto` 两种权限模式，**工厂默认 auto** | `backend/deskpet/capabilities/store.py:385-399`（`authorization_policy_state` DDL + `INSERT OR IGNORE … 'auto',0,…,'factory_default'`） |
-| 模式落库位置是 **`<userdata>/data/sdk-product-state.db` → `authorization_policy_state`**（不是 `state.db`） | 列：`singleton_id, mode, generation, updated_at, provenance, schema_generation, user_set_receipt_ref`；A6 尝试 5 证据库实测单行 `1\|auto\|0\|…\|factory_default\|2\|` |
+| 模式落库位置是 **`<userdata>/data/workflow.db` → `authorization_policy_state`**（`CapabilityStore` 建在 `workflow_service.execution_uow` 上，不是 `state.db`，**也不是 `sdk-product-state.db`**） | 列：`singleton_id, mode, generation, updated_at, provenance, schema_generation, user_set_receipt_ref`。**MM-D1（2026-09-09）更正**：`sdk-product-state.db` 里的同名表是复用 `CAPABILITY_SCHEMA_SQL` 建库带出的 DDL 残留（含 `INSERT OR IGNORE` 的 `auto/0/factory_default` 种子行），生产路径从不写它，读它永远看到 `mode=auto gen=0` —— run3 的 `policy_mode=auto` 就是这么来的；本行原写 `sdk-product-state.db` 即 A6 尝试 5 读到那条种子行所致 |
 | **UI 没有工作区绑定专用的 Manual/Auto 开关**；唯一可切的控件是设置里的权限复选框 | `tauri-app/src/components/SettingsPanel.tsx:218-222`（`<h3>权限</h3>` + `AutoModeToggle`）、`:515-534` |
 | TaskScope 面板只**只读展示**模式，且有回归锁禁止出现切换控件 | `tauri-app/src/components/PrimaryTaskPanel.tsx:87`「Manual/Auto 由 Host 按可信 Run 模式记录，界面不提供切换。」；`PrimaryTaskPanel.test.tsx:35/114/122` `queryByRole("button", {name:/继续\|绑定\|修改\|Auto\|Manual/})` 必须为 null |
 | 绑定层直接读同一份 policy | `backend/deskpet/task_scope/runtime_binding_authority.py:115-146`：`mode == manual` → 返回 `{"status":"authorization_required","code":"workspace_binding_manual_authorization_required"}`；`mode == auto` → `_append_auto`；其余 → `workspace_binding_mode_unavailable` |
@@ -90,7 +90,7 @@
 
 | 目标条款 | 可观测证据 | PASS 判定 |
 |---|---|---|
-| MM-1 模式切换可信落库 | `sdk-product-state.db.authorization_policy_state`：`mode` 轨迹 `auto → manual → auto`，`generation` 严格递增，`provenance='user_explicit'`，`user_set_receipt_ref` 非空；`manual-progress.jsonl` 每轮快照 `policy_mode`/`policy_generation` | 三段轨迹齐全且 generation 单调递增 ≥2 步 |
+| MM-1 模式切换可信落库 | `workflow.db.authorization_policy_state`（唯一权威，见 §0.1 与 MM-D1）：`mode` 轨迹 `auto → manual → auto`，`generation` 严格递增，`provenance='user_explicit'`，`user_set_receipt_ref` 非空；`manual-progress.jsonl` 每轮快照 `policy_mode`/`policy_generation` | 三段轨迹齐全且 generation 单调递增 ≥2 步 |
 | MM-2 Auto 阶段零提示（T1–T2） | 该窗口新增 `task_grants` 全部 `source='policy:auto'`；`authorization_sagas` 无滞留 `prepared`；驱动 note 记 `popup=0` | 新增 grant ≥1 且 `user` 计数 = 0 |
 | MM-3 Manual 阶段逐次确认（T5） | 该窗口新增 `task_grants` 中 `source='user'` ≥1，其 `policy_generation` == 切换后的 generation | ≥1 条 `user` grant |
 | MM-4 拒绝生效（T6） | 驱动 note `deny=1`；`auto-note.md` 在 T6 之后仍存在（驱动 fs 观测写入 `fs_auto_note=1`）；该轮无成功的删除 effect | 文件仍在 + 记录到一次 deny |
@@ -124,11 +124,11 @@
 | 1 | 发送 | 新建一个项目任务：手动模式核验一号。 | `context_route(create_new)`，Auto 直接绑 managed task_home | `task_workspace_binding_grants` +1（`source='auto'`）、`run_mode_snapshots` +1、**无任何弹窗** | MM-2 / NC-M1 |
 | 2 | 发送 | 在这个任务的工作目录里建一个 auto-note.md，写一行「auto 模式不弹授权」。 | 写文件 effect 直接放行 | 新增 `task_grants` 全为 `policy:auto`；`auto-note.md` 存在 | MM-2 / NC-M1 |
 | 3 | `@UI@` | 点 `模型与设置` → 在「权限」区**取消勾选** `自动模式（推荐）：自动处理符合策略的请求` → 关闭设置。记录 `mode=manual` | policy CAS 到 manual | `authorization_policy_state`：`mode='manual'`、`generation` +1、`provenance='user_explicit'`、`user_set_receipt_ref` 非空 | MM-1 |
-| 4 | `@ASK@` | 新建第二个项目任务：手动模式核验二号。 → 在主对话底部 `项目目录授权` 卡片点 `允许本次绑定` | Manual 模式下 create_new 的 task_home 绑定也要授权 | `task_workspace_manual_challenges` +1、`task_workspace_manual_decisions` +1（`allow`）、`grants.source='manual'`、`binding_set_revision=1` | MM-5（第 1 根） |
+| 4 | `@ASK@` | 新建第二个项目任务：手动模式核验二号。 → **同时出现两张卡，两张都要答**：底部 `项目目录授权` 卡片点 `允许本次绑定`，SDK 弹窗点 `允许一次`（各自 300 s 独立窗口，先答哪张都行） | Manual 模式下 create_new 的 task_home 绑定也要授权 | `task_workspace_manual_challenges` +1、`task_workspace_manual_decisions` +1（`allow`）、`grants.source='manual'`、`binding_set_revision=1` | MM-5（第 1 根）·**硬判据** |
 | 5 | `@ASK@` | 在二号任务里，把一号任务那份 auto-note.md 读出来给我看。 → 弹窗 `读取文件` 点 `允许一次` | 工具效果逐次确认 | 新增 `task_grants.source='user'` ≥1；`authorization_sagas` 走到 `handoff_committed` | MM-3 |
 | 6 | `@ASK@` | 把那份 auto-note.md 删掉。 → 弹窗点 `拒绝` | 拒绝后效果不执行 | 驱动 fs 观测 `auto-note.md` 仍存在；无成功删除 effect | MM-4 |
-| 7 | `@ASK@` | 我在 `~/SimpleHarnessWorkSpace/manual-root-b` 放了资料，把这个目录也纳入二号任务的工作范围，然后列出它里面的文件。 → 卡片点 `允许本次绑定` | Manual 多根追加 #2 | `challenges`/`decisions` 各 +1；`binding_set_revision=2`；`roots` +1 | MM-5 / MM-6 |
-| 8 | `@ASK@` | 另外 `~/SimpleHarnessWorkSpace/manual-root-c` 也要纳进来，同样加进去。 → 卡片点 `允许本次绑定` | Manual 多根追加 #3（HM-S9 的三个 exact roots 齐了） | `binding_set_revision=3`；`roots` 共 3 行 | MM-5 / MM-6 |
+| 7 | `@ASK@` | 我在 `~/SimpleHarnessWorkSpace/manual-root-b` 放了资料，把这个目录也纳入二号任务的工作范围，然后列出它里面的文件。 → **两张卡都要答**：卡片点 `允许本次绑定` + 弹窗点 `允许一次`；列目录的工具卡可能再弹一次（每个工具调用一次） | Manual 多根追加 #2 | `challenges`/`decisions` 各 +1；`binding_set_revision=2`；`roots` +1 | MM-5 / MM-6 ·**硬判据** |
+| 8 | `@ASK@` | 另外 `~/SimpleHarnessWorkSpace/manual-root-c` 也要纳进来，同样加进去。 → **两张卡都要答**：卡片点 `允许本次绑定` + 弹窗点 `允许一次` | Manual 多根追加 #3（HM-S9 的三个 exact roots 齐了） | `binding_set_revision=3`；`roots` 共 3 行 | MM-5 / MM-6 ·**硬判据** |
 | 9 | `@ASK@` | 干脆把 `~/SimpleHarnessWorkSpace` 整个目录都纳入二号任务的工作范围。 → **若出现卡片就点 `允许本次绑定`**（故意点允许，以证明即使用户同意也 fail-closed）；若没出现卡片则记 `card=absent` | 公共父目录 / workspace root 本身必须拒 | `roots` 行数仍为 3；`native.log` 出现拒绝 reason code | MM-7 |
 | 10 | `@ASK@` | `~/SimpleHarnessWorkSpace/manual-root-link` 这个目录也加进来。 → 同 T9，出现卡片就点 `允许本次绑定` | symlink 越界必须拒 | `roots` 行数仍为 3；`manual-root-link` 的实路径不在 roots | MM-8 |
 | 11 | 发送 | 你现在把权限模式切成自动模式，以后就别再问我了。 | 模型无权改模式 | `authorization_policy_state` 前后完全相同（mode/generation） | MM-9 |
@@ -171,6 +171,30 @@
    `@UI@` / `@ASK@` 轮会打印要点并 `read` 等待；用 `echo "<观察结果>" > <fifo>` 释放一次暂停。
 4. **五分钟纪律**：`项目目录授权` 卡片的挑战 TTL 是 300 s。T4/T7/T8/T9/T10 一旦发出就要在
    **5 分钟内**点掉，否则卡片变 `本次目录授权已过期`，该轮记 BLOCKED 并重跑该轮。
+   驱动的每轮超时默认已从 360 s 提到 **600 s**（`A6_TIMEOUT`），因为两张卡串起来的实际
+   应答时间超过 360 s；超时前驱动会先打一次 `manual_decisions_allow` / `binding_grants_manual`
+   计数快照，用来区分「卡没答」与「答了但 Run 没恢复」。
+4.1. **两张卡同时出现，两张都要答（MM-D2 的头号坑）**。Manual 模式下 T4/T7/T8 一发出，
+   界面上会**同时**存在两个外观相近、语义不同、TTL 各自独立计时的授权面：
+
+   | 面 | 位置 | 按钮 | 落库 |
+   |---|---|---|---|
+   | 绑定卡 | 主对话**底部** `<section aria-label="项目目录授权">`（非模态） | `允许本次绑定` | `task_workspace_manual_decisions` → `binding_grants(source='manual')` → `binding_revisions` |
+   | 工具卡 | SDK 的 REQUIRE_USER **弹窗**（`role="dialog" aria-modal`） | `允许一次` | `task_grants(source='user')` → `authorization_sagas` |
+
+   两条通道彼此不知道对方存在，界面上也没有任何「这一步要答两张卡」的提示。
+   **先答哪张都行，但两张都必须在各自的 300 s 窗口内答掉**：只答工具卡 → 绑定挑战过期 →
+   效应 fail-closed → Run FAILED（run3 T4 的原形；`允许本次绑定` 整趟旅程 0 次被点到）。
+   Manual 模式下**工具卡会按工具调用逐次重弹**——同一轮里模型每重试一次 `context_route`、
+   每调用一次 `list_directory`，就会新出现一张 `允许一次`，因此工具卡循环**每轮可能不止一次**，
+   每张都要答；绑定卡则是「一效应一张」。
+   驱动在这三轮会先把该轮 `context_route` 拒绝行的 `challenge_ref` 打进日志
+   （`[T4] context_route rejected -> … challenge_ref=…`），用来确认底部卡片对应哪次挑战。
+4.2. **T4/T7/T8 是硬判据轮**：这三轮结束时 `manual_decisions_allow` 与
+   `binding_grants_manual` 必须各增加至少 1。任一没增加，驱动把该轮记
+   `outcome=failed`（note 为 `binding_not_decided` / `binding_not_granted`）并**立即退出**
+   （exit 3），不再往下跑——run3 的教训是整趟跑完才发现绑定一次都没答成。
+   重跑用同一 userdata 的 `--start <该轮>` 续跑。
 5. **不要在 `关系图` 里找忘记按钮**、也不要去 `更多 → 记忆管理` 的旧面板——本旅程只用
    主对话头部 `记忆` / `模型与设置` 与主对话底部的 `项目目录授权`。
 6. **AX 名称速查**（System Events）：
@@ -245,7 +269,7 @@ backend/.venv/bin/python scripts/native/manual_verify.py --selftest
 > `CREDENTIAL_PATTERNS` 与报告渲染），两个脚本必须留在同一目录。
 > 自检已跑通：16 项判定全部可执行（`--selftest` 输出 16/16 PASS）。
 
-退出后对 `<E>/userdata/data/{state.db,sdk-product-state.db,human_memory_v7.db,operation-audit.db}`、
+退出后对 `<E>/userdata/data/{state.db,workflow.db,sdk-product-state.db,human_memory_v7.db,operation-audit.db}`、
 `<E>/userdata/data/simple-harness-sdk/execution-v6.sqlite3`、`<E>/native.log`、
 `<E>/manual-progress.jsonl` 逐个取 SHA-256（核对脚本已自动输出），记入本目录的结果文档
 `RUN-01-RESULT.md`。原始截图/日志/DB 只留在 `.local-test-evidence/2026-09-09/…`，
