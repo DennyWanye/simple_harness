@@ -658,3 +658,24 @@ simple_harness 的用户界面现在以暗色为默认外观。主窗口背景�
   重试仍由 `App.tsx` 的既有有界退避负责。回归：`src/primary` + `src/auth` **104 passed**、
   `tsc -b --noEmit` PASS；`controller.test.ts` 新增 3 例覆盖降级就绪帧、被拒显码、已就绪不被覆盖。
   详见 [DECISION-AK-RESTART-READY](../plans/2026-09-09-two-flow-journey/DECISION-AK-RESTART-READY.md)。
+- 2026-09-09（UAT 主对话历史）刷新/重启后历史完整性与角色可辨：真人验收报「分不清谁说的、
+  刷新后只剩我的问题，AI 回答和 tool 记录不见了」。用 UAT 真实库（`native-uat-7e64dab0/
+  primary-ui-wmqy3l5j/userdata`）跑真实 `PrimaryReadModel` 证明**数据与后端投影都没丢**
+  （11 轮逐轮 `_messages()` 均返回 user/assistant/tool），根因是分页与呈现：
+  ① `primary_read_model.page()` 按**消息条数**截断，`limit=20` 把边界那一轮劈成两页
+  （实测第 6 轮的 `user+assistant` 在第 2 页、`tool+最终 assistant` 在第 1 页）；
+  ② 前端「查看更早消息」调 `refresh(cursor)` 是**替换**当前页，点一下就把刚看到的回答换走。
+  本轮改动：后端 `page()` 改为**轮次对齐**——只在轮边界收尾，装不下的整轮整体留给下一页
+  （游标停在该轮最新一条之上），仅当单轮本身超过 `limit` 时才截断以保证有进展；页大小、
+  50 条硬上限、10 轮扫描窗口与游标 `revision` 语义不变，无新增 wire 字段。前端
+  `controller.ts` 新增 `loadOlder()`（prepend + 按 `message_ref` 去重 + 有界上限
+  `PRIMARY_HISTORY_MAX_MESSAGES=200`，到顶给出可读提示），显式刷新仍是替换语义；
+  `PrimaryChatView.tsx` 三角色差异化：用户右对齐蓝底、助手左对齐卡片底、工具灰底等宽
+  **默认折叠**且标题为「工具 · <name>」（从 Host 拼在首行的 `{"call_id","name"}` 解析），
+  每条带 `data-testid="primary-message-<role>"`。回归：后端
+  `tests/memory/test_primary_read_api.py` **30 passed**（新增整轮分页用例）、前端
+  `src/primary` + `PrimaryChatView` + `InputBar.primary` + `WorkbenchShell` **124 passed**、
+  `tsc -b --noEmit` PASS；`test_primary_visibility` / `test_primary_runtime_api_integration`
+  的 forget 相关失败在 main 基线同样存在，非本轮引入。前端改动需重建 bundle 才在原生生效，
+  真机点击验收未做。详见
+  [DECISION-UAT-CHAT-HISTORY](../plans/2026-09-09-two-flow-journey/DECISION-UAT-CHAT-HISTORY.md)。

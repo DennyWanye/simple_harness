@@ -593,16 +593,32 @@ class PrimaryReadModel:
                 )
             turns = await self._turns(db, primary, before=before[0], limit=10)
             selected, next_key = [], None
+            # UAT 2026-09-09：一页必须是若干**完整轮**。旧实现按消息计数截断，
+            # 于是边界那一轮被劈成两页——用户看到自己的提问却看不到助手回答与
+            # 工具记录（「AI 的回答和 tool 使用记录都不见了」）。这里改为只在
+            # 轮边界收尾：装不下的整轮留给下一页；只有当单独一轮就超过 limit 时
+            # 才截断，否则分页会原地打转。
             for turn in turns:
+                pending = []
                 for message in reversed(await self._messages_with_notices(db, primary, turn, disclosure_context)):
                     key = (turn["enqueue_sequence"], message[0])
                     if key >= before:
                         continue
-                    selected.append((self._item(primary, turn, message), message[4]))
-                    if len(selected) == limit:
-                        next_key = key
+                    pending.append((key, self._item(primary, turn, message), message[4]))
+                if not pending:
+                    continue
+                if len(selected) + len(pending) > limit:
+                    if selected:
+                        # 整轮下移：游标停在这一轮最新一条之上，下一页从这一轮开头读起。
+                        next_key = (turn["enqueue_sequence"], pending[0][0][1] + 1)
                         break
-                if next_key is not None:
+                    pending = pending[:limit]
+                    next_key = pending[-1][0]
+                    selected.extend((item, sources) for _, item, sources in pending)
+                    break
+                selected.extend((item, sources) for _, item, sources in pending)
+                if len(selected) == limit:
+                    next_key = (turn["enqueue_sequence"], 0)
                     break
             if next_key is None and len(turns) == 10:
                 next_key = (turns[-1]["enqueue_sequence"], 0)

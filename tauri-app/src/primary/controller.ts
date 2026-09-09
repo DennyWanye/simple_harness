@@ -48,7 +48,14 @@ export interface PrimarySnapshot {
 }
 const empty = (): PrimarySnapshot => ({ ready: false, verifiedOwnerKey: null, primaryRef: null, loading: false, state: null, messages: [], nextCursor: null, error: "", notice: "正在恢复主对话身份…", viewEpoch: 0, draftEpoch: 0 });
 
-/** Bounded, replace-only read model. No persistence and no automatic mutation retry. */
+/**
+ * 一次会话里可展开的历史上限。UAT 2026-09-09：「查看更早消息」原来是**替换**
+ * 当前页，用户点一下就把刚看到的助手回答/工具记录换走，看起来像"回答不见了"。
+ * 现在旧页向上累积，但仍然有界——到上限就不再提供更早入口，而不是无限增长。
+ */
+export const PRIMARY_HISTORY_MAX_MESSAGES = 200;
+
+/** Bounded read model; older pages accumulate on explicit request. No persistence and no automatic mutation retry. */
 export class PrimaryController {
   private snapshot = empty();
   private listeners = new Set<() => void>();
@@ -193,7 +200,13 @@ export class PrimaryController {
     if (!this.snapshot.ready || this.timer) return;
     this.timer = setTimeout(() => { this.timer = null; void this.refresh(); }, delay);
   }
-  refresh = async (cursor: string | null = null): Promise<void> => {
+  /** 显式展开更早一页；新读到的旧消息拼在已显示历史之前，绝不替换掉当前页。 */
+  loadOlder = () => {
+    const cursor = this.snapshot.nextCursor;
+    if (!cursor) return Promise.resolve();
+    return this.refresh(cursor, "prepend");
+  };
+  refresh = async (cursor: string | null = null, mode: "replace" | "prepend" = "replace"): Promise<void> => {
     const client = this.client;
     if (!client || !this.snapshot.ready) return;
     if (this.reading) { this.refreshAgain = true; return; }
@@ -208,8 +221,17 @@ export class PrimaryController {
       if (epoch !== this.epoch) return;
       if (page.primary_ref !== state.primary_ref) throw new Error("主对话历史归属不匹配");
       if (page.revision !== state.revision) throw new Error("历史读取期间状态已变化，请刷新。");
-      const messages = parseMessages(page);
-      this.update({ state, primaryRef: state.primary_ref, messages, nextCursor: typeof page.next_cursor === "string" ? page.next_cursor : null, notice: this.readNotice(), error: "", viewEpoch: this.snapshot.viewEpoch + 1 });
+      const older = parseMessages(page);
+      const seen = new Set(older.map((message) => message.message_ref));
+      const messages = mode === "prepend"
+        ? [...older, ...this.snapshot.messages.filter((message) => !seen.has(message.message_ref))]
+        : older;
+      const serverCursor = typeof page.next_cursor === "string" ? page.next_cursor : null;
+      const capped = messages.length >= PRIMARY_HISTORY_MAX_MESSAGES;
+      this.update({ state, primaryRef: state.primary_ref, messages,
+        nextCursor: capped ? null : serverCursor,
+        notice: capped && serverCursor ? "本次已展开到历史上限；刷新状态后可从最新一页重新展开。" : this.readNotice(),
+        error: "", viewEpoch: mode === "prepend" ? this.snapshot.viewEpoch : this.snapshot.viewEpoch + 1 });
       if (state.current_run || state.queued_count) {
         if (this.followups < 12) { ++this.followups; this.scheduleRefresh(); }
         else this.update({ notice: "自动补读已暂停；运行可能仍在继续，可手动刷新状态。" });

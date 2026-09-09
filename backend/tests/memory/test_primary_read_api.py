@@ -894,3 +894,57 @@ async def test_page_rechecks_previously_selected_source_after_later_reader_await
     result(await f.send("queue.enqueue", {"text": "NEWER_SOURCE_CANARY"}, key="newer"))
     page = result(await f.send("primary.messages.page", {"primary_ref": f.primary}))
     assert "NEWER_SOURCE_CANARY" not in json.dumps(page)
+
+
+@pytest.mark.asyncio
+async def test_page_never_splits_one_turn_so_refresh_keeps_answers_and_tools(tmp_path):
+    """UAT 2026-09-09：刷新/重启后，每一页都必须是完整的轮。
+
+    旧实现按消息条数截断，边界那一轮只剩用户提问，助手回答与工具记录被切到
+    另一页——真人验收里表现为「AI 的回答和 tool 使用记录都不见了」。
+    """
+    facts = {}
+
+    def reader(run_id, *, current_text):
+        return facts[run_id], (
+            {"role": "user", "content": current_text},
+            {"role": "assistant", "content": "answer for " + current_text},
+            {
+                "role": "tool",
+                "content": "tool output for " + current_text,
+                "name": "read_file",
+                "call_id": "call-" + run_id,
+            },
+        )
+
+    f = await setup(tmp_path, reader=reader)
+    for key, text in (("first", "older question"), ("second", "newer question")):
+        _, terminal = await settled(f, key=key, text=text)
+        facts[terminal.run_id] = terminal
+
+    # limit=4 装不下第二个完整轮（3+3），旧实现会把老的那一轮劈开。
+    first = result(
+        await f.send("primary.messages.page", {"primary_ref": f.primary, "limit": 4})
+    )
+    assert [i["role"] for i in first["items"]] == ["user", "assistant", "tool"]
+    assert {i["delivery_key"] for i in first["items"]} == {"second"}
+    assert first["next_cursor"] is not None
+
+    second = result(
+        await f.send(
+            "primary.messages.page",
+            {"primary_ref": f.primary, "limit": 4, "cursor": first["next_cursor"]},
+        )
+    )
+    assert [i["role"] for i in second["items"]] == ["user", "assistant", "tool"]
+    assert {i["delivery_key"] for i in second["items"]} == {"first"}
+
+    # 两页合起来仍然是完整历史，没有任何一条被跳过。
+    refs = [i["message_ref"] for i in second["items"] + first["items"]]
+    assert len(set(refs)) == 6
+
+    # 单独一轮就超过上限时仍要有进展（截断而不是空页死循环）。
+    tiny = result(
+        await f.send("primary.messages.page", {"primary_ref": f.primary, "limit": 2})
+    )
+    assert len(tiny["items"]) == 2 and tiny["next_cursor"] is not None
