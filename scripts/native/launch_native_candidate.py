@@ -54,11 +54,24 @@ def main():
     parser.add_argument('--fallback-env-file', type=Path, default=None, help='BASEURL/APIKEY for the fallback provider (else the primary credential file)')
     parser.add_argument('--launch', action='store_true')
     parser.add_argument('--memory-probe', action='store_true',
-                        help='event X-3: turn on the backend site-level memory probe (memory.probe lines in native.log + tracemalloc snapshots under <userdata>/memory-probe/)')
-    parser.add_argument('--memory-probe-every', type=int, default=1, metavar='N',
-                        help='emit one memory.probe line every N foreground Run terminals (default 1); only meaningful with --memory-probe')
+                        help='event X-3: turn on the backend site-level memory probe (memory.probe.rss per terminal + full memory.probe samples on a background thread, tracemalloc snapshots under <userdata>/memory-probe/)')
+    parser.add_argument('--memory-probe-light', action='store_true',
+                        help='X3-F4 recommended journey mode: the probe at RSS-per-terminal plus one 5-frame tracemalloc sample every 6 terminals, gc census off (implies --memory-probe)')
+    parser.add_argument('--memory-probe-every', type=int, default=None, metavar='N',
+                        help='full sample every N foreground Run terminals (default 3, or 6 with --memory-probe-light); the cheap memory.probe.rss line is emitted every terminal regardless')
+    parser.add_argument('--memory-probe-frames', type=int, default=5, metavar='N',
+                        help='tracemalloc stack depth (default 5; X3-F4 measured 25 frames at 13x the allocation cost of no tracing vs 4.3x for 5 frames)')
+    parser.add_argument('--memory-probe-census', action='store_true',
+                        help='also run the gc.get_objects() type census on the sampling thread (off by default: 6.5 s per sample on a 1 GiB heap)')
     parser.add_argument('--headroom-mib', type=int, default=7168)
     args = parser.parse_args()
+    # X3-F4: --memory-probe-light is the recommended journey mode; it only picks
+    # cheaper defaults, so an explicit --memory-probe-every/-frames still wins.
+    if args.memory_probe_light and args.memory_probe_census:
+        parser.error('--memory-probe-light keeps the gc census off; drop one of the two')
+    probe_on = bool(args.memory_probe or args.memory_probe_light)
+    probe_every = max(1, args.memory_probe_every) if args.memory_probe_every else (6 if args.memory_probe_light else 3)
+    probe_frames = max(1, args.memory_probe_frames)
     source = args.source.resolve(strict=True)
     installed = args.installed_target.resolve(strict=True)
     assert (installed / 'simple_harness').is_dir()
@@ -136,13 +149,17 @@ def main():
         HF_HOME=str(run / 'cache/hf'), HF_MODULES_CACHE=str(run / 'cache/hf-modules'),
         TORCH_HOME=str(run / 'cache/torch'), HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
     )
-    # Event X-3: the probe is opt-in and must be deterministic per run, so the
-    # inherited value is always dropped and only re-set when asked for.
-    for name in ('SIMPLEHARNESS_MEMORY_PROBE', 'SIMPLEHARNESS_MEMORY_PROBE_EVERY'):
+    # Event X-3: the probe is opt-in and must be deterministic per run, so every
+    # inherited value is dropped and only re-set when asked for.
+    for name in ('SIMPLEHARNESS_MEMORY_PROBE', 'SIMPLEHARNESS_MEMORY_PROBE_EVERY',
+                 'SIMPLEHARNESS_MEMORY_PROBE_FRAMES', 'SIMPLEHARNESS_MEMORY_PROBE_KEEP',
+                 'SIMPLEHARNESS_MEMORY_PROBE_TOP', 'SIMPLEHARNESS_MEMORY_PROBE_CENSUS'):
         env.pop(name, None)
-    if args.memory_probe:
+    if probe_on:
         env['SIMPLEHARNESS_MEMORY_PROBE'] = '1'
-        env['SIMPLEHARNESS_MEMORY_PROBE_EVERY'] = str(max(1, args.memory_probe_every))
+        env['SIMPLEHARNESS_MEMORY_PROBE_EVERY'] = str(probe_every)
+        env['SIMPLEHARNESS_MEMORY_PROBE_FRAMES'] = str(probe_frames)
+        env['SIMPLEHARNESS_MEMORY_PROBE_CENSUS'] = '1' if args.memory_probe_census else '0'
     metadata = {
         'source': str(source), 'source_head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip(),
         'python': str(python), 'installed_target': str(installed), 'bundle': str(bundle),
@@ -150,8 +167,11 @@ def main():
         'model': model, 'model_preflight': preflight, 'provider_kind': provider_kind,
         'model_fallback_used': provider_kind == 'fallback',
         'launched': args.launch, 'admission_headroom_mib': args.headroom_mib,
-        'memory_probe': bool(args.memory_probe),
-        'memory_probe_every': (max(1, args.memory_probe_every) if args.memory_probe else None),
+        'memory_probe': probe_on,
+        'memory_probe_mode': (('light' if args.memory_probe_light else 'full') if probe_on else None),
+        'memory_probe_every': (probe_every if probe_on else None),
+        'memory_probe_frames': (probe_frames if probe_on else None),
+        'memory_probe_census': (bool(args.memory_probe_census) if probe_on else None),
         'carrier_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     }
     (run / 'launch.json').write_text(json.dumps(metadata, indent=2) + '\n')
