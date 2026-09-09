@@ -32,3 +32,7 @@
 - 关闭 thinking 后普通轮 8–28 s，全程约 55 min（第 9 次 75 min）。
 - T20 更正后，applies_to 边因 source 端点 revision 前进而按「exact revision」口径隐藏（8 记忆 0 关系）：契约行为，但产品上值得记为 followup F-A6-EDGE（是否应把知识边迁移到新 revision 或标记待复核）。
 - 后端 RSS 逐轮增长仍在（事件 X 剖析中）。
+
+## 事件 AA 结论（合入 `3fbdf021`）
+
+T18 的根因不是 epoch 推进，而是 Host 给召回权威设的 **60 s 租约**在 12 次调用的长轮里到期（超 4.96 s），SDK 四个 stale 判据里只有租约一条成立（7 个来源逐字节未变）。修复：快照期租约 <10 s 时同计划重收集，逐字节复核后重绑（`context_use_recollections`，域链 v56）；来源真变则 `recall_context_use_source_superseded` 失败关闭。SDK 侧 followup：租约到期应降为 `authority_lease_expired` 退化码而非硬 stale（与逐来源复验冗余）；Harness `MandatoryContextRejectionV1.reason` 枚举需扩到 superseded 才能变成模型可见的重路由。
