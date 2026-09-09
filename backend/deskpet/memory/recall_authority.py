@@ -63,19 +63,55 @@ class RecallAuthorityStale(RuntimeError):
         super().__init__(self.code)
 
 
+#: The re-collect lane's idempotency purpose.  A *different* purpose from the
+#: model's own ``context-route`` recall is mandatory: the re-collection must
+#: mint its own durable SDK request (a fresh result id, a fresh authority lease)
+#: instead of replaying the bound one, and it must never collide with the lane
+#: that produced the binding in the first place.
+CONTEXT_USE_RECOLLECT_PURPOSE = "context-route-use-recollect"
+
+#: Re-collections of one bound recall inside one Run.  A turn that keeps
+#: running past its bound recall's authority lease re-collects roughly once per
+#: lease; the bound exists so a pathological loop cannot re-collect forever.
+MAX_CONTEXT_USE_RECOLLECTS = 16
+
+#: Seconds of head-room demanded of a bound recall's authority lease at the
+#: moment the Host composes a provider request.  The lease is checked again by
+#: Memory when the use is authorized and by the Harness at hand-off, both of
+#: which happen *after* snapshot composition, so a lease that is merely "not yet
+#: expired" is not good enough to compose against.
+CONTEXT_USE_LEASE_MARGIN_SECONDS = 10.0
+
+#: Recorded in the Host re-collection receipt when the bound values survived.
+CONTEXT_USE_RECOLLECTED = "context_use_recollected"
+
+
 class RecallContextUseAuthorityStale(RuntimeError):
     """The provider context-use fence rejected an already-returned typed recall.
 
-    This one is **not** retryable and not re-collectable at the Host: the recall
-    result identity (``result_id``/``result_hash``) is already bound into the
-    conversation by the tool receipt, the authority epoch only ever moves
-    forward, and the SDK exposes no way to re-fence a stored result.  The Host
-    can only make the outcome attributable — the fence itself is the SDK's, and
-    softening it (the SDK re-validates every bound source immediately after the
-    epoch equality check) is a Memory SDK decision.
+    Reached only when the bounded re-collect could not run or could not produce
+    a usable replacement binding (no re-collect plan on a legacy carrier, the
+    re-collect budget exhausted, Memory unavailable).  The Host code stays
+    stable and payload-free so the outcome is attributable.
     """
 
     code = "recall_context_use_authority_stale"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+class RecallContextUseSourceSuperseded(RuntimeError):
+    """A bound recall source is genuinely gone: fail closed, never re-bind.
+
+    The re-collect ran and Memory's answer *changed* — the memory was
+    superseded, suppressed, contested, re-classified or its disclosure was
+    withdrawn.  The value the model already holds is therefore no longer the
+    current one, which is exactly what the use fence exists to prevent, so the
+    turn fails closed with this stable code rather than being re-authorized.
+    """
+
+    code = "recall_context_use_source_superseded"
 
     def __init__(self) -> None:
         super().__init__(self.code)

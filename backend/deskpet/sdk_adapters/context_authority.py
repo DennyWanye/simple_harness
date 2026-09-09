@@ -856,7 +856,136 @@ class ContextRouteLedgerStore:
         finally:
             await db.close()
 
+    async def read_context_use_recollections(
+        self, *, sdk_run_id: str, effect_id: str
+    ) -> tuple[Mapping[str, Any], ...]:
+        """Every re-collection receipt for one bound recall, oldest generation first.
 
+        Read-only and cheap: the context-use path calls it once per composed
+        provider request, and replay resolves the exact generation from it.
+        """
+
+        db = await self._connect()
+        try:
+            cursor = await db.execute(
+                "SELECT * FROM context_use_recollections WHERE sdk_run_id=? AND effect_id=? "
+                "ORDER BY generation",
+                (sdk_run_id, effect_id),
+            )
+            rows = tuple(await cursor.fetchall())
+            await cursor.close()
+        finally:
+            await db.close()
+        return tuple(
+            dict(row) | {"bindings": json.loads(str(row["bindings_json"]))} for row in rows
+        )
+
+    async def record_context_use_recollection(
+        self,
+        *,
+        sdk_run_id: str,
+        effect_id: str,
+        generation: int,
+        reason_code: str,
+        bound_result_id: str,
+        bound_result_hash: str,
+        decision_id: str,
+        decision_hash: str,
+        result_id: str,
+        result_hash: str,
+        authority_epoch: int,
+        expires_at: float,
+        bindings: Sequence[Mapping[str, Any]],
+    ) -> Mapping[str, Any]:
+        """Append one immutable re-collection receipt; idempotent per generation.
+
+        A concurrent writer that already claimed this generation wins and its
+        row is returned unchanged — the receipt is a Host fact, never a race.
+        """
+
+        if generation < 1:
+            raise ContextRouteLedgerError("sdk_context_use_recollect_generation_invalid")
+        body = {
+            "authority_epoch": int(authority_epoch),
+            "bindings": [dict(item) for item in bindings],
+            "bound_result_hash": bound_result_hash,
+            "bound_result_id": bound_result_id,
+            "decision_hash": decision_hash,
+            "decision_id": decision_id,
+            "effect_id": effect_id,
+            "expires_at": float(expires_at),
+            "generation": int(generation),
+            "reason_code": reason_code,
+            "result_hash": result_hash,
+            "result_id": result_id,
+            "sdk_run_id": sdk_run_id,
+        }
+        recollection_hash = canonical_sha256(body)
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                "SELECT * FROM context_use_recollections "
+                "WHERE sdk_run_id=? AND effect_id=? AND generation=?",
+                (sdk_run_id, effect_id, int(generation)),
+            )
+            existing = await cursor.fetchone()
+            await cursor.close()
+            if existing is not None:
+                await db.commit()
+                return dict(existing) | {
+                    "bindings": json.loads(str(existing["bindings_json"]))
+                }
+            await db.execute(
+                "INSERT INTO context_use_recollections("
+                "recollection_id,sdk_run_id,effect_id,generation,reason_code,"
+                "bound_result_id,bound_result_hash,decision_id,decision_hash,"
+                "result_id,result_hash,authority_epoch,expires_at,bindings_json,"
+                "recollection_hash,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    f"context-use-recollect:{sdk_run_id}:{effect_id}:{int(generation)}",
+                    sdk_run_id,
+                    effect_id,
+                    int(generation),
+                    reason_code,
+                    bound_result_id,
+                    bound_result_hash,
+                    decision_id,
+                    decision_hash,
+                    result_id,
+                    result_hash,
+                    int(authority_epoch),
+                    float(expires_at),
+                    canonical_json(body["bindings"]),
+                    recollection_hash,
+                    float(self._clock()),
+                ),
+            )
+            await self._ingest_fact_tx(
+                db,
+                sdk_run_id=sdk_run_id,
+                kind="context_use_recollection",
+                source_event_id=f"context-use-recollect:{effect_id}:{int(generation)}",
+                # Payload-free by construction: identities and counts only, no
+                # query, no recalled content, no source ref.
+                public_payload={
+                    "effect_id": effect_id,
+                    "generation": int(generation),
+                    "reason_code": reason_code,
+                    "bound_result_id": bound_result_id,
+                    "result_id": result_id,
+                    "authority_epoch": int(authority_epoch),
+                    "bound_source_count": len(body["bindings"]),
+                },
+                now=float(self._clock()),
+            )
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
+        finally:
+            await db.close()
+        return dict(body) | {"recollection_hash": recollection_hash}
 
 
 def _context_text_tokens(text: str) -> int:
