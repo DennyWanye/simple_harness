@@ -19,3 +19,16 @@
 
 - run5：T3 第一次点击后复选框显示 1、策略仍 auto，补点一次才到 manual；但驱动已按我早放行的 note 发了 T4（Auto 下自动绑定），再从 T4 重启时同一句已无可授权内容（无卡）→ 该轮作废。
 - run5b（全新 userdata）：打开『模型与设置』后复选框**初始显示 0（未勾选）而 `workflow.db` 策略为 auto/gen 0**，等 8 s 仍为 0；点一次变 1（策略不变），再点一次变 0 且策略 → manual/gen 1。→ **MM-D4**：设置面板的自动模式复选框初始状态未从后端策略读取（渲染为默认未勾选），用户看到的与实际相反，需修（前端读取路径 + 回归测试）。
+
+## run5b 结果（12:50–13:10，Host ea7c6a31 源码，MM-D3 已合入）
+
+| 轮 | 结果 | 观察 |
+|---|---|---|
+| T1–T2 | COMPLETED | 无弹窗 |
+| T3 | UI | manual/gen 1（MM-D4 见上） |
+| T4 | COMPLETED 25 s | 绑定卡 1 + 工具卡 1 |
+| T5 | COMPLETED 94 s | 工具卡 8 |
+| T6 | COMPLETED 102 s | **我的自动应答循环错点了「允许一次」**（计划要求 T6 点「拒绝」验证 MM-4），MM-4 本次无效；循环已改为 T6 点拒绝 |
+| **T7** | failed `binding_not_decided`（141 s） | MM-D3 生效：`task_scope_search` 命中 `is_active=true` 且活跃任务正是二号，`continue_active` 正确；模型随后用 `task_scope_update` 把「纳入工作范围」记成语义 scope 修订（revision 2），**从未调用 list_directory**——`tool_describe` 显示 `workspace_unscoped`（Run 开始冻结的投影没有读工具），而目录绑定提案（`propose_manual_binding`）只在文件工具调用触及未绑定路径时才会产生 → MM-5 被 **F-Z1** 阻塞（与 A6-2 同一前置） |
+
+结论：Manual 旅程 T7+ 等 F-Z1（读工具调用期门）合入后再跑；届时 T6 由循环点「拒绝」。
