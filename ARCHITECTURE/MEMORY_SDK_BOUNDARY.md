@@ -1336,6 +1336,48 @@ fail closed。
 
 最后更新：2026-09-08（HM-TO-A6 typed recall 超时 Host 侧）。`wemm_embedder.py` 新增真正的 `embed_batch`：按「最长×条数 ≤ 1024 字符、条数 ≤ 32」分组、按长度升序装箱、结果回填输入位置；实测（mps，两路径均预热）6 条短 chunk 322ms vs 串行 1430ms（0.22），长 chunk 独占调用故不劣于串行（现场 6 条 0.93、短三条 0.82），真模型批量/逐条 cos ≥ 0.99988。`short_index_worker.py` 拆出 `maintenance_timeout=60s`（`operation_timeout` 仍 5s 只管扫描/注册），维护重建失败按 60→120→…→600s 指数退避、成功/换 manager 清零、跳过的 tick payload-free 审计；常量由一致性用例绑定生产装配值（实测 projection 600ms + 世代 embed 45690ms ≤ 60s，退避基数 ≥ 超时 → 写锁占空比 ≤ 50%）。`human_memory_v7.py` 前台 `RecallBudget` deadline 1000→2000ms（协议上限，S3 契约 `deadline_ms=1..2000` / hard deadline 2s）。短时域 chunk `public_text` 的长度上限**不在 Host**（Harness 派生 `public_text_hash` 绑定 + SDK 自己拼 chunk），记为需新增的 SDK 契约条款；`context_route.py` 的重试收口另有属主。控制：新增 `test_wemm_embed_batch.py` / `test_short_index_backoff.py` / `test_recall_budget_deadline.py`；`test_short_index_worker.py` 等短索引既有红（fixture 无生产 embedder）不变。[裁决](../plans/2026-09-08-hm-to-a6/DECISION-RECALL-TIMEOUT-HOST-SIDE.md)。
 
+最后更新：2026-09-09（HM-TO-A6 事件 AE：分析协议 v10，Prospective 的时间触发必须由引文接地）。
+分析车道当前协议为 `host-analysis-prompt/v10` / `memory-analysis-proposal/v10` / `host-analysis-policy/v10` /
+`host-analysis-validator/v6`（`analysis_proposal_v10.py`，`analysis_protocol.protocol_for_request` 仍解析
+v3/v4/v5/v5.1/v6/v7/v8/v9，线格式与提示词逐字不变——提示体进 `bind_attempt` 哈希，改词必须换协议 id；
+v9 的线 sha256 `8895dc9b…` 由 `test_analysis_proposal_v10.py` 钉住，v3..v8 的金值仍在
+`test_analysis_proposal_v9.py::WIRE_GOLDENS`）。事件 AE（第 11 次原生跑 T14，负控 NC-3）：
+「以后有机会我想学画画。」产出了一条 pending Prospective「有机会时开始学画画」，
+`trigger_at=1788920760.0`（Asia/Shanghai 10:26:00），注册 2 条并在旅程内 `time_due/matched` 真的触发
+（revision 2 `lifecycle=triggered`）。**根因不在模型，在契约**：v3 起编译器对 prospective 只做
+`datetime.fromisoformat(trigger_at_iso)` + 要求带时区偏移，逐字引文规则（`derive_span`）约束的是
+`exact_quote`、**从不约束 `trigger_at_iso`**——它是整条分析车道里唯一一个模型可以凭空写、Host 完全不核对的
+字段；而 schema 的 prospective 分支 `required:[action,trigger_at_iso,timezone]` **只有时间触发一种形状**，
+策略文本又从没说过「没有时间的将来愿望」该落到哪里。实测那个数值**逐字等于请求体递给模型的 `now_iso`**
+（`analysis-attempt-input-0bf36e50…`，`"now_iso":"2026-09-09T10:26:00+08:00"`），所以它在登记时已过期 3 秒。
+第 8–10 次「NC-3 通过」不算数：s5c cursor-version 回归（`48617f73` 已修）让那三次每一条注册都失败。
+**v10 两半**：①策略正面陈述（有明确时间表达/条件才用 prospective，`trigger_at_iso` 必须是本句引文里那个时间，
+点名禁止把 `now_iso` 抄过去；模糊将来愿望改记 `user:self` 的 `interest_…`/`goal_…` semantic，必要时加 episode）；
+②硬校验 `prospective_trigger_grounding.py`（新模块），对每一条 `trigger_kind=time` 的 create，
+把**该 operation 自己引用的证据跨度**里的时间表达确定性解析成可接受区间再比对：带钟点 ±5 分钟、
+只有日期则整个本地日；对不上 → `analysis_prospective_trigger_not_grounded`，
+只有模糊将来标记（有机会/以后/今后/将来/哪天/某天/改天/有空/找时间/抽空/迟早/总有一天…）而无任何时间表达
+→ `analysis_prospective_vague_wish`。两者都是**单条 operation** 拒收，同批 semantic/episode 照常落库
+（NC-3 期望的 `user:self · interest_learn · "画画"` 保住）。相对表达锚在**证据采纳时刻**（`item.occurred_at`）
+而非分析时钟（post-turn job 可能晚很多才跑）；时区取触发器自己声明的 IANA 名，声明不出来即 fail closed。
+**边界口径**：任务书假设可复用「C04 oracle / `trigger_local` 的时间表达解析器」——**实测不存在**：
+`corpus_c04.SPECS` 是手写 anchor 字面量，`_prospective_trigger_local`/`render_episode_occurred_local` 是渲染方向，
+`companion/*` 的 `_parse_time` 只吃 ISO/HH:MM，全仓没有「中文时间短语 → 时间戳」的代码，解析器为本轮新写，
+C04 的 anchor 文本（`9月7日09:00`/`2027年1月2日10:00`/`9月8日00:30`）作为正样本语料进了用例。
+**s5c 注册侧不加「trigger_at 距提案时刻过近就拒绝」的纵深防御**（裁定见备忘 §4）：
+`prospective_registration_source.py` 是传输授权车道、看不见证据；「五分钟后提醒我」合法；
+在那里拒绝会留下一条永远 pending、调度器却不知道的记忆（比响一次更糟）；接地判定已在唯一看得见证据的地方堵死源头。
+真实模型复算（`deepseek-v4-flash`，逐字重放第 11 次 attempt-input，system 文本与持久化请求逐字节相同）：
+**NC-3 本句 v9 24 样本 prospective 0/24、v10 8 样本 0/8**——事件 AE 在隔离重放下复现不出来，它是低频采样事件，
+**因此提示词改动无法被测量为「修好了」，真正关闭它的是硬校验**；v10 能被测量到的是 semantic 槽位收敛
+（`interest_*`/`goal_*` 命中 v9 0/24 → v10 8/8，completion tokens 中位数 919 → 571，记为 F-AE-4 观察）。
+正控（同一 `now_iso`，句子换成「明天上午九点半提醒我把修正版交出去。」）：v9 与 v10 各 6/6 提 prospective、
+`trigger_at_iso` 全为 `2026-09-10T09:30:00+08:00`、**v10 拒收 0/6**——接地判定一次都没误伤真实提醒。
+控制：新增 `tests/memory/test_analysis_proposal_v10.py` 37 项；分析车道 14 文件 179 passed；
+C04 语料 105 passed；Prospective 14 文件 108 passed / 16 failed 与基线 `7d161678` 逐条一致
+（`test_analysis_episode_time.py` 4 failed 同为既有红）。复算驱动提交为 `scripts/native/a6_replay_t14.py`
+（凭据路径参数化，密钥不打印不入库，样本留 scratchpad）。[裁决](../plans/2026-09-08-hm-to-a6/DECISION-AE-VAGUE-WISH-PROSPECTIVE.md)。
+
 最后更新：2026-09-09（HM-TO-A6 事件 T：分析协议 v9，被点名的流程在同一 plan 里成为关系端点）。
 分析车道当前协议为 `host-analysis-prompt/v9` / `memory-analysis-proposal/v9` / `host-analysis-policy/v9` /
 `host-analysis-validator/v5`（`analysis_proposal_v9.py`，`analysis_protocol.protocol_for_request` 仍解析

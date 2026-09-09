@@ -38,6 +38,13 @@ from tests.sdk_adapters import s5b_memory_harness as mh
 
 REMINDER_ACTION = "复查记录和备份"
 ENVIRONMENT_VALUE = "Python 3.12"
+# 事件 AE：协议 v10 起，prospective 的 `time` 触发必须能被**本条 operation 自己引用的引文**里的
+# 时间表达接地（`prospective_trigger_grounding`）。原来的夹具让用户说「执行记录和备份两步。」
+# 却凭空写一个 now+1d 的到期时间——那正是 T14 的缺陷形状，v10 按
+# `analysis_prospective_trigger_not_grounded` 拒收它。所以这一轮的用户消息现在真的说了时间。
+# 「明天」是日精度表达，可接受区间是**次日一整个本地日**，now+86400 必落在其中，
+# 因此这条断言不依赖两个时钟（证据采纳时刻 vs 适配器时钟）之间的秒级偏差。
+REMINDER_TEXT = "明天提醒我复查记录和备份。"
 
 
 def _trigger_iso(now):
@@ -96,7 +103,7 @@ def _analysis_config(state):
 async def test_an_existing_prospective_endpoint_is_issued_and_the_relation_is_applied(tmp_path):
     async with session(tmp_path) as ctx:
         clock = lambda: time.time() + ctx.offset[0]
-        await execute(ctx, 1)
+        await execute(ctx, 1, text=REMINDER_TEXT)
         await execute(ctx, 2, revision=ctx.revision)
         await ctx.memory.close()
 

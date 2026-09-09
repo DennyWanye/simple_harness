@@ -297,7 +297,8 @@ def compile_proposal(proposal, *, request, items, base_revision, plan_id, now,
 
 def _compile_validated_proposal(proposal, *, request, items, base_revision, plan_id, now,
                                 candidates=(), relation_candidates=(),
-                                created_endpoint_must_survive=False):
+                                created_endpoint_must_survive=False,
+                                prospective_grounding=None):
     """v8's admission rules without the protocol-identity check.
 
     v9 is a *policy* version: the same wire, schema and compiler, a different ordered prompt.
@@ -317,6 +318,14 @@ def _compile_validated_proposal(proposal, *, request, items, base_revision, plan
     on, the relation is refused by name instead — ``analysis_relation_endpoint_unknown`` — and
     the rest of the turn is kept.  v8 keeps the old behaviour byte for byte so that a persisted
     v8 request replays to exactly the result it produced when it was first answered.
+
+    ``prospective_grounding`` is ``None`` for v8 and v9 and a callable for v10 (event AE).
+    It is handed ``(raw, span, item)`` for every ``prospective`` operation *before* the
+    legacy compiler mints one, and either returns (grounded) or raises
+    ``AnalysisProposalRejected`` — so the operation is refused by name and the rest of the
+    turn is still written, exactly like every other per-operation admission rule here.
+    v8/v9 keep the old behaviour byte for byte: a persisted request must replay to the
+    result it produced when it was first answered, even the wrong one.
     """
     raw_operations = proposal.get("operations") if isinstance(proposal, dict) else None
     claim_ids = {
@@ -348,6 +357,8 @@ def _compile_validated_proposal(proposal, *, request, items, base_revision, plan
         if raw.get("memory_type") == "procedure":
             return v4._compile_procedure(raw, span, item=item, request=request, items=items,
                                          now=now, candidates=candidates)
+        if raw.get("memory_type") == "prospective" and prospective_grounding is not None:
+            prospective_grounding(raw, span, item=item)
         return legacy.compile_operation(raw, span, item=item, now=now, candidates=candidates)
 
     def compile_operation(raw, span, *, item, now, candidates):

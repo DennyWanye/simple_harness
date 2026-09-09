@@ -99,7 +99,7 @@
 | 11 | 主清单 A 里 `ANCHOR-ALPHA` 那一条的完整取值是什么？照原文给我，不要概括。 | **page-in #1** | `execution_effects.tool_name='context_page_in'` 出现；返回 `primary_tool_history_page_v1` | 答案逐字等于 fixture 内锚点值 |
 | 12 | 顺便问一句，今天几号？ | **负控**：无关闲聊不改 active scope、不建新 scope | `context_route_decisions` 无 `create_new`；active scope 不变 | scope 未漂移 |
 | 13 | FIXTURE_B 里 `ANCHOR-BETA` 后面那一整行原文是什么？ | **page-in #2** | 同 T11 | 答案逐字命中 |
-| 14 | 以后有机会我想学画画。 | **负控**：只进 Semantic Goal | 无 pending Prospective 行 | 不调度不提醒 |
+| 14 | 以后有机会我想学画画。 | **负控**：只进 Semantic Goal（分析协议 v10：模糊将来愿望不得成为 Prospective，`time` 触发必须由引文里的时间表达接地——事件 AE） | 无 pending Prospective 行；`prospective_scheduler_registrations` / `prospective_trigger_events` 本轮不新增 | 不调度不提醒 |
 | 15 | 记住：秋分资料整理这套校对流程，就按我前面说的 Python 环境执行。 | **同一 plan 建流程节点 + relation memory**（分析协议 v9 分支②） | `cognitive_relations` +1（`applies_to`）；target 端 revision 的 `plan_id`/`plan_hash` 与关系行一致；source 端是 T1 事实的 current revision；本轮**不**新增第二条 Python 版本 semantic | A6-6 |
 | 16 | （**UI 操作**，不发消息）打开记忆图谱面板，读取节点/边 | 普通图谱出现 1 条 `applies_to` 边，两端分别是 T1 的语义节点与 T15 新建的流程节点；relation memory 自身不作为节点出现（节点总数按当轮已落库记忆计，不是 2） | 图谱读取前后 `provider_invocations` **行数不变** | A6-11 前半 |
 | 17 | （脚本发送 ~18 KiB 目标说明）把下面这段完整的目标说明**逐字**记为这个任务的目标，不要概括、不要省略：`<GOAL_TEXT>` | `task_scope_update(goal.set)` 超长值 | README 视图 bounded 截断；STATUS 视图 `"bounded":true` | A6-5 |
