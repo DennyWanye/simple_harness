@@ -8,6 +8,8 @@
 #
 # Env overrides:
 #   A6_SEND       path to send.sh helper (default: scratchpad send.sh)
+#   A6_AXDUMP     path to ax_dump.sh helper (default: scratchpad ax_dump.sh)
+#   A6_UI_SETTLE  bounded wait (s) for a pending授权卡/停止键 to clear before a send (default 180)
 #   MM_FIXTURES   workspace fixture root (default: $HOME/SimpleHarnessWorkSpace)
 #   MM_OUTSIDE    real directory OUTSIDE the workspace, symlink target
 #                 (default: $HOME/SimpleHarnessManualOutside)
@@ -35,6 +37,8 @@ EVIDENCE="${3:?evidence dir required}"
 START="${4:-1}"
 
 SEND="${A6_SEND:-/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/6927d19d-804c-42ea-a91d-fd3cf836f540/scratchpad/send.sh}"
+AXDUMP="${A6_AXDUMP:-/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/6927d19d-804c-42ea-a91d-fd3cf836f540/scratchpad/ax_dump.sh}"
+UI_SETTLE="${A6_UI_SETTLE:-180}"
 WS="${MM_FIXTURES:-$HOME/SimpleHarnessWorkSpace}"
 OUTSIDE="${MM_OUTSIDE:-$HOME/SimpleHarnessManualOutside}"
 TIMEOUT="${A6_TIMEOUT:-600}"
@@ -254,13 +258,33 @@ terminal_reached() { # $1 baseline run count
 
 # send_confirmed <bid> <msg> <baseline run count>: send, require a new Run head
 # within 30 s, retry the send once.  Echoes ok|retried|send_failed.
+# 发送前的有界门（2026-09-09）：Manual 旅程里一轮的授权卡（底部『允许本次绑定/拒绝』
+# 或 SDK 弹窗『允许一次』）如果还挂着，或发送键还是「■ 停止」，send.sh 会把文本填进去、
+# 点一颗当时不存在/不生效的『发送』，症状就是下面那句 "no new Run head after two sends"。
+# 永远返回 0：等不到也照旧发送（不比原来更糟），但把原因带进 progress 的 note。
+UI_BLOCKERS='允许一次|允许本次绑定|重试完成已允许的绑定|拒绝|停止'
+
+wait_ui_send_ready() {
+  local bid="$1" i names tries
+  [ -x "$AXDUMP" ] || [ -f "$AXDUMP" ] || { echo axdump_missing; return 0; }
+  tries=$(( UI_SETTLE / 5 )); [ "$tries" -ge 1 ] || tries=1
+  for i in $(seq 1 "$tries"); do
+    names=$(bash "$AXDUMP" "$bid" AXButton 2>/dev/null | awk -F'|' '{print $2}')
+    printf '%s\n' "$names" | grep -qE "$UI_BLOCKERS" || { echo ready; return 0; }
+    sleep 5
+  done
+  echo ui_blocked; return 0
+}
+
 send_confirmed() {
-  local bid="$1" msg="$2" base="$3" i n
+  local bid="$1" msg="$2" base="$3" i n guard suffix=""
+  guard=$(wait_ui_send_ready "$bid"); [ "$guard" = ready ] || suffix=":$guard"
   "$SEND" "$bid" "$msg" >/dev/null 2>&1 || true
-  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo ok; return 0; }; done
+  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo "ok$suffix"; return 0; }; done
+  guard=$(wait_ui_send_ready "$bid"); [ "$guard" = ready ] || suffix=":$guard"
   "$SEND" "$bid" "$msg" >/dev/null 2>&1 || true
-  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo retried; return 0; }; done
-  echo send_failed; return 1
+  for i in $(seq 1 6); do sleep 5; n=$(q "$STATE" "select count(*) from foreground_run_heads;"); [ "$n" -gt "$base" ] && { echo "retried$suffix"; return 0; }; done
+  echo "send_failed$suffix"; return 1
 }
 
 wait_previous_idle() { # a slow previous Run must finish, else 发送 is 停止
@@ -346,12 +370,14 @@ for (( T=START; T<=LAST; T++ )); do
   echo "=== T$T [$K] send (${#MSG} chars)"
   START_TS=$(date +%s)
   SENT=$(send_confirmed "$BID" "$MSG" "$BASE_RUN")
-  if [ "$SENT" = send_failed ]; then
-    echo "    !! T$T send_failed: no new Run head after two sends (recorded, continuing)"
-    record "$T" "$K" send_failed $(( $(date +%s) - START_TS )) "send_failed"
-    continue
-  fi
-  [ "$SENT" = retried ] && echo "    warn: T$T needed a second send"
+  case "$SENT" in
+    send_failed*)
+      echo "    !! T$T $SENT: no new Run head after two sends (recorded, continuing)"
+      record "$T" "$K" send_failed $(( $(date +%s) - START_TS )) "$SENT"
+      continue ;;
+    retried*) echo "    warn: T$T needed a second send ($SENT)" ;;
+  esac
+  case "$SENT" in *:ui_blocked) echo "    warn: T$T 发送前授权卡/停止键未消失（有界等待耗尽）" ;; esac
 
   UI_NOTE=""
   if [ "$K" = "ask" ]; then

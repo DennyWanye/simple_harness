@@ -13,6 +13,16 @@
 >
 > 执行方式：**真实主模型 + 原生 App + System Events UI 驱动，无截图**（同 HM-TO-A6）。
 > 驱动脚本：`scripts/native/twoflow_driver.sh`（分两阶段跑）；核对脚本：`scripts/native/twoflow_verify.py`。
+>
+> **2026-09-09 傍晚对齐（本方案已按此改写，细节见 `READINESS-2026-09-09.md`）**：
+> ① 授权策略的唯一权威是 `workflow.db.authorization_policy_state`（MM-D1），
+> `sdk-product-state.db` 的同名表是 DDL 残留种子行，驱动与核对器都不得读它；
+> ② 读类工具现在要求目标目录已绑定，越界读走 S4 绑定提案（F-Z1b/F-Z1c），
+> Auto 策略自动授予、模型需重路由一次 —— 所以 **T4 改读任务托管家目录之外的夹具**，
+> **T15 重启后重读同一夹具**，构成新判定项 **TF-16（读绑定跨重启复用）**；
+> ③ 新增 **TF-17（策略=Auto 且权威在 workflow.db）**，它是 ② 能成立的前提；
+> ④ 模型 `deepseek-v4-flash`，`model_overrides.toml` 必须钉 `context_window = 32000`
+> 与 `reasoning_mode = "fast"`；启动加 `--memory-probe`（事件 X-3）。
 
 ---
 
@@ -33,14 +43,19 @@ user = args.userdata.resolve(strict=True) if args.userdata else run / 'userdata'
 | 阶段 | 命令 | 产物 |
 |---|---|---|
 | 第一次启动（冷启动，全新数据目录） | `--evidence-root .local-test-evidence/2026-09-09/twoflow-<sha>/`（**不带** `--userdata`） | `<E1>`，DB 在 `<E1>/userdata/data`，日志 `<E1>/native.log` |
-| 关闭 | `pkill -f '<bundle 名>.app/Contents/MacOS'`（注意是 **bundle 名**不是 bundle id），再 `lsof -nP -iTCP:18120` 确认端口释放 | — |
+| 关闭 | 三件都要杀：`pkill -f 'launch_native_candidate.py'` → `pkill -f '/Contents/MacOS/simple-harness'` → 杀掉 18120 上的残留监听（`lsof -nP -iTCP:18120 -sTCP:LISTEN` 应无输出）。启动器只要探到任何 `/Contents/MacOS/simple-harness` 进程就抛 `native_test_already_running` | — |
 | 第二次启动（重启，同 userdata） | 同样的 `--evidence-root`，**加** `--userdata <E1>/userdata` | `<E2>`，DB 仍在 `<E1>/userdata/data`，新日志 `<E2>/native.log` |
 
 必须记住的三条硬约束：
 
 1. `--userdata` 走 `resolve(strict=True)`，**目录必须已存在**，所以只能传第一次跑出来的 `<E1>/userdata`。
-2. 带 `--userdata` 时启动器 **不会重写** `llm_runtime.json`（`launch_native_candidate.py:120-121`），
+2. 带 `--userdata` 时启动器 **不会重写** `llm_runtime.json`（`launch_native_candidate.py:124-125`），
    第一次跑的 provider 配置原样保留——这正是"同一环境重启"该有的语义。
+   同理 `<E1>/userdata/model_overrides.toml` 也原样保留，重启后窗口仍是 32000、thinking 仍关闭。
+   **注意第一次启动的顺序**：userdata 是启动器建的，所以 `model_overrides.toml` 只能在
+   **启动之后、第一轮之前**写进去（A6 第 12 次实测：launch 后 71 s 写入即生效，
+   `llm.model_info.resolve` 每次取值都重读）。写完再跑一次
+   `preflight_native.sh <env> deepseek-v4-flash 18120 32000 <E1>/userdata` 让第 4 项转绿。
 3. 启动器在探测到任何 `/Contents/MacOS/simple-harness` 进程时抛 `native_test_already_running`
    （`:71-75`），所以**必须先杀干净再重启**；端口 18120 也会被残留 `main.py` 占住。
 
@@ -97,6 +112,8 @@ user = args.userdata.resolve(strict=True) if args.userdata else run / 'userdata'
 | TF-13 两个任务都正向收口 | `task_scope_closure_receipts` ≥2；两个 scope 的 `task_scope_canonical_revisions.state_json` 里出现完成态 `status`/`closure_reason` | 两任务均收口 |
 | TF-14 物理删除禁令 | `evidence_envelopes` / `suppression_directives` / `task_scope_events` 三个计数在 progress 中逐轮单调不减，重启前后也不减 | 全程单调不减 |
 | TF-15 snapshot 重放指纹 | 用安装目标 venv 的 `provider_request_from_json` / `provider_request_fingerprint` 对每行 `request_json` 重算，与 `provider_invocations.request_fingerprint` 比对（复用 `a6_verify.build_replayer`） | 重放全等 |
+| TF-16 读闸门绑定跨重启复用 | T4 读**任务托管家目录之外**的夹具 → `task_workspace_binding_proposals` +1、`task_workspace_binding_roots` +1（Auto 自动授予，日志 `read_workspace_binding_revised` → `context_route` 重路由 → `read_file`）；重启后 T15 读**同一夹具** → 两表增量均为 0，且本轮有真实读效应 | flow1 建绑定、flow2 复用不重建 |
+| TF-17 授权策略=Auto（权威 workflow.db） | `workflow.db.authorization_policy_state.mode='auto'`；progress 逐轮 `policy_mode` 全程 auto；**不采信** `sdk-product-state.db` 的同名残留行 | 全程 Auto，且读的是对的库 |
 
 ### 负控（必须为「不发生」）
 
@@ -122,7 +139,7 @@ user = args.userdata.resolve(strict=True) if args.userdata else run / 'userdata'
 | 1 | 发送 | 记住：我整理素材的时候，成品一律放到「霜降素材 / 成片」这个目录。 | 明确记住 → 语义事实（跨重启召回目标） | `cognitive_memory_heads` +1（`memory_type='semantic'`） | TF-6 前置 |
 | 2 | 发送 | 新建一个项目任务：霜降素材整理。 | `context_route(create_new)`，任务 A 建档 + managed home 绑定 | `task_scopes` +1；`route='create_new'`；`task_workspace_binding_revisions` +1 | TF-4 |
 | 3 | 发送 | 在这个任务的工作目录里建一个 clips.md，写三行素材条目：A-01、A-02、A-03。 | 工具使用 + 正向业务结果 | `execution_effects` 出现写文件；文件真实存在 | S6 Task 7「正向业务结果」 |
-| 4 | 发送 | 把 clips.md 读回来，确认三行都在。 | 第二次工具使用（读回核对） | `execution_effects` 出现读文件 | 同上 |
+| 4 | 发送 | 请读一下 `~/SimpleHarnessWorkSpace/twoflow-fixture/clips-source.md` 这个文件，把里面列的三条素材编号念给我听，并确认和 clips.md 里写的一致。 | 读**任务托管家目录之外**的夹具 → F-Z1b 读闸门：`read_file` 越界 → 绑定提案 → Auto 自动授予 → 模型**重路由一次** → 读成功 | `native.log`：`read_workspace_binding_revised` → `context_route` → `read_file`；`task_workspace_binding_proposals` +1、`task_workspace_binding_roots` +1；`execution_effects` 出现读文件 | TF-16 前半 / 正向业务结果 |
 | 5 | 发送 | 记一个决定：素材编号统一用 A-序号 两段式，不再用日期前缀。 | `task_scope_update(decision.record)` | `task_scope_events` +1；DECISIONS 视图含该决定 | TF-5 后置核对 |
 | 6 | 发送 | 把上一句话改得更简洁一点。 | **负控**：简单改写不建档、不召回 | 无 `create_new`；active scope 不变；`origin='no_recall'` | NC-T1 |
 | 7 | 发送 | 另外新建一个项目任务：霜降字幕校对。 | 第二个 TaskScope（任务 B） | `task_scopes` +1；第二次 `create_new` | TF-4 |
@@ -153,7 +170,7 @@ python scripts/native/launch_native_candidate.py --launch \
 | 12 | 发送 | 我们接着聊。你还记得我最早说过，成品要放到哪个目录吗？只依据我以前说过的回答。 | 跨重启类型化召回，答「霜降素材 / 成片」 | 本轮新增 `typed_recall_requests`/`typed_recall_results`；主对话 ID 未变 | TF-1 / TF-6 |
 | 13 | 发送 | 我之前做过一个跟「霜降」有关的整理任务，帮我先找出来，别急着打开。 | `task_scope_search` → 只给候选，不切 scope、不授权 | `task_scope_search_access_receipts.operation='search'`；active scope 未变 | TF-5 前半 |
 | 14 | 发送 | 就精确打开「霜降素材整理」，把它的恢复要点和已经记下的决定说给我听。 | exact open → ResumePackage；读 RESUME + DECISIONS | `operation='open'`；`route='resume_existing'`；开的是任务 A | TF-5 后半 |
-| 15 | 发送 | 这个任务当时留下的 clips.md 现在还在吗？读出来核对一下三行素材条目。 | 跨重启的工作区绑定仍有效，文件仍在 | 读文件 effect 成功；内容含 A-01/A-02/A-03 | TF-3 佐证 |
+| 15 | 发送 | 这个任务当时留下的 clips.md 现在还在吗？读出来核对一下三行素材条目；另外把 `~/SimpleHarnessWorkSpace/twoflow-fixture/clips-source.md` 也再读一遍，看是不是还能读到。 | 跨重启的工作区绑定仍有效：**两条根**（任务托管家目录 + T4 用读闸门换来的夹具根）都在，读直接放行 | 读文件 effect 成功、内容含 A-01/A-02/A-03；`task_workspace_binding_roots` / `_proposals` 增量**均为 0**（不重新提案） | TF-16 后半 / TF-3 佐证 |
 | 16 | 发送 | 在这个任务的目录里，按我以前存的「霜降清点」流程做一遍。 | Procedure 跨重启真实使用 | `state.db.procedure_uses` +1，`task_scope_id` == 任务 A；inventory.md / inventory-backup.md 生成且内容一致 | TF-7 |
 | 17 | 发送 | 以后有机会我想学做饭。 | **负控**：模糊愿望只进 Semantic Goal | `prospective_records` 增量 0；无调度注册 | NC-T2 |
 | 18 | `@UI@` | 点 `记忆` → `记忆列表` → 找到「成品一律放到『霜降素材 / 成片』」那条记忆，点 `忘记这条记忆`（**一击即生效，无二次确认**）。记录 `before=<条数> after=<条数> forgot=1` | 逻辑遗忘写 append-only suppression | `suppression_directives` +1（`scope_kind='MEMORY'`、`reason_code='user_forget'`）、`suppression_targets` +1 | TF-9 / NC-T3 |
@@ -166,12 +183,23 @@ python scripts/native/launch_native_candidate.py --launch \
 
 ## 3. 执行前置与操作要点
 
+0. **干跑**（不启动 App、不碰任何 DB，确认轮次与路径都对）：
+   ```
+   bash -n scripts/native/twoflow_driver.sh
+   TWOFLOW_DRY_RUN=1 bash scripts/native/twoflow_driver.sh <bundle-id> <ud> <ev> all
+   backend/.venv/bin/python scripts/native/twoflow_verify.py --selftest
+   ```
 1. **预检**（两次启动前各跑一次）：
-   `bash scripts/native/preflight_native.sh <env-file> <model> 18120 32000 [<userdata>]` 必须全绿。
+   `bash scripts/native/preflight_native.sh <env-file> deepseek-v4-flash 18120 32000 [<userdata>]` 必须全绿。
+   第一次启动时 userdata 还不存在，先不带最后一个参数；写完 `model_overrides.toml` 后再补跑一次带 userdata 的。
 2. **第一次启动 → flow1**：
    ```
    bash scripts/native/twoflow_driver.sh <bundle-id> <E1>/userdata <E1> flow1
    ```
+   驱动会自动生成读夹具 `~/SimpleHarnessWorkSpace/twoflow-fixture/clips-source.md`
+   （< 16 KiB，不触发分页；必须是既定 workspace 根的**严格后代**且不是任务托管家目录，
+   否则 T4 的读闸门提案不会被触发）。启动时会打印 `policy(workflow.db)=…`，
+   不是 `auto` 会显式告警。
 3. **重启**：驱动跑完 T11 后打印 `@RESTART@` 提示并暂停；按 §2 的三步操作，完成后回车。
 4. **第二次启动 → flow2**：
    ```
@@ -186,7 +214,13 @@ python scripts/native/launch_native_candidate.py --launch \
 6. **忘记按钮是一击生效、且底层行被触发器保护不可删除**——点错就永久生效。T18 前先用
    `记忆列表` 的 `下一页` 翻到正确那条，确认文本再点。
 7. **不要**去 `更多 → 记忆管理` 的旧面板（那是 legacy overlay，忘记按钮是 `🗑`，语义不同）。
-8. **AX 名称速查**（System Events）：
+8. **发送前的有界门（2026-09-09 加固）**：驱动在每次发送前先用 `ax_dump.sh` 枚举
+   `AXButton`，只要还看得到 `允许一次` / `允许本次绑定` / `重试完成已允许的绑定` / `拒绝` /
+   `停止` 中任何一个，就等（默认上限 `A6_UI_SETTLE=180` 秒）再发。原因：上一轮留下的
+   授权卡或还没变回 `发送` 的 `■ 停止` 键会让 `send.sh` 点到一颗不生效的按钮，
+   症状就是 `no new Run head after two sends`。等不到也照旧发送，但 progress 的 note 会带
+   `:ui_blocked`，判定时按「该轮环境受扰」看待。同一个门也已加进 `manual_driver.sh`。
+9. **AX 名称速查**（System Events）：
 
 | 目标 | 角色 | 名称 |
 |---|---|---|
@@ -219,7 +253,9 @@ python scripts/native/launch_native_candidate.py --launch \
 - T17 模糊愿望产生了 pending Prospective 或调度注册；
 - T18/T21 两个纯 UI 轮新增了 `provider_invocations` 行；
 - `request_json` 命中凭据形状；
-- 指纹重放与 `request_fingerprint` 不等。
+- 指纹重放与 `request_fingerprint` 不等；
+- **重启后 T15 重读同一夹具又新增了绑定根/提案**（读绑定没活过重启，TF-16）；
+- `workflow.db` 的策略不是 `auto`，或旅程中途被改过（TF-17）。
 
 **BLOCKED（缺陷登记，不记 FAIL）**
 - 重启后 UI 长期停在「等待主对话就绪 / 正在重新读取…」，发送不再产生 Run
@@ -260,10 +296,13 @@ backend/.venv/bin/python scripts/native/twoflow_verify.py --selftest
 > `twoflow_verify.py` 直接 `import a6_verify`（复用 `RoDb` / `Item` / `Evidence` /
 > `build_replayer` / `CREDENTIAL_PATTERNS`），两个脚本必须留在同一目录。
 > 用系统 Python 3.9 跑会让 TF-15 因 `StrEnum` 导入失败而 INCONCLUSIVE。
-> 自检已跑通：20 项判定全部可执行；在 A6 尝试 5 的真实证据库上冒烟，
+> 自检已跑通：**22 项**判定全部可执行（新增 TF-16 / TF-17）；在 A6 尝试 5 的真实证据库上冒烟，
 > TF-15 指纹重放 118/118 全等、无误判 FAIL。
+> 自检的策略夹具**故意给相反的值**（`workflow.db=auto` / `sdk-product-state.db=manual`），
+> 核对器一旦回落读错库，TF-17 立刻由 PASS 转 FAIL——回归用例见
+> `backend/tests/native/test_twoflow_verify.py`。
 
-退出后对 `<E1>/userdata/data/{state.db,sdk-product-state.db,human_memory_v7.db,operation-audit.db}`、
+退出后对 `<E1>/userdata/data/{state.db,sdk-product-state.db,workflow.db,human_memory_v7.db,operation-audit.db}`、
 `<E1>/userdata/data/simple-harness-sdk/execution-v6.sqlite3`、`<E1>/native.log`、`<E2>/native.log`、
 `<E1>/twoflow-progress.jsonl` 逐个取 SHA-256（核对脚本已自动输出），记入本目录的
 `RUN-01-RESULT.md`。原始证据只留在 `.local-test-evidence/2026-09-09/…`，Git 只存结论与 SHA-256。

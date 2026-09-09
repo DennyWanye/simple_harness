@@ -101,9 +101,13 @@ class Evidence(A6Evidence):
         self.paths.pop("a6-progress.jsonl", None)
         self.paths[PROGRESS_NAME] = os.path.join(self.root, PROGRESS_NAME)
         self.paths["sdk-product-state.db"] = os.path.join(data, "sdk-product-state.db")
+        # MM-D1(2026-09-09): 授权策略的唯一权威。sdk-product-state.db 的同名表是
+        # 建库时 INSERT OR IGNORE 的 DDL 残留(恒为 auto/0/factory_default), 绝不回落读它。
+        self.paths["workflow.db"] = os.path.join(data, "workflow.db")
         self.paths["launch.json"] = os.path.join(self.root, "launch.json")
         self.progress = self._read_progress(self.paths[PROGRESS_NAME])
         self.product = RoDb(self.paths["sdk-product-state.db"], "sdk-product-state.db")
+        self.workflow = RoDb(self.paths["workflow.db"], "workflow.db")
         self.second_log_path = second_log
         self.second_launch_path = second_launch
         if second_log:
@@ -115,6 +119,21 @@ class Evidence(A6Evidence):
     def close(self) -> None:
         super().close()
         self.product.close()
+        self.workflow.close()
+
+    def policy_state(self) -> dict[str, Any]:
+        """授权策略。**只**读 workflow.db；缺表即 SchemaMissing, 绝不回落 product-state。"""
+        self.workflow.require("authorization_policy_state", "mode", "generation", "provenance")
+        rows = self.workflow.rows(
+            "select mode, generation, provenance from authorization_policy_state limit 1"
+        )
+        if not rows:
+            raise SchemaMissing("workflow.db.authorization_policy_state 无行")
+        return {
+            "mode": as_text(rows[0][0]),
+            "generation": int(rows[0][1] or 0),
+            "provenance": as_text(rows[0][2]),
+        }
 
     # ---- launch 元数据 ----
     @staticmethod
@@ -907,6 +926,118 @@ def item_tf_15(
     return it
 
 
+def item_tf_16(ev: Evidence) -> Item:
+    """F-Z1b 读闸门绑定在 flow1 建立, 重启后 flow2 复用而不再提案。"""
+    it = Item("TF-16", "读闸门绑定跨重启复用")
+    d_root_t4 = ev.delta(4, "binding_roots")
+    d_prop_t4 = ev.delta(4, "binding_proposals")
+    d_root_t15 = ev.delta(15, "binding_roots")
+    d_prop_t15 = ev.delta(15, "binding_proposals")
+    d_eff_t4 = ev.delta(4, "execution_effects")
+    d_eff_t15 = ev.delta(15, "execution_effects")
+    roots_total = ev.value_at(EXPECTED_TURNS, "binding_roots")
+    log = ev.log_all()
+    revised = log.count("read_workspace_binding_revised")
+    denied = log.count("path_outside_workspace_root")
+    it.numbers = {
+        "delta_binding_roots_T4": d_root_t4,
+        "delta_binding_proposals_T4": d_prop_t4,
+        "delta_binding_roots_T15": d_root_t15,
+        "delta_binding_proposals_T15": d_prop_t15,
+        "delta_execution_effects_T4": d_eff_t4,
+        "delta_execution_effects_T15": d_eff_t15,
+        "binding_roots_total": roots_total,
+        "log_read_workspace_binding_revised": revised,
+        "log_path_outside_workspace_root": denied,
+    }
+    if d_root_t4 is None or d_root_t15 is None:
+        it.verdict = INCONCLUSIVE
+        it.reason = (
+            "progress 缺 binding_roots 计数(旧版驱动)——本项要求 2026-09-09 之后的 "
+            "twoflow_driver.sh。"
+        )
+        return it
+    if ev.outcome(4) in {"timeout", "send_failed"} or ev.outcome(15) in {"timeout", "send_failed"}:
+        it.verdict = BLOCKED
+        it.reason = f"T4/T15 未跑成(outcome T4={ev.outcome(4)} T15={ev.outcome(15)}), 读路径无从取证。"
+        return it
+    if d_root_t4 <= 0:
+        it.verdict = INCONCLUSIVE
+        it.reason = (
+            "T4 没有新增绑定根 —— 模型没有读那个任务托管家目录之外的夹具(或读被拒后放弃), "
+            "F-Z1b 的提案→自动授予链路未被触发; 备用杠杆: 重问一次并给出绝对路径。"
+        )
+        return it
+    if d_root_t15 > 0 or (d_prop_t15 or 0) > 0:
+        it.verdict = FAIL
+        it.reason = (
+            f"重启后 T15 又新增了绑定根 {d_root_t15} / 提案 {d_prop_t15} —— "
+            "flow1 建立的读绑定没有跨重启存活。"
+        )
+        return it
+    if (d_eff_t15 or 0) <= 0:
+        it.verdict = INCONCLUSIVE
+        it.reason = "T15 没有任何工具效应, 无法证明「复用了旧绑定读到了文件」(只证明了没新增根)。"
+        return it
+    it.verdict = PASS
+    it.reason = (
+        f"T4 经读闸门提案新增 {d_root_t4} 条绑定根(日志 read_workspace_binding_revised×{revised}); "
+        f"重启后 T15 读同一夹具, 绑定根/提案增量均为 0, 效应 +{d_eff_t15} —— 绑定跨重启复用。"
+    )
+    return it
+
+
+def item_tf_17(ev: Evidence) -> Item:
+    """MM-D1: 策略权威只在 workflow.db; 本旅程必须整程 Auto(读闸门提案自动授予的前提)。"""
+    it = Item("TF-17", "授权策略=Auto 且权威在 workflow.db")
+    modes = sorted({
+        as_text(r.get("policy_mode"))
+        for r in ev.counter_rows().values()
+        if as_text(r.get("policy_mode")) not in {"", "unknown"}
+    })
+    residue: dict[str, Any] = {}
+    if ev.product.has("authorization_policy_state", "mode", "provenance"):
+        with contextlib.suppress(SchemaMissing):
+            rows = ev.product.rows(
+                "select mode, provenance from authorization_policy_state limit 1"
+            )
+            if rows:
+                residue = {"mode": as_text(rows[0][0]), "provenance": as_text(rows[0][1])}
+    try:
+        state = ev.policy_state()
+    except SchemaMissing as exc:
+        it.numbers = {"progress_policy_modes": modes, "product_state_residue_row": residue}
+        it.verdict = INCONCLUSIVE
+        it.reason = (
+            f"workflow.db 读不到策略({exc}) —— 按 MM-D1 绝不回落读 sdk-product-state.db 的残留行。"
+        )
+        return it
+    it.numbers = {
+        "workflow_mode": state["mode"],
+        "workflow_generation": state["generation"],
+        "workflow_provenance": state["provenance"],
+        "progress_policy_modes": modes,
+        "product_state_residue_row": residue,
+    }
+    if state["mode"] != "auto":
+        it.verdict = FAIL
+        it.reason = (
+            f"workflow.db 策略是 {state['mode']}(gen={state['generation']}), 不是本旅程要求的 auto ——"
+            " Manual 下读闸门提案要真人应答，T4/T15 的判定不成立。"
+        )
+        return it
+    if modes and any(m != "auto" for m in modes):
+        it.verdict = FAIL
+        it.reason = f"progress 记录到过非 auto 的策略模式 {modes}, 旅程中途被改过策略。"
+        return it
+    it.verdict = PASS
+    it.reason = (
+        f"workflow.db 策略 auto(gen={state['generation']}, provenance={state['provenance']}); "
+        f"progress 逐轮记录 {modes or '未记录'}; sdk-product-state.db 的残留行 {residue or '不存在'} 未被采信。"
+    )
+    return it
+
+
 # ---------------------------------------------------------------- 负控 NC-T1..5
 
 
@@ -1032,6 +1163,7 @@ def item_nc_t5(ev: Evidence) -> Item:
 ORDER = [
     "TF-1", "TF-2", "TF-3", "TF-4", "TF-5", "TF-6", "TF-7", "TF-8",
     "TF-9", "TF-10", "TF-11", "TF-12", "TF-13", "TF-14", "TF-15",
+    "TF-16", "TF-17",
     "NC-T1", "NC-T2", "NC-T3", "NC-T4", "NC-T5",
 ]
 
@@ -1057,6 +1189,8 @@ def run_items(
         ("TF-13", "两个任务收口", lambda: item_tf_13(ev)),
         ("TF-14", "物理删除禁令", lambda: item_tf_14(ev)),
         ("TF-15", "snapshot 重放指纹", lambda: item_tf_15(ev, replay, replay_info)),
+        ("TF-16", "读闸门绑定跨重启复用", lambda: item_tf_16(ev)),
+        ("TF-17", "授权策略=Auto(workflow.db)", lambda: item_tf_17(ev)),
         ("NC-T1", "简单改写不建档", lambda: item_nc_t1(ev)),
         ("NC-T2", "模糊愿望不 pending", lambda: item_nc_t2(ev)),
         ("NC-T3", "UI 轮不调 provider", lambda: item_nc_t3(ev)),
@@ -1101,7 +1235,11 @@ def build_report(
         "逻辑遗忘只针对记忆, 不隐藏会话记录(Host CLAUDE.md 2026-09-07 用户产品决定第 2 条); "
         "TF-10 与 TF-11 是一对断言, 只通过其一不算成立。"
     )
-    for db in (ev.hm, ev.state, ev.audit, ev.exec, ev.product):
+    notes.append(
+        "授权策略的唯一权威是 workflow.db.authorization_policy_state(MM-D1); "
+        "sdk-product-state.db 的同名表是 DDL 残留种子行, 本核对器不采信。"
+    )
+    for db in (ev.hm, ev.state, ev.audit, ev.exec, ev.product, ev.workflow):
         if db.error:
             notes.append(db.error)
     return {
@@ -1230,6 +1368,14 @@ def selftest() -> int:
             " task_scope_id text, view_kind text, content blob)",
             "create table task_workspace_binding_revisions(receipt_id text primary key,"
             " task_scope_id text, binding_set_revision integer)",
+            "create table task_workspace_binding_roots(root_id text primary key,"
+            " task_scope_id text, canonical_path text, object_id integer)",
+            "create table task_workspace_binding_proposals(proposal_id text primary key,"
+            " task_scope_id text, idempotency_key text, canonical_path text)",
+            "create table run_context_snapshot_receipts(snapshot_id text primary key,"
+            " sdk_run_id text, provider_turn_ordinal integer, prior_context_revision integer,"
+            " snapshot_revision integer, source_revisions_json text, payload_hash text,"
+            " expected_request_fingerprint text, receipt_hash text, recorded_at real)",
         ],
         [
             ("insert into human_memory_primary_conversations values (?,?,?,?)",
@@ -1253,6 +1399,18 @@ def selftest() -> int:
             ("insert into task_scope_closure_receipts values (?,?,?,?)",
              ("c2", scope_b, "closed", "user_complete")),
             ("insert into procedure_uses values (?,?,?,?)", ("u1", scope_a, "mem-proc", 1)),
+            # 任务托管家目录 ×2(T2/T7) + T4 读闸门提案换来的夹具根 ×1
+            ("insert into task_workspace_binding_roots values (?,?,?,?)",
+             ("r1", scope_a, "/ws/task-a", 11)),
+            ("insert into task_workspace_binding_roots values (?,?,?,?)",
+             ("r2", scope_b, "/ws/task-b", 12)),
+            ("insert into task_workspace_binding_roots values (?,?,?,?)",
+             ("r3", scope_a, "/ws/twoflow-fixture", 13)),
+            ("insert into task_workspace_binding_proposals values (?,?,?,?)",
+             ("p1", scope_a, "read-gate:run4:eff4", "/ws/twoflow-fixture")),
+            ("insert into run_context_snapshot_receipts values (?,?,?,?,?,?,?,?,?,?)",
+             ("snap1", "run1", 1, 0, 1, json.dumps({"trimmed_groups": 0}), "0" * 64,
+              "fp1", "0" * 64, 100.0)),
         ],
     )
     for i in range(20):
@@ -1310,7 +1468,20 @@ def selftest() -> int:
             "create table task_grants(task_grant_id text primary key, source text)",
         ],
         [("insert into authorization_policy_state values (?,?,?,?,?,?,?)",
-          (1, "auto", 0, 1.0, "factory_default", 2, None))],
+          (1, "manual", 0, 1.0, "factory_default", 2, None))],
+    )
+    # MM-D1 反向自检: 两个库都有 authorization_policy_state, 内容故意相反 ——
+    # workflow.db 是真轨迹(auto/1/user_explicit), product-state 是残留行(manual)。
+    # 核对器一旦读错库, TF-17 会立刻从 PASS 变 FAIL, 自检就红。
+    make(
+        os.path.join(parent, "workflow.db"),
+        [
+            "create table authorization_policy_state(singleton_id integer primary key, mode text,"
+            " generation integer, updated_at real, provenance text, schema_generation integer,"
+            " user_set_receipt_ref text)",
+        ],
+        [("insert into authorization_policy_state values (?,?,?,?,?,?,?)",
+          (1, "auto", 1, 2.0, "user_explicit", 2, "policy-user-set:1"))],
     )
     make(
         os.path.join(parent, "operation-audit.db"),
@@ -1332,6 +1503,7 @@ def selftest() -> int:
     )
     with open(os.path.join(root, "native.log"), "w", encoding="utf-8") as fh:
         fh.write('{"event": "startup complete"}\n')
+        fh.write("read_workspace_binding_revised proposal=185fae71 root=/ws/twoflow-fixture\n")
     with open(os.path.join(second, "native.log"), "w", encoding="utf-8") as fh:
         fh.write('{"event": "startup complete (restart)"}\n')
     with open(os.path.join(root, "launch.json"), "w", encoding="utf-8") as fh:
@@ -1345,6 +1517,7 @@ def selftest() -> int:
         "route_resume_existing": 0, "route_no_recall": 0, "task_scope_search_ops": 0,
         "task_scope_open_ops": 0, "task_scope_events": 0, "task_scope_read_view_revisions": 0,
         "task_scope_closure_receipts": 0, "procedure_uses": 0, "binding_revisions": 0,
+        "binding_roots": 0, "binding_proposals": 0,
         "evidence_envelopes": 0, "cognitive_memory_heads": 0, "heads_semantic": 0,
         "heads_episode": 0, "heads_procedure": 0, "heads_prospective": 0,
         "procedure_records": 0, "prospective_records": 0,
@@ -1353,6 +1526,7 @@ def selftest() -> int:
         "typed_recall_result_items": 0, "human_audit_grants": 0, "human_audit_deliveries": 0,
         "human_audit_host_streams": 0, "human_audit_host_deliveries": 0,
         "provider_invocations": 0, "execution_effects": 0, "task_grants_user": 0,
+        "policy_generation": 1,
     }
     script: list[tuple[int, str, str, str, dict[str, int]]] = [
         (0, "baseline", "flow1", "baseline", {}),
@@ -1361,11 +1535,15 @@ def selftest() -> int:
                                          "provider_invocations": 2}),
         (2, "send", "flow1", "settled", {"task_scopes": 1, "route_create_new": 1,
                                          "context_route_decisions": 1, "binding_revisions": 1,
+                                         "binding_roots": 1,
                                          "foreground_run_heads": 2, "evidence_envelopes": 4,
                                          "provider_invocations": 4}),
         (3, "send", "flow1", "settled", {"execution_effects": 1, "foreground_run_heads": 3,
                                          "evidence_envelopes": 6, "provider_invocations": 6}),
+        # T4 读任务托管家目录之外的夹具 -> F-Z1b 提案(Auto 自动授予) -> 绑定根 +1
         (4, "send", "flow1", "settled", {"execution_effects": 2, "foreground_run_heads": 4,
+                                         "binding_revisions": 2, "binding_roots": 2,
+                                         "binding_proposals": 1,
                                          "evidence_envelopes": 8, "provider_invocations": 8}),
         (5, "send", "flow1", "settled", {"task_scope_events": 1,
                                          "task_scope_read_view_revisions": 2,
@@ -1375,7 +1553,8 @@ def selftest() -> int:
                                          "foreground_run_heads": 6, "evidence_envelopes": 12,
                                          "provider_invocations": 12}),
         (7, "send", "flow1", "settled", {"task_scopes": 2, "route_create_new": 2,
-                                         "context_route_decisions": 3, "binding_revisions": 2,
+                                         "context_route_decisions": 3, "binding_revisions": 3,
+                                         "binding_roots": 3,
                                          "foreground_run_heads": 7, "evidence_envelopes": 14,
                                          "provider_invocations": 14}),
         (8, "send", "flow1", "settled", {"execution_effects": 3, "foreground_run_heads": 8,
@@ -1400,6 +1579,7 @@ def selftest() -> int:
                                           "context_route_decisions": 4,
                                           "foreground_run_heads": 14, "evidence_envelopes": 28,
                                           "provider_invocations": 28}),
+        # T15 重启后读同一夹具: 绑定根/提案增量必须为 0(复用), 但要有真实读效应
         (15, "send", "flow2", "settled", {"execution_effects": 4, "foreground_run_heads": 15,
                                           "evidence_envelopes": 30, "provider_invocations": 30}),
         (16, "send", "flow2", "settled", {"procedure_uses": 1, "execution_effects": 6,
@@ -1436,6 +1616,7 @@ def selftest() -> int:
                 "turn": turn, "kind": kind, "phase": phase, "outcome": outcome,
                 "elapsed_s": 1.0, "primary_conversation_id": "primary-1",
                 "last_run_state": "COMPLETED", "note": notes.get(turn, ""),
+                "policy_mode": "auto", "policy_provenance": "user_explicit",
             }
             row.update(running)
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
