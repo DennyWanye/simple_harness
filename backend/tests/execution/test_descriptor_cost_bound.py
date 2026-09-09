@@ -35,9 +35,9 @@ from simple_harness import CallId
 from simple_harness.contracts.messages import Message, MessageRole
 
 from deskpet.execution.current_tool_pages import (
-    CONTROL_TOOLS, MARKER, PAGE_SAVING_DIVISOR, PAGE_WORTH_MIN_BYTES, PREFIX,
+    CONTROL_TOOLS, MARKER, PAGE_SAVING_DIVISOR, PAGE_SIZE, PAGE_WORTH_MIN_BYTES, PREFIX,
     PrimaryContextPageUnavailable, SUMMARY_EXCERPT_BYTES, SUMMARY_MIN_BYTES,
-    _settled_tool_tokens, current_tool_allowance, reference, source_content, summary,
+    _settled_tool_tokens, current_tool_allowance, page_starts, reference, source_content, summary,
     verify_request, worth_paging,
 )
 from deskpet.execution.primary_context_pages import PAGE_BYTES
@@ -98,7 +98,14 @@ def test_bounded_descriptor_costs_about_a_hundred_tokens_whatever_the_body_is():
         #     many pages it would take to read it all back.
         assert wire["source"]["tool_name"] == descriptor["tool_name"]
         assert wire["source"]["content_bytes"] == descriptor["content_bytes"]
-        assert wire["pages"] == -(-descriptor["content_bytes"] // PAGE_BYTES)
+        # 事件 AF：``pages`` 的 ceil 估算换成精确页数 + 显式页大小，这样 offset
+        # 的单位（字节）由描述符本身讲清楚，模型不必去猜 1024 的整数倍。
+        assert wire["page_count"] == len(page_starts(content))
+        assert wire["page_size"] == PAGE_BYTES == PAGE_SIZE
+        assert "pages" not in wire
+        # 单字节正文的页起点就是 page_size 的整数倍，已被上面两个字段决定，
+        # 所以不重复印（描述符 token 上限没有余量）。
+        assert "valid_offsets" not in wire
         assert wire["source"]["effect_id"] == descriptor["effect_id"]
 
     # The cost is flat in the body size (that was always true) *and* small (that

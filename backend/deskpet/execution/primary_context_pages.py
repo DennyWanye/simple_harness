@@ -36,7 +36,23 @@ ARGUMENTS_SUMMARY_BYTES = DEFAULT_LARGE_RESULT_BYTES
 
 
 class PrimaryContextPageUnavailable(ValueError):
-    pass
+    """A stable rejection code, optionally carrying an executable next step.
+
+    2026-09-09 事件 AF：``str(exc)`` 永远只是那个稳定码，一个字符都不多——
+    ``primary_dependencies.check_runtime_dependencies`` 用它重放并逐字比对已记录的
+    ``error_code``，任何附加文本都会把重放判成 ``primary_page_rejection_mismatch``。
+    可执行的下一步走 :attr:`detail`：它只在**当次**拒绝里被渲染进
+    ``public_message``，从不参与重放比对，也从不参与任何指纹。
+
+    ``detail`` 必须是可 canonical_json 化的、由权威事实推导出的纯数据（页大小、
+    页起点、本 Run 已准入过的最高页之后的下一个 offset），不得包含模型可见文本、
+    路径或任何未经权威重算的声明。
+    """
+
+    def __init__(self, code, detail=None):
+        super().__init__(code)
+        self.code = code
+        self.detail = detail
 
 
 def _sha(text):
