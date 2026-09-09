@@ -804,3 +804,271 @@ reasoning_tokens` 全部有值** —— 一组都不落进兜底分支。§3.1 �
   `reasoning_disabled` 得从**当时那份 wire payload** 取，而库里的 canonical
   `request_json` 没有这个字段（W-b.1）——只能靠响应侧那条证据，即重建出来的观测
   最多退化到 `no_reasoning` / `output_fallback` 两档，不会退化到「多算」以外的方向。
+
+---
+
+## §W-c. 估算与观测冲突时，以观测为准（2026-09-09，第 11 次尝试 11 第 17 轮）
+
+- 证据：`.local-test-evidence/2026-09-09/native-a6-run11/primary-ui-9izlp1ao/`
+  （`native.log` 第 1396 行那条 `sdk_provider_wire_input_budget_exceeded`、
+  `userdata/data/simple-harness-sdk/execution-v6.sqlite3` 的 `provider_invocations`），
+  外加 run10 `primary-ui-j5yjctfj`、run9 `primary-ui-8whts2lo`、run8 `primary-ui-a_tg7ppv`、
+  run6 `primary-ui-0mv7ur1p` 的同名库。
+- 分支：`worktree-wire-ratio`（基线 `0b2226ca`）。
+
+### W-c.1 事故
+
+第 17 轮要求把一段 ~18 KB 的中文目标文本逐字记下来。`context_route`（一次参数
+非法、一次成功）与 `task_scope_update goal.set` **都成功了**（事件 U 工作正常），
+第 5 次 provider 调用被这道闸门拦下：
+
+```
+sdk_provider_wire_input_budget_exceeded floor=31246 effective=26752
+wire=31246 carry=0 carry_before_trim=0 observed_input=17058
+observed_output=5015 observed_hidden=0 observed_wire=22066
+window=32000 ordinal=5 carry_basis=no_reasoning
+```
+
+`carry=0`、`observed_hidden=0` —— **W-b 那条线工作正常**，这次拦截完全来自
+`wire` 本身，也就是 `text_tokens` 的字符类估算。按实测密度外推，这条请求真发出去
+约计费 **22.7 K**，装得下（见 W-c.3）。A6-5 因此直接失败。
+
+### W-c.2 量化：过估随 CJK 占比单调增长
+
+把 run6/run8/run9/run10/run11 五个库的 `provider_invocations` 逐条重放：
+messages 取 `request_json`，assistant `tool_calls.arguments` 用**同一条 Run 早先
+响应里的真实参数**补回（这正是 `ToolCallArgumentsMemo` 在运行时做的事），
+tools 按 `tool_schema_tokens` 渲染。重放的锚点是事故那条 Run 自己的两条回执：
+ordinal 4 复算 **22 082** 对回执 22 066、ordinal 5 复算 **31 270** 对回执
+31 246（误差 0.07%），所以「重放出来的 wire」与生产那份是同一个数。
+
+分母按任务口径取 `billed_input − Σ_{k<n} reasoning_tokens[k]`：
+
+**A. thinking 全程关闭的 174 组**（`continuation.mode == "reasoning_disabled"`
+且 `usage.reasoning_tokens` 为空，因此隐藏注入恒为 0，`billed ≈ wire`）
+
+| CJK 占比 | n | 旧公式 中位 | 旧 最大 | 新公式 中位 | 新 最大 |
+|---|---|---|---|---|---|
+| 0–1% | 39 | 0.905 | 1.005 | 0.902 | 1.005 |
+| 1–3% | 97 | 0.888 | 1.006 | 0.873 | 0.995 |
+| 3–6% | 26 | 0.877 | 0.956 | 0.851 | 0.929 |
+| 6–12% | 7 | 0.916 | 0.961 | 0.873 | 0.913 |
+| 12–25% | 3 | 1.090 | **1.295** | 0.971 | 1.012 |
+| ≥25% | 2 | 1.340 | **1.345** | 1.014 | 1.016 |
+
+**B. thinking 开、先前每一轮的 `reasoning_tokens` 都已知的 187 组**
+
+| CJK 占比 | n | 旧公式 中位 | 旧 最大 | 新公式 中位 | 新 最大 |
+|---|---|---|---|---|---|
+| 0–1% | 54 | 0.802 | 0.965 | 0.800 | 0.964 |
+| 1–3% | 105 | 0.798 | 0.980 | 0.786 | 0.970 |
+| 3–6% | 10 | 0.857 | 0.928 | 0.822 | 0.903 |
+| 12–25% | 11 | 0.985 | **1.297** | 0.893 | 0.963 |
+| ≥25% | 7 | 1.347 | **1.357** | 0.942 | 1.012 |
+
+两块证据独立、结论同号：**CJK 占比在 3% 以下时估算稳定地偏低约 10–20%
+（非 CJK 的 `/4` 比实测的 3.26 字/token 松），占比一过 12% 就翻过 1.0，
+到 25% 以上时高估 34–36%。** 过估随 CJK 占比单调增长，这不是噪声。
+
+### W-c.3 归因：两个常数，都是猜的
+
+事故那条请求（ordinal 5，wire 31 246）拆开来：
+
+| 成分 | 量 | 旧公式记账 | 按实测密度折算 | 倍数 |
+|---|---|---|---|---|
+| 原样中文 | 5 023 字 | 5 023 | ≈ 2 983（1.684 字/token） | **1.68×** |
+| `\uXXXX` 转义的中文 | 9 934 个 | 14 901 | ≈ 5 970（0.601 token/转义） | **2.50×** |
+| 其余 ASCII | 44 861 字 | 11 215 | ≈ 13 761（3.258 字/token） | 0.82× |
+| 合计 | | **31 246** | ≈ **22 714** | **1.38×** |
+
+（折算用的三个密度都来自 W-c.2 的同一批实测；这条请求没有发出去，所以没有真实
+计费可比，22 714 是外推值。无论取哪一组系数，它都稳稳落在 `effective=26752` 以内
+——这就是「本来装得下」的意思。）
+
+1. **CJK 记 1 token/字**。这不是一个 tokenizer 事实，而是「没人量过」。
+   两段法实测（先在 CJK 占比 < 0.5% 的 30 组上定 ASCII 密度 = 3.26 字/token，
+   再在带中文的组上解 CJK 项）：**1.54–2.04 字/token**
+   （run11 t1 = 1.684、run10 t1 = 1.541、run11 另两条 = 2.016 / 2.039）。
+2. **`ensure_ascii` 转义的中文按 6 个 ASCII 记 1.5 token**。
+   `ToolCallArgumentsMemo.canonical_tool_arguments_json` 用的是
+   `json.dumps(..., sort_keys=True, separators=(",",":"))` —— **默认
+   `ensure_ascii=True`**，所以模型回显的每个汉字以 `\uXXXX` 六个 ASCII 上线。
+   实测（事故 Run ordinal 1→2：+4 940 个转义、+5 884 个普通字符、
+   +4 776 计费；普通字符按 3.26 折算掉 1 806，余 2 970）：**0.601 token/转义**，
+   即 1.66 转义/token —— 与原样汉字的 0.594（1.684 字/token）**同一档**。
+   中转站在套模板前会把参数 JSON 解回来，被 tokenize 的始终是那个字。
+   14 901 / 31 246 —— 事故里将近一半的估算量，出自这一个常数。
+
+### W-c.4 修法（两条，互补而不互相补偿）
+
+**(a) `context_partitions.text_tokens` —— 把量得到的那部分算对。**
+
+- CJK：`ceil(chars × 10 / 13)`，即 **1.3 字/token**。取实测区间
+  （1.54–2.04）的保守端：对每一条观测仍然高估 ≥18%，方向合乎冻结 oracle 的
+  `token_underestimate_allowed: false`，同时把 1.35× 的病态抹掉。
+  整数运算，装配 lane 与 wire lane 逐 token 一致。
+- `\uXXXX`：先折回它编码的那个字符，再按上面两类计价。非 CJK 的转义原样保留
+  （它确实就是 6 个 ASCII），截断/非法的 `\uZZZZ` 也原样保留。
+- 非 CJK 的 `/4` **不动**（实测 3.26，故意留松）——这是事件 W 那条「wire 要的是
+  下界」的分工，密度的其余部分由 per-model 倍率承担。
+
+**(b) `wire_input_budget` —— 估算与观测冲突时，以观测为准。**
+
+同一条 Run 的上一轮已经把两个数同时摆在 Host 手里：那一轮 Host 估
+`wire_tokens`、provider 计 `input_tokens`。当且仅当
+
+* `observed_hidden == 0`（计费没超过 Host 量到的 wire → 上一轮 prompt 里没有
+  任何 Host 看不见的质量；有隐藏质量时这个比值混着两种成因，拿它缩估算方向危险），
+* 且 `observed_input < observed_wire`（估算确实偏高；反向的那一半正是
+  `hidden_tokens`，已经由 `carry` 承担，不重复计），
+
+取 `wire_ratio_observed = clamp(observed_input / observed_wire, 0.5, 1.0)`，
+`wire_estimate_corrected = ceil(wire × ratio)`（整数分数运算），
+`floor = wire_estimate_corrected + carry`。回执与日志各多两项
+`wire_ratio_observed` / `wire_estimate_corrected`。
+
+- **0.5 下限**是工程下限不是拟合值：观测说「估算是计费的两倍以上」时，那多半不是
+  tokenizer 密度而是上一轮 payload 里有本轮没有的东西（裁史、换页），照单全收会
+  把这道终局闸门开得太大。239 组真机配对里实测比值最低 0.773，离 0.5 很远。
+- **没有观测（本 Run 第一次调用）时 `corrected == wire`**，闸门仍然 fail closed，
+  与本条规则出现之前逐 token 相同。
+- 与 `carry` 的分工写死：**ratio 修的是量得到的那部分，carry 猜的是量不到的那部分**。
+  `carry_basis` 的三档（`reasoning_tokens` / `no_reasoning` / `output_fallback`）
+  一个都没动，`carry` 一个 token 都没少收。
+- 裁剪循环 `_measured_floor` 走同一条算术，所以「丢回传丢到刚好装得下就停」
+  仍然是确定性的。
+
+事故那条请求：`ratio = 17058 / 22066 = 0.7731`，
+`ceil(31246 × 17058 / 22066) = 24 155 ≤ 26 752` —— **发得出去**。
+
+### W-c.5 连带重拟：pro 的三元组（1.50 / 1.25 / 7.10 → 1.50 / **1.60** / **8.00**）
+
+倍率的分母是 `text_tokens`。分母变小，「不低估」所需的倍率就必然变大——不跟着抬
+就会真的低估：未重拟前 `run5-54747d49-t5` 估 **54 497** 对真实 **54 683**。
+
+逐 ordinal 的实测上界按夹具自己的字符类计数重述
+（`tests/fixtures/hm_to_a6_pro_pool_samples.json` 的
+`measured_max_needed_message_ratio_by_ordinal`，36 条样本恰好就是全池 423 组
+每个 ordinal 的最大值，重述前逐条与旧表相等，所以这次重述是精确的而不是近似）：
+
+| ordinal | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | … | 21 | 22 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 旧 | 1.235 | 1.751 | 3.453 | 4.586 | 5.827 | 6.081 | 6.109 | 5.937 | 6.335 | | 6.139 | 6.158 |
+| 新 | 1.266 | 2.097 | 4.130 | 5.459 | 6.925 | **7.127** | 7.001 | 6.707 | 7.063 | | 6.189 | 6.210 |
+| 涨幅 | +2.5% | +19.8% | +19.6% | +19.0% | +18.8% | +17.2% | +14.6% | +13.0% | +11.5% | | +0.8% | +0.8% |
+
+**涨幅精确地跟着 CJK 占比走**：涨得多的全是 `run5-54747d49` 那条 Run（messages
+CJK 占比 30–39%），其余全池只涨 0.3–2.5%。这本身就是 W-c 的旁证。
+
+新的实测平台 7.127（ordinal 5），仍按「对每个 ordinal 的实测上界留 ≥10% 工程
+余量」取 `max = 8.00`、`per_turn = 1.60`；ordinal 0 的上界 1.266 → `base` 保持
+1.50。schema 仍 1.30（Incident P 的拆分不受影响）。重拟后 36 条样本**零低估**，
+最紧一条余量 **+10.7%**（旧口径 +10.4%）——口径没有放松，只是分母换对了。
+
+flash 的三元组（1.25 / 0.35 / 1.65）**不动**：174 组 thinking 关闭的配对上，
+校准后的估算/实测中位由 1.459 降到 1.435、最紧一条余量由 +12.7% 降到 +9.6%，
+仍然**零低估**，方向不变。
+
+### W-c.6 夹具里的派生量随公式一起重述
+
+`wire_input_tokens` 与 `previous_turn.wire_tokens` 是 **Host 口径的派生量**，
+不是原始观测（原始观测是字符类计数与 usage 三元）。公式一变必须一起重述，
+否则回放里会出现「本轮按新公式、上一轮按旧公式」——`wire(n) < wire(n-1)` 是这道
+闸门唯一的裁史信号，那会**伪造出一次裁史**并把 carry 打折掉。
+
+`hm_to_a6_flash_pool_samples.json`：65 条 `wire_input_tokens` 全部按夹具自己的
+字符类计数重算；58 条带 `previous_turn` 的样本里 **44 条**的上一轮本身也是样本，
+逐条重述；余下 **14 条**的上一轮不在样本里，其 `wire_tokens` 仍是旧口径的记录值
+——那只会让回放里的 carry 比生产更小（闸门更松），不会掩盖任何一次真实超窗。
+新增 `wire_formula` 段把这三件事写在夹具里；`selected_for` 的标签同步重算，
+并新增 `selected_for_glossary` 说明每个标签的含义。W-b 口径下反超、W-c 之后
+不再反超的那三条 `ordinal 1` 改挂 `floor_above_the_real_billing_before_w_c`
+留在夹具里，作为这一条修法的正向证据。
+
+`hm_to_a6_pro_pool_samples.json`：两张 `*_by_ordinal` 表与
+`worst_ratio_of_the_replaced_calibration`（0.4072 → **0.3652**）重述；
+`population` 里 `under_counted_by_the_replaced_calibration` / 
+`over_budget_hidden_by_the_replaced_calibration` 两个 423 组的计数**不重述**
+（样本里没留下重算所需的另外 387 组），新口径只会让被替换的旧梯子低估得更多，
+所以那两个数现在是下界，夹具 `note` 里写明了。
+
+### W-c.7 群体判据：65 条样本重放，逐条对账
+
+用真代码（`check_wire_input_budget` + 真的 `ObservedInputCarryLedger`）重放：
+
+| 判据 | W-b 口径 | W-c 之后 |
+|---|---|---|
+| 触发次数 | 30 | 29 |
+| **误伤（打死真实装得下的请求）** | **0** | **0** |
+| **漏判真实超过整个 32000 窗口的** | **0** | **0** |
+| 漏判超 effective（仍在窗口内） | 6 | 7 |
+| floor 反超真实计费 | 6 | **3** |
+| ——其中 carry = 0（纯文本估算造成的） | 3 | **0** |
+| 最差反超量 | 1 661 | 1 342 |
+
+不能动的三条一条没动；「floor 反超真实计费」由 6 降到 3，**降掉的正好是那三条
+`ordinal 1`（carry = 0）** ——它们当初反超的原因就是 CJK 被按 1 token/字 记，
+这一条修的就是它。代价是漏判由 6 升到 7（新增 `run9-b0dc8632-t6`），全部仍在
+物理窗口内，由装配期的倍率与有序降级去接。事故那条 Run（`run9-ded6c3dc-t4`，
+真实 33 200）仍然在 ordinal 4 被拦下。
+
+### W-c.8 测试
+
+`backend/tests/sdk_adapters/test_wire_input_budget.py`（34 → **41** 条）
+
+- `test_the_incident_request_goes_out_once_the_observation_corrects_the_estimate`
+  —— **事故形态**：账本按生产路径灌进 ordinal 4（wire 22 066 / input 17 058 /
+  hidden 0），这一轮 wire 31 246 → `wire_ratio_observed = 0.7731`、
+  `wire_estimate_corrected = 24 155` ≤ 26 752，**不拦**。
+- `test_the_correction_needs_both_no_hidden_mass_and_an_over_estimate` ——
+  两条前提各自必要，少一条就不打折。
+- `test_the_correction_is_clamped_at_half` —— 0.5 下限。
+- `test_without_an_observation_the_gate_still_fails_closed_on_the_raw_estimate`
+  —— 本 Run 第一次调用仍然 fail closed，回执 `wire_ratio_observed == 1.0`。
+- `test_a_thinking_on_turn_is_untouched_by_the_correction` —— **thinking 开的形态
+  一动没动**：hidden > 0 → 两条前提都不成立 → 不打折，carry 按 reasoning 实测
+  全额收，该拦还是拦。
+- `test_the_correction_and_the_trim_discount_compose_on_the_same_arithmetic`
+  —— 裁史打折压 carry、实测比值压估算，各压各的那一项。
+- `test_the_sample_verdicts_after_w_c_are_recorded` —— W-c.7 那张表逐条复算。
+- W-b 的三条改写：同一组数字里本来就藏着一次实测（12 874 估对 12 360 计），
+  `floor` 由 21 997 变成 21 119；thinking 开的两档改成「carry 全额收、
+  floor = 修正后估算 + carry」——它们原来越界的那 105 个 token 完全落在文本估算
+  自己多算的 878 个里面，所以现在装得下；`test_a_thinking_enabled_turn_still_charges_the_measured_reasoning`
+  另补一条「思考量再大一档就仍然 fail closed」的判据，守住终局行为。
+
+`backend/tests/sdk_adapters/test_token_estimator_calibration.py`（54 → **62** 绿，
+56 个用例函数，其中 CJK 单元表参数化 7 组）
+
+- `test_text_tokens_prices_cjk_at_the_measured_density`（参数化 7 组）——
+  CJK 单元表：0→0、1→1、13→10、14→11、100→77、1 000→770、4 962→3 817。
+- `test_text_tokens_folds_a_json_escape_back_into_the_character` ——
+  `\u6c49` × 100 == `汉` × 100 == 77；非 CJK 的 `\u0041` 仍按 6 个 ASCII 记。
+- `test_text_tokens_never_reads_a_truncated_escape_as_a_character` ——
+  `\u6c4` / `\uZZZZ` 原样当普通文本。
+- pro 的四条判据（零低估、每个 ordinal ≥10% 余量、最紧一条 ∈ [1.10, 1.15)、
+  最坏被替换梯子的比值）在重拟后的三元组与重述后的表上全绿。
+
+`backend/tests/sdk_adapters/test_reasoning_relay_budget.py`（19 条）不变，全绿。
+
+三个文件一次 pytest：**122 passed**。
+
+### W-c.9 边界与待办
+
+- **F-W-c-1**：`text_tokens` 的 CJK 区间仍是 `U+3400–U+9FFF`（与 V0 一致），
+  假名、谚文、CJK 兼容区、扩展 B 以上都按非 CJK 的 `/4` 记。真机语料里没有这些，
+  但一条日文/韩文旅程会重演同一个形态。
+- **F-W-c-2**：1.3 字/token 是**这一个端点**（中转站后的 `deepseek-v4-*`）的实测。
+  它写在共享常数里而不是 per-model 表里，理由与 `/4` 相同：这是「Host 看得见的
+  质量」的计价口径，不是「看不见的质量」的校准量。真要 per-model 化，
+  应该和 `NON_CJK_CHARS_PER_TOKEN` 一起搬，而不是只搬一半。
+- **F-W-c-3**：`wire_ratio_observed` 只用**上一轮**的观测。同一条 Run 的更早几轮
+  也在账本里过（`ObservedInputCarryLedger` 每个 `(Run, 型号)` 只留最新一条），
+  取几轮的中位数会更稳；今天不做——一条 Run 里 payload 的成分变化很快，
+  最近一轮与本轮最像。
+- **F-W-c-4**：`ensure_ascii=True` 本身值得改。中转站接受 UTF-8 原文，
+  `canonical_tool_arguments_json` 转义只是 `json.dumps` 的默认值撞上来的，
+  中文参数真发出去的字节直接翻倍（2 400 个汉字：UTF-8 7 200 字节 → 转义后
+  14 402 字节）。修好估算之后这不再影响预算判定，但带宽和延迟还在。
+  改它要过 `ToolCallArgumentsMemo` 的
+  `entry_max_bytes` 与 fingerprint 两道口子，另开一轮。
