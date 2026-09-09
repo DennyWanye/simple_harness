@@ -14,7 +14,10 @@ import aiosqlite
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 from deskpet.task_scope.store import TaskScopeNotFound, _uuid
 
-RENDERER_CONTRACT_VERSION = "task-scope-views/v1"
+# v2(事件 AC): EVIDENCE 清单新增自述的 `event_watermark`。渲染输出变了就必须换版本 ——
+# 版本进 source_hash, 于是老 source 的视图行不会被新渲染器的内容以 INSERT OR IGNORE 顶掉,
+# read_view 与 read_materialized_view 不会一个新一个旧。
+RENDERER_CONTRACT_VERSION = "task-scope-views/v2"
 
 
 @dataclass(frozen=True, slots=True)

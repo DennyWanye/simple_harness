@@ -672,6 +672,11 @@ class TaskScopeProjectionStore:
                 "task_scope_id": source.task_scope_id,
                 "source_id": source.source_id,
                 "source_hash": source.source_hash,
+                # `event_count` 是**这个视图水位上**的 canonical 事件数:
+                # 视图按读取时物化, 物化之后追加的事件不属于本次修订。
+                # 把水位一并写进清单, 读者/验证器不必回查 projection source
+                # 就能在同一水位上核对 canonical 事实不丢(事件 AC)。
+                "event_watermark": source.event_watermark,
                 "event_count": len(events),
                 "logical_group_size": LOGICAL_EVIDENCE_GROUP_SIZE,
                 "logical_group_count": len(groups),
