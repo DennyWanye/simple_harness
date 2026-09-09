@@ -198,3 +198,30 @@ it("rejects reminder text without a typed notice identity", async () => {
   await screen.findByText("提醒来源格式无效");
   expect(screen.queryByText("不得显示")).toBeNull();
 });
+
+// UAT 2026-09-09：「我分不清哪句话是我说的，哪句话是 AI 回答的」——三种角色
+// 必须有不同的对齐/底色，工具记录默认折叠但看得见"有工具调用"，点开可读。
+it("renders user / assistant / tool with distinct roles and a collapsible tool record", async () => {
+  const h = fixture([
+    { message_ref: "u1", role: "user", text: "我的提问", has_more: false, total_chars: 4 },
+    { message_ref: "a1", role: "assistant", text: "助手的回答", has_more: false, total_chars: 5 },
+    { message_ref: "t1", role: "tool", text: '{"call_id":"c1","name":"read_file"}\n工具正文内容', has_more: false, total_chars: 40 },
+  ]);
+  render(<PrimaryChatView channel={h.channel} />);
+  await screen.findByText("助手的回答");
+  const user = screen.getByTestId("primary-message-user");
+  const assistant = screen.getByTestId("primary-message-assistant");
+  const tool = screen.getByTestId("primary-message-tool");
+  expect(user.getAttribute("data-role")).toBe("user");
+  expect(user.style.textAlign).toBe("right");
+  expect(assistant.style.textAlign).toBe("left");
+  expect(user.style.background).not.toBe(assistant.style.background);
+  expect(tool.style.background).not.toBe(assistant.style.background);
+  // 折叠时正文不渲染，但标题写明是哪个工具。
+  const toggle = screen.getByRole("button", { name: /工具 · read_file/ });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("工具正文内容")).toBeNull();
+  fireEvent.click(toggle);
+  expect(screen.getByText("工具正文内容")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /工具 · read_file/ }).getAttribute("aria-expanded")).toBe("true");
+});

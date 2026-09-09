@@ -290,4 +290,46 @@ describe("事件 AK 重启就绪", () => {
     expect(h.controller.getSnapshot().error).toBe("");
     h.stop();
   });
+  // UAT 2026-09-09：「查看更早消息」原来替换当前页，用户点一下刚看到的助手
+  // 回答与工具记录就没了。旧页必须向上累积，刷新才回到最新一页。
+  it("展开更早一页时把旧消息拼在前面，而不是替换掉已显示的回合", async () => {
+    const listeners = new Set<(message: unknown) => void>();
+    const emit = (message: unknown) => listeners.forEach((listener) => listener(message));
+    const page = (items: object[], next: string | null) =>
+      ({ primary_ref: state.primary_ref, revision: state.revision, items, next_cursor: next });
+    const newest = [
+      { ...item, message_ref: "m-new-user", role: "user", text: "最新提问" },
+      { ...item, message_ref: "m-new-answer", role: "assistant", text: "最新回答" },
+    ];
+    const older = [
+      { ...item, message_ref: "m-old-user", role: "user", text: "更早提问" },
+      { ...item, message_ref: "m-old-tool", role: "tool", text: "更早工具" },
+    ];
+    const port: PrimaryPort = {
+      state: () => "connected",
+      on_message: (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; },
+      on_state_change: () => () => {},
+      send_command: (request) => {
+        const result = request.operation === "primary.messages.page"
+          ? ((request.request as Record<string, unknown>).cursor ? page(older, null) : page(newest, "cursor-older"))
+          : state;
+        queueMicrotask(() => emit({ type: "human_memory_response", request_id: request.request_id,
+          payload: { ok: true, operation: request.operation, result } }));
+        return true;
+      },
+    };
+    const controller = new PrimaryController(port);
+    const stop = controller.start();
+    emit(bound); await tick();
+    expect(controller.getSnapshot().messages.map((m) => m.message_ref)).toEqual(["m-new-user", "m-new-answer"]);
+    expect(controller.getSnapshot().nextCursor).toBe("cursor-older");
+    await controller.loadOlder(); await tick();
+    expect(controller.getSnapshot().messages.map((m) => m.message_ref))
+      .toEqual(["m-old-user", "m-old-tool", "m-new-user", "m-new-answer"]);
+    expect(controller.getSnapshot().nextCursor).toBeNull();
+    // 显式刷新仍然是「替换成最新一页」的有界读，不会无限累积。
+    await controller.refreshLatest(); await tick();
+    expect(controller.getSnapshot().messages.map((m) => m.message_ref)).toEqual(["m-new-user", "m-new-answer"]);
+    stop();
+  });
 });
