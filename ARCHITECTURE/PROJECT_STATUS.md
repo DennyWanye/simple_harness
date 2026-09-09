@@ -327,6 +327,47 @@ claim, and077 artifact is unchanged. [Contract](../plans/2026-09-06-expiry-termi
 
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-09 MM-D4：设置面板「自动模式」复选框改为渲染权威策略（run5b 复盘）
+
+基线 `6ff7fb46`，工作树 `.claude/worktrees/auto-mode-checkbox`（分支 `worktree-auto-mode-checkbox`，**未合回 main**）。
+Manual 模式旅程 run5b 发现：全新 userdata 下后端是 `auto / gen 0 / factory_default`，
+而『模型与设置』权限区的复选框渲染成**未勾选**且 ≥8 s 不变；第一次点击对后端是空操作
+（仍 auto/gen 0），第二次点击才写成 `manual / gen 1 / user_explicit`。
+
+- **根因全在前端读写路径，后端读源本来就对**：`_authorization_auto_mode()` 读的是
+  `service_context` 里由 `uow = workflow_service.execution_uow` → `CapabilityStore(uow)` 建立的
+  workflow.db 权威（`backend/main.py:2712/2935`），没有碰 MM-D1 判定的 `sdk-product-state.db` 残留表。
+  三处叠加：①`SettingsPanel.tsx:453-459` 的初始值取自 localStorage 显示缓存
+  （`cached === null ? true`），webview 缓存与后端 userdata 生命周期不同 → 清 userdata 不清缓存；
+  ②`SettingsPanel.tsx:466-487` 只在 `send` **抛异常**时重试，而 `ControlChannel.send()`
+  （`ws/ControlChannel.ts:164-179`）在 socket 未 OPEN 时**不抛异常、静默丢帧并返回 false**，
+  于是 `permission_auto_mode_get` 丢失后永不重发，界面永远停在缓存值上；
+  ③回执走 App 级单槽 `lastMessage`（`hooks/useWebSocket.ts:11,18` 只留最近一条），
+  且写入是 `const next = !enabled`——"翻转我以为的当前值"，本地值与后端相反时第一次点击
+  必然写成后端已有的模式（CAS 在 `current.mode == requested` 时短路）。
+- **修复**：`AutoModeToggle` 重写并导出——状态改为 `policy | null`，`null` = 加载中且
+  **`disabled`**（任何点击都不可能被解释成对默认值的翻转）；localStorage 只写不读；
+  用 `ch.onMessage()` 订阅 + `ch.onStateChange()` 在 `connected` 时重发 get + 挂载先读
+  `ch.getLatestMessage()`；检查 `send()` 返回值，丢帧 500 ms 后重发；写入用
+  `buildAutoModeSetMessage(target, requestId)` 携带 `event.target.checked` 的**显式目标模式**；
+  不做乐观写，按回执里的落盘状态渲染「当前：自动/手动（策略代次 N · provenance）」；
+  `generation` 单调，迟到的旧快照不得把界面拉回写前状态。后端新增
+  `_authorization_policy_snapshot()`（workflow.db 权威 → `{enabled, mode, generation, provenance,
+  authoritative}`，无 store 时标 `authoritative: false`），`get`/`set` 两个 handler 都回发快照并回显
+  `request_id`，**`set` 写入后重读**而不是把请求原样回显；`enabled` 字段保留兼容。
+- 用例：新增 `SettingsPanel.autoMode.test.tsx`（8：加载态不可交互、auto→勾选/manual→不勾选、
+  缓存与后端相反时以后端为准、写入携带显式目标、加载态点击不写后端、旧代次不回退、
+  通道缓存优先渲染、旧回执兼容）与 `backend/tests/test_mmd4_auto_mode_policy_snapshot.py`（4：
+  全新 profile→auto/0/factory_default、CAS 后重读→manual/1/user_explicit、无 store 标非权威、
+  store 绑定 workflow.db uow 的结构锁）；改写 `permissionMode.test.tsx`（2，原锁的
+  `cached === null ? true` 正是病灶，改锁新行为）；回归 `PrimaryTaskPanel.test.tsx`（5，
+  TaskScope 面板仍无 Manual/Auto 开关）+ `SettingsPanel.timeout`/`retiredSupervisor`/`dataDir`/
+  `CapabilityCenterPanel`（12）+ `test_permission_mode_migration.py`/
+  `test_p4s21_permission_gate_auto_mode.py`（10）。前端 27 例、后端 14 例全绿，`npm run typecheck` 通过。
+  本轮**未启动原生应用**；前端改动需重新打包 bundle
+  （`.local-test-evidence/2026-09-07/native-build-r8/build.py`，由用户执行）后重跑 run5c 复验。
+  [裁定](../plans/2026-09-09-manual-mode-journey/DECISION-MM-D4-AUTO-MODE-CHECKBOX.md)。
+
 ## 2026-09-09 旅程加固三件：Manual 驱动硬判据 + F-MMD-1 注册白名单 + F-NC1 自改写路由
 
 基线 `43a8f835`，工作树 `.claude/worktrees/journey-hardening`（分支 `worktree-journey-hardening`，**未合回 main**）。

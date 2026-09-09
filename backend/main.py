@@ -3020,13 +3020,41 @@ async def _set_authorization_auto_mode(enabled: bool) -> bool:
 
 
 async def _authorization_auto_mode() -> bool:
+    # MM-D4: one source only — the snapshot below reads the CapabilityStore.
+    return bool((await _authorization_policy_snapshot())["enabled"])
+
+
+async def _authorization_policy_snapshot() -> dict[str, object]:
+    """MM-D4: authoritative authorization-policy view for the settings panel.
+
+    The single source of truth is the ``CapabilityStore`` over
+    ``workflow_service.execution_uow`` (workflow.db ``authorization_policy_state``).
+    The identically named table in ``sdk-product-state.db`` is DDL residue
+    (MM-D1) and is never read here. ``enabled`` stays for wire compatibility;
+    ``mode``/``generation``/``provenance`` let the panel render what actually
+    persisted instead of a client-side guess.
+    """
     store = service_context.get("capability_store")
     if store is None:
-        return bool(
+        enabled = bool(
             permission_gate_v2 is not None
             and getattr(permission_gate_v2, "auto_mode", False)
         )
-    return (await store.get_policy_state()).mode == "auto"
+        return {
+            "enabled": enabled,
+            "mode": "auto" if enabled else "manual",
+            "generation": 0,
+            "provenance": "unavailable",
+            "authoritative": False,
+        }
+    state = await store.get_policy_state()
+    return {
+        "enabled": state.mode == "auto",
+        "mode": state.mode,
+        "generation": int(state.generation),
+        "provenance": str(state.provenance),
+        "authoritative": True,
+    }
 
 
 async def _activate_terminal_operation_audit():
@@ -14775,30 +14803,33 @@ async def control_channel(ws: WebSocket):
                 )
 
             elif msg_type == "permission_auto_mode_set":
-                # P4-S21 #13: toggle "yes-to-all" mode. Settings panel
-                # sends {enabled: bool}; we flip the flag on the live
-                # PermissionGate instance. Default is OFF — has to be
-                # explicitly opted in. Reverts on backend restart.
+                # P4-S21 #13 / P4-S25: the settings panel sends the target
+                # mode explicitly ({enabled: bool}); the CapabilityStore CAS
+                # persists it in workflow.db and bumps the generation.
+                # MM-D4: never echo the request back — re-read the persisted
+                # state so the panel renders the mode+generation that landed.
                 payload = raw.get("payload", {}) or {}
-                enabled = await _set_authorization_auto_mode(
-                    bool(payload.get("enabled", False))
+                requested = bool(payload.get("enabled", False))
+                await _set_authorization_auto_mode(requested)
+                snapshot = await _authorization_policy_snapshot()
+                logger.info(
+                    "permission_auto_mode_set",
+                    requested=requested,
+                    mode=snapshot["mode"],
+                    generation=snapshot["generation"],
+                    provenance=snapshot["provenance"],
                 )
-                if permission_gate_v2 is not None:
-                    # P4-S25: route through set_auto_mode so the choice
-                    # persists across backend restart (was process-only).
-                    logger.info(
-                        "permission_auto_mode_set", enabled=enabled,
-                    )
                 await ws.send_json({
                     "type": "permission_auto_mode_response",
-                    "payload": {"enabled": enabled},
+                    "request_id": raw.get("request_id"),
+                    "payload": snapshot,
                 })
 
             elif msg_type == "permission_auto_mode_get":
-                enabled = await _authorization_auto_mode()
                 await ws.send_json({
                     "type": "permission_auto_mode_response",
-                    "payload": {"enabled": enabled},
+                    "request_id": raw.get("request_id"),
+                    "payload": await _authorization_policy_snapshot(),
                 })
 
             elif msg_type == "capability_list":
