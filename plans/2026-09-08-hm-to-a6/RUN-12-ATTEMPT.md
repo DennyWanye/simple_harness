@@ -12,3 +12,5 @@
 
 T6 读路径全通（提案 → 重路由 → `read_file` 成功），事件 AF 的 `next_offset` 也被模型正确跟随——但 `PAGE_BYTES=1024` 让 40 KB 文件要翻 ~40 页，翻到第 13 页时开放分组把预算挤爆（`planned=27202`），事件 Z 的收尾指令未触发（`wrap_up_injected=0`）→ Run FAILED。→ **事件 AG**（页大小提到 4 KiB + 描述符带 line_count/char_count/首行，让「标题和总行数」不必翻页；收尾指令在开放分组溢出时也要触发）已派子代理。T8（参照件 B）31 s 完成。
 - T11（ANCHOR-ALPHA）FAILED：`grep` 对**文件路径**连续 4 次 `tool_failed`（回执只说「Tool execution failed」），模型退回逐页翻 12 页后预算耗尽（`planned=26756`，仅超 4）→ **事件 AH**（grep/glob 支持文件路径；tool_failed 带稳定原因码）已派子代理。两轮完整流程旅程就绪分支已合入（`288e1887`）。
+- T13–T16 COMPLETED（T14 后 `prospective_records`=0：事件 AE 生效；T16 图谱 11 记忆 1 关系）。
+- T17 FAILED（组装超限 `planned=29172`，收尾仍未触发 → AG）：模型这次没走 `task_scope_update`，而是 `context_route` 带 goal 参数（schema 不符）→ `write_file` 想把目标写成文件（`tool_failed`，回执不透明）→ `context_page_in` 构造了不存在的引用（`primary_effect_page_reference`，回执只说「不可用」）→ tool_search 循环。新增两个待修：**AH-2** `write_file` 的 tool_failed 原因码（AH 通用化覆盖）、**AF-2** `primary_effect_page_reference`（引用格式/不存在）也要带可执行下一步。
