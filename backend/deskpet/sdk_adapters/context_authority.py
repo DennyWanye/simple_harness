@@ -937,6 +937,56 @@ def _pending_occurrence_message(pending: tuple[Any, ...], *, overdue_keys=frozen
     )
 
 
+# --------------------------------------------------------------------------
+# Incident Z (2026-09-09), degradation step 5: wrap up instead of dying.
+#
+# HM-TO-A6 attempt 10 turn 6 (native run ``product-sdk-6ad6a40a…``, 21 provider
+# invocations) ended ``sdk_context_budget_exceeded planned=28494 effective=26752
+# protected=7920 open_group=20574 full_trim=True`` -> ``react_termination_limits``
+# and the user got nothing at all.  The open group that could not be trimmed was
+# 20 assistant tool-call echoes (20.5 KB — an untrimmable causal chain), 17 paged
+# descriptors (9.6 KB) and 8 elision notices (5.3 KB): 45 items for 20574 tokens,
+# i.e. ~457 token per item and ~915 token for one react step (an echo plus the
+# result it produces).  Anything under one whole step of headroom means the next
+# turn cannot exist, so that is where the Host stops asking the model to keep
+# going and tells it — once, deterministically — to answer with what it has.
+#
+# The threshold is that step rounded up, which also covers the wrap-up message's
+# own ~120 token: below it the turn is already unable to make progress.
+CONTEXT_BUDGET_WRAP_UP_ID = "context_budget_wrap_up"
+CONTEXT_BUDGET_WRAP_UP_HEADROOM_TOKENS = 1200
+CONTEXT_BUDGET_WRAP_UP_INSTRUCTION = (
+    "This Run has no context budget left for another tool step. Stop calling "
+    "tools now — tool_search, tool_describe, tool_activate, context_page_in and "
+    "every other tool included. Answer the user directly in this turn with what "
+    "you already have, and say plainly which part of the request you could not "
+    "complete and why. Calling any tool instead of answering ends this Run "
+    "without a reply."
+)
+
+
+def context_budget_wrap_up_message() -> Any:
+    """The one deterministic instruction the wrap-up path injects.
+
+    Same shape as the semantic-closure instruction (Host-authority SYSTEM
+    message, canonical JSON body) and byte-identical on every Run, so the
+    persisted request fingerprint stays reproducible on replay.
+    """
+
+    from simple_harness.contracts.messages import Message, MessageRole
+
+    return Message(
+        role=MessageRole.SYSTEM,
+        content=canonical_json(
+            {
+                "kind": CONTEXT_BUDGET_WRAP_UP_ID,
+                "instruction": CONTEXT_BUDGET_WRAP_UP_INSTRUCTION,
+            }
+        ),
+        metadata={"source": "context_budget", "trust": "host_authority"},
+    )
+
+
 def _plan_turn_messages(
     messages: tuple[Any, ...],
     window_tokens: int | None,
@@ -948,6 +998,7 @@ def _plan_turn_messages(
     model_id: str | None = None,
     allow_full_group_trim: bool = False,
     raise_on_overflow: bool = True,
+    wrap_up_message: Any = None,
 ) -> tuple[tuple[Any, ...], dict[str, int]]:
     """Per-turn causal-group + frozen-budget assembly over the Run context.
 
@@ -974,6 +1025,15 @@ def _plan_turn_messages(
     (this Run's own turn, including the current user message) is kept.  Reaching
     the raise after that means the irreducible part alone is over budget, and
     the log line names which piece of it.
+
+    Incident Z (2026-09-09): ``wrap_up_message`` is the last step of the same
+    ordered degradation.  It is protected mass like the system prefix, and it
+    unlocks one further trim the normal path must never take — the open group's
+    own causal chain.  Only the leading USER message(s) of that group survive,
+    so the request stays causally valid (no assistant tool_calls without their
+    results) and still carries what the user actually asked for; the tool
+    echoes, paged descriptors and elision notices that made the turn impossible
+    are what pays for the answer.
 
     ``raise_on_overflow=False`` lets the caller ask "does this fit?" without
     turning the answer into an exception: the plan comes back with a negative
@@ -1015,6 +1075,8 @@ def _plan_turn_messages(
     if extra_protected is not None:
         extras = extra_protected if isinstance(extra_protected, (list, tuple)) else (extra_protected,)
         protected = (*protected, *[item for item in extras if item is not None])
+    if wrap_up_message is not None:
+        protected = (*protected, wrap_up_message)
     tail = messages[split:]
     # Incident P: the tools array carries its own multiplier where a model
     # configures one — the relay's hidden re-injection lands in the messages,
@@ -1026,7 +1088,9 @@ def _plan_turn_messages(
     if not tail:
         return tuple(protected), {"causal_groups": 0, "trimmed_groups": 0,
                                   "groups_trimmed_for_budget": 0,
-                                  "tool_schema_tokens": schema_tokens}
+                                  "tool_schema_tokens": schema_tokens,
+                                  "wrap_up_injected": 1 if wrap_up_message is not None else 0,
+                                  "open_group_items_dropped": 0}
 
     window = window_tokens_for(window_tokens, model_id)
     tier = budget_window(window)
@@ -1071,11 +1135,18 @@ def _plan_turn_messages(
     # forbidden, so the turn fails closed instead.
     effective = effective_input_budget(window)
 
+    # Incident Z: how many leading items of a group survive.  Only the open
+    # group is ever partially kept, and only on the wrap-up path.
+    keep_counts: dict[int, int] = {}
+
+    def _kept_items(group):
+        return group.items[: keep_counts.get(id(group), len(group.items))]
+
     def _group_total() -> int:
         return sum(
             estimator(item.content)
             for group in groups
-            for item in group.items
+            for item in _kept_items(group)
         )
 
     total = protected_tokens + _group_total()
@@ -1091,6 +1162,24 @@ def _plan_turn_messages(
             budget_trimmed += 1
             trimmed += 1
             total = protected_tokens + _group_total()
+    open_group_items_dropped = 0
+    if total > effective and wrap_up_message is not None:
+        # Degradation step 5 (Incident Z): the open group's own causal chain is
+        # the last reserve.  Keep its leading USER message(s) — the request the
+        # answer must address — and drop everything the Run produced after them.
+        for group in groups:
+            if not group.open_run:
+                continue
+            keep = 0
+            for item in group.items:
+                if str(item.role) != "user":
+                    break
+                keep += 1
+            if keep < len(group.items):
+                keep_counts[id(group)] = keep
+                open_group_items_dropped = len(group.items) - keep
+                total = protected_tokens + _group_total()
+            break
     if total > effective and raise_on_overflow:
         # Incident N: the numbers are the whole diagnosis when a Run fails
         # closed here, and they were previously invisible.  Incident O: getting
@@ -1125,7 +1214,8 @@ def _plan_turn_messages(
         cursor += len(group.items)
         if id(group) not in kept_set:
             continue
-        for message, item in zip(span, group.items):
+        keep = keep_counts.get(id(group), len(group.items))
+        for message, item in zip(span[:keep], group.items[:keep]):
             if item.summarized:
                 # Large tool results travel as typed summary + page ref; the
                 # raw payload stays durable behind the exact ref.  Rebuild the
@@ -1157,6 +1247,10 @@ def _plan_turn_messages(
         # Negative only on the caller's ``raise_on_overflow=False`` probe: on
         # every plan that is actually shipped this is the room left over.
         "budget_headroom": effective - total,
+        # Incident Z: the wrap-up is an audited degradation step, so the receipt
+        # says both that it happened and what it cost.
+        "wrap_up_injected": 1 if wrap_up_message is not None else 0,
+        "open_group_items_dropped": open_group_items_dropped,
     }
     return tuple(kept_messages), facts
 
@@ -1328,6 +1422,28 @@ class ProductRunContextAuthority:
         # (``sdk_task_execution_root_authority_ambiguous``); not offering the
         # Tools keeps the model from walking into it.
         self._binding_store = binding_store
+        # Incident Z: the wrap-up instruction is injected at most once per Run.
+        # Process-local by design — losing it across a restart only means the
+        # Run may wrap up once more, which is the fail-safe direction; the
+        # message itself is deterministic and travels in the persisted request.
+        self._wrap_up_runs: set[str] = set()
+
+    def _should_wrap_up(self, run_key: str, headroom: int) -> bool:
+        """Fire the budget wrap-up for this Run at most once.
+
+        Below one react step of headroom the turn cannot make progress, so the
+        Host stops asking the model to.  If the model calls a tool anyway, the
+        next turn of the same Run gets the plain plan and fails closed exactly
+        as before — which is what keeps this bounded, and keeps it well inside
+        the react turn/wall limits (25 turns / 600 s) that back it up.
+        """
+
+        if headroom >= CONTEXT_BUDGET_WRAP_UP_HEADROOM_TOKENS:
+            return False
+        if run_key in self._wrap_up_runs:
+            return False
+        self._wrap_up_runs.add(run_key)
+        return True
 
     async def _hide_project_effects(self, request: Any) -> bool:
         """True when the ROUTED_TASK receipt's exact binding set holds ≥2 roots."""
@@ -1447,7 +1563,8 @@ class ProductRunContextAuthority:
                 selected = tuple(m for m in selected if m != feedback_message)
             return selected, exact
 
-        def _plan(selected, exact, *, full_trim: bool, probe_only: bool = False):
+        def _plan(selected, exact, *, full_trim: bool, probe_only: bool = False,
+                  wrap_up: Any = None):
             return _plan_turn_messages(
                 selected, window_tokens,
                 extra_protected=(inbox_message, closure_message, feedback_message),
@@ -1457,6 +1574,7 @@ class ProductRunContextAuthority:
                 model_id=model_id,
                 allow_full_group_trim=full_trim,
                 raise_on_overflow=not probe_only,
+                wrap_up_message=wrap_up,
             )
 
         source_messages, exact_sources = await _projected(force_all=False)
@@ -1501,9 +1619,40 @@ class ProductRunContextAuthority:
             # the bounded pass achieved.  Degrading must never move backwards,
             # so keep the bounded projection and go on to the history step.
 
-            # Step 3 and, if it is still not enough, step 4: this plan trims the
-            # history to zero and then raises, because nothing is left to spend.
-            messages, assembly_facts = _plan(source_messages, exact_sources, full_trim=True)
+            # Step 3: trim history to zero groups.  Probe first, because what
+            # that leaves decides whether this turn can still make progress.
+            messages, assembly_facts = _plan(
+                source_messages, exact_sources, full_trim=True, probe_only=True
+            )
+            headroom = int(assembly_facts.get("budget_headroom", 0))
+            run_key = request.run_id.value
+            if self._should_wrap_up(run_key, headroom):
+                # Step 4 (Incident Z): less than one react step of room left —
+                # including the case that used to raise.  Inject the single
+                # deterministic wrap-up instruction, keep this turn's protected
+                # parts plus the user's own message, and let the model answer.
+                # Once per Run: if the model calls a tool anyway, the next turn
+                # takes the plain step-3 plan and fails closed exactly as before,
+                # well inside the react turn/wall limits that backstop it.
+                messages, assembly_facts = _plan(
+                    source_messages, exact_sources, full_trim=True,
+                    wrap_up=context_budget_wrap_up_message(),
+                )
+                _LOG.warning(
+                    "sdk_context_budget_wrap_up run=%s turn=%s headroom=%d "
+                    "threshold=%d open_group_items_dropped=%d",
+                    run_key,
+                    getattr(request, "provider_turn_ordinal", 0),
+                    headroom,
+                    CONTEXT_BUDGET_WRAP_UP_HEADROOM_TOKENS,
+                    assembly_facts.get("open_group_items_dropped", 0),
+                )
+            else:
+                # Step 5: nothing left to spend and no wrap-up available — raise
+                # with the breakdown, as before.
+                messages, assembly_facts = _plan(
+                    source_messages, exact_sources, full_trim=True
+                )
         probe = ProviderRequest(
             RequestId("hash-only"),
             messages,

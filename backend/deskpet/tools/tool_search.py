@@ -89,7 +89,9 @@ def _classify_bridge_error(exc: BaseException) -> tuple[str, str | None]:
 
 
 def _activation_rejection(
-    exc: BaseException, requested_capability_id: str
+    exc: BaseException,
+    requested_capability_id: str,
+    service: Any = None,
 ) -> dict[str, Any]:
     code, reason = _classify_bridge_error(exc)
     capability_id = (
@@ -102,11 +104,25 @@ def _activation_rejection(
             unavailable_capability_next_action,
         )
 
-        next_action = unavailable_capability_next_action(reason or "")
+        # HM-TO-A6 incident Z: a static next step told the model to activate the
+        # capability that had just been refused.  The bridge knows this Run's
+        # frozen projection, so ask it; a bridge without the hook (legacy
+        # ToolCapabilityBridgeService) keeps the Run-agnostic text.
+        run_aware = getattr(service, "unavailable_next_action", None)
+        next_action = None
+        if callable(run_aware):
+            try:
+                next_action = str(run_aware(capability_id, reason or ""))
+            except Exception:  # noqa: BLE001 - guidance never fails the refusal
+                next_action = None
+        if not next_action:
+            next_action = unavailable_capability_next_action(
+                reason or "", capability_id=capability_id
+            )
         message = (
             f"tool_activate rejected for {capability_id}: not activatable in "
             f"this Run (availability_reason={reason or 'unspecified'}). "
-            f"Do not retry tool_activate for it. {next_action}"
+            f"{next_action}"
         )
     else:
         from deskpet.sdk_adapters.tool_authority import (
@@ -472,7 +488,7 @@ def register_capability_bridge_tools(
             # repeated-tool limit failed the whole Run.  Return a stable code
             # plus one actionable next step and log the rejection.
             return json.dumps(
-                _activation_rejection(exc, requested), ensure_ascii=False
+                _activation_rejection(exc, requested, service), ensure_ascii=False
             )
 
     search_schema = {
