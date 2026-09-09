@@ -1,0 +1,562 @@
+{
+  "schema": "a6-verify-v1",
+  "evidence_root": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-09/native-a6-run13/primary-ui-hwbyjnym",
+  "generated_at": "2026-09-09T14:42:32+08:00",
+  "budget": {
+    "window_tokens": 32000,
+    "window_source": "native.log:model_context_resolved(deepseek-v4-flash)",
+    "window_assumed": false,
+    "models_used": [
+      "deepseek-v4-flash"
+    ],
+    "native_log_windows": {
+      "deepseek-v4-flash": 32000,
+      "deepseek-v4-pro": 1000000
+    },
+    "budget_tier": 8192,
+    "budget_tier_recorded": [
+      8192
+    ],
+    "generation_reserve": 2048,
+    "safety_margin": 3200,
+    "effective_input_budget": 26752,
+    "recent_causal_group_caps": {
+      "groups_max": 10,
+      "items_max": 80,
+      "bytes_max": 196608
+    }
+  },
+  "context_triples": {
+    "preparing": 21,
+    "staged": 21,
+    "consumed": 21,
+    "foreground_runs": 21,
+    "balanced": true,
+    "covers_all_runs": true
+  },
+  "turns_recorded": 24,
+  "timeout_turns": [],
+  "replay": {
+    "installed_target": ".local-test-evidence/2026-09-07/installed-h0710-m0638-s0313",
+    "imported": true,
+    "functions": [
+      "simple_harness.execution.provider_invocations.provider_request_from_json(request_id: RequestId, value: object)",
+      "simple_harness.execution.provider_invocations.provider_request_fingerprint(request)",
+      "simple_harness.contracts.RequestId",
+      "simple_harness.contracts.canonical_json"
+    ],
+    "error": null,
+    "module_file": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-07/installed-h0710-m0638-s0313/simple_harness/execution/provider_invocations.py"
+  },
+  "sha256": {
+    "human_memory_v7.db": "33c0bea7306976499c5ac8adf55dafff2026f40f6b8cd445df5d1e76a023a0e7",
+    "state.db": "789db5ae2b0d5e2ad988ac0eeb1ae320b082ac408a03d6021bbedff5f752886c",
+    "operation-audit.db": "e050468c3a5c86cf82e1ae0e93ddd7084855a93c62e33b6f0651a385ba2e4c69",
+    "execution-v6.sqlite3": "8f7d627cf362e61f98c2d7b34114c8c8d3723795f9f4bf306cf6f8c708160d0b",
+    "native.log": "afe9ec795dda47b7b96c3f535d45704a709a72b3f281130f078f0f61212abadb",
+    "a6-progress.jsonl": "55602745fe35dd1d59eed68c8deedc525dd1692731475a2dee915be8f7d08a6a"
+  },
+  "items": [
+    {
+      "item": "A6-1",
+      "title": "20+ turn 动态组装",
+      "verdict": "INCONCLUSIVE",
+      "reason": "终态 Run 仅 21 个, 少于 22 个非 UI 轮, 无法证明 20+ turn 组装。",
+      "numbers": {
+        "foreground_run_heads": 21,
+        "non_terminal_runs": 0,
+        "non_terminal_sample": [],
+        "receipt_runs": 21,
+        "runs_with_ordinal_gap": 0,
+        "gap_sample": {},
+        "turns_recorded": 24,
+        "timeout_turns": [],
+        "required_runs": 24
+      }
+    },
+    {
+      "item": "A6-2",
+      "title": "大 tool result 分页",
+      "verdict": "BLOCKED",
+      "reason": "全程未出现 >16 KiB 的 tool 结果, 也无 context_page_in 调用 —— T5/T6/T8 未成功读文件, 按 plan 第 4 节记 BLOCKED(环境/路由)而非 FAIL。",
+      "numbers": {
+        "distinct_page_reference_ids": 9,
+        "page_reference_samples": [
+          "primary-effect-page:v1:1ac06fa7ff44287fa3c45bf2fca4e9e332bdb0087ebb0fadaeb8cb885ad50c37",
+          "primary-effect-page:v1:8646d4c0ba23260ccc8efdc4eaf3f63fef4389b9e06bfceebe5e4620324d36b0",
+          "primary-effect-page:v1:8f95865dc540c956c08c891bf1357ccaba149d415ba3574551696e8b932769b9"
+        ],
+        "history_summaries_in_requests": 14,
+        "messages_tagged_primary_tool_history_v1": 14,
+        "context_page_in_effects": 0,
+        "context_page_in_succeeded": 0,
+        "anchor_alpha_in_response": true,
+        "anchor_beta_in_response": true,
+        "tool_messages_over_16KiB": 0,
+        "receipt_runs": 21,
+        "receipts_with_source_revisions": 84,
+        "receipts_with_pages_forced_field": 84,
+        "receipts_with_control_fields": 84,
+        "current_tool_pages_max_per_run": 2,
+        "pages_forced_max_per_run": 0,
+        "pages_forced_sum": 0,
+        "runs_with_pages_forced": 0,
+        "groups_trimmed_for_budget_max_per_run": 2,
+        "groups_trimmed_for_budget_sum": 32,
+        "budget_headroom_min": 148,
+        "control_results_stubbed_sum": 0,
+        "control_result_tokens_max": 2606,
+        "control_stubs_forced_sum": 0,
+        "runs_with_control_stubs": 0,
+        "requests_with_control_elision_notice": 0,
+        "control_elision_notices_in_requests": 0,
+        "runs_with_control_elision_notice": 0,
+        "sdk_context_budget_exceeded_total": 0,
+        "sdk_context_budget_exceeded_foreground": 0,
+        "sdk_context_budget_exceeded_other_lane": 0,
+        "sdk_context_budget_exceeded_unattributed": 0,
+        "sdk_context_budget_exceeded_samples": [],
+        "sdk_provider_wire_input_budget_exceeded_total": 1,
+        "sdk_provider_wire_input_budget_settled_invocations": 1,
+        "sdk_provider_wire_input_budget_settled_foreground": 1
+      }
+    },
+    {
+      "item": "A6-3",
+      "title": "预算内有界",
+      "verdict": "PASS",
+      "reason": "max_input_tokens=19898 < effective_input_budget=26752; provider 计费峰值 19898 亦在预算内(83 次调用, planned 低估 0 条); 后8/前8 轮调整后峰值比 0.847 ≤ 1.6(未调整的逐轮比 1.015, 旧的逐次尝试比 1.388); 观测到 32 次整组丢弃。 判据只统前台泳道; 本次证据里没有其它泳道的 provider 调用。 实测闸门 sdk_provider_wire_input_budget_exceeded 本次触发 1 次(耐久结算 1 次, 其中前台 1 次) —— 这些请求被拦在发出之前, 不计入上面的计费统计。 同 Run 有界化: pages_forced 合计 0(单 Run 峰值 0); control_results_stubbed 合计 0; control_stubs_forced 合计 0; control_result_tokens 峰值 2606; budget_headroom 最小 148; 请求内省略通知 0 次。",
+      "numbers": {
+        "attempt_rows": 83,
+        "max_input_tokens": 19898,
+        "first8_max_input_tokens": 19546,
+        "last8_max_input_tokens": 16553,
+        "growth_ratio_last8_over_first8": 0.847,
+        "growth_ratio_limit": 1.6,
+        "growth_basis": "per_turn_billed_minus_own_user_message_and_reasoning_relay",
+        "turns_with_billing": 21,
+        "first8_max_turn_billed_raw": 19611,
+        "last8_max_turn_billed_raw": 19898,
+        "growth_ratio_raw_per_turn": 1.015,
+        "first8_max_attempt_input_tokens": 7555,
+        "last8_max_attempt_input_tokens": 10489,
+        "growth_ratio_legacy_per_attempt": 1.388,
+        "own_user_message_tokens_max": 5526,
+        "reasoning_relay_observed_max": 0,
+        "reasoning_relay_tokens_subtracted_max": 0,
+        "reasoning_relay_basis": "observed_zero",
+        "window_tokens": 32000,
+        "window_source": "native.log:model_context_resolved(deepseek-v4-flash)",
+        "effective_input_budget": 26752,
+        "plan_ceiling_window_minus_reserve": 29952,
+        "max_estimated_request_tokens": 14545,
+        "requests_over_budget": 0,
+        "trimmed_groups_total": 32,
+        "max_causal_groups_recorded": 11,
+        "other_lane_attempt_rows": 0,
+        "other_lane_max_input_tokens": 0,
+        "receipt_runs": 21,
+        "receipts_with_source_revisions": 84,
+        "receipts_with_pages_forced_field": 84,
+        "receipts_with_control_fields": 84,
+        "current_tool_pages_max_per_run": 2,
+        "pages_forced_max_per_run": 0,
+        "pages_forced_sum": 0,
+        "runs_with_pages_forced": 0,
+        "groups_trimmed_for_budget_max_per_run": 2,
+        "groups_trimmed_for_budget_sum": 32,
+        "budget_headroom_min": 148,
+        "control_results_stubbed_sum": 0,
+        "control_result_tokens_max": 2606,
+        "control_stubs_forced_sum": 0,
+        "runs_with_control_stubs": 0,
+        "requests_with_control_elision_notice": 0,
+        "control_elision_notices_in_requests": 0,
+        "runs_with_control_elision_notice": 0,
+        "sdk_context_budget_exceeded_total": 0,
+        "sdk_context_budget_exceeded_foreground": 0,
+        "sdk_context_budget_exceeded_other_lane": 0,
+        "sdk_context_budget_exceeded_unattributed": 0,
+        "sdk_context_budget_exceeded_samples": [],
+        "sdk_provider_wire_input_budget_exceeded_total": 1,
+        "sdk_provider_wire_input_budget_settled_invocations": 1,
+        "sdk_provider_wire_input_budget_settled_foreground": 1,
+        "billed_lane": "foreground",
+        "billed_attempts": 83,
+        "max_billed_input_tokens": 19898,
+        "attempts_over_effective_budget": 0,
+        "attempts_over_window": 0,
+        "attempts_over_effective_budget_samples": [],
+        "planned_billed_pairs": 83,
+        "planned_under_counts_billed": 0,
+        "worst_planned_over_billed": null,
+        "worst_planned_over_billed_sample": {},
+        "other_lane_billed_attempts": 0,
+        "other_lane_runs": 0,
+        "other_lane_max_billed_input_tokens": 0,
+        "other_lane_attempts_over_effective_budget": 0
+      }
+    },
+    {
+      "item": "A6-4",
+      "title": "裁剪不破坏因果链",
+      "verdict": "PASS",
+      "reason": "84 次请求无孤立 tool 消息, 组数峰值 6 ≤ 10, 9 次整组消失(其中 2 次该请求回执确实裁过组)全部满足从头部丢组的后缀单调。",
+      "numbers": {
+        "requests_parsed": 84,
+        "max_history_groups_in_one_request": 6,
+        "groups_max_cap": 10,
+        "requests_over_groups_max": 0,
+        "orphan_tool_messages_top_level": 0,
+        "orphan_tool_messages_in_group": 0,
+        "trim_transitions_observed": 9,
+        "budget_trim_transitions": 2,
+        "disclosure_withdrawn_groups": 0,
+        "disclosure_withdrawal_sample": [],
+        "suffix_monotonicity_violations": 0,
+        "suffix_violation_sample": []
+      }
+    },
+    {
+      "item": "A6-5",
+      "title": "README/STATUS 超限拆分",
+      "verdict": "INCONCLUSIVE",
+      "reason": "README/STATUS 均未进入 bounded 形态 —— T17/T18 的超长 goal.set 未逐字落库, 按 plan 第 4 节记 INCONCLUSIVE(可用多条 decision.record 顶 PLAN 作备用杠杆重试)。",
+      "numbers": {
+        "view_revisions": 12,
+        "readme_bounded_revisions": 0,
+        "readme_bounded_max_bytes": 0,
+        "readme_cap_bytes": 16384,
+        "status_bounded_revisions": 0,
+        "evidence_event_count_values": [
+          120,
+          174
+        ],
+        "evidence_watermark_checks": [
+          {
+            "task_scope_id": "3702dafd",
+            "event_count": 120,
+            "event_watermark": 120,
+            "watermark_from": "view",
+            "events_at_watermark": 120,
+            "scope_event_rows": 174
+          },
+          {
+            "task_scope_id": "3702dafd",
+            "event_count": 174,
+            "event_watermark": 174,
+            "watermark_from": "view",
+            "events_at_watermark": 174,
+            "scope_event_rows": 174
+          }
+        ],
+        "task_scope_events_rows": 174,
+        "task_scope_events_rows_by_scope": {
+          "3702dafd": 174
+        }
+      }
+    },
+    {
+      "item": "A6-6",
+      "title": "同一 plan 建节点 + relation memory",
+      "verdict": "PASS",
+      "reason": "1/2 条关系是 applies_to 知识边, 且其 **target 流程节点**(heads.memory_type=procedure)与 relation memory 由同一个 plan 新建(本 plan 新建的端点角色 [['target']]), 两端 revision 均可解析, relation_memory_id 在 heads 中存在; relation_kind=['applies_to', 'contests']。",
+      "numbers": {
+        "cognitive_relations_rows": 2,
+        "applies_to_rows": 1,
+        "relations_new_workflow_target_plus_relation_in_same_plan": 1,
+        "relation_kinds": [
+          "applies_to",
+          "contests"
+        ],
+        "matched_sample": [
+          {
+            "relation_id": "cognitive-knowledge-relation-522d6d3f91876d718ceee640261355a2dd8ec737268cacf8c1b55a8586810670",
+            "relation_kind": "applies_to",
+            "endpoints_created_in_this_plan": [
+              "target"
+            ],
+            "target_memory_type": "procedure"
+          }
+        ]
+      }
+    },
+    {
+      "item": "A6-7",
+      "title": "edge 更新/纠正(supersede)",
+      "verdict": "PASS",
+      "reason": "1 条记忆出现新 revision, head 全部指向最新 revision 且其 lifecycle 合法(取值 ['active']), 每次**内容**前进都有 evolution 血缘边(kind=['contests']), 另有 0 个纯生命周期推进按 S3/S5c 契约豁免[]; 旧 revision 按 append-only 契约保持不可变快照, 不参与召回。",
+      "numbers": {
+        "heads": 9,
+        "memories_with_multiple_revisions": 1,
+        "head_not_latest_revision": [],
+        "head_lifecycle_invalid": [],
+        "missing_evolution_lineage": [],
+        "lifecycle_only_revisions_exempted": 0,
+        "lifecycle_only_revision_samples": [],
+        "lifecycle_states_observed": [
+          "active"
+        ],
+        "evolution_relation_kinds": [
+          "contests"
+        ]
+      }
+    },
+    {
+      "item": "A6-8",
+      "title": "争议 contested",
+      "verdict": "INCONCLUSIVE",
+      "reason": "冲突组 1 个、contested revision 1 条已成立, 但 T22 未在 a6-progress.jsonl 中定位到 provider 调用, 后半段无法判定。",
+      "numbers": {
+        "cognitive_conflict_groups_rows": 1,
+        "revisions_contested": 1,
+        "t22_invocations": 0,
+        "t22_asks_confirmation": false,
+        "t22_mentions_3_12": false
+      }
+    },
+    {
+      "item": "A6-9",
+      "title": "ordinary projection policy 过滤",
+      "verdict": "PASS",
+      "reason": "T24 人工观测 nodes=8 edges=1, 与 DB 复算一致; 被抑制 1 条(含同源副本 1 条)、redacted 0 条、expired 0 条、relation memory 1 条都不在图上; 可见边 kind=['contests'](争议期 contests 边按契约应当出现), 被过滤边 kind=['applies_to'](旧 revision 血缘边/端点不可见)。",
+      "numbers": {
+        "expected_nodes": 8,
+        "expected_edges": 1,
+        "heads": 9,
+        "suppressed_direct": [
+          "522ddb859e4b"
+        ],
+        "suppressed_alias_same_source": [
+          "63a5079aec6c"
+        ],
+        "redacted_excluded": [],
+        "expired_excluded": [],
+        "relation_memory_nodes_excluded": [
+          "63a5079aec6c"
+        ],
+        "contested_pairs": [
+          [
+            "de9ec4036ee3",
+            1,
+            2
+          ]
+        ],
+        "visible_edges": [
+          {
+            "relation_id": "cognitive-relation-15f60",
+            "domain": "evolution",
+            "kind": "contests",
+            "source_revision": 2,
+            "target_revision": 1,
+            "reason": "两端 exact revision 都是可见 node"
+          }
+        ],
+        "hidden_edges": [
+          {
+            "relation_id": "cognitive-knowledge-rela",
+            "domain": "knowledge",
+            "kind": "applies_to",
+            "source_revision": 1,
+            "target_revision": 1,
+            "reason": "knowledge 边严格资格未通过"
+          }
+        ],
+        "manual_ui_observations": [
+          {
+            "turn": 16,
+            "nodes": 6,
+            "edges": 1,
+            "note": "nodes=6 edges=1"
+          },
+          {
+            "turn": 23,
+            "nodes": 8,
+            "edges": 1,
+            "note": "nodes=8 edges=1 forget=ok target=cognitive-memory-239ae69f(procedure 秋分资料整理这套校对流程) suppression_directives=1 suppression_targets=1 (目标关系「流程→Python环境」本次未成边，图中唯一边为 contests)"
+          },
+          {
+            "turn": 24,
+            "nodes": 8,
+            "edges": 1,
+            "note": "reopen: 记忆关系图：8条记忆，1条关系 ops=0"
+          }
+        ],
+        "expectation_notes": []
+      }
+    },
+    {
+      "item": "A6-10",
+      "title": "relation/endpoint 遗忘 + close/reopen",
+      "verdict": "PASS",
+      "reason": "关系行 2 未减少(峰值 2, append-only 成立); 遗忘使 1 个节点离图(直接目标 1 条 + 同源副本 1 条), T23 观测 nodes=8 edges=1 与复算一致; T24 关表重开观测逐字相同, 未复活。含 knowledge 关系行 1 条。",
+      "numbers": {
+        "cognitive_relations_final": 2,
+        "cognitive_relations_peak_in_progress": 2,
+        "suppression_directives": 1,
+        "suppression_targets": 1,
+        "manual_ui_observations": [
+          {
+            "turn": 16,
+            "nodes": 6,
+            "edges": 1,
+            "note": "nodes=6 edges=1"
+          },
+          {
+            "turn": 23,
+            "nodes": 8,
+            "edges": 1,
+            "note": "nodes=8 edges=1 forget=ok target=cognitive-memory-239ae69f(procedure 秋分资料整理这套校对流程) suppression_directives=1 suppression_targets=1 (目标关系「流程→Python环境」本次未成边，图中唯一边为 contests)"
+          },
+          {
+            "turn": 24,
+            "nodes": 8,
+            "edges": 1,
+            "note": "reopen: 记忆关系图：8条记忆，1条关系 ops=0"
+          }
+        ],
+        "expected_nodes": 8,
+        "expected_edges": 1,
+        "nodes_removed_by_suppression": 1,
+        "suppressed_direct": [
+          "522ddb859e4b"
+        ],
+        "suppressed_alias_same_source": [
+          "63a5079aec6c"
+        ],
+        "knowledge_relation_rows": 1,
+        "expectation_notes": []
+      }
+    },
+    {
+      "item": "A6-11",
+      "title": "图谱不进入 Provider Context",
+      "verdict": "PASS",
+      "reason": "84 次请求中 relation_id/relation_hash/twin_graph/graph_edge 命中数 = 0; T16/T24 的 provider_invocations 增量均为 0。",
+      "numbers": {
+        "invocations_scanned": 84,
+        "needle_relation_ids": 2,
+        "needle_memory_ids": 9,
+        "hits_relation_id": 0,
+        "hits_relation_hash": 0,
+        "hits_memory_id": 0,
+        "hits_memory_id_only_in_tool_results": true,
+        "memory_id_hit_histogram": {},
+        "memory_id_hits_in_graph_payload": 0,
+        "memory_id_graph_payload_samples": [],
+        "hits_graph_structural_keys": 0,
+        "structural_samples": [],
+        "ui_turn_invocation_delta": {
+          "T16": 0,
+          "T24": 0
+        },
+        "strict_mode": false
+      }
+    },
+    {
+      "item": "A6-12",
+      "title": "snapshot 重放指纹",
+      "verdict": "PASS",
+      "reason": "84 条 request_json 重放指纹 == request_fingerprint == receipt.expected_request_fingerprint, 且 payload_hash 与之恒等(84 条); 每条调用恰好一条同 Run 同指纹 receipt, 无中段孤儿; 另有 0 条「组装完但 Run 就此终止」的末条 receipt[](合法形态, 不计入不匹配)。",
+      "numbers": {
+        "invocations": 84,
+        "replay_match": 84,
+        "replay_mismatch": 0,
+        "replay_error": 0,
+        "replay_error_samples": [],
+        "receipts": 84,
+        "fingerprint_aligned_with_receipt": 84,
+        "fingerprint_misaligned": 0,
+        "invocations_without_receipt": 0,
+        "receipt_payload_hash_equals_expected": 84,
+        "receipt_payload_hash_mismatch": 0,
+        "duplicate_receipts_for_one_invocation": 0,
+        "unsent_terminal_receipts": 0,
+        "unsent_terminal_receipt_samples": [],
+        "orphan_receipts_without_invocation": 0,
+        "orphan_receipt_samples": [],
+        "per_run_count_mismatch": []
+      }
+    },
+    {
+      "item": "NC-1",
+      "title": "T3 简单改写不查长期库(no_recall)",
+      "verdict": "PASS",
+      "reason": "T3 的 context_route_decisions 1 行全部为 no_recall(或无召回记录)。",
+      "numbers": {
+        "route_decisions_in_t3": 1,
+        "origins": [
+          "no_recall"
+        ],
+        "non_no_recall": []
+      }
+    },
+    {
+      "item": "NC-2",
+      "title": "T12 闲聊不建/切 TaskScope",
+      "verdict": "PASS",
+      "reason": "T12 未出现 create_new(该轮路由 ['direct_standalone'])。",
+      "numbers": {
+        "route_decisions_in_t12": 1,
+        "routes": [
+          "direct_standalone"
+        ]
+      }
+    },
+    {
+      "item": "NC-3",
+      "title": "T14 模糊愿望不产生 Prospective",
+      "verdict": "PASS",
+      "reason": "prospective_records 与 scheduler_registrations 均为 0, 未产生 pending Prospective。",
+      "numbers": {
+        "prospective_records": 0,
+        "prospective_scheduler_registrations": 0
+      }
+    },
+    {
+      "item": "NC-4",
+      "title": "T22 争议期不直接用旧值 3.12",
+      "verdict": "INCONCLUSIVE",
+      "reason": "未定位到 T22 的 provider 调用(未跑到该轮或计数快照缺失)。",
+      "numbers": {
+        "t22_invocations": 0,
+        "asks_confirmation": false,
+        "mentions_3_12": false,
+        "response_chars": 0
+      }
+    },
+    {
+      "item": "NC-5",
+      "title": "T16/T24 图谱 UI 不新增 provider_invocations",
+      "verdict": "PASS",
+      "reason": "T16/T24 的 provider_invocations 增量均为 0({'T16': 0, 'T24': 0})。",
+      "numbers": {
+        "provider_invocation_delta": {
+          "T16": 0,
+          "T24": 0
+        }
+      }
+    },
+    {
+      "item": "NC-6",
+      "title": "request_json 无凭据形状",
+      "verdict": "PASS",
+      "reason": "84 次请求全文扫描, sk-/Bearer/ghp_/AKIA/PRIVATE KEY 命中数均为 0。",
+      "numbers": {
+        "invocations_scanned": 84,
+        "credential_hits": {},
+        "samples": []
+      }
+    }
+  ],
+  "tally": {
+    "INCONCLUSIVE": 4,
+    "BLOCKED": 1,
+    "PASS": 13
+  },
+  "schema_notes": [
+    "context window=32000 读自 native.log:model_context_resolved(deepseek-v4-flash); receipts 记录的 budget_tier=[8192]。",
+    "sdk_context_public_snapshots 按 plan 第 0 节未被用作任何判定依据(该表在当前构建为空)。",
+    "A6-11 默认区分「图谱结构性标识」与「memory_id 在 tool 回执中的回声」; 加 --strict-a6-11 可回到 plan 字面的一刀切命中判定。"
+  ]
+}
