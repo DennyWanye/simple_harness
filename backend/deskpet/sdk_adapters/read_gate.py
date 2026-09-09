@@ -564,12 +564,52 @@ class WorkspaceReadGate:
         """``(the task's primary verified root, reason code)``.
 
         Kept as the narrow F-Z1 accessor.  With F-Z1b's multi-root binding the
-        primary root is the first one the route receipt names (append order, so
-        revision 1's root — the task's managed home).
+        primary root is the one this task bound *first* — revision 1's root, the
+        task's managed home (see :meth:`_ordered_root_hashes`).
         """
 
         bound, code = await self.bound_context(run_id)
         return (None if bound is None else bound.primary_root), code
+
+    async def _ordered_root_hashes(self, task_scope_id: str, receipt: Any) -> tuple[str, ...]:
+        """The receipt's roots in **append order** (revision 1 first).
+
+        ``WorkspaceBindingSetReceipt.root_identity_hashes`` is
+        ``tuple(sorted(...))`` — a set digest, ordered by hash, not by history.
+        Reading ``roots[0]`` off it made :attr:`BoundReadContext.primary_root`
+        depend on which SHA happened to sort first, so after F-Z1b's second
+        append the "primary" root could flip to the *proposed* directory: a
+        relative read path and the F-Z1b candidate-root computation would then
+        resolve against it instead of the task's managed home (it also made
+        ``test_multi_root_reads_run_in_the_root_that_contains_the_path`` pass or
+        fail with the tmp directory's name).  ``task_workspace_binding_roots``
+        keeps the durable append order in ``first_binding_set_revision``; that is
+        the order used here.  Ordering is presentation, never authority — every
+        root is still verified one by one against the exact revision the route
+        receipt names, so an unreadable order falls back to the receipt's own.
+        """
+
+        hashes = tuple(str(value) for value in getattr(receipt, "root_identity_hashes", ()))
+        if len(hashes) < 2:
+            return hashes
+        order: dict[str, int] = {}
+        try:
+            async with self._scope_store._connection() as db:  # noqa: SLF001
+                cursor = await db.execute(
+                    "SELECT root_identity_hash,first_binding_set_revision FROM "
+                    "task_workspace_binding_roots WHERE task_scope_id=?",
+                    (task_scope_id,),
+                )
+                for row in await cursor.fetchall():
+                    order[str(row[0])] = int(row[1])
+        except Exception as exc:  # noqa: BLE001 - order is not an authority
+            logger.warning(
+                "workspace_read_root_order_unavailable scope=%s error=%s",
+                task_scope_id,
+                exc,
+            )
+            return hashes
+        return tuple(sorted(hashes, key=lambda value: (order.get(value, 1 << 31), value)))
 
     async def bound_context(
         self, run_id: str
@@ -604,7 +644,7 @@ class WorkspaceReadGate:
         except WorkspaceBindingError:
             return None, READ_ROOT_REASON
         roots: list[str] = []
-        for root_hash in getattr(receipt, "root_identity_hashes", ()):
+        for root_hash in await self._ordered_root_hashes(scope_id, receipt):
             try:
                 authority = await self._binding_store.verify_effect_authority(
                     task_scope_id=scope_id,

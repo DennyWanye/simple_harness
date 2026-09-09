@@ -724,3 +724,173 @@ def test_candidate_root_is_the_nearest_existing_directory_ancestor(
     # 指回 workspace 之内 → 候选根是解析后的真实目录。
     (configured / "link-in").symlink_to(project)
     assert candidate(str(configured / "link-in" / "x.md")) == (str(project), None)
+
+
+# --------------------------------------------------------------------------
+# F-Z1c：Run 行 task_scope_id 为 NULL（continue_active 的生产常态）时，读闸门的
+# 提案不能死在 invocation origin 上。
+# --------------------------------------------------------------------------
+
+
+async def _claim_live_run(env: _Env, *, key: str):
+    """在同一个 state.db 上认领一条真实的前台 Run（**不带 scope_ref**）。
+
+    F-Z1b 原有用例的 state.db 里根本没有前台 Run，``_append_auto`` 于是走
+    「pre-admission bootstrap」；生产里永远有一条正在跑的 Run，且它的
+    ``task_scope_id`` 恒为 NULL——``foreground_runs.task_scope_id`` 只来自入队
+    turn，``context_route`` 不回填（证据：
+    ``.local-test-evidence/2026-09-09/native-a6-run12a`` 的 state.db，8 条
+    foreground_runs 全是 NULL，而 context_route_decisions 里有 create_new /
+    continue_active 指向 scope 239f50cd）。这条 helper 把这个缺失的生产要件补上。
+    """
+
+    from deskpet.execution.foreground_queue import ContextLineage
+    from deskpet.memory.human_memory_service import QueueTurnRequest
+
+    foreground = ForegroundQueueStore(env.db_path)
+    await env.service.enqueue_turn(QueueTurnRequest(None, f"turn-{key}", "读一下样例"))
+    candidate = await foreground.read_next_preparation_candidate(AUTH.subject)
+    assert candidate is not None
+    draft = await foreground.prepare_candidate(
+        subject=AUTH.subject,
+        expected_candidate_hash=candidate.candidate_hash,
+        context=ContextLineage(f"context-{key}", 1, "b" * 64),
+        idempotency_key=f"prepare-{key}",
+    )
+    admitted = await foreground.claim_next(
+        subject=AUTH.subject,
+        owner_id=f"scheduler-{key}",
+        claim_idempotency_key=f"claim-{key}",
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
+        lease_seconds=30,
+    )
+    assert admitted is not None
+    snapshot = await foreground.current_snapshot(AUTH.subject)
+    assert snapshot is not None and snapshot.task_scope_id is None
+    await foreground.record_execution_preparation(
+        host_run_id=admitted.host_run_id,
+        owner_id=f"scheduler-{key}",
+        generation=admitted.generation,
+        context_ref=f"context:{key}",
+        context_hash="c" * 64,
+        provider_ref=f"provider:{key}",
+        provider_hash="d" * 64,
+        tool_ref=f"tools:{key}",
+        tool_hash="e" * 64,
+        execution_request_hash="f" * 64,
+        idempotency_key=f"final-prepare-{key}",
+    )
+    for step in ("record_start_intent", "record_start_observation", "bind_sdk_run"):
+        extra: dict[str, object] = {}
+        if step == "record_start_intent":
+            extra = {"start_request_hash": "a" * 64}
+        elif step == "record_start_observation":
+            extra = {
+                "outcome": "RETURNED",
+                "result_ref": f"sdk-start:{RUN.value}",
+                "result_hash": "b" * 64,
+            }
+        await getattr(foreground, step)(
+            host_run_id=admitted.host_run_id,
+            sdk_run_id=RUN.value,
+            owner_id=f"scheduler-{key}",
+            generation=admitted.generation,
+            idempotency_key=f"{step}-{key}",
+            **extra,
+        )
+    return admitted
+
+
+@pytest.mark.asyncio
+async def test_live_unscoped_run_reads_through_the_proposal_path(
+    tmp_path: Path,
+) -> None:
+    """缺陷 F-Z1c（HM-TO-A6 12a 第 6 轮，2026-09-09 15:50）。
+
+    证据形状：``native.log`` 连续三条
+    ``workspace_read_denied … reason=workspace_binding_invocation_origin_stale
+    binding_proposal=-``；state.db 里 foreground_runs 八条全是
+    ``task_scope_id=NULL``、绑定 head 停在 revision 1；execution-v6 里该 Run 只有
+    一个 context_route（continue_active）效应、没有任何读效应。
+
+    根因：Run 行没有 task_scope_id → ``_append_auto`` 走 ``_PrimaryBindingTarget``
+    分支 → ``_verify_primary_target`` 无条件复核 origin，而读闸门跑在
+    ``ProductEffectExecutor.execute`` 捕获 origin **之前**，origin 是 None，被判成
+    「过期」。修复后同一次调用应当正常落提案，拿到 F-Z1b 的
+    ``read_workspace_binding_revised``。
+    """
+
+    env = await _build(tmp_path, mode="auto")
+    scope_id = await _bound_scope(env)
+    await _record_route(env, suffix="live")
+    await _claim_live_run(env, key="live")
+    assert _head_revision(env.db_path, scope_id) == 1
+
+    rejected = await env.gate.verify(
+        _context("call-live", "effect-live"),
+        "read_file",
+        call_id=CallId("call-live"),
+        arguments={"path": str(env.fixture / "x.md")},
+    )
+    assert rejected is not None
+    assert rejected.error_code == READ_BINDING_REVISED_REASON
+    assert _head_revision(env.db_path, scope_id) == 2
+    assert _root_paths(env.db_path, scope_id) == {
+        str(env.task_home.resolve()),
+        str(env.fixture.resolve()),
+    }
+    audit = await _audit(env.db_path)
+    assert audit[-1][:2] == ("read_file", READ_BINDING_REVISED_REASON)
+
+    # 按提示再路由一次（continue_active）后，同一条路径就读得到了。
+    await _record_route(env, suffix="live-2", ordinal=2)
+    assert (
+        await env.gate.verify(
+            _context("call-live-2", "effect-live-2"),
+            "read_file",
+            call_id=CallId("call-live-2"),
+            arguments={"path": str(env.fixture / "x.md")},
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_live_run_with_a_foreign_origin_is_still_refused(
+    tmp_path: Path,
+) -> None:
+    """负例：读闸门带着**别人的** dispatch 身份来提案，依旧 fail-closed。
+
+    F-Z1c 只承认「没捕获 origin」；捕获到的 origin 与当前前台租约不符（这里是
+    被 reclaim 过的 generation）仍然是
+    ``workspace_binding_invocation_origin_stale``，且不留下任何绑定 revision。
+    """
+
+    from deskpet.sdk_adapters import tools as product_tools
+
+    env = await _build(tmp_path, mode="auto")
+    scope_id = await _bound_scope(env)
+    await _record_route(env, suffix="foreign")
+    admitted = await _claim_live_run(env, key="foreign")
+
+    stale = SimpleNamespace(
+        host_run_id=admitted.host_run_id,
+        sdk_run_id=RUN.value,
+        owner_id="scheduler-foreign",
+        generation=admitted.generation + 1,
+    )
+    token = product_tools._foreground_invocation_origin.set(stale)
+    try:
+        rejected = await env.gate.verify(
+            _context("call-foreign", "effect-foreign"),
+            "read_file",
+            call_id=CallId("call-foreign"),
+            arguments={"path": str(env.fixture / "x.md")},
+        )
+    finally:
+        product_tools._foreground_invocation_origin.reset(token)
+    assert rejected is not None
+    assert rejected.error_code == "workspace_binding_invocation_origin_stale"
+    assert _head_revision(env.db_path, scope_id) == 1
+    assert _root_paths(env.db_path, scope_id) == {str(env.task_home.resolve())}

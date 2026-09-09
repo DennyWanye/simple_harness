@@ -399,8 +399,7 @@ class WorkspaceBindingRuntimeAuthority:
         from deskpet.sdk_adapters.tools import active_product_foreground_origin
         origin = active_product_foreground_origin()
         current = await self._foreground.current_snapshot(self._subject)
-        if origin is not None:
-            self._verify_invocation_origin(current, origin)
+        self._verify_captured_invocation_origin(current, origin)
         if current is not None and current.task_scope_id is not None and current.task_scope_id != task_scope_id:
             raise WorkspaceBindingError("workspace_binding_current_run_authority_stale")
 
@@ -486,6 +485,14 @@ class WorkspaceBindingRuntimeAuthority:
         return self._binding_result(receipt, status="bound")
 
     def _verify_invocation_origin(self, current, origin) -> None:
+        """Pin one *captured* dispatch identity to the live foreground lease.
+
+        Only ever called with a captured origin (see
+        :meth:`_verify_captured_invocation_origin`).  ``current is None`` still raises:
+        a completed effect's context must not fall back to the no-Run
+        pre-admission bootstrap.
+        """
+
         if (origin is None or current is None
                 or current.host_run_id != origin.host_run_id
                 or current.sdk_run_id != origin.sdk_run_id
@@ -493,9 +500,33 @@ class WorkspaceBindingRuntimeAuthority:
                 or current.generation != origin.generation):
             raise WorkspaceBindingError("workspace_binding_invocation_origin_stale")
 
+    def _verify_captured_invocation_origin(self, current, origin) -> None:
+        """缺陷 F-Z1c（2026-09-09）：「没捕获 origin」不等于「origin 过期」。
+
+        ``_foreground_invocation_origin`` 只在 ``ProductEffectExecutor.execute``
+        真正派发物理效应之前那一段被 set；**不在**那一段里的合法调用者（Host API
+        的 ``binding.append``、以及 F-Z1b 读闸门——它在 execute 捕获 origin 之前就
+        跑）拿到的是 ``None``。``_append_auto`` 顶层一直是这个口径
+        （``if origin is not None:``），但 ``_verify_primary_target`` 过去无条件复
+        核，于是 ``None`` 被判成「过期」。
+
+        生产后果（HM-TO-A6 12a 第 6 轮）：``foreground_runs.task_scope_id`` 只来自
+        入队 turn，``context_route`` 不回填，所以 continue_active 的 Run 行恒为
+        NULL → ``_append_auto`` 一律走 ``_PrimaryBindingTarget`` 分支 → 读闸门的
+        每一次候选根提案都在任何提案落库之前死于
+        ``workspace_binding_invocation_origin_stale``（``binding_proposal=-``）。
+
+        捕获到的 origin 一律照旧逐字段复核；缺席时其余证明（Run 归属、
+        CLAIMED/RUNNING、租约未过期、sdk 绑定、durable 提案证据）一条不放宽。
+        """
+
+        if origin is None:
+            return
+        self._verify_invocation_origin(current, origin)
+
     def _verify_primary_target(self, current, target: _PrimaryBindingTarget) -> None:
         """Re-read real Run ownership and durable proposal on every Auto check."""
-        self._verify_invocation_origin(current, target.origin)
+        self._verify_captured_invocation_origin(current, target.origin)
         if (current.host_run_id != target.run_id or current.subject != self._subject
                 or current.task_scope_id is not None or current.sdk_run_id is None
                 or current.state.value not in {"CLAIMED", "RUNNING"}
