@@ -340,4 +340,91 @@ required 176/176 = 100% ✅；隐私 0 ✅**。上一轮 C04 的 12/52 由本轮
 - 组合：Host `7d161678`+、Memory 0.6.37、flash；证据 `.local-test-evidence/2026-09-09/corpus-c04-flash-r3/run-01`。
 - 20/20 rc 0；required 40/40；多提类型 **3/43 = 7.0%**（第一次 23.1% → 第二次 13.0% → 本次 7.0%；R5b 把残留 6 例压到 3 例）。
 - 累计（77 例 + 本轮 20 例）：多提 (26+3)/(228+43) = **29/271 = 10.7% ✅**；required 100% ✅。
-- 终态复核（`occurred_local` 与 `rendered_occurred_local` 23/23 一致、C04-10/14 不再给日期、C04-17 只说「8月」）待子代理。
+
+### 终态复核已完成（`RUN-C04-RERUN-3-REVIEW.md`，2026-09-09 下午，主代理单进程、无子代理）
+
+- **复核裁定：gold PASS 20 / FAIL 0 / INCONCLUSIVE 0；日期精度 PASS 20 / FAIL 0**
+  （上一轮为精度 PASS 17 / FAIL 3）。批次 10:38:49–10:48:12，8 min 56 s，峰值 RSS 1.72 GiB。
+- 注册形态 20/20 正确：`user_version=**56**`（55→56 来自今日 09:30 无关车道的
+  `context_use_recollect_schema` 迁移，C04 相关表一律未变），游标全部落 `prospective_outbox_cursor_v52`
+  （24 行，C04-12/17 各 3 行），封存表 0 行；HM 侧 24 条登记事件、state 侧 48 行 `prepared`→`applied` 成对落地；
+  `signal_decisions`/`signal_results`/`signal_authority_consumptions` 各 24。
+  `s5c_cursor_successor_required` / `IntegrityError` / `ProspectiveSetupNotReady` / `LEDGER_TAMPERED` /
+  `typed_use_projection_differs` 全批零命中。
+- 生命周期两例与上一轮**逐 hash 一致**（`…7be9d7e7`→作废→`…dd48b663`；`…e6112a66` + `…0a036c11` 作废，
+  rev2 未再登记），且两例都跑在批中 HEAD 变动之后——这是本轮跨版本确定性的最强证据。
+- 负向要求 20/20 满足：`prospective_records` 23 行 = 种子数，trigger/timer/occurrence 三表全 0，
+  `route_effects` 每例恰好 1 条 `context_route`。
+- `trigger_local` 独立复算 **18/18 逐字一致**（含 Europe/London BST 与跨年 2027-01-02 周六）；
+  2 条 event trigger 片段**根本没有该键**。
+- **隐私：0 违规**。20 例 `privacy_allowed=true` / `no_recall=false`，**43 条片段 `privacy_class` 全 `personal`**。
+
+**F-EPI-1 裁定：验收通过，关闭。**
+
+- 片段形态按设计：episode 带 `occurred_local` **21** 条 / 不带 **2** 条（C04-10、C04-14，`undated`）；
+  prospective 带 `trigger_local` 18 / 不带 2（event trigger）。裸 `occurred_start` 仍在 payload 里
+  ——这是为守住 typed-use carrier 逐字节不变量**有意保留**的一半（`DECISION-F-EPI-1-R5B.md` §1.4），
+  本轮实证该不变量未被削弱。
+- **`occurred_local` 与 `setup_receipt.precision_oracle.*.rendered_occurred_local` 23/23 逐字一致**；
+  又因该字段是直接 import Host 渲染函数算出的（等式只证明接线），复核另用 `zoneinfo` 从
+  `[occurred_start, occurred_end]` **独立重写渲染器复算**，同样 **23/23 一致**
+  （含整月 `2026年7月`、同月七天 `2026年8月24–30日那周`、跨月七天 `2026年8月31日–9月6日那周`）。
+  任何非 `minute` 精度的渲染串都不含 `T` 与 `:`。
+- **三个目标例全部转 PASS**：C04-10 终答的日期/时刻 token 数 **= 0**，并主动声明"没有记录具体发生日期"
+  （上一轮的「2026-09-03 左右」差 2 天，消失）；C04-14 全文唯一日期是提醒的 2026-09-08，
+  第一阶段零日期（上一轮的「(上次，2026-09-05)」消失）；C04-17 只说「2026年8月」，全文无"上/中/下旬"。
+- **17 个负控 17/17 未回归**，逐个日期 token 都可归属到该例的 `occurred_local` 或 `trigger_local`；
+  唯一措辞是 C04-05 把 `09:00` 说成「9:00 左右」（放宽，非越界）。**零例从 epoch 反算日期。**
+- `temporal_hint` **只在 C04-10/14 出现（2/20）**，恰为仅有的两例"返回了无 `occurred_local` 的 episode 片段"，
+  两例对象 sha256 同一（`c46e861b9ea574a9`）→ 是 fragments 的纯函数，无 per-case 污染；
+  其余 18 例结果里没有这个键。两例终答与提示逐条对上。
+- **F-C04-2 关闭（改述后）**：锚点仍在 payload 里这一事实成立，但它**不再是模型回答日期的信息来源**；
+  上一轮"在 F-EPI-1 落地前不得声称『原文只有上次时模型能保持不确定』已验证"这条限制，**本轮已解除**。
+- **F-C04-1 保持关闭**：11 词扫全部模型可见文本仅 2 次 `precision`，来自 `temporal_hint` 的通用英文正文。
+
+**F-ETR-8 裁定：关闭（R5b 实测生效）。多提 13.0% → 7.0%，required 100% 未受损。**
+
+- 策略正文 20 例逐 hash 相同（`276ddf4c11d162bc`），R5b 的正向门与 −3 供给压缩
+  （`An empty list requires include_short_horizon=true`）**逐字落地**。
+- 残留 3 例（**C04-06 / C04-12 / C04-20**）全部带咨询码 `semantic_fallback_on_reminder_lifecycle_request`，
+  `semantic` 片段返回数 **0**；判据函数对 20 条 query 与 20 条用户原话仍 **20/20 命中**。
+- **但残留已不是同一种东西**：C04-12（「为什么延期 + 提醒是哪天」）点不出任何长期值，是 R5b 的**纯违反**；
+  C04-06（「换成北京时间」）与 C04-20（「按上海和 UTC 标注日期时间」）**确实点名了一种时间标注格式/单位**
+  ——R1 给长期值举的例子正是 `habit/format/unit/agreement`，所以这两例的选择**与它读到的规则自洽**。
+  Host 判据的 `STANDING_VALUE_MARKERS` 里没有"时区/北京时间/UTC/标注"，于是把它们记成了违规。
+  **咨询码与 R5b 的门在这两例上口径不一致**（新观测口径问题，非模型问题）。
+- 三轮成员：12 例 {02,04,05,10,12,13,14,15,17,18,19,20} → 6 例 {04,09,12,13,18,20} → **3 例 {06,12,20}**；
+  R5→R5b 净减 3（4 消失、1 新增）。方向可信，幅度受 ≥1 例采样噪声限制。
+- **不提 R5c，两条独立理由**：① 3 例里只有 1 例是措辞缺口，且为单例，收益无法与噪声分辨；
+  要让 C04-06/20 收敛需要"声明时区标注不算长期值"这一**语义变更**，会威胁 C01/C02/C06 里 gold 确实需要
+  `semantic` 的格式/单位类请求，风险不对称。② **付不起**：实测 `context_route` schema **625**（≤643，余 18），
+  但真正卡住的 `test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn` 是
+  fixed 2287 + variable 3038 = planned **5325** = effective **5325**，**余量 0**；
+  三个候选正文最便宜的一个也要 **+5 token**（630 / 634 / 641），全部打红该闸。
+
+**⚠️ 全仓警告（8192 档余量 = 0）**：任何往 `PERSONA` 或四个产品 schema 的 description 里加字的车道，
+现在会直接打红上述测试。出口只有该测试自己写的两条：先在同一受保护面压缩等量 token，
+或按 `DECISION-TOKEN-ESTIMATOR.md` 用一次真实 Run 重推 `MEGABYTE_PEAK_*`。
+
+**本轮无新增中/高缺陷。** 新增/保持的后续：
+
+1. **F-ETR-9（低，零 token）**：把"时区/北京时间/UTC/标注"纳入 `STANDING_VALUE_MARKERS` 的考量，
+   使咨询码与 R5b 的门口径一致（否则 C04-06/20 会长期以"违规"身份出现在报表里，而它们并不违规）；
+   只改 Host 观测面，**不进 prompt**，须先核不误伤 C01/C02/C06 的 gold 命中。
+2. **F-ETR-10（低）**：C04-12 的单例残留是否稳定，靠多轮同配置重跑分辨，不靠改正文。
+3. **F-BATCH-1（低，流程）**：**本轮批中 HEAD 动过运行期路径**——`e6696fd6`（F-Z1b）于 10:43:59 合入，
+   改了 `sdk_adapters/read_gate.py` 与 **`backend/main.py`**（在 `main_product_factory` 路径上）；
+   C04-01…11 跑在 `c15a0704`、**C04-12…20 跑在 `e6696fd6`**。三条实证说明未见影响
+   （两段形态指标逐项相同、跨版本 hash 确定性、3 例残留跨越该边界无相关性），但这是"没看到"不是"证明无"。
+   建议后续语料批次在 detached HEAD 上跑，或先确认无并发车道合入。
+4. **F-OBS-2（低）｜Memory SDK**：`prospective_records.scheduler_registration_ref` 恒为 NULL（23/23），
+   **0.6.37 上三次确认未修复，保持开启**。
+5. **观察｜`NO_ACTIVE_GENERATION` 归因二次确认**：本轮 20/20 例 `include_short_horizon=true`，该码 20/20 出现，
+   与上一轮 18/18 对 2/2 互补，同一假说在"全部为真"这一侧再次成立；改写后的口径保持。
+6. **观察（新，低）**：C04-20 本轮 4 次 provider handoff、53.0 s（全批最长），但只发 1 次工具调用；
+   终答正确，不影响裁定。
+
+累计（复核后口径）：**多提 29/271 = 10.7% ✅（残留 3，全部 `semantic`、全部零命中，其中仅 1 例是规则的纯违反）；
+required 176/176 = 100% ✅；隐私 0 ✅**。上一轮 C04 的 6/46 由本轮 **3/43** 取代
+（23 条 episode 的 `occurred_end` 由 `null` 变为数值、两条 month 的 `occurred_start` 前移，
+内容哈希全变，两者不同源、不可相加）。
