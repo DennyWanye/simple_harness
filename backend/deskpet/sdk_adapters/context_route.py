@@ -323,8 +323,11 @@ class ContextRouteToolService:
                              "include_short_horizon": short,
                              # Advisory only: recorded so the extra-type rate has
                              # a Host-side trace. Never gates or rewrites recall.
+                             # The query text is read for rule R5 and is not
+                             # itself recorded - the projection stays bounded.
                              "selection_policy_departures":
-                                 list(selection_policy_departures(selected))}
+                                 list(selection_policy_departures(
+                                     selected, proposal.get("query")))}
             except ValueError as exc:
                 selection = {"origin": "model_proposal", "selection_status": "invalid",
                              "selection_error": str(exc)}
@@ -421,7 +424,8 @@ class ContextRouteToolService:
                     "requested_memory_types": list(recall_types),
                     "include_short_horizon": bool(recall_short_horizon),
                     "selection_policy_departures":
-                        list(selection_policy_departures(recall_types or ())),
+                        list(selection_policy_departures(
+                            recall_types or (), proposal.get("query"))),
                 }} if recall_types or recall_short_horizon is not None else {}),
                 **({"recall_conflict": _conflict_digest(recall_conflict)}
                    if recall_conflict is not None else {}),

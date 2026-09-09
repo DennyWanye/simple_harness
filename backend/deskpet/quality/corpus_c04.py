@@ -2,6 +2,18 @@
 
 Synthetic clock concretization preserves original precision in public payloads.
 No event is asserted to have occurred by constructing a pending event trigger.
+
+F-C04-1: the precision label used to travel inside the model-visible memory
+text. ``temporal_payload`` appended
+``【原时间=…；精度=…；具体日时仅synthetic fixture锚点，非原文事实或评分答案】``
+to every non-minute payload, so 11/20 answers repeated fixture and scoring
+words back to the user, and - worse - the fixture handed the model the date
+precision this whole class exists to measure. The label, the anchor and the
+"synthetic fixture" disclaimer now live only in :func:`precision_oracle`,
+which no model-visible payload or prompt ever reads. What stays visible is the
+source document's own time wording (``9月4日``, ``上次``, ``8月24–30周``),
+which is a fact of the memory rather than an answer key, and without which the
+synthetic noon anchor would assert a precision the source never stated.
 """
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,7 +37,7 @@ SPECS = {
  'C04-09': (('E1','episode','修复缺页','2026-08-24T12:00','Asia/Shanghai','week','8月24–30周'), ('E2','episode','发现重复封面','2026-08-31T12:00','Asia/Shanghai','week','8月31–9月6周'), ('P','prospective','复核封面','2026-09-08T12:00','Asia/Shanghai','day','9月8日')),
  'C04-10': (('E','episode','上次借书归还时漏带借阅卡','2026-09-05T10:00','Asia/Shanghai','undated','上次'), ('P','prospective','归档借阅回执',None,None,'event','下一次归还成功')),
  'C04-11': (('E','episode','试印失败，颜色不符','2026-09-05T12:00','Asia/Shanghai','day','9月5日'), ('P','prospective','寄正式样',None,None,'event','试印验收成功')),
- 'C04-12': (('E','episode','因场地检修推迟讨论','2026-09-04T12:00','Asia/Shanghai','day','9月4日'), ('P_OLD','prospective','旧讨论提醒（原文未指定正文）','2026-09-07T12:00','Asia/Shanghai','day','旧9月7日提醒')),
+ 'C04-12': (('E','episode','因场地检修推迟讨论','2026-09-04T12:00','Asia/Shanghai','day','9月4日'), ('P_OLD','prospective','旧讨论提醒','2026-09-07T12:00','Asia/Shanghai','day','旧9月7日提醒')),
  'C04-13': (('E','episode','申请材料核对缺签名','2026-09-03T12:00','Asia/Shanghai','day','9月3日'), ('P','prospective','补签（截止日9月10日）','2026-09-09T10:00','Asia/Shanghai','minute','9月9日10:00')),
  'C04-14': (('E','episode','第一阶段数据去重完成；第二阶段格式检查未开始','2026-09-05T10:00','Asia/Shanghai','undated','未指定日期'), ('P','prospective','开始格式检查','2026-09-08T14:00','Asia/Shanghai','minute','9月8日14:00')),
  'C04-15': (('E','episode','三季度清点缺备份索引','2026-09-30T16:00','Asia/Shanghai','minute','2026年9月30日16:00'), ('P','prospective','补索引','2026-10-02T10:00','Asia/Shanghai','minute','2026年10月2日10:00')),
@@ -72,10 +84,61 @@ def compile_c04_setup(case_id, setup_text, *, scenario_clock):
     return TemporalSetupBatch(case_id, text, digest, expected.timestamp(), ingestion, SPECS[case_id])
 
 
+# Anchors whose authored field describes the *absence* of a source time rather
+# than quoting one. Nothing is prepended for them: the placeholder is fixture
+# bookkeeping and stays in `precision_oracle`.
+UNQUOTED_TIME_ANCHORS = frozenset({'未指定日期'})
+
+# Strings that would make a payload carry the answer key or name the harness.
+# `tests/quality/test_corpus_c04_payload_text.py` asserts every model-visible
+# C04 payload is free of them, for all 20 cases.
+SCORING_METADATA_MARKERS = ('精度', '评分', '夹具', '锚点', '原文', 'gold', 'oracle',
+                            'fixture', 'synthetic', 'precision', 'scoring')
+
+
+def _join_anchor(authored, text):
+    """Prefix the source's own time wording, sharing the longest overlap.
+
+    `9月4日夜间` + `夜间传稿漏附件` -> `9月4日夜间传稿漏附件`, never a doubled
+    `夜间夜间`. Pure text; deterministic for a given SPECS row.
+    """
+    for size in range(min(len(authored), len(text)), 0, -1):
+        if authored[-size:] == text[:size]:
+            return authored[:-size] + text
+    return authored + text
+
+
+def public_memory_text(spec):
+    """The model-visible memory text for one spec. No scoring metadata.
+
+    Episodes carry their time only in `occurred_start`, so a `day`/`week`/
+    `month`/`night`/`undated` anchor would otherwise read as a precise noon
+    claim the source never made; the source's own wording is restored in front
+    of the action instead. Prospective payloads need nothing: their trigger
+    already carries the time (or, for `event`, the authored condition).
+    """
+    label, kind, text, local, zone, precision, authored = spec
+    if (kind != 'episode' or precision == 'minute' or authored in UNQUOTED_TIME_ANCHORS):
+        return text
+    return _join_anchor(authored, text)
+
+
+def precision_oracle(batch):
+    """Scoring-side record of what each synthetic anchor stands for.
+
+    F-C04-1: this is the answer C04 measures, so it is returned to the fixture
+    caller (which writes it into the post-run setup receipt) and never reaches
+    a memory payload, a prompt, or any model-visible surface.
+    """
+    return {spec[0]: dict(memory_type=spec[1], authored_time_text=spec[6], precision=spec[5],
+                          anchor_local=spec[3], anchor_zone=spec[4],
+                          note='具体日时仅synthetic fixture锚点，非原文事实；精度为评分端期望值')
+            for spec in batch.specs}
+
+
 def temporal_payload(batch, spec):
     label, kind, text, local, zone, precision, authored = spec
-    if precision != 'minute':
-        text += f'【原时间={authored}；精度={precision}；具体日时仅synthetic fixture锚点，非原文事实或评分答案】'
+    text = public_memory_text(spec)
     if kind == 'episode':
         return h.EpisodeMemoryPayload(text, ('user:self',), (), (text,), (), (), timestamp(local, zone), None, None)
     if precision == 'event':

@@ -107,7 +107,33 @@ P5 与本阈值同分子但**根因不同**：它是路由判断错误（no_reca
   这条与 PERSONA 现有那句「A stored Procedure stays outside typed recall until it has actually
   been used once」同源，只是把它移到**模型选参数的那一刻**，而不是收到空 fragments 之后。
 - 总纲：**只请求"答案真的可能在里面"的最小类型集合；当兜底加的类型什么也返回不了，
-  还要占用共享的召回预算**。→ 消 P4。
+  还要占用共享的召回预算**。→ 原本用来消 P4，但它**不是一条可判定的规则**，见下条 R5。
+- **R5（semantic 收窄）｜2026-09-09 追加，闭合 F-ETR-7**：当请求是一个**生命周期回顾轮**——
+  同时问「过去发生了什么」与「我（已经）定下的提醒/待办/截止是什么」，
+  且**没有问任何长期值**（习惯／偏好／格式／单位／约定，即 R1 的那组判别词）——
+  **不要把 `semantic` 当兜底加进来**：`semantic` 存的就是长期值，请求里没有长期值，
+  它只能空手而归，还照样占用共享召回预算。→ 真正消 P4。
+  模型可见正文（接在 semantic 句尾）：
+  `never a safety net on an occurrence-plus-reminder question that asks for no standing value`。
+
+  **为什么原来的总纲不够**：C04 重跑（`RUN-C04-RERUN-REVIEW.md` §六缺陷 2）显示 P4 在 20 例里
+  触发 12 例、**返回 0 条 `semantic` 片段**，且触发与句式无关——
+  C04-08「昨天交接**缺什么**，明天一早我留了哪项提醒」不多提、
+  C04-13「申请上次查出**缺什么**，截止前我设了什么准备提醒」多提，同一句式跨在两侧，是抖动不是判断。
+  所以 R5 只能建立在 20 例**共同**的形态上，不能建立在 12 与 8 的差别上。
+
+  **判别力（全语料 240 条 provider_input 实测）**：恰好命中 20 条 C04、其它类别 0 条；
+  gold `required_types` 含 `semantic` 的 C01/C02/C03/C06 一条都不命中（每条都点名了长期值）。
+  **代价为零**：C04 全类 gold 的 `required_types` 是 `[episode, prospective]`，无一条含 `semantic`。
+
+  **成本**：`context_route` 整个 schema **600 → 623** wire token，
+  §5 钉死的 643 上限未动（该上限即 `test_current_tool_megabyte.py[8192]` 的实测断点）。
+
+  **Host 侧咨询码**：`selection_policy_departures(memory_types, request=None)` 新增可选 `request`，
+  命中记 `semantic_fallback_on_reminder_lifecycle_request`；判据 `indicates_reminder_lifecycle_request()`
+  是三组纯文本标记（发生类／提醒类／长期值类，长期值一票否决），与 `indicates_workflow_request` 同性质：
+  只观测，不拒绝/不过滤/不改写，不含 gold 与 per-case 答案。旧调用方（只传类型）行为不变。
+  重跑与重算见 `DECISION-F-C04-1-F-ETR-7.md`（预测：38/280 = 13.6% → **26/268 = 9.7%**）。
 
 ### 3.2 落点（为什么不是 PERSONA、不是分析协议）
 
@@ -277,5 +303,8 @@ A 臂原样重放（旧 description），B 臂**只把 `context_route` 的 param
 - **F-ETR-4**：`[4096]` 窗口下 protected 分区本就超限（基线即红）。本改动使其更紧。
   若要恢复该窗口，应压缩 `context_route` schema 里与本轮无关的长描述
   （`reuse_workspace_of` 400+ 字符、`expected_source_hash` 230+ 字符），属任务路由车道，本轮未动。
+- **（关闭）F-ETR-7**：P4「兜底加 `semantic`」由 R5 补上可判定规则（§3.1），
+  用例见 `backend/tests/memory/test_recall_selection_policy.py`（20 条 C04 turn + 5 条负控）；
+  阈值须由 C04 全 20 例重跑实测，预测 26/268 = 9.7%。裁定 `DECISION-F-C04-1-F-ETR-7.md`。
 - **F-ETR-3**：写侧（分析车道）是否也存在「任务型 turn 一律生成通用 episode」「必需 episode
   又镜像 semantic」的多提，本轮**未验证也未处理**——它不影响 HM-AC-8，需要另立度量才能评估。
