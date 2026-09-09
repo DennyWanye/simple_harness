@@ -1,3 +1,5 @@
+2026-09-09 F-Z1c（HM-TO-A6 短段 12a 第 6 轮）：F-Z1b 的读侧提案通道在生产上**一次都没走通**——三次读 `a6-fixture/` 全部以 `workspace_binding_invocation_origin_stale` 被拒且 `binding_proposal=-`（提案从未产生）。两个「合法状态」相撞：① `context_route` 从不回填 `foreground_runs.task_scope_id`（该字段只来自入队 turn 的 `scope_ref`，证据 run12a 里 8/8 全 NULL），所以 continue_active 的 Run 也一律走 `_append_auto` 的 `_PrimaryBindingTarget` 首绑分支；② 读闸门跑在 `ProductEffectExecutor.execute` 捕获 origin **之前**，`active_product_foreground_origin()` 必为 None，而 `_verify_primary_target` 无条件复核 origin、`origin is None` 即判「过期」——与 `_append_auto` 顶层 `if origin is not None` 的口径自相矛盾。裁决：origin 检查区分「缺席」与「不符」（`_verify_captured_invocation_origin`：捕获到的一律逐字段核 `host_run_id`/`sdk_run_id`/`owner_id`/`generation` 且 `current` 不得为 None，缺席则跳过），其余证明——Run 归属、未挂 scope、sdk 绑定、CLAIMED/RUNNING、租约未过期、durable 提案证据 join——一条不放宽，reclaim 老 worker 与「已完成 effect 上下文回落 bootstrap」两条负例照旧拒。顺带修掉 `BoundReadContext.primary_root` 按**哈希**排序取首根的确定性缺陷（回执的 `root_identity_hashes` 是 `tuple(sorted(...))` 集合摘要，第二条根落库后主根有一半概率翻成刚提案的目录，既有多根用例是掷硬币），改按 `task_workspace_binding_roots.first_binding_set_revision` 的追加顺序。[裁决备忘](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1C-READ-ORIGIN-STALE.md)。
+
 2026-09-09 F-Z1b（A6 第 11 次整跑第 6 轮）：F-Z1 的读闸门判据没错但**没有出口**——样例目录 `a6-fixture/` 不在任务唯一的托管家目录里，读被 `path_outside_workspace_root` 拒且无下一步；写侧同样的越界会进 S4 绑定提案（manual 出『项目目录授权』卡片、auto 落授权）。本轮把读侧接进**同一条**权威：Host 确定性算出候选根（符号链接解析后最近的已存在目录祖先，既定 workspace 根本身 / 公共父目录 → S4 码 `workspace_root_too_broad`，解析后离开既定 workspace → `path_outside_workspace_root`），调 `HumanMemoryHostService.append_binding` 走 create_new 同一入口，manual 下补一行与路由工具同形的 `context_route_tool_invocations` 拒绝行使卡片原样出现。**同调用 vs 重试钉死为「永远不是同一次调用」**：读权威是路由回执所指的那一版 revision、EffectGate 更要求 head 等于回执 revision，绑定一动就必须先 `context_route route=continue_active` 刷新回执再重发读（这一步同时修好写侧 supersede）。`bound_root` 的「恰好一条根」放宽为多根。[裁决备忘](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1B-READ-BINDING-PROPOSAL.md)。
 
 2026-09-09 事件 AC（HM-TO-A6 第 11 次 A6-5）：第 11 次头一回把 ≥16 KiB 逐字目标顶进 bounded 视图（`readme_bounded_max_bytes=16383` < 16384 上限，24 条视图修订），A6-5 却 FAIL 在「EVIDENCE `event_count=151` 与 `task_scope_events` 176 行不等」。逐行取证：176 行分属**两个** TaskScope（`870a401b…` 151 行 + `3a5016d0…` 25 行），四条 EVIDENCE 修订的 `event_count` 117/125/20/151 **各自等于自己 source 的 `event_watermark`**，一条 canonical 事实没丢；`3a5016d0…` 的视图停在水位 20，而 seq 21 的 `harness.tool_invocation`（`occurred_at` 1788921011.060）比该视图 `created_at`（…011.142）还早——它就是触发这次物化的那次读取本身。裁决：**投影对、判据错**（跨 scope + 跨水位两层错）。`event_count` 的定义是「该视图水位上的 canonical 事件数」：EVIDENCE 清单新增自述的 `event_watermark`，渲染契约 `task-scope-views/v1 → v2`（版本进 `source_hash`，老 source 的视图行不会被新渲染器用 `INSERT OR IGNORE` 顶掉，`read_view` 与 `read_materialized_view` 不会一新一旧）；`a6_verify.py` A6-5 改为逐条视图在同一 `task_scope_id`、同一水位上比（水位优先取视图自述、回落 `task_scope_projection_sources`），另加「同 scope 水位只进不退时 `event_count` 不许降」，两者都无从判定时记 INCONCLUSIVE，不再拿整表行数硬比。投影的 archive/分组/块哈希与视图回执一字未改，重建仍逐字节可复现。决定性测试：`backend/tests/native/test_a6_verify_a6_5.py`（5 例，`main@c15a0704` 上 5 红）与 `backend/tests/task_scope/test_projections_evidence_watermark.py`（3 例，含 16384 边界：正好 16384 不截断 / 16385 截断，两边 `event_count` 都不动）。[裁决备忘](../plans/2026-09-08-hm-to-a6/DECISION-AC-EVIDENCE-VIEW-COUNT.md)。
@@ -2787,6 +2789,52 @@ F-Z1 的判据是对的，但**没有出口**：A6 第 11 次整跑第 6 轮里�
   回归（单进程、点名文件）：F-Z1 15 passed；F-Z1 + 事件 Z + `tests/task_scope/*` 共 81 passed；
   `test_main_service_registrations.py` + `test_context_route_tool.py` 45 passed；全绿。
   详见 [DECISION-F-Z1B-READ-BINDING-PROPOSAL](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1B-READ-BINDING-PROPOSAL.md)。
+
+### 2026-09-09（F-Z1c）：绑定权威的 invocation origin 检查——「没捕获」≠「已过期」
+
+F-Z1b 落地后，HM-TO-A6 短段 12a 第 6 轮的三次 `read_file` 仍然全灭，但码换了：
+`workspace_binding_invocation_origin_stale`、`binding_proposal=-`——S4 权威
+（`runtime_binding_authority.py:494`）在任何提案落库之前就抛了，读闸门把它原样透传成模型可见
+的原因码。
+
+- **两个合法状态相撞**。① `foreground_runs.task_scope_id` 只来自入队 turn 的 `scope_ref`，
+  `context_route` 只写 `context_route_decisions`、从不回填 Run 行（证据 run12a：8 条
+  foreground_runs 全 NULL，而路由账本里 1 条 create_new + 5 条 continue_active 都指向
+  scope `239f50cd…`）——所以**生产上每一次绑定追加**都走 `_append_auto` 里本为 create_new 首绑
+  准备的 `_PrimaryBindingTarget` 分支。② `_foreground_invocation_origin` 只在
+  `ProductEffectExecutor.execute` 的派发段内 `set`，而读闸门跑在
+  `_foreground_admission.authorize()` **之前**，`active_product_foreground_origin()` 必为
+  `None`。`_append_auto` 顶层承认这个状态（`if origin is not None:`），
+  `_verify_primary_target` 却无条件再核一次，而 `origin is None` 是
+  `_verify_invocation_origin` 的第一个抛点。合起来：F-Z1b 的候选根提案在生产上永远走不到
+  `record_proposal`。同一根因也卡住 Host API 侧的 `binding.append`（只要有一个未挂 scope 的
+  Run 在跑）。
+- **裁决**：新增 `_verify_captured_invocation_origin`——**捕获到的 origin 一律逐字段复核**
+  （`host_run_id`/`sdk_run_id`/`owner_id`/`generation` 四项全等，`current` 不得为 None），
+  **没捕获就跳过**；`_append_auto` 顶层与 `_verify_primary_target` 从此同一口径。
+  `_verify_invocation_origin` 本身一字未松。这道检查保护的两件事都带着非空 origin，因而完好：
+  租约 reclaim 后老 worker 借用新属主（`test_create_new_cannot_borrow_reclaimed_generation`），
+  以及已完成 effect 的上下文回落 pre-admission bootstrap
+  （`test_completed_invocation_cannot_fall_back_to_bootstrap`）。无 origin 的调用者仍须过
+  `_verify_primary_target` 余下全部证明（Run 归属、未挂 scope、有 sdk 绑定、CLAIMED/RUNNING、
+  租约未过期、`host-binding-append:<key>` 的 durable 证据与三表 join 逐字段相等），落库时 store
+  的 `_verify_current_run_authority` 在写锁内再验一遍。
+- **不做**：不改 `tools.py` 的门序（把 `authorize()` 提到读闸门之前会让被拒的读也消费一次前台
+  准入，并把租约过期时的表面错误从「读被拒」变成抛异常）；不给 Run 行回填 `task_scope_id`
+  （S4 Task 2 的 append-only 语义）；不让 S4 权威去读 v45 路由账本。
+- **同批修掉的确定性缺陷**：`WorkspaceBindingSetReceipt.root_identity_hashes` 是
+  `tuple(sorted(...))`（按哈希排的集合摘要），`bound_context` 照它取 `roots[0]` 作主根，于是
+  F-Z1b 追加第二条根后「主根」有一半概率翻成刚提案的目录——而主根正是相对路径解析与
+  `read_binding_candidate_root` 的基准。改按 `task_workspace_binding_roots.
+  first_binding_set_revision` 的追加顺序（`_ordered_root_hashes`），revision 1 的托管家目录恒为
+  主根；排序只是呈现，每条根仍逐条 `verify_effect_authority`，查询失败回落回执顺序。
+- 决定性测试：`tests/task_scope/test_runtime_binding_authority.py` 5 例（+2：无 origin 的未挂
+  scope Run 能绑 / 伪 origin 仍拒）、`tests/sdk_adapters/test_read_binding_proposal_f_z1b.py`
+  13 例（+2：在跑的 NULL-scope 前台 Run 下读闸门走通提案 / 伪 origin 仍拒）。两条复现用例在
+  `main@e1726a73` 上红成事故那一个码。回归（单进程、点名文件）：F-Z1b + F-Z1 + 绑定权威
+  33 passed（连跑三次稳定）；create_new runtime + workspace bindings + manual 卡片 seam
+  31 passed；route authority + route tool + projections search 57 passed。
+  详见 [DECISION-F-Z1C-READ-ORIGIN-STALE](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1C-READ-ORIGIN-STALE.md)。
 
 ## 历史阶段索引
 
