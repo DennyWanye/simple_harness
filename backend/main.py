@@ -8510,6 +8510,9 @@ async def _build_product_sdk_runtime_stack(
         ContextRouteToolService,
         read_current_turn_text as _read_current_turn_text,
     )
+    from deskpet.sdk_adapters.task_scope_mutation import (
+        read_current_turn_evidence_ref as _read_current_turn_evidence_ref,
+    )
     from deskpet.sdk_adapters.tools import active_product_tool_context
 
     def _context_route_binding_store():
@@ -8634,6 +8637,14 @@ async def _build_product_sdk_runtime_stack(
         # the Host gets to see an open conflict group.
         current_turn_text_reader=(
             lambda sdk_run_id: _read_current_turn_text(_state_db_path, sdk_run_id)
+        ),
+        # 事件 AL: an accepted route into a task publishes this turn's own
+        # admitted evidence id, so ``task_scope_update`` can cite it on its
+        # first attempt instead of paying for a rejected payload first.
+        current_turn_evidence_reader=(
+            lambda sdk_run_id, task_scope_id: _read_current_turn_evidence_ref(
+                _state_db_path, sdk_run_id, task_scope_id
+            )
         ),
     )
 

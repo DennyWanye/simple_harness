@@ -53,6 +53,10 @@ from deskpet.memory.recall_selection import (
     MEMORY_TYPE_SELECTION_POLICY, REQUESTABLE_MEMORY_TYPES, indicates_workflow_request,
     parse_recall_selection, selection_policy_departures,
 )
+# 事件 AL: one name for this turn's evidence id, shared with the closure Tool's
+# ``refs_outside_scope`` disclosure — the model must read the same key whether
+# it learns the id from the accepted route or from a rejection.
+from deskpet.sdk_adapters.task_scope_mutation import CURRENT_TURN_EVIDENCE_REF_KEY
 
 ROUTES = (
     "direct_standalone",
@@ -235,6 +239,18 @@ async def read_current_turn_text(db_path: Any, sdk_run_id: str) -> str:
     return text if isinstance(text, str) else ""
 
 
+#: 事件 AL: what the id published beside an accepted route is for. One
+#: sentence — it is on the wire once per route call, and it has to stop the
+#: model doing what T17 did (citing the route receipt id, being rejected, and
+#: resending a 26 KB payload it could no longer afford).
+_CURRENT_TURN_EVIDENCE_NEXT_STEP = (
+    "This turn's own admitted user evidence id. task_scope_update requires "
+    "evidence_refs (the plan's and every operation's) to be admitted evidence "
+    "ids: cite this one when you record what the user just stated. Never send a "
+    "receipt, binding, run, call or effect id, and never a content hash."
+)
+
+
 @dataclass(frozen=True)
 class _ContestedProbe:
     """One verdict of the event-V contested guard, plus what the audit needs.
@@ -321,6 +337,7 @@ class ContextRouteToolService:
         producer_dependencies_reader: Any = None,
         typed_use_authority: Any = None,
         current_turn_text_reader: Any = None,
+        current_turn_evidence_reader: Any = None,
     ) -> None:
         self._service_factory_getter = service_factory_getter
         self._binding_store_factory = binding_store_factory
@@ -333,6 +350,7 @@ class ContextRouteToolService:
         self._producer_dependencies_reader = producer_dependencies_reader
         self._typed_use_authority = typed_use_authority
         self._current_turn_text_reader = current_turn_text_reader
+        self._current_turn_evidence_reader = current_turn_evidence_reader
 
     # -- shared -----------------------------------------------------------
 
@@ -426,6 +444,16 @@ class ContextRouteToolService:
         if recall_conflict is None and contested.notice is not None:
             recall_conflict = contested.notice
             extras = {**dict(extras or {}), "conflict_notice": dict(recall_conflict)}
+        # 事件 AL: a Run routed to a task can close it this same turn, so hand the
+        # model the evidence id that closure must cite *now* — not one rejected
+        # 26 KB payload later. Read **before** any durable write: a cancelled
+        # advisory read must not be able to leave a recorded route decision
+        # without its tool-invocation audit row. Standalone routes carry no scope
+        # and get nothing (there is no closure to compose).
+        turn_ref = (
+            "" if task_scope_id is None
+            else await self._current_turn_evidence_ref(run_id, task_scope_id)
+        )
         receipt = ContextRouteReceipt(
             receipt_id=str(
                 uuid.uuid5(
@@ -460,6 +488,9 @@ class ContextRouteToolService:
         result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
         if extras:
             result.update(dict(extras))
+        if turn_ref:
+            result[CURRENT_TURN_EVIDENCE_REF_KEY] = turn_ref
+            result["current_turn_evidence_next_step"] = _CURRENT_TURN_EVIDENCE_NEXT_STEP
         await self._record(
             run_id=run_id,
             raw_call_id=raw_call_id,
@@ -513,6 +544,39 @@ class ContextRouteToolService:
             _LOG.warning("context_route_current_turn_text_unavailable run_id=%s", run_id)
             return ""
         return str(text or "").strip()[:_MAX_TEXT]
+
+    async def _current_turn_evidence_ref(self, run_id: str, task_scope_id: str) -> str:
+        """This turn's admitted user evidence id, for the accepted route result.
+
+        HM-TO-A6 事件 AL (2026-09-09, 第 13 次整跑 T17).  ``task_scope_update``
+        requires ``evidence_refs`` the Host has already admitted, and until now
+        the only surface that named them was the
+        ``task_scope_update_refs_outside_scope`` *rejection* — so the tool
+        description told the model to send its best payload once and read the
+        ids off the refusal.  T17 shows what that costs on a 32000-token window:
+        the doomed first payload carried the user's 26 KB verbatim goal, and its
+        presence in the history killed the resend with
+        ``sdk_provider_wire_input_budget_exceeded``.
+
+        Publishing the id here removes the first step entirely: whenever this
+        Run is routed to a task, the model already holds the id it must cite
+        before it composes anything.  Advisory and bounded — one opaque uuid,
+        never a payload; an unavailable reader only returns the pre-event-AL
+        result, and the rejection lane still publishes the full list.
+        """
+
+        if self._current_turn_evidence_reader is None:
+            return ""
+        try:
+            ref = self._current_turn_evidence_reader(run_id, task_scope_id)
+            if inspect.isawaitable(ref):
+                ref = await ref
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - advisory, never a route verdict
+            _LOG.warning("context_route_current_turn_evidence_unavailable run_id=%s", run_id)
+            return ""
+        return str(ref or "").strip()[:512]
 
     async def _probe_recall(
         self, *, query: str, run_id: str, turn_ordinal: int, effect_id: str, purpose: str,

@@ -46,6 +46,22 @@ import json
 import threading
 from collections import OrderedDict
 
+#: 事件 AL (2026-09-09, HM-TO-A6 第 13 次整跑 T17): 一次**被拒**的大参数调用要在
+#: 历史里付两次钱 —— 拒绝那一轮付一次, 之后每一轮 ``_wire_messages`` 把它原样补
+#: 回再付一次。T17 的第一次 ``goal.set`` 逐字带了 26 KB 目标(6256 output token),
+#: 因为引用了 route 回执 id 被拒; 重发那一轮 ``floor=27176 > effective=26752``,
+#: 死在 ``sdk_provider_wire_input_budget_exceeded`` —— 撑爆窗口的正是那份**已经
+#: 作废**的入参。超过这个阈值的被拒入参因此在下一次线上请求里压成短存根。
+REJECTED_TOOL_CALL_ARGUMENTS_MAX_BYTES = 2 * 1024
+#: 存根里每个字符串保留的前缀长度(字符, 不是字节 —— 中文一个字算一个)。
+REJECTED_TOOL_CALL_ARGUMENT_PREFIX_CHARS = 200
+#: 拼在被截断字符串后面的那句话。它同时是给模型的下一步: 这份入参**没有**留在
+#: 历史里, 要用就得重发完整的。
+REJECTED_TOOL_CALL_ARGUMENTS_TRUNCATION_SUFFIX = "…(truncated, resend in full)"
+#: 被拒工具结果的 ``outcome``。SDK 的 ToolResult 只有这三种, 成功的入参一个字节
+#: 都不动 —— 模型可能还要照着它继续做事。
+REJECTED_TOOL_OUTCOMES = frozenset({"rejected", "failed"})
+
 DEFAULT_TOOL_CALL_ARGUMENTS_MEMO_CAPACITY = 4096
 DEFAULT_TOOL_CALL_ARGUMENTS_MEMO_MAX_BYTES = 8 * 1024 * 1024
 DEFAULT_TOOL_CALL_ARGUMENTS_ENTRY_MAX_BYTES = 256 * 1024
@@ -64,6 +80,96 @@ def canonical_tool_arguments_json(arguments: object) -> str:
     if not isinstance(arguments, dict):
         return EMPTY_TOOL_CALL_ARGUMENTS_JSON
     return json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+
+
+def rejected_tool_result_reason(content: object) -> str | None:
+    """The stable reason code of a rejected/failed tool result, else ``None``.
+
+    Reads only the Host's own tool-result envelope (``outcome`` / ``error_code``),
+    which every product Tool result carries verbatim on the wire.  Anything it
+    cannot parse is treated as "not a rejection": the arguments then stay
+    byte-identical, which is the pre-event-AL behaviour.
+    """
+
+    text = _result_text(content)
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    outcome = parsed.get("outcome")
+    if not isinstance(outcome, str) or outcome.strip().lower() not in REJECTED_TOOL_OUTCOMES:
+        return None
+    code = parsed.get("error_code")
+    if isinstance(code, str) and code.strip():
+        return code.strip()
+    return outcome.strip().lower()
+
+
+def stub_rejected_tool_call_arguments(arguments_json: object) -> str | None:
+    """Shrink an oversized **rejected** call's arguments, or ``None`` to keep them.
+
+    Structure is preserved verbatim — every key, every nesting level, every
+    short scalar, so ``kind`` / ``operation_id`` / ``base_revision`` and the
+    shape of ``operations[]`` still read as the call the model actually made.
+    Only long strings lose their tail, and each one says so in place.
+
+    **No foreign key is injected.** The rejection's own reason code sits in the
+    ``tool`` message directly below this assistant message, and adding a Host
+    key inside a strict, ``additionalProperties: false`` argument object would
+    reopen exactly the imitation channel incident K closed: the model copies its
+    own transcript, sends the invented key, and every later call dies
+    ``task_scope_update_payload_invalid``.
+    """
+
+    if not isinstance(arguments_json, str) or not arguments_json:
+        return None
+    if len(arguments_json.encode("utf-8")) <= REJECTED_TOOL_CALL_ARGUMENTS_MAX_BYTES:
+        return None
+    try:
+        parsed = json.loads(arguments_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    shrunk = _shrink(parsed)
+    stub = canonical_tool_arguments_json(shrunk)
+    # Never grow the wire: the suffix is longer than the string it replaces when
+    # the object is mostly short values that happened to add up.
+    if len(stub.encode("utf-8")) >= len(arguments_json.encode("utf-8")):
+        return None
+    return stub
+
+
+def _shrink(value: object) -> object:
+    if isinstance(value, str):
+        if len(value) <= REJECTED_TOOL_CALL_ARGUMENT_PREFIX_CHARS:
+            return value
+        head = value[:REJECTED_TOOL_CALL_ARGUMENT_PREFIX_CHARS]
+        return f"{head}{REJECTED_TOOL_CALL_ARGUMENTS_TRUNCATION_SUFFIX}"
+    if isinstance(value, dict):
+        return {key: _shrink(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_shrink(item) for item in value]
+    return value
+
+
+def _result_text(content: object) -> str:
+    """The tool result body, whether the SDK carried it as text or as blocks."""
+
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, (list, tuple)):
+        parts = [
+            str(block.get("text") or "")
+            for block in content
+            if isinstance(block, dict) and block.get("text")
+        ]
+        return "".join(parts).strip()
+    return ""
 
 
 class ToolCallArgumentsMemo:
@@ -270,7 +376,13 @@ __all__ = [
     "DEFAULT_TOOL_CALL_ARGUMENTS_MEMO_CAPACITY",
     "DEFAULT_TOOL_CALL_ARGUMENTS_MEMO_MAX_BYTES",
     "EMPTY_TOOL_CALL_ARGUMENTS_JSON",
+    "REJECTED_TOOL_CALL_ARGUMENTS_MAX_BYTES",
+    "REJECTED_TOOL_CALL_ARGUMENTS_TRUNCATION_SUFFIX",
+    "REJECTED_TOOL_CALL_ARGUMENT_PREFIX_CHARS",
+    "REJECTED_TOOL_OUTCOMES",
     "ToolCallArgumentsMemo",
     "canonical_tool_arguments_json",
     "default_tool_call_arguments_memo",
+    "rejected_tool_result_reason",
+    "stub_rejected_tool_call_arguments",
 ]

@@ -142,11 +142,11 @@ TASK_SCOPE_UPDATE_DESCRIPTION = (
     "either outcome=mutate with a plan of operations describing what "
     "materially changed (goal / plan steps / decisions / status / next "
     "action), or outcome=no_mutation with a closure_reason. Every operation "
-    "and the plan itself must cite evidence_refs from the closure instruction's "
-    "allowed_evidence_refs; if you have not been given that list, send your best "
-    "payload once and the rejection publishes the admissible ids in its own "
-    "allowed_evidence_refs — never invent an id from a run id, call id, effect "
-    "id or content hash, and never send a content_hash (the Host resolves it). "
+    "and the plan itself must cite evidence_refs the Host already admitted: "
+    "the closure instruction's allowed_evidence_refs, or the "
+    "current_turn_evidence_ref the accepted context_route published for this "
+    "turn — never invent an id from a run id, call id, effect id or content "
+    "hash, and never send a content_hash (the Host resolves it). "
     "base_revision must equal the current TaskScope "
     "revision. Rejected with a stable code when nothing needs closing or the "
     "Run is not routed to a task."
@@ -610,6 +610,116 @@ class TaskScopeUpdateService:
         )
 
 
+#: Model-facing name of the current turn's own admitted user evidence.  The
+#: ``refs_outside_scope`` rejection publishes it under this key and so does the
+#: accepted ``context_route`` result (事件 AL): one name, one meaning, whichever
+#: surface the model reads it from first.
+CURRENT_TURN_EVIDENCE_REF_KEY = "current_turn_evidence_ref"
+
+
+async def _turn_evidence_rows_tx(
+    db: aiosqlite.Connection,
+    *,
+    task_scope_id: str,
+    subject: str,
+    sdk_run_id: str,
+    host_run_id: str,
+) -> list[Any]:
+    """The Run's admitted user evidence rows, newest turn first.
+
+    The single query behind both surfaces that name this turn's evidence: the
+    ``refs_outside_scope`` rejection (:func:`_admissible_refs_tx`) and the
+    accepted ``context_route`` result (:func:`read_current_turn_evidence_ref`).
+    One query, so the id the model is handed *before* it composes a payload is
+    byte-identical to the id the rejection would have published afterwards.
+    """
+
+    try:
+        cursor = await db.execute(
+            "SELECT t.evidence_id AS evidence_id, t.evidence_hash AS content_hash "
+            "FROM foreground_run_sdk_bindings b "
+            "JOIN foreground_runs r ON r.host_run_id=b.host_run_id "
+            "JOIN foreground_turns t ON t.turn_id=r.turn_id AND t.subject=r.subject "
+            "JOIN human_memory_evidence e ON e.evidence_id=t.evidence_id "
+            "WHERE b.sdk_run_id=? AND r.host_run_id=? AND r.subject=? "
+            "AND e.subject=? AND e.envelope_sha256=t.evidence_hash "
+            # Review SHOULD-FIX 3: the caller always passes the Run's own admission
+            # scope, but ``resolve_run_scope_tx`` can fall back to a model-chosen
+            # route decision when ``foreground_runs.task_scope_id`` is NULL — keep
+            # the cross-scope invariant local to the query that asserts it.
+            "AND (t.task_scope_id IS NULL OR t.task_scope_id=?) "
+            "ORDER BY t.enqueue_sequence DESC, t.evidence_id",
+            (sdk_run_id, host_run_id, subject, subject, task_scope_id),
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+    except aiosqlite.OperationalError as exc:
+        # Only a DB without the foreground tables (unit fixtures) degrades to
+        # "no turn evidence".  Anything else — a lock, a corrupt page — must not
+        # be swallowed into a spurious ``refs_outside_scope``.
+        if "no such table" not in str(exc):
+            raise
+        return []
+    return list(rows)
+
+
+async def read_current_turn_evidence_ref(
+    db_path: Any, sdk_run_id: str, task_scope_id: str
+) -> str:
+    """This turn's own admitted user evidence id, or ``""`` when unresolvable.
+
+    HM-TO-A6 事件 AL (2026-09-09, 第 13 次整跑 T17).  The admissible ids used to
+    become visible **only** inside the ``task_scope_update_refs_outside_scope``
+    rejection, so the tool description told the model to "send your best payload
+    once" and read the ids off the refusal.  On a 32000-token window that
+    two-step is not a protocol, it is a budget bomb: T17's first ``goal.set``
+    carried a 26 KB verbatim goal (6256 output tokens), was rejected for citing
+    the route receipt id, and the resend then died
+    ``sdk_provider_wire_input_budget_exceeded`` (floor 27176 > effective 26752)
+    because the rejected 26 KB call was still in the history.
+
+    So the id is published on the accepted ``context_route`` result instead —
+    one turn earlier, before any payload is composed.  Read-only, Host-computed,
+    fail-closed: no model input reaches the query, an unresolvable Run returns
+    ``""`` (the rejection lane still publishes the list), and the id is the very
+    same ``turn_ref`` :func:`_admissible_refs_tx` would have disclosed.
+    """
+
+    run_id = str(sdk_run_id or "").strip()
+    scope_id = str(task_scope_id or "").strip()
+    if not run_id or not scope_id:
+        return ""
+    async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
+        db.row_factory = aiosqlite.Row
+        try:
+            cursor = await db.execute(
+                "SELECT r.subject AS subject, r.host_run_id AS host_run_id "
+                "FROM foreground_run_sdk_bindings b "
+                "JOIN foreground_runs r ON r.host_run_id=b.host_run_id "
+                "WHERE b.sdk_run_id=? LIMIT 2",
+                (run_id,),
+            )
+            bindings = await cursor.fetchall()
+            await cursor.close()
+        except aiosqlite.OperationalError as exc:
+            if "no such table" not in str(exc):
+                raise
+            return ""
+        # Exactly one binding or nothing: an ambiguous Run must not be answered
+        # with some other Run's turn (same fail-closed shape as
+        # ``read_current_turn_text``).
+        if len(bindings) != 1:
+            return ""
+        rows = await _turn_evidence_rows_tx(
+            db,
+            task_scope_id=scope_id,
+            subject=str(bindings[0]["subject"]),
+            sdk_run_id=run_id,
+            host_run_id=str(bindings[0]["host_run_id"]),
+        )
+    return str(rows[0]["evidence_id"]) if rows else ""
+
+
 async def _admissible_refs_tx(
     db: aiosqlite.Connection,
     *,
@@ -647,32 +757,13 @@ async def _admissible_refs_tx(
     ordered: list[tuple[str, str]] = []
     seen: set[str] = set()
     turn_ref: str | None = None
-    try:
-        turn_cursor = await db.execute(
-            "SELECT t.evidence_id AS evidence_id, t.evidence_hash AS content_hash "
-            "FROM foreground_run_sdk_bindings b "
-            "JOIN foreground_runs r ON r.host_run_id=b.host_run_id "
-            "JOIN foreground_turns t ON t.turn_id=r.turn_id AND t.subject=r.subject "
-            "JOIN human_memory_evidence e ON e.evidence_id=t.evidence_id "
-            "WHERE b.sdk_run_id=? AND r.host_run_id=? AND r.subject=? "
-            "AND e.subject=? AND e.envelope_sha256=t.evidence_hash "
-            # Review SHOULD-FIX 3: the caller always passes the Run's own admission
-            # scope, but ``resolve_run_scope_tx`` can fall back to a model-chosen
-            # route decision when ``foreground_runs.task_scope_id`` is NULL — keep
-            # the cross-scope invariant local to the query that asserts it.
-            "AND (t.task_scope_id IS NULL OR t.task_scope_id=?) "
-            "ORDER BY t.enqueue_sequence DESC, t.evidence_id",
-            (sdk_run_id, host_run_id, subject, subject, task_scope_id),
-        )
-        turn_rows = await turn_cursor.fetchall()
-        await turn_cursor.close()
-    except aiosqlite.OperationalError as exc:
-        # Only a DB without the foreground tables (unit fixtures) degrades to
-        # "no turn evidence".  Anything else — a lock, a corrupt page — must not
-        # be swallowed into a spurious ``refs_outside_scope``.
-        if "no such table" not in str(exc):
-            raise
-        turn_rows = []
+    turn_rows = await _turn_evidence_rows_tx(
+        db,
+        task_scope_id=task_scope_id,
+        subject=subject,
+        sdk_run_id=sdk_run_id,
+        host_run_id=host_run_id,
+    )
     for row in turn_rows:
         evidence_id = str(row["evidence_id"])
         if evidence_id not in seen:
@@ -717,7 +808,7 @@ def _refs_outside_scope_disclosure(admissible: _AdmissibleRefs) -> dict[str, Any
         "next_step": _REFS_OUTSIDE_SCOPE_NEXT_STEP,
     }
     if admissible.turn_ref is not None:
-        detail["current_turn_evidence_ref"] = admissible.turn_ref
+        detail[CURRENT_TURN_EVIDENCE_REF_KEY] = admissible.turn_ref
         detail["next_step"] += _REFS_OUTSIDE_SCOPE_CURRENT_TURN
     return detail
 
@@ -858,6 +949,7 @@ def _check_transitions(status: str, payload: Mapping[str, Any]) -> None:
 
 
 __all__ = [
+    "CURRENT_TURN_EVIDENCE_REF_KEY",
     "HOST_TASK_SCOPE_UPDATE_AUTHORITY_REF",
     "MODEL_CLOSURE_REASON_CODE",
     "TASK_SCOPE_UPDATE_DESCRIPTION",
@@ -867,5 +959,6 @@ __all__ = [
     "ClosureRejected",
     "TaskScopeUpdateService",
     "derive_plan_id",
+    "read_current_turn_evidence_ref",
     "write_pre_admission_audit_tx",
 ]
