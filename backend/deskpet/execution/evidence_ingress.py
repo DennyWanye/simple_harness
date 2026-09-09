@@ -27,6 +27,7 @@ TaskScope archive:
 
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 import time
@@ -53,12 +54,31 @@ from deskpet.task_scope.store import (
     _uuid,
 )
 
+_LOG = logging.getLogger(__name__)
+
+#: The S4 canonical-archive evidence vocabulary (slice S4 §"Harness 事实").
+#:
+#: One token per Harness fact family; the archive imports each as
+#: ``harness.<kind>`` and every projection rule is keyed by it.  Read-class Tool
+#: effects (``read_file`` / ``grep`` / ``glob`` / ``list_directory``, F-Z1) are
+#: **not** a family of their own: a settled read effect is an ordinary settled
+#: SDK effect and projects as ``tool_invocation`` with ``public_payload.
+#: tool_name`` naming the read Tool — exactly like every other Tool effect.
+#:
+#: ``context_use_recollection`` (event AA) is the bounded re-collection receipt
+#: minted when a typed-recall use fence would otherwise expire mid-turn.  It is
+#: a state.db Harness fact imported through :meth:`ingest_ledger_fact_tx`, has
+#: no ``tool_name`` (it is not a Tool effect), and its payload is identities and
+#: counts only — no query, no recalled content, no source ref.  It was added to
+#: the ledger without ever being added here, which is exactly what killed the
+#: Run in event AI; a kind must never reach a producer before this vocabulary.
 RESERVATION_KINDS: frozenset[str] = frozenset(
     {
         "provider_invocation",
         "tool_invocation",
         "context_snapshot",
         "route_decision",
+        "context_use_recollection",
         "run_terminal",
     }
 )
@@ -91,6 +111,45 @@ HOST_HARNESS_FACT_AUTHORITY_REF = "host:harness-fact-ingress:v1"
 
 class TerminalWatermarkPending(RuntimeError):
     code = "task_scope_terminal_watermark_pending"
+
+
+class EvidenceKindRejected(ValueError):
+    """A producer offered a fact whose kind is outside :data:`RESERVATION_KINDS`.
+
+    Event AI: this used to be a bare ``ValueError`` raised from the middle of
+    ``reserve_tx``, so a producer that had shipped a new kind without extending
+    the vocabulary (``context_use_recollection``) surfaced only as an opaque
+    ``sdk_run_driver_failed / ValueError`` and took the whole Run with it.
+
+    It stays a ``ValueError`` (the message is unchanged, so every existing
+    caller and expectation still holds), but it now carries the offending
+    ``kind`` and a stable public ``code``, and the vocabulary check runs
+    **before** any read or write so the rejection is confined to the one fact
+    that produced it: no sequence is consumed, no partial archive state is left
+    behind, and the caller's own transaction is free to roll that single effect
+    back and let the Run continue.  The kind is a vocabulary token, never
+    payload, so it is safe to log by name — an unknown kind must be loud.
+    """
+
+    code = "execution_evidence_kind_rejected"
+
+    def __init__(self, kind: object) -> None:
+        super().__init__(self.code)
+        self.kind = str(kind)[:128]
+
+
+def _assert_reservation_kind(kind: str, *, run_id: str, source_event_id: str) -> None:
+    """Fail closed on an unknown evidence kind, loudly and before any state."""
+
+    if kind in RESERVATION_KINDS:
+        return
+    _LOG.error(
+        "execution_evidence_kind_rejected evidence_kind=%s run_id=%s source_event_id=%s",
+        str(kind)[:128],
+        run_id,
+        source_event_id,
+    )
+    raise EvidenceKindRejected(kind)
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,6 +389,9 @@ class ExecutionEvidenceIngress:
         dispatched and no sequence is consumed.
         """
 
+        # Event AI: an unknown kind is refused before the write lock is taken,
+        # so the producer's own effect is the whole blast radius.
+        _assert_reservation_kind(kind, run_id=run_id, source_event_id=source_event_id)
         await self._store.initialize()
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
@@ -388,8 +450,7 @@ class ExecutionEvidenceIngress:
         identifier(run_id, "run_id", 512)
         identifier(task_scope_id, "task_scope_id", 512)
         identifier(source_event_id, "source_event_id", 512)
-        if kind not in RESERVATION_KINDS:
-            raise ValueError("execution_evidence_kind_rejected")
+        _assert_reservation_kind(kind, run_id=run_id, source_event_id=source_event_id)
         if tool_name is not None:
             identifier(tool_name, "tool_name", 512)
         existing = await self._reservation_tx(db, source_event_id)
@@ -688,8 +749,17 @@ class ExecutionEvidenceIngress:
 
         Returns ``None`` (no rows) when the Run has no foreground admission
         scope — such Runs carry no TaskScope watermark at all.
+
+        Event AI: this is the only entry whose ``kind`` is a runtime variable
+        rather than a literal, so it is the only way an unknown kind can reach
+        the archive.  It is checked first — before the scope resolution and
+        before any row is read or written inside the caller's transaction — so
+        a producer that shipped a kind the vocabulary does not know fails
+        closed on that one fact with a stable code instead of leaving half a
+        Harness fact behind.
         """
 
+        _assert_reservation_kind(kind, run_id=run_id, source_event_id=source_event_id)
         binding = await self.resolve_run_scope_tx(db, run_id)
         if binding is None:
             return None
@@ -1253,6 +1323,7 @@ __all__ = [
     "HOST_OBJECTIVE_AUTHORITY_REF",
     "RESERVATION_KINDS",
     "DrainReport",
+    "EvidenceKindRejected",
     "EvidenceReservation",
     "ExecutionEvidenceIngress",
     "ExecutionIngestReceipt",

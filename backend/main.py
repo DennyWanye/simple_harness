@@ -8546,11 +8546,12 @@ async def _build_product_sdk_runtime_stack(
         raise RuntimeError("procedure_public_sdk_successor_required")
     await initialize_procedure_recovery_state_db(_state_db_path)
     # 2026-09-08 HM-TO-A6 F-K1: v55 side record of assistant tool-call arguments.
-    # v56 chains onto v55; initializing the head installs every earlier step.
-    from deskpet.memory.context_use_recollect_schema import (
-        initialize_context_use_recollect_state_db,
+    # v56 chains onto v55; 事件 AI 的 v57 把 context_use_recollection 收进
+    # harness_evidence_reservations 的种类 CHECK。初始化链头即安装前面每一步。
+    from deskpet.memory.evidence_kind_schema import (
+        initialize_evidence_kind_state_db,
     )
-    await initialize_context_use_recollect_state_db(_state_db_path)
+    await initialize_evidence_kind_state_db(_state_db_path)
     projected_registrations = (*projected_registrations,
         procedure_use_registration(_human_memory_v7.procedure_runtime),
         procedure_discovery_registration(_human_memory_v7.procedure_runtime))
