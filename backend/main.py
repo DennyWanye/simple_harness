@@ -8830,11 +8830,22 @@ async def _build_product_sdk_runtime_stack(
     # missing piece fails startup instead of degrading to "no gate".
     from deskpet.sdk_adapters.read_gate import WorkspaceReadGate
 
+    # F-Z1b (2026-09-09): a read whose path is outside the task's bound roots
+    # but still inside the configured workspace no longer dead-ends — the gate
+    # enters the same S4 binding-proposal authority the create_new route uses
+    # (manual → the 『项目目录授权』 card, auto → a policy:auto grant), then makes
+    # the model re-route once so the write path stays consistent too.
     read_gate = WorkspaceReadGate(
         binding_store=_context_route_binding_store(),
         route_ledger=_ContextRouteLedgerStore(_state_db_path),
         scope_store=_GateScopeStore(_state_db_path),
         authority_resolver=tool_authorities.resolve,
+        service_factory_getter=lambda: service_context.get(
+            "human_memory_host_service_factory"
+        ),
+        binding_append_getter=lambda: service_context.get(
+            "human_memory_binding_append_authority"
+        ),
     )
     service_context.register("sdk_workspace_read_gate", read_gate)
 
