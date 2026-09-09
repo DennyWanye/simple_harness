@@ -1605,17 +1605,34 @@ def item_a6_4(ev: Evidence, budget: dict[str, Any]) -> Item:
 
 
 def item_a6_5(ev: Evidence) -> Item:
+    """README/STATUS 进入 bounded 形态, 且 EVIDENCE 视图在**自己的水位上**不丢 canonical 事实。
+
+    事件 AC(第 11 次): 旧判据把「最后一条 EVIDENCE 视图的 event_count」直接和
+    `select count(*) from task_scope_events`(整表, 跨所有 TaskScope)相比, 两处口径都错:
+
+      * 跨 scope: 第 11 次有两个 TaskScope(870a401b 151 行 + 3a5016d0 25 行 = 整表 176),
+        最后一条 EVIDENCE 视图属于 870a401b, 它的 151 只能和 870a401b 的 151 行比。
+      * 跨水位: 视图按读取时物化, `event_count` 是**该视图 source 的 event_watermark**
+        处的事件数; 物化之后追加的事件(含触发这次读取本身的 tool_invocation/
+        context_snapshot/provider_invocation)不在里面。3a5016d0 的视图水位 20,
+        而事件 21..25 是在这次读取当时及之后才落库的。
+
+    所以本项按视图逐条核对: `event_count` 必须等于「同一 task_scope_id 且
+    event_sequence <= 该视图水位」的事件行数; 并且同一 scope 内水位推进时
+    event_count 不得倒退(plan 第 4 节 FAIL 条件: 超限拆分后 canonical 事件数变少)。
+    """
+
     it = Item("A6-5", "README/STATUS 超限拆分")
     ev.state.require(
-        "task_scope_read_view_revisions", "view_kind", "content", "task_scope_id"
+        "task_scope_read_view_revisions", "view_kind", "content", "task_scope_id", "source_id"
     )
     rows = ev.state.rows(
-        "select view_kind, content, task_scope_id, created_at"
+        "select view_kind, content, task_scope_id, source_id, created_at"
         " from task_scope_read_view_revisions order by created_at asc"
     )
     readme_bounded = []
     status_bounded = []
-    evidence_counts: list[int] = []
+    evidence_views: list[dict[str, Any]] = []
     for r in rows:
         kind = as_text(r["view_kind"]).upper()
         content = as_text(r["content"])
@@ -1626,12 +1643,62 @@ def item_a6_5(ev: Evidence) -> Item:
         if kind == "EVIDENCE":
             obj = maybe_json(content)
             if isinstance(obj, dict) and isinstance(obj.get("event_count"), int):
-                evidence_counts.append(int(obj["event_count"]))
+                declared = obj.get("event_watermark")
+                evidence_views.append(
+                    {
+                        "task_scope_id": as_text(r["task_scope_id"]),
+                        "source_id": as_text(r["source_id"]),
+                        "event_count": int(obj["event_count"]),
+                        "event_watermark": int(declared) if isinstance(declared, int) else None,
+                    }
+                )
 
     scope_event_rows = 0
+    rows_by_scope: dict[str, int] = {}
+    has_sequence = ev.state.has("task_scope_events", "task_scope_id", "event_sequence")
     if ev.state.has("task_scope_events", "task_scope_id"):
         with contextlib.suppress(SchemaMissing):
             scope_event_rows = ev.state.count("task_scope_events")
+            for row in ev.state.rows(
+                "select task_scope_id, count(*) n from task_scope_events group by task_scope_id"
+            ):
+                rows_by_scope[as_text(row["task_scope_id"])] = int(row["n"])
+
+    # 视图水位优先取视图自述(EVIDENCE 清单里的 event_watermark),
+    # 老库没有这个字段时回落到该视图 source 的 event_watermark。
+    watermark_by_source: dict[str, int] = {}
+    if ev.state.has("task_scope_projection_sources", "source_id", "event_watermark"):
+        with contextlib.suppress(SchemaMissing):
+            for row in ev.state.rows(
+                "select source_id, event_watermark from task_scope_projection_sources"
+            ):
+                watermark_by_source[as_text(row["source_id"])] = int(row["event_watermark"])
+
+    checks: list[dict[str, Any]] = []
+    for view in evidence_views:
+        watermark = view["event_watermark"]
+        watermark_source = "view"
+        if watermark is None:
+            watermark = watermark_by_source.get(view["source_id"])
+            watermark_source = "projection_source" if watermark is not None else "unknown"
+        archived: int | None = None
+        if watermark is not None and has_sequence:
+            with contextlib.suppress(SchemaMissing):
+                archived = ev.state.count(
+                    "task_scope_events",
+                    "task_scope_id=? and event_sequence<=?",
+                    (view["task_scope_id"], watermark),
+                )
+        checks.append(
+            {
+                "task_scope_id": view["task_scope_id"][:8],
+                "event_count": view["event_count"],
+                "event_watermark": watermark,
+                "watermark_from": watermark_source,
+                "events_at_watermark": archived,
+                "scope_event_rows": rows_by_scope.get(view["task_scope_id"]),
+            }
+        )
 
     it.numbers = {
         "view_revisions": len(rows),
@@ -1639,8 +1706,12 @@ def item_a6_5(ev: Evidence) -> Item:
         "readme_bounded_max_bytes": max(readme_bounded) if readme_bounded else 0,
         "readme_cap_bytes": 16384,
         "status_bounded_revisions": len(status_bounded),
-        "evidence_event_count_values": evidence_counts[-3:],
+        "evidence_event_count_values": [v["event_count"] for v in evidence_views][-3:],
+        "evidence_watermark_checks": checks[-4:],
         "task_scope_events_rows": scope_event_rows,
+        "task_scope_events_rows_by_scope": {
+            scope[:8]: n for scope, n in sorted(rows_by_scope.items())
+        },
     }
     if not rows:
         it.verdict = INCONCLUSIVE
@@ -1657,24 +1728,66 @@ def item_a6_5(ev: Evidence) -> Item:
         it.verdict = FAIL
         it.reason = f"README bounded 后仍有 {max(readme_bounded)} 字节 > 16384 上限。"
         return it
-    if not evidence_counts:
+    if not evidence_views:
         it.verdict = INCONCLUSIVE
         it.reason = (
             f"README bounded={len(readme_bounded)} / STATUS bounded={len(status_bounded)} 已成立, "
             "但 EVIDENCE 视图未记录 event_count, 无法核对 canonical 事件数不丢。"
         )
         return it
-    if evidence_counts[-1] != scope_event_rows:
+
+    lost = [c for c in checks if c["events_at_watermark"] is not None
+            and c["event_count"] != c["events_at_watermark"]]
+    if lost:
+        bad = lost[0]
         it.verdict = FAIL
         it.reason = (
-            f"EVIDENCE 视图 event_count={evidence_counts[-1]} 与 task_scope_events 实际"
-            f" {scope_event_rows} 行不等, canonical 事实丢失。"
+            f"EVIDENCE 视图(scope {bad['task_scope_id']}, 水位 {bad['event_watermark']})"
+            f" event_count={bad['event_count']} 与该水位下 task_scope_events 的"
+            f" {bad['events_at_watermark']} 行不等, canonical 事实丢失。"
         )
         return it
+
+    # 同一 scope 内水位推进而 event_count 倒退 = 拆分/bounded 把事实做没了。
+    seen: dict[str, dict[str, Any]] = {}
+    for check in checks:
+        scope = check["task_scope_id"]
+        prev = seen.get(scope)
+        if (
+            prev is not None
+            and check["event_watermark"] is not None
+            and prev["event_watermark"] is not None
+            and check["event_watermark"] >= prev["event_watermark"]
+            and check["event_count"] < prev["event_count"]
+        ):
+            it.verdict = FAIL
+            it.reason = (
+                f"EVIDENCE 视图(scope {scope}) 水位从 {prev['event_watermark']} 推进到"
+                f" {check['event_watermark']}, event_count 却从 {prev['event_count']} 降到"
+                f" {check['event_count']} —— 超限拆分后 canonical 事件数变少。"
+            )
+            return it
+        seen[scope] = check
+
+    verified = [c for c in checks if c["events_at_watermark"] is not None]
+    if not verified:
+        it.verdict = INCONCLUSIVE
+        it.reason = (
+            f"README bounded={len(readme_bounded)} / STATUS bounded={len(status_bounded)} 已成立, "
+            "但 EVIDENCE 视图未自述 event_watermark 且无 task_scope_projection_sources/"
+            "task_scope_events.event_sequence 可定位水位, 无法在水位上核对 canonical 事件数。"
+        )
+        return it
+
     it.verdict = PASS
+    per_scope = "; ".join(
+        f"{c['task_scope_id']}@水位{c['event_watermark']}: {c['event_count']}=={c['events_at_watermark']}"
+        for c in verified[-3:]
+    )
     it.reason = (
         f"README {len(readme_bounded)} 次 bounded(≤16384B), STATUS {len(status_bounded)} 次 bounded, "
-        f"EVIDENCE event_count={evidence_counts[-1]} == task_scope_events {scope_event_rows} 行。"
+        f"{len(verified)}/{len(checks)} 条 EVIDENCE 视图在各自水位上 event_count 与 "
+        f"task_scope_events 行数相等({per_scope})。"
     )
     return it
 

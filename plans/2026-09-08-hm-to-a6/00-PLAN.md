@@ -69,7 +69,7 @@
 | A6-2 大 tool result 分页 | 历史组投影出现 `primary_tool_result_summary_v1`；`provider_invocations.request_json` 中该消息带 `metadata.source=primary_tool_history_v1`；`execution-v6.sqlite3` 的 `execution_effects.tool_name='context_page_in'` 计数增加 | ≥2 个不同 `reference_id` 前缀 `primary-tool-page:v1:` 被摘要；≥2 次 `context_page_in` 成功返回 `ok=true` 且答案与原文逐字一致 |
 | A6-3 预算内有界 | 每次 `provider_invocations.request_json` 的 token 估算 ≤ `effective_input_budget`；`sdk_provider_attempt_audit.input_tokens` 单调有界（不随轮次线性增长到窗口上限） | 最大 `input_tokens` < 32000 − 2048；后 8 轮的 `input_tokens` 不超过前 8 轮最大值的 1.6 倍 |
 | A6-4 裁剪不破坏因果链 | `request_json.messages` 中每个 `historical_causal_group` 的 `messages` 内部 tool 消息与其发起 assistant 消息同组；被裁的组整组消失 | 任一请求中不存在孤立 tool 消息；组数 ≤10 |
-| A6-5 README/STATUS 超限拆分 | `state.db.task_scope_read_view_revisions`：README `content` 以 `…[bounded; details are content-addressed in EVIDENCE]` 结尾且 `length(content) ≤ 16384`；STATUS `content` 含 `"bounded":true` 且带 `full_content_sha256`/`full_byte_length` | 两视图都进入 bounded 形态，且 EVIDENCE 视图的 `event_count` == `task_scope_events` 实际行数（canonical facts 不丢） |
+| A6-5 README/STATUS 超限拆分 | `state.db.task_scope_read_view_revisions`：README `content` 以 `…[bounded; details are content-addressed in EVIDENCE]` 结尾且 `length(content) ≤ 16384`；STATUS `content` 含 `"bounded":true` 且带 `full_content_sha256`/`full_byte_length` | 两视图都进入 bounded 形态，且**每条** EVIDENCE 视图的 `event_count` == 「同一 `task_scope_id` 且 `event_sequence` ≤ 该视图 `event_watermark`」的 `task_scope_events` 行数（canonical facts 不丢）。视图按读取时物化，物化之后追加的事件不属于这条修订；不同 TaskScope 的事件数不得相加（事件 AC，见 DECISION-AC-EVIDENCE-VIEW-COUNT） |
 | A6-6 同一 plan 创建节点 + relation memory | `human_memory_v7.db.cognitive_relations` 新增 1 行；该行的 `plan_id`/`plan_hash` 与**本 plan 新建的端点**（流程节点）以及 relation memory 自身在 `cognitive_memory_revisions` 里的 `plan_id`/`plan_hash` **相同**；已有端点记录其当时的 `current_revision`；`relation_memory_id` 在 `cognitive_memory_heads` 中存在 | 一条 `relation_kind='applies_to'`：target 是本 plan 新建流程节点的 exact revision，source 是 T1 那条 Python 版本事实的 current revision。**不再要求两端都是本 plan 的 revision**——那要求本轮再造一条同值 semantic（第二个槽位，正是事件 L 要消灭的东西），而 SDK 仓 `simple-harness-memory-sdk` 的 `plans/2026-08-29-human-memory-digital-twin/acceptance.md`「测试义务矩阵」HM-TO-A6 行对本项的要求逐字只有「clean-wheel public API 在同一 plan 创建节点与 relation memory」。同文件另有两处更紧的措辞：HM-S12 场景行「clean-wheel public API 创建**两个** canonical nodes + 一条 relation memory」、HM-TO-A2 行「clean-wheel public API 在同一原子 plan 正向创建**两个端点**及一条 `applies_to` Semantic relation」；「两个 canonical node」这条义务由 **HM-TO-A2 的 clean-wheel oracle** 履行（SDK 公共 API 直接造两个端点，不经分析车道），本项不重复证明，追踪项 F-T6。**只新建 source**（本轮再造一条同值语义再连一条旧流程）与本行相反，判 FAIL。裁决见 [DECISION-T-RELATION-FORM.md](DECISION-T-RELATION-FORM.md) §1 |
 | A6-7 edge 更新/纠正 | 纠正后 `cognitive_memory_revisions` 出现新 revision（`lifecycle_state` supersede 语义），旧 revision 退出 active；图谱边指向新 revision | 图谱只显示 1 条 active edge，端点为新 revision |
 | A6-8 争议 | `cognitive_conflict_groups` 新增行（`incumbent_revision`/`challenger_revision`）；对应 head 的 `conflict_status` 变 contested | 出现 contested；且依赖该值的执行问句得到"要求确认"而非直接用旧值 |
@@ -207,7 +207,7 @@ for rj in provider_invocations.request_json: assert not (needles & tokens(rj))
 **明确的 FAIL 条件**
 - 重放指纹与 `expected_request_fingerprint` 不等；
 - 请求中出现孤立 tool 消息或组数 >10；
-- README/STATUS 超限后 EVIDENCE 里 canonical 事件数变少；
+- README/STATUS 超限后 EVIDENCE 里 canonical 事件数变少（同一 TaskScope 内，`event_watermark` 只进不退而 `event_count` 反降；或某条视图的 `event_count` 小于它自己水位下的 `task_scope_events` 行数）；
 - 图谱标识出现在任一 `request_json`；
 - 遗忘后 `cognitive_relations` 行被物理删除，或 close/reopen 后 edge 复活。
 
