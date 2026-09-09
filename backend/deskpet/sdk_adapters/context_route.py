@@ -139,6 +139,44 @@ TASK_SCOPE_SEARCH_SCHEMA: dict[str, Any] = {
 }
 
 
+# MM-D3 (manual journey run4 T7). The user named 「二号任务」 while 一号 was the
+# active task; the search hits carried no "which of these is the active one"
+# fact, so the model routed ``continue_active``, bound the Run to 一号, and every
+# later ``resume_existing`` for 二号 died on the frozen one-scope-per-Run rule.
+# These two strings are the whole disclosure fix: which hit is active, and the
+# route that follows from the *name the user used* rather than from activity.
+RUN_SCOPE_BOUND_ELSEWHERE = "context_route_run_scope_bound_elsewhere"
+
+_NAMED_TASK_ROUTE_RULE = (
+    "is_active marks this Run's current active task; it is not the task the user named, and it is "
+    "not scope_disclosure.status (which is every open task's own lifecycle). Route by the name the "
+    "user used: when the task the user named is a candidate with is_active=false, call context_route "
+    "with route=resume_existing and that exact task_scope_id. Never continue_active for it — that "
+    "binds this Run to the active task instead, and a Run binds one scope and can never rebind."
+)
+
+
+def _named_task_route_hint(
+    candidates: list[dict[str, Any]], active_scope: str | None
+) -> str:
+    """The one route rule a hit list has to carry, plus this Run's own facts."""
+
+    if active_scope is None:
+        return (
+            f"{_NAMED_TASK_ROUTE_RULE} No task is active in this Run yet, so continue_active has "
+            "nothing to select at all."
+        )
+    if all(candidate["is_active"] for candidate in candidates):
+        return (
+            f"{_NAMED_TASK_ROUTE_RULE} Every candidate here is the active task "
+            f"(task_scope_id={active_scope}), so continue_active is the route for it."
+        )
+    return (
+        f"{_NAMED_TASK_ROUTE_RULE} The active task here is task_scope_id={active_scope}; every other "
+        "candidate needs resume_existing."
+    )
+
+
 def _error(code: str, **detail: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {"ok": False, "error": {"code": code, **detail}}
     return payload
@@ -688,12 +726,61 @@ class ContextRouteToolService:
                         else "context_route_adjudication_failed")
                 return await self._reject(run_id, raw_call_id, effect_id, proposal, code)
             code = str(getattr(exc, "code", "") or "context_route_adjudication_failed")
+            # MM-D3: ``task_scope_conflict`` used to carry only the raw
+            # ``execution_run_scope_conflict`` string — neither scope id and no
+            # next step, so the model spent the rest of the Run looking for a
+            # rebind that does not exist. Same stable code, actionable detail.
+            scope_detail: dict[str, Any] = {}
+            if code == "task_scope_conflict":
+                scope_detail = await self._run_scope_conflict_detail(run_id, proposal)
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal, code,
-                contested=contested,
+                contested=contested, **scope_detail,
                 message=(_WORKSPACE_REUSE_NEW_RUN if code == "context_route_workspace_reuse_requires_new_run"
                          else str(exc)[:512]),
             )
+
+    async def _run_scope_conflict_detail(
+        self, run_id: str, proposal: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Name the bound scope, the requested scope, and the only honest step.
+
+        The frozen S4/S5 rule is one TaskScope per Run: the route decision is
+        ingested into the bound scope's canonical archive in the same
+        transaction that records it, so there is nothing here to undo and no
+        "handoff" route to offer. The executable step is therefore for *this*
+        turn to end with an explanation, and for the next turn to route
+        ``resume_existing`` directly.
+        """
+
+        try:
+            bound = await self._ledger.latest_route_decision_for_run(run_id, task_only=True)
+        except Exception:  # noqa: BLE001 - the rejection must never fail on its own detail
+            _LOG.warning("context_route_conflict_detail_unavailable run_id=%s", run_id)
+            bound = None
+        bound_id = None if bound is None else bound.get("task_scope_id")
+        requested = proposal.get("task_scope_id")
+        requested_id = None if requested is None else str(requested)[:128]
+        bound_text = "another task" if bound_id is None else f"task_scope_id={bound_id}"
+        target_text = (
+            "the requested task" if requested_id is None else f"task_scope_id={requested_id}"
+        )
+        return {
+            "reason_code": RUN_SCOPE_BOUND_ELSEWHERE,
+            "bound_task_scope_id": bound_id,
+            "requested_task_scope_id": requested_id,
+            "next_step": (
+                f"This Run is already bound to {bound_text} and a Run binds one scope only; it can "
+                f"never rebind, and no route switches it. End this turn by telling the user that the "
+                f"request needs the other task, naming {target_text}. Their next message starts a new "
+                f"Run, and there route {target_text} with resume_existing as its first task route. Do "
+                f"not retry this call, and do not close or mutate the bound task over this."
+            ),
+            "next_step_zh": (
+                f"本 Run 已绑定 {bound_text}；请回复用户说明并在下一轮直接 resume_existing "
+                f"{target_text}。"
+            ),
+        }
 
     async def _reject(
         self,
@@ -1130,6 +1217,11 @@ class ContextRouteToolService:
         from deskpet.memory.human_memory_service import OpenTaskScopeRequest
         if self._scope_disclosure_reader is None:
             return _error("scope_disclosure_reader_missing")
+        # MM-D3: which hit is *this Run's* active task is a Host fact the model
+        # cannot derive. ``scope_disclosure.status`` is the scope's own
+        # lifecycle ("active" = not completed) and is "active" for every open
+        # task, so it never answered "is this the one continue_active picks?".
+        active_scope = await self._current_active_task_scope_id()
         candidates = []
         for item in result["candidates"]:
             scope_id = item["scope_ref"]
@@ -1137,7 +1229,9 @@ class ContextRouteToolService:
                 expected_source_hash=item["source_hash"], effect_id=effect_id, sdk_run_id=run_id))
             package = await self._scope_disclosure_reader(run_id, opened["resume_package"], effect_id)
             candidates.append({"task_scope_id": scope_id, "source_id": package["source_id"],
-                "source_hash": package["source_hash"], "scope_disclosure": package})
+                "source_hash": package["source_hash"],
+                "is_active": active_scope is not None and str(scope_id) == active_scope,
+                "scope_disclosure": package})
         payload: dict[str, Any] = {
             "candidates": candidates,
             "next_cursor": result.get("next_cursor"),
@@ -1148,6 +1242,8 @@ class ContextRouteToolService:
             "binding. It must be the first task route in a new Run; do not resume the old task first. "
             "Active tasks may use resume_existing with their exact task_scope_id.",
         }
+        if candidates:
+            payload["route_hint"] = _named_task_route_hint(candidates, active_scope)
         if not candidates:
             # HM-TO-A6 incident B: a real model re-issued the same zero-hit
             # query ten times because an empty candidate list said nothing
@@ -1155,6 +1251,22 @@ class ContextRouteToolService:
             # active task route exists — say so, and name the exact next call.
             payload["next_action"] = await self._empty_search_next_action()
         return payload
+
+    async def _current_active_task_scope_id(self) -> str | None:
+        """This Run's would-be ``continue_active`` target, or ``None``.
+
+        Advisory disclosure only: an unavailable ledger degrades to "unknown",
+        never to a wrong flag and never to a failed search.
+        """
+
+        try:
+            active = await self._ledger.latest_task_route_decision()
+        except Exception:  # noqa: BLE001 - disclosure must never fail the search
+            _LOG.warning("task_scope_search_active_scope_unavailable")
+            return None
+        if active is None or not active.get("task_scope_id"):
+            return None
+        return str(active["task_scope_id"])
 
     async def _empty_search_next_action(self) -> str:
         """The one next call to make when the search returned no candidates.
@@ -1196,6 +1308,7 @@ class _CompositionUnavailable(RuntimeError):
 
 __all__ = [
     "CONTEXT_ROUTE_SCHEMA",
+    "RUN_SCOPE_BOUND_ELSEWHERE",
     "TASK_SCOPE_SEARCH_SCHEMA",
     "ContextRouteToolService",
     "local_owner_auth",

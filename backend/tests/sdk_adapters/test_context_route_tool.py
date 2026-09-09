@@ -863,3 +863,183 @@ async def test_task_scope_read_failure_never_fails_an_already_successful_recall(
     )
     assert "error" not in result and "procedure_hint" not in result
     assert _decision_rows(state_db) == [("memory_standalone", "context_tool", "effect-1")]
+
+
+# ---- MM-D3：点名任务 ≠ 活跃任务（manual 旅程 run4 T7） -----------------------
+#
+# 证据：`.local-test-evidence/2026-09-09/native-manual-run4/primary-ui-dys43uzo/`
+# Run ``product-sdk-169be262…``。用户说「把这个目录也纳入二号任务的工作范围」，
+# 活跃任务是一号。``task_scope_search "二号任务 Task No.2"`` 三个命中里唯一带标题
+# 的恰好是一号，三个 ``scope_disclosure.status`` 全是 ``active``（那是 scope 自身
+# 的生命周期，不是「谁是本 Run 的活跃任务」）。模型据此选了 ``continue_active``，
+# 把 Run 绑到一号；随后 ``resume_existing`` 二号被 ``task_scope_conflict /
+# execution_run_scope_conflict`` 拒绝，而该拒绝**只有这两个字符串**——不报被绑
+# scope、不报被请求 scope、不给下一步。整轮 MM-4/MM-5 无法执行。
+#
+# 修法与事故 B 同口径：稳定码与 schema 不动，只补披露与可行动文案。
+
+
+def _multi_hit_service(*scope_refs: str) -> _FakeService:
+    inner = _FakeService()
+
+    async def search_task_scopes(request):
+        return {
+            "candidates": [
+                {"scope_ref": ref, "title": ref, "rank": -1.0, "source_hash": "e" * 64}
+                for ref in scope_refs
+            ],
+            "next_cursor": None,
+            "receipt_hash": "c" * 64,
+        }
+
+    inner.search_task_scopes = search_task_scopes
+    return inner
+
+
+async def _tool_with_active_scope(
+    state_db: Path, *scope_refs: str, resumable: str | None = None
+):
+    """A service whose Run already committed ``create_new`` → ``scope-new-1``."""
+
+    binding_store = _FakeBindingStore()
+    binding_store.receipts["scope-new-1"] = SimpleNamespace(
+        binding_set_revision=1, receipt_id="bind-new", receipt_hash="a" * 64
+    )
+    if resumable is not None:
+        binding_store.receipts[resumable] = SimpleNamespace(
+            binding_set_revision=2, receipt_id="bind-resume", receipt_hash="b" * 64
+        )
+    inner = _multi_hit_service(*scope_refs)
+    append = _FakeBindingAppend()
+    inner.binding_append = append
+    tool = _service(
+        state_db,
+        factory=SimpleNamespace(bind=lambda auth, **kw: inner),
+        binding_store=binding_store,
+        binding_append=append,
+        disclosure_reader=_FakeDisclosureReader(),
+    )
+    created = await tool.handle_context_route({"route": "create_new", "title": "一号"})
+    assert "error" not in created
+    return tool
+
+
+@pytest.mark.asyncio
+async def test_search_hits_flag_which_candidate_is_the_runs_active_task(
+    state_db: Path,
+) -> None:
+    tool = await _tool_with_active_scope(state_db, "scope-new-1", "scope-b")
+    result = await tool.handle_task_scope_search({"query": "二号任务 Task No.2"})
+
+    flags = {c["task_scope_id"]: c["is_active"] for c in result["candidates"]}
+    assert flags == {"scope-new-1": True, "scope-b": False}
+    hint = result["route_hint"]
+    assert "is_active" in hint and "resume_existing" in hint
+    assert "Never continue_active" in hint
+    assert "task_scope_id=scope-new-1" in hint
+    # 披露不改变任何路由事实：搜索仍不写决策。
+    assert _decision_rows(state_db) == [("create_new", "context_tool", "effect-1")]
+
+
+@pytest.mark.asyncio
+async def test_search_hints_say_so_when_no_task_is_active_yet(state_db: Path) -> None:
+    inner = _multi_hit_service("scope-a", "scope-b")
+    tool = _service(
+        state_db,
+        factory=SimpleNamespace(bind=lambda auth, **kw: inner),
+        disclosure_reader=_FakeDisclosureReader(),
+    )
+    result = await tool.handle_task_scope_search({"query": "以前的 A"})
+    assert all(c["is_active"] is False for c in result["candidates"])
+    assert "No task is active in this Run yet" in result["route_hint"]
+
+
+@pytest.mark.asyncio
+async def test_active_flag_degrades_to_false_when_the_ledger_is_unavailable(
+    state_db: Path, monkeypatch
+) -> None:
+    """一条不可用的账本只能让披露退化为「不知道」，不能让搜索失败或标错。"""
+
+    tool = await _tool_with_active_scope(state_db, "scope-new-1", "scope-b")
+
+    async def unavailable():
+        raise RuntimeError("ledger unavailable")
+
+    monkeypatch.setattr(tool._ledger, "latest_task_route_decision", unavailable)
+    result = await tool.handle_task_scope_search({"query": "二号任务"})
+    assert [c["is_active"] for c in result["candidates"]] == [False, False]
+    assert "No task is active in this Run yet" in result["route_hint"]
+
+
+@pytest.mark.asyncio
+async def test_run_scope_conflict_names_both_scopes_and_the_only_next_step(
+    state_db: Path, monkeypatch
+) -> None:
+    """``task_scope_conflict`` 必须点名被绑 scope、被请求 scope 与下一步。"""
+
+    from deskpet.sdk_adapters.context_route import RUN_SCOPE_BOUND_ELSEWHERE
+    from deskpet.task_scope.store import TaskScopeConflict
+
+    tool = await _tool_with_active_scope(state_db, "scope-new-1", resumable="scope-b")
+    tool._tool_context_getter = lambda: _tool_context(effect="effect-2", raw="raw-2", turn=2)
+
+    async def conflicting(**kwargs):
+        raise TaskScopeConflict("execution_run_scope_conflict")
+
+    monkeypatch.setattr(tool._ledger, "record_route_decision", conflicting)
+    result = await tool.handle_context_route(
+        {"route": "resume_existing", "task_scope_id": "scope-b"}
+    )
+
+    error = result["error"]
+    # 稳定码不动（S4 store 的冻结码），新增的是可机读的原因码与两个 scope。
+    assert error["code"] == "task_scope_conflict"
+    assert error["message"] == "execution_run_scope_conflict"
+    assert error["reason_code"] == RUN_SCOPE_BOUND_ELSEWHERE
+    assert error["bound_task_scope_id"] == "scope-new-1"
+    assert error["requested_task_scope_id"] == "scope-b"
+    assert "can never rebind" in error["next_step"]
+    assert "resume_existing" in error["next_step"]
+    assert "本 Run 已绑定 task_scope_id=scope-new-1" in error["next_step_zh"]
+    assert "resume_existing task_scope_id=scope-b" in error["next_step_zh"]
+    # 拒绝按原样落库，含新的原因码。
+    with sqlite3.connect(state_db) as db:
+        detail = json.loads(db.execute(
+            "SELECT detail_json FROM context_route_tool_invocations "
+            "WHERE sdk_run_id=? AND verdict='rejected'", (RUN,)).fetchone()[0])
+    assert detail["reason_code"] == RUN_SCOPE_BOUND_ELSEWHERE
+    assert detail["bound_task_scope_id"] == "scope-new-1"
+
+
+def test_persona_routes_a_named_task_that_is_not_the_active_one() -> None:
+    """PERSONA 必须一句话说清「点名任务 ≠ 活跃任务」的路由。"""
+
+    from deskpet.execution.primary_context import PERSONA
+
+    assert "For any other task the user names" in PERSONA
+    assert "never continue_active" in PERSONA
+    assert "irreversibly" in PERSONA
+    # 事故 B 与 F-NC1 钉住的既有口径不得被这次压缩改掉。
+    assert "an active scope needs no search" in PERSONA
+    assert "Rewriting or shortening the user's own words needs no context tool or recall." in PERSONA
+    assert len(PERSONA) <= 4900
+
+
+def test_context_route_description_names_the_named_task_rule() -> None:
+    """工具描述本身也要说明这条规则（模型不一定读得到 PERSONA 的每一句）。"""
+
+    import re
+
+    source = Path(__file__).resolve().parents[2] / "main.py"
+    route_block = re.search(
+        r'name="context_route",\s*\n\s*description=\((.*?)\n\s*\),',
+        source.read_text(encoding="utf-8"), re.S)
+    assert route_block is not None
+    assert "is_active=false" in route_block.group(1)
+    assert "can never rebind" in route_block.group(1)
+
+    search_block = re.search(
+        r'name="task_scope_search",\s*\n\s*description=\((.*?)\n\s*\),',
+        source.read_text(encoding="utf-8"), re.S)
+    assert search_block is not None
+    assert "is_active" in search_block.group(1)
