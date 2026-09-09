@@ -53,6 +53,10 @@ def main():
     parser.add_argument('--fallback-model', default=None, help='used (and recorded) only when --model fails preflight')
     parser.add_argument('--fallback-env-file', type=Path, default=None, help='BASEURL/APIKEY for the fallback provider (else the primary credential file)')
     parser.add_argument('--launch', action='store_true')
+    parser.add_argument('--memory-probe', action='store_true',
+                        help='event X-3: turn on the backend site-level memory probe (memory.probe lines in native.log + tracemalloc snapshots under <userdata>/memory-probe/)')
+    parser.add_argument('--memory-probe-every', type=int, default=1, metavar='N',
+                        help='emit one memory.probe line every N foreground Run terminals (default 1); only meaningful with --memory-probe')
     parser.add_argument('--headroom-mib', type=int, default=7168)
     args = parser.parse_args()
     source = args.source.resolve(strict=True)
@@ -132,6 +136,13 @@ def main():
         HF_HOME=str(run / 'cache/hf'), HF_MODULES_CACHE=str(run / 'cache/hf-modules'),
         TORCH_HOME=str(run / 'cache/torch'), HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
     )
+    # Event X-3: the probe is opt-in and must be deterministic per run, so the
+    # inherited value is always dropped and only re-set when asked for.
+    for name in ('SIMPLEHARNESS_MEMORY_PROBE', 'SIMPLEHARNESS_MEMORY_PROBE_EVERY'):
+        env.pop(name, None)
+    if args.memory_probe:
+        env['SIMPLEHARNESS_MEMORY_PROBE'] = '1'
+        env['SIMPLEHARNESS_MEMORY_PROBE_EVERY'] = str(max(1, args.memory_probe_every))
     metadata = {
         'source': str(source), 'source_head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip(),
         'python': str(python), 'installed_target': str(installed), 'bundle': str(bundle),
@@ -139,6 +150,8 @@ def main():
         'model': model, 'model_preflight': preflight, 'provider_kind': provider_kind,
         'model_fallback_used': provider_kind == 'fallback',
         'launched': args.launch, 'admission_headroom_mib': args.headroom_mib,
+        'memory_probe': bool(args.memory_probe),
+        'memory_probe_every': (max(1, args.memory_probe_every) if args.memory_probe else None),
         'carrier_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     }
     (run / 'launch.json').write_text(json.dumps(metadata, indent=2) + '\n')

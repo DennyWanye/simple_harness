@@ -2733,6 +2733,47 @@ seq 19「更正一下：校对脚本我现在统一用 Python 3.13，不是 3.12
   未纳入测量）、X2-F5（离线无 FastAPI/WebSocket，广播缓冲未覆盖）。
   详见 [DECISION-X2-MEMORY-LANES-GROWTH](../plans/2026-09-08-hm-to-a6/DECISION-X2-MEMORY-LANES-GROWTH.md)。
 
+## 2026-09-09 原生按站点内存探针（HM-TO-A6 事件 X-3：X2-F2 的测量装置）
+
+- **动机**：事件 X 与 X-2 两轮离线复现都把每回合净保留压到 5.0 KiB（X-2 还打开了全部
+  memory 车道），可原生 backend 仍每个 provider 回合涨 250–300 MB（attempt 11：turn 15
+  RSS 5143 MB）。离线**解释不了**这笔账，再堆离线夹具也永远不能证伪"还有一条我没想到的
+  车道"。X2-F2 的唯一出路是**在原生进程里按分配站点归因**。
+- **装置**：新增 `backend/observability/memory_probe.py`。`SIMPLEHARNESS_MEMORY_PROBE`
+  显式置真时才启 `tracemalloc`（25 帧）并把探针挂到 `SdkRunToolAuthorityRegistry.add_terminal_listener`
+  ——事件 X / AA 用的**同一条** Run 终态缝（`main.py:8208` 邻位）。每 N 个终态
+  （`..._EVERY`，默认 1）打一行 `memory.probe`：RSS（`psutil` + `ru_maxrss`）、
+  tracemalloc current/peak、**相对上一次探针**的 top 15 分配站点（`file:line size_kb count`）、
+  gc 类型普查 top 15 增量、`len(gc.get_objects())`；另写一份完整 `tracemalloc` 快照到
+  `<userdata>/memory-probe/turn-<n>.snap`，**只留最近 30 份**。
+- **默认关 = 零成本**：`build_memory_probe()` 在没打开时返回 `None`，`main.py` 连监听器都
+  **不注册** —— 不启 `tracemalloc`、不 import `psutil`、不碰 `gc.get_objects()`、不建目录。
+  常开不可接受：25 帧栈快照的自身开销与被跟踪对象数同量级，采样一次 ~0.4 s（空进程）。
+- **不记载荷**：日志与快照里只有 `file:line`、字节数、对象计数、类型名；站点路径经
+  `shorten_location` 截掉 `/site-packages/`、`/backend/`、`/simple_harness/` 之前的部分
+  （跨进程可比，且不出现用户家目录）。采样顺序钉死为 RSS → `get_traced_memory` →
+  `take_snapshot` → 落盘 → gc 普查，因为普查自己的临时 list 若发生在快照之前会占满
+  `top_sites`（X-2 §2.2 踩过）。探针不持有上一次的 `Snapshot`（会常驻几十 MB），
+  只留 `file:line -> (size, count)` 字典自己算差值。整条路径吞异常，绝不影响 Run 终态。
+- **发射端**：`scripts/native/launch_native_candidate.py` 新增 `--memory-probe` /
+  `--memory-probe-every N`，把环境变量放进 spawn 给 backend 的环境并写进 `launch.json`；
+  不带该旗标时主动 `pop` 掉继承来的同名变量，保证跑与跑之间确定。
+- **读数**：`scripts/native/memory_probe_report.py --log <evidence>/native.log` 打四段
+  ——每探针增长表、汇总（`baseline` 那条不计）、**累计增长最大的分配站点**、累计增长最大的
+  gc 类型；可选 `--snapshot-old/--snapshot-new` 用官方 `Snapshot.compare_to` 做全量比对。
+  第三张表就是 X2-F2 的答案：250 MB/回合若是 Python 侧分配会现出一行 ≈ 250000 KiB 的站点；
+  若该表总和远小于 `Δrss`，结论同样决定性 —— 增长不在 Python 堆上，转查 C 扩展 / mmap /
+  分配器碎片。
+- **测试**：`backend/tests/test_memory_probe.py`（15 例：关闭时监听器列表恒空且不启
+  tracemalloc、打开后按 N 出行、17 个字段逐字断言、站点/类型逐项正则、故意分配的
+  `S3CRET-PAYLOAD` 不出现在行里、快照只留 `turn-4/5/6.snap`）+
+  `backend/tests/native/test_memory_probe_report.py`（10 例：夹具日志含非 JSON 行与乱序
+  `probe_seq`、表格逐格数值、真快照 `compare_to`、一条生产者→消费者往返用例）。
+  单进程执行：15 + 10 passed；`test_main_service_registrations.py` 4 passed（`main.py`
+  被改动的回归；本轮**未注册** service，`_VALID_SERVICES` 未动）。
+- **本轮不跑原生**（纪律）：X2-F2 仍开着，下一次原生旅程带 `--memory-probe` 起即可收口。
+  详见 [DECISION-X3-MEMORY-PROBE](../plans/2026-09-08-hm-to-a6/DECISION-X3-MEMORY-PROBE.md)。
+
 ### 2026-09-09（F-Z1）：读类文件工具的调用时工作区闸门 `WorkspaceReadGate`
 
 事件 Z 留下的「能写不能读」不对称已关闭。先确认契约再动代码：读类是 `requires_project`，
