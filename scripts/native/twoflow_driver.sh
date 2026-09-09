@@ -368,7 +368,9 @@ fi
 # flow2 launched separately: record the restart marker before the first turn.
 if [ "$PHASE" = flow2 ] && [ "$FIRST" = "$FLOW2_FIRST" ]; then restart_pause; fi
 
-for (( T=FIRST; T<=LAST; T++ )); do
+# TF_TURNS="1 2 3 11" 只跑这些轮（主流程冒烟/定向复验）；默认 FIRST..LAST。
+if [[ -n "${TF_TURNS:-}" ]]; then TURN_LIST=( $TF_TURNS ); else TURN_LIST=( $(seq "$FIRST" "$LAST") ); fi
+for T in "${TURN_LIST[@]}"; do
   PH=$(phase_of "$T")
 
   if [ "$PHASE" = all ] && [ "$T" = "$FLOW2_FIRST" ]; then restart_pause; fi
