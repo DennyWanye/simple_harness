@@ -76,12 +76,17 @@ def register_code_tools(
         schema=_schema(
             "glob",
             "Find files by glob pattern under the project root. "
+            "path may be a directory (walked) or a single file (the pattern "
+            "is matched against that one file). "
             "Returns paths sorted by mtime (newest first).",
             {
                 "pattern": {"type": "string", "description": "e.g. **/*.py"},
                 "path": {
                     "type": "string",
-                    "description": "Optional override of search root.",
+                    "description": (
+                        "Optional override of the search root. A directory is "
+                        "walked; a file path matches that single file."
+                    ),
                 },
             },
             ["pattern"],
@@ -98,10 +103,19 @@ def register_code_tools(
         schema=_schema(
             "grep",
             "Search file contents under the project root via Python regex. "
+            "path may be a directory (walked recursively) or a single file "
+            "(that one file is searched) — passing a file path is the direct "
+            "way to search one known file instead of paging it. "
             "Three output modes: files_with_matches (default), content, count.",
             {
                 "pattern": {"type": "string", "description": "Python regex"},
-                "path": {"type": "string"},
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Directory to walk, or a single file to search. "
+                        "Defaults to the bound workspace root."
+                    ),
+                },
                 "glob": {
                     "type": "string",
                     "description": "Filter files by glob, e.g. *.py",
