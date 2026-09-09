@@ -1,3 +1,5 @@
+2026-09-09 F-Z1b（A6 第 11 次整跑第 6 轮）：F-Z1 的读闸门判据没错但**没有出口**——样例目录 `a6-fixture/` 不在任务唯一的托管家目录里，读被 `path_outside_workspace_root` 拒且无下一步；写侧同样的越界会进 S4 绑定提案（manual 出『项目目录授权』卡片、auto 落授权）。本轮把读侧接进**同一条**权威：Host 确定性算出候选根（符号链接解析后最近的已存在目录祖先，既定 workspace 根本身 / 公共父目录 → S4 码 `workspace_root_too_broad`，解析后离开既定 workspace → `path_outside_workspace_root`），调 `HumanMemoryHostService.append_binding` 走 create_new 同一入口，manual 下补一行与路由工具同形的 `context_route_tool_invocations` 拒绝行使卡片原样出现。**同调用 vs 重试钉死为「永远不是同一次调用」**：读权威是路由回执所指的那一版 revision、EffectGate 更要求 head 等于回执 revision，绑定一动就必须先 `context_route route=continue_active` 刷新回执再重发读（这一步同时修好写侧 supersede）。`bound_root` 的「恰好一条根」放宽为多根。[裁决备忘](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1B-READ-BINDING-PROPOSAL.md)。
+
 2026-09-09 MM-D3（Manual 旅程 run4 T7）：用户点名「二号任务」而当前活跃任务是一号时，`task_scope_search` 的命中项**不标注哪一个是本 Run 的活跃任务**（`scope_disclosure.status` 只是 scope 自身生命周期，三个候选全是 `active`），PERSONA/工具描述也只覆盖「找旧东西」的措辞，模型因此路由 `continue_active` 把 Run 绑到一号；随后 `resume_existing` 二号被 `task_scope_conflict` 拒绝，而该拒绝的全文只有 `execution_run_scope_conflict` 一个字符串——不报被绑 scope、不报被请求 scope、不给下一步，整轮 MM-4/MM-5 未被执行。裁决：**同 Run 不允许改绑，也不新增 `handoff` 路由**——接受路由的同一事务已把 route decision 写进被绑 scope 的 append-only canonical archive 并建立 `task_scope_run_watermarks`（S4 Task 2 / S5 Task 5「下一轮 route 才能刷新」；冻结 SDK 的 `TaskScopeRoute` 只有五个成员）。修复照事故 B 口径只动披露与文案：搜索命中新增 `is_active` 与 `route_hint`（「点名任务 ≠ 活跃任务 → `resume_existing` + 该 `task_scope_id`」），`context_route`/`task_scope_search` 工具描述与 PERSONA 各补一句（PERSONA 净 +1 token，用同块语义中性压缩抵消，8192 档门余量 3→2），`task_scope_conflict` 拒绝新增稳定原因码 `context_route_run_scope_bound_elsewhere` 与 `bound_task_scope_id` / `requested_task_scope_id` / 中英文 `next_step`；`primary_dependencies.read_run_dependencies` 把 `is_active` 作为 Host 注解（布尔、不再推导）排除在候选内容等价之外。稳定码、schema、EffectGate 与任何权威一字未改。[裁决备忘](../plans/2026-09-09-manual-mode-journey/DECISION-MM-D3-NAMED-TASK-ROUTE.md)。
 
 2026-09-08 HM-TO-A6 事故 A/B：standalone 路由下 `tool_activate` 一个 PROJECT_EFFECT 工具，后续调用在冻结 SDK 的 `tool.envelope` 一跳被 `TaskExecutionAuthorityError` 打掉**整个 Run**（无任何工具回执可言）。修复把「本轮 ContextRouteState」从 provider 快照收窄面发布到能力披露面（`RunRouteStateMemo`）：`tool_search`/`tool_describe`/`tool_activate` 现在以稳定码 `project_effect_requires_task_route` 提前拒绝并给出 `context_route` 的可执行下一步，Run 继续；`ProductTaskExecutionAuthority` 与 `EffectGate` 的 deny 语义一字未改。事故 B：缺参回执现在回显已发布 schema 的参数形状，`task_scope_search` 零命中给出唯一下一步（有活跃任务时点名 `continue_active`）。[裁决备忘](../plans/2026-09-08-hm-to-a6/DECISION-STANDALONE-ROUTE-TOOL-AUTHORITY.md)。
@@ -2736,6 +2738,53 @@ seq 19「更正一下：校对脚本我现在统一用 Python 3.13，不是 3.12
   FAILED 集合与 `main@b76a7bd9` 逐行相同、通过数 +17；`tests/execution` 39 failed /
   269 passed / 10 errors，比 main 少两条红（方向为由红转绿），无新增红。
   详见 [DECISION-F-Z1-READ-TOOL-CALL-GATE](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1-READ-TOOL-CALL-GATE.md)。
+
+### 2026-09-09（F-Z1b）：读闸门的越界路径接入 S4 绑定提案通道
+
+F-Z1 的判据是对的，但**没有出口**：A6 第 11 次整跑第 6 轮里，样例文件在
+`~/SimpleHarnessWorkSpace/a6-fixture/`、任务唯一的根是托管家目录 `task-<id>/`，模型被要求读
+那些文件只拿到 `path_outside_workspace_root` 且无可执行下一步；同样的越界在写/效应侧会进入
+`runtime_binding_authority.append_binding`（manual 出『项目目录授权』卡片、auto 落授权）。
+本轮把读侧接进**同一条**权威。
+
+- **候选根（`read_binding_candidate_root`）**：模型只说文件、Host 自己算目录。解析口径与
+  `path_within_root` 相同（`~`、相对路径按任务主根、`resolve()` 跟随符号链接）；解析后必须是
+  既定 workspace 根的**严格后代**；候选根 = **最近一个已存在目录祖先**；等于既定根 / 上溯到
+  既定根 / 是任务已有根的父目录 → S4 码 `workspace_root_too_broad`；解析后离开既定 workspace
+  （含符号链接越界）→ `path_outside_workspace_root`。指回 workspace 之内的符号链接会解析成真实
+  目录并正常成为候选根（MM-8 的 `manual-root-link` 即此情形，根数不变）。
+- **提案**：直接调 `HumanMemoryHostService.append_binding`——与 `context_route` create_new
+  同一入口，manual/auto 分叉由它内部完成，没有第二套实现。manual 下另补一行与路由工具
+  **同形**的 `context_route_tool_invocations` 拒绝行（`verdict='rejected'`、
+  `detail.code = context_route_binding_authorization_required`、`binding_challenge.challenge_ref`），
+  提案幂等键沿用 `context-route:{sdk_run_id}:{effect_id}`——`PrimaryWorkspaceBindings` 的卡片
+  查询与 `_item` 的校验原样命中，前端与 schema 均未改。
+- **同调用 vs 重试（钉死）：永远不是同一次调用。** 读权威是路由回执**所指的那一版** binding
+  revision（不是 live head），而 `EffectGate` 第 5 步要求 head **等于**回执 revision——绑定一动，
+  本 Run 后续一切工程效应都会 `workspace_binding_receipt_superseded`。所以绑定成功统一是
+  「拒绝本次读 + 要求再调一次 `context_route route=continue_active` 刷新回执 + 重发读」，
+  这一次额外调用同时修好写侧。新码：`read_workspace_binding_revised`（auto 已绑）、
+  `context_route_binding_authorization_required`（manual 待批，与路由工具同码，旅程驱动的
+  `print_binding_challenges` 直接命中）、`workspace_root_too_broad`。
+- **多根放宽**：`bound_root` 的「恰好一条根」会把闸门自己的成功提案变成
+  `read_workspace_root_unavailable`，故改为 `bound_context()` →
+  `BoundReadContext(task_scope_id, binding_set_revision, roots)`：零根仍拒，一根以上一律接受，
+  包含性额外回答「是哪一条根放行的」并只把那一条投影进 `ToolExecutionContext.workspace`；
+  不带 `path` 的 `glob`/`grep` 落在主根（回执首条根＝revision 1 的托管家目录）。
+  写侧 `effect_gate_projectless_project_effect` 一字未改。
+- **回执**：提案引用挂在原因码尾部 `workspace_read.<tool>.<reason>@<binding_proposal_ref>`
+  （挑战 id 或绑定回执 id，都不是路径），读取用 `parse_read_audit_reason()`；
+  `host_pre_admission_audit` 未加列、未做迁移。
+- **装配**：`main.py` 给 `WorkspaceReadGate` 多注入 `human_memory_host_service_factory` 与
+  `human_memory_binding_append_authority` 两个惰性 getter（与 `ContextRouteToolService` 同源）；
+  未注入时闸门退回纯 F-Z1 行为，有专门用例守着。
+- **A6 驱动不预绑 fixture 目录**：预绑等于把这条路径从旅程里删掉，MM-5/MM-6 会退化成
+  INCONCLUSIVE。只需让轮次预算容下 auto 下多出的 2 次调用（`context_route` + 重发读）。
+- 决定性测试：`backend/tests/sdk_adapters/test_read_binding_proposal_f_z1b.py`（11 例，真
+  v45 state.db + 真 `WorkspaceBindingRuntimeAuthority` manual/auto 两条通道 + 真 route ledger）。
+  回归（单进程、点名文件）：F-Z1 15 passed；F-Z1 + 事件 Z + `tests/task_scope/*` 共 81 passed；
+  `test_main_service_registrations.py` + `test_context_route_tool.py` 45 passed；全绿。
+  详见 [DECISION-F-Z1B-READ-BINDING-PROPOSAL](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1B-READ-BINDING-PROPOSAL.md)。
 
 ## 历史阶段索引
 
