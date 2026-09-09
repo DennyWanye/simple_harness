@@ -10,16 +10,26 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 
+# 事件 AF：主页面引用被拒时公共消息的固定前缀。``primary_dependencies`` 用它
+# 认出"这是主页面的确定性拒绝"，因此它必须是**前缀**而不是全等——升级后同一条
+# 拒绝会在前缀之后追加可执行的下一步（页大小/页起点/下一个 offset），而升级前
+# 已记录的、只有前缀本身的拒绝仍然原样通过。
+PRIMARY_PAGE_PUBLIC_MESSAGE = "Requested primary page is unavailable."
+
 CONTEXT_PAGE_IN_SCHEMA: dict[str, Any] = {
     "name": "context_page_in",
+    # 事件 AF：offset 的单位必须由工具说明本身讲清楚。证据里模型按 1024/8192 的
+    # 等距步长猜 offset，56 % 的猜测落在中文码点中间被拒。前半段的措辞按等义压缩，
+    # 把新增的分页说明摊回原来的量级——工具 schema 每轮都随请求走，8192 档没有余量。
     "description": (
-        "Load one exact page reference already prepared for this request. Only a page "
-        "reference is accepted: copy reference_id and source_hash verbatim from a truncation "
-        "marker carrying page_tool=\"context_page_in\" (fields reference_id / source_hash), or "
-        "from a \"[Context page-in reference: id=... hash=...]\" line. The ref of a recall "
-        "fragment returned by context_route (fragments[].ref, e.g. \"recall-item:<id>:1\") is a "
-        "memory item id, not a page reference; passing it fails. If this request offers no such "
-        "reference_id, do not call this tool."
+        "Load one exact page reference prepared for this request. Copy reference_id and "
+        "source_hash verbatim from a truncation marker carrying page_tool=\"context_page_in\", or "
+        "from a \"[Context page-in reference: id=... hash=...]\" line; nothing else is accepted. A "
+        "context_route recall fragment ref (fragments[].ref, e.g. \"recall-item:<id>:1\") is a memory "
+        "item id, not a page reference, and fails. If this request offers no such reference_id, do "
+        "not call this tool. The \":<offset>\" tail of a reference_id is a BYTE offset into the body, "
+        "not a page index and not always a multiple of page_size; never invent one — use the "
+        "summary's valid_offsets, a page's next_reference_id, or a rejection's retry_reference_id."
     ),
     "parameters": {
         "type": "object",
@@ -181,8 +191,12 @@ def build_context_page_in_handler(
                 result = json.dumps(await store.primary_reader(args), ensure_ascii=False)
             except PrimaryContextPageUnavailable as exc:
                 await receipt(runtime, reference_id=reference_id, kind=kind, outcome=str(exc))
+                # 事件 AF：可执行的下一步必须走 ``public_message``。失败的工具结果
+                # 只有 ``error_code`` + ``public_message`` 两个字段能抵达模型
+                # （``sdk_adapters.tools._result`` 把 value 丢掉），所以详情跟在
+                # 固定前缀之后。稳定码本身一个字未改，重放不受影响。
                 return json.dumps({"ok": False, "error_code": str(exc),
-                    "public_message": "Requested primary page is unavailable."})
+                    "public_message": _primary_page_message(getattr(exc, "detail", None))})
             await receipt(runtime, reference_id=reference_id, kind=kind, outcome="ok")
             return result
         source_hash = str(args.get("source_hash", "") or "").strip()
@@ -237,5 +251,24 @@ def _error(code: str) -> str:
     return json.dumps({"ok": False, "error": code, "retriable": code == "reference_stale"})
 
 
-__all__ = ["CONTEXT_PAGE_IN_SCHEMA", "ContextPageInReference", "ContextPageInStore",
-           "build_context_page_in_handler", "register_context_page_in"]
+# ``sdk_adapters.tools._MAX_HANDLER_PUBLIC_MESSAGE``：超出即被截断，截断后的
+# JSON 尾巴对模型毫无用处，所以这里自己先兜住，宁可不带详情也不带半条。
+_MAX_PRIMARY_PAGE_MESSAGE = 2048
+
+
+def _primary_page_message(detail: Any) -> str:
+    """固定前缀 + 可选的确定性详情（事件 AF）。
+
+    前缀逐字不变，``primary_dependencies`` 靠它认出主页面的确定性拒绝；详情是
+    权威事实推导出的纯数据（页大小、页起点、下一个 offset），既不参与重放比对，
+    也不参与任何指纹，只是把"下一步"讲给模型听。
+    """
+    if not isinstance(detail, dict) or not detail:
+        return PRIMARY_PAGE_PUBLIC_MESSAGE
+    rendered = PRIMARY_PAGE_PUBLIC_MESSAGE + " " + json.dumps(
+        detail, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return rendered if len(rendered) <= _MAX_PRIMARY_PAGE_MESSAGE else PRIMARY_PAGE_PUBLIC_MESSAGE
+
+
+__all__ = ["CONTEXT_PAGE_IN_SCHEMA", "PRIMARY_PAGE_PUBLIC_MESSAGE", "ContextPageInReference",
+           "ContextPageInStore", "build_context_page_in_handler", "register_context_page_in"]

@@ -338,7 +338,11 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             primary_reference = isinstance(reference, str) and reference.startswith(
                 (HISTORY_PAGE_PREFIX, CURRENT_PAGE_PREFIX))
             if primary_reference:
-                if fact.result.public_message != "Requested primary page is unavailable.":
+                # 事件 AF：公共消息现在是「固定前缀 + 可执行的下一步」。前缀逐字
+                # 不变，所以升级前只有前缀本身的记录照样通过；改成前缀判定只是
+                # 允许同一条拒绝多讲一句该拿什么 offset。
+                from deskpet.tools.context_page_in_tools import PRIMARY_PAGE_PUBLIC_MESSAGE
+                if not str(fact.result.public_message or "").startswith(PRIMARY_PAGE_PUBLIC_MESSAGE):
                     raise ValueError("scope_search_result_unverified")
             elif fact.result.error_code != "tool_failed":
                 raise ValueError("scope_search_result_unverified")
@@ -350,7 +354,11 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
                     await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
                         start=start, arguments=arguments)
             except PrimaryContextPageUnavailable as exc:
-                if primary_reference and str(exc) != fact.result.error_code:
+                # 事件 AF：一次纯措辞升级不得把还在飞的 Run 判成重放不一致。
+                # ``rejection_code_matches`` 只认冻结的「新码 → 它取代的旧码」这
+                # 一个方向，语义没有放宽（review M1 同款理由，见 legacy_summary）。
+                from deskpet.execution.current_tool_pages import rejection_code_matches
+                if primary_reference and not rejection_code_matches(fact.result.error_code, str(exc)):
                     raise ValueError("primary_page_rejection_mismatch") from exc
             else:
                 # A replay that succeeds means the recorded failure was not

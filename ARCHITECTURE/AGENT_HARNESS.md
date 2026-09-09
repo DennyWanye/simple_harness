@@ -2189,8 +2189,9 @@ Harness 已吸收该 FailureSet 并从 Plan v1 重规划到 v2。
 
 生产事实：`primary_settled_effect_v1` **在请求里发送的形态**是 descriptor 的投影，不再是
 descriptor 本身。wire 只带 `kind` / `excerpt`（硬上限 `SUMMARY_EXCERPT_BYTES = 128` 字节的
-确定性前缀）/ `pages` / `page_tool` / `reference_id` / `source_hash` /
-`source:{effect_id, tool_name, content_bytes}`。**单条 566–568 B / 142 token**
+确定性前缀）/ `page_count` / `page_size`（事件 AF 起，此前是 `pages`）/ `page_tool` /
+`reference_id` / `source_hash` / `source:{effect_id, tool_name, content_bytes}`，
+以及页数 ≤ 8 且页起点非等距时的 `valid_offsets`。**单条 567–569 B / 142 token**
 （此前 1 960–2 030 B / 490–507 token，且与被分页的结果体大小无关）。
 
 - **完整 descriptor 未变**：它仍是 `reference()` = `PREFIX + canonical_hash(descriptor)` 的
@@ -2203,7 +2204,8 @@ descriptor 本身。wire 只带 `kind` / `excerpt`（硬上限 `SUMMARY_EXCERPT_
 - **不划算就不分页**：`worth_paging()` 要求摘要 ≤ 原体的 `1 / PAGE_SAVING_DIVISOR`（= 一半）
   **且** `text_tokens` 上有正收益，否则原体保留原样；只有 Incident O 的 `force_all`
   降级步会放弃这条 margin（此时"更小"即可）。
-- **兼容读**：`legacy_summary()` 只读不写地接受 F-E3 之前的形态。`admitted_current_page`
+- **兼容读**：`legacy_summary()`（F-E3 之前）与 `legacy_bounded_summary()`（事件 AF
+  之前的 F-E3 形态）只读不写地被接受。`admitted_current_page`
   校验的是**持久化的**父请求，`primary_dependencies.check_runtime_dependencies` 每轮都会
   对该 Run 全部历史 `context_page_in` effect 重跑一次，没有它则跨升级在飞的 Run 会因
   格式变化 fail closed 且无法恢复。
@@ -2220,6 +2222,53 @@ descriptor 本身。wire 只带 `kind` / `excerpt`（硬上限 `SUMMARY_EXCERPT_
 [DECISION-F-E3-DESCRIPTOR-COST](../plans/2026-09-08-hm-to-a6/DECISION-F-E3-DESCRIPTOR-COST.md)。
 用例 `backend/tests/execution/test_descriptor_cost_bound.py`（10 例，含事故形状：修前
 headroom −1231 / 分页 0 条，修后 +3479 / 分页 10 条）。
+
+### 分页 offset 自解释：拒绝携带可执行的下一步（2026-09-09，事件 AF）
+
+生产事实：`context_page_in` 的 offset 是**字节** offset，合法 offset 是
+「在 `[0, content_bytes)` 内 **且** 落在 UTF-8 码点边界上」——**不是** `page_size`
+的整数倍。多字节正文里这两者差得很远：HM-TO-A6 短旅程 run12b 第 13 轮的 47 KB
+中文参照件，48 272 B 里只有 21 227 个（44 %）字节位置是合法 offset，模型按
+1024 / 8192 等距步长猜，16 次 `context_page_in` 里 7 次被
+`primary_page_offset_invalid` 拒（无一越界、无一引用失效），Run 撞 react 上限。
+
+- **描述符**（`primary_settled_effect_v1` wire 形态）：`pages`（`ceil` 估算）→
+  **`page_count`（精确，走 `page_starts()`）+ `page_size`（1024，字节）**；页数
+  ≤ `DESCRIPTOR_OFFSET_LIMIT = 8` **且**页起点不等于 `range(0, content_bytes,
+  page_size)` 时附 `valid_offsets` 全量清单（单字节正文的清单已被前两个字段
+  决定，不重复印——F-E3 的 token 上限没有余量）。实测 **564 B/143 token →
+  586 B/149 token**（+3.9 %），`DESCRIPTOR_TOKEN_CEILING = 150` 与
+  `MAIN_DESCRIPTOR_BYTES // 3` 两条上界仍成立。
+- **拒绝**（事件 B 口径）：`primary_page_offset_invalid` 的**稳定码一字未改**，
+  额外携带 `detail` → `reason` / `requested_offset` / `page_size` / `page_count` /
+  `content_bytes` / `valid_offsets`（前 16 + 最后一个）/ `next_offset` /
+  `retry_reference_id` / `next_step`。`next_offset` 是**本 Run 已准入过的最高一页
+  之后**的下一个 offset，取自 `primary_effect_identities` + 公共 audit/effect 事实
+  （**披露只走回执**，绝不从模型可见的请求文本读），最多回溯 8 个效果，读不出就
+  退回 0；提示永不改变这次调用的结果。
+- **引用不在本请求里**：独立稳定码 **`primary_page_reference_unavailable`**
+  （原先与 offset 错误混在 `primary_effect_page_not_admitted` 里），`next_step`
+  是"重跑产出该结果的工具，或从本次请求里的摘要复制 reference_id / source_hash"。
+- **抵达模型的通路**：失败工具结果只有 `error_code` + `public_message` 能过
+  `sdk_adapters.tools._result`，所以详情跟在**逐字不变的固定前缀**
+  `Requested primary page is unavailable.` 之后（canonical JSON）；
+  `primary_dependencies` 对该前缀由全等改为**前缀**判定，升级前的记录照样通过。
+  超 2048 字符时整段详情不带，不给半条 JSON。
+- **受理口径一字未改**：任意码点边界仍被接受——证据里成功的 8192/16384/40960
+  都不在规范页链上，收窄会让已记录页在 `check_runtime_dependencies` 重放时读不回来。
+  `verify_request`、`reference()` 原像、`canonical_hash(descriptor)` 准入键、
+  `provider_request_fingerprint` 全部未动。
+- **跨升级兼容**：`legacy_bounded_summary()`（事件 AF 之前的 F-E3 形态）与
+  `legacy_summary()`（F-E3 之前）并列被 `verify_request` 只读接受；
+  `REJECTION_CODE_ALIASES` / `rejection_code_matches()` 单向、冻结，让记录了旧码的
+  在飞 Run 不被判 `primary_page_rejection_mismatch`。
+- **工具说明**：`CONTEXT_PAGE_IN_SCHEMA["description"]` 明写 offset 单位（前半段等义
+  压缩，134 → 175 token）；**`parameters` 一个字都没加**——它进 `tool_schema_tokens`，
+  8192 档受保护预算零余量。
+
+证据、逐次 offset 复盘表与 followup（AF-F1/F2/F3）见
+[DECISION-AF-PAGE-OFFSET-GUIDANCE](../plans/2026-09-08-hm-to-a6/DECISION-AF-PAGE-OFFSET-GUIDANCE.md)。
+用例 `backend/tests/execution/test_page_offset_guidance.py`（12 例）。
 
 ### 输入 token 估算口径与 per-model 校准（2026-09-08，Incident N）
 

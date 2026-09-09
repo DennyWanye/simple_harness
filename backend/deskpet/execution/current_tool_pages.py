@@ -82,6 +82,81 @@ SUMMARY_MIN_BYTES = 400
 # is why this one is verbatim" (review S1).
 PAGE_WORTH_MIN_BYTES = SUMMARY_MIN_BYTES * PAGE_SAVING_DIVISOR
 
+# --- 事件 AF：offset 必须自解释 -------------------------------------------
+# HM-TO-A6 短旅程 run12b 第 13 轮（证据 `.local-test-evidence/2026-09-09/
+# native-a6-run12b/primary-ui-9iyw1map/`）：模型对同一个 47 KB 的 read_file 结果
+# 发了 16 次 ``context_page_in``，9 成 7 败，7 次全是 ``primary_page_offset_invalid``。
+# 没有一次越界，也没有一次是引用失效：正文是中文，48 272 B 里只有 21 227 个
+# （44 %）字节位置落在 UTF-8 码点边界上，而模型按 1024 / 8192 的等距步长猜 offset，
+# 于是 2048 / 3072 / 20480 / 24576 / 32768 全部落在码点中间被拒。
+#
+# 拒绝只回 "Requested primary page is unavailable."——没有页大小、没有页起点、
+# 没有下一页，模型只能继续猜，直到 react 上限吃掉整个 Run。成功的那 9 次其实都
+# 回了 ``next_reference_id``（真实边界 2046 / 9216 / 17407 / 13310 / 29695 /
+# 41984），但描述符只印了 ``pages``，从没说过"页起点不是 1024 的倍数"。
+#
+# 事件 B 的口径：拒绝必须自带可执行的下一步。因此 offset 拒绝改为携带页大小、
+# 页数、页起点清单和本 Run 的下一个未读 offset；描述符也直接印出页大小与页数。
+# 受理口径一字未改——任何落在码点边界且在正文内的 offset 仍然被接受，只有这样
+# 已记录的成功页（其中 8192 / 16384 / 40960 都不在规范页链上）才能原样重放。
+PAGE_SIZE = PAGE_BYTES
+# 页起点清单的上界：前 N 个 + 最后一个。48 页的正文列 17 个数字约 100 B，
+# 远在 ``_MAX_HANDLER_PUBLIC_MESSAGE``（2048）之内。
+MAX_LISTED_OFFSETS = 16
+# 描述符里顺带印全量页起点的上界（页数 ≤ 此值时才印）。8 个 offset 约 45 B，
+# 是 F-E3 字节预算里付得起的；再多就只印 page_size + page_count，让模型按
+# 页大小自己推，或在被拒时从拒绝详情里拿完整清单。
+DESCRIPTOR_OFFSET_LIMIT = 8
+# 拒绝详情里为了算"本 Run 已准入过的最高页"最多回溯多少个 context_page_in 效果。
+# 只走失败路径，且每个都要重算一次公共审计事实，所以给一个小而确定的上界。
+MAX_SCANNED_PAGE_EFFECTS = 8
+# 事件 AF 之前 ``not_admitted`` 是"引用不在本次请求里"的唯一出口，语义上却是
+# 两件事：引用形如页引用但本请求没有它（被逐出/从未分页/正文这轮走了原文）。
+# 新的稳定码把它讲清楚并给出下一步。跨升级的重放兼容见 ``REJECTION_CODE_ALIASES``。
+REFERENCE_UNAVAILABLE_CODE = "primary_page_reference_unavailable"
+# 升级前已记录的拒绝码 → 升级后重算出的新码。``primary_dependencies`` 重放旧
+# Run 时按这张表比对，理由与 ``legacy_summary`` 完全一致（review M1）：一次纯粹
+# 的措辞升级不得把还在飞的 Run 判成 ``primary_page_rejection_mismatch``。
+# 只允许"新码 → 它取代的那个旧码"这一个方向，且表是冻结的。
+REJECTION_CODE_ALIASES = MappingProxyType({
+    REFERENCE_UNAVAILABLE_CODE: "primary_effect_page_not_admitted",
+})
+
+
+def rejection_code_matches(recorded, derived):
+    """已记录的拒绝码与重算出的拒绝码是否是同一次拒绝（事件 AF 升级兼容）。"""
+    return recorded == derived or REJECTION_CODE_ALIASES.get(derived) == recorded
+
+
+def page_starts(content):
+    """本正文按 ``context_page_in`` 规范翻页时的全部页起点（精确，非估算）。
+
+    从 0 开始反复调用 ``_excerpt`` 并按**实际返回的字节数**前进——和
+    ``admitted_current_page`` 计算 ``next_reference_id`` 用的是同一个式子，所以
+    这张清单就是"从头一页页翻下去会经过的 offset"，模型照着走一定成功。
+
+    注意它**不是**全部合法 offset：任何落在码点边界上的 offset 都合法（这一点
+    没有改，也不能改，否则已记录的页读不回来）。它是合法 offset 的一个确定子集，
+    覆盖整份正文且不重不漏，因此拿来当"下一步"是安全的。
+    """
+    raw = content.encode("utf-8")
+    starts, offset = [], 0
+    while offset < len(raw):
+        starts.append(offset)
+        step = len(raw[offset:offset + PAGE_SIZE].decode("utf-8", errors="ignore").encode("utf-8"))
+        if step <= 0:  # 防御：起点在码点边界上时不可能发生，但绝不允许死循环
+            break
+        offset += step
+    return starts
+
+
+def _listed_offsets(starts):
+    """页起点清单的有界投影：前 ``MAX_LISTED_OFFSETS`` 个 + 最后一个。"""
+    if len(starts) <= MAX_LISTED_OFFSETS + 1:
+        return list(starts)
+    return list(starts[:MAX_LISTED_OFFSETS]) + [starts[-1]]
+
+
 # --- F-E2: the same-Run bound for CONTROL results ------------------------
 CONTROL_MARKER = "primary_control_result_elided_v1"
 # Which control families may lose their body, and which may not.
@@ -270,18 +345,52 @@ def summary(descriptor, content):
     What is kept is what has a *reader*: ``reference_id`` + ``source_hash`` +
     ``page_tool`` are the three fields ``context_page_in``'s own tool
     description tells the model to copy verbatim; ``effect_id`` is the lookup
-    key ``verify_request`` needs; ``tool_name`` / ``content_bytes`` / ``pages``
-    / ``excerpt`` are what makes the placeholder legible to the model.
-    ``content_hash`` is not repeated inside ``source`` — ``source_hash`` is the
-    same value and is the name the tool schema uses.
+    key ``verify_request`` needs; ``tool_name`` / ``content_bytes`` /
+    ``page_count`` / ``excerpt`` are what makes the placeholder legible to the
+    model.  ``content_hash`` is not repeated inside ``source`` — ``source_hash``
+    is the same value and is the name the tool schema uses.
+
+    事件 AF 追加的三个字段回答的是"该拿什么 offset"，而不是"这是什么"：
+    ``page_size`` 说清 offset 的单位是**字节**（不是页序号、不是行号），
+    ``page_count`` 是精确页数（走 :func:`page_starts`，不再是 ceil 估算），
+    ``valid_offsets`` 只在页数 ≤ ``DESCRIPTOR_OFFSET_LIMIT`` 时出现——小正文里
+    它就是全部页起点，模型一次就能读完，不必先撞一次拒绝。大正文不印清单，
+    页起点由拒绝详情或每页的 ``next_reference_id`` 给。
+    """
+    starts = page_starts(content)
+    wire = dict(kind=MARKER,
+        source=dict(effect_id=descriptor["effect_id"], tool_name=descriptor["tool_name"],
+                    content_bytes=descriptor["content_bytes"]),
+        excerpt=_summary_excerpt(content),
+        # 读完整份正文需要的 ``context_page_in`` 次数，精确值。
+        page_count=len(starts), page_size=PAGE_SIZE,
+        reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
+        page_tool="context_page_in")
+    if len(starts) <= DESCRIPTOR_OFFSET_LIMIT and starts != list(range(0, len(content.encode("utf-8")), PAGE_SIZE)):
+        # 只在清单**带信息**时才印：单字节正文的页起点就是 page_size 的整数倍，
+        # 已经被 page_size + page_count 完全决定，再印一遍是白花字节（F-E3 的
+        # 每条描述符 token 上限没有余量）。真正需要它的恰好是事件 AF 的形态——
+        # 多字节正文的页起点不是整数倍，光靠步长推一定推错。
+        wire["valid_offsets"] = starts
+    return canonical_json(wire)
+
+
+def legacy_bounded_summary(descriptor, content):
+    """事件 AF 之前的 F-E3 有界形态：只读兼容，永不再产出。
+
+    理由与 :func:`legacy_summary` 一模一样（review M1）：``admitted_current_page``
+    重新校验的是**已持久化的**父请求，而 ``check_runtime_dependencies`` 每一轮都
+    会对此前每个 ``context_page_in`` 效果重跑一遍。升级瞬间还在飞的 Run，其请求里
+    存的是 ``pages`` 形态；不接受它，Run 会因为一次纯措辞变更永久 fail closed。
+
+    接受它不放宽任何权限：两种形态都是同一对重新推导出的 ``(descriptor, content)``
+    的确定函数，比对仍是对权威的逐字节相等，且 ``canonical_hash(descriptor)``
+    这个准入键在两种形态下完全相同。
     """
     return canonical_json(dict(kind=MARKER,
         source=dict(effect_id=descriptor["effect_id"], tool_name=descriptor["tool_name"],
                     content_bytes=descriptor["content_bytes"]),
         excerpt=_summary_excerpt(content),
-        # At least this many ``context_page_in`` reads to see the whole body.
-        # A floor, not an exact count: ``_excerpt`` shortens a page to a UTF-8
-        # boundary, so a multibyte body takes marginally more.
         pages=-(-int(descriptor["content_bytes"]) // PAGE_BYTES),
         reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
         page_tool="context_page_in"))
@@ -442,11 +551,91 @@ def verify_request(stack, run_id, messages):
                                                  if isinstance(claimed, Mapping) else None), min_bytes=0)
         _require(descriptor["run_id"] == run_id, "foreign_source")
         _require(message.content in (summary(descriptor, content),
+                                     legacy_bounded_summary(descriptor, content),
                                      legacy_summary(descriptor, content))
                  and message.name == descriptor["tool_name"]
                  and message.call_id.value == descriptor["raw_call_id"], "summary_mismatch")
         found[canonical_hash(descriptor)] = descriptor, content
     return found
+
+
+def _offset_reason(content, offset):
+    """None（可受理）或这次 offset 被拒的确切原因。受理口径与 ``_excerpt`` 一致。"""
+    raw = content.encode("utf-8")
+    if type(offset) is not int or offset < 0:
+        return "offset_negative"
+    if offset >= len(raw):
+        return "offset_past_end"
+    try:
+        raw[offset:].decode("utf-8")
+    except UnicodeDecodeError:
+        # 事件 AF 的真实形态：中文正文里 56 % 的字节位置都落在码点中间。
+        return "offset_not_on_character_boundary"
+    return None
+
+
+async def _admitted_next_offset(*, db, stack, sdk_run_id, digest, content, before_sequence):
+    """本 Run 已准入过的最高一页之后的下一个 offset（没有已准入页时是 0）。
+
+    只读**权威回执**：Host 的 ``primary_effect_identities`` 给出本 Run 在本次调用
+    之前的 ``context_page_in`` 效果顺序，公共审计事实给出每个效果的实参与结果。
+    绝不从模型可见的请求文本里读——那是模型写的，拿它算"下一步"等于让模型自证。
+
+    只走拒绝路径，且回溯上限是 ``MAX_SCANNED_PAGE_EFFECTS``；任何一个效果读不出
+    权威事实就跳过。提示读不出来时退回 0（"从头翻"），永远不把整次调用变成别的错。
+    """
+    from simple_harness import thaw_json
+    rows = await (await db.execute(
+        "SELECT effect_id FROM primary_effect_identities WHERE sdk_run_id=? AND tool_name='context_page_in' "
+        "AND sequence<? ORDER BY sequence DESC LIMIT ?",
+        (sdk_run_id, before_sequence, MAX_SCANNED_PAGE_EFFECTS))).fetchall()
+    highest = None
+    for row in rows:
+        try:
+            prior = stack.read_primary_effect_page_facts(sdk_run_id, row["effect_id"])[0]
+            if (prior.result is None or prior.result.outcome.value != "succeeded"):
+                continue
+            prior_args = thaw_json(prior.arguments)
+            prior_ref = prior_args.get("reference_id") if isinstance(prior_args, Mapping) else None
+            if not isinstance(prior_ref, str) or not prior_ref.startswith(PREFIX):
+                continue
+            prior_digest, prior_raw = prior_ref.removeprefix(PREFIX).split(":")
+            prior_offset = int(prior_raw)
+        except Exception:  # noqa: BLE001 — 提示永远不得改变这次调用的结果
+            continue
+        if prior_digest == digest and _offset_reason(content, prior_offset) is None:
+            highest = prior_offset if highest is None else max(highest, prior_offset)
+    if highest is None:
+        return 0
+    nxt = highest + len(_excerpt(content, highest).encode("utf-8"))
+    return nxt if nxt < len(content.encode("utf-8")) else None
+
+
+async def _reject_bad_offset(*, db, stack, sdk_run_id, digest, content, offset, before_sequence):
+    """事件 AF：offset 不可受理时，带着可执行的下一步拒绝。
+
+    稳定码一个字都没变（``primary_page_offset_invalid``），所以
+    ``primary_dependencies`` 对旧 Run 的重放比对原样成立；变的只是**这一次**拒绝
+    额外携带的 ``detail``——页大小、精确页数、页起点清单（前 16 + 最后一个）、
+    本 Run 的下一个未读 offset，以及可以直接复制去重试的完整 reference_id。
+    """
+    reason = _offset_reason(content, offset)
+    if reason is None:
+        return
+    starts = page_starts(content)
+    detail = dict(reason=reason, requested_offset=offset, page_size=PAGE_SIZE,
+                  page_count=len(starts), content_bytes=len(content.encode("utf-8")),
+                  valid_offsets=_listed_offsets(starts),
+                  offsets_listed=len(_listed_offsets(starts)),
+                  next_step="offset is a BYTE offset into the source body and must be one of "
+                            "valid_offsets; retry context_page_in with retry_reference_id")
+    next_offset = await _admitted_next_offset(db=db, stack=stack, sdk_run_id=sdk_run_id,
+                                              digest=digest, content=content,
+                                              before_sequence=before_sequence)
+    detail["next_offset"] = next_offset
+    if next_offset is not None:
+        detail["retry_reference_id"] = PREFIX + digest + ":" + str(next_offset)
+    raise PrimaryContextPageUnavailable("primary_page_offset_invalid", detail)
 
 
 async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, arguments):
@@ -462,7 +651,15 @@ async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, argu
     actual, _, _, parent_request = stack.read_primary_effect_page_facts(sdk_run_id, page_effect.effect_id.value)
     _require(actual == page_effect and actual.tool_name == "context_page_in", "caller_mismatch")
     found = verify_request(stack, sdk_run_id, parent_request.messages)
-    _require(digest in found, "not_admitted")
+    if digest not in found:
+        # 事件 AF (c)：这不是"offset 不对"，是"这条引用在本次请求里根本不在了"
+        # ——正文这轮走了原文、消息被裁掉、或者引用来自另一个 Run。给一个不同的
+        # 稳定码和一条可执行的下一步，而不是让模型继续换 offset 重试。
+        raise PrimaryContextPageUnavailable(REFERENCE_UNAVAILABLE_CODE, dict(
+            reason="reference_not_in_this_request",
+            next_step="this reference is not available in this request; re-run the tool that "
+                      "produced the result, or copy reference_id/source_hash from a "
+                      "primary_settled_effect_v1 summary present in THIS request"))
     descriptor, content = found[digest]
     _require(arguments["source_hash"] == descriptor["content_hash"], "hash_mismatch")
     # Immutable Host identities supply ordering, not result authority. The
@@ -477,6 +674,9 @@ async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, argu
         _require(row["identity_json"] == canonical_json(identity) and row["identity_hash"] == canonical_hash(identity), "order_binding")
         order[row["effect_id"]] = row["sequence"]
     _require(order[descriptor["effect_id"]] < order[page_effect.effect_id.value], "source_not_prior")
+    await _reject_bad_offset(db=db, stack=stack, sdk_run_id=sdk_run_id, digest=digest,
+                             content=content, offset=offset,
+                             before_sequence=order[page_effect.effect_id.value])
     page = _excerpt(content, offset)
     end = offset + len(page.encode())
     return dict(ok=True, kind="primary_current_tool_page_v1", reference_id=ref, source=descriptor,
