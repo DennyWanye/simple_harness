@@ -8823,6 +8823,21 @@ async def _build_product_sdk_runtime_stack(
     )
     service_context.register("sdk_effect_gate", effect_gate)
 
+    # F-Z1 (2026-09-09): the read-class file Tools are exposed in a
+    # route-capable projectless Run only because every *call* is admitted here
+    # — durable ``context_route`` task decision → verified S4 binding root →
+    # path containment.  Same composition discipline as the EffectGate: a
+    # missing piece fails startup instead of degrading to "no gate".
+    from deskpet.sdk_adapters.read_gate import WorkspaceReadGate
+
+    read_gate = WorkspaceReadGate(
+        binding_store=_context_route_binding_store(),
+        route_ledger=_ContextRouteLedgerStore(_state_db_path),
+        scope_store=_GateScopeStore(_state_db_path),
+        authority_resolver=tool_authorities.resolve,
+    )
+    service_context.register("sdk_workspace_read_gate", read_gate)
+
     def ports_factory(database, uow):
         nonlocal projection_pump
         global _sdk_context_port
@@ -8881,6 +8896,7 @@ async def _build_product_sdk_runtime_stack(
             reconciliation=reconciliation_adapter,
             foreground_admission=_ensure_foreground_effect_gate(),
             effect_gate=effect_gate,
+            read_gate=read_gate,
             evidence_ingress=_ensure_evidence_ingress(),
             procedure_runtime=_human_memory_v7.procedure_runtime,
         )

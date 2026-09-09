@@ -2642,6 +2642,8 @@ seq 19「更正一下：校对脚本我现在统一用 Python 3.13，不是 3.12
   未消除。读类没有写类那样的调用时闸门（react barrier + TaskExecutionEnvelope +
   EffectGate），直接放开等于无工作区根读任意路径；`workspace_prepare` 隐式/自动激活也
   被否掉（它只 `mkdir`，治不了本事故，且会绕开 describe→activate 的三段哈希链）。
+  **F-Z1 已于 2026-09-09 关闭，见下一节**（补的正是那道缺失的读类调用时闸门；
+  上面「文件工具从下一个 Run 起可激活」的指引口径也随之作废）。
 - 决定性测试：`backend/tests/sdk_adapters/test_unscoped_guidance_incident_z.py`（7 例）、
   `backend/tests/execution/test_context_budget_wrap_up.py`（5 例）；
   `test_current_tool_pages.py` / `test_current_tool_megabyte.py` 的 4096 档由
@@ -2678,6 +2680,62 @@ seq 19「更正一下：校对脚本我现在统一用 Python 3.13，不是 3.12
 - **已知未做**：SDK 侧 `ToolRegistry` 自身的回收（X-F1）、原生旅程定量复测（X-F2）、
   分页缓存改字节预算（X-F3）、`main.py` 的 `_sdk_unavailable_tool_authority_runs`（X-F4）、
   打开 agent memory 后的同样测量（X-F5）。
+
+### 2026-09-09（F-Z1）：读类文件工具的调用时工作区闸门 `WorkspaceReadGate`
+
+事件 Z 留下的「能写不能读」不对称已关闭。先确认契约再动代码：读类是 `requires_project`，
+理由是**读必须收在 S4 绑定的工作区根内**（canonical path + POSIX inode 身份，
+`verify_effect_authority` 每次现场重验），不是「读比写更私密」；写类之所以敢在未绑定 Run
+里暴露，唯一理由是**每次调用还有闸门**（SDK react barrier → Host `TaskExecutionEnvelope`
+权威 → `EffectGate`）。读类缺的就是这道闸门，所以修法是先补闸门、再开投影。
+
+- **新增 `backend/deskpet/sdk_adapters/read_gate.py`**：`WorkspaceReadGate`，与 `EffectGate`
+  同构（二元裁决、只返回 `ToolResult.rejected`、永不抛异常、拒绝时 `effect=None`、
+  同一条 step-0 重放纪律）。**适用面只有** `isinstance(task_work_context, PrimaryRunWorkContext)`
+  的 Run 的读类四件套——即 `ProductForegroundToolPort.freeze` 里 `task_scope_id is None`
+  产生的那一类。legacy / `project_bound` / 起始已绑定的 Run 原路通过，**写侧闸门一字未改**。
+- **判据**：本 Run 最近一次绑定任务的 durable 路由决定（v45 `context_route_decisions`，
+  `task_only=True`，与 `task_scope_update` handler 闸门同源）→ 该决定的 `ContextRouteReceipt`
+  → `verify_route_binding` 取**该路由提交的精确 binding revision**（不读 live head）→
+  `verify_effect_authority` 取**恰好一个**已验证根（零/多根不隐式选）→ 每个 `path` 参数
+  resolve（含符号链接、`~`、相对路径按根解析）后必须在根内，`glob`/`grep` 的 pattern 含
+  `..` 段即拒（`Path(root).rglob('../*')` 实测会走出根）。
+  standalone 路由（`direct_standalone`/`memory_standalone`）的决定行 `task_scope_id IS NULL`，
+  第一步即 fail closed → **读照样拒**，与 PROJECT_EFFECT 同口径。
+- **稳定原因码**：`read_requires_bound_workspace`（未路由；文案点名 `context_route` 的
+  `continue_active`/`resume_existing`/`create_new`，并说明**本 Run 内**再调一次即可）、
+  `read_workspace_root_unavailable`（有任务路由但根不可验证；文案是「停手并告知用户」，
+  不是「再路由一次」）、`path_outside_workspace_root`。
+- **投影**：`tool_authority.PROJECT_READ_TOOL_NAMES = ("read_file","glob","grep","list_directory")`
+  与 `PROJECT_EFFECT_TOOL_NAMES` 并入 `_PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES`，
+  `filter_sdk_catalog_for_workspace` 的 projectless 豁免与 `prepare_run` 的
+  `projectless_catalog_contains_project_tool` 守卫同读这一个集合。
+  **冻结身份语义不变**：读类保持 SDK 默认执行策略，`_FrozenCapabilitySpec` /
+  `capability_hash` / `scope_hash` / describe→activate 三段哈希链与记录版本全部未动。
+  `file_read`/`file_glob`/`file_grep`/`doc_read` 仍是 `requires_project`、仍被裁。
+- **分发期**：放行的调用由 `execution_scope` 把已验证根写进 contextvar，
+  `effect_gate.project_tool_execution_context` 在没有 PROJECT_EFFECT 投影时改走它，
+  于是 `ToolExecutionContext.workspace`/`.write_scope_root` 等于绑定根——相对路径与不带
+  `path` 的 `glob`/`grep` 落在根内而不是后端 cwd，handler 自己那道
+  `agent.write_scope.write_scope_check` 成为纵深防御第二层。未经 `verify` 放行的调用进
+  `execution_scope` 直接 `workspace_read_root_unverified`，绝不凭空造根。
+- **回执**：每次裁决（放行/拒绝都记）写一行 `host_pre_admission_audit`，
+  `reason_code="workspace_read.<tool>.<code>"` + 参数 canonical hash，**无路径无内容**；
+  `payload_kind` 复用 `context_route` 靠前缀命名空间隔离（新 `payload_kind` 需 CHECK 重建迁移，
+  本轮不取），读取用 `workspace_read_audit_rows()`。审计写失败只记 warning，不改变裁决。
+- **事件 Z 文案改口**：`_UNSCOPED_UNROUTED_ACTION` / `_UNSCOPED_ALTERNATIVES_ACTION`
+  不再说「文件工具从下一个 Run 起可激活」，改为「先 `context_route`，然后用本 Run 已暴露的
+  工作区文件工具——它们按调用逐次把关，路由一提交就在这同一个 Run 里工作」。该分支现在只对
+  投影里真的没有的能力触发。
+- **装配**：`ProductEffectExecutor` 新增 `read_gate` 口（位于 EffectGate 之后、
+  `assert_workspace_current` 之前）；`main.py` 与 EffectGate 同处构造，缺件即启动失败。
+- 决定性测试：`backend/tests/sdk_adapters/test_read_tool_call_gate_f_z1.py`（15 例，真
+  v45 state.db + 真 Manual binding 授权链 + 真 route ledger）；
+  `test_unscoped_guidance_incident_z.py` 由 7 例改写为 9 例（契约变更）。
+  回归：`tests/sdk_adapters`（排除 `test_composition.py`）58 failed / 735 passed，
+  FAILED 集合与 `main@b76a7bd9` 逐行相同、通过数 +17；`tests/execution` 39 failed /
+  269 passed / 10 errors，比 main 少两条红（方向为由红转绿），无新增红。
+  详见 [DECISION-F-Z1-READ-TOOL-CALL-GATE](../plans/2026-09-08-hm-to-a6/DECISION-F-Z1-READ-TOOL-CALL-GATE.md)。
 
 ## 历史阶段索引
 

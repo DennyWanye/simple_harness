@@ -450,6 +450,26 @@ class EffectGatePort(Protocol):
     ) -> ToolResult | None: ...
 
 
+class WorkspaceReadGatePort(Protocol):
+    """Call-time workspace admission for the read-class file Tools (F-Z1).
+
+    Implemented by ``deskpet.sdk_adapters.read_gate.WorkspaceReadGate``.  Like
+    the EffectGate it is binary: ``None`` admits, a ``ToolResult.rejected``
+    names one stable reason.  It only ever answers for a Run whose projection
+    exposed the read Tools through the ``primary_route_capable`` exemption;
+    every other Run is passed through untouched.
+    """
+
+    async def verify(
+        self,
+        context: ToolContext,
+        tool_name: str,
+        *,
+        call_id: CallId | None = None,
+        arguments: Mapping[str, Any] | None = None,
+    ) -> ToolResult | None: ...
+
+
 class ProductEffectExecutor(EffectExecutor):
     """Bind SDK validation and dispatch to the immutable Run authority."""
 
@@ -459,6 +479,7 @@ class ProductEffectExecutor(EffectExecutor):
         registry: ProductToolsAdapter,
         foreground_admission: ForegroundEffectAdmissionPort | None = None,
         effect_gate: EffectGatePort | None = None,
+        read_gate: WorkspaceReadGatePort | None = None,
         evidence_ingress: Any | None = None,
         procedure_runtime: Any | None = None,
         **kwargs: Any,
@@ -466,6 +487,9 @@ class ProductEffectExecutor(EffectExecutor):
         super().__init__(registry=registry, **kwargs)
         self._foreground_admission = foreground_admission
         self._effect_gate = effect_gate
+        # F-Z1: read-class file Tools exposed in a route-capable projectless
+        # Run are admitted per call, never per Run.
+        self._read_gate = read_gate
         # S5b Task 2: Harness evidence reservation before the physical
         # dispatch, objective event + evidence row + tool_invocation import in
         # one state.db transaction after the SDK settled the effect.
@@ -603,6 +627,31 @@ class ProductEffectExecutor(EffectExecutor):
                     },
                 )
                 return EffectExecution(effect=None, result=rejection)
+        if self._read_gate is not None and gated:
+            # F-Z1 read gate.  Same shape and same step-0 discipline as the
+            # EffectGate: only a first occurrence is verified, a rejection is
+            # the SDK authorization-deny shape (effect=None) so no
+            # ``execution_effects`` row and no Host event is produced, and the
+            # model sees one stable reason code with its executable next step.
+            call = kwargs.get("call")
+            if not isinstance(call, ToolCall):
+                raise TypeError("ProductEffectExecutor requires ToolCall")
+            read_rejection = await self._read_gate.verify(
+                context,
+                call.name,
+                call_id=call.call_id,
+                arguments=dict(thaw_json(call.arguments)),
+            )
+            if read_rejection is not None:
+                logger.warning(
+                    "tool.denied",
+                    extra={
+                        "tool": call.name,
+                        "reason": read_rejection.error_code or "read_gate_rejected",
+                        "path": "workspace_read_gate",
+                    },
+                )
+                return EffectExecution(effect=None, result=read_rejection)
         self._registry.assert_workspace_current(context.run_id)
         origin = None
         if self._foreground_admission is not None:
@@ -649,10 +698,24 @@ class ProductEffectExecutor(EffectExecutor):
         token = _validation_run_id.set(context.run_id.value)
         origin_token = _foreground_invocation_origin.set(origin)
         try:
-            from contextlib import nullcontext
+            from contextlib import AsyncExitStack, nullcontext
             binding_scope = getattr(self._effect_gate, "execution_scope", None)
             scope = binding_scope(context, kwargs["call"].name) if gated and callable(binding_scope) else nullcontext()
-            async with scope:
+            read_scope = getattr(self._read_gate, "execution_scope", None)
+            async with AsyncExitStack() as stack:
+                await stack.enter_async_context(scope)
+                if gated and callable(read_scope):
+                    # The verified read root is projected into the execution
+                    # context for this dispatch only, so a relative path and a
+                    # ``path``-less glob/grep resolve against the bound root
+                    # instead of the backend process cwd.
+                    await stack.enter_async_context(
+                        read_scope(
+                            context,
+                            kwargs["call"].name,
+                            call_id=kwargs["call"].call_id,
+                        )
+                    )
                 # A foreground/binding rejection must not consume a Procedure
                 # step. Recheck and reserve only inside the final execution
                 # scope, after the existing admission/evidence gates.
@@ -1172,7 +1235,9 @@ def filter_sdk_catalog_for_workspace(
     authority reconstruction.
     """
 
-    from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
+    from deskpet.sdk_adapters.tool_authority import (
+        _PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES,
+    )
 
     kind = str(workspace_resolution_kind).strip()
     if kind == "legacy":
@@ -1217,13 +1282,24 @@ def filter_sdk_catalog_for_workspace(
         raise RuntimeError("workspace_unavailable")
     if kind != "projectless":
         raise ValueError("unsupported workspace resolution kind")
+    # A ``primary_route_capable`` Run is one that was frozen before the model
+    # routed (``task_scope_id is None`` at Run start) and can still bind a task
+    # from inside the Run.  Both exemptions below expose a Tool whose *call* is
+    # gated afterwards, never a Tool that could act unbound:
+    #   * PROJECT_EFFECT names — SDK react barrier + TaskExecutionEnvelope +
+    #     EffectGate (design-freeze §1/§4);
+    #   * F-Z1 read names — ``WorkspaceReadGate`` (durable route decision +
+    #     verified binding root + path containment) at call time.
+    # Without the second line a Run could write and shell out but never read a
+    # workspace file (incident Z), which is the asymmetry F-Z1 closes.
+    exempt = _PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES
     selected_inventory = tuple(
         replace(
             item,
             availability_reason=(
                 item.availability_reason
                 if (item.projectless_admission == "safe"
-                    or (primary_route_capable and item.name in PROJECT_EFFECT_TOOL_NAMES))
+                    or (primary_route_capable and item.name in exempt))
                 else item.availability_reason or "workspace_unscoped"
             ),
         )

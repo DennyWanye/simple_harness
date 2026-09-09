@@ -103,7 +103,13 @@ def project_tool_execution_context(base, context=None):
     """Apply only the exact verified effect root, for this dispatch lifetime."""
     projection = _primary_effect_root.get()
     if projection is None:
-        return base
+        # F-Z1: the same discipline for an admitted read — the WorkspaceReadGate
+        # verified a durable task route and its binding root for THIS call, so
+        # the read runs inside that root and nothing else.  The two projections
+        # are mutually exclusive (a Tool is either PROJECT_EFFECT or read-class).
+        from deskpet.sdk_adapters.read_gate import project_read_execution_context
+
+        return project_read_execution_context(base)
     envelope, root = projection
     if (base.run_id != envelope.run_id.value or base.effect_id != envelope.effect_id.value
             or base.call_id != envelope.call_id.value):
