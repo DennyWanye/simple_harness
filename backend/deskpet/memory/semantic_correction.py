@@ -754,9 +754,12 @@ class SemanticCorrectionAuthority:
             if len(matches) != 1 or operation.memory_type.value != 'semantic':
                 raise ValueError('analysis_action_target_not_issued')
             candidate = matches[0]
-            slot = (candidate['payload']['subject_entity'], candidate['payload']['predicate'])
-            if sum((c['payload']['subject_entity'], c['payload']['predicate']) == slot for c in snapshot['candidates']) != 1:
-                raise ValueError('analysis_action_target_ambiguous')
+            # Event AJ: the unique-target test is the intent count below, not a predicate
+            # count.  A predicate is a free-form string the model minted when the memory was
+            # written; two unrelated facts sharing one is a naming collision, not an
+            # ambiguous correction, and the Host's own grammar (old-value template /
+            # discriminating anchor) has already picked exactly one candidate for this
+            # sentence.  Rejecting here left HM-TO-A6 attempt 12's memory at revision 1.
             if (tuple(operation.payload.qualifiers) != tuple(candidate['payload'].get('qualifiers', ()))
                 or operation.proposed_privacy_class.value != candidate['privacy_class']
                 or tuple(a.value for a in operation.proposed_information_attributes) != tuple(candidate['information_attributes'])):

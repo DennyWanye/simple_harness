@@ -1336,6 +1336,51 @@ fail closed。
 
 最后更新：2026-09-08（HM-TO-A6 typed recall 超时 Host 侧）。`wemm_embedder.py` 新增真正的 `embed_batch`：按「最长×条数 ≤ 1024 字符、条数 ≤ 32」分组、按长度升序装箱、结果回填输入位置；实测（mps，两路径均预热）6 条短 chunk 322ms vs 串行 1430ms（0.22），长 chunk 独占调用故不劣于串行（现场 6 条 0.93、短三条 0.82），真模型批量/逐条 cos ≥ 0.99988。`short_index_worker.py` 拆出 `maintenance_timeout=60s`（`operation_timeout` 仍 5s 只管扫描/注册），维护重建失败按 60→120→…→600s 指数退避、成功/换 manager 清零、跳过的 tick payload-free 审计；常量由一致性用例绑定生产装配值（实测 projection 600ms + 世代 embed 45690ms ≤ 60s，退避基数 ≥ 超时 → 写锁占空比 ≤ 50%）。`human_memory_v7.py` 前台 `RecallBudget` deadline 1000→2000ms（协议上限，S3 契约 `deadline_ms=1..2000` / hard deadline 2s）。短时域 chunk `public_text` 的长度上限**不在 Host**（Harness 派生 `public_text_hash` 绑定 + SDK 自己拼 chunk），记为需新增的 SDK 契约条款；`context_route.py` 的重试收口另有属主。控制：新增 `test_wemm_embed_batch.py` / `test_short_index_backoff.py` / `test_recall_budget_deadline.py`；`test_short_index_worker.py` 等短索引既有红（fixture 无生产 embedder）不变。[裁决](../plans/2026-09-08-hm-to-a6/DECISION-RECALL-TIMEOUT-HOST-SIDE.md)。
 
+最后更新：2026-09-09（HM-TO-A6 事件 AJ：同 predicate 的两条记忆不是「歧义的更正」，CONTEST 不必重打 qualifiers）。
+第 12 次原生跑 T20/T21 两个 batch **每一条 operation 都被 Host 拒收**，A6-7/A6-8 判 INCONCLUSIVE：
+`native.log` 2521 行 `('revise_py313','analysis_correction_candidate_ambiguous',{})`、
+2580 行 `('contest-8a24131c','analysis_contest_slot_mismatch',{'reason':'qualifiers'})`，
+两个 batch 的 `analysis_batches.state='applied'` + `reason_codes=["analysis_validator_accepted"]`
+**不矛盾**——验证器接受的是逐条准入之后的结果，而结果是 0 条 operation
+（`structured_result.closure_reason='analysis_all_operations_rejected'`）。
+**与事件 AE 无关**：`analysis_proposal_v8._compile_validated_proposal` 只对 `memory_type=='prospective'`
+调 `prospective_grounding`，semantic 的 create/revise/contest 一条都不过它（用例钉住调用次数为 0）；
+也**不是 v10 提示词把模型带偏**：逐字重放第 12 次 attempt-input，v9 与 v10 各 6 样本
+**6/6 都提 `revise_semantic`、6/6 引对 `candidate_key`、6/6 的 qualifiers 与候选逐字一致**。
+根因是更正切片里两条与协议版本无关的 Host 准入规则：
+①`analysis_proposal.py` 在确认「本句唯一一条带 `correction_intent` 的候选」之后，**又**按
+`(subject_entity, predicate)` 数了一遍候选（`semantic_correction.authorize_plan` 有同样一条
+`analysis_action_target_ambiguous`）。这是只有模板语法年代的代理判据；cue-anchor/v1 把判别依据换成了**旧值**
+（`_discriminating_anchor` 只接受「本句引到、其他候选的值里都不含」的 token，模板语法把 `old` 逐字嵌进正则），
+唯一性早已由 intent 计数钉死。而 predicate 是模型自由取的字符串、Host 没有注册表：第 12 次 T1「统一用
+Python 3.12 跑脚本」与 T2「校对结果一律存到…这个目录」两件无关的事都落进了 `user:self ·
+workflow_environment_preference`（候选快照 `analysis-candidates-f18430f5…`：只有第一条带
+`correction_intent`，`anchor=Python`，第二条为 `null`），于是一次**已经唯一定位**的更正被判成歧义，
+`cognitive-memory-4e4b8346…` 停在 revision 1、`cognitive_conflict_groups` 0 行；第 11 次没踩中只是因为
+那次四个候选的 predicate 各不相同（运气，不是保护）。
+②`analysis_proposal_v7._compile_contest` 要求模型把 `qualifiers` 逐字重打一遍，可组装 payload 时用的是
+`tuple(old.get("qualifiers", ()))`——**模型给什么都不会被写进去**，SDK 那侧还会再把 CONTEST 槽位钉死一遍；
+第 12 次的 `doing 资料校对` 没被原样重打，一条合法的含糊冲突就整条丢了。
+**修复口径「槽位归 Host，替换值归模型」**：删掉两处按 predicate 的计数（目标唯一性仍由 intent 计数负责，
+拒收码 `analysis_correction_candidate_ambiguous` / `analysis_action_target_ambiguous` 保留）；
+revise 与 contest 在模型**不给** qualifiers 时继承在位那条，给了且**非空又不同**时仍然拒
+（`analysis_correction_qualifiers_mismatch` / `analysis_contest_slot_mismatch{reason:qualifiers}`）。
+`authorize_plan` 与 `_verify_contest` 里逐字相等的 qualifiers 校验**一个字没改**，纵深防御原样生效。
+**就地改而不是发 v11 编译器分支**：不碰线格式/schema/提示词（提示体才进 `bind_attempt` 哈希），
+`SemanticCorrectionAuthority` 本来就没有协议版本维度（`ISSUER=host:semantic-correction/v2` 对 v3..v10 同一套），
+只改编译器权威车道照样拒；更正切片历来就地演进（`d0cce501` 给 v3..v8 一起加 `revise_semantic`，
+cue-anchor/v1 就地替掉别名表）；两条都是严格放宽且不可能写出不同 payload。**本轮不发 v11 提示词**：
+复算证明 v9/v10 逐样本同形，发 v11 只会作废 AE §5 的复算。
+真实模型复算（`deepseek-v4-flash`，新增 `scripts/native/a6_replay_t20.py`，`--recompile` 让**同一批样本**
+分别过修复前/后的编译器，无采样噪声）：**T20 v9 0/6 → 6/6、v10 0/6 → 6/6**；
+T21 两臂各 18 样本，模型只有 v9 3/18、v10 4/18 会提 contest，提了就一次不落把 qualifiers 打对，
+所以该批**测不出**修复前后差别（与 AE 同类：低频采样事件，真正关闭它的是准入规则本身）；
+flash 在这句上的 contest 提案率 ~20% 且两臂相当，记为 **F-AJ-1**（A6-8 的独立风险，本轮不动提示词）；
+撞槽记忆并存本身记为 **F-AJ-2**。控制：新增 `tests/memory/test_semantic_correction_slot_collision.py`
+10 项（修复前 7 failed / 3 passed），`test_analysis_proposal_v10/v9/v8.py` + 两个 semantic_correction 文件 +
+`test_analysis_v9_named_workflow_relation.py` 150 passed，v5/v6/v7 与 relation/contested/guard/trigger 共
+11 文件 69 passed。[裁决](../plans/2026-09-08-hm-to-a6/DECISION-AJ-V10-CORRECTION-REGRESSION.md)。
+
 最后更新：2026-09-09（HM-TO-A6 事件 AE：分析协议 v10，Prospective 的时间触发必须由引文接地）。
 分析车道当前协议为 `host-analysis-prompt/v10` / `memory-analysis-proposal/v10` / `host-analysis-policy/v10` /
 `host-analysis-validator/v6`（`analysis_proposal_v10.py`，`analysis_protocol.protocol_for_request` 仍解析
