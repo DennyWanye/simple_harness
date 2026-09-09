@@ -50,4 +50,21 @@
 - plan 挑战：primary 1 轮（12 findings，2 P0）→ synthesis → closure 2 轮 → specialist 1 个（residual-surface）→ CONVERGED；记账文件 `challenge-round-{1-primary,2-closure,3-closure}.json`、`challenge-round-1-synthesis.md`、`specialist-residual-surface.json`。required specialist 中三个以 closure 的真实命令输出替代，未取得用户 waiver 批准，如实记录。
 - 完成度审计：`audit-full.json`（Opus 5，MODE full-audit）**PASS，8/8**；P2 findings：文档笔误三处（已改）、restart note 为空（记入 Slice 2 驱动改进）、`problem_pipeline` 配置空转（范围外，见遗留）。
 
-VERDICT: PENDING（待完成度审计与提交后填写）
+## 7. DoD 清单（phase-final）
+
+- [x] 主要矛盾对应的决定性 AC 实测达成 —— §1 里程碑 + 兑现表 AC-1/AC-2；审计 `audit-full.json` 8/8 PASS
+- [x] 整体可用性实测通过 —— 启动→记忆→建任务→写文件→记流程→收口→重启→召回→打开任务→总结整机走通（审计「整体可用性」节）
+- [x] 全部必须 AC 有测试证据 —— §2 兑现表无 ❌、无未批准降级
+- [x] 执行期 plan 层回炉已闭环 —— 无 A2 事件（`a2-events.md` 不存在 = 零事件）
+- [x] 工作树干净且已提交 —— 代码提交 `b4a7a00c`，`git status --porcelain` 为空
+- [x] 干净态复验 —— 不适用（单会话集中兵力，无 worktree/多代理实现）
+- [x] 分级冒烟通过 —— §3
+- [x] 无回归 —— 八文件门失败集合与 baseline 两条既有红逐条相同
+- [x] 幂等性审查 —— §5 末条
+- [x] 可追溯矩阵无断点 —— 审计逐条核对表
+- [x] testcase 已存盘、index 已同步 —— `testcase/2026-09-09-remove-workflow-line/TC-RW-01-slice1.md`、`testcase/index.md`；回归套件新增 `tests/test_turn_preparer_static_helpers.py`
+- [x] journal 终态行 —— 见文末
+- [x] code review 已执行 —— §4（A4）；本次不推送远程，push 前硬门不适用
+- [x] retro.md 已写 —— `retro.md`
+
+VERDICT: SHIPPED — Slice 1（模型面 workflow_spawn 与死壳删除；冻结清单 77→76 重签；主流程 10 轮冒烟 + 重启 + 旧 userdata 段）— 2026-09-10 — b4a7a00c
