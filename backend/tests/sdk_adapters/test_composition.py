@@ -200,9 +200,12 @@ async def test_start_reconcile_recover_query_close_and_schema_independence(
     assert loads == 2
 
     with sqlite3.connect(paths.execution_database) as connection:
+        # A fresh library carries the pinned SDK's fresh descriptor (v10 since 0.8.0).
+        from simple_harness.execution.sqlite import schema as sdk_schema
+
         assert connection.execute(
             "SELECT max(version) FROM sdk_schema_migrations"
-        ).fetchone()[0] == 7
+        ).fetchone()[0] == sdk_schema.fresh_descriptor().version
         tables = {
             row[0]
             for row in connection.execute(
@@ -954,3 +957,51 @@ def _restore_slots(context, snapshot) -> None:  # type: ignore[no-untyped-def]
 
 
 # 2026-09-10 removed with the Memory SDK: test_product_sdk_runtime_stack_builds_on_real_startup_order
+
+
+@pytest.mark.asyncio
+async def test_start_upgrades_a_pre_audit_v7_execution_library_to_v10(
+    tmp_path: Path,
+) -> None:
+    """2026-09-10 Host integration: the live execution file is a v7 library written before
+    the SDK's explicit audit schema.  Startup must upgrade it 7 -> 9 -> 10 with retained
+    backups, and a second start must replay both receipts without touching the file."""
+
+    from simple_harness.execution.sqlite import schema as sdk_schema
+    from simple_harness.execution.sqlite.context_use_migration import _DESCRIPTOR_SQL
+
+    paths = ProductRuntimePathsAdapter(tmp_path / "user-data")
+    execution = paths.execution_database
+    descriptor = sdk_schema.legacy_v7_descriptor()
+    connection = sqlite3.connect(execution)
+    connection.executescript(_DESCRIPTOR_SQL + ";" + descriptor.sql)
+    connection.execute(
+        "INSERT INTO sdk_schema_migrations(version,name,checksum) VALUES(?,?,?)",
+        (descriptor.version, descriptor.name, descriptor.checksum),
+    )
+    connection.commit()
+    connection.close()
+
+    stack = ProductSdkRuntimeStack(
+        paths=paths, candidate_identity=IDENTITY, dependency_loader=_inputs
+    )
+    await stack.start()
+    nine, ten = stack.schema_upgrade_receipt, stack.schema10_upgrade_receipt
+    assert nine is not None and nine.from_version == 7
+    assert ten is not None and ten.from_version == 9
+    backup9 = execution.with_name(execution.name + ".pre-schema-9.backup")
+    backup10 = execution.with_name(execution.name + ".pre-schema-10.backup")
+    assert backup9.is_file() and backup10.is_file()
+    await stack.close()
+    versions = [
+        row[0]
+        for row in sqlite3.connect(execution).execute(
+            "SELECT version FROM sdk_schema_migrations ORDER BY version"
+        )
+    ]
+    assert versions == [7, 9, 10]
+    digest_before = hashlib.sha256(execution.read_bytes()).hexdigest()
+    await stack.start()
+    assert (stack.schema_upgrade_receipt, stack.schema10_upgrade_receipt) == (nine, ten)
+    await stack.close()
+    assert hashlib.sha256(execution.read_bytes()).hexdigest() == digest_before

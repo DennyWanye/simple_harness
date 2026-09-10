@@ -361,15 +361,22 @@ class ProductSdkRuntimeStack:
                 verify_sdk_candidate(self._candidate_identity)
                 # Official schema9 migration before any execution handle opens.
                 # The retained same-directory backup is never overwritten.
-                from simple_harness import migrate_execution_to_v9
+                from simple_harness import migrate_execution_to_v9, migrate_execution_to_v10
                 execution_path = self._paths.execution_database
                 if execution_path.exists():
                     self.schema_upgrade_receipt = migrate_execution_to_v9(
                         execution_path,
                         backup_path=execution_path.with_name(execution_path.name + ".pre-schema-9.backup"),
                     )
+                    # 2026-09-10: BaseAgent tables (schema 10) — explicit, backup-first,
+                    # replay-safe; a fresh v10 library returns None.
+                    self.schema10_upgrade_receipt = migrate_execution_to_v10(
+                        execution_path,
+                        backup_path=execution_path.with_name(execution_path.name + ".pre-schema-10.backup"),
+                    )
                 else:
                     self.schema_upgrade_receipt = None
+                    self.schema10_upgrade_receipt = None
                 dependencies = await self._load_dependencies()
                 owned_resources = dependencies.owned_resources
                 if dependencies.runtime_factory is not None:

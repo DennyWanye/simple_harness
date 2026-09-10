@@ -1,0 +1,12 @@
+{
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.8.0",
+  "commit": "dffd13c829d42ac3df213ac0c490f3d5834a8b2b",
+  "artifacts": {
+    "simple_harness_sdk-0.8.0-py3-none-any.whl": "f1f1a46925b63539ede574c366a5688006aa60b679d0e7cb873dcbcac0c22d67"
+  },
+  "build_count": 1,
+  "execution_schema": 10,
+  "source_date_epoch": "1789050129",
+  "scope": "BaseAgent phase 1 (slices 1-5): durable Agents, bounded Context, session recall, v10 schema with explicit v9->v10 upgrade"
+}
