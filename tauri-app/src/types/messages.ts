@@ -598,55 +598,17 @@ export interface HarnessInspectorDetailsResponse {
   projection_complete?: boolean;
 }
 
-// --- S14 memory management (control channel) ---
+// --- S14 memory management：2026-09-10 随认知记忆 SDK 一并移除 ---
+// （memory_list / memory_delete / memory_thumbs_up / memory_clear / memory_export，
+//  以及 P4-S11 的 memory_search / memory_l1_* 与 WI-S2.1b 的 facts / forget / undo）
 
-export interface StoredTurn {
-  id: number;
-  session_id: string;
-  role: "user" | "assistant";
-  content: string;
-  created_at: number;
-}
 
-export interface SessionSummary {
-  session_id: string;
-  turn_count: number;
-  last_message_at: number;
-}
 
-export interface MemoryListResponse {
-  type: "memory_list_response";
-  payload: {
-    scope: "session" | "all";
-    session_id: string | null;
-    turns: StoredTurn[];
-  };
-}
 
-export interface MemoryDeleteAck {
-  type: "memory_delete_ack";
-  payload: { id: number; deleted: boolean };
-}
 
 // 记忆系统升级 WI-M1.1：评估反馈回路。点 👍/👎 后端落 memory_user_feedback。
-export interface MemoryThumbsUpResponse {
-  type: "memory_thumbs_up_response";
-  payload: { ok: boolean; feedback_id?: number; reason?: string };
-}
 
-export interface MemoryClearAck {
-  type: "memory_clear_ack";
-  payload: { scope: "session" | "all"; session_id?: string; removed?: number };
-}
 
-export interface MemoryExportResponse {
-  type: "memory_export_response";
-  payload: {
-    exported_at: number;
-    sessions: SessionSummary[];
-    turns: StoredTurn[];
-  };
-}
 
 // --- P2-1-S3 settings / provider test ----------------------------------------
 
@@ -830,98 +792,19 @@ export interface DecisionsListResponse {
   };
 }
 
-export interface MemoryHit {
-  text: string;
-  score: number;
-  source?: string;
-  created_at?: string | number | null;
-  session_id?: string | null;
-}
 
-export interface MemorySearchResponse {
-  type: "memory_search_response";
-  payload: {
-    query: string;
-    hits: MemoryHit[];
-    reason?: string;
-    error?: string;
-  };
-}
 
-export type L1Target = "memory" | "user";
 
-export interface L1Entry {
-  index: number;
-  text: string;
-  salience: number;
-}
 
-export interface MemoryL1ListResponse {
-  type: "memory_l1_list_response";
-  payload: {
-    target: L1Target;
-    entries: L1Entry[];
-    reason?: string;
-  };
-}
-
-export interface MemoryL1DeleteAck {
-  type: "memory_l1_delete_ack";
-  payload: {
-    target: L1Target;
-    index: number;
-    deleted: boolean;
-    reason?: string;
-  };
-}
 
 // --- WI-S2.1b: facts view（事实 tab） + 🗑 + 5s undo --------------------
 //
 // 后端 ws 路由 `memory_facts_list` / `memory_forget` / `memory_forget_undo`
 // 由 backend/p4_ipc.py 实现。embedding 列在后端已剥离（JSON 不接 bytes），
 // 因此 FactItem 不含 embedding 字段。
-export interface FactItem {
-  id: number;
-  category: string;
-  subject: string;
-  key: string;
-  value: string;
-  confidence: number;
-  source_msg_id: number | null;
-  created_at: number;
-  updated_at: number;
-  evidence: string | null;
-  is_active: number;
-  decay_rate: number;
-  last_recalled: number | null;
-  superseded_by?: number | null;
-  forgotten_at?: number | null;
-}
 
-export interface MemoryFactsListResponse {
-  type: "memory_facts_list_response";
-  payload: { facts: FactItem[]; reason?: string };
-}
 
-export interface MemoryForgetResponse {
-  type: "memory_forget_response";
-  payload: {
-    status: "ok" | "error" | "skipped" | "not_found";
-    op_id?: string;
-    forgotten_ids?: number[];
-    reason?: string;
-    candidates?: number[];
-  };
-}
 
-export interface MemoryForgetUndoResponse {
-  type: "memory_forget_undo_response";
-  payload: {
-    status: "ok" | "expired" | "error";
-    restored_ids: number[];
-    reason?: string;
-  };
-}
 
 // --- P4-S16 Embedder status (SettingsPanel BGE-M3 卡片) ---------------------
 //
@@ -929,21 +812,6 @@ export interface MemoryForgetUndoResponse {
 // backend/p4_ipc.py::_handle_embedder_status；service_context._p4_embedder
 // 缺失或抛错会带 reason 回传，UI 据此渲染降级状态。
 
-export interface EmbedderStatusResponse {
-  type: "embedder_status_response";
-  payload: {
-    /** 模型是否已加载可用；查询状态不会触发加载。 */
-    is_ready: boolean;
-    state?: "cold" | "loading" | "ready" | "failed";
-    model_name?: string;
-    /** True = 当前走 mock 路径（语义搜索能力受限）。 */
-    is_mock: boolean;
-    /** Embedder 期望的模型路径（绝对路径，已脱敏不含密码）。 */
-    model_path: string;
-    /** 仅在异常态出现："embedder_not_registered" / "embedder_error: ..." */
-    reason?: string;
-  };
-}
 
 // --- Option A (2026-06-05) 首启模型下载进度 ------------------------------
 //
@@ -1415,24 +1283,12 @@ export type IncomingMessage =
   | PongMessage
   | ErrorMessage
   | LipSyncMessage
-  | MemoryListResponse
-  | MemoryDeleteAck
-  | MemoryThumbsUpResponse
-  | MemoryClearAck
-  | MemoryExportResponse
   | ProviderTestConnectionResult
   | BudgetStatusMessage
   | ChatTurnTimeoutResponse
   | PermissionAutoModeResponse
   | SkillsListResponse
   | DecisionsListResponse
-  | MemorySearchResponse
-  | MemoryL1ListResponse
-  | MemoryL1DeleteAck
-  | MemoryFactsListResponse
-  | MemoryForgetResponse
-  | MemoryForgetUndoResponse
-  | EmbedderStatusResponse
   | ModelProvisionStatusResponse
   | ModelContextGetResponse
   | ModelContextSetAck

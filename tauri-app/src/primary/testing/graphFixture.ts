@@ -1,15 +1,12 @@
-/** Protocol unit-test values only. Real SDK/store/API fixture is generated separately. */
-import type { MemoryGraphView } from "../graphRequests";
+/** Protocol unit-test values only. Real SDK/store/API fixture is generated separately.
+ *
+ * 2026-09-10：认知记忆关系图夹具（`graph`）随 simple-harness-memory-sdk 移除；
+ * 本文件只剩通用的 PrimaryPort 线缆桩 `wire()` 与 `flush()`，仍被 task scope /
+ * chat view 的协议单测使用。
+ */
 import type { PrimaryPort } from "../controller";
 import type { PrimaryWireRequest } from "../requests";
-export const graph: MemoryGraphView = {
-  primary_ref: "p", view_ref: "view", generated_at: 1, source_payload_hash: "a".repeat(64),
-  nodes: [{ node_id: "n", memory_id: "memory", revision: 1, memory_type: "semantic", label: "秋天偏好", tooltip: "",
-    status: "active", lifecycle_state: "active", epistemic_status: "explicit_user", conflict_status: "uncontested",
-    verification_state: "source_bound", confidence: 0.8, confidence_basis: [], content_hash: "b".repeat(64),
-    source_node_hash: "c".repeat(64), source_refs: [], source_refs_truncated: false, can_correct: true, can_forget: true }],
-  edges: [], truncated: { nodes: false, edges: false },
-};
+
 export function wire() {
   const listeners = new Set<(v: unknown) => void>(), states = new Set<(s: "connected" | "disconnected") => void>();
   const sent: PrimaryWireRequest[] = [];

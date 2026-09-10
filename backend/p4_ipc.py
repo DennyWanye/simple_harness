@@ -39,8 +39,6 @@ P4_IPC_MESSAGE_TYPES = frozenset(
     {
         "skills_list",
         "decisions_list",
-        # P4-S16: SettingsPanel "BGE-M3 状态" 卡片探针。
-        "embedder_status",
         # Phase 1.1.6（context-1m-rearch）: SettingsPanel「模型上下文」卡片。
         "model_context_get",
         "model_context_set",
@@ -72,8 +70,6 @@ async def handle(
             await _handle_skills_list(ws, payload, service_context)
         elif msg_type == "decisions_list":
             await _handle_decisions_list(ws, session_id, payload, service_context)
-        elif msg_type == "embedder_status":
-            await _handle_embedder_status(ws, payload, service_context)
         elif msg_type == "model_provision_status":
             await _handle_model_provision_status(ws, payload, service_context)
         elif msg_type == "model_context_get":
@@ -177,85 +173,9 @@ async def _handle_decisions_list(
 # （memory_l1_list / memory_l1_delete）随认知记忆 SDK 一并移除。
 
 
-async def _handle_embedder_status(
-    ws: Any, payload: dict[str, Any], sc: Any
-) -> None:
-    """P4-S16: 查询当前 Embedder 状态供 SettingsPanel 渲染。
-
-    返回 ``{is_ready, is_mock, model_path, reason?}``。Embedder 走
-    ServiceContext 正式注册路径（``_VALID_SERVICES`` 含 ``embedder``）。
-    任何阶段失败都退到 "未注册" 形态而不是抛错——前端拿到 reason 字段
-    就知道为什么不能用。
-    """
-    embedder = _get_service(sc, "embedder")
-    if embedder is None:
-        await ws.send_json(
-            {
-                "type": "embedder_status_response",
-                "payload": {
-                    "is_ready": False,
-                    "is_mock": False,
-                    "model_path": "",
-                    "reason": "embedder_not_registered",
-                },
-            }
-        )
-        return
-    try:
-        # WeMM returns one atomic metadata-only snapshot; probing must not load.
-        snapshot_probe = getattr(embedder, "status_snapshot", None)
-        if callable(snapshot_probe):
-            await ws.send_json({
-                "type": "embedder_status_response", "payload": snapshot_probe(),
-            })
-            return
-        # Legacy product embedders expose is_ready()/is_mock().  The official
-        # Memory SDK embedder is constructed synchronously from pinned local
-        # resources and exposes kind/lineage instead.  Support both while the
-        # status authority remains the exact instance used by MemoryManager.
-        ready_probe = getattr(embedder, "is_ready", None)
-        mock_probe = getattr(embedder, "is_mock", None)
-        is_ready = bool(ready_probe()) if callable(ready_probe) else True
-        is_mock = (
-            bool(mock_probe())
-            if callable(mock_probe)
-            else str(getattr(embedder, "kind", "")).lower() in {"mock", "hash"}
-        )
-        # SDK BGEM3Embedder stores the pinned resource as _model_ref; retain
-        # _model_path compatibility for the retired product implementation.
-        model_path = str(
-            getattr(embedder, "_model_path", "")
-            or getattr(embedder, "_model_ref", "")
-            or ""
-        )
-    except Exception as exc:
-        logger.warning(
-            "p4_ipc.embedder_status_failed",
-            error=str(exc),
-            error_type=type(exc).__name__,
-        )
-        await ws.send_json(
-            {
-                "type": "embedder_status_response",
-                "payload": {
-                    "is_ready": False,
-                    "is_mock": False,
-                    "model_path": "",
-                    "reason": f"embedder_error: {type(exc).__name__}",
-                },
-            }
-        )
-        return
-    await ws.send_json(
-        {
-            "type": "embedder_status_response",
-            "payload": {
-                "is_ready": is_ready,
-                "is_mock": is_mock,
-                "model_path": model_path,
-            },
-        }
-    )
+# 2026-09-10：``embedder_status``（SettingsPanel 的 BGE-M3 状态卡）随认知记忆
+# SDK 一并移除——本构建不再注册任何 embedder，留一个恒定报「未注册」的探针
+# 只会误导用户。
 
 
 async def _handle_model_provision_status(

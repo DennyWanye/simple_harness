@@ -1,10 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { PrimaryTaskPanel } from "./PrimaryTaskPanel";
-import { PrimaryMemoryPanel } from "./PrimaryMemoryPanel";
 import { wire } from "../primary/testing/graphFixture";
 import { boundOpen, evidenceView, groups, listPage, open, page, planView, search } from "../primary/testing/taskScopeFixture";
-vi.mock("./MemoryGraphCanvas", () => ({ memoryTypeLabels: {}, MemoryGraphCanvas: () => <div /> }));
 afterEach(cleanup);
 
 const searchFor = (text: string) => {
@@ -90,13 +88,8 @@ it("rejects a reply with missing fields and never shows partial data", async () 
   expect(screen.queryByText(/完整计划正文/)).toBeNull(); expect(screen.getByRole("alert").textContent).toMatch(/过期/);
   expect(screen.queryByRole("article", { name: "任务详情" })).toBeNull();
 });
-it("memory panel exposes the task tab beside list, graph and audit", () => {
-  const w = wire(); render(<PrimaryMemoryPanel port={w.port} primaryRef="p" verifiedOwnerKey="owner:1" ready />);
-  fireEvent.click(screen.getByRole("button", { name: "任务" }));
-  expect(screen.getByRole("region", { name: "任务范围" })).toBeTruthy();
-  expect(screen.getByRole("textbox", { name: "搜索任务" })).toBeTruthy();
-  expect(w.sent.filter((r) => r.operation.startsWith("task_scope."))).toHaveLength(0);
-});
+// 2026-09-10：「记忆面板的四个页签（列表/关系图/审计/任务）」这条用例随
+// PrimaryMemoryPanel 一并移除；PrimaryTaskPanel 自身的用例全部保留。
 it("recent list is explicit, shows Host binding facts read-only, and opens items exactly", async () => {
   const w = wire(); render(<PrimaryTaskPanel port={w.port} primaryRef="p" verifiedOwnerKey="owner:1" ready />);
   expect(w.sent).toHaveLength(0);

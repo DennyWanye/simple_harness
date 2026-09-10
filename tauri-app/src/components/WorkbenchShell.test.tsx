@@ -172,7 +172,6 @@ describe("Sidebar T13 — 「更多」入口与连接徽章聚合（WB-3）", ()
     routeKind?: "cloud" | "local" | null;
   }) {
     const actions = {
-      onMemory: vi.fn(),
       onTrace: vi.fn(),
       onFeedback: vi.fn(),
     };
@@ -196,20 +195,19 @@ describe("Sidebar T13 — 「更多」入口与连接徽章聚合（WB-3）", ()
     return actions;
   }
 
-  it("「更多」折叠组展开后 记忆/Trace/反馈 入口逐一可达", () => {
+  it("「更多」折叠组展开后 Trace/反馈 入口逐一可达", () => {
     vi.mocked(controlWS.state).mockReturnValue("connected");
     const actions = renderWithMore();
     expect(screen.queryByTestId("sidebar-more-group")).toBeNull();
 
     fireEvent.click(screen.getByTestId("sidebar-more-toggle"));
     expect(screen.getByTestId("sidebar-more-group")).toBeTruthy();
-    expect(screen.getByTestId("memory-toggle").textContent).toContain("记忆管理");
+    // 2026-09-10：「记忆管理」入口随认知记忆 SDK 移除。
+    expect(screen.queryByTestId("memory-toggle")).toBeNull();
     expect(screen.getByTestId("trace-toggle").textContent).toContain("ContextTrace");
     expect(screen.getByTestId("feedback-toggle").textContent).toContain("反馈问题");
-    fireEvent.click(screen.getByTestId("memory-toggle"));
     fireEvent.click(screen.getByTestId("trace-toggle"));
     fireEvent.click(screen.getByTestId("feedback-toggle"));
-    expect(actions.onMemory).toHaveBeenCalledOnce();
     expect(actions.onTrace).toHaveBeenCalledOnce();
     expect(actions.onFeedback).toHaveBeenCalledOnce();
   });

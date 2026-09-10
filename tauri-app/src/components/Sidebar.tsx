@@ -5,7 +5,7 @@
  * Workbench 侧栏（T6/T7/T13，WB-3/WB-5/WB-11）。
  *
  * 结构：Logo → 三个主导航项（主对话 / 技能中心 / 产物库，会话项
- * 带 SessionList 展开区）→ 「更多」折叠组（记忆/Trace/反馈，
+ * 带 SessionList 展开区）→ 「更多」折叠组（Trace/反馈，
  * T13 自 Toolbar 迁入，点击行为=原浮层打开，能力不减）→ 底部「设置」+
  * 连接状态徽章。
  *
@@ -38,7 +38,6 @@ export type RouteKind = "cloud" | "local" | null;
 
 /** T13：Toolbar 面板入口迁移矩阵 —「更多」折叠组回调。 */
 export interface SidebarMoreActions {
-  onMemory: () => void;
   onTrace: () => void;
   onFeedback: () => void;
 }
@@ -52,7 +51,7 @@ interface SidebarProps {
   sessionProps?: SessionListProps;
   /** 路由指示（chat_response/transcript 捎带 provider）— cloud/local。 */
   routeKind?: RouteKind;
-  /** T13：「更多」折叠组入口（记忆/Trace/反馈）。 */
+  /** T13：「更多」折叠组入口（Trace/反馈）。2026-09-10 记忆入口随认知记忆 SDK 移除。 */
   moreActions?: SidebarMoreActions;
 }
 
@@ -164,7 +163,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <div style={{ flex: 1, minHeight: 0 }} />
 
-      {/* T13：「更多」折叠组 — 记忆/Trace/反馈（原 Toolbar 入口，
+      {/* T13：「更多」折叠组 — Trace/反馈（原 Toolbar 入口，
           点击行为=原浮层打开，能力不减；icon+tooltip 与原 Toolbar 同构）。 */}
       {moreActions && (
         <div style={{ flexShrink: 0 }}>
@@ -213,12 +212,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 padding: `${tokens.space.xxs}px 0 ${tokens.space.xs}px ${tokens.space.md}px`,
               }}
             >
-              <MoreActionButton
-                title="记忆管理"
-                testId="memory-toggle"
-                icon="archive"
-                onClick={moreActions.onMemory}
-              />
               <MoreActionButton
                 title="ContextTrace"
                 testId="trace-toggle"

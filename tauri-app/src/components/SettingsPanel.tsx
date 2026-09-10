@@ -16,7 +16,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 
 import { Icon } from "./Icon";
-import { EmbedderStatusCard } from "./EmbedderStatusCard";
 import { ModelContextCard } from "./ModelContextCard";
 import { SettingsProviders } from "./SettingsProviders";
 import { formatUpdaterError } from "./updaterError";
@@ -197,7 +196,8 @@ export function SettingsPanel({
         {/* ================ 模型状态 (P4-S16) ================ */}
         <section style={sectionStyle}>
           <h3 style={h3Style}>模型状态</h3>
-          <EmbedderStatusCard getChannel={getChannel} />
+          {/* 2026-09-10：BGE-M3 / WeMM 嵌入器状态卡随认知记忆 SDK 一并移除
+              ——本构建不再注册任何 embedder。 */}
           {/* Phase 1.1.6（context-1m-rearch）：per-model 上下文窗口卡片 */}
           <ModelContextCard getChannel={getChannel} />
         </section>

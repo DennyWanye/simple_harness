@@ -18,13 +18,10 @@ import { InputBar } from "../code-panel/InputBar";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { Icon } from "../components/Icon";
 import {
-  DRAWER_WIDTH,
   INTERACTIVE_CLASS,
   MESSAGE_MAX_WIDTH,
   buttonStyle,
   dark,
-  drawerScrim,
-  drawerSurface,
   emptyState,
   metaText,
   textLinkStyle,
@@ -37,8 +34,6 @@ import { PrimaryController, type PrimaryMessage, type PrimaryPort } from "../pri
 import { PrimaryRunPanel } from "../primary/PrimaryRunPanel";
 import { PrimaryWorkspaceBindings } from "../primary/PrimaryWorkspaceBindings";
 import { PrimaryBindingRecovery } from "../primary/bindingRecovery";
-import { PrimaryMemoryPanel } from "../components/PrimaryMemoryPanel";
-import { CognitiveRequests } from "../primary/cognitiveRequests";
 
 const disconnected: PrimaryPort = {
   state: () => "disconnected", send_command: () => false,
@@ -66,8 +61,6 @@ const column = {
 export function PrimaryChatView({ channel, onOpenSettings, active = true }: PrimaryChatViewProps) {
   const [controller] = useState(() => new PrimaryController(disconnected));
   const [bindingRecovery] = useState(() => new PrimaryBindingRecovery());
-  const [memoryRequests] = useState(() => new CognitiveRequests());
-  const [memoryOpen, setMemoryOpen] = useState(false);
   const [decisionRefresh, setDecisionRefresh] = useState(0);
   const [bindingRefresh, setBindingRefresh] = useState(0);
   const refreshBindings = useCallback(() => setBindingRefresh(value => value + 1), []);
@@ -83,15 +76,12 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
   const runLabel = run ? runLabels[run.state.toUpperCase()] ?? run.state : "空闲";
   const canSend = snapshot.ready && snapshot.state !== null;
   const status = canSend ? `${runLabel} · 排队 ${snapshot.state?.queued_count_truncated ? "至少 " : ""}${snapshot.state?.queued_count ?? 0}` : "等待主对话就绪";
-  const drawerOpen = memoryOpen && active && Boolean(snapshot.primaryRef);
   return <section data-testid="view-chat" aria-label="主对话" style={{
     position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0,
     background: dark.bgSolid, color: dark.text, fontFamily: tokens.font.ui,
   }}>
     <header data-testid="chat-header" style={viewHeader}>
       <h1 data-testid="chat-title" style={{ ...titleText, flex: 1 }}>主对话</h1>
-      <button className={INTERACTIVE_CLASS} style={buttonStyle("ghost", "md")} disabled={!canSend}
-        aria-expanded={memoryOpen} onClick={() => setMemoryOpen((open) => !open)}>记忆</button>
       <button className={INTERACTIVE_CLASS} style={buttonStyle("ghost", "md")} onClick={onOpenSettings}
         title="前台任务使用全局 Provider 模型与参数">模型与设置</button>
       <button className={INTERACTIVE_CLASS} style={buttonStyle("ghost", "md")}
@@ -145,15 +135,8 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         primary={{ submit: controller.submit, status, stop: run && snapshot.ready ? () => void controller.control("stop", run) : undefined }} />
     </div>
 
-    {/* 记忆：右侧抽屉（宽 420）+ 遮罩淡入 160ms。 */}
-    {drawerOpen && <>
-      <div style={drawerScrim} onClick={() => setMemoryOpen(false)} aria-hidden />
-      <aside style={{ ...drawerSurface, width: DRAWER_WIDTH }}>
-        <PrimaryMemoryPanel port={primaryPort} primaryRef={snapshot.primaryRef!}
-          verifiedOwnerKey={snapshot.verifiedOwnerKey} ready={snapshot.ready}
-          requests={memoryRequests} onForgotten={controller.refreshLatest} onClose={() => setMemoryOpen(false)} />
-      </aside>
-    </>}
+    {/* 2026-09-10：认知记忆抽屉（记忆列表 / 关系图 / 记忆审计）随
+        simple-harness-memory-sdk 一并下线。 */}
   </section>;
 }
 const roleLabels: Record<PrimaryMessage["role"], string> = {

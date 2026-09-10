@@ -4,7 +4,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { V2_CLIENT_VERSION } from "./ws/ControlChannel";
 void V2_CLIENT_VERSION; // silence unused import (re-exported for diagnostics later)
-import { MemoryPanel } from "./components/MemoryPanel";
 import { ModelDownloadBanner } from "./components/ModelDownloadBanner";
 import { ContextTracePanel } from "./components/ContextTracePanel";
 import { WorkbenchShell, type WorkbenchView } from "./components/WorkbenchShell";
@@ -538,7 +537,6 @@ function App() {
   }, [state]);
 
   // S14 — memory management panel toggle.
-  const [memoryOpen, setMemoryOpen] = useState(false);
   // T13：contextModalOpen 删除 —— 上下文钻取模态与其环形入口都在
   // ChatView（T8）；App 层不再有打开点。
   // P4-S11 §16.5 — ContextTrace panel (decision timeline + token budget)
@@ -891,7 +889,6 @@ function App() {
         primaryChannel={getControlChannel()}
         routeKind={routeKind}
         moreActions={{
-          onMemory: () => setMemoryOpen(true),
           onTrace: () => setTraceOpen(true),
           onFeedback: () => setFeedbackOpen(true),
         }}
@@ -940,13 +937,8 @@ function App() {
           头部条（T8）；退出按钮移窗口层（系统关闭钮=完全退出 B13，
           tray 仍有退出）；自启开关归设置页（T11）。 */}
 
-      {/* S14 memory management overlay */}
-      <MemoryPanel
-        open={memoryOpen}
-        onClose={() => setMemoryOpen(false)}
-        sessionId={activeSid}
-        getChannel={getControlChannel}
-      />
+      {/* 2026-09-10：S14 MemoryPanel（记忆检索/L1 文件记忆/facts）随
+          认知记忆 SDK 一并下线。 */}
 
       {/* Option A: 首启模型下载进度（瘦包后台从 hf-mirror 拉模型时显示） */}
       <ModelDownloadBanner getChannel={getControlChannel} />
