@@ -1,15 +1,16 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P4-S11 IPC handlers — MemoryPanel + ContextTrace endpoints.
+"""P4-S11 IPC handlers — Skills / decisions / model-context endpoints.
+
+2026-09-10：MemoryPanel 相关的九条消息（memory_search / memory_l1_* /
+memory_facts_list / memory_forget{,_undo} / memory_pin / memory_unpin）随
+认知记忆 SDK 一并移除。
 
 Four message types the front-end drives:
 
 - ``skills_list``         → ``skills_list_response``
 - ``decisions_list``      → ``decisions_list_response``
-- ``memory_search``       → ``memory_search_response``
-- ``memory_l1_list``      → ``memory_l1_list_response``
-- ``memory_l1_delete``    → ``memory_l1_delete_ack``
 
 Every handler tolerates "service not registered" gracefully (empty
 payload + warning log) so the S11 front-end can ship before the S12
@@ -38,9 +39,6 @@ P4_IPC_MESSAGE_TYPES = frozenset(
     {
         "skills_list",
         "decisions_list",
-        "memory_search",
-        "memory_l1_list",
-        "memory_l1_delete",
         # P4-S16: SettingsPanel "BGE-M3 状态" 卡片探针。
         "embedder_status",
         # Phase 1.1.6（context-1m-rearch）: SettingsPanel「模型上下文」卡片。
@@ -50,15 +48,8 @@ P4_IPC_MESSAGE_TYPES = frozenset(
         # overrides.  ``follow_session`` keeps the historical behaviour.
         "context_compaction_get",
         "context_compaction_set",
-        # Stage 2 WI-S2.1a / E3 v2 — MemoryPanel facts view + 🗑 + undo
-        "memory_facts_list",
-        "memory_forget",
-        "memory_forget_undo",
         # Option A (2026-06-05) — 瘦包首启模型下载进度探针。
         "model_provision_status",
-        # FP-4 WI-3.3 — 用户 Pin/Unpin 钉住事实（跳过 daily_decay 衰减）。
-        "memory_pin",
-        "memory_unpin",
         # WI-TG-2 — ApprovalCenterPanel 只读「列当前 session pending 权限请求」。
         "permissions_pending_list",
     }
@@ -81,12 +72,6 @@ async def handle(
             await _handle_skills_list(ws, payload, service_context)
         elif msg_type == "decisions_list":
             await _handle_decisions_list(ws, session_id, payload, service_context)
-        elif msg_type == "memory_search":
-            await _handle_memory_search(ws, session_id, payload, service_context)
-        elif msg_type == "memory_l1_list":
-            await _handle_memory_l1_list(ws, payload, service_context)
-        elif msg_type == "memory_l1_delete":
-            await _handle_memory_l1_delete(ws, payload, service_context)
         elif msg_type == "embedder_status":
             await _handle_embedder_status(ws, payload, service_context)
         elif msg_type == "model_provision_status":
@@ -99,16 +84,6 @@ async def handle(
             await _handle_context_compaction_get(ws, service_context)
         elif msg_type == "context_compaction_set":
             await _handle_context_compaction_set(ws, payload, service_context)
-        elif msg_type == "memory_facts_list":
-            await _handle_memory_facts_list(ws, session_id, payload, service_context)
-        elif msg_type == "memory_forget":
-            await _handle_memory_forget_ws(ws, session_id, payload, service_context)
-        elif msg_type == "memory_forget_undo":
-            await _handle_memory_forget_undo(ws, session_id, payload, service_context)
-        elif msg_type == "memory_pin":
-            await _handle_memory_pin(ws, payload, service_context, pinned=True)
-        elif msg_type == "memory_unpin":
-            await _handle_memory_pin(ws, payload, service_context, pinned=False)
         elif msg_type == "permissions_pending_list":
             await _handle_permissions_pending_list(
                 ws, session_id, payload, service_context
@@ -198,149 +173,8 @@ async def _handle_decisions_list(
     )
 
 
-async def _handle_memory_search(
-    ws: Any, session_id: str, payload: dict[str, Any], sc: Any
-) -> None:
-    query = str(payload.get("query") or "").strip()
-    if not query:
-        await _send_error(ws, "memory_search requires non-empty query")
-        return
-    raw_top_k = payload.get("top_k")
-    if raw_top_k is None:
-        top_k = 10
-    else:
-        try:
-            top_k = max(1, min(int(raw_top_k), 50))
-        except (TypeError, ValueError):
-            top_k = 10
-
-    manager = _get_service(sc, "memory_manager")
-    if manager is None:
-        await ws.send_json(
-            {
-                "type": "memory_search_response",
-                "payload": {
-                    "query": query,
-                    "hits": [],
-                    "reason": "memory_manager_not_registered",
-                },
-            }
-        )
-        return
-    try:
-        recall = await manager.recall(
-            query,
-            policy={
-                "l1": "skip",
-                "l2_top_k": 0,
-                "l3_top_k": top_k,
-                "session_id": session_id,
-            },
-        )
-    except Exception as exc:
-        logger.warning(
-            "p4_ipc.memory_search_failed", error=str(exc), query_len=len(query)
-        )
-        await ws.send_json(
-            {
-                "type": "memory_search_response",
-                "payload": {"query": query, "hits": [], "error": str(exc)},
-            }
-        )
-        return
-
-    hits = _recall_to_hits(recall)
-    await ws.send_json(
-        {
-            "type": "memory_search_response",
-            "payload": {"query": query, "hits": hits},
-        }
-    )
-
-
-async def _handle_memory_l1_list(
-    ws: Any, payload: dict[str, Any], sc: Any
-) -> None:
-    target = (payload.get("target") or "memory").strip()
-    if target not in ("memory", "user"):
-        await _send_error(ws, "target must be 'memory' or 'user'")
-        return
-
-    file_memory = _get_file_memory(sc)
-    if file_memory is None:
-        await ws.send_json(
-            {
-                "type": "memory_l1_list_response",
-                "payload": {
-                    "target": target,
-                    "entries": [],
-                    "reason": "file_memory_not_registered",
-                },
-            }
-        )
-        return
-    try:
-        entries = await file_memory.list_entries(target)
-    except Exception as exc:
-        logger.warning(
-            "p4_ipc.memory_l1_list_failed", target=target, error=str(exc)
-        )
-        entries = []
-    # Stamp with list index so the UI can drive delete without server-side IDs.
-    indexed = [
-        {"index": i, "text": e.get("text", ""), "salience": e.get("salience", 0.5)}
-        for i, e in enumerate(entries)
-    ]
-    await ws.send_json(
-        {
-            "type": "memory_l1_list_response",
-            "payload": {"target": target, "entries": indexed},
-        }
-    )
-
-
-async def _handle_memory_l1_delete(
-    ws: Any, payload: dict[str, Any], sc: Any
-) -> None:
-    target = (payload.get("target") or "memory").strip()
-    if target not in ("memory", "user"):
-        await _send_error(ws, "target must be 'memory' or 'user'")
-        return
-    index = payload.get("index")
-    if not isinstance(index, int) or index < 0:
-        await _send_error(ws, "memory_l1_delete requires integer index >= 0")
-        return
-
-    file_memory = _get_file_memory(sc)
-    if file_memory is None:
-        await ws.send_json(
-            {
-                "type": "memory_l1_delete_ack",
-                "payload": {
-                    "target": target,
-                    "index": index,
-                    "deleted": False,
-                    "reason": "file_memory_not_registered",
-                },
-            }
-        )
-        return
-    try:
-        deleted = await file_memory.delete_entry(target, index)
-    except Exception as exc:
-        logger.warning(
-            "p4_ipc.memory_l1_delete_failed",
-            target=target,
-            index=index,
-            error=str(exc),
-        )
-        deleted = False
-    await ws.send_json(
-        {
-            "type": "memory_l1_delete_ack",
-            "payload": {"target": target, "index": index, "deleted": deleted},
-        }
-    )
+# 2026-09-10：MemoryPanel 的三段式检索（memory_search）与 L1 文件记忆
+# （memory_l1_list / memory_l1_delete）随认知记忆 SDK 一并移除。
 
 
 async def _handle_embedder_status(
@@ -459,316 +293,10 @@ async def _handle_model_provision_status(
 # ---------------------------------------------------------------------------
 # Stage 2 / WI-S2.1a — MemoryPanel facts view + memory_forget UI bridge
 # ---------------------------------------------------------------------------
-async def _handle_memory_facts_list(
-    ws: Any, _connection_session_id: str, payload: dict[str, Any], sc: Any,
-) -> None:
-    """返回 active facts 给前端 facts view 渲染。
-
-    payload: ``{session_id: str, limit?: int, subject?: str, category?: str}``
-    Response: ``{type: "memory_facts_list_response", payload: {facts: [...]}}``
-    """
-    facts_surface = _get_service(sc, "memory_facts_surface")
-    facts_store = _get_service(sc, "facts_store")
-    requested_session_id = str(payload.get("session_id") or "").strip()
-    if facts_surface is not None and not requested_session_id:
-        await ws.send_json({
-            "type": "memory_facts_list_response",
-            "payload": {"facts": [], "reason": "session_id_required"},
-        })
-        return
-    if facts_store is None and facts_surface is None:
-        await ws.send_json({
-            "type": "memory_facts_list_response",
-            "payload": {
-                "facts": [],
-                "reason": "facts_store_not_registered",
-            },
-        })
-        return
-    raw_limit = payload.get("limit")
-    try:
-        limit = max(1, min(int(raw_limit) if raw_limit is not None else 200, 500))
-    except (TypeError, ValueError):
-        limit = 200
-    subject = payload.get("subject")
-    category = payload.get("category")
-    try:
-        if facts_surface is not None:
-            rows = await facts_surface.list_active(
-                session_id=requested_session_id,
-                subject=str(subject) if subject else None,
-                category=str(category) if category else None,
-                limit=limit,
-            )
-        else:
-            rows = await facts_store.list_active(
-                subject=str(subject) if subject else None,
-                category=str(category) if category else None,
-                limit=limit,
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("p4_ipc.memory_facts_list_failed", error=str(exc))
-        rows = []
-    # 序列化 BLOB embedding 列（前端用不上 + JSON 不好放二进制）。
-    out_rows: list[dict[str, Any]] = []
-    for r in rows:
-        d = dict(r)
-        d.pop("embedding", None)
-        out_rows.append(d)
-    await ws.send_json({
-        "type": "memory_facts_list_response",
-        "payload": {"facts": out_rows},
-    })
+# 2026-09-10：认知记忆面板的 facts 列表 / 遗忘 / 撤销遗忘 / Pin-Unpin 四组
+# handler 随认知记忆 SDK 与 FactsStore 一并移除。
 
 
-async def _handle_memory_forget_ws(
-    ws: Any, _connection_session_id: str, payload: dict[str, Any], sc: Any,
-) -> None:
-    """前端点 🗑 按钮的桥接 —— UI 已确认过来源，直调工具实现。
-
-    payload: ``{fact_id?: int, query?: str}``
-    Response: ``{type: "memory_forget_response", payload: {status, op_id?, forgotten_ids?, reason?}}``
-    """
-    facts_surface = _get_service(sc, "memory_facts_surface")
-    facts_store = _get_service(sc, "facts_store")
-    requested_session_id = str(payload.get("session_id") or "").strip()
-    if facts_surface is not None:
-        if not requested_session_id:
-            await ws.send_json({
-                "type": "memory_forget_response",
-                "payload": {"status": "error", "reason": "session_id_required"},
-            })
-            return
-        fact_id = payload.get("fact_id")
-        if fact_id is None:
-            await ws.send_json({
-                "type": "memory_forget_response",
-                "payload": {
-                    "status": "error",
-                    "reason": "official_memory_forget_requires_fact_id",
-                },
-            })
-            return
-        try:
-            fid = int(fact_id)
-            forgotten = await facts_surface.forget_fact(
-                session_id=requested_session_id,
-                fact_id=fid,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("p4_ipc.memory_forget_failed", error=str(exc))
-            await ws.send_json({
-                "type": "memory_forget_response",
-                "payload": {"status": "error", "reason": str(exc)},
-            })
-            return
-        if not forgotten:
-            await ws.send_json({
-                "type": "memory_forget_response",
-                "payload": {
-                    "status": "error",
-                    "reason": "memory_fact_not_found_or_not_owned",
-                },
-            })
-            return
-        await ws.send_json({
-            "type": "memory_forget_response",
-            "payload": {"status": "ok", "forgotten_ids": [fid]},
-        })
-        return
-    if facts_store is None:
-        await ws.send_json({
-            "type": "memory_forget_response",
-            "payload": {
-                "status": "error",
-                "reason": "facts_store_not_registered",
-            },
-        })
-        return
-    try:
-        from deskpet.tools.memory_tools import (
-            _forget_by_id as _do_forget_by_id,
-            _forget_by_query as _do_forget_by_query,
-            is_bound as _memory_tool_bound,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("p4_ipc.memory_forget_import_failed", error=str(exc))
-        await ws.send_json({
-            "type": "memory_forget_response",
-            "payload": {"status": "error", "reason": str(exc)},
-        })
-        return
-    if not _memory_tool_bound():
-        await ws.send_json({
-            "type": "memory_forget_response",
-            "payload": {
-                "status": "error",
-                "reason": "memory_forget_tool_not_bound",
-            },
-        })
-        return
-    fact_id = payload.get("fact_id")
-    query = payload.get("query")
-    try:
-        if fact_id is not None:
-            try:
-                fid = int(fact_id)
-            except (TypeError, ValueError):
-                raise ValueError(f"fact_id must be int, got {fact_id!r}")
-            result_str = await _do_forget_by_id(fid)
-        elif query:
-            result_str = await _do_forget_by_query(str(query))
-        else:
-            await ws.send_json({
-                "type": "memory_forget_response",
-                "payload": {
-                    "status": "error",
-                    "reason": "需 fact_id 或 query 之一",
-                },
-            })
-            return
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("p4_ipc.memory_forget_failed", error=str(exc))
-        await ws.send_json({
-            "type": "memory_forget_response",
-            "payload": {"status": "error", "reason": str(exc)},
-        })
-        return
-    import json as _json
-    try:
-        result = _json.loads(result_str)
-    except Exception:
-        result = {"status": "error", "reason": "invalid tool response"}
-    await ws.send_json({
-        "type": "memory_forget_response",
-        "payload": result,
-    })
-
-
-async def _handle_memory_forget_undo(
-    ws: Any, _connection_session_id: str, payload: dict[str, Any], sc: Any,
-) -> None:
-    """5 秒 undo 窗口内恢复 forgotten fact。
-
-    payload: ``{op_id: str, max_age_seconds?: float}``
-    Response: ``{type: "memory_forget_undo_response", payload: {status, restored_ids: [...]}}``
-    """
-    facts_surface = _get_service(sc, "memory_facts_surface")
-    if facts_surface is not None:
-        await ws.send_json({
-            "type": "memory_forget_undo_response",
-            "payload": {
-                "status": "error",
-                "restored_ids": [],
-                "reason": "memory_forget_irreversible",
-            },
-        })
-        return
-    facts_store = _get_service(sc, "facts_store")
-    op_id = str(payload.get("op_id") or "").strip()
-    if not op_id:
-        await _send_error(ws, "memory_forget_undo requires op_id")
-        return
-    if facts_store is None:
-        await ws.send_json({
-            "type": "memory_forget_undo_response",
-            "payload": {
-                "status": "error",
-                "restored_ids": [],
-                "reason": "facts_store_not_registered",
-            },
-        })
-        return
-    try:
-        max_age = float(payload.get("max_age_seconds") or 5.0)
-    except (TypeError, ValueError):
-        max_age = 5.0
-    try:
-        restored = await facts_store.restore_from_undo(
-            op_id, max_age_seconds=max_age,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("p4_ipc.memory_forget_undo_failed", error=str(exc))
-        restored = []
-    status = "ok" if restored else "expired"
-    await ws.send_json({
-        "type": "memory_forget_undo_response",
-        "payload": {
-            "status": status,
-            "restored_ids": [int(i) for i in restored],
-        },
-    })
-
-
-# ---------------------------------------------------------------------------
-# FP-4 WI-3.3 — Pin / Unpin fact (skip daily_decay)
-# ---------------------------------------------------------------------------
-
-async def _handle_memory_pin(
-    ws: Any, payload: dict[str, Any], sc: Any, *, pinned: bool,
-) -> None:
-    """Pin 或 Unpin 一条 fact（pinned=True → 跳过 daily_decay 衰减）。
-
-    verb ``memory_pin``   payload: ``{fact_id: int}``
-    verb ``memory_unpin`` payload: ``{fact_id: int}``
-    Response: ``{type: "memory_pin_response" | "memory_unpin_response",
-                 payload: {status: "ok" | "error", reason?: str}}``
-    """
-    resp_type = "memory_pin_response" if pinned else "memory_unpin_response"
-    facts_store = _get_service(sc, "facts_store")
-    if facts_store is None:
-        await ws.send_json({
-            "type": resp_type,
-            "payload": {
-                "status": "error",
-                "reason": "facts_store_not_registered",
-            },
-        })
-        return
-    raw_id = payload.get("fact_id")
-    if raw_id is None:
-        await ws.send_json({
-            "type": resp_type,
-            "payload": {"status": "error", "reason": "fact_id required"},
-        })
-        return
-    try:
-        fact_id = int(raw_id)
-    except (TypeError, ValueError):
-        await ws.send_json({
-            "type": resp_type,
-            "payload": {
-                "status": "error",
-                "reason": f"fact_id must be int, got {raw_id!r}",
-            },
-        })
-        return
-    try:
-        await facts_store.set_pinned(fact_id, pinned)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "p4_ipc.memory_pin_failed",
-            fact_id=fact_id, pinned=pinned, error=str(exc),
-        )
-        await ws.send_json({
-            "type": resp_type,
-            "payload": {"status": "error", "reason": str(exc)},
-        })
-        return
-    await ws.send_json({
-        "type": resp_type,
-        "payload": {"status": "ok", "fact_id": fact_id, "pinned": pinned},
-    })
-
-
-# ---------------------------------------------------------------------------
-# WI-TG-2 — ApprovalCenterPanel: 只读列出 pending 权限请求
-#
-# 纯只读：从 PermissionGate.list_pending() 取在途请求快照，绝不改 gate 决策。
-# 批准/拒绝仍走既有 permission_response 协议（一条 request_id 一条），本接口
-# 只负责让聚合面板知道「现在有哪些待办」。gate 未注册（如 v2 init 失败）→
-# 返回空列表 + reason，前端据此不显示面板。
-# ---------------------------------------------------------------------------
 async def _handle_permissions_pending_list(
     ws: Any, session_id: str, payload: dict[str, Any], sc: Any,
 ) -> None:
@@ -1176,71 +704,10 @@ def _get_service(sc: Any, name: str) -> Optional[Any]:
     return getattr(sc, name, None)
 
 
-def _get_file_memory(sc: Any) -> Optional[Any]:
-    """Resolve FileMemory either directly or via MemoryManager.file_memory."""
-    direct = _get_service(sc, "file_memory")
-    if direct is not None:
-        return direct
-    manager = _get_service(sc, "memory_manager")
-    if manager is None:
-        return None
-    # MemoryManager wraps FileMemory; expose the inner handle if present.
-    return getattr(manager, "file_memory", None)
+# 2026-09-10：``_get_file_memory`` / ``_recall_to_hits`` / ``_hit_to_dict``
+# 三个只服务于已删除记忆 handler 的辅助函数一并移除。
 
 
-# ---------------------------------------------------------------------------
-# Payload shaping
-# ---------------------------------------------------------------------------
-def _recall_to_hits(recall: Any) -> list[dict[str, Any]]:
-    """Normalise MemoryManager.recall() output for the UI.
-
-    The recall object shape varies by version — it may be a list of dicts,
-    an object with a ``.l3`` attribute, or a dict with ``"l3"`` key. We
-    prefer the L3 vector hits (query is a vector search) and fall back to
-    whatever iterable is present.
-    """
-    if recall is None:
-        return []
-
-    # Object-with-.l3 path (current MemoryManager).
-    l3 = getattr(recall, "l3", None)
-    if l3 is None and isinstance(recall, dict):
-        l3 = recall.get("l3")
-    candidates: Iterable[Any]
-    if l3:
-        candidates = l3
-    elif isinstance(recall, (list, tuple)):
-        candidates = recall
-    else:
-        return []
-
-    hits: list[dict[str, Any]] = []
-    for item in candidates:
-        hits.append(_hit_to_dict(item))
-    return hits
-
-
-def _hit_to_dict(item: Any) -> dict[str, Any]:
-    if isinstance(item, dict):
-        return {
-            "text": str(item.get("text") or item.get("content") or ""),
-            "score": float(item.get("score") or 0.0),
-            "source": str(item.get("source") or item.get("src") or ""),
-            "created_at": item.get("created_at"),
-            "session_id": item.get("session_id"),
-        }
-    return {
-        "text": str(getattr(item, "text", getattr(item, "content", "")) or ""),
-        "score": float(getattr(item, "score", 0.0) or 0.0),
-        "source": str(getattr(item, "source", "") or ""),
-        "created_at": getattr(item, "created_at", None),
-        "session_id": getattr(item, "session_id", None),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Error helper
-# ---------------------------------------------------------------------------
 async def _send_error(ws: Any, message: str) -> None:
     try:
         await ws.send_json({"type": "error", "payload": {"message": message}})

@@ -165,14 +165,6 @@ class _CatalogTodoStore:
     async def replace_session_todos(self, session_id, items): return None
 
 
-class _CatalogMemoryQuery:
-    async def recall_readonly(self, query, limit, scope): return []
-
-
-class _CatalogMemoryScope:
-    def resolve_for_run(self, run_id): return object()
-
-
 class _CatalogCapabilityBridge:
     def search(self, *args, **kwargs): return []
     def describe(self, *args, **kwargs): return {}
@@ -201,14 +193,12 @@ def _product_tools(root: Path):
         workflow_service_provider=lambda: None,
         context_page_store=page_store,
         execution_context_getter=lambda: execution_context,
-        memory_query=_CatalogMemoryQuery(),
-        memory_scope_resolver=_CatalogMemoryScope(),
         capability_bridge_service=_CatalogCapabilityBridge(),
         search_gateway=_CatalogSearchGateway(),
     )
     catalog = build_explicit_product_tool_catalog(dependencies)
     registry, inventory = build_product_tool_registry(catalog.registrations)
-    if len(inventory) != 76:
+    if len(inventory) != 71:
         raise RuntimeError("real product Tool catalog is incomplete")
     return registry
 

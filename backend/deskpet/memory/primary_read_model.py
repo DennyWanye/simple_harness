@@ -1,7 +1,10 @@
 """Bounded primary history over Host receipts and a public SDK transcript reader.
 
 No Session selector, SDK database, projection cache, or implicit disclosure grant.
-The composition owns the reader and current suppression resolver.
+
+2026-09-10：认知记忆 SDK 移除后，抑制（遗忘）解析器与 Prospective 提醒读者一并
+下线。没有记忆系统就没有会被抑制的主对话内容——这与 2026-09-07 的产品决定一致：
+遗忘只作用于记忆，不隐藏会话记录。
 """
 
 from __future__ import annotations
@@ -15,11 +18,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiosqlite
-from simple_harness_memory.core.suppression import (
-    OrdinaryMemoryPurpose,
-    SuppressionCandidate,
-    SuppressionResolution,
-)
 
 from deskpet.memory.primary_visibility import (
     PrimaryHistoryPolicy,
@@ -96,38 +94,20 @@ class PrimaryReadModel:
         *,
         subject: str,
         settled_run_reader=None,
-        suppression_resolver=None,
         run_binding_reader=None,
-        history_visibility_checker=None,
-        prospective_notice_reader=None,
     ):
         self.path, self.subject = Path(db_path), subject
-        self.reader, self.policy = settled_run_reader, suppression_resolver
+        self.reader = settled_run_reader
         self.run_binding_reader = run_binding_reader
-        self.prospective_notice_reader = prospective_notice_reader
-        self.history_policy = PrimaryHistoryPolicy(
-            db_path, subject, history_visibility_checker
-        )
+        self.history_policy = PrimaryHistoryPolicy(db_path, subject)
 
     async def _visible(self, evidence_id=None):
-        if self.policy is None:
-            raise PrimaryReadError("primary_read_policy_unavailable")
-        try:
-            value = await _resolved(
-                self.policy(
-                    SuppressionCandidate(self.subject, evidence_id=evidence_id),
-                    OrdinaryMemoryPurpose.READ,
-                )
-            )
-            if type(value) is not SuppressionResolution:
-                raise TypeError("typed suppression resolution required")
-            return not value.denied
-        except Exception as exc:
-            raise PrimaryReadError("primary_read_policy_unavailable", exc) from exc
+        """No suppression authority exists in a build with no Memory system."""
+
+        return True
 
     async def _subject_visible(self):
-        if not await self._visible():
-            raise PrimaryReadError("primary_read_suppressed")
+        return None
 
     @asynccontextmanager
     async def _snapshot(self, primary_ref=None):
@@ -515,14 +495,9 @@ class PrimaryReadModel:
         return messages
 
     async def _messages_with_notices(self, db, primary, turn, disclosure_context):
-        messages = await self._messages(db, primary, turn)
-        if self.prospective_notice_reader is not None:
-            try:
-                messages.extend(await self.prospective_notice_reader.read(
-                    db=db, primary=primary, turn=turn, disclosure_context=disclosure_context))
-            except (ValueError, TypeError, KeyError, RuntimeError) as exc:
-                raise PrimaryReadError("primary_reminder_unavailable") from exc
-        return messages
+        # 2026-09-10：Prospective 提醒消息随认知记忆 SDK 移除，主对话页只剩
+        # Host 自己的真实消息。
+        return await self._messages(db, primary, turn)
 
     async def _turns(self, db, primary, *, before, limit, turn_ref=None):
         select = (

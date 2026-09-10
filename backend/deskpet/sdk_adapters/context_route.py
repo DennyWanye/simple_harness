@@ -1,24 +1,16 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""S5a five-route ``context_route`` tool and read-only ``task_scope_search``.
+"""S5a four-route ``context_route`` tool and read-only ``task_scope_search``.
+
+2026-09-10：认知记忆 SDK 整条移除，本工具从五路由降为四路由——
+``memory_standalone``（类型化召回）与事件 V 的「争议确认」探针都建立在记忆
+系统之上，随其一并下线。
 
 Host adjudication over the model's route proposal:
 
 - ``direct_standalone`` — standalone receipt, no TaskScope, no recalled content
-  in the result. Since event V it is not "no Memory query": every executing
-  route first runs the confirmation-only contested probe below, whose one and
-  only output is a ``conflict_notice``.
-
-What event V guarantees is that **the Host always asks Memory** before any
-route commits — not that a contested value is always reported. Whether the ask
-returns a group is the SDK's own slot-level admission, and on 0.6.34 a
-Chinese-only turn over a slot whose ``contested_slot_text`` holds no CJK and
-whose memory has no vector generation admits nothing (SDK followup F-V-2, a
-blocker for the AC). The probe therefore sends both surfaces the Host has and
-records which one admitted.
-- ``memory_standalone`` — explicit long-term and/or short-horizon selection,
-  with one typed RecallPlan budget and current source checks.
+  in the result.
 - ``continue_active``   — exact current active scope (latest durable
   ROUTED_TASK decision) revalidated against the live binding head.
 - ``resume_existing``   — requires an exact ``task_scope_id`` (search hits
@@ -49,10 +41,6 @@ from deskpet.sdk_adapters.context_authority import (
     ContextRouteLedgerStore,
     canonical_sha256,
 )
-from deskpet.memory.recall_selection import (
-    MEMORY_TYPE_SELECTION_POLICY, REQUESTABLE_MEMORY_TYPES, indicates_workflow_request,
-    parse_recall_selection, selection_policy_departures,
-)
 # 事件 AL: one name for this turn's evidence id, shared with the closure Tool's
 # ``refs_outside_scope`` disclosure — the model must read the same key whether
 # it learns the id from the accepted route or from a rejection.
@@ -60,7 +48,6 @@ from deskpet.sdk_adapters.task_scope_mutation import CURRENT_TURN_EVIDENCE_REF_K
 
 ROUTES = (
     "direct_standalone",
-    "memory_standalone",
     "continue_active",
     "resume_existing",
     "create_new",
@@ -72,14 +59,9 @@ _MAX_TEXT = 2048
 _AUDIT_CANCEL_SECONDS = 2.0
 _LOG = logging.getLogger(__name__)
 
-# Event V: the two Host lanes that ask Memory outside the model's own
-# ``memory_standalone`` recall. They name their own durable SDK requests so a
-# probe can never spend the idempotency key the model's recall needs.
-CONTESTED_PROBE_PURPOSE = "contested-probe"
-CONTESTED_PROBE_ATTRIBUTION_PURPOSE = "contested-probe-attribution"
 _WORKSPACE_REUSE_OMIT = (
     "reuse_workspace_of is only valid for create_new with an exact verified task ID "
-    "and source hash. For memory_standalone, omit both reuse_workspace_of and "
+    "and source hash. Otherwise omit both reuse_workspace_of and "
     "expected_source_hash entirely, or set them to JSON null. Do not supply "
     "placeholder strings, whitespace, or a fabricated hash."
 )
@@ -90,50 +72,11 @@ _WORKSPACE_REUSE_NEW_RUN = (
     "This request did not reopen the completed task or edit its files."
 )
 
-# F-EPI-1. Episodes whose memory bounds no occurrence carry no ``occurred_local``
-# (``human_memory_v7.render_episode_occurred_local``), and the raw
-# ``occurred_start`` beside them is a minute-precise anchor the memory never
-# claimed. Silence there is what C04-10 and C04-14 answered with a computed date
-# (one of them two days off), so the Host says once, and only on a recall that
-# actually returned such a fragment, what the absence means. It costs nothing on
-# every other turn - unlike a PERSONA sentence, which is protected mass on every
-# request and whose 8192-tier headroom is exhausted (see
-# tests/sdk_adapters/test_token_estimator_calibration.py).
-_TEMPORAL_HINT = {
-    "reason": "episode_fragment_states_no_occurrence_time",
-    "next": "answer_without_inventing_a_date",
-    "message": "occurred_local is the Host-rendered occurrence time at the precision the memory "
-               "actually states; report it as written and never recompute a date from occurred_start. "
-               "An episode fragment carrying no occurred_local records no occurrence time at all: "
-               "describe when it happened only in that memory's own words, and state no date, month "
-               "or weekday for it.",
-}
-
-_PROCEDURE_HINT = {
-    "reason": "typed_recall_returns_only_applicable_procedures",
-    "next": "procedure_discover",
-    "message": "Typed recall only returns a Procedure that is already bound/applicable here; "
-               "a saved-but-unbound workflow never appears in these fragments. Their absence does not "
-               "mean no such workflow was saved. Call procedure_discover with the workflow name to list "
-               "the actual saved candidates before concluding anything or drafting from scratch.",
-}
-
 CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "route": {"type": "string", "enum": list(ROUTES)},
         "query": {"type": "string", "maxLength": _MAX_TEXT},
-        "memory_types": {
-            "type": "array", "minItems": 0, "maxItems": 4,
-            "items": {"type": "string", "enum": list(REQUESTABLE_MEMORY_TYPES)},
-            "description": ("Required for memory_standalone. " + MEMORY_TYPE_SELECTION_POLICY
-                            + " An empty list requires include_short_horizon=true. "
-                              "Selection grants no permission to disclose or execute."),
-        },
-        "include_short_horizon": {
-            "type": "boolean",
-            "description": "For memory_standalone, also request relevant prior conversation groups outside the recent context; default false. Short and long-term results share one Host budget and source checks.",
-        },
         "task_scope_id": {"type": "string", "maxLength": 128},
         "reuse_workspace_of": {
             "type": ["string", "null"], "minLength": 1, "maxLength": 128,
@@ -255,10 +198,12 @@ _CURRENT_TURN_EVIDENCE_NEXT_STEP = (
 class _ContestedProbe:
     """One verdict of the event-V contested guard, plus what the audit needs.
 
-    ``status is None`` means the probe never ran for this call (the
-    ``memory_standalone`` lane asks for itself, and a proposal rejected before
-    dispatch never reached it): the recorded detail is then byte-identical to
-    the pre-event-V one.
+    ``status is None`` means the probe never ran for this call: the recorded
+    detail is then byte-identical to the pre-event-V one.
+
+    2026-09-10：探针本身随认知记忆 SDK 移除（它唯一的判据是类型化召回返回的
+    冲突组）。所有路由现在都拿 ``_NO_PROBE``，因此审计投影回到事件 V 之前的
+    形状，而不是每轮记一条无意义的 "unavailable"。
     """
 
     notice: dict[str, Any] | None = None
@@ -386,27 +331,6 @@ class ContextRouteToolService:
         detail: Mapping[str, Any],
         wait_for_lock: bool = True,
     ) -> None:
-        if proposal.get("route") == "memory_standalone":
-            # Keep only the bounded enum/boolean projection. Raw query, invalid
-            # model values and provider exception text are not audit metadata.
-            try:
-                selected, short = parse_recall_selection(
-                    proposal.get("memory_types"), proposal.get("include_short_horizon", False),
-                )
-                selection = {"origin": "model_proposal",
-                             "requested_memory_types": list(selected),
-                             "include_short_horizon": short,
-                             # Advisory only: recorded so the extra-type rate has
-                             # a Host-side trace. Never gates or rewrites recall.
-                             # The query text is read for rule R5 and is not
-                             # itself recorded - the projection stays bounded.
-                             "selection_policy_departures":
-                                 list(selection_policy_departures(
-                                     selected, proposal.get("query")))}
-            except ValueError as exc:
-                selection = {"origin": "model_proposal", "selection_status": "invalid",
-                             "selection_error": str(exc)}
-            detail = {**detail, "recall_selection": selection}
         await self._ledger.record_tool_invocation(
             sdk_run_id=run_id,
             raw_call_id=raw_call_id,
@@ -431,16 +355,13 @@ class ContextRouteToolService:
         binding: Mapping[str, Any] | None = None,
         extras: Mapping[str, Any] | None = None,
         recall_refs: tuple[str, ...] = (),
-        recall_types: tuple[str, ...] = (),
-        recall_short_horizon: bool | None = None,
         typed_carrier: Mapping[str, Any] | None = None,
         recall_conflict: Mapping[str, Any] | None = None,
         contested: _ContestedProbe = _NO_PROBE,
     ) -> dict[str, Any]:
-        # Event V: the guard's verdict, taken by ``handle_context_route`` before
-        # this route touched anything. ``memory_standalone`` passes its own
-        # ``recall_conflict`` and never carries one here, so the value lands in
-        # the same extras field and the same audit detail either way.
+        # ``contested`` 自 2026-09-10 起恒为 ``_NO_PROBE``（见类注释），
+        # 下面这段因此不会触发；保留是为了让编排层大改重新引入争议判定时
+        # 有一个现成的落点，而不是散落回填。
         if recall_conflict is None and contested.notice is not None:
             recall_conflict = contested.notice
             extras = {**dict(extras or {}), "conflict_notice": dict(recall_conflict)}
@@ -507,14 +428,6 @@ class ContextRouteToolService:
                 # covered by no hash at all.
                 **({"public_result_hash": canonical_sha256(result)}
                    if typed_carrier is not None or contested.notice is not None else {}),
-                **({"recall_selection": {
-                    "origin": "model_proposal",
-                    "requested_memory_types": list(recall_types),
-                    "include_short_horizon": bool(recall_short_horizon),
-                    "selection_policy_departures":
-                        list(selection_policy_departures(
-                            recall_types or (), proposal.get("query"))),
-                }} if recall_types or recall_short_horizon is not None else {}),
                 **({"recall_conflict": _conflict_digest(recall_conflict)}
                    if recall_conflict is not None else {}),
                 # Every route that ran the guard says so, clear included: "no
@@ -578,142 +491,11 @@ class ContextRouteToolService:
             return ""
         return str(ref or "").strip()[:512]
 
-    async def _probe_recall(
-        self, *, query: str, run_id: str, turn_ordinal: int, effect_id: str, purpose: str,
-    ) -> Any:
-        """One confirmation-only recall in the probe's own idempotency lane.
-
-        The SDK keys one durable request per ``idempotency_key`` and rejects a
-        second, different request under the same key. ``turn_ordinal`` is per
-        provider *response*, shared by every tool call in one batch, so the
-        probe must never spend the model's own ``context-route:{run}:{turn}``
-        key: with two ``context_route`` calls in a batch the second would come
-        back ``context_route_adjudication_failed``. Purpose + ``effect_id``
-        give every read of a turn its own key.
-        """
-
-        return await self._recall_executor(
-            query=query, run_id=run_id, turn_ordinal=turn_ordinal,
-            memory_types=REQUESTABLE_MEMORY_TYPES,
-            include_short_horizon=False,
-            idempotency_purpose=purpose,
-            idempotency_scope=effect_id,
-        )
-
-    async def _contested_notice(
-        self,
-        *,
-        run_id: str,
-        turn_ordinal: int,
-        effect_id: str,
-        proposal: Mapping[str, Any],
-    ) -> _ContestedProbe:
-        """Ask Memory whether this turn's own words touch a contested value.
-
-        Confirmation-only: the probe's ordinary items and refs are discarded
-        (its degradation codes go to the audit, not to the model), so a
-        non-memory route still delivers no recalled content, keeps
-        ``recall_refs`` empty and leaves ``ContextRouteReceipt`` untouched.
-        Relevance is the SDK's own slot-level admission (0.6.31
-        ``contested_slot_text`` + vector), not a Host heuristic, so an unrelated
-        turn discloses nothing (minimum necessary) while the turn that names the
-        contested slot gets the identical notice ``memory_standalone`` returns.
-
-        The probe query is BOTH surfaces the Host has, model paraphrase first
-        then the admitted user turn, because neither alone is sound: 0.6.34
-        admits a group lexically only when a query term hits
-        ``contested_slot_text`` (the differing fields + ``predicate``), and this
-        incident's memory has that text in English/values only, with no vector
-        generation to fall back on (SDK followup F-V-2). The real T22 user
-        sentence 「那你现在按哪个版本执行这套校对流程？」 admits **nothing** on
-        0.6.34 — the replay measured ``confirmation_groups 0`` — and only the
-        model's paraphrase, which quoted 「3.13，不是 3.12」, hit the slot; a
-        differently-worded turn is the mirror case. Sending both is what makes
-        this a guarantee that the Host *asks* on every executing route. It is
-        not a guarantee that Memory can always answer: until F-V-2 lands, a
-        Chinese turn over a Chinese-less slot can still come back clear.
-
-        Never a route verdict: a route that already validated must not fail on
-        an unavailable memory read, so every failure degrades to ``unavailable``
-        in the audit.
-        """
-
-        model_query = str(proposal.get("query") or "").strip()[:_MAX_TEXT]
-        turn_text = await self._current_turn_text(run_id)
-        sources: list[str] = []
-        parts: list[str] = []
-        for name, text in (("model_query", model_query), ("user_turn", turn_text)):
-            if text and text not in parts:
-                sources.append(name)
-                parts.append(text)
-        if not parts:
-            # Neither surface exists, so there is no bounded basis to disclose
-            # on. Recorded, never silent.
-            return _ContestedProbe(status="no_query")
-        if self._recall_executor is None:
-            return _ContestedProbe(status="unavailable", query_sources=tuple(sources))
-        from deskpet.memory.human_memory_v7 import project_contested_confirmation
-
-        try:
-            execution = await self._probe_recall(
-                query="\n".join(parts), run_id=run_id, turn_ordinal=turn_ordinal,
-                effect_id=effect_id, purpose=CONTESTED_PROBE_PURPOSE,
-            )
-            notice = project_contested_confirmation(execution)
-            codes = tuple(str(getattr(code, "value", code))
-                          for code in (getattr(execution, "degradation_codes", ()) or ()))
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001 - advisory guard, never a route verdict
-            # Exception text can carry provider or source content; log identity.
-            _LOG.warning("context_route_contested_probe_unavailable run_id=%s", run_id)
-            return _ContestedProbe(status="unavailable", query_sources=tuple(sources))
-        if notice is None:
-            return _ContestedProbe(
-                status="clear", query_sources=tuple(sources), degradation_codes=codes)
-        return _ContestedProbe(
-            notice=notice, status="contested", query_sources=tuple(sources),
-            degradation_codes=codes,
-            admitted=await self._admitting_surface(
-                turn_text=turn_text, sources=tuple(sources), run_id=run_id,
-                turn_ordinal=turn_ordinal, effect_id=effect_id,
-            ),
-        )
-
-    async def _admitting_surface(
-        self, *, turn_text: str, sources: tuple[str, ...], run_id: str,
-        turn_ordinal: int, effect_id: str,
-    ) -> str | None:
-        """Would the user's own sentence alone have reached this group?
-
-        Asked only when a notice actually fired and both surfaces were sent, so
-        it costs one extra recall on the rare contested turn and none otherwise.
-        This is the production measurement of SDK followup F-V-2, and it asks
-        the one question that matters: ``user_turn`` means the Host stands on
-        the user's own words and the model's paraphrase was not needed;
-        ``model_query`` means the user's sentence did NOT reach the group and
-        this disclosure only happened because the model happened to quote the
-        contested values — the T22 shape, and exactly the case F-V-2 must close.
-        A field of ``model_query`` in production is therefore a defect report,
-        not a statistic. Discarded result, own idempotency lane, never a verdict.
-        """
-
-        if sources != ("model_query", "user_turn"):
-            return sources[0] if sources else None
-        from deskpet.memory.human_memory_v7 import project_contested_confirmation
-
-        try:
-            execution = await self._probe_recall(
-                query=turn_text, run_id=run_id, turn_ordinal=turn_ordinal,
-                effect_id=effect_id,
-                purpose=CONTESTED_PROBE_ATTRIBUTION_PURPOSE,
-            )
-            return "user_turn" if project_contested_confirmation(execution) else "model_query"
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001 - attribution is a measurement, not a gate
-            _LOG.warning("context_route_contested_attribution_unavailable run_id=%s", run_id)
-            return "unknown"
+    # 2026-09-10：事件 V 的「争议确认」探针（``_probe_recall`` /
+    # ``_contested_notice`` / ``_admitting_surface``）全部建立在类型化记忆召回
+    # 之上——没有记忆系统就没有会与本轮冲突的已存值可查。三者一并移除；
+    # ``contested`` 参数保留为恒定的 ``_NO_PROBE``，审计投影因此与事件 V 之前
+    # 逐字节相同，而不是每轮记一条假的 "unavailable"。
 
     async def _binding_head(self, task_scope_id: str) -> dict[str, Any]:
         store = self._binding_store_factory()
@@ -755,21 +537,7 @@ class ContextRouteToolService:
                 "context_route_source_hash_not_applicable",
                 message="expected_source_hash requires resume_existing or exact create_new workspace reuse. "
                         "Otherwise omit expected_source_hash or set it to JSON null; never fabricate a hash.")
-        # Event V: ``memory_standalone`` is not the only route that executes on
-        # a stored value. A6 attempt 9 T22 asked 「那你现在按哪个版本执行这套校对
-        # 流程？」 66 s after the contest landed, routed ``direct_standalone``
-        # ("answer the turn as it stands") and answered "Python 3.13" from its
-        # own transcript: the Host's contested gate lived only inside
-        # ``_memory_standalone``, so no route but that one ever consulted the
-        # open conflict group. Every other route now runs the same bounded probe
-        # — deliberately here, BEFORE any route side effect, so a cancelled probe
-        # can never leave a created TaskScope without its route decision.
         contested = _NO_PROBE
-        if route_value != "memory_standalone":
-            contested = await self._contested_notice(
-                run_id=run_id, turn_ordinal=turn_ordinal, effect_id=effect_id,
-                proposal=proposal,
-            )
         try:
             if route_value == "direct_standalone":
                 return await self._commit_receipt(
@@ -780,10 +548,6 @@ class ContextRouteToolService:
                     route=TaskScopeRoute.DIRECT_STANDALONE,
                     proposal=proposal,
                     contested=contested,
-                )
-            if route_value == "memory_standalone":
-                return await self._memory_standalone(
-                    run_id, raw_call_id, effect_id, turn_ordinal, proposal
                 )
             if route_value == "continue_active":
                 return await self._continue_active(
@@ -803,11 +567,6 @@ class ContextRouteToolService:
             return await self._reject(run_id, raw_call_id, effect_id, proposal, exc.code,
                                       contested=contested)
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
-            if route_value == "memory_standalone":
-                # Exception messages/codes can contain provider or source text.
-                code = ("context_route_recall_timeout" if isinstance(exc, TimeoutError)
-                        else "context_route_adjudication_failed")
-                return await self._reject(run_id, raw_call_id, effect_id, proposal, code)
             code = str(getattr(exc, "code", "") or "context_route_adjudication_failed")
             # MM-D3: ``task_scope_conflict`` used to carry only the raw
             # ``execution_run_scope_conflict`` string — neither scope id and no
@@ -904,118 +663,7 @@ class ContextRouteToolService:
         return payload
 
 
-    async def _memory_standalone(
-        self,
-        run_id: str,
-        raw_call_id: str,
-        effect_id: str,
-        turn_ordinal: int,
-        proposal: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        if self._recall_executor is None:
-            return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
-                "context_route_memory_standalone_unavailable",
-            )
-        query = str(proposal.get("query") or "").strip()
-        if not query:
-            return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
-                "context_route_recall_query_required",
-            )
-        try:
-            memory_types, include_short_horizon = parse_recall_selection(
-                proposal.get("memory_types"), proposal.get("include_short_horizon", False),
-            )
-        except ValueError as exc:
-            return await self._reject(
-                run_id, raw_call_id, effect_id, proposal, str(exc),
-            )
-        from deskpet.memory.human_memory_v7 import (
-            project_contested_confirmation, project_recall_fragments,
-        )
-
-        admitted = None
-        if self._typed_use_authority is not None:
-            admitted = await self._typed_use_authority.admitted_tool_context(self._tool_context_getter())
-        try:
-            execution = await self._recall_executor(
-                query=query, run_id=run_id, turn_ordinal=turn_ordinal,
-                memory_types=memory_types,
-                include_short_horizon=include_short_horizon,
-                # One provider response can carry two context_route calls; the
-                # turn ordinal alone is not a per-call identity, so the model's
-                # second recall of a turn used to collide with its first inside
-                # the SDK's idempotency store.
-                idempotency_scope=effect_id,
-                **({"admitted_context": admitted} if admitted is not None else {}),
-            )
-        except asyncio.CancelledError:
-            # This boundary precedes route commit; cancellation is not a
-            # successful route or a normal tool return. Do not wait for a DB
-            # writer lock. The deadline requests cancellation; wait_for still
-            # awaits owned rollback/close, so it is not a wall-clock hard cap.
-            # Always propagate cancellation, including if storage fails.
-            try:
-                await asyncio.wait_for(self._record(
-                    run_id=run_id, raw_call_id=raw_call_id, effect_id=effect_id,
-                    proposal=proposal, verdict="rejected", decision_id=None,
-                    detail={"code": "context_route_recall_cancelled"},
-                    wait_for_lock=False,
-                ), timeout=_AUDIT_CANCEL_SECONDS)
-            except (Exception, asyncio.CancelledError):
-                _LOG.warning("context_route_cancel_audit_unavailable run_id=%s effect_id=%s",
-                             run_id, effect_id)
-            raise
-        fragments = project_recall_fragments(execution)
-        # HM-S3: a contested head never reaches ``result.items``; without this the
-        # whole recall reads to the model as "nothing was ever saved" and it
-        # answers a dependent execution question from the last value it saw.
-        conflict = project_contested_confirmation(execution)
-        carrier = None
-        if self._typed_use_authority is not None:
-            carrier = await self._typed_use_authority.build_carrier(
-                execution=execution, projected=fragments, admitted=admitted, effect_id=effect_id,
-                # Event AA: the exact Host-authored recall behind this binding,
-                # so the context-use fence can re-collect it (same plan, its own
-                # idempotency purpose) when the bound authority lease runs out
-                # mid-turn instead of failing the whole Run.
-                recall_plan=dict(query=query, memory_types=memory_types,
-                                 include_short_horizon=include_short_horizon,
-                                 turn_ordinal=turn_ordinal),
-            )
-        refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
-        procedure_hint = await self._procedure_hint(
-            run_id=run_id, query=query, memory_types=memory_types, fragments=fragments,
-        )
-        temporal_hint = self._temporal_hint(fragments)
-        return await self._commit_receipt(
-            run_id=run_id,
-            raw_call_id=raw_call_id,
-            effect_id=effect_id,
-            turn_ordinal=turn_ordinal,
-            route=TaskScopeRoute.MEMORY_STANDALONE,
-            proposal=proposal,
-            recall_refs=refs,
-            recall_types=memory_types,
-            recall_short_horizon=include_short_horizon,
-            typed_carrier=carrier,
-            recall_conflict=conflict,
-            extras={
-                "fragments": list(fragments),
-                "degradation_codes": list(execution.degradation_codes),
-                "truncated": bool(execution.result.truncated),
-                **({"conflict_notice": conflict} if conflict is not None else {}),
-                # By design typed recall withholds unbound Procedures. Silence
-                # reads to the model as "nothing was ever saved", so point at
-                # the discovery surface instead. This rides in the same extras
-                # the receipt hash and typed-use public_result_hash cover; the
-                # ContextRouteReceipt itself is untouched.
-                **({"procedure_hint": procedure_hint} if procedure_hint else {}),
-                # F-EPI-1: same carrier, same receipt hash; see _temporal_hint.
-                **({"temporal_hint": temporal_hint} if temporal_hint else {}),
-            },
-        )
+    # 2026-09-10：``memory_standalone`` 路由（类型化召回）随认知记忆 SDK 移除。
 
     async def _run_is_task_scoped(self, run_id: str) -> bool:
         """Has this Run already bound a TaskScope (any earlier turn of the Run)?
@@ -1033,42 +681,8 @@ class ContextRouteToolService:
             return False
         return decision is not None
 
-    @staticmethod
-    def _temporal_hint(fragments) -> dict[str, Any] | None:
-        """Explain an episode fragment that states no occurrence time.
-
-        Pure function of what this recall actually returned: no query text, no
-        DB read, no per-case expectation. A recall that returned no such
-        fragment is byte-identical to the pre-F-EPI-1 receipt.
-        """
-
-        if any(fragment["memory_type"] == "episode" and "occurred_local" not in fragment
-               for fragment in fragments):
-            return dict(_TEMPORAL_HINT)
-        return None
-
-    async def _procedure_hint(
-        self, *, run_id: str, query: str, memory_types: tuple[str, ...], fragments,
-    ) -> dict[str, Any] | None:
-        """Point at ``procedure_discover`` whenever a workflow could be the answer.
-
-        F-ETR-5: this used to fire only when the model had put ``procedure`` in
-        ``memory_types``. Rule R4 of ``MEMORY_TYPE_SELECTION_POLICY`` then
-        correctly told the model to stop requesting a type typed recall cannot
-        serve, which silently switched the hint off for the very requests it
-        exists for (C06 ``procedure_discover`` 18/19 → 14/19). The trigger is
-        therefore the request, not the type selection: a workflow-shaped query,
-        or a Run already inside a TaskScope, where an unbound saved workflow is
-        exactly what typed recall withholds. The payload is unchanged.
-        """
-
-        if any(fragment["memory_type"] == "procedure" for fragment in fragments):
-            return None
-        if not ("procedure" in memory_types
-                or indicates_workflow_request(query)
-                or await self._run_is_task_scoped(run_id)):
-            return None
-        return dict(_PROCEDURE_HINT)
+    # 2026-09-10：``_temporal_hint`` / ``_procedure_hint`` 只在类型化召回的
+    # 返回上生效，随记忆一并移除。
 
     async def _continue_active(
         self,
@@ -1403,7 +1017,7 @@ class ContextRouteToolService:
             f"{base} There is no current active task, so continue_active and "
             "resume_existing have nothing to select. Call context_route with "
             "route=create_new plus title and goal for multi-step work, or "
-            "route=direct_standalone / memory_standalone if no task is needed."
+            "route=direct_standalone if no task is needed."
         )
 
 

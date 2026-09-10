@@ -1,4 +1,14 @@
-"""Host-owned history dependency proof, checked by one public Memory batch."""
+"""Host-owned history dependency proof.
+
+2026-09-10：认知记忆 SDK（``simple-harness-memory-sdk``）整条移除后，这里只剩
+**Host 自己的证据依赖证明**：读回 S1 证据对、逐条校验 envelope/receipt 承诺、
+遍历依赖 DAG（环/深度/边数/哈希不匹配一律判不可见）。
+
+原先决定「某条证据是否对本次读可见」的那一次公开 Memory 批（
+``HistoryVisibilitySnapshot``）已经没有了。没有记忆系统就没有遗忘/抑制权威，
+所以**遍历通过即可见**——这是诚实的语义，不是放行：链路损坏、哈希对不上、
+终态未被 Host 身份表证实的根，依然返回不可见。
+"""
 
 from __future__ import annotations
 
@@ -39,24 +49,14 @@ def _stable_message_types() -> tuple[type, ...]:
     Task 6 review F-3: an arbitrary innermost cause can carry a raw HTTP body,
     a SQLite statement or a provider URL.  Only a ``.code`` attribute or one of
     these types is proof that the message is a bounded, content-free token.
+
+    2026-09-10：记忆 SDK 的稳定错误类（``MemoryLimitError`` 等）随其一并移除，
+    白名单只剩 Host 自己的稳定错误类型。
     """
 
-    allowed: list[type] = []
-    try:
-        from simple_harness_memory.core import errors as sdk_errors
-    except ImportError:  # pragma: no cover - no SDK ⇒ nothing to allowlist
-        pass
-    else:
-        allowed += [
-            sdk_errors.MemoryErrorBase,
-            sdk_errors.MemoryLimitError,
-            sdk_errors.MemoryCorruptionError,
-            sdk_errors.EmbeddingError,
-        ]
     from deskpet.task_scope.protocol import TaskScopeProtocolError
 
-    allowed.append(TaskScopeProtocolError)
-    return tuple(allowed)
+    return (TaskScopeProtocolError,)
 
 
 def cause_fields(exc: BaseException | None) -> dict[str, str | None]:
@@ -74,10 +74,9 @@ def cause_fields(exc: BaseException | None) -> dict[str, str | None]:
     fields = {"cause_type": type(exc).__name__, "cause_detail": None}
     code = getattr(exc, "code", None)
     if isinstance(exc, _stable_message_types()):
-        # The message wins over ``.code`` for these: an SDK stable-error class
-        # carries a *generic* class-level code ("memory_validation_error")
-        # while its message is the specific one we actually need
-        # ("evidence_credential_boundary_rejected").
+        # The message wins over ``.code`` for these: the class carries a
+        # *generic* class-level code while its message is the specific one we
+        # actually need.
         message = str(exc)
     elif isinstance(code, str) and code:
         message = code
@@ -152,10 +151,13 @@ def _fields(value, keys):
 
 
 def _dependencies(proof):
-    try:
-        from simple_harness_memory import HistoryRecallBinding
-    except ImportError as exc:
-        raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
+    """Validate a recorded visibility-dependency proof and key its lanes.
+
+    2026-09-10：``recall`` / ``short_horizon`` / ``procedure_drafts`` 三条泳道
+    原本要构造记忆 SDK 的 binding 对象再交给公开可见性批。SDK 移除后这里只保留
+    **形状校验**，并把每条泳道项折算成一个不可伪造的规范哈希键；键只用于本模块
+    内部的「这条依赖是否被证明」记账，不再代表任何记忆权威。
+    """
 
     if not isinstance(proof, Mapping):
         raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
@@ -182,83 +184,70 @@ def _dependencies(proof):
         evidence[item["evidence_id"]] = item["envelope_hash"]
     for item in proof["recall"]:
         _fields(item, ("result_id", "result_hash", "item_id", "item_hash"))
-        recalls.append(HistoryRecallBinding(**dict(item)))
+        recalls.append(_lane_key("recall", item))
     if version >= 2:
-        try:
-            from simple_harness_memory import HistoryShortHorizonBinding
-        except ImportError as exc:
-            raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
         for item in proof["short_horizon"]:
             _fields(item, ("audit_id", "chunk_ref", "content_hash"))
-            recalls.append(HistoryShortHorizonBinding(**dict(item)))
+            recalls.append(_lane_key("short_horizon", item))
     if version == 3:
-        from simple_harness_memory import HistoryProcedureDraftBinding
         for item in proof["procedure_drafts"]:
             _fields(item, ("memory_id","revision","candidate_hash"))
-            recalls.append(HistoryProcedureDraftBinding(**dict(item)))
-    return evidence, recalls
+            recalls.append(_lane_key("procedure_drafts", item))
+    return evidence, tuple(recalls)
 
 
-def _binding_hash(binding):
-    # Public Memory history v1 binding commitment; no SDK private helper/SQL.
+def _lane_key(lane: str, item) -> str:
+    """Content-addressed key for one recorded non-evidence dependency item."""
     return canonical_hash(
-        {"domain": "memory.history.binding.v1", "payload": binding.to_json()}
+        {"domain": "host.primary.visibility.lane.v1", "lane": lane, "item": dict(item)}
+    )
+
+
+def _evidence_key(evidence_id: str, envelope_hash: str) -> str:
+    """Key for one proven S1 evidence node inside a single dependency proof."""
+    return canonical_hash(
+        {
+            "domain": "host.primary.visibility.evidence.v1",
+            "evidence_id": evidence_id,
+            "envelope_hash": envelope_hash,
+        }
     )
 
 
 def inline_evidence_limit() -> int | None:
-    """The Memory inline-payload ceiling this build's SDK will admit."""
-    try:
-        from simple_harness_memory.core.evidence import MAX_INLINE_EVIDENCE_BYTES
-    except ImportError:  # pragma: no cover - no SDK ⇒ every read already fails
-        return None
-    return int(MAX_INLINE_EVIDENCE_BYTES)
+    """No Memory system ⇒ no inline-payload ceiling imposed by a Memory batch.
+
+    ``None`` is the existing "no ceiling known" answer every caller already
+    handles by writing the payload unchanged.
+    """
+    return None
 
 
 def assert_source_admissible(envelope, receipt) -> None:
-    """Reject an S1 pair the Memory batch can never admit (fail-closed).
+    """No-op in a build with no Memory system.
 
-    2026-09-08 HM-TO-A6: a single terminal observation whose inline payload
-    exceeded Memory's 64 KiB ceiling made **every** later history batch raise
-    ``MemoryLimitError``.  The Host wrapped that as the transient-looking
-    ``primary_read_policy_unavailable`` and the whole primary conversation
-    became unreadable — the foreground driver died and no later turn could
-    start.
+    2026-09-08 HM-TO-A6 装了这道门，是因为一条超过记忆 SDK 64 KiB 内联上限的
+    终态观测会让**之后每一批**历史可见性调用抛 ``MemoryLimitError``，整条主对话
+    读不出来。那个批已经不存在了：没有记忆系统，就没有会被它结构性拒绝的证据。
 
-    Structural rejection is a permanent, per-envelope property, not a policy
-    outage, so it withholds that one source instead of the batch.  Task 6
-    review F-1: this calls **the SDK's own** :func:`validate_sanitized_evidence`
-    rather than reimplementing one of its rules, because the batch also dies on
-    a malformed ``blob_ref``, a >4096-node or depth->32 structure, an oversized
-    public string and a credential-boundary hit — a hand-rolled 64 KiB check
-    admitted every one of those and reproduced the stall.
-
-    This only ever withholds a source; no binding becomes visible because of it.
+    保留函数与调用点（而不是删掉），是因为「哪些来源可被下游权威接纳」这件事在
+    编排层大改后大概率要回来；此时它诚实地什么都不判，不假装通过某个不存在的
+    校验。
     """
 
-    try:
-        from simple_harness_memory.core.errors import (
-            MemoryLimitError,
-            MemoryValidationError,
-        )
-        from simple_harness_memory.core.evidence import validate_sanitized_evidence
-    except ImportError as exc:  # pragma: no cover - no SDK ⇒ every read fails
-        raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
-    from deskpet.memory.human_memory_v7 import HOST_SUPPORTED_FILTER_POLICIES
-
-    try:
-        validate_sanitized_evidence(
-            envelope,
-            receipt,
-            supported_filter_policies=tuple(sorted(HOST_SUPPORTED_FILTER_POLICIES)),
-        )
-    except (MemoryValidationError, MemoryLimitError) as exc:
-        raise PrimaryVisibilityError(SOURCE_UNADMISSIBLE, exc) from exc
+    return None
 
 
 class PrimaryHistoryPolicy:
-    def __init__(self, db_path: str | Path, subject: str, checker: object | None):
-        self.path, self.subject, self.checker = Path(db_path), subject, checker
+    """Host dependency-proof policy for one subject's primary conversation.
+
+    The third constructor argument used to be the public Memory
+    history-visibility checker.  It is gone with the Memory SDK; the parameter
+    is retired rather than silently ignored.
+    """
+
+    def __init__(self, db_path: str | Path, subject: str):
+        self.path, self.subject = Path(db_path), subject
 
     async def check_evidence_ids(
         self,
@@ -303,30 +292,17 @@ class PrimaryHistoryPolicy:
             return False
 
     async def current_user_denial(self, *, db, primary_ref, evidence_id, evidence_hash, disclosure_context):
-        """Return only a validated current-source denial, never a generic false."""
-        from simple_harness_memory import HistoryEvidenceBinding
-        from deskpet.execution.preparation_rejection import REASONS
+        """Always ``None``: no Memory system ⇒ no authority that can deny a source.
 
-        capture = {}
-        # Task 6 review F-7: an unadmissible *current* USER source is not
-        # "no proven denial" — it is a source this Run can never read back.
-        # Let the stable code out instead of degrading it into ``None``.
-        visible, _ = await self._check(
-            db=db, primary_ref=primary_ref, evidence_ids=(evidence_id,),
-            disclosure_context=disclosure_context, expected_hashes={evidence_id: evidence_hash},
-            snapshot_capture=capture, propagate_unadmissible=True,
-        )
-        if visible.get(evidence_id) is not False or "snapshot" not in capture:
-            return None
-        snapshot = capture["snapshot"]
-        for binding in capture["bindings"]:
-            if type(binding) is HistoryEvidenceBinding and binding.envelope.evidence_id == evidence_id:
-                if binding.envelope.source_kind.value != "user_message":
-                    return None
-                key = _binding_hash(binding)
-                item = next((i for i in snapshot.items if i.binding_hash == key), None)
-                if item is not None and not item.visible and item.reason in REASONS:
-                    return key, snapshot, item.reason
+        原来这条路径唯一的判据是那次公开 Memory 可见性批的逐条 ``visible``
+        判定（用户在记忆面板里「忘掉」了这条当前 USER 来源）。记忆系统于
+        2026-09-10 整条移除后，没有任何权威能给出「被证明的拒绝」，所以这里
+        诚实地回答"没有证明"，而不是拿遍历失败去伪造一次拒绝——遍历失败是
+        「读不出来」，与「被拒绝披露」是两回事。
+
+        结果：``PreparationDisclosureRejected`` 在本构建下不会再产生新记录。
+        """
+
         return None
 
     async def _check(
@@ -338,17 +314,14 @@ class PrimaryHistoryPolicy:
         disclosure_context,
         expected_hashes=None,
         recall=(),
-        snapshot_capture=None,
-        propagate_unadmissible=False,
     ):
-        """All dependency decisions belong to this call's single SDK snapshot."""
-        try:
-            from simple_harness_memory import (
-                HistoryEvidenceBinding,
-                HistoryVisibilitySnapshot,
-            )
-        except ImportError as exc:
-            raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
+        """Prove each root's dependency DAG; no Memory snapshot decides here.
+
+        2026-09-10：唯一那次公开 Memory 可见性批已随记忆 SDK 移除。本方法保留
+        全部 Host 侧结构证明——S1 证据对读回与承诺校验、envelope 哈希必须与
+        依赖声明一致、环/深度/边数上限、终态观测必须被 Host 终态身份表证实、
+        终态的当前 USER 输入必须落在自己的依赖闭包里——遍历不过的根返回不可见。
+        """
 
         identifier(primary_ref, "primary_ref", 512)
         if (
@@ -356,8 +329,6 @@ class PrimaryHistoryPolicy:
             or disclosure_context.subject != self.subject
         ):
             raise PrimaryVisibilityError("primary_visibility_context_invalid")
-        if self.checker is None:
-            raise PrimaryVisibilityError("primary_read_policy_unavailable")
         if (
             not isinstance(evidence_ids, (list, tuple))
             or len(evidence_ids) > MAX_BINDINGS
@@ -365,13 +336,12 @@ class PrimaryHistoryPolicy:
             raise PrimaryVisibilityError("primary_visibility_limit")
         for evidence_id in evidence_ids:
             identifier(evidence_id, "evidence_id", 512)
-        bindings, memo, active = {}, {}, set()
+        proven, memo, active = set(), {}, set()
         edges = 0
 
-        def add(binding):
-            key = _binding_hash(binding)
-            bindings[key] = binding
-            if len(bindings) > MAX_BINDINGS:
+        def add(key):
+            proven.add(key)
+            if len(proven) > MAX_BINDINGS:
                 raise PrimaryVisibilityError("primary_visibility_limit")
             return key
 
@@ -395,12 +365,11 @@ class PrimaryHistoryPolicy:
             )
             if expected_hash is not None and expected_hash != envelope.envelope_hash:
                 raise PrimaryVisibilityError("primary_visibility_binding_mismatch")
-            # Checked before the batch is assembled: one unadmissible source
-            # must withhold only its own root, never the whole SDK batch.
+            # Retired gate, kept as the seam a later admission authority reuses.
             assert_source_admissible(envelope, receipt)
             active.add(evidence_id)
             try:
-                required = {add(HistoryEvidenceBinding(envelope, receipt))}
+                required = {add(_evidence_key(evidence_id, envelope.envelope_hash))}
                 evidence_dependencies = [
                     (ref.evidence_id, ref.content_hash)
                     for ref in envelope.evidence_refs
@@ -415,9 +384,9 @@ class PrimaryHistoryPolicy:
                     evidence_proof, recall_proof = _dependencies(
                         payload.get("visibility_dependencies")
                     )
-                    from deskpet.memory.prospective_source_dependencies import verify_terminal_sources_tx
-                    await verify_terminal_sources_tx(db, sdk_run_id=envelope.run_id,
-                        manifest=payload.get('prospective_source_dependencies'), evidence=evidence_proof)
+                    # 记忆 SDK 移除后不再有 prospective 来源清单可对账，
+                    # ``prospective_source_dependencies`` 字段（若旧记录里还有）
+                    # 只是不再被检查的历史字节，不参与任何判定。
                     from deskpet.execution.terminal_identity import (
                         read_primary_terminal_identity_tx,
                     )
@@ -457,8 +426,8 @@ class PrimaryHistoryPolicy:
                         )
                     input_id = input_row[0]
                     evidence_dependencies.extend(evidence_proof.items())
-                    for binding in recall_proof:
-                        required.add(add(binding))
+                    for lane_key in recall_proof:
+                        required.add(add(lane_key))
                 for dependency_id, dependency_hash in evidence_dependencies:
                     required.update(
                         await visit(dependency_id, dependency_hash, depth + 1)
@@ -478,7 +447,7 @@ class PrimaryHistoryPolicy:
             finally:
                 active.remove(evidence_id)
 
-        extra_keys = {add(binding) for binding in recall}
+        extra_keys = {add(lane_key) for lane_key in recall}
         roots = {}
         for evidence_id in dict.fromkeys(evidence_ids):
             try:
@@ -487,48 +456,17 @@ class PrimaryHistoryPolicy:
                     None if expected_hashes is None else expected_hashes[evidence_id],
                 )
             except PrimaryVisibilityError as exc:
-                if exc.code == "primary_visibility_limit" or (
-                    propagate_unadmissible and exc.code == SOURCE_UNADMISSIBLE
-                ):
+                if exc.code == "primary_visibility_limit":
                     raise
                 roots[evidence_id] = None
             except (ValueError, TypeError, KeyError, RuntimeError):
                 roots[evidence_id] = None
-        needed = extra_keys.union(
-            *(keys for keys in roots.values() if keys is not None)
-        )
-        if not needed:
-            return {evidence_id: False for evidence_id in roots}, not extra_keys
-        ordered = tuple(bindings[key] for key in bindings if key in needed)
-        expected = tuple(_binding_hash(binding) for binding in ordered)
-        try:
-            snapshot = self.checker(
-                subject=self.subject,
-                disclosure_context=disclosure_context,
-                bindings=ordered,
-            )
-            if inspect.isawaitable(snapshot):
-                snapshot = await snapshot
-            if (
-                type(snapshot) is not HistoryVisibilitySnapshot
-                or type(snapshot.schema_version) is not int
-                or snapshot.schema_version != 1
-                or snapshot.subject != self.subject
-                or tuple(item.binding_hash for item in snapshot.items) != expected
-                or any(type(item.visible) is not bool for item in snapshot.items)
-            ):
-                raise ValueError("history visibility response mismatch")
-        except Exception as exc:
-            # 这里是唯一的 SDK 快照调用点；把真实异常的类型与稳定消息带出去，
-            # 否则 `foreground.runtime.failed` 只剩一个空壳码。
-            raise PrimaryVisibilityError("primary_read_policy_unavailable", exc) from exc
-        if snapshot_capture is not None:
-            snapshot_capture.update(snapshot=snapshot, bindings=ordered)
-        decisions = {item.binding_hash: item.visible for item in snapshot.items}
+        # No Memory system ⇒ no suppression authority ⇒ every dependency this
+        # traversal actually *proved* is visible.  A root that failed to prove
+        # its chain stays invisible, and a recorded non-evidence lane item
+        # (legacy recall / short-horizon / procedure-draft proof) counts as
+        # proved only because its shape and content hash were validated above.
         return (
-            {
-                eid: keys is not None and all(decisions[key] for key in keys)
-                for eid, keys in roots.items()
-            },
-            all(decisions[key] for key in extra_keys),
+            {eid: keys is not None for eid, keys in roots.items()},
+            extra_keys <= proven,
         )

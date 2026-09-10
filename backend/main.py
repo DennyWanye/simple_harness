@@ -229,7 +229,6 @@ from deskpet.tools.public_projection import (
 from deskpet.sdk_adapters.sdk_candidate import (
     SDK_VERSION,
     build_candidate_identity,
-    verify_memory_candidate,
 )
 from observability.vram import classify_tier
 from router.hybrid_router import HybridRouter, LLMUnavailableError, RoutingStrategy
@@ -1108,40 +1107,8 @@ async def _initialize_growth_authority() -> None:
         _paths.user_data_dir() / "data" / "companion.db",
         clock=companion_clock.now_utc,
     )
-    # P4-S13: 记忆 SDK 接线 —— 把认知记忆能力暴露为 product SDK 的 memory tool
-    # provider。旧 deskpet.tools.memory_recall 模块已在记忆系统清理时删除，这里改用
-    # host 侧 recall_adapter（只做「product SDK tool 契约 <-> MemoryBackend」翻译）。
-    from deskpet.memory.recall_adapter import (
-        CompanionRunMemoryScopeResolver,
-        OwnerMemoryRecallQueryAdapter,
-        register_memory_recall,
-    )
-    from deskpet.memory.session_db import DEFAULT_MEMORY_USER_ID
-    memory_recall_query = OwnerMemoryRecallQueryAdapter(
-        _memory_backend,
-        session_db,
-        default_user_id=DEFAULT_MEMORY_USER_ID,
-    )
-    service_context.register("memory_recall_query", memory_recall_query)
-    scope_resolver = CompanionRunMemoryScopeResolver(store)
-    service_context.register("memory_recall_scope_resolver", scope_resolver)
-    if deskpet_tool_registry_v2 is not None:
-        if deskpet_tool_registry_v2.get("memory_recall") is None:
-            # P4-S13 TODO: core handler authority 清单仍指向已删除的
-            # deskpet/tools/memory_recall.py，需重建 execution_build_* 三个 manifest 后
-            # 才能通过 authority_accepts_handler。在此之前仅注册 provider，不阻断启动；
-            # SDK runtime 的 memory_recall 走 product tool catalog，不受 host registry 影响。
-            try:
-                register_memory_recall(
-                    deskpet_tool_registry_v2,
-                    memory_recall_query,
-                    scope_resolver,
-                )
-            except Exception as _mem_recall_reg_exc:  # noqa: BLE001
-                logger.warning(
-                    "memory_recall_host_registration_deferred",
-                    reason=str(_mem_recall_reg_exc)[:200],
-                )
+    # 2026-09-10：认知记忆 SDK（simple-harness-memory-sdk）已从 Host 移除，
+    # memory_recall / memory_search 等记忆工具与其 provider 一并下线。
     preference_resolver = PreferenceResolver(
         store,
         policy=PreferencePolicy.from_growth_config(config.companion.growth),
@@ -2565,20 +2532,16 @@ _message_chunker = None  # type: ignore[assignment]
 # 记忆系统升级 WI-M1.7b: procedural memory（反复问题→解法）存储。
 _skill_memory_store = None  # type: ignore[assignment]
 
-# --- P4-S13 记忆系统接入（simple-harness-memory-sdk） ---
-# 旧 FileMemory / Manager / Embedder / VectorWorker / Facts / Retriever 等已删除。
-# 这里构造 host 会话账本 SessionDB + SDK 认知记忆 MemoryBackend（双写）；失败降级为 None，
-# app 以无认知记忆模式启动但不阻断。
+# --- Host 会话账本（SessionDB）---
+# 2026-09-10：认知记忆 SDK（simple-harness-memory-sdk）已整条移除，本块只剩
+# Host 自己的会话账本 SessionDB（state.db）。失败降级为 None，app 仍能启动。
 _summarizer_state_db_path = None
 _state_db_path = _paths.user_data_dir() / "data" / "state.db"
 try:
     from deskpet.memory.session_db import SessionDB
-    _memory_db_path = _paths.user_data_dir() / "data" / "memory.db"
-    _memory_backend = None
     _session_db = SessionDB(db_path=_state_db_path)
-except Exception as _memory_sdk_exc:  # noqa: BLE001
-    logger.warning("memory_sdk_wiring_failed error=%s", str(_memory_sdk_exc)[:200])
-    _memory_backend = None
+except Exception as _session_db_exc:  # noqa: BLE001
+    logger.warning("session_db_wiring_failed error=%s", str(_session_db_exc)[:200])
     _session_db = None
 # 旧记忆装配块曾赋值、且 main.py 别处仍可能引用的全局变量统一置 None，避免 NameError。
 _file_memory = None
@@ -3283,21 +3246,8 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
 
     _terminal_audit = await _activate_terminal_operation_audit()
 
-    def _occurrence_terminal_hook(sdk_run_id):
-        from deskpet.memory.prospective_terminal_hook import prepare_occurrence_terminal_hook
-        coordinator=service_context.get("prospective_occurrence_coordinator")
-        if coordinator is None:
-            return None
-        # Public SDK read occurs before the Host terminal writer transaction.
-        actual=_sdk_runtime_stack.read_run_terminal_evidence(sdk_run_id)
-        return prepare_occurrence_terminal_hook(principal=coordinator.store.principal,
-            sdk_run_id=sdk_run_id,actual_sdk_terminal=actual)
-
-    # The Context's trusted date and Memory's public as_of use the same owned
-    # business clock. Physical workers/leases retain their existing clocks.
-    _context_memory_runtime = service_context.get("human_memory_v7_runtime")
-    if _context_memory_runtime is None:
-        raise RuntimeError("human_memory_v7_runtime_unavailable")
+    # 2026-09-10：prospective（未来时点提醒）随认知记忆 SDK 移除，终态提交
+    # 不再有 occurrence hook 要跑。
     runtime = ForegroundRuntimeExecutionAuthority(
         store=foreground,
         subject="deskpet-local-owner-v1",
@@ -3308,7 +3258,11 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
             _state_db_path,
             subject="deskpet-local-owner-v1",
             **({"history_reader": history_reader} if history_reader is not None else {}),
-            clock=_context_memory_runtime.semantic_clock,
+            # 受信业务时钟：原先取 ``HumanMemoryV7Runtime.semantic_clock``，
+            # 那本身就是组装时注入的 ``time.time``（见删除前的
+            # ``compose_human_memory_runtime(clock=clock)``，``clock`` 默认
+            # ``time.time``）。记忆运行时移除后直接用同一个物理时钟。
+            clock=time.time,
             policy=_primary_history_policy("deskpet-local-owner-v1"),
             stack_getter=lambda: _sdk_runtime_stack,
             route_ledger=_foreground_route_ledger(),
@@ -3329,18 +3283,14 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
             _sdk_ingress,
             _sdk_runtime_stack,
             run_fault_memo=_ensure_run_fault_memo(),
-            occurrence_coordinator=service_context.get("prospective_occurrence_coordinator"),
         ),
         audit_sink=_AuditSink(),
         effect_gate=_ensure_foreground_effect_gate(),
-        # S5b Task 4: terminal commit writes the Memory ingestion outbox row from the
-        # durable SdkRunBindingV1 (same record the post-turn invoker rebuilds from).
         run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id),
         endpoint_identity_resolver=_provider_endpoint_identity_for_binding,
         conversation_entrypoint=_foreground_conversation_entrypoint,
         state_changed=_primary_state_changed,
         terminal_audit_wake=_terminal_audit.wake if _terminal_audit is not None else None,
-        terminal_commit_hook_factory=_occurrence_terminal_hook,
         provider_reconciliation=_ensure_provider_reconciliation(),
         provider_reconcile=_reconcile_incomplete_providers,
     )
@@ -3350,39 +3300,13 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
     )
 
 
-async def _initialize_product_memory() -> None:
-    """Own the real product Memory manager before any Runtime borrower starts."""
-    global _memory_backend
-    if _memory_backend is not None:
-        return
-    from paths import resolve_model_dir
-    from simple_harness_memory import MemoryManager
-    from deskpet.memory.wemm_embedder import WeMMEmbedder
-
-    memory_resource = resolve_model_dir("wemm-embedding-2b").resolve()
-    if not memory_resource.is_dir():
-        raise RuntimeError("memory_embedding_resource_unavailable")
-    memory_embedder = WeMMEmbedder(memory_resource, revision="product-bundled")
-    memory_build_kwargs = {"embedder": memory_embedder, "resource_path": memory_resource}
-    if "observability_sink" in inspect.signature(MemoryManager.build_production).parameters:
-        memory_build_kwargs.update(observability_sink=_sdk_observability.sink,
-            correlation=_sdk_observability.correlation)
-    _memory_backend = await MemoryManager.build_production(_memory_db_path, **memory_build_kwargs)
-    memory_snapshot = getattr(_memory_backend, "diagnostics_snapshot", None)
-    if callable(memory_snapshot):
-        _sdk_observability.register_snapshot_source("memory", memory_snapshot)
-    await _sdk_observability.export_async()
-    service_context.register("embedder", memory_embedder)
-    _session_db.bind_memory_manager(_memory_backend)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Preload models on startup (best-effort — failures logged but don't block)."""
     logger.info("preloading models...")
     from llm.resolution import ProviderRoutingReadiness
 
-    global _provider_registry, _memory_backend, _session_creation_service
+    global _provider_registry, _session_creation_service
     global _realtime_voice_service
     _provider_readiness = ProviderRoutingReadiness()
     service_context.register("provider_routing_readiness", _provider_readiness)
@@ -3403,15 +3327,6 @@ async def lifespan(app: FastAPI):
         _state_db_path,
         approved_fresh_lane=approved_fresh_lane,
     )
-    async def _primary_suppression_resolver(candidate, purpose):
-        runtime = service_context.get("human_memory_v7_runtime")
-        if runtime is None:
-            raise RuntimeError("human_memory_v7_runtime_unavailable")
-        manager = await runtime.manager()
-        return await manager.backend.resolve_suppression(
-            candidate, purpose, principal=runtime.principal(),
-        )
-
     from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
 
     memory_display_invalidation = MemoryDisplayInvalidation(_broadcast_control)
@@ -3426,18 +3341,14 @@ async def lifespan(app: FastAPI):
             HumanMemoryHostServiceFactory(
                 _state_db_path, startup_epoch,
                 settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
-                suppression_resolver=_primary_suppression_resolver,
-                history_visibility_checker=_primary_history_visibility_checker,
                 run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id).binding_record,
                 decision_ingress_getter=lambda: _sdk_ingress,
-                cognitive_runtime_getter=lambda: service_context.get("human_memory_v7_runtime"),
                 display_invalidation=memory_display_invalidation,
             )
             if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
             else None
         ),
     )
-    await _initialize_product_memory()
     try:
         # SessionDB owns the migration/backup recovery path. Registry identity
         # is loaded only after v23 exists, then legacy bindings are reconciled
@@ -5013,13 +4924,6 @@ async def lifespan(app: FastAPI):
             logger.info("goal_store_load_persisted restored=%d", _n)
         except Exception as _lp_exc:  # noqa: BLE001
             logger.warning("goal_store_load_persisted_failed: %s", _lp_exc)
-    _mm = service_context.get("memory_manager")
-    if _mm is not None:
-        try:
-            await _mm.initialize()
-            logger.info("p4_memory_manager_ready")
-        except Exception as exc:
-            logger.warning("p4_memory_manager_init_failed", error=str(exc))
     # FP-4 WI-3.3 ★ FIX BUG: FactsStore.daily_decay() was never called in prod.
     # Apply once at startup (mirrors retriever's "run once at startup" convention).
     # Pinned facts are skipped (WI-3.3). Failure is non-fatal — only logs.
@@ -5813,7 +5717,7 @@ async def lifespan(app: FastAPI):
             _realtime_voice_service = None
     from deskpet.retrieval.runtime import shutdown_default_gateway
     await shutdown_default_gateway()
-    global _sdk_runtime_stack, _sdk_ingress, _memory_analysis_lane
+    global _sdk_runtime_stack, _sdk_ingress
     global _sdk_desktop_bridge
     _foreground_runtime = service_context.get(
         "human_memory_foreground_runtime_execution_authority"
@@ -5835,21 +5739,12 @@ async def lifespan(app: FastAPI):
             logger.warning("terminal_operation_audit_shutdown_incomplete")
         finally:
             service_context.register("terminal_operation_audit", None)
-    if _memory_analysis_lane is not None:
-        try:
-            await _memory_analysis_lane.close(timeout_seconds=5.0)
-            logger.info("memory_analysis_lane_stopped")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("memory_analysis_lane_shutdown_failed", error=str(exc))
-        finally:
-            _memory_analysis_lane = None
-            service_context.register("sdk_memory_ingestion_outbox", None)
-            service_context.register(
-                "human_memory_foreground_scheduler_wake", None
-            )
-            service_context.register(
-                "human_memory_foreground_runtime_execution_authority", None
-            )
+    # 2026-09-10：记忆分析 lane 已移除；原先嵌在它 finally 里的两次前台调度槽位
+    # 复位现在无条件执行（旧写法在没有 lane 时根本不会复位）。
+    service_context.register("human_memory_foreground_scheduler_wake", None)
+    service_context.register(
+        "human_memory_foreground_runtime_execution_authority", None
+    )
     # Close SDK Runtime ingress
     if _sdk_ingress is not None:
         _sdk_ingress.close()
@@ -5936,19 +5831,8 @@ async def lifespan(app: FastAPI):
             _sdk_retained_presentations.clear()
             _sdk_unavailable_tool_authority_runs.clear()
             service_context.register("sdk_runtime_ready", None)
-    # The foreground, audit lane and Runtime borrowers have stopped above.
-    # v7 owns a separate lazy manager; stop indexing before closing that owner.
-    _owned_v7 = service_context.get("human_memory_v7_runtime")
-    if _owned_v7 is not None:
-        try:
-            await asyncio.wait_for(_owned_v7.close(), timeout=6.0)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("human_memory_v7_shutdown_failed", error=type(exc).__name__)
-        finally:
-            service_context.register("human_memory_v7_runtime", None)
-    # SessionDB is the sole owner of the borrowed MemoryManager and its
-    # product outbox dispatcher.  Close it after every Runtime borrower, once,
-    # with a hard bound so shutdown cannot hang on a provider/storage fault.
+    # SessionDB 是纯 Host 会话账本；在每个 Runtime 借用方停止后关闭一次，
+    # 带硬超时，避免 shutdown 卡在存储故障上。
     _owned_session_db = service_context.get("session_db")
     if _owned_session_db is not None:
         try:
@@ -7809,8 +7693,6 @@ def _freeze_sdk_catalog(
     specs: list[dict[str, Any]] = []
     schema_fingerprints: dict[str, str] = {}
     for spec in tools_adapter.specs:
-        if str(spec.name) in {"memory_recall", "memory_search"}:
-            continue
         live_spec = (
             visibility_registry.get(str(spec.name))
             if visibility_registry is not None
@@ -7857,22 +7739,15 @@ def _freeze_sdk_catalog(
     }
 
 
-async def _primary_history_visibility_checker(*, subject, disclosure_context, bindings):
-    runtime = service_context.get("human_memory_v7_runtime")
-    if runtime is None:
-        raise RuntimeError("human_memory_v7_runtime_unavailable")
-    principal = runtime.principal()
-    if principal.actor_id != subject or disclosure_context.subject != subject:
-        raise RuntimeError("primary_history_principal_mismatch")
-    manager = await runtime.manager()
-    from deskpet.memory.current_input_visibility import check_primary_input_visibility
-    return await check_primary_input_visibility(db_path=_state_db_path, manager=manager, principal=principal,
-        disclosure_context=disclosure_context, bindings=bindings)
-
-
 def _primary_history_policy(subject):
+    """Host dependency-proof policy.
+
+    2026-09-10：原来的第三个参数是公开 Memory 历史可见性 checker，随认知记忆
+    SDK 一并移除；没有记忆系统就没有抑制权威，遍历证明通过即可见。
+    """
+
     from deskpet.memory.primary_visibility import PrimaryHistoryPolicy
-    return PrimaryHistoryPolicy(_state_db_path, subject, _primary_history_visibility_checker)
+    return PrimaryHistoryPolicy(_state_db_path, subject)
 
 
 class _ProductSdkProviderBindingResolver:
@@ -7907,11 +7782,6 @@ class _ProductSdkProviderBindingResolver:
             await check_runtime_dependencies(db_path=_state_db_path, stack=_sdk_runtime_stack,
                 sdk_run_id=binding.run_id, request=request, policy_factory=_primary_history_policy,
                 typed_use_authority=service_context.get("sdk_typed_context_use_authority"))
-            coordinator=service_context.get("prospective_occurrence_coordinator")
-            if coordinator is not None and await coordinator.applies_to_run(binding.run_id):
-                from deskpet.sdk_adapters.prospective_request_guard import ProspectiveRequestGuard
-                await ProspectiveRequestGuard(sdk_run_id=binding.run_id,coordinator=coordinator,
-                    read_provider_context_use=_sdk_runtime_stack.read_provider_context_use)(request)
 
         if request_guard is ...:
             request_guard = primary_guard
@@ -8107,7 +7977,6 @@ async def _build_product_sdk_runtime_stack(
     *, clock=time.time, configured_workspace_root=None,
 ):
     """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
-    verify_memory_candidate()
     from simple_harness import RuntimeProfile
     from simple_harness.execution.budget import BudgetPolicy
     from simple_harness.execution.delivery import DeliveryDispatcher
@@ -8154,13 +8023,6 @@ async def _build_product_sdk_runtime_stack(
         service_context.register("memory_identity_authority", memory_identity_authority)
     memory_identity_resolver = memory_identity_authority.resolver
     service_context.register("memory_identity_resolver", memory_identity_resolver)
-    from deskpet.sdk_adapters.memory_facts_surface import OfficialMemoryFactsSurface
-
-    service_context.register(
-        "memory_facts_surface",
-        OfficialMemoryFactsSurface(_memory_backend, memory_identity_resolver),
-    )
-
     # The runtime is stable across Provider mutations.  A physical Provider is
     # constructed only after a Run freezes its own Session binding.
     provider_registry = service_context.get("provider_registry")
@@ -8186,8 +8048,6 @@ async def _build_product_sdk_runtime_stack(
     todo_session_db = service_context.get("session_db")
     workflow_service = service_context.get("workflow_service")
     context_page_store = service_context.get("context_page_in_store")
-    memory_query = service_context.get("memory_recall_query")
-    memory_scope_resolver = service_context.get("memory_recall_scope_resolver")
     search_gateway = service_context.get("search_gateway")
     authorization_runtime = service_context.get("authorization_runtime")
     capability_store = service_context.get("capability_store")
@@ -8372,12 +8232,8 @@ async def _build_product_sdk_runtime_stack(
         workflow_service_provider=lambda: workflow_service,
         context_page_store=context_page_store,
         execution_context_getter=execution_context_getter,
-        memory_query=memory_query,
-        memory_scope_resolver=memory_scope_resolver,
         capability_bridge_service=capability_bridge,
         search_gateway=search_gateway,
-        memory_manager=_memory_backend,
-        memory_identity_resolver=memory_identity_resolver,
     )
 
     # Authorization state must exist before the Skill install registration is
@@ -8523,32 +8379,9 @@ async def _build_product_sdk_runtime_stack(
         return WorkspaceBindingAuthorityStore(_state_db_path,
             configured_workspace_root=configured_workspace_root)
 
-    from deskpet.memory.runtime_composition import compose_human_memory_runtime
-
-    # S5b Task 4: the v7 store is built with the Host state.db evidence resolver and
-    # the Host analysis executor as its delivery authority (identity-bound), so the
-    # accepted analysis plan materializes inside Memory 0.6.1.
-    def _analysis_adapter(record):  # type: ignore[no-untyped-def]
-        from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
-        from deskpet.memory.analysis_request_guard import AnalysisPhysicalRequestGuard
-
-        resolver = _resolve_sdk_provider_binding_resolver()
-        if resolver is None:
-            raise RuntimeError("sdk_provider_binding_resolver_unavailable")
-        binding = SdkRunBindingV1.from_record(record)
-        guard = AnalysisPhysicalRequestGuard(
-            _state_db_path, binding=binding, runtime_getter=lambda: _human_memory_v7,
-        )
-        return resolver.build_authority(binding, request_guard=guard).provider
-
-    _human_memory_v7 = compose_human_memory_runtime(
-        _state_db_path,
-        Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db",
-        embedder_getter=lambda: service_context.get("embedder"),
-        adapter_factory=_analysis_adapter,
-        clock=clock,
-    )
-    service_context.register("human_memory_v7_runtime", _human_memory_v7)
+    # 2026-09-10：认知记忆 SDK 移除，``HumanMemoryV7Runtime``（分析批 / 类型化召回 /
+    # Procedure / Prospective 的宿主运行时）随之下线，``human_memory_v7_runtime``
+    # 槽位不再注册。
     from deskpet.execution.primary_context_pages import PrimaryContextPageReader
     context_page_store.primary_reader = PrimaryContextPageReader(
         _state_db_path, stack_getter=lambda: _sdk_runtime_stack,
@@ -8559,18 +8392,8 @@ async def _build_product_sdk_runtime_stack(
     context_page_store.receipt_ledger = ContextPageInReceiptLedger(
         _state_db_path.with_name("operation-audit.db"), clock=clock,
     )
-    from deskpet.memory.procedure_recovery_schema import initialize_procedure_recovery_state_db
-    from deskpet.sdk_adapters.procedure_use import procedure_use_registration
-    from deskpet.sdk_adapters.procedure_discovery import procedure_discovery_registration
-    from simple_harness_memory import MemoryManager as _ProcedureMemoryManager
-    import simple_harness_memory as _procedure_memory_sdk
-    if getattr(_procedure_memory_sdk, "PROCEDURE_OBSERVATION_RECOVERY_VERSION", None) != 1:
-        raise RuntimeError("procedure_public_recovery_sdk_required")
-    if any(not callable(getattr(_ProcedureMemoryManager, name, None)) for name in (
-        "read_procedure_use_target", "prepare_procedure_observation", "record_procedure_observation", "discover_procedure_drafts",
-    )):
-        raise RuntimeError("procedure_public_sdk_successor_required")
-    await initialize_procedure_recovery_state_db(_state_db_path)
+    # 2026-09-10：``procedure_use`` / ``procedure_discover`` 两个程序性记忆工具
+    # 及其 recovery schema 随认知记忆 SDK 一并移除。
     # 2026-09-08 HM-TO-A6 F-K1: v55 side record of assistant tool-call arguments.
     # v56 chains onto v55; 事件 AI 的 v57 把 context_use_recollection 收进
     # harness_evidence_reservations 的种类 CHECK。初始化链头即安装前面每一步。
@@ -8578,41 +8401,14 @@ async def _build_product_sdk_runtime_stack(
         initialize_evidence_kind_state_db,
     )
     await initialize_evidence_kind_state_db(_state_db_path)
-    projected_registrations = (*projected_registrations,
-        procedure_use_registration(_human_memory_v7.procedure_runtime),
-        procedure_discovery_registration(_human_memory_v7.procedure_runtime))
+    # 2026-09-10：类型化 Context-use 权威（``memory_standalone`` 路由背后的
+    # typed recall 记账）与 Prospective occurrence 协调器都直接建在认知记忆
+    # 运行时上，随其一并移除。两个槽位在下游本来就是 Optional（旧库 user_version
+    # < 35 时同样是 None），此处恒为 None。
     _typed_use_authority = None
-    if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
-        from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
-        from deskpet.sdk_adapters.context_authority import ProductRuntimeDecisionSink
-        _typed_ledger = _ContextRouteLedgerStore(_state_db_path, evidence_ingress=_ensure_evidence_ingress())
-        _typed_ledger.verify_schema()
-        _typed_sink = ProductRuntimeDecisionSink(ledger=_typed_ledger, reconcile=_human_memory_v7.pending_occurrences)
-        _typed_use_authority = await ProductTypedContextUseAuthority.create(
-            state_path=_state_db_path, memory_runtime=_human_memory_v7,
-            stack_getter=lambda: _sdk_runtime_stack, ledger=_typed_ledger, terminal_sink=_typed_sink,
-            fault_sink=_ensure_run_fault_memo(),
-        )
-    service_context.register("sdk_typed_context_use_authority", _typed_use_authority)
-
+    service_context.register("sdk_typed_context_use_authority", None)
     _occurrence_coordinator = None
-    if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
-        from deskpet.memory.s5c_terminal_schema import initialize_s5c_terminal_state_db
-        from deskpet.memory.s5c_store import S5cStore
-        from deskpet.memory.prospective_occurrence import ProspectiveOccurrenceCoordinator
-        from deskpet.memory.prospective_current_reader import PublicOccurrenceCurrentReader
-        from deskpet.memory.prospective_source_dependencies import ProspectiveSourceDependencies
-        from deskpet.sdk_adapters.prospective_ack import prospective_ack_registration
-        await initialize_s5c_terminal_state_db(_state_db_path)
-        _occurrence_store=S5cStore(_state_db_path,_human_memory_v7.principal())
-        _occurrence_coordinator=ProspectiveOccurrenceCoordinator(store=_occurrence_store,
-            read_current=PublicOccurrenceCurrentReader(store=_occurrence_store,
-                runtime_getter=lambda:service_context.get("human_memory_v7_runtime")),clock=clock,
-            source_dependencies=ProspectiveSourceDependencies(store=_occurrence_store,
-                runtime_getter=lambda:service_context.get("human_memory_v7_runtime")))
-        projected_registrations=(*projected_registrations,
-            prospective_ack_registration(coordinator=_occurrence_coordinator))
-    service_context.register("prospective_occurrence_coordinator",_occurrence_coordinator)
+    service_context.register("prospective_occurrence_coordinator", None)
 
     from deskpet.task_scope.disclosure import ScopeDisclosureReader
     scope_disclosure = ScopeDisclosureReader(_state_db_path, stack_getter=lambda: _sdk_runtime_stack, policy_factory=_primary_history_policy)
@@ -8628,8 +8424,8 @@ async def _build_product_sdk_runtime_stack(
             _state_db_path, evidence_ingress=_ensure_evidence_ingress()
         ),
         tool_context_getter=active_product_tool_context,
-        recall_executor=_human_memory_v7.typed_recall,
-        typed_use_authority=_typed_use_authority,
+        recall_executor=None,
+        typed_use_authority=None,
         scope_disclosure_reader=scope_disclosure.read,
         producer_dependencies_reader=scope_disclosure.producer_dependencies,
         # Event V: the contested probe asks with the model's own words AND this
@@ -8756,7 +8552,6 @@ async def _build_product_sdk_runtime_stack(
         execution_context_getter=execution_context_getter,
     )
     tools_adapter.bind_run_authorities(tool_authorities)
-    _human_memory_v7.procedure_runtime.bind_tools(tool_authorities, tools_adapter)
     frozen_catalog = _freeze_sdk_catalog(
         tools_adapter,
         generation,
@@ -8832,8 +8627,6 @@ async def _build_product_sdk_runtime_stack(
     _runtime_reconciliation = runtime_reconciliation
 
     projection_pump = None
-    if _memory_backend is None:
-        raise RuntimeError("SDK Runtime requires the Memory SDK manager")
     from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
     from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
 
@@ -8843,12 +8636,13 @@ async def _build_product_sdk_runtime_stack(
     # task grants and intentionally does not carry the SessionDB schema.
     context_source_repository = ProductContextSourceRepository(session_state_db_path)
     context_provider = ProductConversationContextProvider(context_source_repository)
-    from deskpet.sdk_adapters.memory_faults import wrap_dev_memory_faults
+    # 2026-09-10：Harness SDK 0.7.10 把 ``memory: AgentMemoryPort`` 列为生产组装
+    # 必填项。认知记忆 SDK 移除后 Host 交一个**诚实的空记忆端口**：召回返回合法
+    # 空结果（不伪造 write_fence / 权威），release 无操作，record 返回合法回执但
+    # 不持久化任何记忆。见 ``deskpet/sdk_adapters/null_memory_port.py``。
+    from deskpet.sdk_adapters.null_memory_port import NoMemoryAgentPort
 
-    agent_memory_port = wrap_dev_memory_faults(
-        _memory_backend,
-        user_data_dir=_paths.user_data_dir(),
-    )
+    agent_memory_port = NoMemoryAgentPort()
     service_context.register("sdk_context_source_repository", context_source_repository)
 
     async def close_projection_pump() -> None:
@@ -8960,7 +8754,6 @@ async def _build_product_sdk_runtime_stack(
             effect_gate=effect_gate,
             read_gate=read_gate,
             evidence_ingress=_ensure_evidence_ingress(),
-            procedure_runtime=_human_memory_v7.procedure_runtime,
         )
         from simple_harness.execution.context_authority import (
             DurableToolCatalogResolver,
@@ -9228,13 +9021,9 @@ async def _build_product_sdk_runtime_stack(
             raise RuntimeError("sdk_run_context_authority_ports_unbound")
         return ports
 
-    _v7_runtime = service_context.get("human_memory_v7_runtime")
-    if _v7_runtime is None:
-        raise RuntimeError(
-            "sdk_context_authority_composition_missing:human_memory_v7_runtime"
-        )
-
-    _occurrence_reconcile = _v7_runtime.pending_occurrences
+    # 2026-09-10：``reconcile`` 原本是认知记忆运行时的 pending-occurrence 对账，
+    # 随 Prospective 一并移除；该参数在下游本就是 Optional。
+    _occurrence_reconcile = None
 
     # S5b Task 3 review F-2: the protected "closure required" instruction of the
     # next Run (pending merge / dirty admission scope) is a production fact, not
@@ -9269,9 +9058,6 @@ async def _build_product_sdk_runtime_stack(
             fault_sink=_ensure_run_fault_memo(),
         ),
     )
-    # S5b Task 4: Host↔Memory async face (evidence authority / analysis executor /
-    # ingestion outbox lane) is part of the same composition; each is a slot.
-    _activate_memory_analysis_lane()
     _assert_sdk_composition_slots()
     return stack
 
@@ -9284,14 +9070,12 @@ SDK_COMPOSITION_SLOTS: tuple[str, ...] = (
     "sdk_provider_binding_resolver",
     "sdk_tool_authority_registry",
     "sdk_run_context_authority",
-    "sdk_typed_context_use_authority",
+    # 2026-09-10：``sdk_typed_context_use_authority``（类型化 Context-use 记账）
+    # 随认知记忆 SDK 移除，恒为 None，不再是必备槽位。
     "sdk_runtime_decision_sink",
     "sdk_task_execution_authority",
     "sdk_effect_gate",
     "sdk_closure_instruction_reader",
-    "sdk_evidence_authority",
-    "sdk_memory_analysis_executor",
-    "sdk_memory_ingestion_outbox",
 )
 
 
@@ -9344,9 +9128,6 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
     )
 
 
-_memory_analysis_lane = None
-
-
 def _resolve_sdk_provider_binding_resolver():  # type: ignore[no-untyped-def]
     """The Run→Provider binding resolver: service_context slot first, module global second.
 
@@ -9373,80 +9154,9 @@ def _provider_endpoint_identity_for_binding(record):  # type: ignore[no-untyped-
     return provider_endpoint_identity(entry)
 
 
-def _activate_memory_analysis_lane() -> None:
-    """S5b Task 4 composition: evidence authority, analysis executor, ingestion outbox + one lane.
-
-    ``HumanMemoryV7Runtime`` (registered earlier) must be the one bound to these
-    authorities — the executor is the v7 builder's ``analysis_delivery_authority``.
-    """
-
-    global _memory_analysis_lane
-    from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
-    from deskpet.memory.memory_ingestion_outbox import (
-        MemoryAnalysisLane,
-        MemoryIngestionOutboxWorker,
-        build_worker_config,
-    )
-    from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
-
-    v7_runtime = service_context.get("human_memory_v7_runtime")
-    if v7_runtime is None:
-        raise RuntimeError("sdk_context_authority_composition_missing:human_memory_v7_runtime")
-    executor = v7_runtime.analysis_authority
-    evidence_authority = v7_runtime.evidence_authority
-    if not isinstance(executor, HostMemoryAnalysisExecutor) or evidence_authority is None:
-        raise RuntimeError("sdk_context_authority_composition_missing:sdk_memory_analysis_executor")
-    # S5b Task 6 P0: this runs inside `_build_product_sdk_runtime_stack`, i.e.
-    # BEFORE `_activate_product_sdk_runtime` copies the resolver into the module
-    # global (`_sdk_provider_binding_resolver`), so the global is None on every
-    # real startup.  The builder registered the resolver in service_context a few
-    # lines earlier — that slot is the composition truth here.
-    if _resolve_sdk_provider_binding_resolver() is None:
-        raise RuntimeError("sdk_context_authority_composition_missing:sdk_provider_binding_resolver")
-    service_context.register("sdk_evidence_authority", evidence_authority)
-    service_context.register("sdk_memory_analysis_executor", executor)
-    if _memory_analysis_lane is None:
-        worker = MemoryIngestionOutboxWorker(
-            _state_db_path,
-            v7_runtime.manager,
-            owner_id=f"deskpet-memory-outbox:{os.getpid()}",
-        )
-        provider_id = "deskpet-host"
-        model_id = "deskpet-host"
-        config_hash = hashlib.sha256(b"deskpet-host:memory-analysis-fallback").hexdigest()
-        registry = _provider_registry
-        chain = _provider_chain_or_none(registry) if registry is not None else None
-        if chain:
-            entry = registry.get_entry(str(chain[0]))
-            if entry is not None:
-                record = {
-                    "provider_id": str(chain[0]),
-                    "provider_incarnation_id": str(getattr(entry, "incarnation_id", "")),
-                    "provider_config_revision": int(getattr(entry, "config_revision", 0) or 0),
-                    "model_id": str(getattr(entry, "model", "") or "deskpet-host"),
-                    "model_params": {},
-                }
-                provider_id = record["provider_id"]
-                model_id = record["model_id"]
-                from deskpet.memory.analysis_lineage import binding_model_config_hash
-
-                config_hash = binding_model_config_hash(
-                    record, endpoint_identity=_provider_endpoint_identity_for_binding(record)
-                )
-        _memory_analysis_lane = MemoryAnalysisLane(
-            worker=worker,
-            runtime=v7_runtime,
-            executor=executor,
-            config=build_worker_config(provider_id=provider_id, model_id=model_id, model_config_hash=config_hash),
-            worker_id=f"deskpet-memory-analysis:{os.getpid()}",
-            display_invalidation=getattr(
-                service_context.get("human_memory_host_service_factory"), "display_invalidation", None
-            ),
-        )
-        _memory_analysis_lane.start()
-        logger.info("memory_analysis_lane_started")
-    service_context.register("sdk_memory_ingestion_outbox", _memory_analysis_lane)
-    del SdkRunBindingV1
+# 2026-09-10：S5b Task 4 的 Host↔Memory 异步面（HostEvidenceAuthority /
+# HostMemoryAnalysisExecutor / MemoryIngestionOutboxWorker / MemoryAnalysisLane）
+# 整条随认知记忆 SDK 移除，不再有可组装的槽位。
 
 
 async def _issue_product_harness_host(

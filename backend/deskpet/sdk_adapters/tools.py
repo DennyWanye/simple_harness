@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 _MAX_TRACKED_RUNS = 64
 
 PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
-    ["agent", "agent_parallel", "agent_reach_doctor", "agent_reach_read", "app_discover", "app_launch", "await_subagents", "capability_build", "capability_repair", "context_page_in", "desktop_create_file", "doc_create", "doc_edit", "doc_read", "download_file", "edit_file", "excel_create", "external_action_wait", "fetch_tool_result", "file_glob", "file_grep", "file_organize", "file_read", "file_write", "generate_image", "glob", "gold_price_lookup", "grep", "image_ocr", "list_directory", "context_route", "prospective_ack", "procedure_use", "procedure_discover", "memory_forget", "memory_read", "memory_recall", "memory_search", "memory_write", "move_file", "office_pick_file", "pdf_export", "ppt_create", "process_list", "process_start", "process_stop", "process_wait", "project_directory_select", "project_group_send", "read_file", "register_artifacts", "run_browser_task", "run_shell", "scrapling_fetch", "screen_capture", "screen_click", "screen_key", "screen_move", "screen_scroll", "screen_type", "skill_invoke", "spawn_subagents", "spawn_team", "skill_install", "task_scope_search", "task_scope_update", "todo_complete", "todo_write", "tool_activate", "tool_describe", "tool_search", "web_crawl", "web_extract_article", "web_fetch", "web_read_sitemap", "web_search", "window_capture", "window_focus", "window_key", "window_list", "workspace_prepare", "workspace_recall", "write_file"]
+    ["agent", "agent_parallel", "agent_reach_doctor", "agent_reach_read", "app_discover", "app_launch", "await_subagents", "capability_build", "capability_repair", "context_page_in", "desktop_create_file", "doc_create", "doc_edit", "doc_read", "download_file", "edit_file", "excel_create", "external_action_wait", "fetch_tool_result", "file_glob", "file_grep", "file_organize", "file_read", "file_write", "generate_image", "glob", "gold_price_lookup", "grep", "image_ocr", "list_directory", "context_route", "move_file", "office_pick_file", "pdf_export", "ppt_create", "process_list", "process_start", "process_stop", "process_wait", "project_directory_select", "project_group_send", "read_file", "register_artifacts", "run_browser_task", "run_shell", "scrapling_fetch", "screen_capture", "screen_click", "screen_key", "screen_move", "screen_scroll", "screen_type", "skill_invoke", "spawn_subagents", "spawn_team", "skill_install", "task_scope_search", "task_scope_update", "todo_complete", "todo_write", "tool_activate", "tool_describe", "tool_search", "web_crawl", "web_extract_article", "web_fetch", "web_read_sitemap", "web_search", "window_capture", "window_focus", "window_key", "window_list", "workspace_prepare", "workspace_recall", "write_file"]
 )
 
 # Host-composed administrative tools are registered only after their durable
@@ -47,7 +47,7 @@ PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
 # built without them for conformance and recovery, while production wiring is
 # still checked against PRODUCT_TOOL_NAMES once the registration is appended.
 HOST_COMPOSED_TOOL_NAMES = frozenset(
-    {"prospective_ack", "procedure_use", "procedure_discover", "skill_install", "context_route", "task_scope_search", "task_scope_update"}
+    {"skill_install", "context_route", "task_scope_search", "task_scope_update"}
 )
 
 DispatchKind = Literal["sync", "async", "context", "staged", "control", "provider"]
@@ -66,14 +66,7 @@ PROJECTLESS_SAFE_TOOL_NAMES = frozenset(
         "task_scope_search",
         # S5b Task 3: semantic closure never touches the workspace.
         "task_scope_update",
-        "procedure_use",
-        "procedure_discover",
         "gold_price_lookup",
-        "memory_forget",
-        "memory_read",
-        "memory_recall",
-        "memory_search",
-        "memory_write",
         "todo_complete",
         "todo_write",
         "tool_activate",
@@ -482,7 +475,6 @@ class ProductEffectExecutor(EffectExecutor):
         effect_gate: EffectGatePort | None = None,
         read_gate: WorkspaceReadGatePort | None = None,
         evidence_ingress: Any | None = None,
-        procedure_runtime: Any | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(registry=registry, **kwargs)
@@ -495,7 +487,6 @@ class ProductEffectExecutor(EffectExecutor):
         # dispatch, objective event + evidence row + tool_invocation import in
         # one state.db transaction after the SDK settled the effect.
         self._evidence_ingress = evidence_ingress
-        self._procedure_runtime = procedure_runtime
 
     async def _evidence_scope(self, context: ToolContext) -> tuple[str, str] | None:
         """(task_scope_id, subject) of the Run's admission scope, or ``None``.
@@ -717,28 +708,9 @@ class ProductEffectExecutor(EffectExecutor):
                             call_id=kwargs["call"].call_id,
                         )
                     )
-                # A foreground/binding rejection must not consume a Procedure
-                # step. Recheck and reserve only inside the final execution
-                # scope, after the existing admission/evidence gates.
-                procedure_rejection = None
-                if self._procedure_runtime is not None and gated:
-                    from deskpet.memory.procedure_applicability import ProcedureUseRejected
-                    try:
-                        await self._procedure_runtime.before_call(context, kwargs["call"])
-                    except ProcedureUseRejected as error:
-                        # r14: one opaque string for every pre-call deny left
-                        # the model guessing and re-binding until the turn
-                        # budget ran out. The code is unchanged; the public
-                        # text now names the exact bound call it must issue.
-                        from deskpet.memory.procedure_guidance import (
-                            call_rejection_public_message)
-                        procedure_rejection = ToolResult.rejected(
-                            kwargs["call"].call_id, str(error),
-                            call_rejection_public_message(error))
-                if procedure_rejection is not None:
-                    execution = EffectExecution(effect=None, result=procedure_rejection)
-                else:
-                    execution = await super().execute(**kwargs)
+                # 2026-09-10：Procedure（程序性记忆）随认知记忆 SDK 移除，
+                # 这里不再有 pre-call 适用性门。
+                execution = await super().execute(**kwargs)
         finally:
             _foreground_invocation_origin.reset(origin_token)
             _validation_run_id.reset(token)
@@ -747,8 +719,6 @@ class ProductEffectExecutor(EffectExecutor):
                 await self._abandon_rejected_reservation(context, execution)
             else:
                 await self._commit_evidence(context, kwargs["call"], execution, evidence_scope)
-        if self._procedure_runtime is not None and execution.effect is not None:
-            await self._procedure_runtime.store.commit_effect(record=execution.effect)
         return execution
 
     def _is_first_occurrence(self, kwargs: Mapping[str, Any]) -> bool:

@@ -83,15 +83,24 @@ class PreparationDisclosureRejected(RuntimeError):
 
 
 async def _verify_source_binding_tx(db, rejection, primary_ref):
-    from simple_harness_memory import HistoryEvidenceBinding
+    """Re-prove a recorded rejection's source against the live S1 bytes.
 
-    from deskpet.memory.primary_visibility import _binding_hash, read_evidence_pair
+    2026-09-10：``binding_hash`` 原本是记忆 SDK 的 ``HistoryEvidenceBinding``
+    公开承诺；SDK 移除后 Host 无法（也不应假装能）重算它，所以这里只保留仍然
+    成立的两条 Host 判据：来源种类必须是 ``user_message``，envelope 承诺必须与
+    记录一致。``binding_hash`` 只做存在性/形状检查。
 
-    envelope, receipt = await read_evidence_pair(
+    注意本构建下 ``PrimaryHistoryPolicy.current_user_denial`` 恒为 ``None``，
+    不会再产生新的拒绝记录，本函数只服务于旧 userdata 里的历史行。
+    """
+
+    from deskpet.memory.primary_visibility import read_evidence_pair
+
+    envelope, _receipt = await read_evidence_pair(
         db=db, subject=rejection.subject, primary_ref=primary_ref, evidence_id=rejection.evidence_id,
     )
     if (envelope.source_kind.value != "user_message" or envelope.envelope_hash != rejection.evidence_hash
-            or _binding_hash(HistoryEvidenceBinding(envelope, receipt)) != rejection.binding_hash):
+            or not isinstance(rejection.binding_hash, str) or not rejection.binding_hash):
         raise ValueError("preparation_rejection_source_binding_mismatch")
 
 

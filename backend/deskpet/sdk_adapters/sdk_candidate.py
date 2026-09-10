@@ -29,12 +29,8 @@ SDK_SOURCE_COMMIT = "031fdc688ceea604ffa409a06a69fd85071aa612"
 SDK_CI_RUN_ID = None
 SDK_CI_ARTIFACT_ID = None
 
-SDK_MEMORY_VERSION = "0.6.38"
-SDK_MEMORY_WHEEL_FILENAME = "simple_harness_memory_sdk-0.6.38-py3-none-any.whl"
-SDK_MEMORY_WHEEL_SHA256 = "fc69e067801667f2e004c3fd9dcc75dbe96e6d75c6cd7ac7a983dcdf80bfd49c"
-SDK_MEMORY_SOURCE_COMMIT = "b5b78044f3ba5313d5d21d8505fb7701307f882a"
-SDK_MEMORY_CI_RUN_ID = None
-SDK_MEMORY_CI_ARTIFACT_ID = None
+# 2026-09-10：认知记忆 SDK（simple-harness-memory-sdk 0.6.38）已从 Host 整条
+# 移除，其 candidate 常量与 ``verify_memory_candidate`` 一并删除。
 
 SDK_SERVICE_VERSION = "0.3.13"
 SDK_SERVICE_WHEEL_FILENAME = "simple_harness_service_sdk-0.3.13-py3-none-any.whl"
@@ -95,12 +91,6 @@ def verify_sdk_candidate_manifest() -> None:
         raise RuntimeError("SDK candidate manifest identity mismatch")
 
 
-def sdk_memory_wheel_path() -> Path:
-    """Absolute path of the vendored memory SDK wheel under backend/vendor/."""
-
-    return _REPO_ROOT / "backend" / "vendor" / SDK_MEMORY_WHEEL_FILENAME
-
-
 def _service_vendor_root() -> Path:
     return _sdk_artifact_root()
 
@@ -120,29 +110,6 @@ def build_candidate_identity() -> SdkCandidateIdentity:
 
     verify_sdk_candidate_manifest()
     return SdkCandidateIdentity(SDK_VERSION, SDK_WHEEL_SHA256, sdk_wheel_path())
-
-
-def verify_memory_candidate() -> None:
-    """Fail closed unless the installed Memory SDK is the vendored wheel bytes."""
-
-    wheel = sdk_memory_wheel_path().resolve()
-    if (
-        not wheel.is_file()
-        or hashlib.sha256(wheel.read_bytes()).hexdigest()
-        != SDK_MEMORY_WHEEL_SHA256
-    ):
-        raise RuntimeError("Memory SDK candidate wheel SHA-256 mismatch")
-    distribution = metadata.distribution("simple-harness-memory-sdk")
-    if distribution.version != SDK_MEMORY_VERSION:
-        raise RuntimeError("Memory SDK candidate installed version mismatch")
-    direct_url_raw = distribution.read_text("direct_url.json")
-    try:
-        parsed = urlparse(str(json.loads(direct_url_raw or "")["url"]))
-        installed_path = Path(unquote(parsed.path)).resolve()
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Memory SDK candidate installed origin is invalid") from exc
-    if parsed.scheme != "file" or installed_path != wheel:
-        raise RuntimeError("Memory SDK candidate installed origin mismatch")
 
 
 def verify_service_candidate() -> None:
@@ -206,12 +173,6 @@ __all__ = (
     "SDK_CANDIDATE_MANIFEST_SHA256",
     "SDK_CI_ARTIFACT_ID",
     "SDK_CI_RUN_ID",
-    "SDK_MEMORY_CI_ARTIFACT_ID",
-    "SDK_MEMORY_CI_RUN_ID",
-    "SDK_MEMORY_SOURCE_COMMIT",
-    "SDK_MEMORY_VERSION",
-    "SDK_MEMORY_WHEEL_FILENAME",
-    "SDK_MEMORY_WHEEL_SHA256",
     "SDK_SERVICE_AUTHORITY_ROOT_SHA256",
     "SDK_SERVICE_CANDIDATE_MANIFEST_FILENAME",
     "SDK_SERVICE_CANDIDATE_MANIFEST_SHA256",
@@ -225,11 +186,9 @@ __all__ = (
     "SDK_WHEEL_SHA256",
     "build_candidate_identity",
     "sdk_candidate_manifest_path",
-    "sdk_memory_wheel_path",
     "sdk_service_candidate_manifest_path",
     "sdk_service_wheel_path",
     "sdk_wheel_path",
-    "verify_memory_candidate",
     "verify_sdk_candidate_manifest",
     "verify_service_candidate",
 )

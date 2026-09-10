@@ -85,16 +85,14 @@ async def reset_storage_set(
 
     from deskpet.memory.session_db import SessionDB
     from simple_harness.execution.sqlite import Database
-    from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
 
     session = SessionDB(state)
     await session.initialize()
     await session.close()
     execution_handle = Database.open(execution, wal=True)
     execution_handle.close()
-    memory_handle = SQLiteMemoryBackend(str(memory))
-    await memory_handle.initialize()
-    await memory_handle.close()
+    # 2026-09-10：认知记忆 SDK 移除后没有 memory.db 后端可重建。``--memory-db``
+    # 仍被接受并清空（旧 userdata 里可能还留着这个文件），但不再重新初始化。
     return state, execution, memory
 
 

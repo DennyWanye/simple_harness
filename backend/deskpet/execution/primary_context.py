@@ -21,7 +21,9 @@ from deskpet.sdk_adapters.context_partitions import (
 )
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
-from deskpet.memory.prospective_runtime import REMINDER_CAPABILITY
+# 2026-09-10：``REMINDER_CAPABILITY`` 那段 PERSONA 文字是在告诉模型
+# 「一次性时间提醒可以由后台记忆工作流在本轮之后处理」。认知记忆 SDK 移除后
+# 那条后台通路不存在了，继续保留这句话就是对模型撒谎，故一并删除。
 
 # PERSONA is protected mass on every single request, and the tool schemas now
 # ride the same budget (Incident N).  The 8192-token tier of
@@ -79,7 +81,7 @@ PERSONA = (
     "to the quotation. The last user message of this request is the current user instruction and must "
     "be carried out, even when such a quotation stands immediately before it. "
     "Project effects require an accepted TaskScope route and exact Host authority. "
-) + REMINDER_CAPABILITY
+)
 
 
 # The only history projection is primary_context_pages.project_history_group:

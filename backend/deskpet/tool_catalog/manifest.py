@@ -12,7 +12,7 @@ from typing import Any, Mapping
 from simple_harness import freeze_json, thaw_json
 
 
-MANIFEST_SHA256 = "df979c0e044112338e0531d53e6d5906767b6ef0fbdaa312fec7d8f162790bc4"
+MANIFEST_SHA256 = "57900a1d4d7b24091b6e04cac4cd3b441e3ea15385134f262b10ed368ba4d02b"
 _ROOT = Path(__file__).resolve().parent
 _MANIFEST_PATH = _ROOT / "real_tool_manifest.json"
 _MIGRATIONS_PATH = _ROOT / "schema_migrations.json"
@@ -66,8 +66,8 @@ def load_tool_manifest() -> ProductToolManifest:
     if (
         raw.get("schema_version") != 1
         or raw.get("pre_cutover_count") != 79
-        or raw.get("tool_count") != 76
-        or len(tools) != 76
+        or raw.get("tool_count") != 71
+        or len(tools) != 71
         or len(names) != len(set(names))
     ):
         raise RuntimeError("real Tool manifest inventory is malformed")

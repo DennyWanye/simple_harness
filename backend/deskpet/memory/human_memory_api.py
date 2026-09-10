@@ -31,9 +31,9 @@ from deskpet.memory.human_memory_service import (
 )
 
 HUMAN_MEMORY_COMMAND = "human_memory_request"
-HUMAN_AUDIT_OPERATIONS = frozenset({
-    "primary.audit.open", "primary.audit.page", "primary.audit.host.page", "primary.audit.close",
-})
+# 2026-09-10：认知记忆审计（``primary.audit.*``）与认知记忆读写
+# （``primary.memory.list/graph/forget``）随记忆 SDK 一并下线；本适配器不再
+# 受理这两族操作，未知 operation 走既有的 ``human_memory_unknown_operation``。
 _AUTHORITY_FIELDS = frozenset(
     {
         "subject",
@@ -102,23 +102,11 @@ async def handle_human_memory_command(
             recovery=recovery,  # type: ignore[arg-type]
             scheduler_wake=scheduler_wake,  # type: ignore[arg-type]
         )
-        # Server-owned display generation only; never accepted in the wire DTO.
-        # Capture before the read and validate AFTER the final async identity fence.
-        changes = getattr(factory, "display_invalidation", None) if operation == "primary.memory.graph" else None
-        generation = changes.generation if changes is not None else None
         payload = await _dispatch(service, operation, dict(request), request_id)
-        if operation in HUMAN_AUDIT_OPERATIONS:
-            from deskpet.memory.writer_fence import human_memory_request_boundary
-
-            async with human_memory_request_boundary():
-                service.check_primary_audit_response(operation, payload)
         if operation in {
             "primary.state",
             "primary.messages.page",
             "primary.messages.detail",
-            "primary.memory.list",
-            "primary.memory.graph",
-            "primary.memory.forget",
             "primary.bindings.pending",
             "primary.bindings.status",
             "primary.bindings.decide",
@@ -129,8 +117,6 @@ async def handle_human_memory_command(
             # A reconnect during a slow read must not disclose through the old lease.
             async with human_memory_request_boundary():
                 pass
-        if changes is not None and changes.generation != generation:
-            raise HumanMemoryHostServiceError("primary_memory_view_invalidated")
     except Exception as exc:  # noqa: BLE001 - stable public error projection
         return _error(
             request_id,
@@ -160,16 +146,14 @@ async def send_human_memory_response(
     payload = response.get("payload", {})
     operation = payload.get("operation")
     binding_operations = {"primary.bindings.pending", "primary.bindings.status", "primary.bindings.decide"}
-    if not payload.get("ok") or operation not in HUMAN_AUDIT_OPERATIONS | binding_operations:
+    if not payload.get("ok") or operation not in binding_operations:
         await send(response)
         return
     checked = False
     try:
         async with human_memory_request_boundary():
             if factory is None:
-                raise HumanMemoryHostServiceError("primary_audit_capability_unavailable")
-            if operation in HUMAN_AUDIT_OPERATIONS:
-                factory.bind(auth).check_primary_audit_response(operation, payload["result"])
+                raise HumanMemoryHostServiceError("primary_binding_capability_unavailable")
             checked = True
             # Bound the time a slow socket may retain the shared revocation
             # lease. Timeout is an uncertain delivery, never a new read.
@@ -180,7 +164,7 @@ async def send_human_memory_response(
             raise
         await send(_error(
             response["request_id"],
-            str(getattr(exc, "code", "primary_audit_delivery_rejected")),
+            str(getattr(exc, "code", "primary_binding_delivery_rejected")),
         ))
 
 
@@ -189,38 +173,6 @@ async def _dispatch(  # type: ignore[no-untyped-def]
 ):
     if operation == "primary.open":
         return await service.open_primary()
-    if operation in HUMAN_AUDIT_OPERATIONS:
-        from deskpet.operation_audit.human_access import HumanAuditError
-        from deskpet.memory.writer_fence import require_human_audit_request
-
-        require_human_audit_request()
-        fields = {
-            "primary.audit.open": {"primary_ref", "open_action_id"},
-            "primary.audit.page": {"primary_ref", "audit_ref", "page_action_id", "cursor_ref"},
-            "primary.audit.host.page": {
-                "primary_ref", "audit_ref", "page_action_id", "section", "cursor_ref", "target_ref",
-            },
-            "primary.audit.close": {"primary_ref", "audit_ref"},
-        }[operation]
-        if set(request) != fields:
-            raise HumanAuditError("primary_audit_request_invalid")
-        return await service.primary_audit(operation, **request)
-    if operation in {"primary.memory.list", "primary.memory.graph", "primary.memory.forget"}:
-        from deskpet.memory.primary_cognitive_controls import PrimaryCognitiveError
-
-        if operation == "primary.memory.graph":
-            if "primary_ref" not in request or not set(request) <= {"primary_ref", "node_limit", "edge_limit"}:
-                raise PrimaryCognitiveError("primary_memory_request_invalid")
-            return await service.read_primary_memory_graph(**request)
-        if operation == "primary.memory.list":
-            if "primary_ref" not in request or not set(request) <= {"primary_ref", "limit", "cursor"}:
-                raise PrimaryCognitiveError("primary_memory_request_invalid")
-            return await service.list_primary_memories(**request)
-        if set(request) != {
-            "primary_ref", "memory_id", "expected_revision", "expected_content_hash", "action_id"
-        }:
-            raise PrimaryCognitiveError("primary_memory_request_invalid")
-        return await service.forget_primary_memory(**request)
     if operation in {
         "primary.state",
         "primary.messages.page",

@@ -43,8 +43,7 @@ _CONTEXT_TOOLS = frozenset({"context_page_in", "skill_invoke", "todo_write"})
 _ASYNC_TOOLS = frozenset(
     {
         "app_discover", "app_launch", "download_file", "file_read", "file_write",
-        "gold_price_lookup", "memory_forget", "memory_read", "memory_search",
-        "memory_write", "process_list", "process_start", "process_stop",
+        "gold_price_lookup", "process_list", "process_start", "process_stop",
         "process_wait", "scrapling_fetch", "skill_invoke", "web_crawl",
         "web_extract_article", "web_fetch", "web_read_sitemap", "web_search",
         "workspace_recall",
@@ -100,12 +99,8 @@ class ToolCatalogDependencies:
     workflow_service_provider: Callable[[], Any]
     context_page_store: Any
     execution_context_getter: Callable[[], Any]
-    memory_query: Any
-    memory_scope_resolver: Any
     capability_bridge_service: Any
     search_gateway: Any
-    memory_manager: Any | None = None
-    memory_identity_resolver: Any | None = None
 
     def __post_init__(self) -> None:
         required = {
@@ -113,8 +108,6 @@ class ToolCatalogDependencies:
             "workflow_service_provider": self.workflow_service_provider,
             "context_page_store": self.context_page_store,
             "execution_context_getter": self.execution_context_getter,
-            "memory_query": self.memory_query,
-            "memory_scope_resolver": self.memory_scope_resolver,
             "capability_bridge_service": self.capability_bridge_service,
             "search_gateway": self.search_gateway,
         }
@@ -130,8 +123,6 @@ class ToolCatalogDependencies:
         required_methods = {
             "todo_session_db": (self.todo_session_db, ("replace_session_todos",)),
             "context_page_store": (self.context_page_store, ("get", "mark_active")),
-            "memory_query": (self.memory_query, ("recall_readonly",)),
-            "memory_scope_resolver": (self.memory_scope_resolver, ("resolve_for_run",)),
             "capability_bridge_service": (
                 self.capability_bridge_service,
                 ("search", "describe", "suggestions", "activate"),
@@ -258,137 +249,12 @@ def adapt_model_arguments(name: str, arguments: Mapping[str, JsonValue]) -> dict
     return adapted
 
 
-# 事故 J（HM-TO-A6 turn 23）：``memory_forget`` 的处理器直接 ``int(arguments["fact_id"])``，
-# 模型不带 ``fact_id`` 调用时抛 ``KeyError('fact_id')``，被 SDK 的处理器边界吞成
-# ``tool_handler_failed`` + "Tool execution failed."，模型看不到任何可行动信息，连打 18 次
-# 直到 ``react_repeated_tool_exceeded`` 打掉整个 Run。
-#
-# 这里的稳定码全部落在 ``deskpet/sdk_adapters/tools.py`` 的
-# ``_SAFE_HANDLER_ERROR_CODE``（``^[a-z][a-z0-9_]{0,63}$``）字母表内，
-# 因此会连同 ``public_message`` 一起原样呈现给模型；不含路径、栈帧、密钥。
-MEMORY_FORGET_TARGET_REQUIRED = "memory_forget_target_required"
-MEMORY_FORGET_INVALID_FACT_ID = "memory_forget_invalid_fact_id"
-MEMORY_FORGET_NATURAL_LANGUAGE_DISABLED = "memory_forget_natural_language_disabled"
-MEMORY_FORGET_UNKNOWN_FACT_ID = "memory_forget_unknown_fact_id"
-MEMORY_FORGET_STORE_UNAVAILABLE = "memory_forget_store_unavailable"
-MEMORY_FORGET_IDENTITY_UNAVAILABLE = "memory_forget_identity_unavailable"
-
-_MEMORY_FORGET_CANDIDATE_LIMIT = 20
-_MEMORY_FORGET_LABEL_LIMIT = 48
-# 与 ``deskpet/sdk_adapters/tools.py`` 的 ``_MAX_HANDLER_PUBLIC_MESSAGE`` 一致。
-_MEMORY_FORGET_MESSAGE_LIMIT = 2048
-
-# 冻结 manifest 里的描述指向 ``memory_facts_list`` —— 那是一条 UI WebSocket 路由，
-# **不是**工具，模型永远拿不到 ``fact_id``，于是只能空手调用或改用自然语言。
-# 照 ``tool_search``/``tool_describe`` 的既有做法在构建期投影正确的公开说明，
-# 不改写 manifest 的存档字节。
-_MEMORY_FORGET_DESCRIPTION = (
-    "Forget one memory this assistant previously stored with memory_write, "
-    "identified by the exact integer fact_id that memory_write returned. Use "
-    "ONLY when the user explicitly asks to forget something. Forgetting by "
-    "natural-language description is disabled. If you have no fact_id, call it "
-    "once to receive the list of forgettable ids, then either call it again "
-    "with one of them or tell the user to remove the memory in the app's "
-    "memory panel — do not retry the same call."
-)
-_MEMORY_FORGET_FACT_ID_DESCRIPTION = (
-    "Exact integer fact ID to forget, as returned by memory_write."
-)
-_MEMORY_FORGET_QUERY_DESCRIPTION = (
-    "Deprecated and always rejected: memory_forget never resolves a memory "
-    "from free text. Pass fact_id instead."
-)
-
-
-def _memory_forget_candidate_label(fact: Any) -> str:
-    key = str(getattr(fact, "key", "") or "").strip()
-    value = str(getattr(fact, "value", "") or "").strip()
-    label = f"{key}={value}" if key and value else key or value
-    label = " ".join(label.split())
-    if len(label) > _MEMORY_FORGET_LABEL_LIMIT:
-        label = label[: _MEMORY_FORGET_LABEL_LIMIT - 1] + "…"
-    return label
-
-
-async def _memory_forget_candidates(
-    memory_manager: Any, principal: Any
-) -> tuple[tuple[int, str], ...]:
-    """列出该 principal 名下可按 id 遗忘的记忆（与 UI facts 面板同一条只读面）。
-
-    这条列举只用来把拒绝变得**可行动**；它绝不放宽授权：读的是
-    ``list_facts``（identity-safe，personal scope），失败一律降级成空列表，
-    不把存储异常泄漏给模型。
-    """
-
-    lister = getattr(memory_manager, "list_facts", None)
-    if lister is None:
-        return ()
-    try:
-        facts = await lister(principal, limit=_MEMORY_FORGET_CANDIDATE_LIMIT)
-    except Exception as exc:  # noqa: BLE001 - 列举失败不得升级成工具崩溃
-        logger.warning(
-            "memory_forget.candidates_unavailable error_type=%s", type(exc).__name__
-        )
-        return ()
-    candidates: list[tuple[int, str]] = []
-    for fact in facts or ():
-        raw_id = getattr(fact, "id", None)
-        if isinstance(raw_id, bool) or not isinstance(raw_id, int):
-            continue
-        candidates.append((raw_id, _memory_forget_candidate_label(fact)))
-        if len(candidates) >= _MEMORY_FORGET_CANDIDATE_LIMIT:
-            break
-    return tuple(candidates)
-
-
-def _memory_forget_rejection(
-    code: str, reason: str, candidates: Sequence[tuple[int, str]]
-) -> dict[str, Any]:
-    if candidates:
-        listed = "; ".join(
-            f"{fact_id} ({label})" if label else str(fact_id)
-            for fact_id, label in candidates
-        )
-        action = (
-            f"Forgettable memory ids for this user: {listed}. Call memory_forget "
-            "again with fact_id set to exactly one of those integers."
-        )
-    else:
-        action = (
-            "This user currently has no memory that can be forgotten by id — only "
-            "a memory this assistant stored earlier with memory_write has one. Do "
-            "not call memory_forget again; tell the user you cannot remove it "
-            "yourself and that they can delete it in the app's memory panel."
-        )
-    message = f"memory_forget rejected: {reason} {action}"
-    return {
-        "ok": False,
-        "error_code": code,
-        "public_message": message[:_MEMORY_FORGET_MESSAGE_LIMIT],
-    }
-
-
-def _memory_forget_fact_id(value: Any) -> int | None:
-    """把模型给的 ``fact_id`` 收敛成整数；无法收敛返回 ``None``（由调用方拒绝）。"""
-
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        if text.lstrip("-").isdigit():
-            return int(text)
-    return None
+# 2026-09-10：五个记忆工具（memory_write / memory_read / memory_forget /
+# memory_recall / memory_search）随认知记忆 SDK 一并下线，其处理器、稳定错误码与
+# 构建期描述投影一并删除；冻结清单 76 → 71 已重签。
 
 
 def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable[..., Any], str]]:
-    from deskpet.memory.recall_adapter import (
-        build_memory_recall_handlers,
-        build_memory_search_handler,
-    )
     from deskpet.tools.code_tools.spawn_subagents_tool import (
         build_sdk_await_subagents_tool,
         product_delegation_tool_catalog,
@@ -424,11 +290,6 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
         deps.context_page_store,
         execution_context_getter=deps.execution_context_getter,
     )
-    _reject_memory_recall, trusted_memory_recall = build_memory_recall_handlers(
-        deps.memory_query,
-        deps.memory_scope_resolver,
-    )
-
     class Capture:
         def __init__(self) -> None:
             self.handlers: dict[str, Callable[..., Any]] = {}
@@ -449,203 +310,9 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
             "await_subagents": (await_handler, "keyword_context"),
             "todo_write": (todo_handler, "keyword_context"),
             "context_page_in": (page_handler, "standard"),
-            "memory_recall": (trusted_memory_recall, "context"),
-            "memory_search": (
-                build_memory_search_handler(
-                    deps.memory_query,
-                    deps.memory_scope_resolver,
-                ),
-                "context",
-            ),
             "web_search": (build_web_search_handler(deps.search_gateway), "standard"),
         }
     )
-    if deps.memory_manager is not None and deps.memory_identity_resolver is not None:
-        from simple_harness_memory import MemoryPrincipal
-
-        def trusted_memory_execution(context: Any) -> tuple[str, str, str]:
-            authority_context = deps.execution_context_getter()
-            metadata = thaw_json(getattr(context, "metadata", {}))
-            session_id = str(
-                getattr(authority_context, "session_id", "")
-                or metadata.get("session_id")
-                or getattr(context, "session_id", "")
-            ).strip()
-            if not session_id:
-                raise RuntimeError("trusted_memory_session_id_unavailable")
-            run = getattr(context, "run_id", None)
-            root_run_id = str(
-                getattr(authority_context, "root_run_id", "")
-                or metadata.get("root_run_id")
-                or getattr(context, "root_run_id", "")
-                or getattr(run, "value", run)
-                or ""
-            ).strip()
-            call = getattr(context, "call_id", None)
-            call_id = str(
-                getattr(authority_context, "call_id", "")
-                or getattr(call, "value", call)
-                or ""
-            ).strip()
-            if not root_run_id or not call_id:
-                raise RuntimeError("trusted_memory_execution_id_unavailable")
-            return session_id, root_run_id, call_id
-
-        async def trusted_principal(context: Any) -> MemoryPrincipal:
-            session_id, _, _ = trusted_memory_execution(context)
-            identity = await deps.memory_identity_resolver.resolve(session_id)
-            return MemoryPrincipal(
-                identity.deployment_id,
-                identity.household_id,
-                identity.actor_id,
-                identity.session_id,
-            )
-
-        async def memory_write(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
-            _, root_run_id, call_id = trusted_memory_execution(context)
-            source_event_id = (
-                f"explicit-memory-action/v1/{root_run_id}/{call_id}"
-            )
-            tier = {
-                "auto": "auto",
-                "l1": "working",
-                "l2": "long_term",
-                "l3": "identity",
-            }[str(arguments.get("tier", "auto"))]
-            fact_id = await deps.memory_manager.remember_fact(
-                await trusted_principal(context),
-                str(arguments["text"]),
-                source_event_id=source_event_id,
-                salience=float(arguments.get("salience", 0.5)),
-                pinned=bool(arguments.get("pinned", False)),
-                tier=tier,
-            )
-            return {
-                "ok": True,
-                "memory_id": int(fact_id),
-                "source_event_id": source_event_id,
-            }
-
-        async def memory_forget(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
-            # 任何模型可控的参数形状都必须收敛成**确定性、模型可见**的拒绝：
-            # 抛异常只会变成不可行动的 "Tool execution failed."（事故 J）。
-            raw_fact_id = arguments.get("fact_id")
-            fact_id = _memory_forget_fact_id(raw_fact_id)
-            if fact_id is None:
-                raw_query = arguments.get("query")
-                if raw_fact_id is not None:
-                    code = MEMORY_FORGET_INVALID_FACT_ID
-                    reason = "fact_id must be an integer memory id."
-                elif isinstance(raw_query, str) and raw_query.strip():
-                    # 自然语言遗忘保持禁用（提示注入面，见 plans/2026-05-23-memory-
-                    # system-stage2/03-architect-review-round1.md D-RISK-5）；
-                    # 只是把拒绝从静默失败改成可行动。
-                    code = MEMORY_FORGET_NATURAL_LANGUAGE_DISABLED
-                    reason = (
-                        "forgetting by natural-language description is disabled; "
-                        "memory_forget resolves an exact integer fact_id only."
-                    )
-                else:
-                    code = MEMORY_FORGET_TARGET_REQUIRED
-                    reason = "no fact_id was given."
-                # 拒绝路径必须永远返回，绝不改成第二种崩溃：身份解析失败时退化成
-                # 「没有可遗忘的 id」这条同样可行动的文案。
-                try:
-                    principal = await trusted_principal(context)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "memory_forget.principal_unavailable error_type=%s",
-                        type(exc).__name__,
-                    )
-                    return _memory_forget_rejection(code, reason, ())
-                return _memory_forget_rejection(
-                    code,
-                    reason,
-                    await _memory_forget_candidates(deps.memory_manager, principal),
-                )
-            # 授权/抑制路径与既有实现逐字一致：同一个 trusted principal、同一个
-            # 由 root_run_id/call_id 派生的 source_event_id、payload_hash=None。
-            # 身份/执行标识解析失败依然**不遗忘**（授权语义不变），只是不再以裸异常收场。
-            try:
-                _, root_run_id, call_id = trusted_memory_execution(context)
-                principal = await trusted_principal(context)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "memory_forget.identity_unavailable error_type=%s",
-                    type(exc).__name__,
-                )
-                return {
-                    "ok": False,
-                    "error_code": MEMORY_FORGET_IDENTITY_UNAVAILABLE,
-                    "public_message": (
-                        "memory_forget rejected: this Run cannot be tied to a "
-                        "memory owner, so nothing was forgotten. Do not retry in "
-                        "this turn; tell the user the memory is unchanged."
-                    ),
-                }
-            source_event_id = (
-                f"explicit-memory-action/v1/{root_run_id}/{call_id}"
-            )
-            try:
-                forgotten = bool(await deps.memory_manager.forget_fact(
-                    fact_id,
-                    reason="",
-                    principal=principal,
-                    source_event_id=source_event_id,
-                    payload_hash=None,
-                ))
-            except Exception as exc:  # noqa: BLE001 - 存储异常不得外泄成裸异常
-                # 只记类型名：所有权/幂等冲突与存储故障的细节都是私有诊断。
-                logger.warning(
-                    "memory_forget.store_failed error_type=%s", type(exc).__name__
-                )
-                return {
-                    "ok": False,
-                    "error_code": MEMORY_FORGET_STORE_UNAVAILABLE,
-                    "public_message": (
-                        "memory_forget rejected: this memory could not be "
-                        "forgotten right now. Do not retry in this turn; tell the "
-                        "user the memory is unchanged and that they can remove it "
-                        "in the app's memory panel."
-                    ),
-                }
-            if not forgotten:
-                return _memory_forget_rejection(
-                    MEMORY_FORGET_UNKNOWN_FACT_ID,
-                    f"fact_id {fact_id} is not an active memory of this user.",
-                    await _memory_forget_candidates(deps.memory_manager, principal),
-                )
-            return {
-                "ok": True,
-                "forgotten": True,
-                "receipt": "forgotten",
-                "source_event_id": source_event_id,
-            }
-
-        async def memory_read(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
-            fact_id = int(arguments["memory_id"])
-            fact = await deps.memory_manager.read_fact(
-                await trusted_principal(context),
-                fact_id,
-            )
-            if fact is None:
-                return {"ok": False, "error": "memory_not_found"}
-            return {
-                "ok": True,
-                "memory": {
-                    "id": fact_id,
-                    "key": str(fact.key),
-                    "value": str(fact.value),
-                },
-            }
-
-        dynamic.update(
-            {
-                "memory_write": (memory_write, "context"),
-                "memory_forget": (memory_forget, "context"),
-                "memory_read": (memory_read, "context"),
-            }
-        )
     dynamic.update({name: (handler, "standard") for name, handler in capture.handlers.items()})
     return dynamic
 
@@ -667,7 +334,7 @@ def _dispatch_kind(name: str, handler: Callable[..., Any]) -> str:
 def build_explicit_product_tool_catalog(
     dependencies: ToolCatalogDependencies,
 ) -> ExplicitProductToolCatalog:
-    """Build all 76 registrations locally; publish nothing until validation ends."""
+    """Build all 71 registrations locally; publish nothing until validation ends."""
 
     manifest = load_tool_manifest()
     schemas, migration_records = migrate_tool_schemas(manifest)
@@ -741,21 +408,6 @@ def build_explicit_product_tool_catalog(
                     "Legacy compatibility field; the current SDK catalog ignores this filter."
                 )},
             }}}
-        elif name == "memory_forget":
-            properties = schema["parameters"].get("properties", {})
-            schema = {**schema, "description": _MEMORY_FORGET_DESCRIPTION, "parameters": {
-                **schema["parameters"], "properties": {
-                    **properties,
-                    "fact_id": {
-                        **properties.get("fact_id", {"type": "integer"}),
-                        "description": _MEMORY_FORGET_FACT_ID_DESCRIPTION,
-                    },
-                    "query": {
-                        **properties.get("query", {"type": "string"}),
-                        "description": _MEMORY_FORGET_QUERY_DESCRIPTION,
-                    },
-                },
-            }}
         elif name == "tool_describe":
             schema = {**schema, "description": schema["description"].replace(
                 "capability_search", "tool_search"), "parameters": {
@@ -790,7 +442,7 @@ def build_explicit_product_tool_catalog(
             )
         )
     names = tuple(item.name for item in registrations)
-    if len(names) != 76 or len(set(names)) != 76 or set(names) != set(manifest.tool_names):
+    if len(names) != 71 or len(set(names)) != 71 or set(names) != set(manifest.tool_names):
         raise RuntimeError("explicit Tool registration inventory differs from manifest")
     return ExplicitProductToolCatalog(
         registrations=tuple(registrations),

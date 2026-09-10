@@ -1,8 +1,7 @@
-"""Actual SDK batch observation; never synthesize a Memory visibility result."""
+"""Physical claim identity for one provider hand-off (Host-only)."""
 import aiosqlite
 
-from deskpet.memory.current_input_source import input_context_request_id, CurrentInputSourceError
-from deskpet.memory.trusted_disclosure import resolve_current_disclosure
+from deskpet.memory.current_input_source import CurrentInputSourceError
 
 # One live-claim vocabulary for this module. The Host admits the sole
 # ``SDK_START`` effect **only** while the head is ``CLAIMED``
@@ -55,62 +54,12 @@ def same_physical_claim(original, final, *, may_bind_sdk_run_id=None):
     return states[0] == states[1] or states == _CLAIM_START_ADVANCE
 
 
-async def check_primary_input_visibility(*, db_path, manager, principal, disclosure_context, bindings):
-    from simple_harness_memory import CurrentInputBindingV1, HistoryEvidenceBinding
-    from deskpet.execution.foreground_runtime import _execution_session_id
-    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
-
-    if ":input-v1:" not in disclosure_context.authority_ref:
-        return await manager.check_history_visibility(principal=principal,
-            disclosure_context=disclosure_context, bindings=bindings)
-    request_id = input_context_request_id(disclosure_context)
-    async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
-        db.row_factory = aiosqlite.Row
-        rows = await (await db.execute(
-            "SELECT h.*,t.evidence_id,t.evidence_hash FROM foreground_run_heads h "
-            "JOIN foreground_turns t ON t.turn_id=h.turn_id AND t.subject=h.subject "
-            f"WHERE h.subject=? AND h.current_state IN ({LIVE_CLAIM_PLACEHOLDERS})",
-            (principal.actor_id, *LIVE_CLAIM_STATES),
-        )).fetchall()
-    matched = [row for row in rows if SdkRuntimeIngress._compute_run_id(
-        _execution_session_id(row["host_run_id"]), f"foreground-request-{row['turn_id']}", row["turn_id"]).value
-        == disclosure_context.run_id]
-    if not matched:
-        # Pre-claim history-only reads have no actual input execution yet and
-        # receive NO new permit. The ordinary SDK gate still applies unchanged.
-        return await manager.check_history_visibility(principal=principal,
-            disclosure_context=disclosure_context, bindings=bindings)
-    if len(matched) != 1:
-        raise CurrentInputSourceError("current_claim_unverifiable")
-    original = matched[0]
-    current = [b for b in bindings if type(b) is HistoryEvidenceBinding
-        and b.envelope.evidence_id == original["evidence_id"]
-        and b.envelope.envelope_hash == original["evidence_hash"]]
-    if not current:
-        # E.g. reading only old completed history before composing this input.
-        return await manager.check_history_visibility(principal=principal,
-            disclosure_context=disclosure_context, bindings=bindings)
-    from deskpet.operation_audit.current_inputs import CurrentInputJournal
-    from pathlib import Path
-    journal = CurrentInputJournal(Path(db_path).with_name("operation-audit.db"))
-    observed = await journal.check_current_input_visibility(manager, principal=principal,
-        disclosure_context=disclosure_context,
-        binding=CurrentInputBindingV1(original["turn_id"], request_id, current[0]), bindings=bindings)
-    # Fresh ORIGINAL claim + ORIGINAL disclosure, after Memory's slow read.
-    # This is not an assertion of an atomic transaction across the two stores.
-    async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
-        db.row_factory = aiosqlite.Row
-        final = await (await db.execute("SELECT * FROM foreground_run_heads WHERE host_run_id=?",
-            (original["host_run_id"],))).fetchone()
-    if not same_physical_claim(original, final):
-        raise CurrentInputSourceError("claim_changed_during_check")
-    current_context = await resolve_current_disclosure(db_path=db_path, subject=principal.actor_id,
-        run_id=disclosure_context.run_id, request_id=request_id, turn_id=original["turn_id"])
-    if current_context != disclosure_context:
-        raise CurrentInputSourceError("policy_changed_during_check")
-    if observed.history_visibility is None:
-        raise CurrentInputSourceError("sdk_batch_snapshot_missing")
-    return observed.history_visibility
+# 2026-09-10：``check_primary_input_visibility`` 随认知记忆 SDK 一并移除。
+# 它的全部作用是把「本轮正在执行的当前 USER 输入」这一条 binding 送进公开
+# Memory 可见性批（并用 CurrentInputJournal 记账），拿回逐条 visible 判定。
+# 没有记忆系统就没有那次批，也没有会把当前输入判成不可见的权威；下面两个
+# 纯 Host 的物理认领工具（claim_stamp / same_physical_claim）保留原样，它们
+# 守的是「provider 交接期间这条 Run 的认领没有换手」，与记忆无关。
 
 
 async def claim_stamp(db_path, host_run_id, sdk_run_id):

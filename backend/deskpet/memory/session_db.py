@@ -219,7 +219,6 @@ class SessionDB:
         db_path: str | Path,
         *,
         on_message_written: Optional[OnMessageWritten] = None,
-        memory_backend: Any = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._initialized = False
@@ -234,20 +233,10 @@ class SessionDB:
         #   * 不得修改 append_message 的返回值（仍是 msg_id）
         #   * None → 老 S1 行为完全不变（零开销）
         self._on_message_written: Optional[OnMessageWritten] = on_message_written
-        # 记忆 SDK（simple-harness-memory-sdk）的可选认知记忆后端。None → 不接入，
-        # 会话账本照常工作；接入后 append_message 会把消息喂给 SDK（facts/twin/
-        # recall），recall/get_facts/get_digital_twin 也委托给 SDK。
-        self._memory_backend: Any = memory_backend
-        self._product_memory_dispatcher: Any = None
+        # 2026-09-10：认知记忆 SDK（simple-harness-memory-sdk）整条移除。SessionDB
+        # 回到「纯 Host 会话账本」的本职：只落 state.db，不再有可选记忆后端、
+        # product_memory_outbox 投递器，也不再代理 recall/facts/twin。
         self._state_db_instance_id: str | None = None
-
-    def bind_memory_manager(self, manager: Any) -> None:
-        """Bind the single process MemoryManager before initialization."""
-        if manager is None:
-            raise TypeError("manager is required")
-        if self._initialized or self._memory_backend is not None:
-            raise RuntimeError("memory_manager_already_bound")
-        self._memory_backend = manager
 
     @property
     def db_path(self) -> Path:
@@ -300,22 +289,6 @@ class SessionDB:
             else:
                 self._state_db_instance_id = str(row[0])
             await db.commit()
-
-        if self._memory_backend is not None:
-            try:
-                from deskpet.memory.product_outbox import (
-                    ProductMemoryDispatcher,
-                    ProductMemoryOutboxRepository,
-                )
-
-                self._product_memory_dispatcher = ProductMemoryDispatcher(
-                    ProductMemoryOutboxRepository(self._db_path),
-                    self._memory_backend,
-                    owner_id=f"deskpet-product:{self._state_db_instance_id}",
-                )
-                self._product_memory_dispatcher.start()
-            except Exception as exc:  # noqa: BLE001
-                log.warning("memory_backend initialize failed: %s", exc)
 
         self._initialized = True
         log.info(
@@ -377,25 +350,6 @@ class SessionDB:
         """
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        dispatcher, self._product_memory_dispatcher = (
-            self._product_memory_dispatcher,
-            None,
-        )
-
-        manager, self._memory_backend = self._memory_backend, None
-        if dispatcher is not None:
-            try:
-                await asyncio.wait_for(
-                    dispatcher.close(timeout_seconds=timeout_seconds),
-                    timeout=timeout_seconds + 0.5,
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.warning("product memory dispatcher close failed: %s", exc)
-        if manager is not None:
-            try:
-                await asyncio.wait_for(manager.close(), timeout=timeout_seconds)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("memory manager close failed: %s", exc)
         self._initialized = False
 
     # ------------------------------------------------------------------
@@ -447,50 +401,9 @@ class SessionDB:
     # 记忆 SDK 委托（认知记忆；未接入时降级为空）
     # ------------------------------------------------------------------
 
-    async def recall(
-        self,
-        query: str,
-        session_id: str | None = None,
-        limit: int = 10,
-        *,
-        user_id: str = DEFAULT_MEMORY_USER_ID,
-    ) -> list[Any]:
-        """混合召回（委托 SDK MemoryBackend）；未接入时返回空。"""
-        if self._memory_backend is None:
-            return []
-        if session_id is not None:
-            await self.ensure_memory_user_binding(session_id, user_id=user_id)
-        return await self._memory_backend.recall(
-            query, session_id=session_id, limit=limit, user_id=user_id
-        )
-
-    async def get_facts(
-        self,
-        subject: str = "user",
-        category: str | None = None,
-        active_only: bool = True,
-        *,
-        user_id: str = DEFAULT_MEMORY_USER_ID,
-    ) -> list[Any]:
-        """结构化事实（委托 SDK MemoryBackend）；未接入时返回空。"""
-        if self._memory_backend is None:
-            return []
-        return await self._memory_backend.get_facts(
-            subject, category, active_only, user_id=user_id
-        )
-
-    async def get_digital_twin(
-        self,
-        subject: str = "user",
-        *,
-        user_id: str = DEFAULT_MEMORY_USER_ID,
-    ) -> Any:
-        """数字孪生体（委托 SDK MemoryBackend）；未接入时返回 None。"""
-        if self._memory_backend is None:
-            return None
-        return await self._memory_backend.get_digital_twin(
-            subject, user_id=user_id
-        )
+    # 2026-09-10：``recall`` / ``get_facts`` / ``get_digital_twin`` 三个委托随
+    # 认知记忆 SDK 一并移除——它们唯一的实现来自那个后端，留下只会返回空值的
+    # 空壳等于假装还有记忆。
 
     # ------------------------------------------------------------------
     # Write path with retry
@@ -3440,18 +3353,6 @@ class SessionDB:
                     exc,
                 )
 
-        # Low-latency attempt through the same durable dispatcher.  Failure
-        # never loses the committed intent: the background scan/restart path
-        # owns retry and dead-letter semantics.
-        if inserted and memory_authority == "product" and self._product_memory_dispatcher is not None:
-            try:
-                await self._product_memory_dispatcher.dispatch_once()
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "product memory dispatch deferred for msg_id=%s code=%s",
-                    msg_id,
-                    type(exc).__name__,
-                )
 
         return msg_id
 
@@ -3528,55 +3429,9 @@ class SessionDB:
                 await self._ensure_memory_binding_in_transaction(
                     db, session_id=session_id, user_id=user_id
                 )
-            is_product_conversation = (
-                authority == "product"
-                and role in {"user", "assistant"}
-                and projection_kind in {"user_message", "assistant_message"}
-                and context_visibility == "conversation"
-                and workflow_event_id is None
-                and tool_call_id is None
-                and tool_calls_json is None
-                and bool(content.strip())
-            )
-            if is_product_conversation:
-                instance_id = str(self._state_db_instance_id or "").strip()
-                if not instance_id:
-                    raise RuntimeError("state_db_identity_unavailable")
-                source_event_id = (
-                    f"deskpet-memory/v1/message/{instance_id}/{msg_id}"
-                )
-                from simple_harness_memory.core.conversation import (
-                    canonical_message_payload_hash,
-                )
-
-                payload_hash = canonical_message_payload_hash(
-                    source_event_id=source_event_id,
-                    user_id=user_id,
-                    session_id=session_id,
-                    role=role,
-                    memory_text=content,
-                )
-                now = time.time()
-                await db.execute(
-                    """INSERT INTO product_memory_outbox(
-                         source_event_id,state_db_instance_id,message_id,user_id,
-                         session_id,role,memory_text,payload_hash,status,attempt,
-                         next_attempt_at,created_at,updated_at)
-                       VALUES (?,?,?,?,?,?,?,?, 'pending',0,?,?,?)""",
-                    (
-                        source_event_id,
-                        instance_id,
-                        msg_id,
-                        user_id,
-                        session_id,
-                        role,
-                        content,
-                        payload_hash,
-                        now,
-                        now,
-                        now,
-                    ),
-                )
+            # 2026-09-10：``product_memory_outbox`` 是 SessionDB 投喂认知记忆
+            # SDK 的入口队列。SDK 移除后没有任何消费者，故不再产生新行（旧行
+            # 由 project_session_reset 的清表清单照常清理）。
         if not inserted:
             if workflow_event_id is not None:
                 conflict_where = "workflow_event_id = ?"

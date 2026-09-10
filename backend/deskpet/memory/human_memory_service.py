@@ -489,11 +489,8 @@ class HumanMemoryHostService:
         recovery: RecoveryLifecyclePort | None = None,
         scheduler_wake: ForegroundSchedulerWakePort | None = None,
         settled_run_reader: object | None = None,
-        suppression_resolver: object | None = None,
         run_binding_reader: object | None = None,
-        history_visibility_checker: object | None = None,
         decision_ingress_getter: object | None = None,
-        cognitive_runtime_getter: object | None = None,
         display_invalidation: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
@@ -512,21 +509,14 @@ class HumanMemoryHostService:
         self._binding_append = binding_append
         self._recovery = recovery
         self._scheduler_wake = scheduler_wake
-        self._cognitive_runtime_getter = cognitive_runtime_getter
         self._display_invalidation = display_invalidation
         from deskpet.memory.primary_read_model import PrimaryReadModel
-        from deskpet.memory.prospective_notice import ProspectiveNoticeReader
 
         self._primary_read = PrimaryReadModel(
             self._db_path,
             subject=auth.subject,
             settled_run_reader=settled_run_reader,
-            suppression_resolver=suppression_resolver,
             run_binding_reader=run_binding_reader,
-            history_visibility_checker=history_visibility_checker,
-            prospective_notice_reader=ProspectiveNoticeReader(
-                path=self._db_path, subject=auth.subject,
-                runtime_getter=cognitive_runtime_getter, terminal_reader=settled_run_reader),
         )
         from deskpet.memory.primary_decisions import PrimaryDecisions
         self._primary_decisions = PrimaryDecisions(
@@ -611,58 +601,8 @@ class HumanMemoryHostService:
             "evidence_hash": committed.envelope_sha256,
         }
 
-    def _cognitive_controls(self):
-        from deskpet.memory.primary_cognitive_controls import PrimaryCognitiveControls
-
-        return PrimaryCognitiveControls(
-            self._db_path, auth=self._auth,
-            runtime_getter=self._cognitive_runtime_getter,
-            display_invalidation=self._display_invalidation,
-        )
-
-    async def list_primary_memories(self, **request):
-        return await self._cognitive_controls().list(**request)
-
-    async def read_primary_memory_graph(self, **request):
-        return await self._cognitive_controls().graph(**request)
-
-    async def forget_primary_memory(self, **request):
-        return await self._cognitive_controls().forget(**request)
-
-    def _human_audit_runtime(self):
-        from deskpet.memory.writer_fence import require_human_audit_request
-        from deskpet.sdk_adapters.context_route import local_owner_auth
-
-        require_human_audit_request()
-        if self._auth != local_owner_auth():
-            raise HumanMemoryHostServiceError("primary_audit_subject_mismatch")
-        runtime = self._cognitive_runtime_getter() if self._cognitive_runtime_getter else None
-        access = getattr(runtime, "audit_access_authority", None)
-        if access is None:
-            raise HumanMemoryHostServiceError("primary_audit_capability_unavailable")
-        return runtime, access
-
-    async def primary_audit(self, operation, **request):
-        from deskpet.memory.writer_fence import require_human_audit_request
-
-        runtime, access = self._human_audit_runtime()
-        if operation == "primary.audit.close":
-            return await access.close(auth=self._auth, **request)
-        if operation == "primary.audit.host.page":
-            # Host-local run-audit rows under the same explicit grant; no SDK read.
-            return await access.host_page(principal=runtime.principal(), auth=self._auth, **request)
-        # Lazy SDK initialization can be slow; it must not retain a stale lease.
-        lease = require_human_audit_request()
-        manager = await runtime.manager()
-        if require_human_audit_request() != lease:
-            raise HumanMemoryHostServiceError("primary_audit_connection_changed")
-        method = access.open if operation == "primary.audit.open" else access.page
-        return await method(manager=manager, principal=runtime.principal(), auth=self._auth, **request)
-
-    def check_primary_audit_response(self, operation, payload):
-        _, access = self._human_audit_runtime()
-        access.final_check(auth=self._auth, primary_ref=payload["primary_ref"],
-                           audit_ref=payload["audit_ref"], allow_closed=operation == "primary.audit.close")
+    # 2026-09-10：认知记忆控制面（list / graph / forget）与认知记忆审计
+    # （primary.audit.*）随记忆 SDK 一并移除。
 
     async def create_task_scope(
         self, request: CreateTaskScopeRequest
@@ -2257,11 +2197,8 @@ class HumanMemoryHostServiceFactory:
     db_path: Path
     startup: StartupEpochDecision
     settled_run_reader: object | None = None
-    suppression_resolver: object | None = None
     run_binding_reader: object | None = None
-    history_visibility_checker: object | None = None
     decision_ingress_getter: object | None = None
-    cognitive_runtime_getter: object | None = None
     display_invalidation: object | None = None
 
     def bind(
@@ -2282,11 +2219,8 @@ class HumanMemoryHostServiceFactory:
             recovery=recovery,
             scheduler_wake=scheduler_wake,
             settled_run_reader=self.settled_run_reader,
-            suppression_resolver=self.suppression_resolver,
             run_binding_reader=self.run_binding_reader,
-            history_visibility_checker=self.history_visibility_checker,
             decision_ingress_getter=self.decision_ingress_getter,
-            cognitive_runtime_getter=self.cognitive_runtime_getter,
             display_invalidation=self.display_invalidation,
         )
 

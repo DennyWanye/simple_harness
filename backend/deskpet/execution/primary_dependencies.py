@@ -371,23 +371,8 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             raise ValueError("scope_search_result_unverified")
         if "error" in value:
             continue  # errors contain no candidate content
-        if row["tool_name"] == "procedure_discover":
-            from simple_harness_memory import ProcedureDraftCandidate
-            if (set(value) != {"kind","execution_authorized","candidates","next_after","omitted_oversize"}
-                    or value["kind"] != "procedure_draft_preview" or value["execution_authorized"] is not False
-                    or type(value["omitted_oversize"]) is not int or not 0 <= value["omitted_oversize"] <= 128
-                    or not isinstance(value["candidates"], (list,tuple)) or len(value["candidates"])>8):
-                raise ValueError("procedure_draft_result_unverified")
-            for item in value["candidates"]:
-                if not isinstance(item, Mapping) or set(item) != {"candidate", "history_binding"}:
-                    raise ValueError("procedure_draft_result_unverified")
-                candidate = ProcedureDraftCandidate.from_json(dict(item["candidate"]))
-                expected = {"memory_id":candidate.memory_id,"revision":candidate.revision,"candidate_hash":candidate.source_hash}
-                if item["history_binding"] != expected: raise ValueError("procedure_draft_result_unverified")
-                drafts.append(expected)
-            if value["next_after"] is not None:
-                identifier(value["next_after"], "next_after", 1024)
-            continue
+        # 2026-09-10：``procedure_discover`` 随认知记忆 SDK 一并下线，
+        # 这条重放校验分支不会再有对应的工具调用记录。
         if row["tool_name"] == "context_page_in":
             if value.get("kind") == "primary_current_tool_page_v1":
                 from deskpet.execution.current_tool_pages import LEGACY_PAGE_SIZE, admitted_current_page

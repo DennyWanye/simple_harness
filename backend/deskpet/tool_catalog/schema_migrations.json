@@ -1,5 +1,5 @@
 {
-  "manifest_sha256": "df979c0e044112338e0531d53e6d5906767b6ef0fbdaa312fec7d8f162790bc4",
+  "manifest_sha256": "57900a1d4d7b24091b6e04cac4cd3b441e3ea15385134f262b10ed368ba4d02b",
   "migrations": [
     {
       "closed_object_paths": [
@@ -276,46 +276,6 @@
       "name": "list_directory",
       "new_hash": "3650af6f935361a0e6baf31393c6dd68898b5a8a2ce2b8b080f75d51b8bb65ef",
       "old_hash": "872313268196ce8a6bf2394c8bf0c50d222dfa01f89e340457035428ef1d1123",
-      "spec_version": "v1.sdk-schema-2"
-    },
-    {
-      "closed_object_paths": [
-        "$"
-      ],
-      "disposition": "closed_object_contract",
-      "name": "memory_forget",
-      "new_hash": "e0f5b49410e8c610555a03df55dc7b4cd94240d1f0e0ed6e16b72c4f38c78156",
-      "old_hash": "a4d7a02f2c25652e5ba278ccce48c586203e226f8524215a78640392d4cee97a",
-      "spec_version": "v1.sdk-schema-2"
-    },
-    {
-      "closed_object_paths": [
-        "$"
-      ],
-      "disposition": "closed_object_contract",
-      "name": "memory_read",
-      "new_hash": "6dd215f28501fef367d3e133105eb67a295b7e039c272428fad23f946c507f2e",
-      "old_hash": "d5cb52a3065e5e7925f74de96d0f8f7a70d673be5e56413b8ffd4a63533a2fd1",
-      "spec_version": "v1.sdk-schema-2"
-    },
-    {
-      "closed_object_paths": [
-        "$"
-      ],
-      "disposition": "closed_object_contract",
-      "name": "memory_search",
-      "new_hash": "6add1fd1bdf35276662ea7ec29d948bd309485d3fbe08af236e2ca3a74bb840c",
-      "old_hash": "36f75ef6775393a81e3560370c22d821c1452a9fe925310e65a1a210c7ce7ea1",
-      "spec_version": "v1.sdk-schema-2"
-    },
-    {
-      "closed_object_paths": [
-        "$"
-      ],
-      "disposition": "closed_object_contract",
-      "name": "memory_write",
-      "new_hash": "189aa5c493d510aa3fd2ce4a658c25e86499bcb74154ed468a963abf2e6cb1f4",
-      "old_hash": "47c9d71baa1a4742b6f0e715f2c0625d92f9c77814f0992b9e1853360042a322",
       "spec_version": "v1.sdk-schema-2"
     },
     {

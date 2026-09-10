@@ -151,9 +151,6 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         # cheap to request in the same conversation.
         "context_route",
         "task_scope_search",
-        "prospective_ack",
-        "procedure_use",
-        "procedure_discover",
         # S5b Task 3: semantic closure must be reachable every provider turn
         # (a hidden Tool call is a whole-Run fault in the frozen SDK).
         "task_scope_update",
