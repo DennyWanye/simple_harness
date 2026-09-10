@@ -90,7 +90,12 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, visibility_checker=None, procedure_runtime=None, context_route_ledger_factory=None, write_file_schema=None, context_clock=None, provider_reconciliation=None, audit_sink=None):
+# 2026-09-10 删记忆 SDK：``visibility_memory`` / ``visibility_checker`` /
+# ``recall_executor`` / ``occurrence_coordinator`` / ``context_use_memory`` /
+# ``procedure_runtime`` 六个入参随认知记忆一并移除（对应的权威都不存在了）。
+# ``memory`` 保留：它是 Harness SDK 必填的 AgentMemoryPort，生产上是
+# ``NoMemoryAgentPort``，测试里按需注入自己的桩。
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, provider_context_window=32768, context_route_ledger_factory=None, write_file_schema=None, context_clock=None, provider_reconciliation=None, audit_sink=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -133,11 +138,6 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     ledger = ContextRouteLedgerStore(state_path)
     decision_sink = decision_sink_factory(ledger) if decision_sink_factory else ProductRuntimeDecisionSink(ledger=ledger)
     typed_use_authority = None
-    if context_use_memory is not None:
-        from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
-        typed_use_authority = await ProductTypedContextUseAuthority.create(
-            state_path=state_path, memory_runtime=context_use_memory,
-            stack_getter=lambda: stack, ledger=ledger, terminal_sink=decision_sink)
     class AuthorityCheckingAuthorization(Noop):
         async def authorize(self, prepared):
             if prepared.call.name == "write_file":
@@ -171,7 +171,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         for spec in specs:
             tools.register(FunctionTool(ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler))
         if dynamic:
-            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor, scope_reader, page_in_store, typed_use_authority, context_route_ledger_factory)
+            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, scope_reader, page_in_store, context_route_ledger_factory)
         if extra_registrations:
             from deskpet.sdk_adapters.tools import ProductToolsAdapter, _sdk_tool
             tools=ProductToolsAdapter(tuple(tools.get(spec['name']) for spec in specs
@@ -180,17 +180,9 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             tools.bind_run_authorities(registry)
             for registration in extra_registrations:
                 tools.register(_sdk_tool(registration))
-        if procedure_runtime is not None:
-            procedure_runtime.bind_tools(registry, tools)
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
         catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
-        if typed_use_authority is not None:
-            from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
-            provider_coordinator=ProductProviderInvocationCoordinator(uow=uow,
-                resolver=SimpleNamespace(resolve=lambda _:binding),
-                context_use_authority=typed_use_authority,typed_terminal=typed_use_authority)
-        else:
-            provider_coordinator=ProviderInvocationCoordinator(uow=uow,resolver=SimpleNamespace(resolve=lambda _:binding))
+        provider_coordinator=ProviderInvocationCoordinator(uow=uow,resolver=SimpleNamespace(resolve=lambda _:binding))
         result = RuntimePorts(provider=provider_coordinator,
                             tools=EffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop),
                             authorization=authorization, context=SqliteContextPort(database), delivery=DeliveryDispatcher(uow, {}),
@@ -211,13 +203,12 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             gate = EffectGate(binding_store=bindings, route_ledger=ledger, scope_store=CanonicalTaskScopeStore(state_path),
                               authority_resolver=registry.resolve, exposure_resolver=registry.resolve_exposure)
             result = replace(result, tools=ProductEffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop,
-                              effect_gate=gate, evidence_ingress=ExecutionEvidenceIngress(state_path), foreground_admission=foreground_gate,
-                              procedure_runtime=procedure_runtime),
+                              effect_gate=gate, evidence_ingress=ExecutionEvidenceIngress(state_path), foreground_admission=foreground_gate),
                               task_execution_authority=ProductTaskExecutionAuthority(root_resolver=BindingRootResolver(bindings)))
         from deskpet.execution.semantic_closure import closure_instruction_for_run
         result = replace(result, run_context_authority=ProductRunContextAuthority(
             ports_resolver=lambda: result, exposure_resolver=registry.resolve_exposure, ledger=ledger,
-            occurrence_coordinator=occurrence_coordinator, typed_use_authority=typed_use_authority,
+            typed_use_authority=typed_use_authority,
             closure_reader=(lambda run: closure_instruction_for_run(state_path, run.value)) if dynamic else None,
         ))
         built_ports["ports"] = result
@@ -265,45 +256,22 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             read_run_terminal_evidence = stack.read_run_terminal_evidence
             read_reserved_fact = stack.read_reserved_fact
         observer_stack = LegacyScopedStack()
-    from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
     from deskpet.memory.primary_visibility import PrimaryHistoryPolicy
-    owns_visibility_memory = visibility_memory is None
-    visibility_memory = visibility_memory or HumanMemoryV7Runtime(tmp_path / "visibility-memory.db")
-    async def checker(*, subject, disclosure_context, bindings):
-        if visibility_checker is not None:
-            return await visibility_checker(subject=subject, disclosure_context=disclosure_context, bindings=bindings)
-        assert visibility_memory.principal().actor_id == subject
-        manager = await visibility_memory.manager()
-        return await manager.check_history_visibility(principal=visibility_memory.principal(),
-            disclosure_context=disclosure_context, bindings=bindings)
-    history_policy = PrimaryHistoryPolicy(state_path, local_owner_auth().subject, checker)
-    def occurrence_terminal_hook(run_id):
-        from deskpet.memory.prospective_terminal_hook import prepare_occurrence_terminal_hook
-        return prepare_occurrence_terminal_hook(principal=occurrence_coordinator.store.principal,
-            sdk_run_id=run_id,actual_sdk_terminal=stack.read_run_terminal_evidence(run_id))
+    history_policy = PrimaryHistoryPolicy(state_path, local_owner_auth().subject)
     runtime = ForegroundRuntimeExecutionAuthority(
         store=queue, subject=local_owner_auth().subject, owner_id="primary-worker", ingress=ingress,
         context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack,
             **({"clock": context_clock} if context_clock is not None else {})),
-        provider=ProviderPort(binding, provider_context_window), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack,
-            occurrence_coordinator=occurrence_coordinator),
+        provider=ProviderPort(binding, provider_context_window), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
         state_changed=state_changed, effect_gate=foreground_gate, terminal_audit_wake=terminal_audit_wake,
-        terminal_commit_hook_factory=occurrence_terminal_hook if occurrence_coordinator else None,
         provider_reconciliation=provider_reconciliation, provider_reconcile=runtime_reconciliation.reconcile_for_run,
         audit_sink=audit_sink,
     )
     runtime.history_policy = history_policy
     runtime.runtime_reconciliation = runtime_reconciliation
     runtime.built_ports = built_ports
-    runtime.history_memory = visibility_memory
     runtime.typed_use_authority = typed_use_authority
-    original_close = runtime.close
-    async def close(**kwargs):
-        await original_close(**kwargs)
-        if owns_visibility_memory:
-            await visibility_memory.close()
-    runtime.close = close
     return runtime, stack, queue
 
 
@@ -654,10 +622,13 @@ async def test_primary_driver_error_invalidates_without_publishing_exception(
         tmp_path, state, Provider(), state_changed=changed, audit_sink=Audit()
     )
 
-    from simple_harness_memory.core.errors import MemoryLimitError
+    # 2026-09-10：原来用记忆 SDK 的 MemoryLimitError 做「稳定消息白名单」样本；
+    # 记忆 SDK 移除后白名单只剩 Host 自己的 TaskScopeProtocolError，断言的语义
+    # （被包住的原因带出类型 + 稳定消息，且不带任何 payload）完全不变。
+    from deskpet.task_scope.protocol import TaskScopeProtocolError
 
     async def fail():
-        raise RuntimeError("PRIVATE_DRIVER_ERROR") from MemoryLimitError(
+        raise RuntimeError("PRIVATE_DRIVER_ERROR") from TaskScopeProtocolError(
             "evidence_payload_requires_controlled_blob_ref"
         )
 
@@ -675,7 +646,7 @@ async def test_primary_driver_error_invalidates_without_publishing_exception(
         failed = [p for e, p in records if e == "foreground.runtime.failed"]
         assert len(failed) == fr.DRIVER_RETRY_ATTEMPTS
         # The wrapped cause is carried, payload-free, so the stable code is not lost.
-        assert failed[0]["error_cause_type"] == "MemoryLimitError"
+        assert failed[0]["error_cause_type"] == "TaskScopeProtocolError"
         assert (failed[0]["error_cause_detail"]
                 == "evidence_payload_requires_controlled_blob_ref")
         assert [p["attempt"] for p in failed] == list(
@@ -860,7 +831,7 @@ async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path
         await stack.close()
 
 
-def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None, scope_reader=None, page_in_store=None, typed_use_authority=None, context_route_ledger_factory=None):
+def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, scope_reader=None, page_in_store=None, context_route_ledger_factory=None):
     from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
@@ -879,7 +850,6 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
         service_factory_getter=lambda: factory,
         binding_store_factory=lambda: WorkspaceBindingAuthorityStore(state_path, configured_workspace_root=configured_root),
         binding_append_getter=lambda: binding_authority, ledger=ledger, tool_context_getter=active_product_tool_context,
-        recall_executor=recall_executor, typed_use_authority=typed_use_authority,
         scope_disclosure_reader=None if scope_reader is None else scope_reader.read,
         producer_dependencies_reader=None if scope_reader is None else scope_reader.producer_dependencies)
     closure = TaskScopeUpdateService(state_path, tool_context_getter=active_product_tool_context, route_ledger=ledger)

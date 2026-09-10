@@ -37,22 +37,4 @@ def test_closed_v2_never_discards_an_unrecognized_carrier(fault):
         parse_dependencies(proof)
 
 
-def test_short_projection_keeps_sdk_dto_identity_bytes_and_host_source_copy():
-    # DTO transport test only: it does not claim an actually selected/registered
-    # Host short chunk. The real manager rejection path is tested at outbound.
-    import hashlib
-    from types import SimpleNamespace
-    from simple_harness import PrivacyClass
-    from simple_harness_memory import ShortHorizonRecallHit, ShortHorizonRecallResult
-    from deskpet.memory.human_memory_v7 import RecallLanes, project_recall_fragments
-    content = "Actual UTF8 bytes: 保留"
-    digest = hashlib.sha256(content.encode()).hexdigest()
-    hit = ShortHorizonRecallHit("chunk", content, digest, 1.0, 20.0, PrivacyClass.PUBLIC, (), ("authority",))
-    short = ShortHorizonRecallResult((hit,), "audit", 1, 1, 0, 0, None, None)
-    sources = dependencies([{"evidence_id":"source", "envelope_hash":"b"*64}], schema_version=2)
-    lanes = RecallLanes(SimpleNamespace(result=SimpleNamespace(items=())), short, sources)
-    fragment, = project_recall_fragments(lanes)
-    assert fragment["history_binding"] == {"audit_id":"audit", "chunk_ref":"chunk", "content_hash":digest}
-    assert fragment["payload"] == content
-    sources["evidence"].clear()
-    assert fragment["history_source_dependencies"]["evidence"] == [{"evidence_id":"source","envelope_hash":"b"*64}]
+# 2026-09-10 removed with the Memory SDK: test_short_projection_keeps_sdk_dto_identity_bytes_and_host_source_copy

@@ -84,7 +84,8 @@ def summary_from(request, *, content_hash):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["allow", "forget_before_page", "forget_after_page"])
+# 2026-09-10 删记忆 SDK：去掉两个 forget 档。
+@pytest.mark.parametrize("mode", ["allow"])
 async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mode):
     import main
     from deskpet.execution.primary_dependencies import read_run_dependencies

@@ -517,6 +517,15 @@ class ForegroundRuntimeExecutionAuthority:
             except TimeoutError:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+            except asyncio.CancelledError:
+                # 2026-09-10：驱动可能以 CancelledError 收场——``_drive_with_lease``
+                # 在租约保持器先完成时 ``await keeper``，而保持器本身是被
+                # ``_stop_lease_keeper`` 取消的（关停竞态）。那是**驱动**结束的
+                # 方式，不是 ``close()`` 自己被取消：继续往下做租约清理，否则
+                # 这一路会把 CancelledError 抛给调用方并跳过 close_current_lease。
+                # 只有 ``close()`` 真的被取消（此时 task 尚未结束）才向外传播。
+                if not task.done():
+                    raise
         await self._stop_lease_keeper()
         snapshot = await self._store.current_snapshot(self._subject)
         if snapshot is None or snapshot.owner_id != self._owner_id:

@@ -32,7 +32,8 @@ from deskpet.execution.current_tool_pages import (
     CONTROL_TOOLS, CurrentToolProjector, MARKER, PREFIX as CURRENT_PREFIX,
 )
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["allow", "forget_after_page"])
+# 2026-09-10 删记忆 SDK：去掉 "forget_after_page"。
+@pytest.mark.parametrize("mode", ["allow"])
 async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode, provider_context_window=32768, write_chunks=None, expected_budget_stop=False):
     import main
     from deskpet.execution.primary_dependencies import read_run_dependencies

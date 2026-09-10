@@ -59,7 +59,8 @@ def install_guard(provider, runtime, stack, queue):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("initial", [False, True, "search"])
-@pytest.mark.parametrize("legacy", [False, True, "suppressed", "memory_suppressed"])
+# 2026-09-10 删记忆 SDK：去掉 "suppressed"（"memory_suppressed" 档是基线既有红，保留原样）。
+@pytest.mark.parametrize("legacy", [False, True, "memory_suppressed"])
 async def test_resume_source_or_explicit_legacy_gap_with_actual_file_terminal(tmp_path, initial, legacy):
     state, factory, service, configured, authority = await fixture(tmp_path)
     if legacy is True:

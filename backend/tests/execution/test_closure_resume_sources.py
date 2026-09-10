@@ -58,7 +58,8 @@ async def write_again(w, monkeypatch, scope):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("producer", ["tool", "tool_then_resume", "fallback", "fallback_forget", "fallback_commit_fault"])
+# 2026-09-10 删记忆 SDK：去掉 "fallback_forget"。
+@pytest.mark.parametrize("producer", ["tool", "tool_then_resume", "fallback", "fallback_commit_fault"])
 async def test_nonempty_resume_actual_producer_to_next_closure(tmp_path, monkeypatch, producer):
     def reply(observation, ordinal):
         if producer.startswith("fallback") and ordinal == 1:

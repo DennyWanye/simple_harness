@@ -17,7 +17,9 @@ from tests.execution.test_current_tool_pages import (
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("context_window", [4096, 8192, 32768])
+# 2026-09-10 删记忆 SDK：4096 档原本靠记忆 SDK 的 64 KiB 内联上限触发 wrap-up；
+# ``inline_evidence_limit()`` 恒为 None 后这一档不再走到那条收尾路径。
+@pytest.mark.parametrize("context_window", [8192, 32768])
 async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path, monkeypatch, context_window):
     module = importlib.import_module("deskpet.tools.os_tools.write_file")
     original_write = module.write_file

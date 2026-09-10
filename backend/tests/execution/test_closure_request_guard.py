@@ -154,7 +154,8 @@ def attempt_rows(w):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["allow", "tamper", "missing_carrier", "late_forget", "unknown", "cancel_reserve", "unproven_event", "slow_scope_change"])
+# 2026-09-10 删记忆 SDK：去掉 "late_forget"（抑制权威已不存在）。
+@pytest.mark.parametrize("mode", ["allow", "tamper", "missing_carrier", "unknown", "cancel_reserve", "unproven_event", "slow_scope_change"])
 async def test_actual_scope_to_physical_closure(tmp_path, monkeypatch, mode):
     w = await world(tmp_path, monkeypatch, mode)
     try:
