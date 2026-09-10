@@ -22,7 +22,13 @@
 
 ## 3. 测试
 
-（回填）
+| 项 | 结果 |
+|---|---|
+| Host `backend/tests/sdk_adapters`（0.8.0，Host `f0027c98`） | 661 passed / 34 failed；红集与 0.7.10 基线（同一树 `2db35b9c` 的 worktree + 独立 venv：660 passed / 35 failed）完全一致（`comm` 差集为空），0.8.0 额外修好 1 条（`test_start_reconcile_recover_query_close_and_schema_independence`，原断言"全新库 = v7"改为跟随 SDK fresh descriptor）。基线红集属于 effect_gate / s5a·s5b 矩阵 / task_scope_update / objective_events 等已知与本次无关的失败 |
+| 新增 Host 测试 | `test_composition.py::test_start_upgrades_a_pre_audit_v7_execution_library_to_v10`：无审计表的 v7 库启动 → 7→9→10、两份备份、第二次启动两回执回放且文件字节不变 |
+| 真实库副本干跑（Host venv 内 0.8.0 wheel） | 7→9→10 共 0.56 s，回放相等，重开 schema 10 |
+| 后端启动冒烟（真实用户数据**副本**，`main.py` 端口 18121，`.local-test-evidence/2026-09-10/host-startup-smoke-080/`） | `/health` = ok（strategy cloud_first），日志 `startup complete`；执行库 `[7] → [7, 9, 10]`，`pre-schema-9/10.backup` 均存在，19 张 `base_agent_*` 表；日志中唯一 Traceback 是 SIGTERM 关停时 MCP stdio 客户端的 `CancelledError`（关停路径，与启动无关，见 §5） |
+| SDK 侧 | `simple-harness-sdk` `dffd13c`：agents/execution/contracts 364 passed（6 基线红）；全量回归 73 红 ⊆ 基线、0 新红；干净 venv 装 wheel 242 passed；DeepSeek 真实委派链 run 9 通过 |
 
 ## 4. 原生 App 手工测试
 
@@ -30,4 +36,8 @@
 
 ## 5. 遗留
 
-（回填）
+| # | 事项 | 归属 |
+|---|---|---|
+| HL-1 | 后端 SIGTERM 关停时 `deskpet/mcp/manager.py::_teardown_runtime` 冒出 MCP stdio 客户端 `CancelledError` Traceback（关停路径，早于本次改动；启动与 `/health` 不受影响） | Host 后续观测 |
+| HL-2 | Host 尚无任何调用 `simple_harness.agents`（BaseAgent）的产品路径：本次只交付 SDK 能力 + 库升级；产品接线是 taskSys2 下一阶段 | 下一阶段 |
+| HL-3 | 真实执行库的正式升级在用户下次启动 App 时发生（备份 `execution-v6.sqlite3.pre-schema-9.backup` / `.pre-schema-10.backup` 与库同目录，不会被覆盖） | 用户启动时 |
