@@ -44,7 +44,7 @@ Host 内叫「记忆 SDK / 认知记忆 / P4-S13 记忆系统」）从 Host 主�
 | 二 | `8d6c6ddf` | 删记忆专属测试、修混合目录测试、PERSONA 去记忆 |
 | 三 | `4087be65` | 前端记忆面板与嵌入器状态卡下线 |
 | 四 | `2012f1f6` | 修 execution/operation_audit 侧测试 + 一处被提速暴露的关停竞态 |
-| 五 | 见文末终态行 | 依赖与 vendor 清理、剩余测试导入清理、文档回写、本 journal |
+| 五 | `fb08f475` | 依赖与 vendor 清理、服务槽位、剩余测试导入、文档回写、本 journal |
 
 相对基线合计：**375 个文件变更，322 个文件删除，-72490 行**。
 
@@ -381,3 +381,4 @@ backend/vendor/simple_harness_service_sdk-0.3.13.candidate-manifest.json:42,71
 
 VERDICT: DONE — 记忆 SDK 已从 Host 主分支移除；Host 在未安装该包的情况下冷启动通过，
 目标测试目录零新增红，前端全绿。主对话端到端待用户真机确认（L-5）。
+终态提交 `fb08f475`（切片一~五：`4b4dfba2` / `8d6c6ddf` / `4087be65` / `2012f1f6` / `fb08f475`），未 push。
