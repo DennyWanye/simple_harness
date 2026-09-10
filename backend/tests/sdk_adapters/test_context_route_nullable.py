@@ -34,66 +34,7 @@ def context(n):
                                                 turn_ordinal=1, task_scope_id=None))
 
 
-@pytest.mark.asyncio
-async def test_nullable_wire_to_memory_route_preserves_raw_and_rejects_placeholders(tmp_path, monkeypatch):
-    def no_network(*args, **kwargs):
-        raise AssertionError("network forbidden")
-    monkeypatch.setattr(socket.socket, "connect", no_network)
-    validate_tool_schema(CONTEXT_ROUTE_SCHEMA)
-    base = dict(route="memory_standalone", query="已有约定", memory_types=["semantic"])
-    proposals = [base, dict(base, reuse_workspace_of=None, expected_source_hash=None),
-        *(dict(base, reuse_workspace_of=s, expected_source_hash="0" * 64) for s in ("null", "none", "d", " ")),
-        dict(base, reuse_workspace_of=None, expected_source_hash="0" * 64)]
-    wires, recall_calls = [], []
-    def transport(request):
-        wires.append(json.loads(request.content))
-        n = len(wires) - 1
-        assert n < len(proposals)
-        return httpx.Response(200, json={"id": f"response-{n}", "model": "gpt-5.5",
-            "choices": [{"finish_reason": "tool_calls", "message": {"role": "assistant", "content": "",
-                "tool_calls": [{"id": f"nullable-call-{n}", "type": "function", "function": {
-                    "name": "context_route", "arguments": json.dumps(proposals[n])}}]}}],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
-    async def recall(**kwargs):
-        recall_calls.append(kwargs)
-        return SimpleNamespace(result=SimpleNamespace(items=(), truncated=False), degradation_codes=())
-    path = tmp_path / "state.db"
-    await initialize_human_memory_program_state_db(path)
-    current = None
-    service = ContextRouteToolService(service_factory_getter=lambda: None,
-        binding_store_factory=lambda: None, binding_append_getter=lambda: None,
-        ledger=ContextRouteLedgerStore(path), tool_context_getter=lambda: current, recall_executor=recall)
-    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
-        provider = _ProductOpenAICompatibleProvider(client, "https://wire.invalid/v1", "gpt-5.5", Secret("local-key"))
-        for n, expected in enumerate(proposals):
-            result = await provider.invoke(ProviderRequest(RequestId(f"nullable-request-{n}"),
-                (Message(MessageRole.USER, "本地无值协议控制"),), tools=(
-                    ProviderToolSpec("context_route", "Context route", CONTEXT_ROUTE_SCHEMA),)), cancel=CancelToken())
-            function = wires[n]["tools"][0]["function"]
-            assert function["strict"] is False and function["parameters"] == CONTEXT_ROUTE_SCHEMA
-            args = thaw_json(result.tool_calls[0].arguments)
-            assert args == expected
-            validate_arguments(args, CONTEXT_ROUTE_SCHEMA)
-            current = context(n)
-            raw = await service.handle_context_route(args)
-            token = host_tools._current_call_id.set(CallId(f"nullable-call-{n}"))
-            try:
-                public = host_tools._result(raw)
-            finally:
-                host_tools._current_call_id.reset(token)
-            if n < 2:
-                assert raw["context_route_receipt"]["route"] == "memory_standalone"
-                assert public.error_code is None
-            else:
-                code = ("context_route_source_hash_not_applicable" if n == len(proposals) - 1
-                        else "context_route_workspace_reuse_requires_create_new")
-                assert public.error_code == code and "JSON null" in public.public_message
-                assert len(recall_calls) == 2
-    with sqlite3.connect(path) as db:
-        rows = db.execute("SELECT proposal_hash,verdict FROM context_route_tool_invocations ORDER BY rowid").fetchall()
-        assert rows == [(canonical_sha256(p), "accepted" if n < 2 else "rejected") for n, p in enumerate(proposals)]
-        assert rows[0][0] != rows[1][0]  # Null is not erased for hashing.
-        assert db.execute("SELECT count(*) FROM context_route_decisions").fetchone()[0] == 2
+# 2026-09-10 removed with the Memory SDK: test_nullable_wire_to_memory_route_preserves_raw_and_rejects_placeholders
 
 
 @pytest.mark.asyncio

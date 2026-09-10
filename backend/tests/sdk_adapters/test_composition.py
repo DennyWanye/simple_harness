@@ -289,7 +289,7 @@ def test_composition_does_not_import_legacy_generic_authority() -> None:
     assert ".reconciler" not in source
 
 
-def test_desktop_composition_uses_sdk_production_builder_with_memory_on() -> None:
+def test_desktop_composition_uses_sdk_production_builder_with_null_memory_port() -> None:
     source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
     assert "ProductionRuntimeConfig(" in source
     assert "build_production_runtime(config)" in source
@@ -300,7 +300,10 @@ def test_desktop_composition_uses_sdk_production_builder_with_memory_on() -> Non
     assert "context_provider=context_provider" in source
     assert "conversation_query=" not in source
     assert "conversation_sink=" not in source
-    assert 'if str(spec.name) in {"memory_recall", "memory_search"}' in source
+    # 2026-09-10：五个记忆工具已从冻结清单里删掉，模型可见工具集的过滤不再需要；
+    # 端口换成诚实的空记忆端口。
+    assert "NoMemoryAgentPort()" in source
+    assert "simple_harness_memory" not in source
     assert "def resolve(self, generation, content_fingerprint):" in source
     assert ".resolve(generation, content_fingerprint)" in source
     assert "**_sdk_runtime_authority_bindings()" in source
@@ -950,82 +953,4 @@ def _restore_slots(context, snapshot) -> None:  # type: ignore[no-untyped-def]
         context.register(name, value)
 
 
-@pytest.mark.asyncio
-async def test_product_sdk_runtime_stack_builds_on_real_startup_order(tmp_path: Path, monkeypatch) -> None:
-    """P0（真实桌面预演 2026-09-03）：真实启动顺序 `_activate_product_sdk_runtime` →
-    `_build_product_sdk_runtime_stack` → `_activate_memory_analysis_lane` 时，模块全局
-    `_sdk_provider_binding_resolver` 尚未赋值（它在 stack 构建之后才写），而 builder 早已把
-    resolver 注册进 `service_context["sdk_provider_binding_resolver"]`。lane 激活必须读 service_context
-    真相；缺件必须让启动 raise（不是 `product_sdk_runtime_skipped` warning）。"""
-
-    import main
-    from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
-    from deskpet.memory.evidence_authority import HostEvidenceAuthority
-    from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
-    from deskpet.memory.memory_ingestion_outbox import MemoryAnalysisLane
-    from deskpet.memory.schema import initialize_human_memory_program_state_db
-
-    state_db = tmp_path / "state.db"
-    await initialize_human_memory_program_state_db(state_db)
-    started: list[str] = []
-    monkeypatch.setattr(MemoryAnalysisLane, "start", lambda self: started.append("lane"))
-    monkeypatch.setattr(main, "_state_db_path", state_db)
-    # 真实构建期状态：全局尚为 None、无 provider chain、lane 未建。
-    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", None)
-    monkeypatch.setattr(main, "_provider_registry", None)
-    monkeypatch.setattr(main, "_memory_analysis_lane", None)
-    v7 = HumanMemoryV7Runtime(
-        tmp_path / "v7.db",
-        embedder_getter=lambda: None,
-        evidence_authority=HostEvidenceAuthority(state_db),
-        analysis_authority=HostMemoryAnalysisExecutor(state_db, adapter_factory=lambda record: None),
-    )
-    resolver = object()
-    slots = (
-        "human_memory_v7_runtime", "sdk_provider_binding_resolver", "sdk_evidence_authority",
-        "sdk_memory_analysis_executor", "sdk_memory_ingestion_outbox",
-    )
-    saved = _snapshot_slots(main.service_context, slots)
-    try:
-        main.service_context.register("human_memory_v7_runtime", v7)
-        main.service_context.register("sdk_provider_binding_resolver", resolver)
-        for slot in slots[2:]:
-            main.service_context.register(slot, None)
-        # ① 与真实启动同序：全局 None + service_context 已注册 → 激活成功、槽齐全。
-        main._activate_memory_analysis_lane()
-        assert started == ["lane"]
-        assert main.service_context.get("sdk_evidence_authority") is v7.evidence_authority
-        assert main.service_context.get("sdk_memory_analysis_executor") is v7.analysis_authority
-        assert isinstance(main.service_context.get("sdk_memory_ingestion_outbox"), MemoryAnalysisLane)
-        # ② resolver 槽缺失 → 稳定缺件码（不是 AttributeError/静默）。
-        main.service_context.register("sdk_provider_binding_resolver", None)
-        monkeypatch.setattr(main, "_memory_analysis_lane", None)
-        with pytest.raises(RuntimeError, match="sdk_context_authority_composition_missing:sdk_provider_binding_resolver"):
-            main._activate_memory_analysis_lane()
-    finally:
-        _restore_slots(main.service_context, saved)
-
-    # ③ `_activate_product_sdk_runtime`：composition 缺件 → 启动抛错，而不是 warning + skip。
-    from types import SimpleNamespace
-
-    class _Uow:
-        async def initialize(self) -> None: ...
-
-        async def get_runtime_state(self):  # type: ignore[no-untyped-def]
-            return SimpleNamespace(phase="open", generation=1)
-
-        async def activate_runtime(self, *, command):  # type: ignore[no-untyped-def]
-            raise AssertionError("no activation transition expected")
-
-    async def _broken_build(generation: int):  # type: ignore[no-untyped-def]
-        raise RuntimeError("sdk_context_authority_composition_missing:sdk_effect_gate")
-
-    saved = _snapshot_slots(main.service_context, ("workflow_service", "provider_registry"))
-    try:
-        main.service_context.register("workflow_service", SimpleNamespace(execution_uow=_Uow()))
-        main.service_context.register("provider_registry", object())
-        monkeypatch.setattr(main, "_build_product_sdk_runtime_stack", _broken_build)
-        with pytest.raises(RuntimeError, match="sdk_context_authority_composition_missing:sdk_effect_gate"):
-            await main._activate_product_sdk_runtime()
-    finally:
-        _restore_slots(main.service_context, saved)
+# 2026-09-10 removed with the Memory SDK: test_product_sdk_runtime_stack_builds_on_real_startup_order

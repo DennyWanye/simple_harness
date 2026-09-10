@@ -566,28 +566,4 @@ async def test_milestone_unrouted_terminal_records_no_recall(milestone) -> None:
     assert milestone.effects.calls == []
 
 
-@pytest.mark.asyncio
-async def test_milestone_memory_standalone_stays_blocked_then_no_recall(
-    milestone,
-) -> None:
-    provider = ScriptedProvider(
-        [
-            _tool_call("context_route", {"route": "memory_standalone"}),
-            _answer("answered without recall"),
-        ]
-    )
-    result = await _run(milestone, provider)
-
-    assert result.termination.route_state == "routed_standalone"
-    invocations = _rows(
-        milestone.db_path,
-        "SELECT verdict FROM context_route_tool_invocations WHERE sdk_run_id=?",
-        RUN.value,
-    )
-    assert invocations == [("rejected",)]
-    decisions = _rows(
-        milestone.db_path,
-        "SELECT route,origin FROM context_route_decisions WHERE sdk_run_id=?",
-        RUN.value,
-    )
-    assert decisions == [("direct_standalone", "no_recall")]
+# 2026-09-10 removed with the Memory SDK: test_milestone_memory_standalone_stays_blocked_then_no_recall

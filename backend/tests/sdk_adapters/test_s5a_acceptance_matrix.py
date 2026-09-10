@@ -202,12 +202,13 @@ async def test_six_step_five_route_sequence_over_one_durable_state(
     )
     assert run1.result.termination.route_state == "routed_standalone"
 
-    # 2 — preference question: memory_standalone (recall lane degraded here —
-    # no recall executor wired in this env → stable rejection, then no_recall).
+    # 2 — preference question. 2026-09-10：``memory_standalone`` 路由随认知记忆
+    # SDK 移除，这一步改走 ``direct_standalone``——本构建没有可召回的长期记忆，
+    # 终态断言（routed_standalone）与原来一致。
     run2 = await env.run(
         "run-step-2",
         [
-            _tool_call("context_route", {"route": "memory_standalone", "query": "偏好"}),
+            _tool_call("context_route", {"route": "direct_standalone", "query": "偏好"}),
             _answer("按你的偏好来"),
         ],
         first_message="按我的偏好回答",

@@ -25,7 +25,34 @@ from deskpet.execution.foreground_queue import ContextLineage, ForegroundQueueSt
 from deskpet.memory.human_memory_service import QueueTurnRequest
 from tests.sdk_adapters import s5b_closure_harness as ch
 from tests.sdk_adapters import s5b_effect_gate_harness as h
-from tests.sdk_adapters import s5b_memory_harness as mh
+
+# 2026-09-10：``tests/sdk_adapters/s5b_memory_harness`` 随认知记忆 SDK 一并删除。
+# 本 harness 只用到它四个纯 Host 的东西，就地内联，不再依赖那个模块。
+BINDING = ch.BINDING_RECORD
+ENDPOINT = "e" * 64  # FakeAdapter.target.endpoint_identity
+
+
+async def record_terminal(env, observed, *, binding=None, endpoint=ENDPOINT):  # type: ignore[no-untyped-def]
+    """Host terminal with the durable Run binding (originally s5b_memory_harness)."""
+
+    record = {**(binding or BINDING), "run_id": env.run_id}
+    return await env.store.record_sdk_terminal(
+        host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id,
+        owner_id=env.admission.owner_id, generation=env.admission.generation,
+        terminal_state=observed.terminal_state, sdk_event_id=observed.sdk_event_id,
+        sdk_event_hash=observed.sdk_event_hash,
+        idempotency_key=f"runtime-terminal:{env.admission.host_run_id}",
+        run_binding=record, endpoint_identity=endpoint,
+    )
+
+
+def post_turn_attempts(db_path: Path) -> list[tuple]:
+    return rows(
+        db_path,
+        "SELECT attempt_ordinal,status,unknown_class,reason_code,request_hash,evidence_set_key,"
+        "result_envelope_json IS NOT NULL FROM post_turn_invocation_attempts WHERE purpose='analysis' "
+        "ORDER BY reserved_at,attempt_ordinal",
+    )
 
 SUBJECT = h.AUTH.subject
 MESSAGE = "把 README 里的版本号改成 1.2.0"
@@ -151,12 +178,12 @@ def last_answer(m: MilestoneEnv) -> str:
     return ""
 
 
-async def settle_terminal(m: MilestoneEnv, *, closure_adapter, binding: dict[str, Any] | None = None, endpoint: str | None = mh.ENDPOINT):  # type: ignore[no-untyped-def]
+async def settle_terminal(m: MilestoneEnv, *, closure_adapter, binding: dict[str, Any] | None = None, endpoint: str | None = ENDPOINT):  # type: ignore[no-untyped-def]
     """SDK terminal observed → drain → closure fallback (only if still dirty) → Host terminal (+ outbox)."""
 
     from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 
-    record = {**(binding or mh.BINDING), "run_id": m.run_id}
+    record = {**(binding or BINDING), "run_id": m.run_id}
     facts = ch.FakeRunFacts(m.run_id, last_answer=last_answer(m) or None, binding=record)
     observed = await SqliteSdkTerminalObserver(str(m.db_path), ch._SdkIngress(facts.state), facts).observe(
         host_run_id=m.admission.host_run_id, sdk_run_id=m.run_id, subject=SUBJECT,
@@ -165,7 +192,7 @@ async def settle_terminal(m: MilestoneEnv, *, closure_adapter, binding: dict[str
     assert observed is not None, "SDK terminal must be observable"
     fallback, _ = ch.build_fallback(m, facts, closure_adapter, clock=time.time)
     settlement = await ch.settle(m, fallback)
-    receipt = await mh.record_terminal(m, observed, binding=record, endpoint=endpoint)
+    receipt = await record_terminal(m, observed, binding=record, endpoint=endpoint)
     return observed, settlement, receipt
 
 
@@ -174,7 +201,7 @@ def closure_receipts(m: MilestoneEnv) -> list[tuple]:
 
 
 def analysis_attempts(m: MilestoneEnv) -> list[tuple]:
-    return mh.attempts(m.db_path)
+    return post_turn_attempts(m.db_path)
 
 
 def transcript_path(lane: str, started: float) -> Path:

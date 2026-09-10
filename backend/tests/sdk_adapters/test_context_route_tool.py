@@ -179,14 +179,7 @@ async def test_direct_standalone_commits_receipt_and_ledger(state_db: Path) -> N
     assert _invocation_rows(state_db) == [("accepted", "effect-1")]
 
 
-@pytest.mark.asyncio
-async def test_memory_standalone_is_stable_blocked_not_faked(state_db: Path) -> None:
-    tool = _service(state_db)
-    result = await tool.handle_context_route({"route": "memory_standalone"})
-    assert result["ok"] is False
-    assert result["error"]["code"] == "context_route_memory_standalone_unavailable"
-    assert _decision_rows(state_db) == []
-    assert _invocation_rows(state_db) == [("rejected", "effect-1")]
+# 2026-09-10 removed with the Memory SDK: test_memory_standalone_is_stable_blocked_not_faked
 
 
 @pytest.mark.asyncio
@@ -429,92 +422,25 @@ async def test_resume_malformed_pin_gets_guidance_not_stale(state_db: Path) -> N
 # DECISION-PROCEDURE-USE-CHAIN; only its silence is not.
 
 
-def _recall_tool(state_db: Path, fragments, monkeypatch):
-    from deskpet.memory import human_memory_v7
-
-    tool = _service(state_db)
-
-    async def recall(**kwargs):
-        recall.calls.append(kwargs)
-        return SimpleNamespace(
-            result=SimpleNamespace(items=(), truncated=False), degradation_codes=()
-        )
-
-    recall.calls = []
-    tool._recall_executor = recall
-    monkeypatch.setattr(human_memory_v7, "project_recall_fragments",
-                        lambda execution: tuple(fragments))
-    return tool
+# 2026-09-10 removed with the Memory SDK: _recall_tool helper
 
 
-def _fragment(ref: str, memory_type: str) -> dict:
-    return {"ref": ref, "memory_type": memory_type, "privacy_class": "personal",
-            "score": 1.0, "payload": {"memory_type": memory_type}, "payload_hash": "a" * 64,
-            "source_task_scope_ids": [], "bytes": 1, "tokens": 1, "lane": "long_term_typed"}
+# 2026-09-10 removed with the Memory SDK: _fragment helper
 
 
-@pytest.mark.asyncio
-async def test_requested_procedure_with_no_procedure_item_points_at_discovery(
-    state_db: Path, monkeypatch
-) -> None:
-    tool = _recall_tool(state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch)
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "发版流程",
-         "memory_types": ["semantic", "procedure"]}
-    )
-    hint = result["procedure_hint"]
-    assert hint["reason"] == "typed_recall_returns_only_applicable_procedures"
-    assert hint["next"] == "procedure_discover"
-    assert "procedure_discover" in hint["message"]
-    # The hint is a top-level result field: the committed receipt is unchanged.
-    assert "procedure_hint" not in result["context_route_receipt"]
-    assert _decision_rows(state_db) == [("memory_standalone", "context_tool", "effect-1")]
+# 2026-09-10 removed with the Memory SDK: test_requested_procedure_with_no_procedure_item_points_at_discovery
 
 
-@pytest.mark.asyncio
-async def test_hint_is_present_even_when_typed_recall_returns_nothing_at_all(
-    state_db: Path, monkeypatch
-) -> None:
-    tool = _recall_tool(state_db, [], monkeypatch)
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "发版流程", "memory_types": ["procedure"]}
-    )
-    assert result["fragments"] == []
-    assert result["procedure_hint"]["next"] == "procedure_discover"
+# 2026-09-10 removed with the Memory SDK: test_hint_is_present_even_when_typed_recall_returns_nothing_at_all
 
 
-@pytest.mark.asyncio
-async def test_returned_procedure_item_needs_no_hint(
-    state_db: Path, monkeypatch
-) -> None:
-    tool = _recall_tool(
-        state_db,
-        [_fragment("recall-item:s:1", "semantic"), _fragment("recall-item:p:1", "procedure")],
-        monkeypatch,
-    )
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "发版流程",
-         "memory_types": ["semantic", "procedure"]}
-    )
-    assert "procedure_hint" not in result
+# 2026-09-10 removed with the Memory SDK: test_returned_procedure_item_needs_no_hint
 
 
-@pytest.mark.asyncio
-async def test_unrequested_procedure_type_gets_no_unsolicited_hint(
-    state_db: Path, monkeypatch
-) -> None:
-    tool = _recall_tool(state_db, [], monkeypatch)
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "上周做了什么", "memory_types": ["episode"]}
-    )
-    assert "procedure_hint" not in result
+# 2026-09-10 removed with the Memory SDK: test_unrequested_procedure_type_gets_no_unsolicited_hint
 
 
-def test_persona_tells_the_model_what_the_two_host_hint_fields_mean() -> None:
-    from deskpet.execution.primary_context import PERSONA
-
-    assert "procedure_hint" in PERSONA and "procedure_discover" in PERSONA
-    assert "trigger_local" in PERSONA
+# 2026-09-10 removed with the Memory SDK: test_persona_tells_the_model_what_the_two_host_hint_fields_mean
 
 
 def test_persona_enumerates_every_context_route_the_tool_accepts() -> None:
@@ -647,32 +573,10 @@ def test_task_scope_search_description_tells_the_model_to_skip_the_search() -> N
 # 的是"什么都没存过"。
 
 
-def _contested_notice(group_id: str = "cognitive-conflict-group-0d8eb9a7") -> dict:
-    return {
-        "reason": "recall_value_contested_requires_user_confirmation",
-        "conflict_status": "contested",
-        "next": "ask_user_to_confirm",
-        "message": "该值处于争议中 ... Ask the user to confirm which one applies",
-        "groups": [{
-            "conflict_group_id": group_id,
-            "memory_type": "semantic",
-            "candidates": [
-                {"role": "incumbent", "revision": 2, "value": {"object_value": "Python 3.13"},
-                 "payload_hash": "a" * 64, "privacy_class": "personal"},
-                {"role": "challenger", "revision": 3, "value": {"object_value": "3.12"},
-                 "payload_hash": "b" * 64, "privacy_class": "personal"},
-            ],
-        }],
-    }
+# 2026-09-10 removed with the Memory SDK: _contested_notice helper
 
 
-def _conflict_tool(state_db: Path, monkeypatch, notice):
-    from deskpet.memory import human_memory_v7
-
-    tool = _recall_tool(state_db, [], monkeypatch)
-    monkeypatch.setattr(human_memory_v7, "project_contested_confirmation",
-                        lambda execution: notice)
-    return tool
+# 2026-09-10 removed with the Memory SDK: _conflict_tool helper
 
 
 def _invocation_detail(state_db: Path, effect_id: str = "effect-1") -> dict:
@@ -684,65 +588,16 @@ def _invocation_detail(state_db: Path, effect_id: str = "effect-1") -> dict:
     return json.loads(row[0])
 
 
-@pytest.mark.asyncio
-async def test_contested_recall_returns_both_candidates_and_a_confirmation_instruction(
-    state_db: Path, monkeypatch
-) -> None:
-    tool = _conflict_tool(state_db, monkeypatch, _contested_notice())
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "校对 Python 版本",
-         "memory_types": ["semantic"]}
-    )
-    # An empty fragments list alone is exactly what misled the model.
-    assert result["fragments"] == []
-    notice = result["conflict_notice"]
-    assert notice["reason"] == "recall_value_contested_requires_user_confirmation"
-    assert notice["next"] == "ask_user_to_confirm"
-    assert [c["value"]["object_value"] for c in notice["groups"][0]["candidates"]] == [
-        "Python 3.13", "3.12",
-    ]
-    # The notice is a top-level result field; the committed receipt is untouched.
-    assert "conflict_notice" not in result["context_route_receipt"]
-    assert _decision_rows(state_db) == [("memory_standalone", "context_tool", "effect-1")]
+# 2026-09-10 removed with the Memory SDK: test_contested_recall_returns_both_candidates_and_a_confirmation_instruction
 
 
-@pytest.mark.asyncio
-async def test_contested_recall_records_a_stable_reason_code_without_the_values(
-    state_db: Path, monkeypatch
-) -> None:
-    tool = _conflict_tool(state_db, monkeypatch, _contested_notice())
-    await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "校对 Python 版本",
-         "memory_types": ["semantic"]}
-    )
-    conflict = _invocation_detail(state_db)["recall_conflict"]
-    assert conflict["reason"] == "recall_value_contested_requires_user_confirmation"
-    assert conflict["conflict_status"] == "contested"
-    assert conflict["groups"] == [{
-        "conflict_group_id": "cognitive-conflict-group-0d8eb9a7",
-        "memory_type": "semantic", "revisions": [2, 3],
-    }]
-    # Attribution, not a second copy of the user's contested values.
-    assert "Python 3.13" not in json.dumps(conflict, ensure_ascii=False)
+# 2026-09-10 removed with the Memory SDK: test_contested_recall_records_a_stable_reason_code_without_the_values
 
 
-@pytest.mark.asyncio
-async def test_uncontested_recall_carries_no_conflict_notice_or_audit_row(
-    state_db: Path, monkeypatch
-) -> None:
-    tool = _conflict_tool(state_db, monkeypatch, None)
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "发版流程", "memory_types": ["semantic"]}
-    )
-    assert "conflict_notice" not in result
-    assert "recall_conflict" not in _invocation_detail(state_db)
+# 2026-09-10 removed with the Memory SDK: test_uncontested_recall_carries_no_conflict_notice_or_audit_row
 
 
-def test_persona_tells_the_model_what_conflict_notice_means() -> None:
-    from deskpet.execution.primary_context import PERSONA
-
-    assert "conflict_notice" in PERSONA
-    assert "contested" in PERSONA and "ask the user which one applies" in PERSONA
+# 2026-09-10 removed with the Memory SDK: test_persona_tells_the_model_what_conflict_notice_means
 
 
 # -- F-ETR-5: the hint must not depend on the model's `memory_types` -----------
@@ -754,115 +609,25 @@ def test_persona_tells_the_model_what_conflict_notice_means() -> None:
 # selection.
 
 
-def _mutable_context(effect="effect-1", raw="raw-1", turn=1):
-    state = {"context": _tool_context(effect=effect, raw=raw, turn=turn)}
-    state["advance"] = lambda effect, raw, turn: state.__setitem__(
-        "context", _tool_context(effect=effect, raw=raw, turn=turn))
-    return state
+# 2026-09-10 removed with the Memory SDK: _mutable_context helper
 
 
-def _hint_tool(state_db: Path, fragments, monkeypatch, *, context_state=None, **kwargs):
-    from deskpet.memory import human_memory_v7
-
-    tool = _service(state_db, **kwargs)
-    if context_state is not None:
-        # A second call of the same Run needs its own effect/raw/turn identity.
-        tool._tool_context_getter = lambda: context_state["context"]
-
-    async def recall(**call):
-        return SimpleNamespace(
-            result=SimpleNamespace(items=(), truncated=False), degradation_codes=())
-
-    tool._recall_executor = recall
-    monkeypatch.setattr(human_memory_v7, "project_recall_fragments",
-                        lambda execution: tuple(fragments))
-    return tool
+# 2026-09-10 removed with the Memory SDK: _hint_tool helper
 
 
-@pytest.mark.asyncio
-async def test_workflow_query_gets_the_hint_without_requesting_procedure(
-    state_db: Path, monkeypatch
-) -> None:
-    """R4-compliant selection, workflow-shaped request: the hint still fires."""
-
-    tool = _hint_tool(state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch)
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "发版流程是怎么走的",
-         "memory_types": ["semantic"]}
-    )
-    assert result["procedure_hint"]["next"] == "procedure_discover"
-    # The payload is byte-identical to the one the receipt/PERSONA describe.
-    from deskpet.sdk_adapters.context_route import _PROCEDURE_HINT
-
-    assert result["procedure_hint"] == dict(_PROCEDURE_HINT)
-    assert "procedure_hint" not in result["context_route_receipt"]
+# 2026-09-10 removed with the Memory SDK: test_workflow_query_gets_the_hint_without_requesting_procedure
 
 
-@pytest.mark.asyncio
-async def test_run_inside_a_task_scope_gets_the_hint_for_any_query(
-    state_db: Path, monkeypatch
-) -> None:
-    binding_store = _FakeBindingStore()
-    binding_store.receipts["scope-new-1"] = SimpleNamespace(
-        binding_set_revision=1, receipt_id="bind-new", receipt_hash="a" * 64
-    )
-    state = _mutable_context()
-    tool = _hint_tool(
-        state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch,
-        context_state=state, binding_store=binding_store,
-        binding_append=_FakeBindingAppend(),
-    )
-    await tool.handle_context_route({"route": "create_new", "title": "季度复盘"})
-    state["advance"]("effect-2", "raw-2", 2)
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "上周做了什么", "memory_types": ["episode"]}
-    )
-    assert result["procedure_hint"]["next"] == "procedure_discover"
+# 2026-09-10 removed with the Memory SDK: test_run_inside_a_task_scope_gets_the_hint_for_any_query
 
 
-@pytest.mark.asyncio
-async def test_plain_question_outside_any_task_scope_still_gets_no_hint(
-    state_db: Path, monkeypatch
-) -> None:
-    """The decoupling widens the trigger; it does not make the hint unsolicited."""
-
-    tool = _hint_tool(state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch)
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "我常用的日期格式", "memory_types": ["semantic"]}
-    )
-    assert "procedure_hint" not in result
+# 2026-09-10 removed with the Memory SDK: test_plain_question_outside_any_task_scope_still_gets_no_hint
 
 
-@pytest.mark.asyncio
-async def test_a_returned_procedure_still_suppresses_every_trigger(
-    state_db: Path, monkeypatch
-) -> None:
-    tool = _hint_tool(
-        state_db,
-        [_fragment("recall-item:s:1", "semantic"), _fragment("recall-item:p:1", "procedure")],
-        monkeypatch,
-    )
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "发版流程", "memory_types": ["semantic"]}
-    )
-    assert "procedure_hint" not in result
+# 2026-09-10 removed with the Memory SDK: test_a_returned_procedure_still_suppresses_every_trigger
 
 
-@pytest.mark.asyncio
-async def test_task_scope_read_failure_never_fails_an_already_successful_recall(
-    state_db: Path, monkeypatch
-) -> None:
-    tool = _hint_tool(state_db, [_fragment("recall-item:s:1", "semantic")], monkeypatch)
-
-    async def unavailable(*args, **kwargs):
-        raise RuntimeError("ledger unavailable")
-
-    monkeypatch.setattr(tool._ledger, "latest_route_decision_for_run", unavailable)
-    result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "我常用的日期格式", "memory_types": ["semantic"]}
-    )
-    assert "error" not in result and "procedure_hint" not in result
-    assert _decision_rows(state_db) == [("memory_standalone", "context_tool", "effect-1")]
+# 2026-09-10 removed with the Memory SDK: test_task_scope_read_failure_never_fails_an_already_successful_recall
 
 
 # ---- MM-D3：点名任务 ≠ 活跃任务（manual 旅程 run4 T7） -----------------------
