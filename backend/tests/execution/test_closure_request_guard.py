@@ -99,14 +99,7 @@ async def world(tmp_path, monkeypatch, mode, *, closure_reply=None, user_text="C
                 w.calls.append(request)
                 if mode == "tamper":
                     request = replace(request, max_output_tokens=request.max_output_tokens + 1)
-                if mode == "late_forget":
-                    from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
-                    manager = await runtime.history_memory.manager()
-                    with sqlite3.connect(state) as db:
-                        evidence_id = db.execute("SELECT evidence_id FROM foreground_turns ORDER BY enqueue_sequence LIMIT 1").fetchone()[0]
-                    await manager.backend.suppress(SuppressionRequest("late-closure-forget", runtime._subject,
-                        SuppressionScopeKind.EVIDENCE, evidence_id, "user_forget", 30.0),
-                        principal=runtime.history_memory.principal())
+                # 2026-09-10 删记忆 SDK：抑制（遗忘）权威已不存在，本段随之删除。
                 return await actual.invoke(request, cancel=cancel)
         return Boundary()
 

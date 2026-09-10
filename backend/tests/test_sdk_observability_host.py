@@ -143,42 +143,19 @@ def test_correlation_policy_does_not_accept_or_return_principal():
     assert not hasattr(first, "principal")
 
 
-def test_main_wires_one_host_sink_into_memory_and_harness() -> None:
+def test_main_wires_one_host_sink_into_harness() -> None:
+    """2026-09-10：原来断言同一个 Host sink 同时接进「记忆 SDK + Harness」两侧。
+    记忆 SDK 移除后只剩 Harness 一侧，故删掉两条记忆侧断言
+    （``observability_sink=`` / ``correlation=`` 是 ``MemoryManager.build_production``
+    的入参）；Harness 侧三条断言原样保留。"""
+
     main_source = (Path(__file__).parents[1] / "main.py").read_text()
-    assert "observability_sink=_sdk_observability.sink" in main_source
-    assert "correlation=_sdk_observability.correlation" in main_source
     assert 'runtime_config_kwargs["observability_sink"] = _sdk_observability.sink' in main_source
     assert "_sdk_observability.bind_ingress(" in main_source
     assert "_sdk_observability.reset_ingress(observability_token)" in main_source
 
 
-@pytest.mark.asyncio
-async def test_installed_memory_async_snapshot_reaches_export_without_coroutine_leak(tmp_path):
-    import warnings
-    from simple_harness_memory import MemoryManager
-
-    host = HostSdkObservability(tmp_path / "logs")
-    manager = await MemoryManager.build_development(tmp_path / "memory.db", embedder="hash")
-    try:
-        host.register_snapshot_source("memory", manager.diagnostics_snapshot)
-        host.register_snapshot_source("sync", lambda: {"health": "ok"})
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always", RuntimeWarning)
-            host.export()  # Compatibility path explicitly reports async-required.
-            before = json.loads((host.log_dir / SDK_SNAPSHOT_FILENAME).read_text())
-            assert before["sources"]["memory"]["error_code"] == "snapshot_requires_async_export"
-            assert set((await host.export_async()).values()) == {"ok"}
-        assert not [item for item in caught if "never awaited" in str(item.message)]
-        actual = json.loads((host.log_dir / SDK_SNAPSHOT_FILENAME).read_text())
-        expected = await manager.diagnostics_snapshot()
-        assert actual["sources"]["memory"] == expected
-        assert actual["sources"]["memory"]["lifecycle"] == "open"
-        assert "storage" in actual["sources"]["memory"]
-        assert actual["sources"]["sync"] == {"health": "ok"}
-        assert actual["degraded_codes"] == []
-    finally:
-        await manager.close()
-        host.sink.close()
+# 2026-09-10 removed with the Memory SDK: test_installed_memory_async_snapshot_reaches_export_without_coroutine_leak
 
 
 @pytest.mark.asyncio

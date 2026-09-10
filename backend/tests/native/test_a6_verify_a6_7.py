@@ -5,7 +5,7 @@
 
 `cognitive_memory_revisions` 挂着 `cognitive_memory_revisions_immutable_update`
 / `_immutable_delete` 两个无条件 `RAISE(ABORT)` 触发器
-(`simple_harness_memory/backends/schema_v5.py:572-577`), SDK 在物理上无法回头
+（记忆 SDK 的 schema_v5 后端，该 SDK 已于 2026-09-10 从 Host 移除）, SDK 在物理上无法回头
 改写旧 revision 的 lifecycle_state。原判据因此恒为 FAIL —— 那是验证器缺陷,
 不是 SDK 缺陷。契约 `slices/S3-cognitive-systems-recall.md:152` 「所有长期普通
 候选先要求 exact principal、exact current head」: 生效的是 head 指针。

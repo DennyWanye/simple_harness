@@ -1,8 +1,0 @@
-{
-  "candidate": "simple_harness_memory_sdk-0.6.9-py3-none-any.whl",
-  "sha256": "cf14902223063ba3586032553c3737d0ee0c13311df3e29bd4561629494d6719",
-  "source_commit": "f92fac121d2d9ce195b5715d272023e5aec920e3",
-  "built_with": "two identical offline builds; independent source/wheel/installed byte verification",
-  "built_at": "2026-09-05",
-  "status": "local candidate; no release or whole-Host completion claim"
-}

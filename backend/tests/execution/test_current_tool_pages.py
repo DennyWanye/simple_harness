@@ -37,7 +37,6 @@ from deskpet.execution.current_tool_pages import (
 async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode, provider_context_window=32768, write_chunks=None, expected_budget_stop=False):
     import main
     from deskpet.execution.primary_dependencies import read_run_dependencies
-    from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
 
     state, _, service, configured, authority = await fixture(tmp_path)
     import tests.execution.test_primary_foreground_runtime as runtime_fixture

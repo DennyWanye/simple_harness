@@ -59,8 +59,8 @@ def install_guard(provider, runtime, stack, queue):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("initial", [False, True, "search"])
-# 2026-09-10 删记忆 SDK：去掉 "suppressed"（"memory_suppressed" 档是基线既有红，保留原样）。
-@pytest.mark.parametrize("legacy", [False, True, "memory_suppressed"])
+# 2026-09-10 删记忆 SDK：去掉 "suppressed" / "memory_suppressed" 两档。
+@pytest.mark.parametrize("legacy", [False, True])
 async def test_resume_source_or_explicit_legacy_gap_with_actual_file_terminal(tmp_path, initial, legacy):
     state, factory, service, configured, authority = await fixture(tmp_path)
     if legacy is True:
@@ -84,30 +84,7 @@ async def test_resume_source_or_explicit_legacy_gap_with_actual_file_terminal(tm
         with sqlite3.connect(state) as db:
             scope = db.execute("SELECT task_scope_id FROM task_scopes").fetchone()[0]
         root = configured / f"task-{scope}"
-    if legacy in {"suppressed", "memory_suppressed"}:
-        from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
-        from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
-        from deskpet.memory.evidence_authority import HostEvidenceAuthority
-        memory = HumanMemoryV7Runtime(tmp_path / "visibility-memory.db", evidence_authority=HostEvidenceAuthority(state))
-        manager = await memory.manager()
-        with sqlite3.connect(state) as db:
-            source = db.execute("SELECT evidence_id FROM foreground_turns ORDER BY enqueue_sequence LIMIT 1").fetchone()[0]
-        target, kind = source, SuppressionScopeKind.EVIDENCE
-        if legacy == "memory_suppressed":
-            import aiosqlite
-            from deskpet.memory.primary_visibility import read_evidence_pair
-            from tests.memory.test_primary_visibility import materialize
-            async with aiosqlite.connect(state) as db:
-                db.row_factory = aiosqlite.Row
-                primary = (await (await db.execute("SELECT primary_conversation_id FROM foreground_runs LIMIT 1")).fetchone())[0]
-                envelope, receipt = await read_evidence_pair(db=db, subject=local_owner_auth().subject,
-                    primary_ref=primary, evidence_id=source)
-            await manager.ingest_committed_evidence(envelope, receipt)
-            target = await materialize(manager, memory.principal(), envelope, receipt)
-            kind = SuppressionScopeKind.MEMORY
-        await manager.backend.suppress(SuppressionRequest("forget-scope-source", local_owner_auth().subject,
-            kind, target, "user_forget", 30.0), principal=memory.principal())
-        await memory.close()
+    # 2026-09-10 删记忆 SDK：suppressed / memory_suppressed 两档依赖抑制权威，整段删除。
     provider = ResumeProvider(scope, initial is True, ("PRIVATE" if legacy is True else "Fresh") if initial == "search" else None)
     await service.enqueue_turn(QueueTurnRequest(scope if initial is True else None, "resume-source", "Continue the actual task and write resumed.txt"))
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,

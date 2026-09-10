@@ -139,28 +139,7 @@ async def test_nonempty_resume_actual_producer_to_next_closure(tmp_path, monkeyp
             assert json.loads(state_json)["resume"] == RESUME
             carriers = db.execute("SELECT COUNT(*) FROM human_memory_evidence WHERE source_ref LIKE 'closure-result-source:%'").fetchone()[0]
             assert carriers == (1 if producer.startswith("fallback") else 0)
-        if producer == "fallback_forget":
-            from deskpet.task_scope.disclosure import render_scope_disclosure
-            from deskpet.task_scope.search import TaskScopeSearchStore
-            from deskpet.memory.trusted_disclosure import resolve_current_disclosure
-            from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
-            row = attempt_rows(w)[0]
-            facts = w.stack.read_closure_run_facts(row["sdk_run_id"])
-            disclosure = await resolve_current_disclosure(db_path=w.state, subject=w.runtime.subject,
-                run_id=row["sdk_run_id"], request_id=facts.binding_record["request_id"])
-            opened = await TaskScopeSearchStore(w.state).open_exact(subject=w.runtime.subject,
-                allowed_scope_ids=(scope,), task_scope_id=scope)
-            async def read():
-                return await render_scope_disclosure(db_path=w.state, package=opened.resume_package,
-                    subject=w.runtime.subject, stack=w.stack, policy=w.runtime.history_policy, disclosure_context=disclosure)
-            assert (await read())["disclosure"]["fields"]["resume"] == RESUME
-            manager = await w.runtime.history_memory.manager()
-            await manager.backend.suppress(SuppressionRequest("forget-result", w.runtime.subject,
-                SuppressionScopeKind.EVIDENCE, "closure-result-source:"+row["attempt_id"], "user_forget", 30.0),
-                principal=w.runtime.history_memory.principal())
-            assert "resume" not in (await read())["disclosure"]["fields"]
-            assert len(w.sent) == 1
-            return
+        # 2026-09-10 删记忆 SDK：fallback_forget 档依赖抑制权威，整段删除。
         requests = await write_again(w, monkeypatch, scope)
         assert len(requests) == 6
         assert w.outcomes[-1].status == "no_mutation"

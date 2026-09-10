@@ -135,62 +135,7 @@ async def test_real_exact_terminal_authority_enumerates_without_evidence_rewrite
         await stack.close()
 
 
-async def test_nonnull_committed_turn_public_head_and_exact_pages_survive_reopen(tmp_path):
-    from simple_harness.execution.memory_outbox import MemoryOutboxRepository
-    from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
-    from simple_harness.runtime.start_snapshot import StartSnapshot
-    from simple_harness_memory import MemoryManager
-
-    memory = await MemoryManager.build_development(tmp_path / "agent-memory.db")
-    state, _, provider, runtime, stack, _ = await setup(tmp_path, memory=memory)
-    consumer = await consumer_at(state, stack, [100.0])
-    try:
-        source = (await consumer.sources.read())[0]
-        identity = await identity_for(state, source)
-        path = ProductRuntimePathsAdapter(tmp_path / "sdk").execution_database
-        with Database.open(path) as db:
-            uow = SqliteExecutionUnitOfWork(db)
-            start = StartSnapshot.from_json(uow.read_start_snapshot(source.sdk_run_id))
-            assert start.conversation.memory_text == "PRIVATE_USER_CANARY"
-            record = MemoryOutboxRepository(db).read(f"agent-memory-turn/v1/{start.turn_id}")
-            assert record is not None and record.run_id == source.sdk_run_id
-            actual = record.committed_turn()
-            turn_hash = record.payload_hash
-            assert turn_hash == actual.payload_hash
-            snapshot = uow.read_run_operation_audit(sdk.RunId(source.sdk_run_id))
-            assert any(op.operation_name == "memory.outbox.created" and op.request_hash == turn_hash
-                       for op in snapshot.operations)
-            assert snapshot.terminal_evidence.event_payload_hash == identity.raw_sdk_event_hash
-            assert turn_hash != identity.raw_sdk_event_hash
-            outbox_before = record
-        assert await consumer.tick(max_pages=1) == 1
-        first = await consumer.store.inspect(source.job_id)
-        cursor = first["job"]["next_cursor"]
-        assert cursor is not None
-        await consumer.close()
-        await runtime.close()
-        await stack.close()
-        runtime, stack, _ = await build(tmp_path, state, provider, memory=memory)
-        consumer = await consumer_at(state, stack, [100.0])
-        await drain(consumer)
-        final = await consumer.store.inspect(source.job_id)
-        assert final["job"]["status"] == "enumerated"
-        assert final["job"]["snapshot_hash"] == first["job"]["snapshot_hash"]
-        assert consumer.reader.calls[0][1] == cursor
-        assert final["pages"][0] == first["pages"][0]
-        for row in final["pages"]:
-            proof = sdk.RunTerminalAuditEvidenceV1.from_json(json.loads(row["payload_json"])["metadata"]["terminal_evidence"])
-            assert proof.matches(event_id=identity.raw_sdk_event_id, payload_hash=identity.raw_sdk_event_hash, state="completed")
-        with Database.open(path) as db:
-            assert MemoryOutboxRepository(db).read(outbox_before.intent_id) == outbox_before
-        assert len(provider.requests) == 1
-        await drain(consumer)
-        assert await consumer.store.inspect(source.job_id) == final
-    finally:
-        await consumer.close()
-        await runtime.close()
-        await stack.close()
-        await memory.close()
+# 2026-09-10 removed with the Memory SDK: test_nonnull_committed_turn_public_head_and_exact_pages_survive_reopen
 
 
 async def test_foreign_real_run_proof_cannot_be_relabelled_as_selected_run(tmp_path):

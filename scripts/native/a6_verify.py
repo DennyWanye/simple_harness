@@ -2142,7 +2142,7 @@ def item_a6_7(ev: Evidence) -> Item:
     `cognitive_memory_revisions` 是 append-only 的每-revision 不可变快照:
     schema 上挂着 `cognitive_memory_revisions_immutable_update` /
     `_immutable_delete` 两个无条件 `RAISE(ABORT)` 触发器
-    (`simple_harness_memory/backends/schema_v5.py:572-577`), 所以 SDK 在物理上
+    （记忆 SDK 的 schema_v5 后端；该 SDK 已于 2026-09-10 从 Host 移除），所以 SDK 在物理上
     不可能回头改写旧 revision 的 lifecycle_state; 全包 grep
     `UPDATE/DELETE cognitive_memory_revisions` 零命中。「哪个 revision 生效」
     只由 `cognitive_memory_heads.current_revision` 表达, 召回资格也一律按

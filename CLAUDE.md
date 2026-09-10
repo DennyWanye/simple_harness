@@ -90,7 +90,8 @@ backend/
 ├── agent/                     # Legacy P3 agent code
 ├── deskpet/                   # P4+ new architecture
 │   ├── agent/                 # Assembler + classifier
-│   ├── memory/                # Three-tier memory + sqlite-vec
+│   ├── memory/                # Host 会话账本 + S1 证据链（名字是历史遗留；
+│   │                          # 认知记忆 SDK 已于 2026-09-10 移除）
 │   ├── tools/                 # Tool implementations (ppt/web/OCR/etc)
 │   ├── skills/                # Skill loader + builtin skills
 │   ├── mcp/                   # MCP client
@@ -114,7 +115,10 @@ tauri-app/
 
 **Backend:**
 - Agent loop uses ReAct pattern with tool registration system
-- Three-tier memory: short-term / episodic / entity (BGE-M3 embeddings + sqlite-vec)
+- No long-term memory: the cognitive Memory SDK was removed on 2026-09-10
+  (`plans/2026-09-10-remove-memory-sdk/`). The Harness SDK's mandatory
+  `AgentMemoryPort` is satisfied by an honest empty port that recalls
+  nothing and retains nothing.
 - LLM providers: Anthropic / OpenAI / Google Gemini adapters with fallback chain
 - Tools register via `deskpet.tools` with effect policies
 

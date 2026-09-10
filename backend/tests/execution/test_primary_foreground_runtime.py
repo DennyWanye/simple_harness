@@ -368,33 +368,7 @@ async def test_primary_terminal_crash_reopen_does_not_resend_or_publish_partial(
         await stack.close()
 
 
-@pytest.mark.asyncio
-async def test_primary_real_runtime_with_agent_memory_and_validated_identity(tmp_path):
-    from simple_harness_memory import MemoryManager
-
-    state = tmp_path / "state.db"
-    startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
-    service = HumanMemoryHostServiceFactory(state, startup).bind(local_owner_auth())
-    await service.open_primary()
-    # The installed public manager with real SQLite and explicitly development
-    # embeddings. No production embedding / real Provider claim is made.
-    memory = await MemoryManager.build_development(tmp_path / "agent-memory.db")
-    provider = Provider()
-    runtime, stack, queue = await build(tmp_path, state, provider, memory=memory)
-    try:
-        await service.enqueue_turn(QueueTurnRequest(None, "memory", "Actual memory-enabled turn"))
-        assert await asyncio.wait_for(runtime._drive_once(), 15)
-        assert len(provider.requests) == 1
-        assert await queue.current_snapshot(local_owner_auth().subject) is None
-        with sqlite3.connect(state) as db:
-            assert db.execute("SELECT COUNT(*) FROM task_scopes").fetchone()[0] == 0
-            assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts WHERE terminal_state='COMPLETED'").fetchone()[0] == 1
-            assert db.execute("SELECT COUNT(*) FROM memory_session_identities").fetchone()[0] == 1
-            assert db.execute("SELECT COUNT(*) FROM sdk_context_sources").fetchone()[0] == 1
-    finally:
-        await runtime.close()
-        await stack.close()
-        await memory.close()
+# 2026-09-10 removed with the Memory SDK: test_primary_real_runtime_with_agent_memory_and_validated_identity
 
 
 @pytest.mark.asyncio

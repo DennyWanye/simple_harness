@@ -21,7 +21,6 @@ async def test_late_history_denial_is_failed_while_sent_ambiguity_stays_unknown(
     late_deny = mode != "sent_unknown"
     from simple_harness import RunId, RequestId
     from simple_harness.execution.provider_invocations import provider_invocation_id
-    from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
     state = tmp_path / "state.db"
     service = HumanMemoryHostServiceFactory(state,
         await dispatch_startup_epoch(state, approved_fresh_lane=True)).bind(local_owner_auth())

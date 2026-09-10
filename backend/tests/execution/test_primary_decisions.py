@@ -19,7 +19,6 @@ from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
 from deskpet.sdk_adapters.tool_authority import SdkPreparedAuthorizationPolicy
-from simple_harness_memory.core.suppression import SuppressionResolution
 from tests.companion.test_window_control_credentials import _ingress
 from tests.execution.test_primary_create_new_runtime import CreateProvider, fixture
 from tests.execution.test_primary_foreground_runtime import build
@@ -64,18 +63,14 @@ async def setup(tmp_path, *, expired=False, wake=False):
     challenge = await _bind(private, control, connection)
     auth = connection.authenticate(control, challenge)
     assert auth.subject == service._auth.subject
+    # 2026-09-10 删记忆 SDK：``history_visibility_checker`` 注入点随公开 Memory
+    # 可见性批一并移除，本夹具不再有可捕获披露上下文的钩子。
     disclosures = []
-
-    async def history_checker(**kwargs):
-        disclosures.append(kwargs["disclosure_context"])
-        return await runtime.history_policy.checker(**kwargs)
 
     factory = replace(
         factory,
         decision_ingress_getter=lambda: runtime._ingress,
-        history_visibility_checker=history_checker,
         run_binding_reader=lambda rid: stack.read_closure_run_facts(rid).binding_record,
-        suppression_resolver=lambda *_: SuppressionResolution(False, (), 1.0),
     )
     await service.enqueue_turn(
         QueueTurnRequest(
@@ -412,48 +407,4 @@ async def test_actual_legacy_signal_entry_cannot_bypass_primary_authentication(
         await close(s)
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "operation", ["primary.decisions.list", "primary.decisions.respond"]
-)
-async def test_forgotten_current_user_cannot_disclose_or_grant_pending_decision(
-    tmp_path, operation
-):
-    from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
-
-    s = await setup(tmp_path)
-    try:
-        item = (await pending(s))[0]
-        with sqlite3.connect(s["state"]) as db:
-            evidence = db.execute(
-                "SELECT t.evidence_id FROM foreground_turns t JOIN foreground_runs r "
-                "ON r.turn_id=t.turn_id WHERE r.host_run_id=?",
-                (s["current"].host_run_id,),
-            ).fetchone()[0]
-        memory = s["runtime"].history_memory
-        manager = await memory.manager()
-        await manager.suppress(
-            principal=memory.principal(),
-            request=SuppressionRequest(
-                "forget-pending-user",
-                s["auth"].subject,
-                SuppressionScopeKind.EVIDENCE,
-                evidence,
-                "user_forget",
-                time.time(),
-            ),
-        )
-        fields = s["target"] if operation.endswith("list") else reply(s, item)
-        response = await s["request"](operation, fields)
-        assert response["payload"]["ok"] is False
-        assert response["payload"]["error"]["code"] == "primary_decision_target_stale"
-        assert "result" not in response["payload"]
-        decision = s["runtime"]._ingress.read_authorization_decision(
-            run_id=s["current"].sdk_run_id, decision_id=item["decision_id"]
-        )
-        assert decision.state.value == "open"
-        assert len(s["provider"].requests) == 1
-        with sqlite3.connect(s["state"]) as db:
-            assert db.execute("SELECT COUNT(*) FROM task_scopes").fetchone()[0] == 0
-    finally:
-        await close(s)
+# 2026-09-10 removed with the Memory SDK: test_forgotten_current_user_cannot_disclose_or_grant_pending_decision

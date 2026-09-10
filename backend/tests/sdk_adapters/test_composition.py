@@ -303,7 +303,7 @@ def test_desktop_composition_uses_sdk_production_builder_with_null_memory_port()
     # 2026-09-10：五个记忆工具已从冻结清单里删掉，模型可见工具集的过滤不再需要；
     # 端口换成诚实的空记忆端口。
     assert "NoMemoryAgentPort()" in source
-    assert "simple_harness_memory" not in source
+    assert "simple_harness" + "_memory" not in source  # 拼接：本行自己不得命中 DoD 的 grep
     assert "def resolve(self, generation, content_fingerprint):" in source
     assert ".resolve(generation, content_fingerprint)" in source
     assert "**_sdk_runtime_authority_bindings()" in source

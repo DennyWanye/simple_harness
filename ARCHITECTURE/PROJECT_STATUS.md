@@ -9,7 +9,7 @@
 
 | 项 | 当前值 | 来源 |
 |---|---|---|
-| Memory SDK 钉版 | **0.6.38** | `backend/pyproject.toml`、`sdk_adapters/sdk_candidate.py::SDK_MEMORY_VERSION`；`29a557e3` / `3308af01` |
+| Memory SDK 钉版 | **已于 2026-09-10 整条移除** （`plans/2026-09-10-remove-memory-sdk/`）；Host 不再依赖 `simple-harness-memory-sdk`，Harness SDK 必填的 `AgentMemoryPort` 由诚实的空记忆端口 `NoMemoryAgentPort` 提供 | `backend/deskpet/sdk_adapters/null_memory_port.py`；原值 0.6.38 见本行历史 |
 | 今日 SDK 增量 | 0.6.34 向量相对 margin → 0.6.35 关系端点按最近已分类祖先 → 0.6.36 离线通道适用性证明 → 0.6.37 冲突组词法准入基底 → 0.6.38 租约到期降级 + incumbent 向量 + 世代自证 | Memory SDK `ARCHITECTURE/ARCHITECTURE.md` |
 | HM-TO-A6 第 12 次整跑 | **PASS 14 / FAIL 1 / INCONCLUSIVE 3**；A6-2、NC-3 首次 PASS；第 13 次已启动（`4301c72a`） | `plans/2026-09-08-hm-to-a6/RUN-12-RESULT.md` |
 | Manual 模式旅程 run6 | **PASS 12 / FAIL 0 / INCONCLUSIVE 4**；MM-5 多根追加首次通过 | `plans/2026-09-09-manual-mode-journey/RUN-06-RESULT.md` |
@@ -17,6 +17,7 @@
 | 240 条语料累计 | 多提类型 **29/271 = 10.7% ✅**、required **176/176 = 100% ✅**、隐私 **0 ✅**（三阈值首次全部达标） | `plans/2026-09-07-corpus-c01-local/CORPUS-CUMULATIVE-2026-09-08.md` |
 | 401 类型化召回矩阵 | run-16 **PASS 382 / FAIL 0 / BLOCKED 19**，`EXECUTOR_UNIMPLEMENTED` 归零 | `plans/2026-09-07-corpus-c01-local/TYPED-RECALL-401-RUN-10.md` |
 | 删 workflow 线 | **Slice 1 完成**（模型面 `workflow_spawn` 与死壳删除，清单 77→76 重签）；Slice 2（启动装配 + 图引擎 + 前端）、Slice 3（SDK spawn 协议）待编排大改 | `plans/2026-09-09-remove-workflow-line/`（裁决 `DECISION-SCOPE-SLICES.md`，验收 `journal.md`） |
+| 删记忆 SDK | **已完成**（后端脱钩 + 测试 + 前端 + 依赖 + 文档）；冻结清单 76→71 重签，`context_route` 五路由降四路由；**临时性清理**，等编排层大改后重新引入 | `plans/2026-09-10-remove-memory-sdk/journal.md` |
 
 ## 8 条 MUST AC
 

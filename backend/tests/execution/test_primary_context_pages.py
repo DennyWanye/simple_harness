@@ -89,7 +89,6 @@ def summary_from(request, *, content_hash):
 async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mode):
     import main
     from deskpet.execution.primary_dependencies import read_run_dependencies
-    from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
 
     state, _, service, configured, authority = await fixture(tmp_path)
     write_module = importlib.import_module("deskpet.tools.os_tools.write_file")

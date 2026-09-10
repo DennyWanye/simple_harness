@@ -167,11 +167,12 @@ dependencies = [
     # Wheel identity single source of truth:
     # deskpet/sdk_adapters/sdk_candidate.py
     "simple-harness-sdk==0.7.10",
-    "simple-harness-memory-sdk==0.6.38",
     "simple-harness-service-sdk[realtime]==0.3.13",
 ]
 
 [tool.uv.sources]
+# 2026-09-10：simple-harness-memory-sdk（认知记忆 SDK）已从 Host 整条移除，
+# 见 plans/2026-09-10-remove-memory-sdk/journal.md。
 # T7.3: Production uses local vendored wheel (exact Release artifact).
 # Development can still use path dependency by uncommenting below and
 # commenting out the wheel reference.
@@ -180,10 +181,7 @@ dependencies = [
 # simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
 #
 # Production (vendored immutable candidate):
-# Development (path dependency):
-# simple-harness-memory-sdk = { path = "../../simple-harness-memory-sdk", editable = true }
 simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.7.10-py3-none-any.whl" }
-simple-harness-memory-sdk = { path = "vendor/simple_harness_memory_sdk-0.6.38-py3-none-any.whl" }
 simple-harness-service-sdk = { path = "vendor/simple_harness_service_sdk-0.3.13-py3-none-any.whl" }
 
 [tool.uv]

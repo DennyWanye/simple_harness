@@ -19,15 +19,22 @@ _VALID_SERVICES = frozenset({
     # p4_ipc.py handlers tolerate any of these being None via graceful fallback.
     "context_assembler",   # ContextAssembler instance (recent_decisions, assemble)
     "skill_loader",        # SkillLoader with hot-reload + builtin skills
-    "memory_manager",      # L1+L2+L3 MemoryManager facade
-    "memory_recall_query",  # owner-scoped zero-write Retriever port
-    "memory_recall_scope_resolver",  # durable Run -> owner memory scope
+    # 2026-09-10 删记忆 SDK：memory_manager / memory_recall_query /
+    # memory_recall_scope_resolver / memory_facts_surface /
+    # human_memory_v7_runtime / sdk_evidence_authority /
+    # sdk_memory_analysis_executor / sdk_memory_ingestion_outbox 八个槽位
+    # 已无任何 register/get，一并从白名单与 ServiceContext 字段里删除。
+    # 仍保留的记忆相关名字（embedder / vector_worker / file_memory /
+    # memory_curator / memory_store / facts_store / preference_memory /
+    # conversation_memory / memory_identity_* / memory_display_invalidation /
+    # prospective_occurrence_coordinator / sdk_typed_context_use_authority）
+    # 仍有 register 或 get 调用点（多数是恒 None 的占位），删掉会让 get()/
+    # register() 抛 "Unknown service"（2026-05-30 / 2026-06-05 两次事故的形态）。
     "conversation_memory",  # Memory SDK conversation query/sink adapter
     "sdk_context_staging",  # durable private provider-context staging authority
     "sdk_context_source_repository",  # immutable non-Memory Context source authority
     "memory_identity_resolver",  # trusted AgentIdentity session binding
     "memory_identity_authority",  # validated product auth -> AgentIdentity
-    "memory_facts_surface",  # principal-scoped official Memory facts UI adapter
     "frozen_skill_instruction_resolver",  # Run-catalog Skill projection
     "legacy_frozen_skill_instruction_resolver",  # legacy-only fallback
     "managed_skill_discovery_projection",  # discovery-only managed Skill view
@@ -130,15 +137,11 @@ _VALID_SERVICES = frozenset({
     # the Host↔Memory async face (Task 4) are explicit composition slots too.
     "sdk_effect_gate",
     "sdk_closure_instruction_reader",
-    "sdk_evidence_authority",
-    "sdk_memory_analysis_executor",
-    "sdk_memory_ingestion_outbox",
     # MM-D2（2026-09-09）：绑定挑战签发/决定落库后广播 content-free 显示失效，供 PrimaryWorkspaceBindings 刷新。
     "memory_display_invalidation",
     # F-Z1（2026-09-09）：读工具调用期门（WorkspaceReadGate）。
     "sdk_workspace_read_gate",
     "human_memory_host_service_factory",
-    "human_memory_v7_runtime",
     "human_memory_binding_append_authority",
     "human_memory_recovery_lifecycle",
     "human_memory_foreground_scheduler_wake",
@@ -221,15 +224,11 @@ class ServiceContext:
     # --- P4 Poseidon slots ---------------------------------------------------
     context_assembler: Any | None = None
     skill_loader: Any | None = None
-    memory_manager: Any | None = None
     conversation_memory: Any | None = None
     sdk_context_staging: Any | None = None
     sdk_context_source_repository: Any | None = None
     memory_identity_resolver: Any | None = None
     memory_identity_authority: Any | None = None
-    memory_facts_surface: Any | None = None
-    memory_recall_query: Any | None = None
-    memory_recall_scope_resolver: Any | None = None
     frozen_skill_instruction_resolver: Any | None = None
     legacy_frozen_skill_instruction_resolver: Any | None = None
     managed_skill_discovery_projection: Any | None = None
@@ -298,11 +297,7 @@ class ServiceContext:
     sdk_task_execution_authority: Any | None = None
     sdk_effect_gate: Any | None = None
     sdk_closure_instruction_reader: Any | None = None
-    sdk_evidence_authority: Any | None = None
-    sdk_memory_analysis_executor: Any | None = None
-    sdk_memory_ingestion_outbox: Any | None = None
     human_memory_host_service_factory: Any | None = None
-    human_memory_v7_runtime: Any = None
     human_memory_binding_append_authority: Any | None = None
     human_memory_recovery_lifecycle: Any | None = None
     human_memory_foreground_scheduler_wake: Any | None = None
