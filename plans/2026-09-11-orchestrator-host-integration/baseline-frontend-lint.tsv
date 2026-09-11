@@ -1,0 +1,64 @@
+src/App.tsx	error	@typescript-eslint/no-explicit-any	15
+src/code-panel/ArtifactCard.tsx	error	react-refresh/only-export-components	1
+src/code-panel/ArtifactCard.tsx	warning	msg:Unused eslint-disable directive (no problems were reported f	1
+src/code-panel/AutoResumeBanner.tsx	error	react-refresh/only-export-components	2
+src/code-panel/ChangeModelModal.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/code-panel/CodeBlock.tsx	error	@typescript-eslint/ban-ts-comment	1
+src/code-panel/InputBar.tsx	error	react-refresh/only-export-components	1
+src/code-panel/MessageBubble.tsx	error	react-hooks/rules-of-hooks	1
+src/code-panel/MessageBubble.tsx	error	react-refresh/only-export-components	2
+src/code-panel/MessageStream.tsx	error	msg:Error: Cannot access refs during render	1
+src/code-panel/SubagentProgressPanel.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/code-panel/__tests__/PPTOutlineCard.test.tsx	error	@typescript-eslint/no-explicit-any	4
+src/code-panel/controlWs.ts	error	@typescript-eslint/no-explicit-any	35
+src/code-panel/slashResult.test.ts	error	@typescript-eslint/no-explicit-any	1
+src/components/AddProviderModal.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/AddProviderModal.tsx	error	react-refresh/only-export-components	6
+src/components/AddProviderModal.tsx:257:5	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/ApprovalCenterPanel.tsx	error	msg:Error: Cannot access refs during render	1
+src/components/ApprovalCenterPanel.tsx	error	react-refresh/only-export-components	5
+src/components/CapabilityCenterPanel.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/ClarificationDialog.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/ContextBreakdownModal.tsx	error	@typescript-eslint/no-explicit-any	1
+src/components/ContextBreakdownModal.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/ContextBreakdownModal.tsx:403:7	warning	react-hooks/exhaustive-deps	1
+src/components/ContextRing.tsx	error	react-refresh/only-export-components	2
+src/components/ContextTracePanel.tsx	error	msg:Error: Cannot access variable before it is declared	1
+src/components/ContextTracePanel.tsx:204:3	error	msg:Error: Cannot access variable before it is declared	1
+src/components/ContextTracePanel.tsx:213:3	error	msg:Error: Cannot access variable before it is declared	1
+src/components/ContextTracePanel.tsx:220:3	error	msg:Error: Cannot access variable before it is declared	1
+src/components/ContextTracePanel.tsx:226:3	error	msg:Error: Cannot access variable before it is declared	1
+src/components/ContextTracePanel.tsx:232:3	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/ContextTracePanel.tsx:232:3	warning	react-hooks/exhaustive-deps	1
+src/components/FeedbackPanel.tsx	error	no-irregular-whitespace	1
+src/components/FeedbackPanel.tsx	error	react-refresh/only-export-components	1
+src/components/MarkdownMessage.tsx	error	@typescript-eslint/no-explicit-any	8
+src/components/MessageStreamPanel.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/MessageStreamPanel.tsx	error	react-refresh/only-export-components	1
+src/components/ModelContextCard.tsx	error	react-refresh/only-export-components	5
+src/components/ModelContextCard.tsx	warning	react-hooks/exhaustive-deps	1
+src/components/OnboardingWizard.tsx	error	@typescript-eslint/no-unused-vars	1
+src/components/OnboardingWizard.tsx	error	react-refresh/only-export-components	2
+src/components/SettingsPanel.tsx	error	react-refresh/only-export-components	9
+src/components/SettingsProviders.tsx	error	@typescript-eslint/no-explicit-any	4
+src/components/SettingsProviders.tsx	error	@typescript-eslint/no-unused-vars	1
+src/components/SettingsProviders.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/SettingsProviders.tsx	error	react-refresh/only-export-components	11
+src/components/SettingsProviders.tsx	warning	react-hooks/exhaustive-deps	1
+src/components/SettingsProviders.tsx:498:5	error	@typescript-eslint/no-explicit-any	1
+src/components/SettingsProviders.tsx:498:5	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/SkillStorePanel.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/workflow/WorkflowProgressGroup.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/workflows/DecisionPanel.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/components/workflows/EvaluationPanel.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/hooks/useAudioChannel.ts	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/hooks/usePermissionRequests.ts	warning	react-hooks/exhaustive-deps	1
+src/primary/PrimaryWorkspaceBindings.test.tsx	error	@typescript-eslint/no-unused-vars	1
+src/stores/companionSelectors.test.tsx	error	msg:Error: Cannot reassign variables declared outside of the com	1
+src/stores/sessionsStore.test.ts	error	@typescript-eslint/no-explicit-any	1
+src/stores/sessionsStore.ts	error	@typescript-eslint/no-unused-vars	2
+src/views/ChatView.tsx	error	msg:Error: Calling setState synchronously within an effect can t	1
+src/views/PrimaryChatView.tsx	error	react-refresh/only-export-components	1
+tests/browser/primary-permission.fixture.tsx	error	msg:Error: Cannot reassign variables declared outside of the com	1
+tests/browser/primary-permission.fixture.tsx	error	react-refresh/only-export-components	1
+tests/browser/primary-permission.fixture.tsx:54:25	error	msg:Error: Cannot reassign variables declared outside of the com	1
