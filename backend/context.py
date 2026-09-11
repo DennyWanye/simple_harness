@@ -209,6 +209,11 @@ _VALID_SERVICES = frozenset({
     "companion_rollback_service",
     "companion_forget_service",
     "window_control_credential_verifier",
+    # 2026-09-11 Agent 编排接入（plans/2026-09-11-orchestrator-host-integration，用户
+    # Phase3 P3.1）：编排服务与 mission_changed 推送。未登记会让 register 抛
+    # "Unknown service" 并使启动失败（2026-09-09 事故形态）。
+    "orchestration",
+    "orchestration_pump",
 })
 
 @dataclass

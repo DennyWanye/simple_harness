@@ -26,6 +26,7 @@ import { dark, INTERACTIVE_CLASS, transition } from "../theme/components";
 import type { WorkbenchView } from "./WorkbenchShell";
 import type { SessionListProps } from "./SessionList";
 import { Icon, type IconName } from "./Icon";
+import { useMissionsStore } from "../stores/missionsStore";
 import {
   useControlWsState,
   worstConnectionState,
@@ -89,6 +90,8 @@ const NAV_ITEMS: ReadonlyArray<{
   label: string;
 }> = [
   { view: "chat", icon: "message", label: "主对话" },
+  // plans/2026-09-11-orchestrator-host-integration：Agent 编排（用户 Phase3 P3.1）
+  { view: "missions", icon: "compass", label: "任务编排" },
   { view: "skills", icon: "layers", label: "技能中心" },
   { view: "artifacts", icon: "file", label: "产物库" },
 ];
@@ -102,6 +105,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   // T13：「更多」折叠组展开态（默认收起，保持侧栏干净）。
   const [moreOpen, setMoreOpen] = useState(false);
+  // 任务编排待审批数（角标；编排审批与主对话授权弹窗分开，plan §3.7）。
+  const pendingApprovals = useMissionsStore((state) =>
+    state.missions.reduce((total, row) => total + (row.pending_approvals || 0), 0),
+  );
   // 双源聚合取最差态（T8/T13 口径）：ControlChannel prop + controlWS hook。
   const chatWsState = useControlWsState();
   const aggregated = worstConnectionState(
@@ -157,6 +164,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             active={view === item.view}
             testId={`nav-${item.view}`}
             onClick={() => onViewChange(item.view)}
+            badge={item.view === "missions" ? pendingApprovals : undefined}
           />
         </React.Fragment>
       ))}
@@ -272,7 +280,9 @@ const NavButton: React.FC<{
   active: boolean;
   testId: string;
   onClick: () => void;
-}> = ({ icon, label, active, testId, onClick }) => (
+  /** 角标（任务编排的待审批数）；0 或缺省不显示。 */
+  badge?: number;
+}> = ({ icon, label, active, testId, onClick, badge }) => (
   <button
     type="button"
     data-testid={testId}
@@ -306,6 +316,24 @@ const NavButton: React.FC<{
       style={{ color: active ? dark.accent : "currentColor" }}
     />
     {label}
+    {badge ? (
+      <span
+        data-testid={`${testId}-badge`}
+        aria-label={`待处理 ${badge}`}
+        style={{
+          marginLeft: "auto",
+          minWidth: 18,
+          padding: "0 6px",
+          borderRadius: tokens.radius.md,
+          background: dark.accentSoft,
+          color: dark.accent,
+          fontSize: tokens.text.xs.size,
+          textAlign: "center",
+        }}
+      >
+        {badge}
+      </span>
+    ) : null}
   </button>
 );
 

@@ -17,6 +17,7 @@
 | 240 条语料累计 | 多提类型 **29/271 = 10.7% ✅**、required **176/176 = 100% ✅**、隐私 **0 ✅**（三阈值首次全部达标） | `plans/2026-09-07-corpus-c01-local/CORPUS-CUMULATIVE-2026-09-08.md` |
 | 401 类型化召回矩阵 | run-16 **PASS 382 / FAIL 0 / BLOCKED 19**，`EXECUTOR_UNIMPLEMENTED` 归零 | `plans/2026-09-07-corpus-c01-local/TYPED-RECALL-401-RUN-10.md` |
 | 删 workflow 线 | **Slice 1 完成**（模型面 `workflow_spawn` 与死壳删除，清单 77→76 重签）；Slice 2（启动装配 + 图引擎 + 前端）、Slice 3（SDK spawn 协议）待编排大改 | `plans/2026-09-09-remove-workflow-line/`（裁决 `DECISION-SCOPE-SLICES.md`，验收 `journal.md`） |
+| Agent 编排接入（Phase3 P3.1 Host 直连） | **进行中（2026-09-12）**：<br>• SDK 0.9.10 / agent_orchestrator 0.9.3 已推送（`7915e40`，含 P3.1 外部控制 facade，以及本机执行开关）；<br>• Host 后端服务、`/ws/control` 协议、"任务编排"视图都已实现；<br>• Host 已钉 0.9.10：后端三个目录的回归与基线逐条一致（69 = 69，0 新红），控制通道等 5 个文件全绿；<br>• 独立代码评审第 1 轮 SHIP_WITH_FIXES，16 条全部接受；后端修复完成，`tests/orchestration` 94 passed；前端修复进行中；<br>• 真实 deepseek-flash 运行（HA-11）PASS：Mission 40 s 到 COMPLETED，证据扫描命中 0；<br>• 待完成：前端修复收尾、提交推送、原生 App 验收（HA-12）。<br>拿到安装版证据之前，只能标为"SDK 已就绪，Host 待验证" | `ARCHITECTURE/AGENT_ORCHESTRATION.md`；`plans/2026-09-11-orchestrator-host-integration/journal.md` |
 | 删记忆 SDK | **已完成**（后端脱钩 + 测试 + 前端 + 依赖 + 文档）；冻结清单 76→71 重签，`context_route` 五路由降四路由；**临时性清理**，等编排层大改后重新引入 | `plans/2026-09-10-remove-memory-sdk/journal.md` |
 
 ## 8 条 MUST AC

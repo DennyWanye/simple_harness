@@ -123,9 +123,11 @@
 
 **S1 的交付要求**：测试先行（`tests/orchestrator/host_support/`）；SDK 全量回归红集 ⊆ 73 条基线；wheel 在干净 venv 中验证；独立代码评审；SDK 仓库记录 `plans/2026-09-11-agent-orchestrator/host-support-0.9.8/journal.md`；推送。这个切片只改部署政策与校验，不涉及模型行为，真实模型证据放到 Host 的 HA-11 一起取。
 
-### 3.2 钉版 0.9.9（切片 H1）
+### 3.2 钉版 0.9.10（切片 H1）
 
-1. 按 HANDOFF §6 的方法，从 S2 的提交可复现地构建 wheel，复制到 `backend/vendor/`，并写 `simple_harness_sdk-0.9.9.candidate-manifest.json`（`execution_schema: 10`）。
+> 2026-09-12 修订：S2 的代码评审第 2 轮修复在 SDK 上发为 0.9.10 / agent_orchestrator 0.9.3，提交 `7915e40`。Host 需要其中 approval-action 夹具的 `allowed_tools` 参数，所以钉版从 0.9.9 改为 0.9.10。0.9.9 从未在 Host 提交过。
+
+1. 按 HANDOFF §6 的方法，从 S2 修复后的提交可复现地构建 wheel，复制到 `backend/vendor/`，并写 `simple_harness_sdk-0.9.10.candidate-manifest.json`（`execution_schema: 10`）。
 2. 改 `sdk_candidate.py` 与 `pyproject.toml` 三处，然后执行 `uv cache clean simple-harness-sdk` → `uv lock` → `uv sync --extra dev`。
 3. 删除 0.8.0 的 wheel 与 manifest（删之前 grep 确认没有其他引用）。
 4. 新建 installed target `.local-test-evidence/2026-09-11/installed-h099-s0313`。
@@ -202,7 +204,7 @@
 | `mission_events` | `{mission_id, after_seq≥0, limit≤200}` | `{events[], last_seq, has_more}` |
 | `mission_cancel` | `{mission_id}` | `{status}` |
 | `mission_approval_list` | `{mission_id?}` | 待决审批列表 |
-| `mission_approval_decide` | `{request_id, decision: approve｜reject｜review_pass｜review_fail｜arbitrate, reason?, note?, ruling?, basis?}` | `{request_state, receipt_hash}` |
+| `mission_approval_decide` | `{approval_id, decision: approve｜reject｜review_pass｜review_fail｜arbitrate, reason?, note?, ruling?, basis?}`（审批 id 用 `approval_id`，避免和信封的 `request_id` 冲突；这是 H4 前端测试发现的问题） | `{request_state, receipt_hash}` |
 | `mission_takeover` | `{task_id, action: stop｜retry_with_note, basis, note?}` | 接管结果 |
 | `mission_comment` | `{target_id, text}` | `{comment_id}` |
 | `mission_artifact_read` | `{artifact_id}` | `{artifact_id, path, content_hash, size_bytes, content}`：按不可变 id 读取；读前核对 hash；只读文本，有大小上限；归属不符时返回 `not_found`（P3.1 §3.4） |
@@ -297,7 +299,7 @@
 | H0 | Host | 本目录文档、评审报告、ORCH-BUILD 纲要入库 | 评审意见已处置 |
 | S1 | SDK | 0.9.8 / 0.9.1：本机代码执行开关、编排感知的创建入口 | SA-1 至 SA-7；SDK 全量回归 ⊆ 基线；wheel 在干净 venv 中验证；独立代码评审；推送 |
 | S2 | SDK | 0.9.9 / 0.9.2：P3.1 外部控制面（`api/facade.py`、`Store.read_view()`）；包含 S1 代码评审的修改 | SB-1 至 SB-6；全量回归 ⊆ 基线；wheel；代码评审；推送 |
-| H1 | Host | 钉 0.9.9 | HA-1；§5 回归 ⊆ 基线；启动冒烟 |
+| H1 | Host | 钉 0.9.10（见 §3.2 修订） | HA-1；§5 回归 ⊆ 基线；启动冒烟 |
 | H2 | Host | 服务、锁、provider、设置、lifespan、`_VALID_SERVICES` | HA-2、3、5、8、9、14、15、16、17、18、20 的后端测试 |
 | H3 | Host | 协议、推送、投影 | HA-4、6、7、19 的契约测试 |
 | H4 | Host | 前端 | HA-10 |

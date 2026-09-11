@@ -36,8 +36,9 @@ import type { ControlChannel } from "../ws/ControlChannel";
 import { SkillsView, type SkillsViewProps } from "../views/SkillsView";
 import { ArtifactsView } from "../views/ArtifactsView";
 import { SettingsView, type SettingsViewProps } from "../views/SettingsView";
+import { MissionsView, type MissionsViewProps } from "../views/MissionsView";
 
-export type WorkbenchView = "chat" | "skills" | "artifacts" | "settings";
+export type WorkbenchView = "chat" | "missions" | "skills" | "artifacts" | "settings";
 
 export interface WorkbenchShellProps {
   view: WorkbenchView;
@@ -50,6 +51,8 @@ export interface WorkbenchShellProps {
   chatProps: ChatViewProps;
   primaryChannel?: ControlChannel | null;
   skillsProps: SkillsViewProps;
+  /** 任务编排视图（plans/2026-09-11-orchestrator-host-integration）：控制通道。 */
+  missionsProps?: MissionsViewProps;
   settingsProps: SettingsViewProps;
   /** T7（WB-5）：Sidebar「会话」展开区的会话列表 props。 */
   sessionProps?: SessionListProps;
@@ -66,6 +69,7 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
   connectionState,
   primaryChannel,
   skillsProps,
+  missionsProps,
   settingsProps,
   routeKind,
   moreActions,
@@ -126,6 +130,7 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
         >
           <PrimaryChatView active={view === "chat"} channel={primaryChannel} onOpenSettings={() => onViewChange("settings")} />
         </div>
+        {view === "missions" && <MissionsView {...(missionsProps ?? { channel: null })} />}
         {view === "skills" && <SkillsView {...skillsProps} />}
         {view === "artifacts" && <ArtifactsView />}
         {view === "settings" && <SettingsView {...settingsProps} />}

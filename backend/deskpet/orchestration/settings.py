@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
+"""``config.toml [orchestration]`` and the test-only scenario gate (plan §3.3, §3.8).
+
+There is deliberately no switch for running model-written code on this machine: until
+the isolated execution of the user's Phase3 P3.2 has passed, the Host deployment keeps
+``local_code_execution=False`` (P3.1 §3.1).
+
+``max_concurrency`` / ``max_concurrent_model_calls`` enter the ACTIVE policy only when
+the library is first seeded; a later change of the config records ``PolicyConfigDrift``
+and the ACTIVE version still governs until a promotion (plan review P1-5).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+TEST_SCENARIO_ENV = "DESKPET_ORCHESTRATION_TEST_SCENARIO"
+KNOWN_SCENARIOS = ("approval-action",)
+EVIDENCE_MARKER = ".local-test-evidence"
+
+
+@dataclass(frozen=True)
+class OrchestrationSettings:
+    enabled: bool = True  # CLAUDE.md: capabilities that passed testing ship on
+    max_concurrency: int = 1  # the chat shares the provider quota
+    max_concurrent_model_calls: int = 1
+    tick_active_seconds: float = 2.0  # work or a turn in flight
+    tick_waiting_seconds: float = 20.0  # only a person is awaited (plan review P2)
+    tick_idle_seconds: float = 30.0
+    lease_seconds: float = 60.0  # tests shorten it; the product does not expose it
+    backoff_max_seconds: float = 60.0
+    rebuild_after_failures: int = 3
+    degraded_after_failures: int = 5
+
+
+def _bounded_int(value: Any, default: int, low: int, high: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return max(low, min(high, value))
+
+
+def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
+    """Read ``[orchestration]``; unknown keys are ignored, bad values fall back."""
+
+    raw = dict(section or {})
+    enabled = raw.get("enabled", True)
+    return OrchestrationSettings(
+        enabled=enabled if isinstance(enabled, bool) else True,
+        max_concurrency=_bounded_int(raw.get("max_concurrency"), 1, 1, 4),
+        max_concurrent_model_calls=_bounded_int(raw.get("max_concurrent_model_calls"), 1, 1, 4),
+    )
+
+
+def resolve_test_scenario(env: Mapping[str, str], user_data: str | Path) -> str | None:
+    """The approval-action test scenario needs *both* gates: the environment variable
+    and a user-data directory inside ``.local-test-evidence/`` (plan review P1-2).
+    ``DESKPET_DEV_MODE`` plays no part — it changes the product path by itself."""
+
+    scenario = env.get(TEST_SCENARIO_ENV)
+    if scenario not in KNOWN_SCENARIOS:
+        return None
+    if EVIDENCE_MARKER not in Path(user_data).resolve(strict=False).parts:
+        return None
+    return scenario
+
+
+__all__ = (
+    "EVIDENCE_MARKER",
+    "KNOWN_SCENARIOS",
+    "TEST_SCENARIO_ENV",
+    "OrchestrationSettings",
+    "load_settings",
+    "resolve_test_scenario",
+)

@@ -5668,6 +5668,19 @@ async def lifespan(app: FastAPI):
         await _initialize_growth_authority()
         # Slice C: Use SDK Runtime instead of legacy harness
         await _activate_product_sdk_runtime()
+        # Agent 编排服务（plans/2026-09-11-orchestrator-host-integration，用户 Phase3
+        # P3.1）：在 SDK stack 之后启动；失败只让它不可用并记入 startup_errors，
+        # 绝不让启动失败。
+        from deskpet.orchestration.wiring import activate_orchestration
+        from paths import user_data_dir as _orchestration_user_data_dir
+
+        await activate_orchestration(
+            service_context,
+            config_path=_CONFIG_PATH,
+            user_data=_orchestration_user_data_dir(),
+            broadcast_targets=lambda: list(_control_connections.values()),
+            record_startup_error=startup_errors.record,
+        )
         await _activate_human_memory_host_ports(startup_epoch)
         await _complete_growth_authority_cutover()
         await _initialize_companion_projection_services()
@@ -5806,6 +5819,14 @@ async def lifespan(app: FastAPI):
         finally:
             _sdk_desktop_bridge = None
             service_context.register("sdk_runtime_ready", None)
+    # Agent 编排服务（plans/2026-09-11-orchestrator-host-integration）先于 SDK stack 关闭。
+    # 这只是有序关停路径；App 真实退出是 SIGKILL，编排的正确性不依赖这里。
+    try:
+        from deskpet.orchestration.wiring import deactivate_orchestration
+
+        await deactivate_orchestration(service_context)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("orchestration_shutdown_failed", error=str(exc))
     # Close SDK Runtime Stack (Slice C)
     if _sdk_runtime_stack is not None:
         try:
@@ -14675,6 +14696,21 @@ async def control_channel(ws: WebSocket):
                     "request_id": raw.get("request_id"),
                     "payload": snapshot,
                 })
+
+            elif msg_type.startswith(("mission_", "orchestration_")):
+                # Agent 编排视图的控制通道协议（plan §3.4）：纯分发，不会把异常抛进 socket 循环
+                from deskpet.orchestration.handlers import handle as _orchestration_handle
+
+                # a payload that is not an object is answered with invalid_request inside
+                # handle(), never raised into this shared loop (review P2-6)
+                await ws.send_json(
+                    await _orchestration_handle(
+                        service_context.get("orchestration"),
+                        msg_type,
+                        raw.get("payload"),
+                        request_id=raw.get("request_id"),
+                    )
+                )
 
             elif msg_type == "permission_auto_mode_get":
                 await ws.send_json({

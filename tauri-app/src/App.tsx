@@ -21,6 +21,7 @@ import {
 import { useControlChannel } from "./hooks/useWebSocket";
 import { useExternalWaitRequests } from "./hooks/useExternalWaitRequests";
 import { useClarificationRequests } from "./hooks/useClarificationRequests";
+import { useMissionsFeed } from "./stores/useMissionsFeed";
 import { ExternalWaitDialog } from "./components/ExternalWaitDialog";
 import { ApprovalCenterPanel } from "./components/ApprovalCenterPanel";
 import { ClarificationDialog } from "./components/ClarificationDialog";
@@ -612,6 +613,8 @@ function App() {
     useExternalWaitRequests(permissionChannel);
   const { current: clarificationCurrent, resolve: resolveClarification } =
     useClarificationRequests(permissionChannel);
+  // 任务编排常驻订阅（代码评审 P2-5）：侧栏角标与列表状态不依赖编排视图是否打开。
+  useMissionsFeed(permissionChannel);
 
   // T6：能力中心 / SkillStore 浮层 open state 已拆除 —— 二者页面化为
   // SkillsView（T10 实装，互跳 state 本地化在视图内部）。
@@ -896,6 +899,7 @@ function App() {
           channel: permissionChannel,
           sessionId: activeSid || null,
         }}
+        missionsProps={{ channel: permissionChannel }}
         settingsProps={{
           getChannel: getControlChannel,
           lastMessage,

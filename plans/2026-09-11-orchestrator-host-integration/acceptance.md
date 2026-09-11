@@ -27,13 +27,13 @@ SA-4 已按 S1 代码评审 P1-2 改写（处置见 SDK journal §4）：关闭�
 | SB-3 | 归属（P3.1-A04） | 另一个 tenant 对 snapshot / events / cancel / decide / comment / artifact_read 的请求全部报 `not_found`，报错内容不暴露对象是否存在 | 同上 |
 | SB-4 | 快照与游标一致（P3.1-A05） | `snapshot.through_seq` 等于读快照时库里的最大 seq；从 `through_seq` 往后翻 `events`，不重复、不丢失；每页有上限 | 同上 |
 | SB-5 | 产物读取 | 按 id 读取内容，并核对 hash；文件被改动过就报 `integrity_error`；超过大小上限就截断，并标出截断；本机路径不被接受 | 同上 |
-| SB-6 | S1 代码评审补测 | 本机执行关闭时 Task 级 `pytest:` 条件被拒；旧 Task 的这类条件在 rule_check 判 FAIL；SA-2 在开、关两种设置下都跑且结果不同；网关兜底分支有测试；合成模板在入口处被检查；最小关闭配置可以构造 | `test_local_code_execution.py` |
+| SB-6 | S1 代码评审补测 | 本机执行关闭时 Task 级 `pytest:` 条件被拒；旧 Task 的这类条件在 rule_check 判 FAIL；SA-2 在开、关两种设置下都跑且结果不同；网关兜底分支有测试；合成模板在入口处被检查（P2-6"最小关闭配置"不采纳，理由见 SDK journal §4） | `test_local_code_execution.py` |
 
 ## B. Host
 
 | 编号 | 场景 | 什么算对 | 证据 |
 |---|---|---|---|
-| HA-1 | 钉版 0.9.9 | ① `simple_harness` 版本为 0.9.9，`agent_orchestrator` 版本为 0.9.2；② `sdk_candidate.py` 里的 sha 与 wheel、manifest 一致，候选校验通过；③ 启动冒烟（真实数据副本、独立端口）：`/health` ok、`startup complete`、`startup_errors=[]`、执行库迁移记录为 `[…, 9, 10]`；④ §5 的回归结果 ⊆ 基线 | `journal.md` §2 |
+| HA-1 | 钉版 0.9.10（原为 0.9.9；S2 代码评审第 2 轮修复后升版） | ① `simple_harness` 版本为 0.9.10，`agent_orchestrator` 版本为 0.9.3；② `sdk_candidate.py` 里的 sha 与 wheel、manifest 一致，候选校验通过；③ 启动冒烟（真实数据副本、独立端口）：`/health` ok、`startup complete`、`startup_errors=[]`、执行库迁移记录为 `[…, 9, 10]`；④ §5 的回归结果 ⊆ 基线 | `journal.md` §2 |
 | HA-2 | 服务装配 | ① 默认 `enabled`，状态为 `available`；② 编排库在 `<user_data>/data/agent-orchestrator/`，不和 SDK 执行库在一起；软链被拒绝；③ 启动失败（目录不可写）时后端照常启动，status 返回 `available=false` 并附原因；④ `_VALID_SERVICES` 包含 `orchestration`；⑤ 测试路径下调用 `close()` 后不留任务 | `test_service_lifecycle.py` |
 | HA-3 | 创建与运行 | ① 夹具 provider 下，合法请求自动跑到 COMPLETED；② 同一个 key 再次提交，返回同一个 id 且 `created=false`；③ 门口拒绝以下情况，且库里不留痕迹：空目标、空成功条件、`pytest:`（返回 `local_tests_disabled`）、带密钥形态的文本，包括当前 provider 的真实密钥（返回 `secret_rejected`，错误信息不回显原文）；④ 客户端传入的 `allowed_tools` 被忽略 | `test_service_missions.py`、`test_boundaries.py` |
 | HA-4 | 进度与推送 | ① 投影只输出白名单字段，模型文本带 `source: "model"`；② 事件分页的 seq 严格递增、不重复、不丢，总数与库里一致；③ 状态变化后 2 s 内收到 `mission_changed`；④ 推送用的是只读连接；⑤ 投影与推送里没有密钥 | `test_projection.py` |
