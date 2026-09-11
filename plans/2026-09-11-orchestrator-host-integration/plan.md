@@ -1,9 +1,28 @@
 # Agent 编排框架接入 Host（产品接线）· 计划
 
 - 日期：2026-09-11
-- 状态：**第 2 版**，已处置 plan review 第 1 轮（`reports/plan-review-round1.md`；处置表在 `journal.md` §1）。评审说明："改完 P0 和 P1-1 到 P1-4 后可以进入实现，不需要再做一轮完整评审。"
+- 状态：**第 3 版**。
+  - 第 2 版处置了 plan review 第 1 轮（`reports/plan-review-round1.md`，处置表在 `journal.md` §1）。评审原话："改完 P0 和 P1-1 到 P1-4 后可以进入实现，不需要再做一轮完整评审。"
+  - 第 3 版按用户 2026-09-11 22:39 放入的 Phase3 计划对齐，见下面 §0.1。
+
+## 0.1 与用户 Phase3 计划（P3-v1.0）P3.1 的关系
+
+用户的 `plans/taskSys2/agent-orchestrator-phase3-plan.zh-CN.md` 把"真实 App Mission 控制闭环"列为 P3.1，并写明"P3.1 当前 UI 工作直接并入，不另建一套控制台""先完成 P3.1"。本计划就是 **P3.1 的 Host 直连路径实现**：Host 在进程内直连 SDK，按 P3.1"只选实际主路径"的要求，不再经 Service SDK 绕一圈。两者不一致的地方以 Phase3 计划为准。第 3 版补齐的内容如下：
+
+| P3.1 要求 | 本计划落点 |
+|---|---|
+| §3.3 SDK Facade 严格映射请求字段；未知字段拒绝，暂不开放的字段明确报错 | SDK 切片 S2（0.9.9），`api/facade.py` |
+| §3.3 `api/read_models.py`：带 through_seq / graph_version，按归属过滤 | S2：`MissionControlV1.snapshot/events`，由 `Store.read_view()` 保证一致性读取 |
+| 外部操作 `mission.create/snapshot/events/cancel`、`artifact.read`、`approval.decide`、`human.comment` | §3.4 协议：补上 `mission_artifact_read`；快照带 through_seq |
+| §3.4 Principal 来自 Host；按归属检查读写，不泄露对象是否存在 | S2 按 tenant 检查归属；Host 的 Principal 见 §3.6 |
+| §3.4 事件页有上限；UI 按 seq 去重，发现缺口就重新取快照 | §3.4 与前端 store |
+| §3.4 UI 状态词汇：已接收 / 排队 / 运行 / 待验证 / 待人 / UNKNOWN / 正式交付 | §3.9 |
+| §3.3 Host 启动时写 `DeploymentManifestV1` | §3.11（新增） |
+| §3.1 P3.2 通过之前，不让任意生成的代码在带真实凭证的 Host 进程里执行 | 去掉 `allow_local_tests` 选项，Host 部署固定 `local_code_execution=False`（§3.5） |
+| §3.5 分开记录"UI 重连成功"与"后端进程重启后恢复成功"；没有安装版证据时，最多标"SDK 已就绪，Host 待验证" | 验收 HA-12 与 HA-22（新增） |
+| §11 P3.1-A01 至 A08 | 验收 §E 对照表 |
 - Host 基线：`simple_harness` main `49466560`（钉 SDK 0.8.0）
-- SDK 基线：`simple-harness-sdk` main `ae8f0ec`（0.9.7 / agent_orchestrator 0.9.0，wheel 源 `88e5582`）。本计划先在 SDK 上做 **0.9.8 / agent_orchestrator 0.9.1**（切片 S1），Host 钉 0.9.8。
+- SDK 基线：`simple-harness-sdk` main `ae8f0ec`（0.9.7 / agent_orchestrator 0.9.0，wheel 源 `88e5582`）。本计划先在 SDK 上做 **0.9.8 / agent_orchestrator 0.9.1**（切片 S1），再做 **0.9.9 / agent_orchestrator 0.9.2**（切片 S2：P3.1 外部控制面），Host 钉 0.9.9。
 - 依据：
   - SDK `plans/2026-09-11-agent-orchestrator/HANDOFF.md` §2 第 1 项（Host 产品接线）；
   - 编排纲要 `plans/taskSys2/agent-orchestrator-incremental-build-plan-phase2-zh-CN.md`（ORCH-BUILD-v1.0）第 15 行："进入产品 UI/Host 接线时，应把真实 Host commit 和装配位置登记到实施记录中"；
@@ -104,12 +123,12 @@
 
 **S1 的交付要求**：测试先行（`tests/orchestrator/host_support/`）；SDK 全量回归红集 ⊆ 73 条基线；wheel 在干净 venv 中验证；独立代码评审；SDK 仓库记录 `plans/2026-09-11-agent-orchestrator/host-support-0.9.8/journal.md`；推送。这个切片只改部署政策与校验，不涉及模型行为，真实模型证据放到 Host 的 HA-11 一起取。
 
-### 3.2 钉版 0.9.8（切片 H1）
+### 3.2 钉版 0.9.9（切片 H1）
 
-1. 从 S1 的提交按 HANDOFF §6 的方法可复现地构建 wheel，复制到 `backend/vendor/`，并写 `simple_harness_sdk-0.9.8.candidate-manifest.json`（`execution_schema: 10`）。
+1. 按 HANDOFF §6 的方法，从 S2 的提交可复现地构建 wheel，复制到 `backend/vendor/`，并写 `simple_harness_sdk-0.9.9.candidate-manifest.json`（`execution_schema: 10`）。
 2. 改 `sdk_candidate.py` 与 `pyproject.toml` 三处，然后执行 `uv cache clean simple-harness-sdk` → `uv lock` → `uv sync --extra dev`。
 3. 删除 0.8.0 的 wheel 与 manifest（删之前 grep 确认没有其他引用）。
-4. 新建 installed target `.local-test-evidence/2026-09-11/installed-h098-s0313`。
+4. 新建 installed target `.local-test-evidence/2026-09-11/installed-h099-s0313`。
 5. 启动迁移不变（v9、v10）。
 
 ### 3.3 后端编排服务 `backend/deskpet/orchestration/`（切片 H2）
@@ -131,7 +150,7 @@
 |---|---|---|
 | `enabled` | true | 按 CLAUDE.md，测试阶段完成的能力默认开启 |
 | `max_concurrency` / `max_concurrent_model_calls` | 1 / 1 | 与主对话共用 provider 限额。**只在编排库第一次 seed 时进入 ACTIVE 策略**；之后改配置只会记一条 `PolicyConfigDrift`，不生效，除非走策略晋级（P1-5；设置说明与 ARCHITECTURE 都要写明） |
-| `allow_local_tests` | false | true 时部署政策 `local_code_execution=True` 并加入 `run_tests`；设置面板"任务编排"组，打开时写明"会在本机执行模型写的测试代码，没有网络或文件系统隔离"；改动后重启服务生效 |
+| （不提供）本机执行测试的开关 | — | 第 3 版按 P3.1 §3.1 去掉：P3.2 的隔离执行通过之前，不让任何模型生成的代码在带真实凭证的 Host 进程里执行；部署固定为 `local_code_execution=False` |
 | `lease_seconds` | 60 | 只供测试缩短；产品不暴露 |
 
 **provider 模型 id**：base_url 是 DeepSeek 官方端点、配置写的是 `deepseek-v4-flash` 时，按 SDK 真实端点的结论改用官方 id `deepseek-flash`（HANDOFF §4），并在 status 里如实写出"配置 id → 请求 id"。其他组合原样使用。换 provider 或模型后重启，只影响新 Attempt；在途回合如果回显不符，由 SDK 记录，界面照实显示（登记为限制）。
@@ -158,7 +177,7 @@
   - `comment`。
 - **门口检查**：
   - 目标与每条成功条件非空；
-  - 成功条件里没有 `pytest:`（除非 allow_local_tests）；没有 `action:`（除非测试场景，P1-1）；
+  - 成功条件里没有 `pytest:`；没有 `action:`（测试场景除外，P1-1）；请求里没有 Facade 未开放的字段（S2 严格映射）；
   - `allowed_tools` 一律强制为部署政策的允许集，忽略客户端传入的值；
   - 预算只收 `max_tokens` / `max_attempts`；
   - 人写的每段文本都过 `find_secrets(text, extra=(当前 provider 密钥,))`，命中就拒绝（错误信息不回显原文）。
@@ -176,7 +195,7 @@
 
 | 请求 | payload | data |
 |---|---|---|
-| `orchestration_status` | — | `{available, state, reason, orchestrator_version, sdk_version, model:{configured, requested}, active_missions, pressure, allow_local_tests, allowed_tools, test_scenario}` |
+| `orchestration_status` | — | `{available, state, reason, orchestrator_version, sdk_version, model:{configured, requested}, active_missions, pressure, allowed_tools, test_scenario, deployment_manifest}` |
 | `mission_create` | `{goal, success_criteria[], budget{max_tokens?, max_attempts?}, idempotency_key}` | `{mission_id, created}` |
 | `mission_list` | `{limit?}` | 摘要列表（id、目标前 120 字、状态、停止原因、创建时间、待审批数、是否阻塞） |
 | `mission_get` | `{mission_id}` | 投影详情（mission、tasks、attempts、results + 验证层、approvals、waiting_on、blocked、graph_changes、mission_policy、usage） |
@@ -186,6 +205,7 @@
 | `mission_approval_decide` | `{request_id, decision: approve｜reject｜review_pass｜review_fail｜arbitrate, reason?, note?, ruling?, basis?}` | `{request_state, receipt_hash}` |
 | `mission_takeover` | `{task_id, action: stop｜retry_with_note, basis, note?}` | 接管结果 |
 | `mission_comment` | `{target_id, text}` | `{comment_id}` |
+| `mission_artifact_read` | `{artifact_id}` | `{artifact_id, path, content_hash, size_bytes, content}`：按不可变 id 读取；读前核对 hash；只读文本，有大小上限；归属不符时返回 `not_found`（P3.1 §3.4） |
 | `orchestration_policy_status` | — | `PolicyApi.status()` 的只读投影（含漂移） |
 
 - 推送：`mission_changed {mission_id, status, last_seq}`。
@@ -200,7 +220,7 @@
 
 | 项 | Host 默认 | 理由 |
 |---|---|---|
-| `local_code_execution` | False | 在隔离交付之前，不在本机执行模型写的任何代码（P0-1）；`allow_local_tests=true` 时改为 True |
+| `local_code_execution` | False（固定） | P3.2 隔离执行交付之前，不在本机执行模型写的任何代码（P0-1、P3.1 §3.1）；不提供打开的开关 |
 | `allowed_tools` | 三个工作区工具（没有 `run_tests`） | 同上 |
 | `enabled_connectors` | 空（测试场景除外） | 真实动作不在这次范围内 |
 | `max_action_level` | L2 | 单机做不到 L3 双人审批；L2 与 SDK 语义一致（`policies.py:36-38`） |
@@ -260,13 +280,24 @@
 - 修正 `AGENT_HARNESS.md` 第 1 行的版本漂移（写的是 0.7.10）。
 - 按 ORCH-BUILD 第 15 行，把 Host 提交与装配位置登记进 `journal.md` §3。
 
+### 3.11 部署清单 `DeploymentManifestV1`（P3.1 §3.3，P3.1-A08）
+
+服务启动时写入 `<编排目录>/deployment-manifest.json`（每次启动覆盖），同时放进 `orchestration_status.deployment_manifest`。不包含任何密钥。字段如下：
+
+- `host_commit`：打包或启动时的 Host 提交；拿不到就写 `unknown`，不伪造。
+- `distributions`：`simple_harness`、`agent_orchestrator` 两个包的实际导入路径（`module.__file__`）、`importlib.metadata` 版本，以及 `sdk_candidate.py` 里的 wheel sha。版本与钉版不一致时，服务标为 unavailable。这样确认的是"实际导入了哪个版本"，不靠 PYTHONPATH 或旧状态文件。
+- `schemas`：编排库的 schema 版本，以及 SDK 执行库的 schema 版本。
+- `features`：生效的部署政策（`to_json`）、测试场景，以及并发设置。
+- `model`：provider id、配置的模型 id 与实际请求的模型 id、价目（`unpriced`）。
+
 ## 4. 切片与提交顺序
 
 | 片 | 仓库 | 内容 | 门槛 |
 |---|---|---|---|
 | H0 | Host | 本目录文档、评审报告、ORCH-BUILD 纲要入库 | 评审意见已处置 |
 | S1 | SDK | 0.9.8 / 0.9.1：本机代码执行开关、编排感知的创建入口 | SA-1 至 SA-7；SDK 全量回归 ⊆ 基线；wheel 在干净 venv 中验证；独立代码评审；推送 |
-| H1 | Host | 钉 0.9.8 | HA-1；§5 回归 ⊆ 基线；启动冒烟 |
+| S2 | SDK | 0.9.9 / 0.9.2：P3.1 外部控制面（`api/facade.py`、`Store.read_view()`）；包含 S1 代码评审的修改 | SB-1 至 SB-6；全量回归 ⊆ 基线；wheel；代码评审；推送 |
+| H1 | Host | 钉 0.9.9 | HA-1；§5 回归 ⊆ 基线；启动冒烟 |
 | H2 | Host | 服务、锁、provider、设置、lifespan、`_VALID_SERVICES` | HA-2、3、5、8、9、14、15、16、17、18、20 的后端测试 |
 | H3 | Host | 协议、推送、投影 | HA-4、6、7、19 的契约测试 |
 | H4 | Host | 前端 | HA-10 |

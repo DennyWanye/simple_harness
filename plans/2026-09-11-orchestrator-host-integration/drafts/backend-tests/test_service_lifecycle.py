@@ -34,7 +34,8 @@ def test_settings_default_on_and_conservative():
     assert settings.enabled is True  # CLAUDE.md: tested capabilities ship on
     assert settings.max_concurrency == 1
     assert settings.max_concurrent_model_calls == 1
-    assert settings.allow_local_tests is False
+    # plan v3 (P3.1 §3.1): no switch for running model-written code on this machine
+    assert not hasattr(settings, "allow_local_tests")
 
 
 def test_root_lives_beside_but_apart_from_the_sdk_execution_library(tmp_path):

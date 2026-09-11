@@ -23,7 +23,14 @@
     - SIGKILL 子进程测试（`_child_service.py`）：HA-8 在等人工复核时杀进程，HA-15 在模型调用中途杀进程，然后接管；
     - `mission_takeover`、测试场景的两道门槛与独立目录（HA-20）、判定分歧的仲裁（HA-19）、拒绝后 FAILED + `approval_rejected`、并发写入（HA-21）。
     设计注记：scripted provider 的步骤在事件循环线程里同步执行，所以测试不能在步骤里阻塞。模型调用中途被杀的场景放在子进程里用 `time.sleep` 模拟。
-  - SDK S1 进度：`627b90e` 已推送（0.9.8 / 0.9.1，host_support 18 条全绿，ruff 与 mypy 干净）。全量回归与独立代码评审都在进行中，下一步按结果处置，然后构建 wheel。
+  - SDK S1 进度：`627b90e` 已推送（0.9.8 / 0.9.1，host_support 18 条全绿，ruff 与 mypy 干净）。代码评审第 1 轮结论为 SHIP_WITH_FIXES，处置见 SDK journal §4；全量回归还在跑。
+  - **计划升到第 3 版**（plan §0.1）。依据是用户 2026-09-11 22:39 放入的 `plans/taskSys2/agent-orchestrator-phase3-plan.zh-CN.md`，本工作就是其中的 P3.1（Host 直连路径）。新增：
+    - SDK 切片 S2（0.9.9）：Facade 严格映射字段、快照与游标一致、按归属检查、`artifact_read`；
+    - Host 部署清单 `DeploymentManifestV1`；
+    - 去掉"允许本机执行测试"的选项；
+    - 新增验收 SB-1 至 SB-6、HA-22 至 HA-24，以及与 P3.1-A01 至 A08 的对照表；
+    - H1 改为钉 0.9.9。
+  - Phase3 计划文件是用户自己放的，目前没有纳入版本管理；本工作不替用户提交它。
   - SDK 切片 S1 的计划在 SDK 仓库 `plans/2026-09-11-agent-orchestrator/host-support-0.9.8/plan.md`。关键取舍：本机代码执行关闭时，不创建冲突 Task，冲突走 DEFERRED。原因是冲突 Task 本身要在本机跑探针测试，只去掉 code_test 会留下没运行过的"假证据"。
   - 用户规则：真实模型测试一律用 deepseek-flash；额度快用完时先写 handoff，再提交推送。
 - 接手须知：凭证只从 `.local-test-evidence/2026-09-07/credentials/deepseek.env` 读取，不打印；只用 deepseek-flash；App 运行时不跑 `tests/sdk_adapters/test_composition.py`。

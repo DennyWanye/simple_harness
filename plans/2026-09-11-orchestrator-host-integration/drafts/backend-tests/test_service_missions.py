@@ -81,21 +81,33 @@ async def test_door_refuses_and_writes_nothing(orchestration_root, principal, ov
 
 
 @pytest.mark.asyncio
-async def test_local_tests_setting_lets_pytest_criteria_through(orchestration_root, principal):
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"allowed_tools": ["workspace_read_file", "run_tests"]},  # not an open field (P3.1-A06)
+        {"risk_level": "production"},
+        {"task_kind": "research"},
+        {"surprise": 1},  # unknown field
+    ],
+)
+async def test_fields_the_facade_does_not_open_are_refused(orchestration_root, principal, overrides):
+    """Plan v3 (P3.1 §3.3): no field is silently dropped; there is no local-tests switch."""
+
     service = OrchestrationService(
         orchestration_root,
-        OrchestrationSettings(allow_local_tests=True),
+        OrchestrationSettings(),
         provider=notes_provider(),
         principal=principal,
         drive=False,
     )
     await service.start()
     try:
-        created = service.create_mission(
-            notes_request("k-tests", success_criteria=["pytest:tests/test_x.py"])
-        )
-        assert created["created"] is True
-        assert "run_tests" in service.status()["allowed_tools"]
+        with pytest.raises(OrchestrationRequestError) as refused:
+            service.create_mission(notes_request("k-fields", **overrides))
+        assert refused.value.code == "invalid_request"
+        assert _mission_count(orchestration_root) == 0
+        assert "run_tests" not in service.status()["allowed_tools"]
+        assert not hasattr(OrchestrationSettings(), "allow_local_tests")
     finally:
         await service.close()
 
