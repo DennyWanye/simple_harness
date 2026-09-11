@@ -88,12 +88,18 @@
 - **Task 预算下限**（SDK 0.9.11 起，F-ORCH-1）：
   - Graph Manager 会拒绝预算低于 `k × (base + critic)` 的 Task。k 是每个 Task 的候选数；base 是单轮最多产出的 token 数，这个部署是 8192；critic 部分只在验证政策含 critic_review 时计入，是 Critic 的预留 6000。
   - 被拒后，Planner / Manager 会收到原因（`task_budget_below_floor`）并重新规划，系统不会替它们编一个数。它们的输入里也写明了下限。
-  - 下限只是必要条件，不能保证之后的修复和重试都付得起。
+  - 下限是**预留层面**的必要条件：它只保证在预留那一刻，第一个 Attempt 和它的 Critic 都能预留得到，前提是一轮结算的用量不超过它的预留。真实模型一轮会连输入一起结算，远超 base（原生验收时一轮结算了 22003），所以预算正好等于下限的 Task，第一轮之后照样可能付不起 Critic，之后的修复和重试也不在保证之内。
   - 这与 Host 门口的默认预算（见 §7）是两道互补的保护。
 - **产物的验证状态**（SDK 0.9.11 起，F-ORCH-3），在对应的提交事务里一并写入：
   - 结果被接受：VERIFIED；
   - 结果被判 FAIL：REJECTED；
   - 被取代的候选：保持 UNVERIFIED。
+
+  注意：产物的 REJECTED 和结果的 REJECTED 意思不同。
+  - 产物 REJECTED 表示它所在的结果被判了 FAIL。
+  - 被取代的结果，其 `verification_state` 也是 REJECTED（verdict=superseded），但它从来没有被评判过，所以它的产物是 UNVERIFIED。
+
+  读模型把两者并排显示时，要按上面的含义解读。
 - **Attempt 的 RETRY_WAIT**：这是失败 Attempt 的终态。原文 §25.2 没有 Attempt 的 FAILED 状态，重试的时候另起一个新 Attempt。所以 Mission 结束后，个别 Attempt 停在 RETRY_WAIT 是设计如此，不是还在排队重试。
 
 ## 9. 部署清单（P3.1-A08）
