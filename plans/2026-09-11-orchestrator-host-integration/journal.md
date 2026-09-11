@@ -14,7 +14,13 @@
   - 摸底完成；基线已取（`baseline.md`）。
   - plan review 第 1 轮 NOT_READY（3 P0 / 6 P1），已全部处置（§1），计划与验收升到第 2 版。
   - 下一步：提交 H0 → **SDK 切片 S1（0.9.8 / 0.9.1）**，在 SDK 仓库测试先行 → H1 钉 0.9.8 → H2 至 H5。
-  - Host 后端测试草稿在 `backend/tests/orchestration/`，前端草稿在会话 scratchpad `host-drafts/frontend/`。都未提交，跟随对应实现切片一起提交。草稿还需按第 2 版计划调整：锁、owner、SIGKILL 子进程测试、`mission_takeover`、测试场景目录、`Orchestrator.create_mission`。
+  - 测试草稿已入库在本目录 `drafts/`，这个目录不在 pytest / vitest / tsc 的扫描路径里，不会让主分支变红：
+    - `backend-tests/`：到 H2 时复制到 `backend/tests/orchestration/`。工作副本也在那里，还没有跟踪。
+    - `frontend/`：到 H4 时复制到 `tauri-app/src/`。
+    - `ui-scripts/`：第一阶段的 AX 驱动脚本，H5 用。
+    草稿还要按第 2 版计划调整：锁、owner、SIGKILL 子进程测试、`mission_takeover`、测试场景目录、`Orchestrator.create_mission`。
+  - SDK 切片 S1 的计划在 SDK 仓库 `plans/2026-09-11-agent-orchestrator/host-support-0.9.8/plan.md`。关键取舍：本机代码执行关闭时，不创建冲突 Task，冲突走 DEFERRED。原因是冲突 Task 本身要在本机跑探针测试，只去掉 code_test 会留下没运行过的"假证据"。
+  - 用户规则：真实模型测试一律用 deepseek-flash；额度快用完时先写 handoff，再提交推送。
 - 接手须知：凭证只从 `.local-test-evidence/2026-09-07/credentials/deepseek.env` 读取，不打印；只用 deepseek-flash；App 运行时不跑 `tests/sdk_adapters/test_composition.py`。
 
 ## 1. plan review 处置
