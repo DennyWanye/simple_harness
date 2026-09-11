@@ -36,6 +36,12 @@ class OrchestrationSettings:
     backoff_max_seconds: float = 60.0
     rebuild_after_failures: int = 3
     degraded_after_failures: int = 5
+    # This deployment offers no Mission without bounds (native run 2026-09-12, adjudication
+    # C): a blank budget item takes these.  400000 tokens is the value both HA-11 real runs
+    # passed with; 12 attempts because the Mission count covers every Worker Attempt of
+    # every Task (3 would fail a three-Task Mission on its first retry).
+    default_mission_max_tokens: int = 400_000
+    default_mission_max_attempts: int = 12
 
 
 def _bounded_int(value: Any, default: int, low: int, high: int) -> int:

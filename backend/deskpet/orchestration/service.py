@@ -345,6 +345,10 @@ class OrchestrationService:
             "active_missions": active,
             "allowed_tools": list(WORKSPACE_TOOLS),
             "test_scenario": self._test_scenario,
+            "mission_budget_defaults": {
+                "max_tokens": self.settings.default_mission_max_tokens,
+                "max_attempts": self.settings.default_mission_max_attempts,
+            },
             "deployment_manifest": self._manifest,
             "owner": self.owner,
         }
@@ -411,6 +415,27 @@ class OrchestrationService:
             raise OrchestrationRequestError(
                 "action_criteria_disabled", "这个部署没有启用真实动作：成功条件不能使用 action:"
             )
+        # No Mission without bounds (native run 2026-09-12, adjudication C): with a null
+        # budget a real Planner invents Task budgets far below one model turn and the
+        # Mission cannot succeed.  A blank item takes the deployment default; an item the
+        # person gave stays as written; a non-positive one is refused.  Filled here, before
+        # the facade, so the persisted receipt's spec hash includes the defaults.
+        budget = body.get("budget")
+        if budget is None:
+            budget = {}
+        if not isinstance(budget, Mapping):
+            raise OrchestrationRequestError("invalid_request", "预算必须是一个对象")
+        budget = dict(budget)
+        for name, default in (
+            ("max_tokens", self.settings.default_mission_max_tokens),
+            ("max_attempts", self.settings.default_mission_max_attempts),
+        ):
+            value = budget.get(name)
+            if value is None:
+                budget[name] = default
+            elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise OrchestrationRequestError("invalid_request", f"预算 {name} 必须是正整数")
+        body["budget"] = budget
         if self._test_scenario == "approval-action":
             from agent_orchestrator.testing.fixtures import APPROVAL_SEED
 

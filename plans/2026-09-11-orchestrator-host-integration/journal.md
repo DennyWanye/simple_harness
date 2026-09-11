@@ -128,11 +128,11 @@
 
 | 片 | 提交 | 内容 | 测试结果 |
 |---|---|---|---|
-| H0 | | 计划文档 | — |
-| H1 | | 钉版 0.9.10（计划 §3.2 修订） | 2026-09-12：<br>• 钉版：`pin2.py` 一次完成，wheel sha `f36f467b…93b0`，manifest sha `3d858528…bb1f`，源提交 `7915e40`；导入版本为 `0.9.10 0.9.3`；候选校验通过；新建 installed target `installed-h0910-s0313`；0.8.0 的 wheel 与 manifest 已删除（grep 确认只有它自己的 manifest 引用它）。<br>• 回归（基线命令，三个目录）：68 failed / 943 passed / 1 error，用时 362 s。失败清单与 `baseline-backend-failures.txt` 逐条比对：69 = 69，**0 新红**，也没有意外变绿。<br>• 控制通道 / 启动 / context 相关的 5 个文件：52 passed / 1 skipped，与基线相同，全绿。<br>• 启动冒烟（HA-1 ③）：改在第一次原生启动时一并验收（HA-12 ⑥）。09-10 那次冒烟是手动 `python main.py` 起后端，而 Host CLAUDE.md 禁止手动起 `main.py`，所以这次改由 Tauri bundle 拉起后端。从原生日志与数据副本中核对四项：`/health` 为 200、`startup complete`、`startup_errors=[]`、执行库 `sdk_schema_migrations` 为 `[…, 9, 10]` |
-| H2 | | 后端编排服务 | 2026-09-12，钉 0.9.10 后：`tests/orchestration` 56 passed，1 条被排除（`real_provider`，只在显式 opt-in 时运行），用时 17.8 s。其中包括 HA-8（等人工复核时 SIGKILL，租约过期后同一个 Attempt 完成）和 HA-15（模型调用中途 SIGKILL，界面显示"回合结果未知"，接管后完成） |
-| H3 | | 控制通道协议 | 同上，`test_handlers_contract` 覆盖了全部 12 种消息、信封格式、`approval_id`、`artifact_read`，以及服务不可用时的应答 |
-| H4 | | 前端视图 | 2026-09-12 初版：typecheck 通过；vitest 96 个文件、736 条全部通过（基线 723 条，新增的是编排视图与 store 的测试）；lint 共 161 条，按文件和级别逐一对比，与基线完全一致，新文件和改动过的文件都没有新增问题。<br>评审修复后（含 `useMissionsFeed` 与 P1-5⑤）：typecheck 通过；vitest 97 个文件、**769 条全部通过**；全仓 lint 仍是 161 条，按文件和级别与基线逐一一致；新建和改动的文件都是 0 问题，只有 `App.tsx` 保留原有的 15 条 `no-explicit-any`，数量没有变化 |
+| H0 | `c41a50a9`（此前 `da88f88e`、`a5d879ac`） | 计划文档 | — |
+| H1 | `ed82be6f` | 钉版 0.9.10（计划 §3.2 修订） | 2026-09-12：<br>• 钉版：`pin2.py` 一次完成，wheel sha `f36f467b…93b0`，manifest sha `3d858528…bb1f`，源提交 `7915e40`；导入版本为 `0.9.10 0.9.3`；候选校验通过；新建 installed target `installed-h0910-s0313`；0.8.0 的 wheel 与 manifest 已删除（grep 确认只有它自己的 manifest 引用它）。<br>• 回归（基线命令，三个目录）：68 failed / 943 passed / 1 error，用时 362 s。失败清单与 `baseline-backend-failures.txt` 逐条比对：69 = 69，**0 新红**，也没有意外变绿。<br>• 控制通道 / 启动 / context 相关的 5 个文件：52 passed / 1 skipped，与基线相同，全绿。<br>• 启动冒烟（HA-1 ③）：**PASS**。2026-09-12 原生启动：bundle `SimpleHarness Agent Verify 20c73ca5p18120`，真实数据副本，deepseek-flash。核对结果：<br>　– `/health` 返回 ok，`startup_errors=[]`；<br>　– `native.log` 里有 `startup complete`，编排就绪行为 `orchestration_ready state=available`；<br>　– 执行库迁移记录为 `[7, 9, 10]`；<br>　– 部署清单：`host_commit` 为 `20c73ca5`，`host_dirty=false`，钉版一致（0.9.10 / 0.9.3），模型 `deepseek-flash`（启动时补种的临时 provider "primary"）；<br>　– `native.log` 里密钥模式命中 0。<br>以下是原先的取舍记录：改在第一次原生启动时一并验收（HA-12 ⑥）。09-10 那次冒烟是手动 `python main.py` 起后端，而 Host CLAUDE.md 禁止手动起 `main.py`，所以这次改由 Tauri bundle 拉起后端。从原生日志与数据副本中核对四项：`/health` 为 200、`startup complete`、`startup_errors=[]`、执行库 `sdk_schema_migrations` 为 `[…, 9, 10]` |
+| H2 | `20c73ca5` | 后端编排服务 | 2026-09-12，钉 0.9.10 后：`tests/orchestration` 56 passed，1 条被排除（`real_provider`，只在显式 opt-in 时运行），用时 17.8 s。其中包括 HA-8（等人工复核时 SIGKILL，租约过期后同一个 Attempt 完成）和 HA-15（模型调用中途 SIGKILL，界面显示"回合结果未知"，接管后完成） |
+| H3 | `20c73ca5` | 控制通道协议 | 同上，`test_handlers_contract` 覆盖了全部 12 种消息、信封格式、`approval_id`、`artifact_read`，以及服务不可用时的应答 |
+| H4 | `20c73ca5` | 前端视图 | 2026-09-12 初版：typecheck 通过；vitest 96 个文件、736 条全部通过（基线 723 条，新增的是编排视图与 store 的测试）；lint 共 161 条，按文件和级别逐一对比，与基线完全一致，新文件和改动过的文件都没有新增问题。<br>评审修复后（含 `useMissionsFeed` 与 P1-5⑤）：typecheck 通过；vitest 97 个文件、**769 条全部通过**；全仓 lint 仍是 161 条，按文件和级别与基线逐一一致；新建和改动的文件都是 0 问题，只有 `App.tsx` 保留原有的 15 条 `no-explicit-any`，数量没有变化 |
 | H5 | | 真实模型、原生验收、文档 | |
 
 ## 3. Host 装配位置登记（按 ORCH-BUILD 第 15 行）
@@ -178,9 +178,71 @@
 
 HA-11 判定为通过，报告见 `reports/real-run1.md`。
 
+### 4.3 HA-12 原生 App（AX 驱动）
+
+环境：bundle `SimpleHarness Agent Verify 20c73ca5p18120`，bundle id `com.dennywanye.simpleharness.verify091220c73ca5p18120`，从干净提交 `20c73ca5` 构建。用的是真实数据副本 `.local-test-evidence/2026-09-12/native-ui-0910/prod/userdata`，模型 deepseek-flash。
+
+- 启动时，启动脚本在 bash 3.2 下遇到 `set -u` 加空数组的写法报错退出，改用 `${EXTRA[@]+...}` 后正常。这是测试工具自身的问题，与产品无关。
+- WebView 要等 App 被激活后，网页内容才会出现在 AX 树里。`ax_click*.sh` 执行时会先激活 App。
+- **⑥ PASS**：启动冒烟见 §2 H1 行；编排服务状态为 `available`。
+- **① PASS**：侧栏"任务编排"用前缀匹配点中后，视图出现：有"新建 Mission"按钮、空态提示"还没有 Mission。点「新建 Mission」开始。"，还有只读策略卡，显示当前版本 `policy-5a04e242b3683c61`。数据副本带出了首次使用引导（"欢迎使用 Simple Harness"），用 AX 点"跳过"关掉。
+- **② 第一个 Mission：到了终态，但结果是 FAILED**。用 AX 新建：点"新建 Mission"，填写目标（SUMMARY.md，内容与 HA-11 相同）和两条成功条件，点"提交 Mission"。列表行立即显示"请求已接收"，详情里有"取消 Mission"、"评论"，金额显示"未计价"。表单里预算留空，所以 Mission 的 budget 全是 null（不设上限）。
+  - 真实模型 Planner 给两个 Task 分的预算是 1200 和 800 tokens。task-1 完成；task-2 的 Worker 预留 800，实际结算 22003。Critic 因此拿不到预算，critic_review 记为 ERROR，接着 `TaskFailed budget_exhausted`，Mission 以 FAILED 结束，`stop_reason=budget_exhausted`。
+  - 这是如实记录的终态，但对不填预算的用户来说，这个 Mission 注定失败。怎么处理（Host 填默认预算、SDK 设预算下限，或两者都做），交给独立评审子代理裁决，见 §4.4。
+- **③ 第一次尝试：未完成**。Mission 运行期间，在"主对话"用 `send.sh` 发了一句"你好，请用一句话介绍你自己。"，界面停在"已领取，等待执行进展 / 正在等待执行绑定"。`native.log` 显示前台运行时连续 4 次 `foreground_provider_context_window_unavailable`，随后 stalled，执行库里也没有新的 run。
+  - 原因在测试环境：真实数据目录里没有 `model_overrides.toml`，所以 Host 不知道 `deepseek-flash` 的上下文窗口。用户 2026-09-09 的决定是：原生旅程用 flash 时，要在 `model_overrides.toml` 里钉 32000 窗口。这与编排无关。
+  - 处置：在副本里写 `model_overrides.toml` 后重启重做。这次重启同时用来检查 ④：退出后重启，已结束的 Mission 应当还在，状态一致。
+- **④ 已结束 Mission 的持久化：PASS**。用 AX 触发 App 正常退出，Tauri 用 SIGKILL 结束后端，18120 端口约 1 s 释放。第一次重新启动时，启动器报端口占用，是短暂的 TIME_WAIT，等端口能绑定后再启动就正常了。
+  - 用同一份数据重启后：`/health` 为 ok，`startup_errors=[]`，编排服务 `available`。
+  - "任务编排"列表里仍是那个 Mission，显示"失败"。详情为"状态：失败 · 停止原因：budget_exhausted"，另有：策略版本、Token 预留 2000、金额未计价；两个 Task 的目标都标"模型生成，未核实"，状态分别为 COMPLETED 和 FAILED；各验证层按原样显示。"取消 Mission"是禁用状态，因为 Mission 已经结束。
+  - 编排库与重启前一致：1 个 Mission 为 FAILED，commit 回执 1 条。
+  - 观察，记为 SDK 后续事项：Mission 已经 FAILED，task-2 的 Attempt 却还是 `RETRY_WAIT`，Mission 失败时没有把在途 Attempt 转入终态。界面不受影响，因为界面以 Mission 状态为准。
+- **② PASS（第二个 Mission）**：
+  - 用 AX 新建，这次在表单里填了"Token 上限"400000、"尝试次数上限"3，编排库里的预算与表单一致。
+  - 列表行先显示"请求已接收"，之后变成"正式交付"；详情为"状态：正式交付 · 停止原因：verification_passed"。
+  - 编排库里：Mission 为 COMPLETED，时间从 1789145846.99 到 1789145862.29。
+- **HA-23（原生）PASS**：
+  - 详情的产物区显示"NOTES.md · 269 B · 验证：UNVERIFIED · 7ea07898712e"。
+  - 点"查看产物"后显示：完整 hash `7ea07898…5960f`、大小 269 B，以及全文三条中文——新建 Mission、查看进度、人工审批，每条一句——并标"模型生成，未核实"。
+  - 观察，待确认：Mission 已经正式交付，产物的 `verification_status` 仍是 UNVERIFIED。SDK 里产物状态与结果验证是分开记的，界面照原样显示，没有改写。
+- **③ PASS（重做）**：
+  - 写入 `model_overrides.toml`（`deepseek-flash` 和 `deepseek-v4-flash` 都钉 32000）后重启。
+  - 第二个 Mission 运行期间，在"主对话"发了一句话。执行库里新 run `product-sdk-e8551c33…` 在 1789145859.76 创建，1789145862.94 completed。
+  - 创建时间落在 Mission 运行区间之内，也就是编排运行期间，主对话完成了一轮。
+
+### 4.4 裁决：没填预算的 Mission（独立评审子代理，2026-09-12）
+
+问题：界面留空预算时，Mission 的预算全为 null。真实 Planner 只能凭空编 Task 预算（1200 / 800），而 SDK 只检查上限、不检查下限。Worker 的预留只是记账，实际一轮就花了 22003；Critic 还要从同一个账户再预留 6000。所以这样的 Mission 在结构上注定失败。
+
+裁决：**选 C**。
+- 本轮 Host 门口补默认预算（A）：
+  - max_tokens 400000，依据是 HA-11 两次都用这个值跑通；
+  - max_attempts 12，因为 Mission 级的次数统计的是所有 Task 的全部 Worker Attempt，设成 3 的话，有 3 个 Task 时第一次重试就会失败；
+  - 只补空缺项，用户填了的值原样保留，0、负数、非整数照旧拒绝；
+  - 在 facade 之前补，这样回执的 spec hash 就包含默认值；
+  - 默认值由 `orchestration_status` 下发，表单占位符显示出来，详情显示实际生效的预算。
+- SDK 的 Task 预算下限（B）记为后续任务，见 §5。
+- 不接受 D（只记录不处理），理由是 P3.1 的退出门槛要求一个 Mission 从创建到正式产物完整可操作，而留空预算是最常见的路径。
+
+实现与测试：
+- `settings.py` 新增 `default_mission_max_tokens` / `default_mission_max_attempts`；
+- `service._door` 负责补默认值与校验；
+- `status()` 下发 `mission_budget_defaults`；
+- 新增 `tests/orchestration/test_mission_budget_default.py`：6 种补默认的情形、5 种拒绝的情形、留空预算重试时回执不变、status 带默认值；
+- 前端：占位符显示下发的默认值，详情显示实际生效的预算；
+- 修复提交后，再做一次原生验收：界面留空预算建一个 Mission。
+
 ## 5. 遗留
 
-（待填）
+| 编号 | 事项 | 归属 | 说明 |
+|---|---|---|---|
+| F-ORCH-1 | SDK 给 Task 预算加下限 | SDK，建议挂在 P3.4 或 P3.5 | 裁决 §4.4 的 B：<br>• 在任务图 gate（`validate`）和图变更（`graph/changes.py`）两处加下限，下限等于一轮模型调用的最低开销，验证政策含 critic_review 时再加上 critic 的预留；<br>• 低于下限时返回 `GraphRejected("budget", …)`，让 Planner 重新规划，系统不替它编一个数；<br>• Mission 预算为 null 时，把 `min_task_tokens` 放进 Planner 的输入；<br>• 实际结算远超预留时（这次是 27 倍）记为可观测事件；<br>• 按 SDK 流程做：测试先行、全量回归、wheel、Host 重钉。<br>Host 的默认预算只是降低概率，Planner 在有额度时仍可能写出过小的值 |
+| F-ORCH-2 | Mission 失败时，在途 Attempt 没有转入终态 | SDK | 原生验收时，Mission 以 `budget_exhausted` 结束为 FAILED，task-2 的 Attempt 却还是 `RETRY_WAIT`，重启后也没变。界面以 Mission 状态为准，所以不受影响 |
+| F-ORCH-3 | 产物的验证状态停在 UNVERIFIED | SDK，待确认 | Mission 已经正式交付，产物的 `verification_status` 仍是 UNVERIFIED。要确认这是 SDK 设计上的"产物级状态与结果验证分开记"，还是漏了回写；界面照原样显示 |
+| F-ORCH-4 | 模型调用中途被杀后要人工接管 | SDK，P3.5 | SDK 不会自动收敛"回合结果未知"。租约 2 s 时约 6 s 显示出来；默认租约 60 s 下的时长还没有在原生 App 里测 |
+| F-ORCH-5 | 本机执行测试的开关不开放 | P3.2 | 等 P3.2 的隔离执行交付后才开放 |
+| F-ORCH-6 | PyInstaller 打包 spec 仍停在 0.6.4 | Host | 本轮不涉及冻结打包；原生验收用的是 dev bundle 加源码后端 |
+| F-ORCH-7 | 评论入口只评论 Mission | Host | Task 与审批请求的单独评论入口没做；SDK 已经支持 |
 
 ## 6. 结论
 

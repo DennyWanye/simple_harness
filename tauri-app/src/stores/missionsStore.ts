@@ -56,6 +56,8 @@ export interface OrchestrationStatus {
   active_missions?: number;
   allowed_tools?: string[];
   test_scenario?: string | null;
+  /** 部署默认预算：表单留空的项由后端按它补齐（没有无上限的 Mission）。 */
+  mission_budget_defaults?: { max_tokens: number; max_attempts: number } | null;
 }
 
 type Json = Record<string, unknown>;

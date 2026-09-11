@@ -613,3 +613,32 @@ describe("P1-5⑤ 卡住但未判 blocked 的 Task 也能接管", () => {
     expect(screen.queryByRole("button", { name: "接管这个 Task" })).toBeNull();
   });
 });
+
+describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
+  it("占位符显示后端下发的默认值，留空时请求里不带 budget", () => {
+    const channel = new FakeChannel();
+    render(<Workbench channel={channel} />);
+    channel.reply("orchestration_status", { ...AVAILABLE, mission_budget_defaults: { max_tokens: 400000, max_attempts: 12 } });
+    channel.reply("mission_list", { missions: [] });
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toBe("Token 上限（留空=400000）");
+    expect(screen.getByLabelText("尝试次数上限").getAttribute("placeholder")).toBe("尝试次数上限（留空=12）");
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "写 NOTES.md" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:NOTES.md" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    const payload = channel.last("mission_create")?.payload as Record<string, unknown>;
+    expect(payload.goal).toBe("写 NOTES.md");
+    expect("budget" in payload).toBe(false); // the Host decides the defaults, the form never guesses
+  });
+
+  it("没有下发默认值时，占位符仍是「可选」", () => {
+    renderAvailable();
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toBe("Token 上限（可选）");
+  });
+
+  it("详情显示实际生效的预算", () => {
+    openMission({ ...DETAIL, mission: { ...DETAIL.mission, budget: { max_tokens: 400000, max_attempts: 12 } } });
+    expect(screen.getByTestId("mission-budget").textContent).toBe("预算：Token 上限 400000 · 尝试次数上限 12");
+  });
+});

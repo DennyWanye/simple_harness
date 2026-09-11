@@ -594,8 +594,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <label htmlFor="mission-criteria">成功条件（每行一条）</label>
             <textarea id="mission-criteria" aria-label="成功条件" style={field} value={criteria} onChange={(e) => setCriteria(e.target.value)} />
             <div style={{ display: "flex", gap: tokens.space.sm }}>
-              <input aria-label="Token 上限" placeholder="Token 上限（可选）" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
-              <input aria-label="尝试次数上限" placeholder="尝试次数上限（可选）" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
+              <input aria-label="Token 上限" placeholder={status?.mission_budget_defaults ? `Token 上限（留空=${status.mission_budget_defaults.max_tokens}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
+              <input aria-label="尝试次数上限" placeholder={status?.mission_budget_defaults ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）` : "尝试次数上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
             </div>
             <button type="button" style={button} disabled={!submittable} onClick={submit}>
               提交 Mission
@@ -619,6 +619,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               </div>
               <div style={muted}>
                 Token 预留 {text(record(detail.usage).reserved_tokens) || "0"} · 金额 未计价
+              </div>
+              <div style={muted} data-testid="mission-budget">
+                {`预算：Token 上限 ${text(record(mission.budget).max_tokens) || "—"} · 尝试次数上限 ${text(record(mission.budget).max_attempts) || "—"}`}
               </div>
               {waiting.length ? (
                 <div aria-label="等待原因" style={{ marginTop: tokens.space.sm }}>
