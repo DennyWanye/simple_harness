@@ -1,0 +1,12 @@
+{
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.9.10",
+  "commit": "7915e40a833dcf2cc32e2832b571c720e90c63b3",
+  "artifacts": {
+    "simple_harness_sdk-0.9.10-py3-none-any.whl": "f36f467b09a225f2c0c1607772bc1f80b80377a9f4f88e0187722f6d812a93b0"
+  },
+  "build_count": 1,
+  "execution_schema": 10,
+  "source_date_epoch": "1789142477",
+  "scope": "agent_orchestrator 0.9.3 host support: local code execution switch, deployment-aware create_mission, P3.1 external control facade (review rounds 1-2 fixed)"
+}
