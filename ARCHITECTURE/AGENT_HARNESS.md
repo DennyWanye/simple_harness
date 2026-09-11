@@ -1,3 +1,7 @@
+2026-09-12 Harness SDK 钉版 0.9.10 → 0.9.11（SDK 源提交 `cfbd88d`，wheel sha256 `7a34e6df…e867`）。
+- 这次是 Phase3 的 P3.1 遗留修复，改动全部在 `agent_orchestrator` 0.9.4 里：Task 预算下限、产物验证状态回写，见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md) §8。
+- 按 `7915e40..cfbd88d` 核对，`simple_harness` 包只改了版本号，主对话 Harness 没有任何变化。
+
 2026-09-12 Harness SDK 钉版 0.8.0 → 0.9.10（`plans/2026-09-11-orchestrator-host-integration/`）。
 - 改钉的原因是接入 Agent 编排（见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)）。编排框架 `agent_orchestrator` 0.9.3 与 `simple_harness` 同在一个 wheel 里。
 - 对主对话 Harness 的影响（按 SDK 源提交 `dffd13c8..7915e40` 核对）：`simple_harness` 包里只有一处代码改动，即 `SqliteExecutionUnitOfWork.list_provider_invocations(run_id)`。这是新增的只读查询，供编排层核对模型实际费用。此外只改了版本号。主对话的 Kernel、Driver、Effect、授权与持久化代码都没有变化。

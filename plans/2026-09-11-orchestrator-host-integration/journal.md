@@ -270,9 +270,9 @@ HA-11 判定为通过，报告见 `reports/real-run1.md`。
 
 | 编号 | 事项 | 归属 | 说明 |
 |---|---|---|---|
-| F-ORCH-1 | SDK 给 Task 预算加下限 | SDK，建议挂在 P3.4 或 P3.5 | 裁决 §4.4 的 B：<br>• 在任务图 gate（`validate`）和图变更（`graph/changes.py`）两处加下限，下限等于一轮模型调用的最低开销，验证政策含 critic_review 时再加上 critic 的预留；<br>• 低于下限时返回 `GraphRejected("budget", …)`，让 Planner 重新规划，系统不替它编一个数；<br>• Mission 预算为 null 时，把 `min_task_tokens` 放进 Planner 的输入；<br>• 实际结算远超预留时（这次是 27 倍）记为可观测事件；<br>• 按 SDK 流程做：测试先行、全量回归、wheel、Host 重钉。<br>Host 的默认预算只是降低概率，Planner 在有额度时仍可能写出过小的值 |
-| F-ORCH-2 | Mission 失败时，在途 Attempt 没有转入终态 | SDK | 原生验收时，Mission 以 `budget_exhausted` 结束为 FAILED，task-2 的 Attempt 却还是 `RETRY_WAIT`，重启后也没变。界面以 Mission 状态为准，所以不受影响 |
-| F-ORCH-3 | 产物的验证状态停在 UNVERIFIED | SDK，待确认 | Mission 已经正式交付，产物的 `verification_status` 仍是 UNVERIFIED。要确认这是 SDK 设计上的"产物级状态与结果验证分开记"，还是漏了回写；界面照原样显示 |
+| F-ORCH-1 | SDK 给 Task 预算加下限 | ✅ **已修（2026-09-12，SDK 0.9.11 / agent_orchestrator 0.9.4，`a84e2a4`；Host 已钉 0.9.11）**。下限为 k×(base+critic)，初始图和图变更两处都检查；Planner 与 Manager 的输入里写明下限。记录见 SDK `plans/2026-09-12-phase3/p31-fixes/`。超支事件留到 P3.5 | 原登记内容——裁决 §4.4 的 B：<br>• 在任务图 gate（`validate`）和图变更（`graph/changes.py`）两处加下限，下限等于一轮模型调用的最低开销，验证政策含 critic_review 时再加上 critic 的预留；<br>• 低于下限时返回 `GraphRejected("budget", …)`，让 Planner 重新规划，系统不替它编一个数；<br>• Mission 预算为 null 时，把 `min_task_tokens` 放进 Planner 的输入；<br>• 实际结算远超预留时（这次是 27 倍）记为可观测事件；<br>• 按 SDK 流程做：测试先行、全量回归、wheel、Host 重钉。<br>Host 的默认预算只是降低概率，Planner 在有额度时仍可能写出过小的值 |
+| F-ORCH-2 | Mission 失败时，在途 Attempt 没有转入终态 | ✅ **设计如此，已写明（2026-09-12）**：RETRY_WAIT 就是失败 Attempt 的终态（原文 §25.2，理论第 09 章），重试时另起新的 Attempt。计划评审已确认；ARCHITECTURE §8 已写明 | 原生验收时，Mission 以 `budget_exhausted` 结束为 FAILED，task-2 的 Attempt 却还是 `RETRY_WAIT`，重启后也没变。界面以 Mission 状态为准，所以不受影响 |
+| F-ORCH-3 | 产物的验证状态停在 UNVERIFIED | ✅ **已修（SDK 0.9.11）**：原先是一个没人写的字段。现在结果被接受时标 VERIFIED，被判 FAIL 时标 REJECTED，都在对应的提交事务里完成；被取代的候选保持 UNVERIFIED | Mission 已经正式交付，产物的 `verification_status` 仍是 UNVERIFIED。要确认这是 SDK 设计上的"产物级状态与结果验证分开记"，还是漏了回写；界面照原样显示 |
 | F-ORCH-4 | 模型调用中途被杀后要人工接管 | SDK，P3.5 | SDK 不会自动收敛"回合结果未知"。租约 2 s 时约 6 s 显示出来；默认租约 60 s 下的时长还没有在原生 App 里测 |
 | F-ORCH-5 | 本机执行测试的开关不开放 | P3.2 | 等 P3.2 的隔离执行交付后才开放 |
 | F-ORCH-6 | PyInstaller 打包 spec 仍停在 0.6.4 | Host | 本轮不涉及冻结打包；原生验收用的是 dev bundle 加源码后端 |

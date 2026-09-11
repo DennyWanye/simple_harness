@@ -85,6 +85,16 @@
 - provider 在启动时对 `get_chain()` 的第一个启用项做一次快照，之后换 provider 需要重启才生效。
 - DeepSeek 官方端点把 `deepseek-v4-flash` 映射为 `deepseek-flash`，status 里同时显示两个 id。
 - 没有注入价目表：金额记为 null，界面显示"未计价"，不写成 0。
+- **Task 预算下限**（SDK 0.9.11 起，F-ORCH-1）：
+  - Graph Manager 会拒绝预算低于 `k × (base + critic)` 的 Task。k 是每个 Task 的候选数；base 是单轮最多产出的 token 数，这个部署是 8192；critic 部分只在验证政策含 critic_review 时计入，是 Critic 的预留 6000。
+  - 被拒后，Planner / Manager 会收到原因（`task_budget_below_floor`）并重新规划，系统不会替它们编一个数。它们的输入里也写明了下限。
+  - 下限只是必要条件，不能保证之后的修复和重试都付得起。
+  - 这与 Host 门口的默认预算（见 §7）是两道互补的保护。
+- **产物的验证状态**（SDK 0.9.11 起，F-ORCH-3），在对应的提交事务里一并写入：
+  - 结果被接受：VERIFIED；
+  - 结果被判 FAIL：REJECTED；
+  - 被取代的候选：保持 UNVERIFIED。
+- **Attempt 的 RETRY_WAIT**：这是失败 Attempt 的终态。原文 §25.2 没有 Attempt 的 FAILED 状态，重试的时候另起一个新 Attempt。所以 Mission 结束后，个别 Attempt 停在 RETRY_WAIT 是设计如此，不是还在排队重试。
 
 ## 9. 部署清单（P3.1-A08）
 
