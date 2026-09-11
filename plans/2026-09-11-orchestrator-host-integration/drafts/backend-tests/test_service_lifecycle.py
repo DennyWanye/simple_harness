@@ -84,6 +84,37 @@ async def test_start_failure_is_isolated(tmp_path, principal):
 
 
 @pytest.mark.asyncio
+async def test_no_model_configured_is_unavailable_not_a_crash(orchestration_root, principal):
+    """HA-17: a fresh install has no provider chain; the chat still starts."""
+
+    service = OrchestrationService(
+        orchestration_root, OrchestrationSettings(), provider=None, principal=principal
+    )
+    await service.start()
+    try:
+        status = service.status()
+        assert status["available"] is False and "未配置模型" in status["reason"]
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_each_process_has_its_own_owner(orchestration_root, principal):
+    """Plan review P0-2: owner = deskpet-orchestrator-<pid>-<random>, never shared."""
+
+    service = OrchestrationService(
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal
+    )
+    await service.start()
+    try:
+        owner = service.owner
+        assert owner.startswith(f"deskpet-orchestrator-{os.getpid()}-")
+        assert len(owner.rsplit("-", 1)[-1]) >= 8
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
 async def test_driver_loop_runs_a_mission_without_being_asked(orchestration_root, principal):
     service = OrchestrationService(
         orchestration_root,

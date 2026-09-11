@@ -19,7 +19,7 @@ from deskpet.orchestration.service import (
     OrchestrationSettings,
 )
 
-from ._support import notes_request, review_provider
+from ._support import judgment_provider, judgment_request, notes_request, review_provider
 
 
 def _approval_request(key: str) -> dict:
@@ -84,7 +84,9 @@ async def test_reject_needs_a_reason_and_never_runs_the_action(orchestration_roo
         await service.drain()
         detail = service.mission_detail(created["mission_id"])
         assert [a["state"] for a in detail["actions"]] == ["REJECTED"]  # never handed off
-        assert detail["mission"]["status"] != "COMPLETED"  # the action criterion is unmet
+        # the SDK step-7 semantics, fixed in the protocol (plan review P1-3)
+        assert detail["mission"]["status"] == "FAILED"
+        assert detail["mission"]["stop_reason"] == "approval_rejected"
     finally:
         await service.close()
 
@@ -145,6 +147,34 @@ async def test_secret_in_reason_or_comment_is_refused_and_not_written(
             service.comment(created["mission_id"], f"记一下 {secret}")
         assert service.approvals(created["mission_id"])[0]["state"] == "PENDING"
         assert secret not in str(service.mission_detail(created["mission_id"]))
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_a_judgment_disagreement_is_arbitrated_by_a_person(orchestration_root, principal):
+    """HA-19: the Task Critics say met, the independent judge says unmet → arbitration."""
+
+    service = OrchestrationService(
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=judgment_provider(),
+        principal=principal,
+        drive=False,
+    )
+    await service.start()
+    try:
+        created = service.create_mission(judgment_request("k-judge"))
+        await service.drain()
+        pending = service.approvals(created["mission_id"])
+        assert [p["kind"] for p in pending] == ["arbitration"]
+        request_id = pending[0]["request_id"]
+        with pytest.raises(OrchestrationRequestError) as refused:
+            service.decide(request_id, "arbitrate", ruling="met", basis="  ")
+        assert refused.value.code == "invalid_request"  # the basis is required
+        service.decide(request_id, "arbitrate", ruling="met", basis="我读过 A.md 与 B.md，要点齐全")
+        await service.drain()
+        assert service.mission_detail(created["mission_id"])["mission"]["status"] == "COMPLETED"
     finally:
         await service.close()
 

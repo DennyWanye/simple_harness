@@ -111,3 +111,77 @@ def review_provider() -> RoleScriptedProvider:
 def mission_count(root: Path) -> int:
     with sqlite3.connect(root / "orchestrator.db") as db:
         return int(db.execute("SELECT COUNT(*) FROM missions").fetchone()[0])
+
+
+def pending_approval_kinds(root: Path) -> list[str]:
+    """Read-only peek used by a parent process watching a child service."""
+
+    path = root / "orchestrator.db"
+    if not path.exists():
+        return []
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
+        try:
+            rows = db.execute("SELECT json FROM approvals").fetchall()
+        except sqlite3.OperationalError:
+            return []
+    kinds = []
+    for (raw,) in rows:
+        request = json.loads(raw)
+        if request.get("state") == "PENDING":
+            kinds.append(str(request.get("kind")))
+    return kinds
+
+
+def judgment_task(key: str, deps: list[str]) -> dict[str, Any]:
+    return {
+        **NOTES_TASK,
+        "key": key,
+        "goal": f"写 {key}.md，列出三个要点",
+        "dependencies": deps,
+        "success_criteria": [f"file:{key}.md"],
+        "outputs": [f"{key}.md"],
+    }
+
+
+def judgment_provider() -> RoleScriptedProvider:
+    """Two Tasks A → B whose own Critics say the Mission criterion is met while the
+    independent judge Critic says it is not: plan D7-8' kind ② — a person arbitrates."""
+
+    def worker(key: str) -> list[object]:
+        return [
+            ("workspace_write_file", {"path": f"{key}.md", "content": "- 一\n- 二\n- 三\n"}),
+            envelope_step(summary=f"写好了 {key}.md", artifacts=[f"{key}.md"], claims=[f"{key}.md 有三个要点"]),
+        ]
+
+    return RoleScriptedProvider(
+        {
+            "planner": [graph_proposal_step([judgment_task("A", []), judgment_task("B", ["A"])])],
+            "worker": worker("A") + worker("B"),
+            "critic": [
+                critic_step(verdict="PASS", criteria_met=True),  # Task A
+                critic_step(verdict="PASS", criteria_met=True),  # Task B
+                critic_step(verdict="PASS", criteria_met=False),  # the independent judge
+                critic_step(verdict="PASS", criteria_met=True),
+            ],
+        }
+    )
+
+
+def judgment_request(key: str) -> dict[str, Any]:
+    return notes_request(key, success_criteria=["要点齐全、表述清楚"])
+
+
+def blocking_worker_provider(marker: Path) -> RoleScriptedProvider:
+    """The Worker's first model call writes ``marker`` and then never returns — the
+    process is killed in the middle of a provider call (plan review P0-3, HA-15)."""
+
+    def blocked(_request):  # type: ignore[no-untyped-def]
+        marker.write_text("in provider call", encoding="utf-8")
+        import time
+
+        time.sleep(3600)
+        return ""
+
+    return RoleScriptedProvider(
+        {"planner": [graph_proposal_step([NOTES_TASK])], "worker": [blocked], "critic": []}
+    )

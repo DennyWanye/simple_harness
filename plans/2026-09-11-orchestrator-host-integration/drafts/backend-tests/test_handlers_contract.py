@@ -28,6 +28,7 @@ def test_message_types_are_the_planned_set():
         "mission_cancel",
         "mission_approval_list",
         "mission_approval_decide",
+        "mission_takeover",
         "mission_comment",
         "orchestration_policy_status",
     }
@@ -66,6 +67,9 @@ async def test_create_then_get_round_trip(orchestration_root, principal):
         ("mission_create", {"goal": "", "success_criteria": []}, "invalid_request"),
         ("mission_events", {"mission_id": "x", "after_seq": -1}, "invalid_request"),
         ("mission_approval_decide", {"request_id": "x", "decision": "maybe"}, "invalid_request"),
+        ("mission_approval_decide", {"request_id": "x", "decision": "reject"}, "invalid_request"),
+        ("mission_takeover", {"task_id": "x", "action": "stop", "basis": " "}, "invalid_request"),
+        ("mission_takeover", {"task_id": "x", "action": "revive", "basis": "b"}, "invalid_request"),
     ],
 )
 async def test_errors_are_coded_and_never_raise(

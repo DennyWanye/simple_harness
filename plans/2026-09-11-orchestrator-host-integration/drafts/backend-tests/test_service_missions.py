@@ -52,6 +52,11 @@ async def test_create_runs_to_completed_and_is_idempotent(orchestration_root, pr
         ({"goal": "   "}, "invalid_request"),
         ({"success_criteria": []}, "invalid_request"),
         ({"success_criteria": ["pytest:tests/test_x.py"]}, "local_tests_disabled"),
+        # HA-18: no connector is enabled in the product; an action criterion could never be met
+        (
+            {"success_criteria": ["file:NOTES.md", "action:test_config.set:feature_flags.new_ui"]},
+            "action_criteria_disabled",
+        ),
         ({"goal": "用这个密钥 sk-" + "a" * 32 + " 调接口"}, "secret_rejected"),
         ({"success_criteria": ["结果里写上 sk-" + "b" * 32]}, "secret_rejected"),
     ],

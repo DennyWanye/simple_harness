@@ -18,7 +18,12 @@
     - `backend-tests/`：到 H2 时复制到 `backend/tests/orchestration/`。工作副本也在那里，还没有跟踪。
     - `frontend/`：到 H4 时复制到 `tauri-app/src/`。
     - `ui-scripts/`：第一阶段的 AX 驱动脚本，H5 用。
-    草稿还要按第 2 版计划调整：锁、owner、SIGKILL 子进程测试、`mission_takeover`、测试场景目录、`Orchestrator.create_mission`。
+    后端草稿已按第 2 版计划调整：
+    - 实例锁（HA-16）、每个进程独立的 owner、没有模型时不可用（HA-17）、`action:` 条件在门口被拒（HA-18）；
+    - SIGKILL 子进程测试（`_child_service.py`）：HA-8 在等人工复核时杀进程，HA-15 在模型调用中途杀进程，然后接管；
+    - `mission_takeover`、测试场景的两道门槛与独立目录（HA-20）、判定分歧的仲裁（HA-19）、拒绝后 FAILED + `approval_rejected`、并发写入（HA-21）。
+    设计注记：scripted provider 的步骤在事件循环线程里同步执行，所以测试不能在步骤里阻塞。模型调用中途被杀的场景放在子进程里用 `time.sleep` 模拟。
+  - SDK S1 进度：`627b90e` 已推送（0.9.8 / 0.9.1，host_support 18 条全绿，ruff 与 mypy 干净）。全量回归与独立代码评审都在进行中，下一步按结果处置，然后构建 wheel。
   - SDK 切片 S1 的计划在 SDK 仓库 `plans/2026-09-11-agent-orchestrator/host-support-0.9.8/plan.md`。关键取舍：本机代码执行关闭时，不创建冲突 Task，冲突走 DEFERRED。原因是冲突 Task 本身要在本机跑探针测试，只去掉 code_test 会留下没运行过的"假证据"。
   - 用户规则：真实模型测试一律用 deepseek-flash；额度快用完时先写 handoff，再提交推送。
 - 接手须知：凭证只从 `.local-test-evidence/2026-09-07/credentials/deepseek.env` 读取，不打印；只用 deepseek-flash；App 运行时不跑 `tests/sdk_adapters/test_composition.py`。

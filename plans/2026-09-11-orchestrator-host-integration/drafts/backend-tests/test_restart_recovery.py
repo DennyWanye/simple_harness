@@ -1,98 +1,154 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""HA-8: an App restart continues the Mission (original §16.4 Durable Execution).
+"""HA-8 / HA-15: an App quit is a SIGKILL (Tauri ``child.kill()``, plan review P0-3), so
+recovery may never depend on ``close()``.  The service runs in a child process, the test
+kills it with ``kill -9`` and starts a new service (a new owner) on the same directory.
 
-Draft written before the implementation (plan 2026-09-11 H2).  A finished Task is never
-re-run and an Attempt's usage is imported at most once.
+* HA-8  — killed while the Mission waits on a person (every turn committed): the new
+  process continues it; finished work is not re-run, each usage is imported once.
+* HA-15 — killed in the middle of a model call: the turn's outcome is unknown; the new
+  process shows that honestly (never "running normally" forever) and a takeover moves on.
+
+Draft written before the implementation (plan 2026-09-11 H2).
 """
 
 from __future__ import annotations
 
-import asyncio
+import os
+import signal
 import sqlite3
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pytest
 
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider, critic_step
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
-from ._support import notes_provider, notes_request
+from ._support import (
+    NOTES_TASK,  # noqa: F401 - documents the scripted Task shape
+    _notes_worker,
+    pending_approval_kinds,
+)
+
+BACKEND = Path(__file__).resolve().parents[2]
 
 
-def _rows(root, sql: str) -> list[tuple]:  # type: ignore[no-untyped-def]
-    with sqlite3.connect(root / "orchestrator.db") as db:
-        return list(db.execute(sql).fetchall())
+def _spawn(root: Path, scenario: str, marker: Path) -> subprocess.Popen:
+    return subprocess.Popen(
+        [sys.executable, "-m", "tests.orchestration._child_service", str(root), scenario, str(marker)],
+        cwd=BACKEND,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+
+def _wait(predicate, seconds: float, what: str) -> None:  # type: ignore[no-untyped-def]
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"timed out waiting for {what}")
+
+
+def _kill9(child: subprocess.Popen) -> None:
+    os.kill(child.pid, signal.SIGKILL)
+    child.wait(timeout=10)
+    assert child.returncode == -signal.SIGKILL
+
+
+def _usage_refs(root: Path) -> list[str]:
+    with sqlite3.connect(f"file:{root / 'orchestrator.db'}?mode=ro", uri=True) as db:
+        try:
+            rows = db.execute("SELECT usage_ref FROM cost_imports").fetchall()
+        except sqlite3.OperationalError:
+            return []
+    return [str(r[0]) for r in rows if r[0] is not None]
+
+
+def _restarted(root: Path, provider: RoleScriptedProvider, principal) -> OrchestrationService:  # type: ignore[no-untyped-def]
+    return OrchestrationService(
+        root,
+        OrchestrationSettings(lease_seconds=2.0),
+        provider=provider,
+        principal=principal,
+        drive=False,
+    )
 
 
 @pytest.mark.asyncio
-async def test_restart_before_any_work_continues_to_completed(orchestration_root, principal):
-    first = OrchestrationService(
-        orchestration_root,
-        OrchestrationSettings(),
-        provider=notes_provider(),
-        principal=principal,
-        drive=False,
-    )
-    await first.start()
-    created = first.create_mission(notes_request("k-restart-0"))
-    await first.close()  # the App quits before the loop ever ran
-
-    second = OrchestrationService(
-        orchestration_root,
-        OrchestrationSettings(),
-        provider=notes_provider(),
-        principal=principal,
-        drive=False,
-    )
-    await second.start()
+async def test_killed_while_waiting_on_a_person_continues_without_rerunning(
+    orchestration_root, principal, tmp_path
+):
+    marker = tmp_path / "review.marker"
+    child = _spawn(orchestration_root, "review", marker)
     try:
-        await second.drain()
-        assert second.mission_detail(created["mission_id"])["mission"]["status"] == "COMPLETED"
+        _wait(lambda: pending_approval_kinds(orchestration_root) == ["review"], 60, "a review request")
     finally:
-        await second.close()
+        _kill9(child)
 
-
-@pytest.mark.asyncio
-async def test_restart_mid_mission_does_not_rerun_finished_work(orchestration_root, principal):
-    first = OrchestrationService(
+    service = _restarted(
         orchestration_root,
-        OrchestrationSettings(tick_active_seconds=0.05, tick_idle_seconds=0.2),
-        provider=notes_provider(),
-        principal=principal,
+        RoleScriptedProvider({"critic": [critic_step(verdict="PASS", criteria_met=True)] * 3}),
+        principal,
     )
-    await first.start()
-    created = first.create_mission(notes_request("k-restart-1"))
-    deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:  # stop as soon as the Attempt exists
-        if first.mission_detail(created["mission_id"])["attempts"]:
-            break
-        await asyncio.sleep(0.02)
-    await first.close()
-
-    second = OrchestrationService(
-        orchestration_root,
-        OrchestrationSettings(),
-        provider=notes_provider(),
-        principal=principal,
-        drive=False,
-    )
-    await second.start()
+    await service.start()
     try:
-        await second.drain()
-        detail = second.mission_detail(created["mission_id"])
+        assert service.owner.startswith("deskpet-orchestrator-")
+        assert service.owner != (tmp_path / "review.marker.started").read_text(encoding="utf-8")
+        mission_id = service.list_missions()[0]["id"]
+        request = service.approvals(mission_id)[0]
+        service.decide(request["request_id"], "review_pass", note="看过了")
+        await service.drain(timeout=60)
+        detail = service.mission_detail(mission_id)
         assert detail["mission"]["status"] == "COMPLETED"
-        completed = [t for t in detail["tasks"] if t["status"] == "COMPLETED"]
-        assert len(completed) == 1
-        # one Task, and at most one Attempt beyond the one in flight at the restart
-        assert len(detail["attempts"]) <= 2
-        usage_refs = [
-            r[0]
-            for r in _rows(
-                orchestration_root,
-                "SELECT usage_ref FROM cost_imports WHERE usage_ref IS NOT NULL",
-            )
-        ]
-        assert len(usage_refs) == len(set(usage_refs))  # each usage imported at most once
+        assert len(detail["attempts"]) == 1  # the committed work was not re-run
+        refs = _usage_refs(orchestration_root)
+        assert len(refs) == len(set(refs))  # each usage imported at most once
     finally:
-        await second.close()
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_killed_inside_a_model_call_is_shown_and_can_be_taken_over(
+    orchestration_root, principal, tmp_path
+):
+    marker = tmp_path / "blocking.marker"
+    child = _spawn(orchestration_root, "blocking", marker)
+    try:
+        _wait(marker.exists, 60, "the Worker's model call")
+    finally:
+        _kill9(child)
+
+    service = _restarted(
+        orchestration_root,
+        RoleScriptedProvider(
+            {
+                "worker": _notes_worker() + _notes_worker(),
+                "critic": [critic_step(verdict="PASS", criteria_met=True)] * 4,
+            }
+        ),
+        principal,
+    )
+    await service.start()
+    try:
+        mission_id = service.list_missions()[0]["id"]
+        await service.drain(timeout=15)  # returns on idle *or* timeout (a blocked turn never idles)
+        detail = service.mission_detail(mission_id)
+        if detail["mission"]["status"] != "COMPLETED":
+            blocked = detail["blocked"]
+            assert blocked, "an unknown turn must be shown, not left as silently running"
+            assert blocked[0]["reason"] == "turn_outcome_unknown"
+            task_id = blocked[0]["task_id"]
+            with pytest.raises(Exception):  # noqa: B017 - the door refuses a missing basis
+                service.takeover(task_id, "retry_with_note", basis="  ")
+            service.takeover(task_id, "retry_with_note", basis="App 被关闭，模型调用结果未知")
+            await service.drain(timeout=60)
+            detail = service.mission_detail(mission_id)
+        assert detail["mission"]["status"] == "COMPLETED"
+    finally:
+        await service.close()
