@@ -73,6 +73,35 @@ SA-4 已按 S1 代码评审 P1-2 改写（处置见 SDK journal §4）：关闭�
 
 P3.1 的退出门槛：安装版 App 里一个 Mission 从创建到正式产物完整可操作（HA-12），并通过 Phase2 回归。拿不到安装版证据时，最多标"SDK 已就绪，Host 待验证"。
 
+## F. 验收结果（2026-09-12）
+
+| 编号 | 结果 | 证据 |
+|---|---|---|
+| SA-1 至 SA-7 | PASS | SDK `host-support-0.9.8/journal.md` §2、§3（全量回归 4 次，红集都等于基线；wheel 0.9.10 在干净环境验证） |
+| SB-1 至 SB-6 | PASS | 同上，另见 §4.2 |
+| HA-1 | PASS | journal §2 H1 行：钉版、回归逐条等于基线；③ 的启动冒烟在原生启动时核对 |
+| HA-2 至 HA-5 | PASS | `tests/orchestration`，共 107 passed |
+| HA-6 | PASS | `test_approvals_bridge.py`；① 另在原生 App 里验证，见 HA-12 ⑤ |
+| HA-7 | PASS | `test_policy_readonly.py`，含漂移显示 |
+| HA-8 | PASS | `test_restart_recovery.py` |
+| HA-9 | PASS | `test_boundaries.py`；HA-11 两次运行和原生 `native.log` 的扫描命中都是 0 |
+| HA-10 | PASS | vitest 97 个文件、772 条全部通过；typecheck 通过；lint 与基线逐文件一致 |
+| HA-11 | PASS | `reports/real-run1.md`（run2 COMPLETED） |
+| HA-12 | PASS（①–⑥） | `reports/native-ui-run1.md` |
+| HA-13 | PASS | ARCHITECTURE 的 AGENT_ORCHESTRATION、index、PROJECT_STATUS、AGENT_HARNESS；journal 的装配登记与终态行 |
+| HA-14 | PASS | `test_boundaries.py`；HA-11 真实运行里，Worker 自己写的测试文件两次都没有被执行 |
+| HA-15 | PASS | `test_restart_recovery.py`（无条件断言）；原生 ④ 在途部分 |
+| HA-16 至 HA-19 | PASS | 对应测试文件 |
+| HA-20 | PASS | `test_test_scenario.py`；原生 ⑤ 的场景副本里没有正式编排库 |
+| HA-21 | PASS | `test_service_concurrency.py`，含审批决定与评论并发 |
+| HA-22 | ② PASS，① 部分完成 | ② 见原生 ④。① 在原生 App 里只做过视图重新挂载，WebView 刷新、关窗再开没有做；前端测试覆盖重连逻辑。已列为遗留 |
+| HA-23 | PASS | `test_review_fixes.py`（按 id 读取并核对 hash，伪造 id 返回 not_found）；原生 App 里"查看产物" |
+| HA-24 | PASS | `test_deployment_manifest.py`；原生启动的清单 |
+
+另外，按裁决 C，本部署不提供无上限的 Mission：预算留空的项由 Host 补 400000 tokens / 12 次，见 `test_mission_budget_default.py` 与原生复验。
+
+P3.1 退出门槛：在原生 verify bundle（debug .app 加源码后端）上达成。冻结打包的安装包没有验证（F-ORCH-6）。
+
 ## C. LLM 行为变异（编排层已有测试覆盖；Host 只验收"端侧不崩、如实显示"）
 
 | 变异 | Host 端断言 |

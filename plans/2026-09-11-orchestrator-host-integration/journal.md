@@ -70,10 +70,16 @@
       - 后端 `tests/orchestration` 94 passed；控制通道等 5 个文件复跑全绿；
       - 前端 vitest 769 passed，lint 与基线一致。
     - HA-11 真实 deepseek-flash 运行已通过：run1 停在人工复核，run2 到 COMPLETED（§4.2，`reports/real-run1.md`）。
-  - 下一步：
-    1. 提交 H1 至 H4 加评审修复，推送；
-    2. 用干净的提交构建 bundle，做原生 AX 验收（HA-12，含 HA-1 ③ 的启动冒烟）：先跑正式模式，再跑测试场景；
-    3. 文档收尾，写终态。
+  - 2026-09-12 晚，已完成：
+    - H1 至 H4 提交为 `ed82be6f`、`20c73ca5`；
+    - 默认预算修复为 `f51ddc37`；
+    - 原生验收 HA-12 ①–⑥ 全部 PASS（§4.3，`reports/native-ui-run1.md`）；
+    - 终态见 §6。
+  - 接手须知（下一轮）：
+    - 遗留 F-ORCH-1 至 F-ORCH-7 见 §5，其中 F-ORCH-1（SDK 给 Task 预算加下限）优先；
+    - 冻结安装包的验证依赖 PyInstaller spec 跟进；
+    - HA-22 ① 的 WebView 刷新与关窗再开要补做原生验收；
+    - 原生验收的工具在 `.local-test-evidence/2026-09-12/native-ui-0910/`：`launch.sh`、`drive_scenario.sh`、`watch_mission.sh`、`ha12_verify.py`、`ax_*.sh`。
 - 接手须知：凭证只从 `.local-test-evidence/2026-09-07/credentials/deepseek.env` 读取，不打印；只用 deepseek-flash；App 运行时不跑 `tests/sdk_adapters/test_composition.py`。
 
 ## 1. plan review 处置
@@ -210,6 +216,34 @@ HA-11 判定为通过，报告见 `reports/real-run1.md`。
   - 第二个 Mission 运行期间，在"主对话"发了一句话。执行库里新 run `product-sdk-e8551c33…` 在 1789145859.76 创建，1789145862.94 completed。
   - 创建时间落在 Mission 运行区间之内，也就是编排运行期间，主对话完成了一轮。
 
+- **换 bundle**：默认预算修复提交为 `f51ddc37` 后，用干净提交重建了 bundle `SimpleHarness Agent Verify f51ddc37p18120`（bundle id `com.dennywanye.simpleharness.verify0912f51ddc37p18120`），打包出的前端里已经有"留空="占位符和详情里的预算一行。后面几项都用这个 bundle，数据仍是同一份正式副本（`--keep`）：
+  - 留空预算的 Mission；
+  - ④ 的在途部分；
+  - ⑤ 测试场景。
+
+- **留空预算的 Mission（裁决 C 的原生复验）：PASS**。
+  - 用 bundle `f51ddc37` 和 AX 新建第三个 Mission（CHECKLIST.md），预算两项都留空。
+  - 详情显示"预算：Token 上限 400000 · 尝试次数上限 12"，说明门口的默认值生效了。Mission 很快进入 COMPLETED。
+  - 本想趁它运行时退出 App 来测 ④ 的在途部分，但 Mission 在我手动操作之前就已经结束了，所以这一次不能算作 ④ 的在途证据。改为让后台脚本在检测到 RUNNING 时立即退出 App。
+
+- **④ 在途部分：退出时 Mission 正在跑**。
+  - 做法：用 AX 新建第四个 Mission（三个文件 A/B/C.md，预算留空，门口补成 400000 / 12）。后台脚本一见到 Attempt 进入 RUNNING，就立即让 App 正常退出，Tauri 随即用 SIGKILL 结束后端，时间 1789146380。退出前后，编排库里都是：Mission ACTIVE，task-1 的 attempt-1 为 RUNNING，租约属于旧 owner `…1dfad0ee`。
+  - 用同一份数据重启，`/health` 在 1789146418 就绪。第 22 s 时，新 owner `…9ca37f0f` 接手了这个 Attempt 的租约，同时最新心跳为 `liveness.blocked=1`。之后到第 180 s，Mission 一直是 ACTIVE，没有自己推进。这与 HA-15 的诊断一致：模型调用中途被杀，回合结果未知，需要有人接管，已登记为 F-ORCH-4。
+  - 界面（AX）：列表行和详情头都显示"UNKNOWN（结果未知）"，出现"回合结果未知（进程在模型调用中途退出）"卡片。依据为空时，"接管：重试 / 接管：停止"都是禁用的；另外 4 个没结束的 Task 各有一个"接管这个 Task"。
+  - 接管：用 AX 填写"接管依据"，点"接管：重试"（1789146635），状态变回"运行"。最终结果见下一条。
+  - 结论：满足验收 ④ 的第二种写法——"如实显示结果未知并能接管"。重启后界面在 120 s 内显示出 UNKNOWN（第 22 s 就被标为 blocked）。
+  - 接管之后：被卡住的 attempt-1 变成 CANCELLED，重新派发的 Attempt 陆续 COMPLETED，约 52 s 后 Mission 进入 **COMPLETED**，也就是正式交付。途中有一个 Attempt 停在 `RETRY_WAIT`，Mission 已经完成它也没有收尾，与 F-ORCH-2 是同一类问题。
+  - **④ PASS**：
+    - 已结束的 Mission 在重启后状态一致；
+    - 在途的 Mission 在重启后如实显示 UNKNOWN；
+    - 在界面上接管后，能继续走到正式交付。
+- **⑤ 测试场景：PASS**。数据用的是全新的场景副本，bundle 为 `f51ddc37`，启动器带 `--orchestration-test-scenario approval-action`，由 `drive_scenario.sh` 驱动：
+  - 界面：出现"测试场景"横幅；用 AX 按夹具的目标和两条条件新建 Mission；状态显示"待人"，等待原因为"动作审批（自 01:13:28）"；审批卡上"拒绝"在理由为空时是禁用的。点"批准"后，状态变为"正式交付 · verification_passed"。
+  - 编排库：审批为 GRANTED，决定记录带 receipt_hash；动作为 SUCCEEDED，事件依次是 ActionProposed → ApprovalRequested → ApprovalGranted → ActionHandedOff → ActionSucceeded；回执为 `after: on, applied: true`。测试配置服务的 `feature_flags.new_ui` 为 `on`，账本里只有 1 条，说明只交接了一次。
+  - 场景副本里没有正式编排库，即 HA-20 要求的"正式库一行不写"。
+- **HA-12 结论：①–⑥ 全部 PASS**。报告见 `reports/native-ui-run1.md`。
+- **HA-22 ① 部分完成**：原生 App 里只做过视图重新挂载，WebView 刷新、关窗再开没有做；前端测试覆盖了重连逻辑。已登记为遗留。
+
 ### 4.4 裁决：没填预算的 Mission（独立评审子代理，2026-09-12）
 
 问题：界面留空预算时，Mission 的预算全为 null。真实 Planner 只能凭空编 Task 预算（1200 / 800），而 SDK 只检查上限、不检查下限。Worker 的预留只是记账，实际一轮就花了 22003；Critic 还要从同一个账户再预留 6000。所以这样的 Mission 在结构上注定失败。
@@ -246,4 +280,15 @@ HA-11 判定为通过，报告见 `reports/real-run1.md`。
 
 ## 6. 结论
 
-（待填）
+- 用户 Phase3 的 P3.1「真实 App Mission 控制闭环」（Host 直连路径）已交付：
+  - SDK：S1、S2 两个切片，外加两轮评审修复，共 0.9.8 到 0.9.10 三个版本；
+  - Host：钉版、编排服务、控制通道、任务编排视图，一轮代码评审的 16 条修复，以及默认预算。
+- 验收（逐条见 `acceptance.md` §F）：
+  - SA-1 至 SA-7、SB-1 至 SB-6 通过；
+  - HA-1 至 HA-24 中，HA-22 ① 为部分完成，其余全部通过；
+  - 真实模型运行（HA-11）与原生 App 验收（HA-12 ①–⑥）都拿到了证据。
+- 对外表述：原生 verify bundle（debug .app 加源码后端）验收通过；冻结打包的安装包待验证（F-ORCH-6）。
+- 遗留见 §5：F-ORCH-1 至 F-ORCH-7，另有 HA-22 ① 的 WebView 刷新与关窗再开没有做原生验收。
+- 完成的判定依据是本 journal 与 acceptance §F，没有机器 receipt。
+
+终态：**SHIPPED（P3.1 Host 直连路径；冻结安装包与 HA-22 ① WebView 重载列为遗留）**，2026-09-12。

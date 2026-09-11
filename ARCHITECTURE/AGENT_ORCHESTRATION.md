@@ -5,7 +5,11 @@
 - 方向依据：用户的 Phase3 计划 `plans/taskSys2/agent-orchestrator-phase3-plan.zh-CN.md`。本模块是其中 **P3.1 真实 App Mission 控制闭环** 的 Host 直连实现。
 - SDK：`simple-harness-sdk` 的 `agent_orchestrator`（与 `simple_harness` 同在一个 wheel 里）。Host 钉版以 `backend/deskpet/sdk_adapters/sdk_candidate.py` 为唯一来源。
 
-> 状态：实现与自动化测试进行中，原生 App 验收（HA-12）尚未完成。在拿到安装版证据之前，按 P3.1 §3.5 只能标为"SDK 已就绪，Host 待验证"。
+> 状态（2026-09-12）：P3.1 Host 直连路径已交付。
+> - 自动化：`tests/orchestration` 107 passed，vitest 772 passed。
+> - 真实 deepseek-flash 运行：HA-11 通过。
+> - 原生 App 验收：HA-12 ①–⑥ 全部通过，用的是 verify bundle `f51ddc37`（debug .app 加源码后端），报告见计划目录的 `reports/native-ui-run1.md`。
+> - 冻结打包的安装包没有验证（PyInstaller spec 仍停在 0.6.4），HA-22 ① 的 WebView 刷新也没有做原生验收，两者都列为遗留。
 
 ## 1. 装配位置
 
