@@ -1,0 +1,12 @@
+{
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.10.0",
+  "commit": "3eb43fb89a27c0bb9dd2e5e8d988354de4f64fda",
+  "artifacts": {
+    "simple_harness_sdk-0.10.0-py3-none-any.whl": "9c07fac4b3b919b2003a380d321f974824818475ca8b3cf9570ba0e00042d06c"
+  },
+  "build_count": 1,
+  "execution_schema": 10,
+  "source_date_epoch": "1789168350",
+  "scope": "agent_orchestrator 0.10.0 (P3.2): sandbox executor port with the macOS seatbelt adapter and an 8-check capability probe; code_execution off/sandboxed/process_only; content-addressed Artifacts with symlink refusal, throw-away execution copies and verification copies rebuilt from recorded bytes; workspace registry (orchestrator schema v7); file publish connector with a write-ahead intent ledger; lookup authority (L2+ must be authoritative); compensation as its own business action; recalled history framed as untrusted USER data"
+}

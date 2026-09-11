@@ -39,7 +39,14 @@ async def test_manifest_records_the_imported_sdk_and_the_fixed_policy(orchestrat
         assert dists["simple_harness"]["version"] == SDK_VERSION
         assert dists["pin"] == {"version": SDK_VERSION, "wheel_sha256": SDK_WHEEL_SHA256}
         policy = manifest["features"]["deployment_policy"]
-        assert policy["local_code_execution"] is False
+        # P3.2 (plan D9): the probe decides — sandboxed when it passed here, off otherwise,
+        # and never process_only (an unisolated child process is for trusted code only)
+        sandbox = manifest["features"]["sandbox"]
+        assert policy["code_execution"] == ("sandboxed" if sandbox.get("ok") else "off")
+        assert policy["local_code_execution"] is bool(sandbox.get("ok"))
+        assert ("run_tests" in policy["allowed_tools"]) is bool(sandbox.get("ok"))
+        if not sandbox.get("ok"):
+            assert sandbox.get("reason") or sandbox.get("items")  # never a silent off
         assert policy["max_action_level"] == "L2"
         assert manifest["model"] is None  # a scripted provider: no real model, no key
     finally:

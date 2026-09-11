@@ -205,6 +205,21 @@ def _action(raw: Mapping[str, Any]) -> dict[str, Any]:
         "target": _short(raw.get("target"), PARAMS_LIMIT),
         "params_hash": raw.get("params_hash"),
         "reason": model_text(raw.get("reason")),
+        # P3.2 (P32-15): what actually happened in the world, so the view can tell
+        # "generated, not published yet" from "published" and show the bytes' identity
+        **_action_receipt(raw.get("receipt")),
+    }
+
+
+def _action_receipt(raw: Any) -> dict[str, Any]:
+    """The published file and the hash that was read back, or nothing yet."""
+
+    if not isinstance(raw, Mapping):
+        return {"published_path": None, "published_hash": None}
+    after = raw.get("after") if isinstance(raw.get("after"), Mapping) else {}
+    return {
+        "published_path": _short(after.get("path"), PARAMS_LIMIT),
+        "published_hash": after.get("content_hash"),
     }
 
 

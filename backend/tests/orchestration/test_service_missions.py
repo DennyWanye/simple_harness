@@ -47,12 +47,39 @@ async def test_create_runs_to_completed_and_is_idempotent(orchestration_root, pr
 
 
 @pytest.mark.asyncio
+async def test_a_pytest_criterion_follows_the_sandbox_probe(orchestration_root, principal):
+    """P3.2 (plan D9): ``pytest:`` is no longer refused on principle — it is refused when
+    this machine has no proven isolation, and allowed when the probe passed here."""
+
+    service = OrchestrationService(
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
+    )
+    await service.start()
+    try:
+        request = notes_request("k-pytest", success_criteria=["pytest:tests/test_x.py"])
+        if bool(service.status()["sandbox"].get("ok")):
+            created = service.create_mission(request)
+            assert created["mission_id"]
+            assert service.status()["code_execution"] == "sandboxed"
+        else:
+            with pytest.raises(OrchestrationRequestError) as refused:
+                service.create_mission(request)
+            assert refused.value.code == "local_tests_disabled"
+            assert _mission_count(orchestration_root) == 0
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("overrides", "code"),
     [
         ({"goal": "   "}, "invalid_request"),
         ({"success_criteria": []}, "invalid_request"),
-        ({"success_criteria": ["pytest:tests/test_x.py"]}, "local_tests_disabled"),
         # HA-18: no connector is enabled in the product; an action criterion could never be met
         (
             {"success_criteria": ["file:NOTES.md", "action:test_config.set:feature_flags.new_ui"]},
@@ -107,7 +134,10 @@ async def test_fields_the_facade_does_not_open_are_refused(orchestration_root, p
             service.create_mission(notes_request("k-fields", **overrides))
         assert refused.value.code == "invalid_request"
         assert _mission_count(orchestration_root) == 0
-        assert "run_tests" not in service.status()["allowed_tools"]
+        # P3.2: there is still no *switch* for local tests; whether run_tests is offered is
+        # decided by the sandbox probe, never by a setting
+        status = service.status()
+        assert ("run_tests" in status["allowed_tools"]) is bool(status["sandbox"].get("ok"))
         assert not hasattr(OrchestrationSettings(), "allow_local_tests")
     finally:
         await service.close()

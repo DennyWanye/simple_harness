@@ -96,6 +96,8 @@ def build_manifest(
     settings: Mapping[str, Any],
     test_scenario: str | None,
     model: Mapping[str, Any] | None,
+    sandbox: Mapping[str, Any] | None = None,
+    publish: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     from agent_orchestrator.storage.schema import SCHEMA_VERSION
 
@@ -109,6 +111,12 @@ def build_manifest(
             "deployment_policy": dict(deployment),
             "test_scenario": test_scenario,
             "settings": dict(settings),
+            # P3.2 (plan D9): what the capability probe found on *this* machine — the
+            # deployment calls itself sandboxed only when every check passed
+            "sandbox": dict(sandbox or {"ok": False, "reason": "尚未探测"}),
+            # P3.2 (P32-14): the one directory a person authorised for published files, or
+            # why nothing may be published here
+            "publish": dict(publish or {"enabled": False, "reason": "未授权发布目录"}),
         },
         "model": None if model is None else dict(model),
     }

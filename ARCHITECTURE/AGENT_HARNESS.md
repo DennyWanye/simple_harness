@@ -1,3 +1,5 @@
+2026-09-12 Harness SDK 钉版 0.9.11 → **0.10.0**（SDK 源提交 `3eb43fb`，wheel sha256 `9c07fac4…d06c`，`SOURCE_DATE_EPOCH=1789168350`）。P3.2「隔离执行与真实受控交付」：沙箱执行端口与 macOS seatbelt 适配器（8 项能力探针）、`code_execution` 三取值、内容寻址产物库与软链拒绝、一次性执行副本、从登记字节重建验证副本、工作区登记（编排库 schema v7）、先写意图的文件发布连接器、权威查询语义（L2 及以上必须权威）、补偿作为独立业务动作、召回历史改为不可信的 USER 数据框。干净环境验证：844 passed，唯一的红是 0.9.9 起的 execution 迁移既有失败。
+
 2026-09-12 Harness SDK 钉版 0.9.10 → 0.9.11（SDK 源提交 `cfbd88d`，wheel sha256 `7a34e6df…e867`）。
 - 这次是 Phase3 的 P3.1 遗留修复，改动全部在 `agent_orchestrator` 0.9.4 里：Task 预算下限、产物验证状态回写，见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md) §8。
 - 按 `7915e40..cfbd88d` 核对，`simple_harness` 包只改了版本号，主对话 Harness 没有任何变化。

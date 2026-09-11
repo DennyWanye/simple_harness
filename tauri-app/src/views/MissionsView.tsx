@@ -239,6 +239,24 @@ const ArtifactPanel: React.FC<{ artifact: Json }> = ({ artifact }) => {
   );
 };
 
+/** P3.2 P32-15：一个动作在世界上到底发生了什么。已发布时显示实际路径与回读的内容
+ * hash；UNKNOWN 说成“核对中”，因为系统自己也还不知道，绝不写成失败或成功。 */
+function ActionOutcome({ action }: { action: Record<string, unknown> }): React.JSX.Element | null {
+  const state = text(action.state);
+  const path = text(action.published_path);
+  const hash = text(action.published_hash);
+  if (!state) return null;
+  const label =
+    state === "SUCCEEDED" ? "已发布" : state === "UNKNOWN" ? "核对中" : "已生成，未发布";
+  return (
+    <div style={muted} data-testid="action-outcome" data-action-state={state}>
+      {label}
+      {path ? ` · ${path}` : ""}
+      {hash ? ` · 内容 ${shortHash(hash)}` : ""}
+    </div>
+  );
+}
+
 /** Task 已经结束的状态：这些 Task 不再提供接管。 */
 const TASK_ENDED = new Set(["DONE", "COMPLETED", "FAILED", "CANCELLED", "SKIPPED"]);
 
@@ -666,6 +684,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                     {kind === "action" ? "动作审批" : kind === "review" ? "人工复核" : "仲裁"}：<ModelText value={approval.summary} />
                   </div>
                   {action.reason ? <div>理由：<ModelText value={action.reason} /></div> : null}
+                  {kind === "action" ? <ActionOutcome action={action} /> : null}
                   {kind === "action" ? (
                     <>
                       <textarea aria-label="拒绝理由" style={field} value={reason} onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })} />

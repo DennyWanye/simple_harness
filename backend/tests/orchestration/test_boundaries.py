@@ -10,6 +10,8 @@ local tests are off, however the Planner fills in ``verification_policy``.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from agent_orchestrator.testing.fixtures import (
@@ -35,10 +37,17 @@ async def test_default_deployment_offers_only_workspace_tools(orchestration_root
     )
     await service.start()
     try:
-        assert sorted(service.status()["allowed_tools"]) == sorted(WORKSPACE_TOOLS)
+        # P3.2 (plan D9): the workspace tools are always there; ``run_tests`` is there when
+        # — and only when — the sandbox probe passed on this machine, because that is the
+        # only way model-written code may run at all
+        status = service.status()
+        sandboxed = bool(status["sandbox"].get("ok"))
+        expected = sorted([*WORKSPACE_TOOLS, "run_tests"] if sandboxed else WORKSPACE_TOOLS)
+        assert sorted(status["allowed_tools"]) == expected
+        assert status["code_execution"] == ("sandboxed" if sandboxed else "off")
         created = service.create_mission(notes_request("k-tools"))
         mission = service.mission_detail(created["mission_id"])["mission"]
-        assert set(mission["allowed_tools"]) <= set(WORKSPACE_TOOLS)  # never the SDK default four
+        assert set(mission["allowed_tools"]) <= set(expected)  # never the SDK default four
     finally:
         await service.close()
 
@@ -121,14 +130,23 @@ async def test_model_written_tests_never_run_when_local_tests_are_off(
     try:
         created = service.create_mission(notes_request("k-probe"))
         await service.drain()
-        assert not marker.exists(), "a model-written test file was executed on this machine"
+        # the oracle is the same on both paths and is never weakened: a model-written test
+        # that tries to write outside its workspace leaves nothing on this machine
+        assert not marker.exists(), "a model-written test file reached this machine"
         detail = service.mission_detail(created["mission_id"])
-        # refused honestly, not left hanging (review P2-10: a Mission has no RUNNING status,
-        # so the old ``!= "RUNNING"`` could never fail): every plan asks for the undeployed
-        # code_test, so the Mission ends FAILED with a stop reason and no Task ever ran
-        assert detail["mission"]["status"] == "FAILED", detail["mission"]
-        assert detail["mission"]["stop_reason"]
-        assert detail["attempts"] == []
+        if bool(service.status()["sandbox"].get("ok")):
+            # P3.2: the file *does* run now — inside the sandbox — so the Attempt is real;
+            # what stops the side effect is the isolation, not a refusal to execute
+            assert detail["attempts"], detail["mission"]
+            ran = json.dumps(detail["attempts"], ensure_ascii=False)
+            assert "pytest" in ran, "code_test should have run the model-written file"
+        else:
+            # refused honestly, not left hanging (review P2-10: a Mission has no RUNNING
+            # status, so the old ``!= "RUNNING"`` could never fail): every plan asks for the
+            # undeployed code_test, so the Mission ends FAILED and no Task ever ran
+            assert detail["mission"]["status"] == "FAILED", detail["mission"]
+            assert detail["mission"]["stop_reason"]
+            assert detail["attempts"] == []
     finally:
         await service.close()
 
@@ -144,9 +162,13 @@ async def test_no_host_tool_reaches_the_orchestration_runtime(orchestration_root
     )
     await service.start()
     try:
-        # exactly the three workspace tools; ``run_tests`` is not merely allowed-and-refused,
-        # it is absent (review P2-10: the old subset check let it through)
-        assert set(service.runtime_tool_names()) == set(WORKSPACE_TOOLS)
-        assert "run_tests" not in service.runtime_tool_names()
+        # nothing of the Host's own chat surface reaches the orchestration runtime: the set
+        # is exactly the workspace tools, plus ``run_tests`` when the sandbox proved itself
+        # here (P3.2 plan D9).  Anything else would be a leak (review P2-10).
+        offered = set(service.runtime_tool_names())
+        sandboxed = bool(service.status()["sandbox"].get("ok"))
+        assert offered - set(WORKSPACE_TOOLS) <= {"run_tests"}
+        assert ("run_tests" in offered) is sandboxed
+        assert set(WORKSPACE_TOOLS) <= offered
     finally:
         await service.close()

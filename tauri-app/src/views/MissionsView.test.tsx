@@ -475,6 +475,38 @@ describe("P1-5 缺失界面", () => {
     expect(screen.queryByRole("region", { name: "产物内容" })).toBeNull();
   });
 
+  it("P3.2 P32-15：审批卡如实说明动作在世界上的状态——已生成未发布 / 已发布 / 核对中", () => {
+    const withAction = (action: Record<string, unknown>) => ({
+      ...DETAIL,
+      approvals: [{ ...DETAIL.approvals[0], action: { ...DETAIL.approvals[0].action, ...action } }],
+    });
+
+    openMission(withAction({ state: "AWAITING_APPROVAL", published_path: null, published_hash: null }));
+    const pending = within(screen.getByTestId("approval-approval-1")).getByTestId("action-outcome");
+    expect(pending.textContent).toMatch(/已生成，未发布/);
+    expect(pending.getAttribute("data-action-state")).toBe("AWAITING_APPROVAL");
+    cleanup();
+
+    openMission(
+      withAction({
+        state: "SUCCEEDED",
+        published_path: "/Users/me/reports/weekly.2f8a1c4d9e0b.v1.md",
+        published_hash: "a".repeat(64),
+      }),
+    );
+    const done = within(screen.getByTestId("approval-approval-1")).getByTestId("action-outcome");
+    expect(done.textContent).toMatch(/已发布/);
+    expect(done.textContent).toMatch(/weekly\.2f8a1c4d9e0b\.v1\.md/); // 实际落盘路径
+    expect(done.textContent).toMatch(/内容 /); // 回读的内容哈希
+    cleanup();
+
+    // UNKNOWN 绝不能写成成功或失败：系统自己也还不知道
+    openMission(withAction({ state: "UNKNOWN", published_path: null, published_hash: null }));
+    const unknown = within(screen.getByTestId("approval-approval-1")).getByTestId("action-outcome");
+    expect(unknown.textContent).toMatch(/核对中/);
+    expect(unknown.textContent).not.toMatch(/已发布|失败/);
+  });
+
   it("b) 评论：空白时禁用；发表后清空并刷新详情与事件；审批卡显示已有评论", () => {
     const channel = openMission({
       ...DETAIL,

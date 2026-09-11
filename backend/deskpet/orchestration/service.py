@@ -19,9 +19,11 @@ be taken over).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import secrets
+import sys
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import asdict
 from pathlib import Path
@@ -106,6 +108,11 @@ class OrchestrationService:
         self._config: Any = None
         self._connectors: dict[str, Any] = {}
         self._deployment: Any = None
+        # P3.2: what the sandbox capability probe found here, and the executor it proved
+        self._sandbox: dict[str, Any] | None = None
+        self._executor: Any = None
+        # P3.2 P32-14: whether a publish directory is authorised, and if not, why
+        self._publish: dict[str, Any] = {"enabled": False, "reason": "尚未探测"}
         self._control: Any = None
         self._policy: Any = None
         self._manifest: dict[str, Any] | None = None
@@ -142,6 +149,8 @@ class OrchestrationService:
                 settings=asdict(self.settings),
                 test_scenario=self._test_scenario,
                 model=None if self._snapshot is None else self._snapshot.public(),
+                sandbox=self._sandbox,
+                publish=self._publish,
             )
             write_manifest(self.root, self._manifest)
             self._state, self._reason = "available", None
@@ -181,9 +190,18 @@ class OrchestrationService:
             enabled_connectors = ("test_config",)
         elif provider is None:
             raise ProviderUnavailable(NO_MODEL)
+        publish = self._publish_connector()  # P3.2 P32-14: only a directory the user authorised
+        if publish is not None:
+            self._connectors["file_publish"] = publish
+            enabled_connectors = (*enabled_connectors, "file_publish")
+        # P3.2 §4.3 / plan D9: model-written code runs only inside a sandbox that has
+        # proven itself here, and never in a plain child process.  The probe decides;
+        # a failure is not fatal — the deployment simply runs nothing model-written.
+        self._sandbox = await self._probe_sandbox()
+        sandboxed = bool(self._sandbox.get("ok"))
         self._deployment = DeploymentPolicy(
-            allowed_tools=WORKSPACE_TOOLS,
-            local_code_execution=False,  # P3.1 §3.1: nothing model-written runs here
+            allowed_tools=(*WORKSPACE_TOOLS, "run_tests") if sandboxed else WORKSPACE_TOOLS,
+            code_execution="sandboxed" if sandboxed else "off",
             enabled_connectors=enabled_connectors,
             max_action_level="L2",  # one person: L3's two distinct people cannot be met
         )
@@ -197,6 +215,7 @@ class OrchestrationService:
             max_concurrent_model_calls=self.settings.max_concurrent_model_calls,
             lease_seconds=self.settings.lease_seconds,
             deployment_policy=self._deployment,
+            sandbox_executor=self._executor,  # P3.2 D2: required when sandboxed
             price_table=None,  # unpriced: money is recorded as null, never 0
             **knobs,
         )
@@ -211,6 +230,74 @@ class OrchestrationService:
         self._policy = PolicyApi(
             self._orchestrator.commit, self._principal, deployment=self._deployment
         )
+
+    def _publish_connector(self) -> Any:
+        """The file publish connector, but only for a directory the user really authorised.
+
+        Three things must hold before anything can be published (P3.2 plan D9, P32-14): the
+        user named a directory, it exists, and it can carry a hard link — the connector's
+        only atomic commit point.  A volume that cannot (exFAT, some network shares) is
+        refused *here*, at authorisation time, rather than turning into an UNKNOWN action
+        later.  Without all three the connector is not enabled at all, so a Mission may not
+        even carry a publish criterion.
+        """
+
+        from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+
+        configured = (self.settings.publish_dir or "").strip()
+        if not configured:
+            self._publish = {"enabled": False, "reason": "未授权发布目录"}
+            return None
+        root = Path(configured).expanduser()
+        if not root.is_dir():
+            self._publish = {"enabled": False, "root": str(root), "reason": "授权目录不存在"}
+            return None
+        if not FilePublishConnector.supports_hardlinks(root):
+            self._publish = {
+                "enabled": False,
+                "root": str(root),
+                "reason": "该卷不支持硬链接，无法原子发布",
+            }
+            return None
+        self._publish = {"enabled": True, "root": str(root)}
+        return FilePublishConnector(root, self.root / "connectors" / "file_publish")
+
+    async def _probe_sandbox(self) -> dict[str, Any]:
+        """Run the SDK's capability probe once per environment (P3.2 plan D9, review P2-9).
+
+        A machine without a usable interpreter (a frozen build) or without seatbelt simply
+        gets ``ok=False`` and a reason; the deployment then runs nothing model-written at
+        all.  The last result is written next to the library for the manifest and for
+        support, but it is **not** trusted as a pass: the SDK only accepts an executor whose
+        probe ran in this process against this very environment digest, so a start always
+        proves isolation again rather than believing a file (plan review P2-9 asked for a
+        cache; caching the *decision* would mean shipping "it worked once" — registered in
+        the P3.2 journal as a deliberate deviation).
+        """
+
+        from agent_orchestrator.runtime.sandbox import SandboxUnavailable, SeatbeltExecutor
+        from agent_orchestrator.runtime.sandbox import probe_sandbox as run_probe
+
+        self._executor = None
+        try:
+            executor = SeatbeltExecutor.for_interpreter(sys.executable)
+        except SandboxUnavailable as error:
+            return {"ok": False, "reason": str(error)[:300]}
+        try:
+            report = await run_probe(executor)
+        except Exception as error:  # noqa: BLE001 - a probe that cannot run is not a pass
+            logger.warning("sandbox probe failed to run: %s", error)
+            return {"ok": False, "reason": f"{type(error).__name__}: {error}"[:300]}
+        result = report.to_json()
+        try:
+            (self.root / "sandbox-probe.json").write_text(
+                json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except OSError:  # a report that cannot be written changes nothing about the run
+            pass
+        if report.ok:
+            self._executor = executor
+        return result
 
     async def _close_runtime(self) -> None:
         orchestrator, self._orchestrator = self._orchestrator, None
@@ -343,7 +430,14 @@ class OrchestrationService:
             "sdk_version": simple_harness.__version__,
             "model": None if self._snapshot is None else self._snapshot.public(),
             "active_missions": active,
-            "allowed_tools": list(WORKSPACE_TOOLS),
+            # P3.2: what this deployment really allows, and whether model-written code can
+            # run here at all (``off`` until the sandbox probe passes on this machine)
+            "allowed_tools": list(self.runtime_tool_names() or WORKSPACE_TOOLS),
+            "code_execution": (
+                None if self._deployment is None else self._deployment.code_execution
+            ),
+            "sandbox": dict(self._sandbox or {"ok": False, "reason": "尚未探测"}),
+            "publish": dict(self._publish),
             "test_scenario": self._test_scenario,
             "mission_budget_defaults": {
                 "max_tokens": self.settings.default_mission_max_tokens,
@@ -407,14 +501,33 @@ class OrchestrationService:
         # every string of the request — stop conditions, synthesis and the workspace seed
         # included, not only the goal and the criteria (review P1-3)
         self._refuse_secrets(body)
-        if any(c.strip().startswith("pytest:") for c in criteria):
+        # P3.2 (plan D9): both gates now ask what this deployment can really do, instead of
+        # the P3.1 answers ("never" / "only in the test scenario")
+        deployment = self._deployment
+        if any(c.strip().startswith("pytest:") for c in criteria) and not (
+            deployment is not None and deployment.code_execution == "sandboxed"
+        ):
             raise OrchestrationRequestError(
-                "local_tests_disabled", "本机执行测试代码已关闭：成功条件不能使用 pytest:"
+                "local_tests_disabled",
+                "本机没有可用的隔离环境：成功条件不能使用 pytest:"
+                + (f"（{self._sandbox.get('reason')}）" if (self._sandbox or {}).get("reason") else ""),
             )
-        if self._test_scenario is None and any(c.strip().startswith("action:") for c in criteria):
-            raise OrchestrationRequestError(
-                "action_criteria_disabled", "这个部署没有启用真实动作：成功条件不能使用 action:"
-            )
+        enabled = set(getattr(deployment, "enabled_connectors", ()) or ())
+        for criterion in criteria:
+            text = criterion.strip()
+            if not text.startswith("action:"):
+                continue
+            connector = text[len("action:") :].partition(".")[0].strip()
+            if not enabled:
+                raise OrchestrationRequestError(
+                    "action_criteria_disabled", "这个部署没有启用真实动作：成功条件不能使用 action:"
+                )
+            if connector not in enabled:
+                reason = self._publish.get("reason") if connector == "file_publish" else None
+                raise OrchestrationRequestError(
+                    "action_criteria_disabled",
+                    f"连接器 {connector} 未启用" + (f"：{reason}" if reason else ""),
+                )
         # No Mission without bounds (native run 2026-09-12, adjudication C): with a null
         # budget a real Planner invents Task budgets far below one model turn and the
         # Mission cannot succeed.  A blank item takes the deployment default; an item the
