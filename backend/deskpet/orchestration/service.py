@@ -133,6 +133,9 @@ class OrchestrationService:
 
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:
+        """Start once. After failure, deactivate/activate with a fresh service and client."""
+        if self._state != "created":
+            return
         if not self.settings.enabled:
             self._state, self._reason = "disabled", "编排服务已在配置中关闭"
             return
@@ -333,14 +336,16 @@ class OrchestrationService:
     async def _close_runtime(self) -> None:
         orchestrator, self._orchestrator = self._orchestrator, None
         self._control = None
+        self._policy = None
         if orchestrator is not None:
             try:
                 await orchestrator.__aexit__(None, None, None)
             except Exception:  # noqa: BLE001
                 logger.exception("orchestrator close failed")
-        if self._http_client is not None:
+        client, self._http_client = self._http_client, None
+        if client is not None:
             try:
-                await self._http_client.aclose()
+                await client.aclose()
             except Exception:  # noqa: BLE001
                 logger.debug("provider http client close failed")
 
@@ -385,6 +390,8 @@ class OrchestrationService:
     async def _drive(self) -> None:
         while not self._closing:
             try:
+                if self._orchestrator is None:
+                    await self._rebuild()
                 await self._orchestrator.run()
                 self._failures = 0
                 if self._state == "degraded":
@@ -396,7 +403,10 @@ class OrchestrationService:
                 logger.exception("orchestrator run failed (%s in a row)", self._failures)
                 if self._failures >= self.settings.degraded_after_failures:
                     self._state, self._reason = "degraded", f"编排循环连续失败：{error}"[:300]
-                if self._failures % self.settings.rebuild_after_failures == 0:
+                if (
+                    self._orchestrator is not None
+                    and self._failures % self.settings.rebuild_after_failures == 0
+                ):
                     try:
                         await self._rebuild()
                     except Exception as rebuild_error:  # noqa: BLE001 - keep looping, and say so (review P1-2)
@@ -416,20 +426,35 @@ class OrchestrationService:
         from agent_orchestrator.api.policies import PolicyApi
         from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
-        old = self._orchestrator
-        try:
-            await old.__aexit__(None, None, None)
-        except Exception:  # noqa: BLE001
-            logger.exception("orchestrator close during rebuild failed")
-        self._orchestrator = Orchestrator(
+        old, self._orchestrator = self._orchestrator, None
+        self._control = None
+        self._policy = None
+        if old is not None:
+            try:
+                await old.__aexit__(None, None, None)
+            except Exception:  # noqa: BLE001
+                logger.exception("orchestrator close during rebuild failed")
+        candidate = Orchestrator(
             self._config, self._effective_provider, owner=self.owner, connectors=self._connectors,
             **source_runtime_options(self._config, self._effective_provider, self._snapshot),
         )
-        await self._orchestrator.__aenter__()
-        self._control = MissionControlV1(
-            self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
-        )
-        self._policy = PolicyApi(self._orchestrator.commit, self._principal, deployment=self._deployment)
+        try:
+            await candidate.__aenter__()
+            control = MissionControlV1(
+                candidate, tenant_id=self.tenant_id, principal=self._principal
+            )
+            policy = PolicyApi(candidate.commit, self._principal, deployment=self._deployment)
+        except BaseException as error:
+            try:
+                await candidate.__aexit__(type(error), error, error.__traceback__)
+            except BaseException as cleanup_error:
+                error.add_note(f"Rebuild resource cleanup failed: {type(cleanup_error).__name__}")
+            raise
+        # Publish only after enter and facade construction succeeded. A failed
+        # candidate leaves no runnable object; the existing driver retries rebuild.
+        self._orchestrator = candidate
+        self._control = control
+        self._policy = policy
 
     async def drain(self, timeout: float = 60.0) -> bool:
         """Tests (``drive=False``): run the loop until idle or ``timeout``.  False when it

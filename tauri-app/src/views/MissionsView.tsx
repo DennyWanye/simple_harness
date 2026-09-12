@@ -845,7 +845,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                     >
                       <strong>{failed ? "结果最终未接受" : "结果判定"}（{verdict || "尚未判定"} / {verificationState || "未知"}）</strong>
                       {reason && <div>拒绝原因：{REJECTION_LABEL[reason] ?? reason}（{reason}）</div>}
-                      {list(rejection.source_issues).map((issue, index) => <div key={index}>
+                      {list(rejection.source_issues).map((issue, index) => <div key={index} style={{ overflowWrap: "anywhere" }}>
                         {text(issue.path) || "来源"} · {REJECTION_LABEL[text(issue.reason)] ?? text(issue.reason)}（{text(issue.reason) || text(issue.code)}）
                         {issue.version ? ` · 版本：${text(issue.version)}` : ""}
                       </div>)}
