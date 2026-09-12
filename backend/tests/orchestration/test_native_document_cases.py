@@ -19,7 +19,9 @@ from deskpet.orchestration.service import OrchestrationService, OrchestrationSet
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case", DOCUMENT_CASES)
+@pytest.mark.parametrize(
+    "case", tuple(case for case in DOCUMENT_CASES if case != "n6-active-revoke")
+)
 async def test_native_case_uses_current_document_contract_and_real_verification(
     tmp_path, principal, case
 ):
@@ -193,6 +195,144 @@ async def test_native_case_uses_current_document_contract_and_real_verification(
                 assert rule["detail"]["reason"] == "uncertainty_conflict"
                 assert rule["detail"]["uncertainty_conflicts"]
                 assert rule["detail"]["limitations_check"]["missing"] == []
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_active_source_revoke_before_original_human_pass_cannot_accept(
+    tmp_path, principal
+):
+    """Actual UI service verbs; no seeded approval, verdict or legacy profile."""
+    case = "n6-active-revoke"
+    assert case in DOCUMENT_CASES
+    root = tmp_path / ".local-test-evidence" / case
+    root.mkdir(parents=True)
+    provider = document_case_provider(case, root)
+    service = OrchestrationService(
+        root / "library",
+        OrchestrationSettings(),
+        principal=principal,
+        provider=provider,
+        drive=False,
+    )
+    await service.start()
+    try:
+        assert service.status()["available"], service.status()
+        request = document_case_mission(case)
+        [material] = document_case_materials(case)
+        assert request["budget"] == {"max_tokens": 200_000, "max_attempts": 1}
+        created = service.create_mission_with_sources(
+            {"mission": request, "sources": [material]}
+        )
+        assert await service.drain(timeout=30), service.status()
+        orch = service._orchestrator
+        mid = created["mission_id"]
+        mission = orch.store.get_mission(mid)
+        assert mission.status.value == "ACTIVE"
+        assert orch.commit.domain_for(mid).version == "6"
+        assert list(mission.success_criteria) == ["cite:" + SOURCE_PATH]
+        original_budget = mission.to_json()["budget"]
+        [task] = orch.store.list_tasks(mid)
+        assert task.budget.max_attempts == 1
+        assert list(task.verification_policy) == [
+            "format_check",
+            "rule_check",
+            "critic_review",
+            "human_review",
+        ]
+        [attempt] = orch.store.list_attempts(task.id)
+        stored = orch.store.find_result_for_attempt(attempt.id)
+        assert stored is not None and stored.verification_state == "SUSPENDED"
+        assert stored.verdict is None and task.accepted_result_id is None
+        rid = stored.envelope.id
+        original_envelope = stored.envelope.to_json()
+        rows = {row["layer"]: row for row in orch.store.list_verifications(rid)}
+        for layer in ("format_check", "rule_check", "critic_review"):
+            assert rows[layer]["status"] == "PASS"
+        [review] = service.approvals(mid)
+        assert review["kind"] == "review" and review["state"] == "PENDING"
+        bound_review = orch.store.get_approval(review["request_id"])
+        assert bound_review["subject_key"] == rid
+        assert bound_review["binding"]["result_id"] == rid
+        [ui_mission] = service.list_missions()
+        assert ui_mission["ui_state"] == "waiting_person"
+        [source] = service.mission_detail(mid)["document"]["sources"]
+        version = source["version_hash"]
+        assert not source["revoked"]
+        [proposal] = stored.envelope.claims
+        assert proposal.content == material["content"].strip()
+        [citation] = proposal.citations
+        assert citation.path == SOURCE_PATH and citation.version == version
+
+        changed = service.source_command(
+            "revoke",
+            {
+                "mission_id": mid,
+                "path": SOURCE_PATH,
+                "expected_version_hash": version,
+                "idempotency_key": case + "-revoke",
+                "reason": "撤销本结果实际引用的来源，再核验原人工批准不能越过当前性检查。",
+            },
+        )
+        assert changed["state"] == "PENDING"
+        # Requesting revocation alone must not mutate source validity.
+        assert not orch.store.get_source(mid, SOURCE_PATH, version)["revoked"]
+        pending = service.approvals(mid)
+        [source_review] = [row for row in pending if row["kind"] == "source_change"]
+        assert {row["request_id"] for row in pending} == {
+            review["request_id"],
+            source_review["request_id"],
+        }
+        assert source_review["source_change"]["expected_version_hash"] == version
+        service.decide(source_review["request_id"], "approve", nonce=case + "-source")
+        assert orch.store.get_source(mid, SOURCE_PATH, version)["revoked"]
+        # Current production preserves the original result review after source
+        # revocation. This asserts that exact route, not an either/or escape hatch.
+        assert orch.store.get_approval(review["request_id"])["state"] == "PENDING"
+        assert orch.store.get_result(rid).verification_state == "SUSPENDED"
+        decided = service.decide(
+            review["request_id"],
+            "review_pass",
+            note="人工仅批准原报告；来源当前性仍必须由系统拒绝。",
+            nonce=case + "-result",
+        )
+        assert decided["request_state"] == "GRANTED"
+        assert await service.drain(timeout=30), service.status()
+
+        failed = orch.store.get_result(rid)
+        assert failed.verification_state == "DONE" and failed.verdict == "FAIL"
+        assert failed.envelope.to_json() == original_envelope
+        [final_attempt] = orch.store.list_attempts(task.id)
+        assert final_attempt.id == attempt.id
+        assert "stale_source" in json.dumps(final_attempt.failure)
+        assert orch.store.get_task(task.id).accepted_result_id is None
+        assert orch.store.list_knowledge(mid) == []
+        final = orch.store.get_mission(mid)
+        assert final.status.value == "FAILED"
+        assert final.final_report.get("result") != "INSUFFICIENT"
+        assert final.to_json()["budget"] == original_budget
+        after = {row["layer"]: row for row in orch.store.list_verifications(rid)}
+        for layer in ("rule_check", "critic_review"):
+            assert after[layer]["status"] == "PASS"
+            assert after[layer]["detail"] == rows[layer]["detail"]
+        assert provider.by_role == {"planner": 1, "worker": 3, "critic": 2}
+        assert [
+            (call["tool"], call["arguments"]["path"], call["view"])
+            for call in orch.assembled.gateway.calls
+        ] == [
+            ("workspace_read_file", SOURCE_PATH, "work"),
+            ("workspace_write_file", "REPORT.md", "work"),
+            ("workspace_read_file", "REPORT.md", "verify"),
+        ]
+        assert orch.assembled.gateway.calls[0]["trust"] == "untrusted_external"
+        # Immutable historical bytes remain available; revoke is not CAS deletion.
+        assert orch.assembled.workspaces.artifact_store.read(version) == material[
+            "content"
+        ].encode("utf-8")
+        assert not (
+            orch.assembled.workspaces.get(attempt.id).root / "INJECTED.txt"
+        ).exists()
     finally:
         await service.close()
 
