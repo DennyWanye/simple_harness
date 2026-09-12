@@ -286,6 +286,10 @@ class OrchestrationService:
         from agent_orchestrator.runtime.sandbox import probe_sandbox as run_probe
 
         self._executor = None
+        if getattr(sys, "frozen", False):
+            # This executable starts the backend; it does not interpret -I/-c.
+            # Probing it would start another backend without this user-data env.
+            return {"ok": False, "reason": "frozen_backend_is_not_a_python_interpreter"}
         try:
             executor = SeatbeltExecutor.for_interpreter(sys.executable)
         except SandboxUnavailable as error:
