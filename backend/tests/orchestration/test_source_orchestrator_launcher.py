@@ -105,7 +105,7 @@ def test_same_inputs_and_model_override_resume_without_launch(launcher, inputs, 
     assert not list(run.glob("launch-*.json"))
 
 
-@pytest.mark.parametrize("changed", ["venv", "distribution", "resources", "models", "manifest", "pth"])
+@pytest.mark.parametrize("changed", ["venv", "distribution", "resources", "models", "manifest", "pth", "fixture_case"])
 def test_changed_runtime_input_cannot_resume_same_prepared_identity(launcher, inputs, changed, tmp_path, monkeypatch):
     frozen = launcher.source_identity(inputs, host_head="recorded-head")
     # Exercise the same persisted marker comparison used by the actual launcher.
@@ -121,6 +121,8 @@ def test_changed_runtime_input_cannot_resume_same_prepared_identity(launcher, in
         next(inputs.python.parent.parent.glob("lib/python*/site-packages/*.dist-info/RECORD")).write_text("changed")
     elif changed == "manifest":
         (inputs.resource_root / "manifest.json").write_text('{"changed":true}')
+    elif changed == "fixture_case":
+        inputs.fixture_case = "n6-two-thirds"
     elif changed == "pth":
         site = next(inputs.python.parent.parent.glob("lib/python*/site-packages"))
         (site / "editable.pth").write_text("/different/source/root\n")

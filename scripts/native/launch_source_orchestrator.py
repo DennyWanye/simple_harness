@@ -183,6 +183,7 @@ def source_identity(args, *, host_head: str) -> dict:
         "model_override_sha256": hashlib.sha256(MODEL_OVERRIDE).hexdigest(),
         "vite_port": args.vite_port,
         **({"fixture": _inventory(args.fixture_dir)} if getattr(args, "fixture_dir", None) else {}),
+        **({"fixture_case": args.fixture_case} if getattr(args, "fixture_case", None) else {}),
     }
 
 
@@ -222,7 +223,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--fixture-dir", type=Path,
                         help="Controlled document UI inputs under ignored test evidence; no real model")
+    parser.add_argument("--fixture-case", choices=(
+        "n4-instruction-attribution", "n4-bad-quote", "n4-contradictory-uncertainty",
+        "n6-half", "n6-two-thirds",
+    ), help="Controlled document boundary case; requires --fixture-dir")
     args = parser.parse_args(argv)
+    if args.fixture_case and args.fixture_dir is None:
+        parser.error("--fixture-case requires --fixture-dir")
     root = _path(args.source_root, directory=True)
     binary = _path(args.binary, executable=True)
     python = args.python.absolute()
@@ -312,6 +319,8 @@ def main(argv: list[str] | None = None) -> int:
             raise LauncherError("fixture inputs must stay in ignored test evidence")
         env["DESKPET_ORCHESTRATION_TEST_SCENARIO"] = "document-ui"
         env["DESKPET_ORCH_UI_FIXTURE_DIR"] = str(fixture)
+        if args.fixture_case:
+            env["DESKPET_ORCH_UI_FIXTURE_CASE"] = args.fixture_case
     vite_env = {
         name: value for name, value in env.items() if name != "DESKPET_CLOUD_API_KEY"
     }

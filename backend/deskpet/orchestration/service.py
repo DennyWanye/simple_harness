@@ -188,7 +188,9 @@ class OrchestrationService:
         enabled_connectors: tuple[str, ...] = ()
         if self._test_scenario == "approval-action":  # plan §3.8: test-only, own directory
             from agent_orchestrator.runtime.connectors import TestConfigService
-            from agent_orchestrator.testing.fixtures import demo_approval_action_provider
+            from agent_orchestrator.testing.fixtures import (
+                demo_approval_action_provider,
+            )
 
             # the Host deployment offers the workspace tools only (SDK 0.9.10 parameter)
             provider = demo_approval_action_provider(allowed_tools=WORKSPACE_TOOLS)
@@ -201,7 +203,14 @@ class OrchestrationService:
 
             from .native_fixture import document_ui_provider
 
-            provider = document_ui_provider(Path(os.environ["DESKPET_ORCH_UI_FIXTURE_DIR"]))
+            fixture_root = Path(os.environ["DESKPET_ORCH_UI_FIXTURE_DIR"])
+            case = os.environ.get("DESKPET_ORCH_UI_FIXTURE_CASE")
+            if case:
+                from .native_cases import document_case_provider
+
+                provider = document_case_provider(case, fixture_root)
+            else:
+                provider = document_ui_provider(fixture_root)
         elif provider is None:
             raise ProviderUnavailable(NO_MODEL)
         publish = self._publish_connector()  # P3.2 P32-14: only a directory the user authorised
@@ -290,7 +299,10 @@ class OrchestrationService:
         the P3.2 journal as a deliberate deviation).
         """
 
-        from agent_orchestrator.runtime.sandbox import SandboxUnavailable, SeatbeltExecutor
+        from agent_orchestrator.runtime.sandbox import (
+            SandboxUnavailable,
+            SeatbeltExecutor,
+        )
         from agent_orchestrator.runtime.sandbox import probe_sandbox as run_probe
 
         self._executor = None

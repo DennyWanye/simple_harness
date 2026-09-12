@@ -275,3 +275,27 @@ The next11 attempts made zero physical calls: the required retry package duplica
 Repair: machine repair feedback retains all required missing claim/criterion pairs, reasons and original-record hash without reinlining historical source prose; unchanged current goals/contracts/catalogs remain full. Planner guidance distinguishes original success criteria/source facts from report-quality requirements retained in goal and independent Critic review. ContextRequiredContentTooLarge now stops unchanged-contract retries without Provider-health downgrade. Targeted5 controls pass/0.45s; first unit fixture exceeded the existing20000-character Attempt.feedback contract and was corrected, not production limits.
 
 Other source results: joint system/accounting/fragment run50 PASS2 fragment-runtime timeout FAIL/33.44s; fragment failures pending. Broad integration1051 PASS2 FAIL3 optional-tokenizer SKIP/52.52s (missing optional env is explicit); new system hook regressions under repair. Priced system rounding reserve has an independent P1 finding and is not complete. First-page native fixture delivery delay1.5s preserves original response and only applies to ignored document-ui scenario; Host command controls12 PASS/17.59s after relocating a misplaced existing assertion. N1–N6/O4 and P34/P35 whole gates remain OPEN; no packaging, release or P36.
+
+## 2026-09-13 04:13 CST — usage recovery and source UI checkpoint
+
+**Source and native checkpoint — 2026-09-13 04:13 CST:** SDK protocol-error response parsing preserves independently valid Provider usage while still rejecting malformed tools (26 PASS/1.36s); missing/invalid usage stays unknown. Late-accounting automatic original-subject import/settle11 PASS/2.90s and receipt boundaries5 PASS/0.47s, independently reviewed. Citation repair retains failing claim/index/source/line identity without source-body reinlining3 PASS/0.46s. Broader integration v14 is still running/stalled in legacy recovery, not PASS. N1v7 was UI-cancelled after malformed-tool response without usage,170532 settled/108083 unknown held,13 physical handoffs, no successful value acceptance; original proof retained. Controlled source UI N2 delivered two28-Claim Missions (750 tokens each/zero reserve), actual long block290080 characters reached END_OF_LONG_TABLE, in-flight citation switching/CAS error and restored retry observed. N3 source supersede/revoke-reject/revoke-approve and historical read observed; cold verification in progress. N4/N6 boundary software27 PASS/10.67s including launcher identity, native cases not yet run. Whole Phase3 gates remain OPEN; no packaging/P3.6/push.
+
+N1 raw evidence: Host `.local-test-evidence/2026-09-13/p33-g/source-ui-n1-v7/failure-summary.json`, SHA-256 `5f19501b1e24ecb2dea3277f2e1520124f34cac385c4eec4ee30b8adad4ebfc9`; original process group25765 exit0/905.089s/remaining[]. N2 first session PG31617 exit0/959.462s/remaining[], cold session separately recorded. CAS fault original bytes restored and SHA verified; no evidence uploaded.
+
+| Run | Actual pytest result | Measured wrapper | Log SHA-256 |
+|---|---|---|---|
+| `g-feedback-citation-v2` | 3 PASS /0.46s | 1.21s | `d67af6276960c86f8235293a7fd7c89828928cae760895086fdc5286a51dbb55` |
+| `g-protocol-usage-v4` | 26 PASS /1.36s | 2.37s | `877eba3264006b10ef3ad3f249b5448625ecc1deadb00a4967c191be6183cd87` |
+| `p35-accounting-boundaries-v1` | 5 PASS /0.47s | 0.75s | `9fe17b0188270dee55574f487842bfdc85861c7dca5c4c925b90b1f6bf41702f` |
+| `p35-late-accounting-runtime-v2` | 11 PASS /2.90s | 3.42s | `3d7dbb7b864b63bf38cfcebc3cecbf257839202a13fe3a4e89d37cfe6f58aa23` |
+| `g-host-native-cases-v3` | 27 PASS /10.67s | 11.24s | `d3cd8dd70daecb4c3737a8bfc1ffaafc49740f4004e26c7f01855eaa7bd9ca82` |
+
+## 2026-09-13 04:15 CST — N2/cold lifecycle and compatibility checkpoint
+
+**Current checkpoint — 2026-09-13 04:15 CST:** controlled native N2 and terminal-source lifecycle checks completed, including >20 Claim scrolling, 290080-character table end, A/B and Mission switching, real CAS error/restored retry, supersede approval/revoke rejection then approval, original citation read after cold restart. Two Missions retain28 Claims each/750 settled tokens/zero reserved;10 physical fixture invocations unchanged across cold restart. No real-model quality claim; active-revocation and conflict-arbitration native controls remain open. Integration v14:1105 PASS/1 legacy recovery FAIL/346.49s; original Attempt executor_stalled after180s then a second Attempt violated original no-rerun oracle. Focused unchanged recovery matrix v15:8 PASS/20.70s. Underlying intermittent stall is unclassified and retained, not dismissed as flaky or closed by the rerun. Local source checkpoint only; overall N1/P34/P35, offline backup and FIRST bounded initial request remain in progress.
+
+Controlled native raw evidence: Host `.local-test-evidence/2026-09-13/p33-g/source-ui-n2-v7/`; cold-resume-summary.json SHA-256 `2d8dc865891988e11f3fbdd5f638ff373e0fb93166678a4e52da150ffd03c88d`. First session959.462s, cold session234.642s, both owned groups fully reaped. Whole native wall time includes concurrent software review; do not add it again to engineering elapsed time.
+
+`g-checkpoint-integration-v14.log` SHA-256 `e578859fedf850bce1bf5bd6d84128b80b745e9ffcd478c2eed415fd7f20d99c`.
+
+`g-recovery-stall-v15.log` SHA-256 `6de81b2c3ba4378803b3f919aea51778c87f8f6a46b555e57b266023156fd61a`.
