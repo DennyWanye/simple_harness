@@ -317,3 +317,10 @@ Host `985e403` 的 N1v8 本机 UI 证据保持 FAILED，预算为 378113 settled
 N1v8 failure summary: Host .local-test-evidence/2026-09-13/p33-g/source-ui-n1-v8/failure-summary.json SHA-256 `56e4cca4aef75dc4d992f7782cd49daddd642913a0716fff5987144fb6bceac6`; owned PG39303 exited, remaining children zero. No formal accepted report.
 
 独立审查：Terra medium 单次只读审查本次 kernel/live-progress/native-active-revoke diff，未发现 P0/P1。保留在途 Provider lease-loss 与真实 OS kill 后续验证，不据现有测试泛化全部恢复路径；源码检查点提交，整体仍 OPEN。
+
+
+## 2026-09-13 05:25 — N1v9 正式交付与冷恢复
+
+**源码与原生 UI 检查点 — 2026-09-13 05:25 CST：** N1v9 原始两文档、400000/12 原目标在 SDK c9a1f183 / Host 45c09756 源码环境完成：220.968s，正式 REPORT f6b192a3…f905、6 条 VERIFIED 逐字引用（两来源、完整表格行、完整限定单元），242431 tokens 已结算/预留0，13 次 Provider handoff。真实 UI 读报告、引用并冷启动重读，调用仍13/无重复；文档区“尚未判定”投影缺陷已修复，后端13 PASS/0.06s、前端25 PASS/0.912s及typecheck通过，新 UI 待验。动态新增已完成依赖的 Task 回放修复42 PASS/36.16s，原 v14 #14 历史43事件全覆盖/无差异；Python3.12空AST字段兼容35 PASS/0.29s，保持原生产基线。总体P33/P34/P35仍OPEN；进程kill测试仍在修复，FIRST请求保护仅helper7 PASS未集成；不打包/P36/推送。
+
+原始本地证据：`.local-test-evidence/2026-09-13/p33-g/source-ui-n1-v9/`，mission `mission-a13c50d355d83850`。当前正式报告SHA256 `f6b192a3d180b3a43e9f2ce69184810f2403bf12aa36a0f51566327fac33f905`。首次cold命令在启动前因端口bind拒绝，监听检查无残留；后续cold2同源恢复成功，不记首轮PASS。初始owned PG50346退出0、剩余0，1283.331s包含终态人工阅读等待，不等于220.968s Mission运行时间。UI显示缺陷根因：SDK成功报告提供success_criteria与stop_reason，没有final_report.result；Host只在冻结条件逐条严格匹配、判定完整时显示实际结果，保留STRUCTURAL覆盖类别。测试：`backend/tests/orchestration/test_g_document_projection.py`13PASS；`MissionDocument.test.tsx`25PASS；typecheckPASS。新修复原生UI待验。

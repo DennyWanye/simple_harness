@@ -66,10 +66,21 @@ function page(index: number, text: string, offset = 0, next_offset: number | nul
 afterEach(cleanup);
 
 describe("P33-45 formal document report", () => {
+  it("shows actual Mission judgment while retaining STRUCTURAL as coverage classification", () => {
+    setup({ ...document, result: "verification_passed", criteria: [
+      { text: "file:REPORT.md", verdict: "STRUCTURAL", final_judgment: { met: true, judge: "rule_check" } },
+      { text: "cite:sources/A.md", verdict: "PASS", final_judgment: { met: true, judge: "document_coverage", verdict: "PASS" } },
+    ] });
+    expect(screen.getByTestId("document-result").textContent).toContain("成功条件已判定满足（verification_passed）");
+    expect(screen.getByText("覆盖归类：结构或执行条件，需实际检查判定（STRUCTURAL）")).toBeTruthy();
+    expect(screen.getByText("实际判定：满足 · 规则检查（rule_check）")).toBeTruthy();
+    expect(screen.getByText("实际判定：满足 · 文档覆盖核验（document_coverage）")).toBeTruthy();
+  });
+
   it("shows readable criteria/source labels and keeps complete raw records collapsed", () => {
     setup({ ...document, criteria: [{ ordinal: 1, text: "世界事实", verdict: "FAIL", excluded_claim_ids: ["claim0"] }], diagnostics: [{ reason: "raw diagnostic detail" }] });
     expect(screen.getByText("世界事实")).toBeTruthy();
-    expect(screen.getByText("未通过（FAIL）")).toBeTruthy();
+    expect(screen.getByText("覆盖归类：未通过（FAIL）")).toBeTruthy();
     const diagnostics = screen.getByTestId("document-diagnostics") as HTMLDetailsElement;
     expect(diagnostics.open).toBe(false);
     expect(diagnostics.textContent).toContain("raw diagnostic detail");

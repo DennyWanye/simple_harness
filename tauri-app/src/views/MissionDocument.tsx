@@ -25,6 +25,8 @@ const LABELS: Record<string, string> = {
   path: "路径", version: "版本", kind: "类型", catalog: "范围", criterion: "条件", binding: "核验方式",
   source_path: "来源路径", literal: "逐字核对", task: "Task", mission: "Mission",
   stale_source: "来源已失效", revoked: "已撤销", superseded: "已替代", not_current: "非当前版本",
+  verification_passed: "成功条件已判定满足", mission_criteria_unmet: "成功条件未全部满足",
+  STRUCTURAL: "结构或执行条件，需实际检查判定", rule_check: "规则检查", document_coverage: "文档覆盖核验",
 };
 const label = (value: unknown) => value == null ? "尚未判定" : LABELS[asText(value)] ? `${LABELS[asText(value)]}（${asText(value)}）` : asText(value);
 const readable = (value: unknown): string => {
@@ -250,7 +252,10 @@ export function MissionDocument({ missionId, document, channel, onChanged }: {
       <div data-testid="document-result">Mission 判定：{label(document.result)}</div>
       <h3>成功条件与实际覆盖</h3>
       {asList(document.criteria).map((criterion, index) => <div key={index} style={{ marginTop: 8 }}>
-        <strong>{asText(criterion.text)}</strong><div>{label(criterion.verdict)}</div>
+        <strong>{asText(criterion.text)}</strong><div>覆盖归类：{label(criterion.verdict)}</div>
+        {typeof asRecord(criterion.final_judgment).met === "boolean" && <div>
+          实际判定：{asRecord(criterion.final_judgment).met === true ? "满足" : "未满足"} · {label(asRecord(criterion.final_judgment).judge)}
+        </div>}
         {Array.isArray(criterion.reasons) && criterion.reasons.length > 0 && <div>{readable(criterion.reasons)}</div>}
         <RecordDetails title={`条件 ${index + 1} 的覆盖记录`} value={criterion} />
       </div>)}

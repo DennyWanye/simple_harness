@@ -214,12 +214,24 @@ def _document(snapshot: Mapping[str, Any], source_issues: Mapping[str, Any] | No
     reviews = [_snapshot_approval(a, {}, document=True) for a in _rows(snapshot.get("approvals")) if a.get("kind") in {"review", "arbitration"}]
     coverage = report.get("document_coverage") or {}
     covered = _rows(coverage.get("criteria"))
+    raw_judgments = _rows(report.get("success_criteria"))
+    criterion_texts = list(mission.get("success_criteria") or ())
+    # The SDK records the actual Mission judgment separately from document
+    # coverage. STRUCTURAL means coverage deferred to a rule/execution check;
+    # it is not itself a PASS. Bind the final rows to the frozen criteria in order.
+    judgments = raw_judgments if (
+        len(raw_judgments) == len(criterion_texts)
+        and all(row.get("criterion") == text and type(row.get("met")) is bool
+                and isinstance(row.get("judge"), str) and bool(row["judge"])
+                for row, text in zip(raw_judgments, criterion_texts, strict=True))
+    ) else []
     criteria = []
-    for ordinal, text in enumerate(mission.get("success_criteria") or (), 1):
+    for ordinal, text in enumerate(criterion_texts, 1):
         entry = next((c for c in covered if c.get("ordinal") == ordinal and c.get("text") == text), {})
         criteria.append({"ordinal": ordinal, "text": text, "verdict": entry.get("verdict"),
                          **_pick(entry, ("criterion_id", "kind", "reasons", "claim_ids", "task_assessment_receipt_ids",
                                         "limitations", "excluded_claim_ids")),
+                         "final_judgment": _pick(judgments[ordinal - 1], ("met", "judge", "verdict")) if judgments else None,
                          "source_provenance_issues": _issues(entry.get("source_provenance_issues"))})
     knowledge = {k.get("id"): k for k in _rows(snapshot.get("knowledge"))}
 
@@ -284,8 +296,15 @@ def _document(snapshot: Mapping[str, Any], source_issues: Mapping[str, Any] | No
                                                        for v in _rows(detail.get("criterion_verdicts"))],
                                 "reason": detail.get("reason"),
                                 "source_provenance_issues": _issues(detail.get("source_provenance_issues"))})
+    judged_reason = (
+        mission.get("stop_reason")
+        if judgments and (
+            (mission.get("status") == "COMPLETED" and mission.get("stop_reason") == "verification_passed" and all(j["met"] for j in judgments))
+            or (mission.get("status") == "FAILED" and mission.get("stop_reason") == "mission_criteria_unmet" and not all(j["met"] for j in judgments))
+        ) else None
+    )
     return {"schema_version": 1, "domain": {"id": domain.get("domain_id"), "version": domain.get("domain_version")},
-            "result": report.get("result"), "criteria": criteria, "claims": rendered,
+            "result": report.get("result") or judged_reason, "criteria": criteria, "claims": rendered,
             "assessments": [_assessment(a) for a in assessments],
             "sources": [_pick(s, ("path", "version_hash", "kind", "trust", "registered_at", "superseded_by", "revoked", "revision")) for s in sources],
             "limitations": limitations, "reviews": reviews, "diagnostics": diagnostics}

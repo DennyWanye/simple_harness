@@ -110,6 +110,44 @@ def test_empty_document_is_not_missing_or_successful():
     assert doc["schema_version"] == 1 and doc["domain"]["version"] == "4"
 
 
+def test_completed_document_projects_actual_judgment_separately_from_structural_coverage():
+    view = document_view(0)
+    mission = view["snapshot"]["mission"]
+    mission.update(status="COMPLETED", stop_reason="verification_passed")
+    mission["success_criteria"] = ["file:REPORT.md", "cite:sources/A.md"]
+    mission["final_report"] = {
+        "success_criteria": [
+            {"criterion": "file:REPORT.md", "met": True, "judge": "rule_check", "reason": "file exists"},
+            {"criterion": "cite:sources/A.md", "met": True, "judge": "document_coverage", "verdict": "PASS"},
+        ],
+        "document_coverage": {"criteria": [
+            {"ordinal": 1, "text": "file:REPORT.md", "kind": "file", "verdict": "STRUCTURAL"},
+            {"ordinal": 2, "text": "cite:sources/A.md", "kind": "cite", "verdict": "PASS"},
+        ]},
+    }
+    doc = project_detail(view)["document"]
+    assert doc["result"] == "verification_passed"
+    assert doc["criteria"][0]["verdict"] == "STRUCTURAL"
+    assert doc["criteria"][0]["final_judgment"] == {"met": True, "judge": "rule_check"}
+    assert doc["criteria"][1]["final_judgment"] == {"met": True, "judge": "document_coverage", "verdict": "PASS"}
+
+    # An incomplete or misbound report cannot acquire a successful label.
+    mission["final_report"]["success_criteria"].pop()
+    incomplete = project_detail(view)["document"]
+    assert incomplete["result"] is None
+    assert all(item["final_judgment"] is None for item in incomplete["criteria"])
+    mission["final_report"]["success_criteria"].append(
+        {"criterion": "cite:other-source.md", "met": True, "judge": "document_coverage"}
+    )
+    assert project_detail(view)["document"]["result"] is None
+
+    mission.update(status="FAILED", stop_reason="mission_criteria_unmet")
+    mission["final_report"]["success_criteria"][-1].update(
+        criterion="cite:sources/A.md", met=False
+    )
+    assert project_detail(view)["document"]["result"] == "mission_criteria_unmet"
+
+
 def test_trust_scope_and_diagnostics_are_real_system_fields():
     view = document_view(1)
     view["snapshot"]["claims"][0]["confidence_metadata"] = {
