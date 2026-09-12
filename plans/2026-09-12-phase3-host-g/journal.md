@@ -324,3 +324,17 @@ N1v8 failure summary: Host .local-test-evidence/2026-09-13/p33-g/source-ui-n1-v8
 **源码与原生 UI 检查点 — 2026-09-13 05:25 CST：** N1v9 原始两文档、400000/12 原目标在 SDK c9a1f183 / Host 45c09756 源码环境完成：220.968s，正式 REPORT f6b192a3…f905、6 条 VERIFIED 逐字引用（两来源、完整表格行、完整限定单元），242431 tokens 已结算/预留0，13 次 Provider handoff。真实 UI 读报告、引用并冷启动重读，调用仍13/无重复；文档区“尚未判定”投影缺陷已修复，后端13 PASS/0.06s、前端25 PASS/0.912s及typecheck通过，新 UI 待验。动态新增已完成依赖的 Task 回放修复42 PASS/36.16s，原 v14 #14 历史43事件全覆盖/无差异；Python3.12空AST字段兼容35 PASS/0.29s，保持原生产基线。总体P33/P34/P35仍OPEN；进程kill测试仍在修复，FIRST请求保护仅helper7 PASS未集成；不打包/P36/推送。
 
 原始本地证据：`.local-test-evidence/2026-09-13/p33-g/source-ui-n1-v9/`，mission `mission-a13c50d355d83850`。当前正式报告SHA256 `f6b192a3d180b3a43e9f2ce69184810f2403bf12aa36a0f51566327fac33f905`。首次cold命令在启动前因端口bind拒绝，监听检查无残留；后续cold2同源恢复成功，不记首轮PASS。初始owned PG50346退出0、剩余0，1283.331s包含终态人工阅读等待，不等于220.968s Mission运行时间。UI显示缺陷根因：SDK成功报告提供success_criteria与stop_reason，没有final_report.result；Host只在冻结条件逐条严格匹配、判定完整时显示实际结果，保留STRUCTURAL覆盖类别。测试：`backend/tests/orchestration/test_g_document_projection.py`13PASS；`MissionDocument.test.tsx`25PASS；typecheckPASS。新修复原生UI待验。
+
+
+## 2026-09-13 05:40 — 原生边界与实际OS恢复
+
+**原生边界与恢复检查点 — 2026-09-13 05:40 CST：** 新冻结 SDK c8e2541 / Host b7dc4c64 综合1127 PASS/75.26s。N1v9真模型正式交付及同源冷恢复已核对；新Host显示修复在受控原生来源指令用例验证。N4来源指令归属、错误逐字引用、矛盾证据三例原生UI符合预期，独立原始证据保存在Host `.local-test-evidence/2026-09-13/p33-g/source-ui-n4-*-v10/`。实际OS SIGKILL后两库冷恢复2 PASS/9.59s：成功结果零重复Worker、独立Critic读产物；UNKNOWN保持原token/cost占用。仅覆盖该两边界，不覆盖完整Mission或P32逃逸进程恢复。FIRST新保护虽18PASS/0.91s，独立审查仍有系统hold丢cap和priced分别取整2项P1，修复中。P33剩余N6/active管理/O4、P34综合价值场景及P35其余门槛保持OPEN，不打包/P36/推送。
+
+OSkill selector：`tests/orchestrator/p35/test_process_kill_recovery.py`；raw `.local-test-evidence/2026-09-12/p33-g/g-process-kill-astra-v3.{json,log}`，wrapper9.87s。Terra初稿及三轮返工保留：v1两项importFAIL0.65s；v2 marker45sFAIL/第二case无壁钟上限，主线程139.62s中止；Astra重做合法envelope/真实分库/硬超时后首次实测2PASS。新启动器SO_REUSEADDR只允许TIME_WAIT重绑定，仍拒绝live监听，定向20PASS/0.11s。所有新证据不入Git。
+
+
+## 2026-09-13 05:44 — 保留不确定性展示边界
+
+**N6 显示修正 — 2026-09-13 05:44 CST：** 原生 n6-half 验证1/2不确定条件按原策略可交付，局限与INCONCLUSIVE均保存；UI“实际判定：满足”措辞会误导，已改为保留不确定性，Mission统一显示“通过交付判定”。新增UI反例先红，修复后26项通过；新快照原生复验待完成，不能把该措辞修正算原生PASS。
+
+本机证据 `source-ui-n6-half-v10` 的 Mission `mission-e2c32d6b00f2d5dd`，Task PASS/Mission COMPLETED，原条件1/2 INCONCLUSIVE，900tokens预留0。UI反例与修复日志为 `g-ui-uncertainty-{red-v1,green-v2}.log`，来源/.local-test-evidence/2026-09-13/p33-g。底层判定/阈值/来源均未改变。

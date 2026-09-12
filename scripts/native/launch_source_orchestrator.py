@@ -241,6 +241,9 @@ def main(argv: list[str] | None = None) -> int:
         raise LauncherError("backend and Vite must have distinct ports")
     for port in (args.backend_port, args.vite_port):
         with socket.socket() as probe:
+            # A cleanly stopped dev server can leave TIME_WAIT connections.
+            # Reuse that state while still refusing a live listening socket.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(("127.0.0.1", port))
     head = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=root, text=True

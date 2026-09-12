@@ -66,12 +66,21 @@ function page(index: number, text: string, offset = 0, next_offset: number | nul
 afterEach(cleanup);
 
 describe("P33-45 formal document report", () => {
+  it("does not present policy-tolerated uncertainty as a satisfied factual criterion", () => {
+    setup({ ...document, result: "verification_passed", criteria: [
+      { text: "方案在环境 1 可运行。", verdict: "INCONCLUSIVE", final_judgment: { met: true, judge: "document_coverage", verdict: "INCONCLUSIVE" } },
+    ] });
+    expect(screen.getByTestId("document-result").textContent).toContain("通过交付判定（verification_passed）");
+    expect(screen.getByText("实际判定：证据不足，按策略保留不确定性 · 文档覆盖核验（document_coverage）")).toBeTruthy();
+    expect(screen.queryByText("实际判定：满足 · 文档覆盖核验（document_coverage）")).toBeNull();
+  });
+
   it("shows actual Mission judgment while retaining STRUCTURAL as coverage classification", () => {
     setup({ ...document, result: "verification_passed", criteria: [
       { text: "file:REPORT.md", verdict: "STRUCTURAL", final_judgment: { met: true, judge: "rule_check" } },
       { text: "cite:sources/A.md", verdict: "PASS", final_judgment: { met: true, judge: "document_coverage", verdict: "PASS" } },
     ] });
-    expect(screen.getByTestId("document-result").textContent).toContain("成功条件已判定满足（verification_passed）");
+    expect(screen.getByTestId("document-result").textContent).toContain("通过交付判定（verification_passed）");
     expect(screen.getByText("覆盖归类：结构或执行条件，需实际检查判定（STRUCTURAL）")).toBeTruthy();
     expect(screen.getByText("实际判定：满足 · 规则检查（rule_check）")).toBeTruthy();
     expect(screen.getByText("实际判定：满足 · 文档覆盖核验（document_coverage）")).toBeTruthy();
