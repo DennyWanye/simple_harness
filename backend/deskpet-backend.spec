@@ -1,7 +1,7 @@
 # P3-S4 — PyInstaller spec for the frozen backend.
 #
-# Produces `dist/deskpet-backend/deskpet-backend.exe` + a `_internal/`
-# sidecar directory with all Python bytecode, native DLLs, and the
+# Produces `dist/deskpet-backend/deskpet-backend` (`.exe` on Windows) + an `_internal/`
+# sidecar directory with Python modules, native libraries, and the
 # data files listed below. The Rust supervisor (post-P3-S3) picks
 # this up via the `Bundled` branch of `backend_launch::resolve`.
 #
@@ -15,7 +15,9 @@
 # `COLLECT`, `block_cipher` into this file's scope.
 
 import glob
+import hashlib
 import importlib.util as _ilu
+import json
 import os
 import subprocess
 import sys
@@ -24,6 +26,7 @@ from pathlib import Path
 
 import PyInstaller.building.build_main as _pyi_build_main
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
+from PyInstaller.building.utils import format_binaries_and_datas
 
 # Playwright driver + the exact product-owned browser are collected through one
 # shared helper.  It validates the package/browser pins and fails the build
@@ -31,6 +34,75 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 _repo_root = Path(SPECPATH).resolve().parent
 sys.path.insert(0, str(_repo_root / "scripts"))
 from playwright_bundle_spec_support import collect_playwright_bundle
+
+
+def _capture_host_build_identity(repository):
+    # These are the tracked Host source/config/resource inputs, not build
+    # scratch, local SDK checkouts, credentials, or mutable process cwd.
+    roots = ["backend", "tauri-app", "scripts", "capability-packs", "resources", "config.toml"]
+
+    def git(*args):
+        try:
+            return subprocess.run(["git", *args], cwd=repository, check=True,
+                                  capture_output=True, timeout=30).stdout
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError("cannot establish Host build source identity") from exc
+
+    commit = git("rev-parse", "HEAD").decode("ascii").strip()
+    if len(commit) != 40 or any(c not in "0123456789abcdef" for c in commit):
+        raise RuntimeError("invalid Host build source commit")
+    if git("status", "--porcelain", "--untracked-files=all", "--", *roots).strip():
+        raise RuntimeError("dirty Host build inputs: commit backend/tauri-app/scripts/resources changes before building")
+    entries = git("ls-files", "--stage", "-z", "--", *roots).split(b"\0")
+    digest = hashlib.sha256()
+    count = 0
+    for entry in sorted(item for item in entries if item):
+        metadata, relative = entry.split(b"\t", 1)
+        mode, _blob, stage = metadata.split()
+        if stage != b"0" or mode not in {b"100644", b"100755", b"120000"}:
+            raise RuntimeError("unsupported Host build input mode or conflict")
+        path = Path(repository) / os.fsdecode(relative)
+        content = hashlib.sha256()
+        if mode == b"120000":
+            content.update(os.fsencode(os.readlink(path)))
+        else:
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    content.update(chunk)
+        digest.update(mode + b"\0" + relative + b"\0" + content.digest())
+        count += 1
+    if not count:
+        raise RuntimeError("Host build inputs are empty")
+    if git("rev-parse", "HEAD").decode("ascii").strip() != commit or git(
+        "status", "--porcelain", "--untracked-files=all", "--", *roots
+    ).strip():
+        raise RuntimeError("Host build inputs changed while capturing identity")
+    return {"schema": "host-build-identity-v1", "host_commit": commit,
+            "host_dirty": False, "tracked_inputs_sha256": digest.hexdigest(),
+            "tracked_input_count": count, "input_roots": roots}
+
+
+_host_build_identity = _capture_host_build_identity(_repo_root)
+_host_identity_path = Path(workpath) / "host-build-identity.json"
+_host_identity_path.parent.mkdir(parents=True, exist_ok=True)
+_host_identity_path.write_text(json.dumps(_host_build_identity, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+# Resolve both SDK artifacts through the product SSOT. Verify the immutable
+# wheel/manifest bytes and installed wheel origins before collecting anything;
+# a source checkout or a stale installed candidate must not become a release.
+sys.path.insert(0, str(_repo_root / "backend"))
+from deskpet.sdk_adapters.runtime_paths import verify_sdk_candidate
+from deskpet.sdk_adapters.sdk_candidate import (
+    build_candidate_identity,
+    sdk_candidate_manifest_path,
+    sdk_service_candidate_manifest_path,
+    sdk_service_wheel_path,
+    sdk_wheel_path,
+    verify_service_candidate,
+)
+
+verify_sdk_candidate(build_candidate_identity())
+verify_service_candidate()
 
 # Durable core tools must be built from the exact checked manifest.  Release
 # wrappers regenerate with --write; PyInstaller itself is deliberately
@@ -77,7 +149,8 @@ _pyi_build_main.find_binary_dependencies = _find_binary_dependencies_skip_flagem
 _site_packages = sysconfig.get_paths()["purelib"]
 _mypyc_modules = [
     os.path.basename(p).split(".", 1)[0]
-    for p in glob.glob(os.path.join(_site_packages, "*__mypyc.*.pyd"))
+    for pattern in ("*__mypyc.*.pyd", "*__mypyc.*.so")
+    for p in glob.glob(os.path.join(_site_packages, pattern))
 ]
 
 # --- 1. Hidden imports --------------------------------------------------
@@ -85,6 +158,9 @@ _mypyc_modules = [
 # won't be discovered by the default import graph. List every top-level
 # package that the frozen exe must be able to `import` lazily.
 hiddenimports: list[str] = []
+# Domain adapters and runtime providers are selected dynamically by the SDK.
+# Collect from the verified installed wheel, never a sibling SDK checkout.
+hiddenimports += collect_submodules("agent_orchestrator", on_error="raise")
 hiddenimports += collect_submodules("faster_whisper")
 hiddenimports += collect_submodules("ctranslate2")
 hiddenimports += collect_submodules("silero_vad")
@@ -174,19 +250,29 @@ hiddenimports += _mypyc_modules
 # (source, dest-inside-bundle) tuples. Use collect_data_files() for
 # installed packages; hardcode relative paths for our own repo files.
 datas: list[tuple[str, str]] = []
+datas.append((str(_host_identity_path), "."))
+datas += collect_data_files("agent_orchestrator")
 datas += copy_metadata("simple-harness-sdk")
 datas += [
-    ("vendor/simple_harness_sdk-0.6.4-py3-none-any.whl", "vendor"),
-    ("vendor/simple_harness_sdk-0.6.4.candidate-manifest.json", "vendor"),
+    (str(sdk_wheel_path()), "vendor"),
+    (str(sdk_candidate_manifest_path()), "vendor"),
 ]
 _playwright_datas, _playwright_hiddenimports = collect_playwright_bundle(_repo_root)
-datas += _playwright_datas
+# The mac browser is an upstream signed, hash-pinned standalone tree. Adding
+# its Mach-O files before Analysis would reclassify/rewrite/resign them and
+# invalidate the runtime pin. Append that tree as DATA only after Analysis.
+_immutable_browser_datas = []
+for _source, _destination in _playwright_datas:
+    if sys.platform == "darwin" and _destination.startswith("playwright-browsers/"):
+        _immutable_browser_datas.append((_source, _destination))
+    else:
+        datas.append((_source, _destination))
 hiddenimports += _playwright_hiddenimports
 datas += collect_data_files("silero_vad")          # silero_vad/data/*.jit
 datas += collect_data_files("faster_whisper")      # tokenizer.json
 datas += collect_data_files("tzdata")              # IANA tz db
 datas += collect_data_files("ctranslate2")         # any shipped configs
-datas += collect_data_files("sqlite_vec", includes=["*.dll"])  # vec0.dll for L3 recall
+datas += collect_data_files("sqlite_vec", includes=["*.dll", "*.dylib", "*.so"])
 for _pkg in ["scrapling", "browserforge", "apify_fingerprint_datapoints"]:
     try:
         datas += collect_data_files(_pkg)
@@ -196,14 +282,8 @@ datas += collect_data_files("agent_reach")
 datas += collect_data_files("simple_harness_service")
 datas += copy_metadata("simple-harness-service-sdk")
 datas += [
-    (
-        "vendor/simple_harness_service_sdk-0.3.12-py3-none-any.whl",
-        "vendor",
-    ),
-    (
-        "vendor/simple_harness_service_sdk-0.3.12.candidate-manifest.json",
-        "vendor",
-    ),
+    (str(sdk_service_wheel_path()), "vendor"),
+    (str(sdk_service_candidate_manifest_path()), "vendor"),
     # P4-S22 fix: ship the canonical migrations directory under
     # ``deskpet/memory/migrations`` (where the actual v9/v10/v11 SQL
     # files live). The legacy ``memory/migrations`` only contains
@@ -259,10 +339,10 @@ datas += [
 # handles).
 import os as _os  # noqa: PLC0415
 _busybox_src = _os.path.join("..", "resources", "busybox-w32", "busybox.exe")
-if _os.path.isfile(_busybox_src):
+if sys.platform == "win32" and _os.path.isfile(_busybox_src):
     datas += [(_busybox_src, ".")]
     print(f"[spec] bundling busybox: {_busybox_src}")
-else:
+elif sys.platform == "win32":
     print(
         f"[spec] WARNING: busybox not found at {_busybox_src} — "
         "frozen build will rely on Git Bash / PowerShell / cmd at runtime. "
@@ -354,6 +434,11 @@ a = Analysis(
     module_collection_mode={"deskpet.workflows.definitions": "py"},
 )
 
+a.datas += [
+    (destination, source, "DATA")
+    for destination, source in format_binaries_and_datas(_immutable_browser_datas)
+]
+
 # --- 3b. Defensive torch CUDA DLL strip ---------------------------------
 # REQUIRED SETUP: the backend venv MUST install torch's CPU-only wheel
 #   pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
@@ -425,6 +510,20 @@ for _dir in _NVIDIA_DLL_DIRS:
             (f"ctranslate2/{os.path.basename(_dll)}", _dll, "BINARY")
         )
 
+# Recursive data trees and third-party hooks must not carry private workspace
+# files into the onedir artifact. Check the expanded destinations before COLLECT;
+# required Python modules (including secrets.py) and pinned wheels remain valid.
+for _dest, _src, _type in [*a.datas, *a.binaries]:
+    _parts = Path(_dest.replace("\\", "/")).parts
+    if any(
+        part.lower() in {".git", ".venv", "secrets", ".local-test-evidence"}
+        or part.lower() == ".env"
+        or part.lower().startswith(".env.")
+        or part.lower().startswith("local-dev-credentials.")
+        for part in _parts
+    ):
+        raise RuntimeError(f"private workspace data must not be bundled: {_dest}")
+
 pyz = PYZ(a.pure, a.zipped_data)
 
 # --- 4. EXE + COLLECT ---------------------------------------------------
@@ -455,3 +554,8 @@ coll = COLLECT(
     upx_exclude=[],
     name="deskpet-backend",                        # dist/<this>/
 )
+
+# A long build must not silently mix inputs from a newer checkout. A mismatch
+# invalidates this build; the captured resource must never be rewritten to HEAD.
+if _capture_host_build_identity(_repo_root) != _host_build_identity:
+    raise RuntimeError("Host build inputs changed during PyInstaller; rebuild from a frozen checkout")

@@ -11,11 +11,13 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import platform
 import shutil
+import struct
 import sys
 import tempfile
 import zipfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path, PurePosixPath
 
 
@@ -44,9 +46,44 @@ class PlaywrightBundleContract:
     executable_sha256: str = "28016DF6864D302434C9231E1F9F1A8A7ECC512CB2FE3FAABB2A36130B96BCF1"
     owner_dir: str = "playwright-browsers"
     product_manifest: str = "deskpet-playwright-bundle.json"
+    executable_architecture: str | None = None
+    license_sha256: str | None = None
 
 
+# Historical Windows identity remains available to explicit legacy callers.
+# Runtime/build defaults select a supported native platform below.
 CONTRACT = PlaywrightBundleContract()
+MAC_ARM64_CONTRACT = replace(
+    CONTRACT,
+    archive_name="chrome-headless-shell-mac-arm64-149.0.7827.55.zip",
+    # Installed Playwright 1.61.0 coreBundle.js cftUrl + browsers.json r1228.
+    archive_url="https://cdn.playwright.dev/builds/cft/149.0.7827.55/mac-arm64/chrome-headless-shell-mac-arm64.zip",
+    archive_length=98_043_456,
+    archive_md5="9EA0A6D16E46DCC685D462D210D78116",
+    archive_sha256="302F82603BE06683947594ECD60F849E362A8FE3DD82A89BD4408477C97E75A6",
+    archive_entries=17,
+    executable_relative="chrome-headless-shell-mac-arm64/chrome-headless-shell",
+    executable_length=159_293_248,
+    executable_sha256="11E393326C7D20A7C56641A7C65DEF33EA9C280DA3B0B74CF8563B07989A0EE3",
+    executable_architecture="macho-arm64",
+    license_sha256="EA614F3494514366B3EE83DB6E3E6DED39E0060C9FF3FB283FFB9A2F60CE59C5",
+)
+
+
+def get_platform_contract(system: str | None = None, machine: str | None = None) -> PlaywrightBundleContract:
+    system = sys.platform if system is None else system
+    machine = (platform.machine() if machine is None else machine).lower()
+    if system == "win32" and machine in {"amd64", "x86_64"}:
+        return CONTRACT
+    if system == "darwin" and machine in {"arm64", "aarch64"}:
+        return MAC_ARM64_CONTRACT
+    raise PlaywrightBundleError(f"unsupported browser bundle platform: {system}/{machine}")
+
+
+def _validate_executable_header(header: bytes, contract: PlaywrightBundleContract) -> None:
+    if contract.executable_architecture == "macho-arm64":
+        if len(header) < 32 or header[:4] != b"\xcf\xfa\xed\xfe" or struct.unpack("<I", header[4:8])[0] != 0x0100000C:
+            raise PlaywrightBundleError("browser executable architecture is not Mach-O arm64")
 
 
 def _digest(path: Path, algorithm: str) -> str:
@@ -57,7 +94,8 @@ def _digest(path: Path, algorithm: str) -> str:
     return digest.hexdigest().upper()
 
 
-def validate_playwright_package(contract: PlaywrightBundleContract = CONTRACT) -> Path:
+def validate_playwright_package(contract: PlaywrightBundleContract | None = None) -> Path:
+    contract = contract or get_platform_contract()
     try:
         version = importlib.metadata.version("playwright")
     except importlib.metadata.PackageNotFoundError as exc:
@@ -91,7 +129,8 @@ def _safe_zip_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     return members
 
 
-def validate_archive(path: Path, contract: PlaywrightBundleContract = CONTRACT) -> None:
+def validate_archive(path: Path, contract: PlaywrightBundleContract | None = None) -> None:
+    contract = contract or get_platform_contract()
     path = Path(path)
     if not path.is_file() or path.stat().st_size != contract.archive_length:
         raise PlaywrightBundleError("browser archive length does not match product pin")
@@ -113,21 +152,37 @@ def validate_archive(path: Path, contract: PlaywrightBundleContract = CONTRACT) 
                 raise PlaywrightBundleError("browser executable entry length does not match product pin")
             digest = hashlib.sha256()
             with archive.open(executable) as stream:
+                header = stream.read(32)
+                _validate_executable_header(header, contract)
+                digest.update(header)
                 for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                     digest.update(chunk)
             if digest.hexdigest().upper() != contract.executable_sha256:
                 raise PlaywrightBundleError("browser executable entry hash does not match product pin")
+            if contract.license_sha256:
+                license_name = str(PurePosixPath(expected).parent / "LICENSE.headless_shell")
+                try:
+                    license_bytes = archive.read(license_name)
+                except KeyError as exc:
+                    raise PlaywrightBundleError("browser archive license is missing") from exc
+                if hashlib.sha256(license_bytes).hexdigest().upper() != contract.license_sha256:
+                    raise PlaywrightBundleError("browser archive license hash does not match product pin")
     except (OSError, zipfile.BadZipFile) as exc:
         raise PlaywrightBundleError(f"invalid browser archive: {exc}") from exc
 
 
 def _manifest_payload(contract: PlaywrightBundleContract) -> dict[str, object]:
     payload = asdict(contract)
+    # Keep existing Windows ownership markers byte-for-byte compatible.
+    for optional in ("executable_architecture", "license_sha256"):
+        if payload[optional] is None:
+            del payload[optional]
     payload["schema_version"] = 1
     return payload
 
 
-def validate_browser_owner(owner: Path, contract: PlaywrightBundleContract = CONTRACT) -> Path:
+def validate_browser_owner(owner: Path, contract: PlaywrightBundleContract | None = None) -> Path:
+    contract = contract or get_platform_contract()
     owner = Path(owner).resolve()
     revision_root = owner / contract.revision_dir
     if not revision_root.is_dir():
@@ -154,18 +209,26 @@ def validate_browser_owner(owner: Path, contract: PlaywrightBundleContract = CON
         raise PlaywrightBundleError("installed browser executable length does not match product pin")
     if _digest(executable, "sha256") != contract.executable_sha256:
         raise PlaywrightBundleError("installed browser executable hash does not match product pin")
+    if contract.executable_architecture:
+        with executable.open("rb") as stream:
+            _validate_executable_header(stream.read(32), contract)
+        if not executable.stat().st_mode & 0o111:
+            raise PlaywrightBundleError("installed browser lacks executable permission")
     license_path = revision_root / Path(contract.executable_relative).parent / "LICENSE.headless_shell"
     if not license_path.is_file():
         raise PlaywrightBundleError("installed browser license is missing")
+    if contract.license_sha256 and _digest(license_path, "sha256") != contract.license_sha256:
+        raise PlaywrightBundleError("installed browser license hash does not match product pin")
     return revision_root
 
 
 def publish_archive(
     archive_path: Path,
     owner: Path,
-    contract: PlaywrightBundleContract = CONTRACT,
+    contract: PlaywrightBundleContract | None = None,
 ) -> Path:
     """Validate, stage on the target volume, then atomically publish."""
+    contract = contract or get_platform_contract()
     archive_path, owner = Path(archive_path).resolve(), Path(owner).resolve()
     validate_archive(archive_path, contract)
     owner.mkdir(parents=True, exist_ok=True)
@@ -179,6 +242,10 @@ def publish_archive(
         with zipfile.ZipFile(archive_path) as archive:
             _safe_zip_members(archive)
             archive.extractall(stage)
+        if contract.executable_architecture:
+            # zipfile does not restore POSIX executable bits. The exact binary
+            # bytes and architecture have already been verified above.
+            (stage / contract.executable_relative).chmod(0o755)
         (stage / "INSTALLATION_COMPLETE").write_text("", encoding="utf-8")
         (stage / contract.product_manifest).write_text(
             json.dumps(_manifest_payload(contract), ensure_ascii=True, indent=2) + "\n",
@@ -219,7 +286,8 @@ class BrowserBundleDiagnostic:
         }
 
 
-def default_dev_owner(contract: PlaywrightBundleContract = CONTRACT) -> Path:
+def default_dev_owner(contract: PlaywrightBundleContract | None = None) -> Path:
+    contract = contract or get_platform_contract()
     local = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir()))
     return local / "DPW" / f"pw-{contract.playwright_version.replace('.', '')}-{contract.revision}" / contract.owner_dir
 
@@ -229,8 +297,9 @@ def resolve_browser_bundle(
     test_override: Path | None = None,
     tauri_resource_root: Path | None = None,
     dev_owner: Path | None = None,
-    contract: PlaywrightBundleContract = CONTRACT,
+    contract: PlaywrightBundleContract | None = None,
 ) -> BrowserBundleDiagnostic:
+    contract = contract or get_platform_contract()
     validate_playwright_package(contract)
     source: str
     owner: Path
@@ -260,7 +329,8 @@ def resolve_browser_bundle(
 
 
 def assert_short_build_paths(*paths: Path, max_deepest_length: int = 240) -> None:
-    suffix = Path(CONTRACT.owner_dir) / CONTRACT.revision_dir / Path(CONTRACT.executable_relative)
+    contract = get_platform_contract()
+    suffix = Path(contract.owner_dir) / contract.revision_dir / Path(contract.executable_relative)
     for path in paths:
         predicted = Path(path).resolve() / suffix
         if len(str(predicted)) > max_deepest_length:

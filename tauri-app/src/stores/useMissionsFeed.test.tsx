@@ -10,6 +10,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ControlMessage, IncomingMessage } from "../types/messages";
+import type { ConnectionState } from "../ws/ControlChannel";
 import { Sidebar } from "../components/Sidebar";
 import { useMissionsStore } from "./missionsStore";
 import { useMissionsFeed } from "./useMissionsFeed";
@@ -17,6 +18,9 @@ import { useMissionsFeed } from "./useMissionsFeed";
 class FakeChannel {
   readonly sent: ControlMessage[] = [];
   readonly listeners = new Set<(message: IncomingMessage) => void>();
+  readonly states = new Set<(state: ConnectionState) => void>();
+  onStateChange = (listener: (state: ConnectionState) => void) => { this.states.add(listener); return () => { this.states.delete(listener); }; };
+  state(state: ConnectionState) { act(() => { for (const listener of this.states) listener(state); }); }
 
   send = (message: ControlMessage) => {
     this.sent.push(message);
@@ -74,6 +78,18 @@ afterEach(() => {
 });
 
 describe("useMissionsFeed（P2-5）", () => {
+  it("reconnects the same channel, refreshes status/list and ignores prior list responses", () => {
+    const channel = new FakeChannel();
+    render(<Feed channel={channel} />);
+    const old = channel.sent.find((m) => m.type === "mission_list")!;
+    channel.state("disconnected");
+    channel.state("connected");
+    expect(channel.count("orchestration_status")).toBe(2);
+    expect(channel.count("mission_list")).toBe(2);
+    channel.reply("mission_list", { missions: [{ ...ROW, goal: "fresh" }] });
+    channel.emit({ type: "mission_list_response", payload: { request_id: old.request_id, ok: true, data: { missions: [{ ...ROW, goal: "old" }] } } });
+    expect(useMissionsStore.getState().missions[0].goal).toBe("fresh");
+  });
   it("挂载时发 orchestration_status 与 mission_list（带信封 request_id）", () => {
     const channel = new FakeChannel();
     render(<Feed channel={channel} />);

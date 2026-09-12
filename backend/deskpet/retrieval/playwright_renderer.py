@@ -112,14 +112,15 @@ def _origin(url: str) -> tuple[str, str, int | None]:
     return parts.scheme.casefold(), parts.hostname.casefold(), parts.port
 
 
-def resolve_browser_executable(root: str | Path) -> Path:
+def resolve_browser_executable(root: str | Path, *, contract=None) -> Path:
     """Resolve one complete headless-shell from an injected registry root."""
+    from deskpet.playwright_bundle import get_platform_contract
 
+    contract = contract or get_platform_contract()
     base = Path(root).resolve()
     matches = sorted(
         base.glob(
-            "chromium_headless_shell-*/chrome-headless-shell-win64/"
-            "chrome-headless-shell.exe"
+            f"chromium_headless_shell-*/{contract.executable_relative}"
         )
     )
     complete = [
@@ -253,10 +254,10 @@ class PlaywrightRendererPool:
         result: dict[int, tuple[float, bool, bool, int]] = {}
         for process in psutil.process_iter(("exe", "cmdline", "create_time", "ppid")):
             try:
-                command = " ".join(process.info["cmdline"] or ()).casefold()
+                command = " ".join(process.info["cmdline"] or ()).replace("\\", "/").casefold()
                 actual = str(process.info["exe"] or "").casefold()
                 is_browser = actual == expected
-                is_driver = "playwright\\driver\\package\\cli.js run-driver" in command
+                is_driver = "playwright/driver/package/cli.js run-driver" in command
                 if is_browser or is_driver:
                     result[process.pid] = (
                         float(process.info["create_time"]),

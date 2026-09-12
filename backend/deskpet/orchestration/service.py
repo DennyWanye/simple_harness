@@ -31,7 +31,14 @@ from typing import Any
 
 from .lock import InstanceLock
 from .manifest import MANIFEST_SCHEMA, build_manifest, distributions, write_manifest
-from .projection import project_approval, project_detail, project_events, ui_state
+from .projection import (
+    citation_identity,
+    is_document_snapshot,
+    project_approval,
+    project_detail,
+    project_events,
+    ui_state,
+)
 from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
 from .settings import OrchestrationSettings
 
@@ -571,6 +578,30 @@ class OrchestrationService:
         self.wake()
         return {"mission_id": receipt["mission_id"], "created": receipt["created"], "spec_hash": receipt["spec_hash"]}
 
+    def create_mission_with_sources(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """The UI's atomic batch; never create and then register in separate transactions."""
+        self._require()
+        if self._state == "degraded":
+            raise OrchestrationRequestError("orchestration_degraded", "编排循环异常，暂不接受新 Mission")
+        if set(request) != {"mission", "sources"} or not isinstance(request["mission"], Mapping):
+            raise OrchestrationRequestError("invalid_request", "需要 mission 与 sources 原子批次")
+        self._refuse_secrets(request)
+        receipt = self._call("create_with_sources", {
+            "mission": self._door(request["mission"]), "sources": request["sources"],
+        })
+        self.wake()
+        return dict(receipt)
+
+    def source_command(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
+        """Explicit IPC verbs, using the same facade's fixed authenticated principal."""
+        methods = {"register": "register_source", "supersede": "supersede_source", "revoke": "revoke_source"}
+        if operation not in methods:
+            raise OrchestrationRequestError("invalid_request", "未知来源操作")
+        self._refuse_secrets(request)
+        result = self._call(methods[operation], dict(request))
+        self.wake()
+        return dict(result)
+
     def cancel_mission(self, mission_id: str) -> dict[str, Any]:
         result = self._call("cancel", mission_id)
         self.wake()
@@ -629,8 +660,21 @@ class OrchestrationService:
             return False
 
     def mission_detail(self, mission_id: str) -> dict[str, Any]:
-        view = self._call("snapshot", mission_id)
-        return project_detail(view, blocked=self._blocked(mission_id))
+        self._require()
+        store = self._orchestrator.store
+        with store.read_view():
+            # The facade authenticates the Mission before any optional source read.
+            view = self._call("snapshot", mission_id)
+            stale = None
+            if is_document_snapshot(view["snapshot"]):
+                from agent_orchestrator.memory.verified_knowledge import KnowledgeIndex
+
+                index = KnowledgeIndex.load(store, mission_id)
+                used = set(index.records)
+                used.update(kid for claim in view["snapshot"].get("claims", ())
+                            for kid in claim.get("dependencies", ()))
+                stale = index.stale(sorted(used))
+            return project_detail(view, blocked=self._blocked(mission_id), source_issues=stale)
 
     def events(self, mission_id: str, *, after_seq: Any = 0, limit: Any = 50) -> dict[str, Any]:
         # whitelisted rows: the raw payloads stay inside (review P2-3)
@@ -641,6 +685,24 @@ class OrchestrationService:
 
     def artifact_read(self, artifact_id: str) -> dict[str, Any]:
         return self._call("artifact_read", artifact_id)
+
+    def citation_read(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        required = {"mission_id", "result_id", "receipt_id", "citation_index"}
+        if not required <= set(request) or set(request) - required - {"offset", "limit"}:
+            raise OrchestrationRequestError("invalid_request", "引用读取只接受记录身份与字符分页")
+        for name in ("mission_id", "result_id", "receipt_id"):
+            if not isinstance(request[name], str) or not request[name].strip():
+                raise OrchestrationRequestError("invalid_request", f"缺少 {name}")
+        index, offset, limit = request["citation_index"], request.get("offset", 0), request.get("limit", 65536)
+        if (type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 65536):
+            raise OrchestrationRequestError("invalid_request", "引用 offset/limit 无效")
+        result = self._call("citation_read", request["mission_id"],
+                            result_id=request["result_id"], receipt_id=request["receipt_id"],
+                            citation_index=index, offset=offset, limit=limit)
+        return {**dict(result), **{name: request[name] for name in required},
+                "version": result.get("version_hash"),
+                "citation_id": citation_identity(request["mission_id"], request["result_id"],
+                                                 request["receipt_id"], index)}
 
     def policy_status(self) -> dict[str, Any]:
         self._require()

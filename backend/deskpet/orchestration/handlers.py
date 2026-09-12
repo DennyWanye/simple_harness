@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 MESSAGE_TYPES = (
     "orchestration_status",
     "mission_create",
+    "mission_create_with_sources",
+    "mission_source_register",
+    "mission_source_supersede",
+    "mission_source_revoke",
+    "mission_citation_read",
     "mission_list",
     "mission_get",
     "mission_events",
@@ -90,6 +95,26 @@ def _create(service: Any, body: Mapping[str, Any]) -> Any:
     return service.create_mission(dict(body))
 
 
+def _create_with_sources(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.create_mission_with_sources(dict(body))
+
+
+def _source_register(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.source_command("register", dict(body))
+
+
+def _source_supersede(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.source_command("supersede", dict(body))
+
+
+def _source_revoke(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.source_command("revoke", dict(body))
+
+
+def _citation(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.citation_read(dict(body))
+
+
 def _list(service: Any, body: Mapping[str, Any]) -> Any:
     limit = body.get("limit", 50)
     return {"missions": service.list_missions(limit=limit if isinstance(limit, int) else 50)}
@@ -149,6 +174,11 @@ def _policy(service: Any, body: Mapping[str, Any]) -> Any:
 
 _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = {
     "mission_create": _create,
+    "mission_create_with_sources": _create_with_sources,
+    "mission_source_register": _source_register,
+    "mission_source_supersede": _source_supersede,
+    "mission_source_revoke": _source_revoke,
+    "mission_citation_read": _citation,
     "mission_list": _list,
     "mission_get": _get,
     "mission_events": _events,

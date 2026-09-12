@@ -1,6 +1,14 @@
 # simple_harness Search Gateway 与 DeepResearch 进度架构基线
 
-> 校准日期：2026-07-20
+> 最后更新：2026-09-12（本次仅校准浏览器平台与 macOS 打包验证边界）
+
+## 2026-09-12 macOS 浏览器与打包当前事实
+
+- Playwright 1.61.0 / Chromium Headless Shell r1228（149.0.7827.55）现有 Windows x64 精确 pin 保持兼容；新增 macOS arm64 官方归档、主程序与许可证的实测 pin。acquisition、打包收集和 runtime executable resolver 使用同一本机契约；macOS x64、Linux、Windows ARM64 明确不支持，未以默认关闭能力绕过。
+- 实际 mac arm64 归档已通过 CRC、哈希、许可证、Mach-O 架构及官方主程序签名检查。Node driver 路径匹配兼容两种分隔符，进程归属仅认定本池浏览器的 driver 祖先；真实清理测试强制 browser/driver 均被追踪并确认退出。
+- 主任务报告 **platform＋全 renderer（实际 mac owner）＋frozen launcher：59 passed / 9.86s**，包含真实 crash/restart 与加强后的 driver cleanup；scoped production review **ACCEPT**。定向 Rust resolver 由 worker 验证 debug/release 各 **14 passed**。
+- **macOS PyInstaller/Tauri 实际冻结构建尚未完成，native packaging gate 为 PENDING。** 上述浏览器与 launcher 测试不等于冻结产物验证。构建后仍须在最终 `Resources/backend/_internal` 树核验原始 browser hash、许可证与架构，并验证 bundled SDK imports、资源边界及实际 frozen backend 启动；历史 Windows 冻结包结果不能替代此门槛。
+- mac 浏览器树按原字节 DATA 收集，避免 PyInstaller 改写上游签名；主任务使用 ignored candidate overlay 映射实际 backend onedir，base 配置不依赖缺失构建输入。归档身份、官方来源、命令和本机证据索引见 [P3.3 G packaging review](../plans/2026-09-12-phase3-host-g/packaging-review.md)。
 
 ## 2026-07-20 当前生产事实
 

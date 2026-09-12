@@ -73,6 +73,7 @@ const AVAILABLE = {
   active_missions: 0,
   allow_local_tests: false,
   allowed_tools: ["workspace_read_file", "workspace_write_file", "workspace_list"],
+  deployment_manifest: { features: { domains: { atomic_source_create: true, citation_read: true, items: [{ id: "doc-research-v1", version: "4" }], source_commands: ["register", "supersede", "revoke"] } } },
 };
 
 const MISSION_ROW = {
@@ -143,6 +144,129 @@ function clock(seconds: number): string {
 afterEach(() => {
   cleanup();
   useMissionsStore.getState().reset();
+});
+
+// P33 G oracle, written before UI implementation. These are frontend controls;
+// P33-20 native/provider acceptance remains the main task's separate gate.
+describe("P33 G creation and explicit approval branches", () => {
+  it.each(["met", "unmet"])("preserves legacy code judgment arbitration and dispatches %s", (ruling) => {
+    const channel = openMission({ ...DETAIL, approvals: [{
+      request_id: "code-judgment", kind: "arbitration", topic: "judgment", state: "PENDING", options: ["met", "unmet"],
+    }] });
+    const approval = screen.getByTestId("approval-code-judgment");
+    const choice = within(approval).getByRole("button", { name: `裁决：${ruling}` }) as HTMLButtonElement;
+    expect(choice.disabled).toBe(true);
+    fireEvent.change(within(approval).getByLabelText("仲裁依据"), { target: { value: "实际验收依据" } });
+    fireEvent.click(choice);
+    expect(channel.last("mission_approval_decide")?.payload).toEqual({
+      approval_id: "code-judgment", decision: "arbitrate", ruling, basis: "实际验收依据",
+    });
+  });
+
+  it("an older Host without document capabilities keeps the code entry only", () => {
+    const channel = new FakeChannel();
+    render(<Workbench channel={channel} />);
+    channel.reply("orchestration_status", { ...AVAILABLE, deployment_manifest: null });
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    expect(screen.queryByRole("option", { name: "文档研究" })).toBeNull();
+    expect((screen.getByLabelText("Mission 领域") as HTMLSelectElement).value).toBe("code");
+  });
+  it("ignores a duplicate late snapshot/error even for the same selected Mission", () => {
+    const channel = openMission();
+    const old = channel.last("mission_get")!;
+    channel.emit({ type: "mission_get_response", payload: { request_id: old.request_id, ok: true, data: { ...DETAIL, mission: { ...DETAIL.mission, goal: "late replacement" } } } });
+    expect(screen.queryByText("late replacement")).toBeNull();
+    channel.emit({ type: "mission_get_response", payload: { request_id: old.request_id, ok: false, error_code: "not_found" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("late artifact content cannot replace a newly selected artifact", () => {
+    const channel = openMission({ ...DETAIL, artifacts: [
+      { id: "a", path: "a.md" }, { id: "b", path: "b.md" },
+    ] });
+    fireEvent.click(within(screen.getByTestId("artifact-a")).getByRole("button"));
+    const old = channel.last("mission_artifact_read")!;
+    fireEvent.click(within(screen.getByTestId("artifact-b")).getByRole("button"));
+    channel.reply("mission_artifact_read", { artifact_id: "b", path: "b.md", encoding: "utf-8", content: "new analysis" });
+    channel.emit({ type: "mission_artifact_read_response", payload: { request_id: old.request_id, ok: true, data: { artifact_id: "a", path: "a.md", content: "old analysis" } } });
+    expect(screen.getByText("new analysis")).toBeTruthy();
+    expect(screen.queryByText("old analysis")).toBeNull();
+  });
+
+  it("renders document conclusions separately from Worker analysis", () => {
+    openMission({ ...DETAIL, document: { schema_version: 1, claims: [{ id: "c", content: "正式主张", status: "SUPPORTED" }], reviews: [], criteria: [] } });
+    expect(within(screen.getByRole("region", { name: "系统结论" })).getByText("正式主张")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "系统结论" })).queryByText(/写好了 NOTES/)).toBeNull();
+    expect(screen.getByText(/分析 \/ 非结论（正文非结论陈述不做覆盖核对）/)).toBeTruthy();
+  });
+
+  it("defaults to code and preserves the existing mission_create request", () => {
+    const channel = renderAvailable();
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    expect((screen.getByLabelText("Mission 领域") as HTMLSelectElement).value).toBe("code");
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "write code" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:a.py" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.last("mission_create")?.payload).toEqual({
+      goal: "write code", success_criteria: ["file:a.py"], idempotency_key: expect.any(String),
+    });
+    expect(channel.all("mission_create_with_sources")).toHaveLength(0);
+  });
+
+  it("pastes sources and sends one atomic doc batch; failure preserves the draft", () => {
+    const channel = renderAvailable();
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.change(screen.getByLabelText("Mission 领域"), { target: { value: "doc-research-v1" } });
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "比较文档" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "说明否定条件" } });
+    expect((screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
+    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
+    fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "条件：不支持。\r\n| A | B |" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.all("mission_create")).toHaveLength(0);
+    expect(channel.all("mission_source_register")).toHaveLength(0);
+    const batch = channel.last("mission_create_with_sources")?.payload;
+    expect(batch).toEqual({
+      mission: { domain: "doc-research-v1", goal: "比较文档", success_criteria: ["说明否定条件"], idempotency_key: expect.any(String) },
+      sources: [{ path: "sources/a.md", content: "条件：不支持。\n| A | B |", kind: "markdown" }],
+    });
+    expect((screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement).disabled).toBe(true);
+    channel.reply("mission_create_with_sources", {}, false, "invalid_request");
+    expect((screen.getByLabelText("Mission 目标") as HTMLTextAreaElement).value).toBe("比较文档");
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.last("mission_create_with_sources")?.payload).toEqual(batch);
+  });
+
+  it("unknown approval kind cannot inherit arbitration actions even with options", () => {
+    openMission({ ...DETAIL, approvals: [{ request_id: "unknown", kind: "future_kind", state: "PENDING", options: ["keep:c1", "unresolved"] }] });
+    const approval = screen.getByTestId("approval-unknown");
+    expect(within(approval).queryAllByRole("button")).toHaveLength(0);
+    expect(approval.textContent).toContain("future_kind");
+  });
+
+  it("source_change shows its exact old/new binding and uses existing approve/reject", () => {
+    const channel = openMission({ ...DETAIL, approvals: [{
+      request_id: "source-approval", kind: "source_change", state: "PENDING",
+      source_change: { operation: "supersede", path: "sources/a.md", expected_version_hash: "old-hash", version_hash: "new-hash", old_revision: 3, kind: "markdown", reason: "replace" },
+    }] });
+    const approval = screen.getByTestId("approval-source-approval");
+    expect(approval.textContent).toContain("old-hash");
+    expect(approval.textContent).toContain("new-hash");
+    expect(within(approval).queryByLabelText("仲裁依据")).toBeNull();
+    fireEvent.click(within(approval).getByRole("button", { name: "批准" }));
+    expect(channel.last("mission_approval_decide")?.payload).toEqual({ approval_id: "source-approval", decision: "approve" });
+  });
+
+  it("arbitration sends only actual keep/contextual/unresolved options with basis", () => {
+    const channel = openMission({ ...DETAIL, approvals: [{ request_id: "arb", kind: "arbitration", state: "PENDING", options: ["keep:c1", "contextual", "unresolved", "approve"] }] });
+    const approval = screen.getByTestId("approval-arb");
+    expect(within(approval).queryByRole("button", { name: "裁决：approve" })).toBeNull();
+    fireEvent.change(within(approval).getByLabelText("仲裁依据"), { target: { value: "条件不同" } });
+    fireEvent.click(within(approval).getByRole("button", { name: "裁决：contextual" }));
+    expect(channel.last("mission_approval_decide")?.payload).toEqual({ approval_id: "arb", decision: "arbitrate", ruling: "contextual", basis: "条件不同" });
+  });
 });
 
 describe("MissionsView（HA-10）", () => {

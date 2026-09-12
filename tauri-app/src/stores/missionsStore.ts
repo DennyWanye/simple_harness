@@ -16,6 +16,9 @@
  * 事件按 seq 合并去重；推送里出现未知 Mission 时标记列表需要重拉（P3.1-A05）。
  */
 import { create } from "zustand";
+import type { ControlChannel } from "../ws/ControlChannel";
+
+export type MissionsChannel = Pick<ControlChannel, "send" | "onMessage"> & Partial<Pick<ControlChannel, "onStateChange">>;
 
 export interface MissionRow {
   id: string;
@@ -58,6 +61,7 @@ export interface OrchestrationStatus {
   test_scenario?: string | null;
   /** 部署默认预算：表单留空的项由后端按它补齐（没有无上限的 Mission）。 */
   mission_budget_defaults?: { max_tokens: number; max_attempts: number } | null;
+  deployment_manifest?: Record<string, unknown> | null;
 }
 
 type Json = Record<string, unknown>;
@@ -111,12 +115,14 @@ interface MissionsState {
   /** 事件分页请求在途（在途时不显示「加载更多事件」）。 */
   eventsLoading: Record<string, boolean>;
   listStale: boolean;
+  listRequestId: string | null;
   selectedId: string | null;
   detail: Record<string, unknown> | null;
   policy: Record<string, unknown> | null;
   error: string | null;
   setStatus: (status: OrchestrationStatus) => void;
   setMissions: (missions: ReadonlyArray<MissionRow | Json>) => void;
+  setListRequest: (requestId: string | null) => void;
   appendEvents: (missionId: string, events: MissionEvent[], hasMore?: boolean, throughSeq?: number) => void;
   setEventsLoading: (missionId: string, loading: boolean) => void;
   clearEventsLoading: () => void;
@@ -138,6 +144,7 @@ const initial = {
   eventsHasMore: {},
   eventsLoading: {},
   listStale: false,
+  listRequestId: null,
   selectedId: null,
   detail: null,
   policy: null,
@@ -148,6 +155,7 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
   ...initial,
   setStatus: (status) => set({ status }),
   setMissions: (missions) => set({ missions: missions.map(toRow).filter((row) => row.id), listStale: false }),
+  setListRequest: (listRequestId) => set({ listRequestId }),
   appendEvents: (missionId, incoming, hasMore, throughSeq) =>
     set((state) => {
       const bySeq = new Map<number, MissionEvent>();

@@ -23,7 +23,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
-import type { ControlChannel } from "../ws/ControlChannel";
+import { MissionDocument, SourceDrafts, type SourceDraft } from "./MissionDocument";
 import {
   asList as list,
   asRecord as record,
@@ -31,10 +31,11 @@ import {
   newRequestKey as newKey,
   useMissionsStore,
   type MissionEvent,
+  type MissionsChannel,
 } from "../stores/missionsStore";
 
 export interface MissionsViewProps {
-  channel: Pick<ControlChannel, "send" | "onMessage"> | null;
+  channel: MissionsChannel | null;
 }
 
 type Json = Record<string, unknown>;
@@ -62,6 +63,7 @@ const LAYER_LABEL: Record<string, string> = {
   SUSPENDED: "待人工",
 };
 const WAIT_LABEL: Record<string, string> = {
+  source_change: "来源变更审批",
   review: "人工复核",
   action: "动作审批",
   arbitration: "仲裁",
@@ -82,6 +84,7 @@ const OWN_RESPONSES = new Set([
   "mission_events_response",
   "orchestration_policy_status_response",
   "mission_create_response",
+  "mission_create_with_sources_response",
   "mission_cancel_response",
   "mission_approval_decide_response",
   "mission_takeover_response",
@@ -290,12 +293,20 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const [creating, setCreating] = useState(false);
   const [goal, setGoal] = useState("");
   const [criteria, setCriteria] = useState("");
+  const [domain, setDomain] = useState("code");
+  const [sources, setSources] = useState<SourceDraft[]>([]);
+  const [sourceImporting, setSourceImporting] = useState(false);
+  const [createPending, setCreatePending] = useState(false);
+  const createRequest = useRef<string | null>(null);
+  const createRetry = useRef<{ fingerprint: string; key: string } | null>(null);
+  const createTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [maxTokens, setMaxTokens] = useState("");
   const [maxAttempts, setMaxAttempts] = useState("");
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [bases, setBases] = useState<Record<string, string>>({});
   const [comment, setComment] = useState("");
   const [artifact, setArtifact] = useState<Json | null>(null);
+  const artifactRequest = useRef<{ requestId: string; missionId: string | null; artifactId: string } | null>(null);
   const selectedRef = useRef<string | null>(null);
   const flights = useRef<Record<string, Flight>>({});
   /** request_id → mission_id（mission_get / mission_events 的应答按它归属）。 */
@@ -308,6 +319,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     (type: string, payload: Json = {}): string => {
       // the envelope id stays at the top level; payload fields keep their own names
       const requestId = newKey();
+      if (type === "mission_list") useMissionsStore.getState().setListRequest(requestId);
       const message: ControlMessage = { type, request_id: requestId, payload };
       channel?.send(message);
       return requestId;
@@ -374,6 +386,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     // a new subscription: whatever was in flight on the old one will never answer
     flights.current = {};
     requests.current.clear();
+    artifactRequest.current = null;
+    setArtifact(null);
+    if (createRequest.current) useMissionsStore.getState().setError("连接已变化，创建结果未知；可以使用原请求键重试");
+    createRequest.current = null;
+    setCreatePending(false);
     useMissionsStore.getState().clearEventsLoading();
 
     const off = channel.onMessage((incoming: IncomingMessage) => {
@@ -396,9 +413,17 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       const ok = payload.ok === true;
       const data = record(payload.data);
       const requestId = text(payload.request_id);
+      if ((type === "mission_create_response" || type === "mission_create_with_sources_response") && requestId !== createRequest.current) return;
       const tracked = requests.current.get(requestId);
+      if ((type === "mission_get_response" || type === "mission_events_response") && tracked === undefined) return;
+      if (type === "mission_artifact_read_response") {
+        const pending = artifactRequest.current;
+        if (!pending || pending.requestId !== requestId || pending.missionId !== selectedRef.current) return;
+        if (ok && data.artifact_id != null && data.artifact_id !== pending.artifactId) return;
+        artifactRequest.current = null;
+      }
       if (tracked !== undefined) requests.current.delete(requestId);
-      if (payload.ok === false) {
+      if (payload.ok === false && (tracked === undefined || tracked === selectedRef.current)) {
         const code = text(payload.error_code);
         state.setError(ERROR_TEXT[code] ?? (text(payload.error) || code || "请求失败"));
       }
@@ -410,7 +435,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
           const flight = flightOf(missionId);
           flight.get = false;
           // a late snapshot of a Mission no longer selected never replaces the open one
-          if (ok && (shown || missionId) === selectedRef.current) state.setDetail(data);
+          if (ok && shown === missionId && missionId === selectedRef.current) state.setDetail(data);
           if (flight.getAgain) {
             flight.getAgain = false;
             if (missionId === selectedRef.current) fetchDetail(missionId);
@@ -450,10 +475,17 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
           if (ok) state.setPolicy(data);
           break;
         case "mission_create_response":
+        case "mission_create_with_sources_response":
+          createRequest.current = null;
+          setCreatePending(false);
+          if (createTimer.current) clearTimeout(createTimer.current);
           if (ok) {
             setCreating(false);
             setGoal("");
             setCriteria("");
+            setSources([]);
+            setDomain("code");
+            createRetry.current = null;
             state.setError(null);
             send("mission_list");
             const missionId = text(data.mission_id);
@@ -487,27 +519,57 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       selectedRef.current = open;
       refreshSelected(open);
     }
-    return off;
+    const offState = channel.onStateChange?.((connection) => {
+      flights.current = {}; requests.current.clear(); artifactRequest.current = null; setArtifact(null);
+      useMissionsStore.getState().clearEventsLoading();
+      if (createRequest.current) useMissionsStore.getState().setError("连接已变化，创建结果未知；可以使用原请求键重试");
+      createRequest.current = null; setCreatePending(false);
+      if (createTimer.current) clearTimeout(createTimer.current);
+      if (connection === "connected") {
+        send("orchestration_policy_status");
+        if (selectedRef.current) refreshSelected(selectedRef.current);
+      }
+    });
+    return () => { off(); offState?.(); if (createTimer.current) clearTimeout(createTimer.current); };
   }, [channel, send, flightOf, fetchDetail, fetchEvents, refreshSelected]);
 
   const status = store.status;
-  const submittable = goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0);
+  const domains = record(record(record(status?.deployment_manifest).features).domains);
+  const canCreateDocument = domains.atomic_source_create === true && list(domains.items).some((item) => item.id === "doc-research-v1");
+  const submittable = !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
+    (domain === "code" || (canCreateDocument && sources.length > 0 && sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0)));
 
   const submit = () => {
+    if (!submittable) return;
     const budget: Json = {};
     if (Number(maxTokens) > 0) budget.max_tokens = Math.floor(Number(maxTokens));
     if (Number(maxAttempts) > 0) budget.max_attempts = Math.floor(Number(maxAttempts));
-    send("mission_create", {
+    const spec = {
       goal: goal.trim(),
       success_criteria: criteria.split("\n").map((line) => line.trim()).filter(Boolean),
-      idempotency_key: newKey(),
       ...(Object.keys(budget).length ? { budget } : {}),
+    };
+    const fingerprint = JSON.stringify([domain, spec, domain === "code" ? [] : sources]);
+    if (createRetry.current?.fingerprint !== fingerprint) createRetry.current = { fingerprint, key: newKey() };
+    const missionSpec = { ...spec, idempotency_key: createRetry.current.key };
+    const requestId = newKey();
+    createRequest.current = requestId;
+    setCreatePending(true);
+    store.setError(null);
+    const accepted = channel?.send({
+      type: domain === "code" ? "mission_create" : "mission_create_with_sources", request_id: requestId,
+      payload: domain === "code" ? missionSpec : { mission: { ...missionSpec, domain }, sources },
     });
+    if (!accepted) { createRequest.current = null; setCreatePending(false); store.setError("连接不可用，创建请求未发送"); return; }
+    createTimer.current = setTimeout(() => {
+      if (createRequest.current === requestId) { createRequest.current = null; setCreatePending(false); useMissionsStore.getState().setError("创建超时，结果未知；可以使用原请求键重试"); }
+    }, 30000);
   };
 
   const open = (missionId: string) => {
     setCreating(false);
     setArtifact(null);
+    artifactRequest.current = null;
     setComment("");
     store.select(missionId);
     selectedRef.current = missionId;
@@ -559,7 +621,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         {status?.test_scenario ? (
           <div role="status" style={{ ...box, borderColor: tokens.color.warning.bg }}>测试场景：{status.test_scenario}</div>
         ) : null}
-        <button type="button" style={button} onClick={() => { setCreating(true); store.select(null); }}>
+        <button type="button" style={button} onClick={() => { setCreating(true); store.select(null); selectedRef.current = null; setArtifact(null); }}>
           新建 Mission
         </button>
         {store.missions.length === 0 ? (
@@ -607,10 +669,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
 
         {creating ? (
           <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm }}>
+            <label>Mission 领域<select aria-label="Mission 领域" style={{ ...field, minHeight: 36 }} disabled={createPending} value={domain} onChange={(e) => setDomain(e.target.value)}>
+              <option value="code">代码</option>{canCreateDocument && <option value="doc-research-v1">文档研究</option>}
+            </select></label>
             <label htmlFor="mission-goal">Mission 目标</label>
-            <textarea id="mission-goal" aria-label="Mission 目标" style={field} value={goal} onChange={(e) => setGoal(e.target.value)} />
+            <textarea id="mission-goal" aria-label="Mission 目标" style={field} disabled={createPending} value={goal} onChange={(e) => setGoal(e.target.value)} />
             <label htmlFor="mission-criteria">成功条件（每行一条）</label>
-            <textarea id="mission-criteria" aria-label="成功条件" style={field} value={criteria} onChange={(e) => setCriteria(e.target.value)} />
+            <textarea id="mission-criteria" aria-label="成功条件" style={field} disabled={createPending} value={criteria} onChange={(e) => setCriteria(e.target.value)} />
+            {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
             <div style={{ display: "flex", gap: tokens.space.sm }}>
               <input aria-label="Token 上限" placeholder={status?.mission_budget_defaults ? `Token 上限（留空=${status.mission_budget_defaults.max_tokens}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
               <input aria-label="尝试次数上限" placeholder={status?.mission_budget_defaults ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）` : "尝试次数上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
@@ -618,6 +684,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <button type="button" style={button} disabled={!submittable} onClick={submit}>
               提交 Mission
             </button>
+            {createPending && <div role="status">正在创建 Mission…</div>}
           </div>
         ) : null}
 
@@ -681,11 +748,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               return (
                 <div key={requestId} style={{ ...box, borderColor: tokens.color.accent.border }} data-testid={`approval-${requestId}`}>
                   <div style={heading}>
-                    {kind === "action" ? "动作审批" : kind === "review" ? "人工复核" : "仲裁"}：<ModelText value={approval.summary} />
+                    {WAIT_LABEL[kind] ?? `未知审批类型（${kind || "未提供"}）`}：<ModelText value={approval.summary} />
                   </div>
                   {action.reason ? <div>理由：<ModelText value={action.reason} /></div> : null}
                   {kind === "action" ? <ActionOutcome action={action} /> : null}
-                  {kind === "action" ? (
+                  {kind === "source_change" ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(record(approval.source_change), null, 2)}</pre> : null}
+                  {kind === "arbitration" && approval.arbitration != null ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(approval.arbitration, null, 2)}</pre> : null}
+                  {kind === "action" || kind === "source_change" ? (
                     <>
                       <textarea aria-label="拒绝理由" style={field} value={reason} onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })} />
                       <div style={{ display: "flex", gap: tokens.space.sm }}>
@@ -698,18 +767,20 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                       <button type="button" style={button} onClick={() => send("mission_approval_decide", { approval_id: requestId, decision: "review_pass" })}>复核通过</button>
                       <button type="button" style={button} onClick={() => send("mission_approval_decide", { approval_id: requestId, decision: "review_fail" })}>复核不通过</button>
                     </div>
-                  ) : (
+                  ) : kind === "arbitration" ? (
                     <>
                       <textarea aria-label="仲裁依据" style={field} value={reason} onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })} />
                       <div style={{ display: "flex", gap: tokens.space.sm, flexWrap: "wrap" }}>
-                        {(Array.isArray(approval.options) ? approval.options : []).map((option) => (
+                        {(Array.isArray(approval.options) ? approval.options : []).filter((option) => typeof option === "string" &&
+                          (approval.topic === "judgment" ? option === "met" || option === "unmet" :
+                            /^keep:.+/.test(option) || option === "contextual" || option === "unresolved")).map((option) => (
                           <button key={text(option)} type="button" style={button} disabled={!reason.trim()} onClick={() => send("mission_approval_decide", { approval_id: requestId, decision: "arbitrate", ruling: text(option), basis: reason })}>
                             裁决：{text(option)}
                           </button>
                         ))}
                       </div>
                     </>
-                  )}
+                  ) : null}
                   {list(approval.comments).map((item, index) => (
                     <div key={index} style={{ ...muted, marginTop: tokens.space.xs }}>
                       {`评论（${text(item.principal_id) || "未知"}）：${text(item.text)}`}
@@ -718,6 +789,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 </div>
               );
             })}
+
+            {detail.document != null && <MissionDocument key={selectedId} missionId={selectedId} document={record(detail.document)} channel={channel} onChanged={() => refreshSelected(selectedId)} />}
 
             <div style={box}>
               <div style={heading}>Task 与验证</div>
@@ -737,7 +810,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 const layers = list(result.verification_layers);
                 return (
                   <div key={text(result.result_id) || attemptId} style={{ marginTop: tokens.space.sm }}>
-                    <div>结果摘要：<ModelText value={result.summary} /></div>
+                    <div>{detail.document != null ? "分析 / 非结论（正文非结论陈述不做覆盖核对）" : "结果摘要"}：<ModelText value={result.summary} /></div>
                     <div style={{ display: "flex", gap: tokens.space.xs, flexWrap: "wrap" }}>
                       {layers.map((layer) => {
                         const layerStatus = text(layer.status);
@@ -785,7 +858,12 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                       <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
                         {`${text(item.path)} · ${formatBytes(item.size_bytes)} · 验证：${LAYER_LABEL[verification] ?? (verification || "—")} · ${shortHash(item.content_hash)}`}
                       </span>
-                      <button type="button" style={button} onClick={() => send("mission_artifact_read", { artifact_id: artifactId })}>
+                      <button type="button" style={button} onClick={() => {
+                        setArtifact(null);
+                        const requestId = newKey();
+                        artifactRequest.current = { requestId, missionId: selectedId, artifactId };
+                        channel?.send({ type: "mission_artifact_read", request_id: requestId, payload: { artifact_id: artifactId } });
+                      }}>
                         查看产物
                       </button>
                     </div>
@@ -794,7 +872,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               </div>
             ) : null}
 
-            {artifact ? <ArtifactPanel artifact={artifact} /> : null}
+            {artifact ? <div>{detail.document != null && <div>分析 / 非结论（正文非结论陈述不做覆盖核对）</div>}<ArtifactPanel artifact={artifact} /></div> : null}
 
             <div style={box}>
               <div style={heading}>评论</div>

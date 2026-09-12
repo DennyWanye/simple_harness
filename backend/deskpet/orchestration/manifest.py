@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
+import sys
 from collections.abc import Mapping
 from importlib import metadata
 from pathlib import Path
@@ -24,7 +25,36 @@ MANIFEST_NAME = "deployment-manifest.json"
 MANIFEST_SCHEMA = "deployment-manifest-v1"
 
 
+def _frozen_host_identity() -> dict[str, Any] | None:
+    """Read the build resource only; never infer identity from the bundle's cwd."""
+    root = getattr(sys, "_MEIPASS", None)
+    if not root:
+        return None
+    try:
+        payload = json.loads((Path(root) / "host-build-identity.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("schema") != "host-build-identity-v1":
+        return None
+    for field, length in (("host_commit", 40), ("tracked_inputs_sha256", 64)):
+        value = payload.get(field)
+        if not isinstance(value, str) or len(value) != length or any(c not in "0123456789abcdef" for c in value):
+            return None
+    if type(payload.get("host_dirty")) is not bool:
+        return None
+    count = payload.get("tracked_input_count")
+    if type(count) is not int or count < 1:
+        return None
+    roots = payload.get("input_roots")
+    if not isinstance(roots, list) or not roots or any(not isinstance(root, str) or not root for root in roots):
+        return None
+    return payload
+
+
 def _host_commit() -> str:
+    if getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None) is not None:
+        identity = _frozen_host_identity()
+        return identity["host_commit"] if identity is not None else "unknown"
     repository = Path(__file__).resolve().parents[3]
     try:
         result = subprocess.run(
@@ -39,8 +69,12 @@ def _host_commit() -> str:
 def _host_dirty() -> bool | None:
     """Whether the Host code the process runs differs from ``host_commit`` (review P2-9):
     uncommitted or untracked files under backend / tauri-app / scripts.  None when unknown
-    (no git, e.g. a packaged build)."""
+    (no git). Frozen builds use only the captured build identity, with None for
+    missing or invalid metadata."""
 
+    if getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None) is not None:
+        identity = _frozen_host_identity()
+        return identity["host_dirty"] if identity is not None else None
     repository = Path(__file__).resolve().parents[3]
     try:
         result = subprocess.run(
@@ -89,6 +123,29 @@ def distributions() -> dict[str, Any]:
     }
 
 
+def _domain_features() -> dict[str, Any]:
+    """Report the installed SDK, including an older code-only candidate during upgrade."""
+    from agent_orchestrator.api.facade import MissionControlV1
+
+    try:
+        from agent_orchestrator.governance.domains import CODE_DOMAIN, DOMAINS
+    except ModuleNotFoundError as error:
+        if error.name != "agent_orchestrator.governance.domains":
+            raise
+        return {"default": "code-v1", "items": [{"id": "code-v1", "version": "1"}],
+                "source_commands": [], "atomic_source_create": False, "citation_read": False}
+    return {
+        "default": CODE_DOMAIN,
+        "items": [{"id": domain.id, "version": domain.version,
+                   "allowed_input_kinds": list(domain.allowed_input_kinds),
+                   "source_roots": list(domain.source_roots)} for domain in DOMAINS.values()],
+        "source_commands": [verb for verb in ("register", "supersede", "revoke")
+                            if callable(getattr(MissionControlV1, f"{verb}_source", None))],
+        "atomic_source_create": callable(getattr(MissionControlV1, "create_with_sources", None)),
+        "citation_read": callable(getattr(MissionControlV1, "citation_read", None)),
+    }
+
+
 def build_manifest(
     *,
     root: Path,
@@ -108,6 +165,7 @@ def build_manifest(
         "distributions": distributions(),
         "schemas": {"orchestrator": SCHEMA_VERSION, "execution": _execution_schema(root)},
         "features": {
+            "domains": _domain_features(),
             "deployment_policy": dict(deployment),
             "test_scenario": test_scenario,
             "settings": dict(settings),

@@ -10,15 +10,16 @@
 //! packaged release.
 //!
 //! Resolution priority (first match wins):
-//! 1. **Bundled**: `<bundle_root>/backend/deskpet-backend.exe` exists
-//!    → run the PyInstaller frozen exe directly.
-//! 2. **Dev via env**: `DESKPET_BACKEND_DIR` set → run
+//! 1. **Dev via env**: `DESKPET_BACKEND_DIR` set and an interpreter exists → run
 //!    `python main.py` under that dir. `DESKPET_PYTHON` overrides
-//!    the interpreter; otherwise fall back to `<dir>/.venv/Scripts/python.exe`.
-//! 3. **Dev fallback**: `<DESKPET_DEV_ROOT>/backend` exists (build.rs
+//!    the interpreter; otherwise use the platform's venv interpreter.
+//! 2. **Bundled**: `<bundle_root>/backend/deskpet-backend` (`.exe` on Windows)
+//!    exists → run the PyInstaller executable directly.
+//! 3. **Explicit dev fallback**: preserve the env override/error when no bundle exists.
+//! 4. **Debug-only dev fallback**: `<DESKPET_DEV_ROOT>/backend` exists (build.rs
 //!    injects `DESKPET_DEV_ROOT = CARGO_MANIFEST_DIR/../..`) → same
-//!    shape as (2) but paths are compile-time constants.
-//! 4. Otherwise `Err(ResolveError::NoBackendFound)` — caller is
+//!    shape as (1) but paths are compile-time constants.
+//! 5. Otherwise `Err(ResolveError::NoBackendFound)` — caller is
 //!    expected to surface `format_user_message(...)` in a dialog.
 //!
 //! The core function `resolve_with(bundle_root, env_lookup)` is
@@ -31,11 +32,14 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub enum BackendLaunch {
-    /// Packaged build: run the frozen `deskpet-backend.exe` directly.
+    /// Packaged build: run the platform's frozen `deskpet-backend` executable directly.
     /// No Python interpreter needed.
     Bundled { exe: PathBuf },
     /// Source checkout: `python main.py` with a cwd.
-    Dev { python: PathBuf, backend_dir: PathBuf },
+    Dev {
+        python: PathBuf,
+        backend_dir: PathBuf,
+    },
 }
 
 #[derive(Debug)]
@@ -62,7 +66,11 @@ pub fn format_user_message(err: &ResolveError) -> String {
              如果你是开发者，请设置 DESKPET_BACKEND_DIR 环境变量指向仓库的 backend/ 目录，\
              或把代码检出到 CARGO_MANIFEST_DIR/../../backend。\n\
              如果你是普通用户，这说明安装包损坏，请重新安装。",
-            tried.iter().map(|s| format!("  • {s}")).collect::<Vec<_>>().join("\n"),
+            tried
+                .iter()
+                .map(|s| format!("  • {s}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
         ),
         ResolveError::DevPythonMissing(p) => format!(
             "DESKPET_PYTHON 指向的解释器不存在：\n{}\n\n\
@@ -125,7 +133,10 @@ pub fn resolve_with_fs(
     // self-contained and always works as a fallback.
     if let Some(dir_str) = env_lookup("DESKPET_BACKEND_DIR").filter(|s| !s.is_empty()) {
         let backend_dir = PathBuf::from(&dir_str);
-        tried.push(format!("env DESKPET_BACKEND_DIR (priority): {}", backend_dir.display()));
+        tried.push(format!(
+            "env DESKPET_BACKEND_DIR (priority): {}",
+            backend_dir.display()
+        ));
 
         // Probe order: explicit DESKPET_PYTHON → default <dir>/.venv/Scripts/python.exe.
         // Each candidate is tested for existence; first hit wins. None
@@ -147,7 +158,10 @@ pub fn resolve_with_fs(
             tried.push(format!("dev python missing: {}", c.display()));
         }
         if let Some(python) = chosen {
-            return Ok(BackendLaunch::Dev { python, backend_dir });
+            return Ok(BackendLaunch::Dev {
+                python,
+                backend_dir,
+            });
         }
         // Fall through. Don't return DevPythonMissing — that pops a
         // fatal dialog and traps the user. Bundle exe (priority 2)
@@ -156,7 +170,12 @@ pub fn resolve_with_fs(
 
     // Priority 2: bundle
     if let Some(root) = bundle_root {
-        let exe = root.join("backend").join("deskpet-backend.exe");
+        let filename = if cfg!(windows) {
+            "deskpet-backend.exe"
+        } else {
+            "deskpet-backend"
+        };
+        let exe = root.join("backend").join(filename);
         tried.push(format!("bundle: {}", exe.display()));
         if exists(&exe) {
             return Ok(BackendLaunch::Bundled { exe });
@@ -173,7 +192,10 @@ pub fn resolve_with_fs(
     // resolution code.
     if let Some(dir_str) = env_lookup("DESKPET_BACKEND_DIR").filter(|s| !s.is_empty()) {
         let backend_dir = PathBuf::from(&dir_str);
-        tried.push(format!("env DESKPET_BACKEND_DIR: {}", backend_dir.display()));
+        tried.push(format!(
+            "env DESKPET_BACKEND_DIR: {}",
+            backend_dir.display()
+        ));
 
         let python = match env_lookup("DESKPET_PYTHON").filter(|s| !s.is_empty()) {
             Some(p) => {
@@ -189,19 +211,31 @@ pub fn resolve_with_fs(
         // will fail loudly if the user pointed somewhere silly. But the
         // python file we DO check, because a missing interpreter gives
         // a less-obvious error at spawn time.
-        return Ok(BackendLaunch::Dev { python, backend_dir });
+        return Ok(BackendLaunch::Dev {
+            python,
+            backend_dir,
+        });
     }
 
-    // Priority 3: dev fallback via compile-time root
-    if let Some(dev_root) = option_env!("DESKPET_DEV_ROOT") {
+    // Priority 4: only debug builds may implicitly use the build machine's
+    // checkout. Release builds still honor the explicit env overrides above.
+    let dev_root = if cfg!(debug_assertions) {
+        option_env!("DESKPET_DEV_ROOT")
+    } else {
+        None
+    };
+    if let Some(dev_root) = dev_root {
         let backend_dir = PathBuf::from(dev_root).join("backend");
         tried.push(format!("DESKPET_DEV_ROOT: {}", backend_dir.display()));
         if exists(&backend_dir.join("main.py")) {
             let python = default_venv_python(&backend_dir);
-            return Ok(BackendLaunch::Dev { python, backend_dir });
+            return Ok(BackendLaunch::Dev {
+                python,
+                backend_dir,
+            });
         }
     } else {
-        tried.push("DESKPET_DEV_ROOT: (not injected at build time)".into());
+        tried.push("DESKPET_DEV_ROOT: (debug-only fallback unavailable)".into());
     }
 
     Err(ResolveError::NoBackendFound { tried })
@@ -255,7 +289,8 @@ mod tests {
 
     fn env_map(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
         move |k: &str| {
-            pairs.iter()
+            pairs
+                .iter()
                 .find(|(kk, _)| *kk == k)
                 .map(|(_, v)| v.to_string())
         }
@@ -267,19 +302,94 @@ mod tests {
     fn bundle_hit_returns_bundled_variant() {
         // Simulate "exe exists" via closure-over-path.
         let bundle = PathBuf::from("C:/fake/resources");
-        let expected_exe = bundle.join("backend").join("deskpet-backend.exe");
+        let filename = if cfg!(windows) {
+            "deskpet-backend.exe"
+        } else {
+            "deskpet-backend"
+        };
+        let expected_exe = bundle.join("backend").join(filename);
         fn fake_exists(p: &Path) -> bool {
-            p.to_string_lossy().ends_with("deskpet-backend.exe")
+            let filename = if cfg!(windows) {
+                "deskpet-backend.exe"
+            } else {
+                "deskpet-backend"
+            };
+            p.file_name() == Some(std::ffi::OsStr::new(filename))
         }
         let env = env_empty();
         let out = resolve_with_fs(Some(&bundle), &env, fake_exists).unwrap();
         assert_eq!(out, BackendLaunch::Bundled { exe: expected_exe });
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_does_not_launch_windows_bundle_executable() {
+        fn windows_exe_only(p: &Path) -> bool {
+            p.file_name() == Some(std::ffi::OsStr::new("deskpet-backend.exe"))
+        }
+        let out = resolve_with_fs(
+            Some(Path::new(
+                "/Applications/Simple Harness.app/Contents/Resources",
+            )),
+            &env_empty(),
+            windows_exe_only,
+        );
+        assert!(matches!(out, Err(ResolveError::NoBackendFound { .. })));
+    }
+
+    #[test]
+    fn explicit_dev_python_wins_over_present_bundle() {
+        fn all_exist(_p: &Path) -> bool {
+            true
+        }
+        let env = env_map(&[
+            ("DESKPET_BACKEND_DIR", "/checkout/backend"),
+            ("DESKPET_PYTHON", "/custom/python"),
+        ]);
+        let out = resolve_with_fs(Some(Path::new("/bundle")), &env, all_exist).unwrap();
+        assert_eq!(
+            out,
+            BackendLaunch::Dev {
+                python: PathBuf::from("/custom/python"),
+                backend_dir: PathBuf::from("/checkout/backend"),
+            }
+        );
+    }
+
+    #[test]
+    fn missing_dev_interpreters_fall_back_to_present_bundle() {
+        fn bundled_only(p: &Path) -> bool {
+            let filename = if cfg!(windows) {
+                "deskpet-backend.exe"
+            } else {
+                "deskpet-backend"
+            };
+            p == Path::new("/bundle").join("backend").join(filename)
+        }
+        let env = env_map(&[
+            ("DESKPET_BACKEND_DIR", "/checkout/backend"),
+            ("DESKPET_PYTHON", "/missing/python"),
+        ]);
+        let out = resolve_with_fs(Some(Path::new("/bundle")), &env, bundled_only).unwrap();
+        let filename = if cfg!(windows) {
+            "deskpet-backend.exe"
+        } else {
+            "deskpet-backend"
+        };
+        assert_eq!(
+            out,
+            BackendLaunch::Bundled {
+                exe: Path::new("/bundle").join("backend").join(filename),
+            }
+        );
+    }
+
     #[test]
     fn bundle_miss_falls_through_to_env() {
         let bundle = PathBuf::from("C:/fake/resources");
-        fn no_file_exists(_p: &Path) -> bool { false }
+        fn no_file_exists(_p: &Path) -> bool {
+            false
+        }
         let env = env_map(&[("DESKPET_BACKEND_DIR", "D:/myrepo/backend")]);
         // With no_file_exists, python falls back to default path; DEV_PYTHON
         // unset so we don't check python existence.
@@ -296,11 +406,16 @@ mod tests {
 
     #[test]
     fn env_backend_dir_sets_dev_variant() {
-        fn all_exist(_p: &Path) -> bool { true }
+        fn all_exist(_p: &Path) -> bool {
+            true
+        }
         let env = env_map(&[("DESKPET_BACKEND_DIR", "D:/x/backend")]);
         let out = resolve_with_fs(None, &env, all_exist).unwrap();
         match out {
-            BackendLaunch::Dev { python, backend_dir } => {
+            BackendLaunch::Dev {
+                python,
+                backend_dir,
+            } => {
                 assert_eq!(backend_dir, PathBuf::from("D:/x/backend"));
                 // Default python path follows the platform venv layout.
                 let expected = if cfg!(windows) {
@@ -316,7 +431,9 @@ mod tests {
 
     #[test]
     fn env_python_override_used_when_set_and_exists() {
-        fn all_exist(_p: &Path) -> bool { true }
+        fn all_exist(_p: &Path) -> bool {
+            true
+        }
         let env = env_map(&[
             ("DESKPET_BACKEND_DIR", "D:/x/backend"),
             ("DESKPET_PYTHON", "E:/py/python.exe"),
@@ -332,7 +449,9 @@ mod tests {
 
     #[test]
     fn env_python_missing_file_returns_err() {
-        fn nothing_exists(_p: &Path) -> bool { false }
+        fn nothing_exists(_p: &Path) -> bool {
+            false
+        }
         let env = env_map(&[
             ("DESKPET_BACKEND_DIR", "D:/x/backend"),
             ("DESKPET_PYTHON", "E:/ghost/python.exe"),
@@ -349,20 +468,26 @@ mod tests {
     #[test]
     fn empty_env_values_treated_as_unset() {
         // Important on Windows where empty env vars are a real thing.
-        fn nothing_exists(_p: &Path) -> bool { false }
+        fn nothing_exists(_p: &Path) -> bool {
+            false
+        }
         let env = env_map(&[("DESKPET_BACKEND_DIR", "")]);
         let out = resolve_with_fs(None, &env, nothing_exists);
         // Should NOT be Dev (empty treated as unset); should fall through
         // to priority 3 / err.
-        assert!(matches!(out, Err(ResolveError::NoBackendFound { .. })),
-                "expected NoBackendFound, got {out:?}");
+        assert!(
+            matches!(out, Err(ResolveError::NoBackendFound { .. })),
+            "expected NoBackendFound, got {out:?}"
+        );
     }
 
     // --- Priority 3 + failure mode -----------------------------------------
 
     #[test]
     fn nothing_matches_returns_no_backend_found() {
-        fn nothing_exists(_p: &Path) -> bool { false }
+        fn nothing_exists(_p: &Path) -> bool {
+            false
+        }
         let env = env_empty();
         let out = resolve_with_fs(None, &env, nothing_exists);
         match out {
@@ -370,6 +495,19 @@ mod tests {
                 assert!(!tried.is_empty(), "tried list must not be empty");
             }
             other => panic!("expected NoBackendFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn compile_time_checkout_fallback_is_debug_only() {
+        fn source_only(p: &Path) -> bool {
+            p.file_name() == Some(std::ffi::OsStr::new("main.py"))
+        }
+        let out = resolve_with_fs(None, &env_empty(), source_only);
+        if cfg!(debug_assertions) && option_env!("DESKPET_DEV_ROOT").is_some() {
+            assert!(matches!(out, Ok(BackendLaunch::Dev { .. })));
+        } else {
+            assert!(matches!(out, Err(ResolveError::NoBackendFound { .. })));
         }
     }
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import time
 from dataclasses import replace
@@ -32,6 +33,43 @@ from deskpet.workflows.definitions.v5 import (
     deep_research_initial_state,
 )
 from deskpet.workflows.native import InMemoryNativeCheckpointStore
+
+
+@pytest.mark.parametrize("system,machine", [("win32", "AMD64"), ("darwin", "arm64")])
+def test_native_bundle_resolver_selects_only_platform_executable(tmp_path, system, machine):
+    from deskpet.playwright_bundle import get_platform_contract
+    from deskpet.retrieval.playwright_renderer import resolve_browser_executable
+
+    contract = get_platform_contract(system, machine)
+    revision = tmp_path / contract.revision_dir
+    executable = revision / contract.executable_relative
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"fixture")
+    (revision / "INSTALLATION_COMPLETE").touch()
+    other = get_platform_contract("darwin", "arm64") if system == "win32" else get_platform_contract("win32", "AMD64")
+    foreign = revision / other.executable_relative
+    foreign.parent.mkdir(parents=True)
+    foreign.write_bytes(b"wrong platform")
+    assert resolve_browser_executable(tmp_path, contract=contract) == executable
+    executable.unlink()
+    with pytest.raises(PlaywrightRenderError, match="browser_bundle_ambiguous:0"):
+        resolve_browser_executable(tmp_path, contract=contract)
+
+
+@pytest.mark.parametrize("system,machine", [("win32", "AMD64"), ("darwin", "arm64")])
+def test_native_bundle_resolver_rejects_ambiguous_complete_revisions(tmp_path, system, machine):
+    from deskpet.playwright_bundle import get_platform_contract
+    from deskpet.retrieval.playwright_renderer import resolve_browser_executable
+
+    contract = get_platform_contract(system, machine)
+    for revision in (contract.revision_dir, "chromium_headless_shell-9999"):
+        root = tmp_path / revision
+        executable = root / contract.executable_relative
+        executable.parent.mkdir(parents=True)
+        executable.touch()
+        (root / "INSTALLATION_COMPLETE").touch()
+    with pytest.raises(PlaywrightRenderError, match="browser_bundle_ambiguous:2"):
+        resolve_browser_executable(tmp_path, contract=contract)
 
 
 class _FixtureHandler(BaseHTTPRequestHandler):
@@ -115,6 +153,13 @@ def fixture_server():
 
 @pytest.fixture(scope="module")
 def task0_browser_root() -> Path:
+    explicit_owner = os.environ.get("DESKPET_TEST_PLAYWRIGHT_OWNER")
+    if explicit_owner:
+        from deskpet.playwright_bundle import validate_browser_owner
+
+        root = Path(explicit_owner).resolve()
+        validate_browser_owner(root)
+        return root
     evidence = (
         Path(__file__).parents[2]
         / "plans"
@@ -210,11 +255,13 @@ async def test_real_browser_crash_restarts_once_and_preserves_cleanup(
 ) -> None:
     import psutil
 
+    from deskpet.playwright_bundle import get_platform_contract
+
+    contract = get_platform_contract()
     executable = str(
         task0_browser_root
-        / "chromium_headless_shell-1228"
-        / "chrome-headless-shell-win64"
-        / "chrome-headless-shell.exe"
+        / contract.revision_dir
+        / contract.executable_relative
     ).casefold()
 
     def root_processes() -> dict[int, object]:
@@ -255,15 +302,16 @@ async def test_idle_shutdown_reaps_browser_and_driver_children(
 ) -> None:
     import psutil
 
-    def children() -> set[int]:
+    def children() -> dict[int, bool]:
         root_text = str(task0_browser_root).casefold()
-        result = set()
+        result = {}
         for process in psutil.process_iter(("exe", "cmdline")):
             try:
-                command = " ".join(process.info["cmdline"] or ()).casefold()
+                command = " ".join(process.info["cmdline"] or ()).replace("\\", "/").casefold()
                 executable = str(process.info["exe"] or "").casefold()
-                if root_text in executable or "playwright\\driver\\package\\cli.js run-driver" in command:
-                    result.add(process.pid)
+                is_driver = "playwright/driver/package/cli.js run-driver" in command
+                if root_text in executable or is_driver:
+                    result[process.pid] = is_driver
             except (psutil.AccessDenied, psutil.NoSuchProcess):
                 continue
         return result
@@ -271,8 +319,13 @@ async def test_idle_shutdown_reaps_browser_and_driver_children(
     pool = _pool(task0_browser_root, idle_shutdown_s=0.05)
     try:
         await pool.render(f"{fixture_server}/dynamic")
-        owned = set(pool._owned_processes)
-        assert owned
+        owned = dict(pool._owned_processes)
+        observed = children()
+        drivers = {pid for pid in owned if observed.get(pid) is True}
+        browsers = {pid for pid in owned if observed.get(pid) is False}
+        assert drivers, "the real Playwright Node driver must be owned before cleanup"
+        assert browsers, "the real browser must be owned before cleanup"
+        assert any(psutil.Process(pid).ppid() in drivers for pid in browsers)
         idle = pool._idle_task
         assert idle is not None
         await asyncio.wait_for(asyncio.shield(idle), timeout=8.0)
@@ -280,11 +333,48 @@ async def test_idle_shutdown_reaps_browser_and_driver_children(
         assert pool._playwright is None
     finally:
         await pool.close()
+
+    def alive_owned() -> set[int]:
+        # Track the captured identities directly. A changed command line or a
+        # broken path matcher must not turn the cleanup assertion into a pass.
+        alive = set()
+        for pid, created in owned.items():
+            try:
+                process = psutil.Process(pid)
+                if abs(process.create_time() - created) < 0.001 and process.is_running():
+                    alive.add(pid)
+            except psutil.NoSuchProcess:
+                pass
+        return alive
+
     for _ in range(250):
-        if not (children() & owned):
+        if not alive_owned():
             break
         await asyncio.sleep(0.02)
-    assert children() & owned == set()
+    assert alive_owned() == set()
+
+
+@pytest.mark.parametrize("driver_script", [
+    r"C:\venv\Lib\site-packages\playwright\driver\package\cli.js",
+    "/venv/lib/site-packages/playwright/driver/package/cli.js",
+])
+def test_process_snapshot_tracks_native_driver_and_owns_only_browser_ancestor(monkeypatch, driver_script):
+    from types import SimpleNamespace
+    import psutil
+
+    executable = Path("/owned/chrome-headless-shell")
+    rows = [
+        SimpleNamespace(pid=10, info={"exe": str(executable), "cmdline": [str(executable)], "create_time": 10.0, "ppid": 20}),
+        SimpleNamespace(pid=20, info={"exe": "/venv/node", "cmdline": ["node", driver_script, "run-driver"], "create_time": 9.0, "ppid": 1}),
+        SimpleNamespace(pid=30, info={"exe": "/venv/node", "cmdline": ["node", driver_script, "run-driver"], "create_time": 9.5, "ppid": 1}),
+    ]
+    monkeypatch.setattr(psutil, "process_iter", lambda _attrs: rows)
+    snapshot = PlaywrightRendererPool._process_snapshot(executable)
+    assert snapshot[20] == (9.0, False, True, 1)
+    assert snapshot[30] == (9.5, False, True, 1)
+    pool = PlaywrightRendererPool(executable_resolver=lambda: executable)
+    pool._capture_owned_processes(executable, {})
+    assert pool._owned_processes == {10: 10.0, 20: 9.0}
 
 
 @pytest.mark.asyncio

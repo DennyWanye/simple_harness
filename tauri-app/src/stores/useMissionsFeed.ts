@@ -15,7 +15,6 @@
 import { useEffect } from "react";
 
 import type { IncomingMessage } from "../types/messages";
-import type { ControlChannel } from "../ws/ControlChannel";
 import {
   asList,
   asRecord,
@@ -23,16 +22,21 @@ import {
   newRequestKey,
   useMissionsStore,
   type OrchestrationStatus,
+  type MissionsChannel,
 } from "./missionsStore";
 
 /** 推送触发的列表重拉最短间隔。 */
 const LIST_REFRESH_INTERVAL_MS = 1000;
 
-export function useMissionsFeed(channel: Pick<ControlChannel, "send" | "onMessage"> | null): void {
+export function useMissionsFeed(channel: MissionsChannel | null): void {
   useEffect(() => {
     if (!channel) return undefined;
+    let statusRequest: string | null = null;
     const request = (type: string) => {
-      channel.send({ type, request_id: newRequestKey(), payload: {} });
+      const requestId = newRequestKey();
+      if (type === "mission_list") useMissionsStore.getState().setListRequest(requestId);
+      else statusRequest = requestId;
+      channel.send({ type, request_id: requestId, payload: {} });
     };
 
     // throttle: send now, then at most once per interval; pushes inside the interval
@@ -58,6 +62,7 @@ export function useMissionsFeed(channel: Pick<ControlChannel, "send" | "onMessag
       const state = useMissionsStore.getState();
       switch (message.type) {
         case "orchestration_status_response": {
+          if (payload.request_id !== statusRequest) break;
           const data = asRecord(payload.data);
           if (payload.ok !== false && typeof data.available === "boolean") {
             state.setStatus(data as unknown as OrchestrationStatus);
@@ -65,6 +70,7 @@ export function useMissionsFeed(channel: Pick<ControlChannel, "send" | "onMessag
           break;
         }
         case "mission_list_response":
+          if (payload.request_id !== state.listRequestId) break;
           if (payload.ok === true) state.setMissions(asList(asRecord(payload.data).missions));
           break;
         case "mission_changed": {
@@ -85,8 +91,16 @@ export function useMissionsFeed(channel: Pick<ControlChannel, "send" | "onMessag
 
     request("orchestration_status");
     sendList();
+    const offState = channel.onStateChange?.((connection) => {
+      statusRequest = null;
+      useMissionsStore.getState().setListRequest(null);
+      if (cooling) clearTimeout(cooling);
+      cooling = null; pending = false;
+      if (connection === "connected") { request("orchestration_status"); sendList(); }
+    });
     return () => {
       off();
+      offState?.();
       if (cooling) clearTimeout(cooling);
       cooling = null;
       pending = false;
