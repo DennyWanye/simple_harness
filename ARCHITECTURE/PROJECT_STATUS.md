@@ -1,4 +1,4 @@
-最后更新：2026-09-12。P3.3 G实施中：SDK0.11.1/Host接线定向已验。三版mac冻结构建成功，真实启动先后暴露SDK延迟导入、workflow源码、Tool目录/迁移资源遗漏；前两项已真实越过，资源修复14项控制通过待重建。真实deepseek-flash文档任务未执行，P3.3未交付；既有P3.1/P3.2结论保持原范围。见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)。
+最后更新：2026-09-12 23:05 CST。用户批准P3.1–P3.5功能优先、直接源码Tauri UI验收；暂停PyInstaller/安装包发布，不含P3.6。P3.3 G源码接线已有SDK1302/安装组合921/Host49/前端86项通过，源码UI真实deepseek-flash文档任务待验，未交付。冻结探针修复4项控制通过并独立审查ACCEPT；不称安装包通过。见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)。
 
 # 当前状态总表（2026-09-09 22:05）
 

@@ -6,7 +6,6 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.runtime import sandbox
 from deskpet.orchestration.service import OrchestrationService
 

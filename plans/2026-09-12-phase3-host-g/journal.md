@@ -98,3 +98,12 @@ c41bfc14的PIv3成功107.754秒、Tauri v3成功36.372秒。最终包包含所�
 - `.local-test-evidence/2026-09-12/p33-g/tauri-build-v3/resource.json` SHA-256 `096b9066d197493882f6a21016c2d90a47a135da9da1b96247b8ebc6ae604149`
 - `.local-test-evidence/2026-09-12/p33-g/native-n1-resource-v3/resource.json` SHA-256 `05cb0c553e73cd86a15e4d90ee8670faf9a78a5c810020113604e9aa4f57db67`
 - `.local-test-evidence/2026-09-12/p33-g/native-n1-v3/native-1789222653501786000.log` SHA-256 `a325e3a155fdfd3963e7cc1c7fe8a7dd61a98e3f1407bef5f6006c77c0f544db`
+
+
+### 用户调整执行方式与源码UI续接（23:05 CST）
+
+用户确认范围P3.1–P3.5：继续完成P3.3、P3.4、P3.5；P3.6不做。当前优先功能，直接源码启动Tauri开发UI真测，暂停冻结安装包及发布包工作。原有安装包AC作为暂缓项保留，不将源码UI说成冻结安装包已验。主线程串行pytest与真实UI，独立代理只读审查/准备后续片。23:01恢复功能执行；22:38–23:01为范围对齐间隔，单列不混为编码时间。防熄屏caffeinate -di，PID83049，pmset确认display/system idle断言生效，未修改永久电源设置。
+
+第四版PI已完成112.858秒，无残留，但不再启动或打包。冻结sys.executable会被SDK探针用作Python -I/-c；新增frozen早退，清空旧executor，保持既有code_execution=off边界。先行控制1 failed/3 passed，修复后4 passed/0.05秒（watchdog0.71秒），Kepler独立限定ACCEPT；代码f14a82ba。未实际执行危险的冻结自启动探针，非真实沙箱PASS。execution manifest检查通过。文档首次写入使用系统python命令遇编码错误，代码提交先于文档，本提交补齐事实源，不把间隙说成任务完成。
+
+证据：SDK .local-test-evidence/2026-09-12/p33-g/host-frozen-sandbox-red-v1.{log,json} 与 host-frozen-sandbox-green-v1.{log,json}。随后运行Tauri dev，由Tauri管理唯一Vite与源码backend；独立userdata/端口，DEEPSEEKER_APIKEY只进入进程环境，deepseek-flash不变。

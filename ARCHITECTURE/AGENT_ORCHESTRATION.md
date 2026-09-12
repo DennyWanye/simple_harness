@@ -1,6 +1,8 @@
 # Agent 编排（任务编排视图）· 生产事实
 
-- 最后更新：2026-09-12
+- 最后更新：2026-09-12 23:05 CST
+
+当前决定：用户批准直接运行源码Tauri UI完成P3.1–P3.5功能验收，暂停安装包构建与发布，不含P3.6。冻结环境探针新增明确不可执行原因，避免把后端应用当Python解释器；四项控制通过及独立限定ACCEPT，源码模式仍执行真实探针。此前安装包失败保留，下面为历史定位过程。
 
 P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定引用全文读取与系统结论展示。候选SDK0.11.1（源码a5c8fca，wheel49137655…）已钉版并安装，Service SDK保持原定0.3.13；本机旧venv的Harness0.7.2/Service0.3.12已对齐。Host实际安装组合定向49项、前端86项组件测试/typecheck通过。干净Host c3d4e227的macOS PyInstaller与Tauri构建成功，浏览器原件/许可证及构建身份核验通过；但原生首次启动因SDK公开延迟导入的workspace_binding_protocol未入包而失败，尚未发出本次真实flash请求。公开延迟导入已修复并在第二版真实启动越过；第二次lifespan因工作流handler源码未随包导致稳定manifest编译失败，源码收集修复的3项控制通过，仍待原生复验。第三次真实启动已越过workflow源码检查，但缺Tool目录JSON；资源全集修复14项控制通过，待第四版原生复验。不宣称P3.3交付。当前失败与后续修复见[Host G journal](../plans/2026-09-12-phase3-host-g/journal.md)。
 - 计划与记录：`plans/2026-09-11-orchestrator-host-integration/`（plan 第 3 版、acceptance、journal）
