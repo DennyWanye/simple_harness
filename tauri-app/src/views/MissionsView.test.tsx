@@ -338,6 +338,17 @@ describe("MissionsView（HA-10）", () => {
     expect(screen.getByText(/policy-seed-abc/)).toBeTruthy();
   });
 
+  it.each([
+    [{ settled_tokens: 86732, reserved_tokens: 0 }, /Token 已结算 86732 · 当前预留 0/],
+    [{ settled_tokens: null, reserved_tokens: null }, /Token 已结算 未知 · 当前预留 未知/],
+  ])("显示账本当前用量，未知不冒充零 %j", (usage, expected) => {
+    openMission({
+      ...DETAIL,
+      usage: { ...usage, amount_micros: null },
+    });
+    expect(screen.getByText(expected)).toBeTruthy();
+  });
+
   it("审批卡：拒绝必须写理由；批准发出 approve", () => {
     const channel = openMission();
     const reject = screen.getByRole("button", { name: "拒绝" }) as HTMLButtonElement;

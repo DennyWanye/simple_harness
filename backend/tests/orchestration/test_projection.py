@@ -12,10 +12,10 @@ import asyncio
 import time
 
 import pytest
-
 from deskpet.orchestration.projection import (
     MISSION_FIELDS,
     project_approval,
+    project_detail,
     project_event,
     ui_state,
 )
@@ -50,6 +50,9 @@ async def test_detail_is_whitelisted_and_marks_model_text(orchestration_root, pr
             layer["status"] != "PASS" for layer in layers if layer["layer"] == "code_test"
         )
         assert detail["usage"]["amount_micros"] is None  # unpriced, not zero
+        assert detail["usage"]["reserved_tokens"] == 0
+        assert detail["usage"]["settled_tokens"] is not None
+        assert detail["usage"]["ledger_version"] is not None
         # review P2-4: a Planner wrote the Task goals, a Critic the critic_review summary
         assert detail["tasks"] and all(t["goal"]["source"] == "model" for t in detail["tasks"])
         sources = {layer["layer"]: layer["summary"]["source"] for layer in layers}
@@ -58,6 +61,23 @@ async def test_detail_is_whitelisted_and_marks_model_text(orchestration_root, pr
         assert detail["mission"]["ui_state"] == "delivered"
     finally:
         await service.close()
+
+
+@pytest.mark.parametrize("status", ["ACTIVE", "FAILED", "CANCELLED"])
+def test_budget_projection_keeps_actual_held_reservation_even_after_terminal(status):
+    view = {"snapshot": {
+        "mission": {"status": status},
+        "budget_usage": {"reserved_tokens": 700, "settled_tokens": 123, "version": 8},
+    }}
+    usage = project_detail(view)["usage"]
+    assert usage["reserved_tokens"] == 700  # UNKNOWN can outlive a cancelled Mission
+    assert usage["settled_tokens"] == 123
+    assert usage["amount_micros"] is None
+
+
+def test_old_snapshot_does_not_invent_zero_budget_usage():
+    usage = project_detail({"snapshot": {}})["usage"]
+    assert usage["reserved_tokens"] is None and usage["settled_tokens"] is None
 
 
 @pytest.mark.asyncio

@@ -197,3 +197,36 @@ The old document fixture was rejected with a durable `TaskGraphRejected`: missin
 - Sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-host-document-current-v5.log`, SHA-256 `dab39989e76a1c1cb46253b5d333f6bb139e9544bd9445697d8d40c1cb8295d8`; exact command and elapsed time in adjacent JSON.
 - Sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-host-remaining-source-v6.log`, SHA-256 `feb74ea58b82f180ee970676fe8d5540f6716d132e9c3f43f60c900e2164ca38`; exact command and elapsed time in adjacent JSON.
 - Sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-host-scenario-path-v7.log`, SHA-256 `f4c77b58e2280613a49ba18da1c4a02d440e862c49a6c8fe5daaf277333ff99d`; exact command and elapsed time in adjacent JSON.
+
+## N1 source v5b actual failure, 2026-09-13 02:25 CST
+
+Immutable source Host `133aaa62` / SDK `dfc9b7c`, doc profile6; actual UI Mission
+`mission-a7960c5f9be8b736` **FAILED**, `max_attempts_reached`. The original two
+sources, goal, criteria and Mission400000 tokens/12 attempts were unchanged.
+Planner made one complete Task but gave it90000 tokens/4 attempts. First Worker
+read both sources completely in4 pages; a later response spent8192 output tokens
+on reasoning and returned no body. Its larger-output retry was denied by the
+Task ceiling. Later zero-handoff failures consumed Task attempts. No REPORT or
+Critic acceptance exists; this is not a business pass.
+
+Eight physical handoffs (7 successful,1 empty-response failure) are all SETTLED.
+Mission known usage86732 tokens (Planner4979 + Worker81753); actual current
+reserved tokens0. UI incorrectly displayed44494 by summing historical initial
+Attempt reservations. Source fixes for current-ledger projection, typed denial
+stopping and Planner ceiling semantics are in progress, not yet UI verified.
+
+Raw local record: Host `.local-test-evidence/2026-09-13/p33-g/source-ui-n1-v5b/failure-summary.json`,
+SHA-256 `dc0cdd92e55ca404bdb331e7e5e6f4469a5499f986feea9ae0841a8e5fdb0291`.
+Owned PG13015 exited normally; elapsed660.36s, peak921616KiB, remaining[].
+Earlier v5 boot-only failure was missing sparse-checkout capability packs;
+full same-commit runtime resources were provisioned before v5b.
+N1–N6/O4 remain open. No packaging, release or P3.6.
+
+## Budget/selection source integration checkpoint, 2026-09-13 02:35 CST
+These are source tests, not N1 UI acceptance. P3.3/G, P3.4 and P3.5 remain open.
+- `p35-tail-price-v1`: exit2, wrapper0.7s, PG16926; command `python -m pytest -q tests/orchestrator/p35/test_tail_and_priced_budget.py tests/orchestrator/p35/test_provider_budget_guard.py tests/orchestrator/p35/test_provider_budget_identity.py --maxfail=5`. Raw sibling SDK `.local-test-evidence/2026-09-12/p33-g/p35-tail-price-v1.log`, SHA-256 `fac0607f74c19f5785cbcd75c3dfec38632d2dc4024f9d1291b1aca52467b6e9`.
+- `p35-tail-price-v2`: exit0, wrapper1.26s, PG17191; command `python -m pytest -q tests/orchestrator/p35/test_tail_and_priced_budget.py tests/orchestrator/p35/test_provider_budget_guard.py tests/orchestrator/p35/test_provider_budget_identity.py --maxfail=5`. Raw sibling SDK `.local-test-evidence/2026-09-12/p33-g/p35-tail-price-v2.log`, SHA-256 `ac75a7f88d4d202f0e7e1a5e53c50a93aa0e86b94c201e623314d35a82be2155`.
+- `g-budget-public-v1`: exit0, wrapper5.57s, PG17239; command `python -m pytest -q tests/orchestrator/host_support/test_facade.py tests/orchestrator/p33/test_g_source_workload.py tests/orchestrator/step06/test_model_router.py --maxfail=5`. Raw sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-budget-public-v1.log`, SHA-256 `1727d03b467056b87bc1518249a7a9f882e0d22877fd639eae8442cc045875d4`.
+- `g-host-budget-projection-v1`: exit0, wrapper9.09s, PG17301; command `python -m pytest -q tests/orchestration/test_projection.py --maxfail=5`. Raw sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-host-budget-projection-v1.log`, SHA-256 `d6e5c7545fbc7c35270891af5eb548302146b975a7711ec32f92df0e09a30ed2`.
+p35 v1 had3 collection errors from an incorrect selection module import; fixed by its owner. v2:19 passed/1.00s. Public snapshot/workload/router:39 passed/5.12s, including simultaneous second-connection budget mutation remaining outside the original snapshot cursor. Host projection:22 passed/8.42s, including actual completed service ledger0, terminal held reservations and unavailable legacy values.
+Frontend MissionsView first run47 passed/1 failed (new fixture reused a consumed request ID); corrected normal-load fixture gives49 passed/0.941s total (tests0.452s). Typecheck passed before the new fixture, and will be repeated for the final frontend state. Raw logs Host `.local-test-evidence/2026-09-13/p33-g/ui-budget-projection-v1/`.

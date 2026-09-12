@@ -703,7 +703,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 {` · 策略版本：${text(record(detail.mission_policy).version_id) || "—"}`}
               </div>
               <div style={muted}>
-                Token 预留 {text(record(detail.usage).reserved_tokens) || "0"} · 金额 未计价
+                Token 已结算 {text(record(detail.usage).settled_tokens) || "未知"} · 当前预留 {text(record(detail.usage).reserved_tokens) || "未知"} · 金额 未计价
               </div>
               <div style={muted} data-testid="mission-budget">
                 {`预算：Token 上限 ${text(record(mission.budget).max_tokens) || "—"} · 尝试次数上限 ${text(record(mission.budget).max_attempts) || "—"}`}

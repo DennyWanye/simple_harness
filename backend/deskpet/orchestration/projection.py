@@ -556,6 +556,8 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         if key not in latest_actions or int(action.get("version") or 0) >= int(latest_actions[key].get("version") or 0):
             latest_actions[key] = action
     policy = dict(snapshot.get("mission_policy") or {})
+    budget_usage = snapshot.get("budget_usage")
+    ledger = budget_usage if isinstance(budget_usage, Mapping) else {}
     approvals = [_snapshot_approval(a, latest_actions) for a in snapshot.get("approvals") or ()]
     waiting_on = [dict(w) for w in snapshot.get("waiting_on") or ()]
     raw_mission = dict(snapshot.get("mission") or {})
@@ -588,7 +590,9 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         "mission_policy": {"version_id": policy.get("version_id"), "source": policy.get("source")},
         "usage": {
             "attempts": len(attempts),
-            "reserved_tokens": sum(int(a.get("reserved_tokens") or 0) for a in attempts),
+            "reserved_tokens": ledger.get("reserved_tokens"),
+            "settled_tokens": ledger.get("settled_tokens"),
+            "ledger_version": ledger.get("version"),
             "amount_micros": None,  # no DeepSeek price table is injected: unpriced, never 0
             "priced": False,
         },
