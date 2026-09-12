@@ -154,10 +154,26 @@ _mypyc_modules = [
 ]
 
 # --- 1. Hidden imports --------------------------------------------------
+def _collect_sdk_production_modules():
+    # Public SDK __getattr__ exports can traverse another lazy mapping before
+    # importing the leaf module. Static imports (or just agent_orchestrator)
+    # miss those leaves, e.g. runtime.workspace_binding_protocol at startup.
+    # Both distributions have already passed candidate verification above.
+    def production_module(name):
+        parts = name.split(".")
+        return len(parts) == 1 or parts[1] not in {"testing", "cli", "__main__"}
+
+    modules = []
+    for package in ("simple_harness", "simple_harness_service"):
+        modules.extend(collect_submodules(package, filter=production_module, on_error="raise"))
+    return sorted(set(modules))
+
+
 # Providers that dlopen / importlib their implementations at runtime
 # won't be discovered by the default import graph. List every top-level
 # package that the frozen exe must be able to `import` lazily.
 hiddenimports: list[str] = []
+hiddenimports += _collect_sdk_production_modules()
 # Domain adapters and runtime providers are selected dynamically by the SDK.
 # Collect from the verified installed wheel, never a sibling SDK checkout.
 hiddenimports += collect_submodules("agent_orchestrator", on_error="raise")

@@ -47,3 +47,25 @@ SDK G1/主判定独立审查ACCEPT；Host后端R2与真实snapshot接缝经Halle
 ### 冻结前专项复验
 
 修复后launcher25 passed/0.12秒；frozen Host身份与原部署manifest20 passed/2.36秒。spec只从已提交运行输入捕获构建身份，打包末再核输入未漂移；frozen状态只读该资源，禁止从外层Git猜身份。主范围审查通过，launcher独立Ohm复审ACCEPT，P1关闭；没有真实启动。
+
+
+### 后端冻结构建通过（21:47 CST）
+
+干净源码c3d4e2277c00de200f0310121b805574f7b5c368，PyInstaller成功115.661秒，峰值RSS1868384KiB，无残留进程组。包内身份绑定2227个运行输入、SHA-256 27efd77d86700113cafeb3101d1b2e3d6c239c142c19ebc68fb3b714a4bc2dfa，构建前后重算一致。实际dist的浏览器exe/driver/许可证与平台pin一致；Tauri仅映射这一份backend目录。此刻Tauri编译进行中，原生启动/真实Provider尚未执行。
+
+- `.local-test-evidence/2026-09-12/p33-g/pyinstaller-resource-v1/resource.json` SHA-256 `53cd3f0b4ba3f371d7571512c6b3663a611b29acd8364a97fb8febf40e37ee66`
+- `.local-test-evidence/2026-09-12/p33-g/frozen-dist/deskpet-backend/_internal/host-build-identity.json` SHA-256 `61f878d8bec9ef776e43e185647db916ffec9d7855b31c73a2bb5e9381000525`
+
+
+### 原生N1首次启动失败（21:51 CST）
+
+Tauri release .app构建成功303.540秒（Rust报告4分56秒），PG64545无残留；最终.app browser pin与host身份检查通过。但真实原生窗口显示“Backend exited without printing SHARED_SECRET”，实际Bundled路径日志显示主程序经deskpet.task_scope.workspace_bindings访问SDK public lazy API，缺少simple_harness.runtime.workspace_binding_protocol。这是打包缺陷，不是环境限制，也未发出本次真实Provider请求。静态PYZ存在94个编排模块不能替代public lazy export依赖闭包；补齐收集与决定性测试后重新冻结。
+
+通过原生Cmd+Q退出；紧接getAXState导致CUA自动重新打开App，产生PID68424（不同PG、无原launcher密钥环境）。再次Cmd+Q后只用进程观察确认无simple-harness/backend残留，避免getAXState再次启动。受控launcher资源receipt return0只是应用正常退出，不代表验收成功；N1结果FAIL。
+
+- `.local-test-evidence/2026-09-12/p33-g/native-n1-v1/native-1789221068963181000.log` SHA-256 `0329fda14ea8f14d1a8f9cf6c0505aaa86b0feee37af9e58bedcbb8bc5a0313c`
+
+
+### SDK延迟导入收集修复（21:57 CST）
+
+两SDK已验证安装包的生产模块由collect_submodules显式收集，排除testing/CLI入口，收集错误立即失败。专项4 passed/0.90秒（runner1.55秒）；基于wheel RECORD覆盖、fresh解释器真实public lazy API链以及删除workspace leaf的决定性反例。主范围审查和Kepler独立限定ACCEPT，Ruff/diff检查及原execution manifest检查通过。下一步将本修复提交后重新构建；原生启动尚未证明修复，首失败保持FAIL。测试wrapper从SDK目录调用Host绝对测试文件，receipt.source_head为SDK身份，Host修复身份取本次随后提交。

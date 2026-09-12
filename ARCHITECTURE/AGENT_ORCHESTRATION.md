@@ -2,7 +2,7 @@
 
 - 最后更新：2026-09-12
 
-P3.3 G进行中：Host工作区已接入原子文档创建、来源版本审批、绑定引用全文读取与系统结论展示。候选SDK0.11.1（源码a5c8fca，wheel49137655…）已钉版并安装，Service SDK保持仓库原定0.3.13。本机旧venv实际曾为Harness0.7.2/Service0.3.12，已对齐，不能将旧pin文本当成此前真实安装身份。新Host安装组合、完整原生与真实flash未验收；前端86项组件测试/typecheck已通过。mac冻结包正在补齐平台路径及浏览器契约，尚非P3.3交付。
+P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定引用全文读取与系统结论展示。候选SDK0.11.1（源码a5c8fca，wheel49137655…）已钉版并安装，Service SDK保持原定0.3.13；本机旧venv的Harness0.7.2/Service0.3.12已对齐。Host实际安装组合定向49项、前端86项组件测试/typecheck通过。干净Host c3d4e227的macOS PyInstaller与Tauri构建成功，浏览器原件/许可证及构建身份核验通过；但原生首次启动因SDK公开延迟导入的workspace_binding_protocol未入包而失败，尚未发出本次真实flash请求。正在修复动态收集，不宣称P3.3交付。当前失败与后续修复见[Host G journal](../plans/2026-09-12-phase3-host-g/journal.md)。
 - 计划与记录：`plans/2026-09-11-orchestrator-host-integration/`（plan 第 3 版、acceptance、journal）
 - 方向依据：用户的 Phase3 计划 `plans/taskSys2/agent-orchestrator-phase3-plan.zh-CN.md`。本模块是其中 **P3.1 真实 App Mission 控制闭环** 的 Host 直连实现。
 - SDK：`simple-harness-sdk` 的 `agent_orchestrator`（与 `simple_harness` 同在一个 wheel 里）。Host 钉版以 `backend/deskpet/sdk_adapters/sdk_candidate.py` 为唯一来源。
