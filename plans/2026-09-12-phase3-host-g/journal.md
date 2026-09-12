@@ -69,3 +69,16 @@ Tauri release .app构建成功303.540秒（Rust报告4分56秒），PG64545无�
 ### SDK延迟导入收集修复（21:57 CST）
 
 两SDK已验证安装包的生产模块由collect_submodules显式收集，排除testing/CLI入口，收集错误立即失败。专项4 passed/0.90秒（runner1.55秒）；基于wheel RECORD覆盖、fresh解释器真实public lazy API链以及删除workspace leaf的决定性反例。主范围审查和Kepler独立限定ACCEPT，Ruff/diff检查及原execution manifest检查通过。下一步将本修复提交后重新构建；原生启动尚未证明修复，首失败保持FAIL。测试wrapper从SDK目录调用Host绝对测试文件，receipt.source_head为SDK身份，Host修复身份取本次随后提交。
+
+
+### 第二次原生启动与工作流源码修复（22:10 CST）
+
+dfb3c7dc的PyInstaller v2成功178.554秒，Tauri v2成功93.365秒；两轮资源receipt无残留。最终.app的browser pin/Host身份通过，公开延迟导入缺陷已在真实启动越过。随后lifespan的build_product_workflow_registrations因research_stages.normalize_handler无可读源码，触发WorkflowDefinitionError与product_sdk_runtime_build_failed；UI显示Backend supervisor gave up after repeated crashes，N1第二次仍FAIL，未发出本次真实模型请求。模型配置已从process-only provider读取deepseek-flash，配置成功不当作请求成功。后台模型provisioner另有HTTP451 warning，当前启动硬失败是workflow源码缺失，两者分开。
+
+通过实际应用菜单Quit退出，PG72563无残留；资源return0仅表示退出正常，验收仍FAIL。保留v2原日志/包。修复只在spec增加product_workflows和SDK workflows的pyz+py源码收集，真实SDK inspect/getsource/fingerprint规则不变。2产品+3官方registration全部handlers/selectors的源码布局控制3 passed/0.59秒；移除任一必要源码组有真实compile失败，正控manifest与implementation hash同源码基线。主审与Kepler独立限定ACCEPT，Ruff/diff/原execution manifest检查通过；提交后仍必须重建并原生重验。
+
+- `.local-test-evidence/2026-09-12/p33-g/pyinstaller-resource-v2/resource.json` SHA-256 `6bbe143c4259cdc2650dda3c6b8f61a5f2a8655b4772b1a4eaad4e3474c6577b`
+- `.local-test-evidence/2026-09-12/p33-g/tauri-build-v2/resource.json` SHA-256 `70ba8af46a06d3d854c1bb4118125c6558cf1c35c45f0dda8848e6b6011569fb`
+- `.local-test-evidence/2026-09-12/p33-g/native-n1-resource-v2/resource.json` SHA-256 `13e0e26d9f7104561fde4865674919a311918ad3f2e8582faec17be2068fe4f9`
+- `.local-test-evidence/2026-09-12/p33-g/tauri-artifact-check-v2.json` SHA-256 `11acbfaf74b5fcff069b2806ac5082cb6019076f4eeb5ea77aa7dd760bbd2504`
+- `.local-test-evidence/2026-09-12/p33-g/native-n1-v2/native-1789221804699242000.log` SHA-256 `7f847cc9e94aecebe7ed40448499566fbb51fd3dc5cafd914c0b83cb606c0cd7`

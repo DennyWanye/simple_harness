@@ -445,9 +445,15 @@ a = Analysis(
     # WorkflowDefinition hashes callable source text. PyInstaller normally
     # stores modules only in PYZ bytecode, so inspect.getsource() fails in the
     # installed backend and disables the entire durable workflow service.
-    # Keep definition modules as external source alongside the frozen app;
-    # source-mode builds and frozen builds then compute identical manifests.
-    module_collection_mode={"deskpet.workflows.definitions": "py"},
+    # Keep the registered handlers AND conditional selectors, not just the
+    # modules that declare the graphs. Product and SDK official registrations
+    # hash their actual callable source; never substitute bytecode fingerprints.
+    # pyz+py retains normal imports plus the identical source for inspect.
+    module_collection_mode={
+        "deskpet.workflows.definitions": "py",
+        "deskpet.sdk_adapters.product_workflows": "pyz+py",
+        "simple_harness.workflows": "pyz+py",
+    },
 )
 
 a.datas += [
