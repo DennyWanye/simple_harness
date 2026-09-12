@@ -24,6 +24,7 @@ import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { MissionDocument, SourceDrafts, type SourceDraft } from "./MissionDocument";
+import { MissionSearch } from "./MissionSearch";
 import {
   asList as list,
   asRecord as record,
@@ -294,6 +295,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const [goal, setGoal] = useState("");
   const [criteria, setCriteria] = useState("");
   const [domain, setDomain] = useState("code");
+  const [searchPolicy, setSearchPolicy] = useState("");
   const [sources, setSources] = useState<SourceDraft[]>([]);
   const [sourceImporting, setSourceImporting] = useState(false);
   const [createPending, setCreatePending] = useState(false);
@@ -536,7 +538,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const status = store.status;
   const domains = record(record(record(status?.deployment_manifest).features).domains);
   const canCreateDocument = domains.atomic_source_create === true && list(domains.items).some((item) => item.id === "doc-research-v1");
+  const searchPolicies = list(store.policy?.eligible_search_policies);
   const submittable = !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
+    (!searchPolicy || searchPolicies.some((policy) => policy.version_id === searchPolicy)) &&
     (domain === "code" || (canCreateDocument && sources.length > 0 && sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0)));
 
   const submit = () => {
@@ -548,6 +552,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       goal: goal.trim(),
       success_criteria: criteria.split("\n").map((line) => line.trim()).filter(Boolean),
       ...(Object.keys(budget).length ? { budget } : {}),
+      ...(searchPolicy ? { search_policy_version_id: searchPolicy } : {}),
     };
     const fingerprint = JSON.stringify([domain, spec, domain === "code" ? [] : sources]);
     if (createRetry.current?.fingerprint !== fingerprint) createRetry.current = { fingerprint, key: newKey() };
@@ -676,6 +681,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <textarea id="mission-goal" aria-label="Mission 目标" style={field} disabled={createPending} value={goal} onChange={(e) => setGoal(e.target.value)} />
             <label htmlFor="mission-criteria">成功条件（每行一条）</label>
             <textarea id="mission-criteria" aria-label="成功条件" style={field} disabled={createPending} value={criteria} onChange={(e) => setCriteria(e.target.value)} />
+            {searchPolicies.length > 0 && <label style={muted}>执行方式
+              <select aria-label="执行方式" style={field} value={searchPolicy} disabled={createPending} onChange={(e) => setSearchPolicy(e.target.value)}>
+                <option value="">首个通过即交付</option>
+                {searchPolicies.map((policy) => <option key={text(policy.version_id)} value={text(policy.version_id)}>
+                  比较最多 {text(record(policy.policy).max_candidates)} 个候选后综合（已批准）
+                </option>)}
+              </select>
+            </label>}
             {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
             <div style={{ display: "flex", gap: tokens.space.sm }}>
               <input aria-label="Token 上限" placeholder={status?.mission_budget_defaults ? `Token 上限（留空=${status.mission_budget_defaults.max_tokens}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
@@ -708,6 +721,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               <div style={muted} data-testid="mission-budget">
                 {`预算：Token 上限 ${text(record(mission.budget).max_tokens) || "—"} · 尝试次数上限 ${text(record(mission.budget).max_attempts) || "—"}`}
               </div>
+              <MissionSearch value={detail.search} />
               {waiting.length ? (
                 <div aria-label="等待原因" style={{ marginTop: tokens.space.sm }}>
                   {waiting.map((item, index) => (

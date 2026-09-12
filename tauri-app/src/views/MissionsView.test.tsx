@@ -171,6 +171,19 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(screen.queryByRole("option", { name: "文档研究" })).toBeNull();
     expect((screen.getByLabelText("Mission 领域") as HTMLSelectElement).value).toBe("code");
   });
+  it("only offers approved search policies and submits the selected registry identity", () => {
+    const channel = renderAvailable();
+    channel.reply("orchestration_policy_status", { eligible_search_policies: [
+      { version_id: "approved-v2", policy: { max_candidates: 2 } },
+    ] });
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    expect((screen.getByLabelText("执行方式") as HTMLSelectElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("执行方式"), { target: { value: "approved-v2" } });
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "compare" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.last("mission_create")?.payload?.search_policy_version_id).toBe("approved-v2");
+  });
   it("ignores a duplicate late snapshot/error even for the same selected Mission", () => {
     const channel = openMission();
     const old = channel.last("mission_get")!;

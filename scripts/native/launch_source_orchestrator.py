@@ -182,6 +182,7 @@ def source_identity(args, *, host_head: str) -> dict:
         "tokenizer_sha256": _sha(_path(args.tokenizer)),
         "model_override_sha256": hashlib.sha256(MODEL_OVERRIDE).hexdigest(),
         "vite_port": args.vite_port,
+        **({"fixture": _inventory(args.fixture_dir)} if getattr(args, "fixture_dir", None) else {}),
     }
 
 
@@ -219,6 +220,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backend-port", type=int, default=18140)
     parser.add_argument("--vite-port", type=int, default=15173)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--fixture-dir", type=Path,
+                        help="Controlled document UI inputs under ignored test evidence; no real model")
     args = parser.parse_args(argv)
     root = _path(args.source_root, directory=True)
     binary = _path(args.binary, executable=True)
@@ -303,6 +306,12 @@ def main(argv: list[str] | None = None) -> int:
         PYTHONDONTWRITEBYTECODE="1",
         PYTHONPYCACHEPREFIX=str(run / f"source-pycache-{ordinal}"),
     )
+    if args.fixture_dir is not None:
+        fixture = _path(args.fixture_dir, directory=True)
+        if ".local-test-evidence" not in fixture.parts:
+            raise LauncherError("fixture inputs must stay in ignored test evidence")
+        env["DESKPET_ORCHESTRATION_TEST_SCENARIO"] = "document-ui"
+        env["DESKPET_ORCH_UI_FIXTURE_DIR"] = str(fixture)
     vite_env = {
         name: value for name, value in env.items() if name != "DESKPET_CLOUD_API_KEY"
     }

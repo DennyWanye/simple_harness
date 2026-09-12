@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 TEST_SCENARIO_ENV = "DESKPET_ORCHESTRATION_TEST_SCENARIO"
-KNOWN_SCENARIOS = ("approval-action",)
+KNOWN_SCENARIOS = ("approval-action", "document-ui")
 EVIDENCE_MARKER = ".local-test-evidence"
 
 

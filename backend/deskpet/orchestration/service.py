@@ -196,6 +196,12 @@ class OrchestrationService:
                 "test_config": TestConfigService(self.root / "test-services" / "config.json")
             }
             enabled_connectors = ("test_config",)
+        elif self._test_scenario == "document-ui":
+            import os
+
+            from .native_fixture import document_ui_provider
+
+            provider = document_ui_provider(Path(os.environ["DESKPET_ORCH_UI_FIXTURE_DIR"]))
         elif provider is None:
             raise ProviderUnavailable(NO_MODEL)
         publish = self._publish_connector()  # P3.2 P32-14: only a directory the user authorised
