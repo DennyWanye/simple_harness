@@ -138,3 +138,18 @@ c41bfc14的PIv3成功107.754秒、Tauri v3成功36.372秒。最终包包含所�
 2026-09-12 23:44 CST：P3.3 G 源码开发接线新增显式 `editable-source` SDK 身份。正式 wheel 默认与 Service 0.3.13 pin 保持；仅非frozen进程、显式模式及独立source attestation可加载SDK源码。校验Git根/commit、两个生产包与数据全集hash（含新增文件）、editable安装metadata、版本及实际模块origin；文档修改不改变生产输入。main组装与RuntimeStack启动接线，编排manifest分别显示source_verified与installed_wheel_verified，不把源码当成旧wheel。71项定向控制通过/6.55秒，含真实composition启动前拒绝与依赖边界；主审及Ohm独立限定ACCEPT。实际源码冷启动与N1复验尚待完成；首次源码N1真实deepseek-flash任务因引用字段schema及Task预算不足FAIL，详见Host G journal。功能仍进行中，P3.4/P3.5未验收，打包/P3.6暂不执行。
 
 独立开发venv以APFS clone复制依赖，editable只更新开发导入元数据；主backend/.venv仍旧wheel，未构建新的发布制品。`host-source-identity-v1`71 passed/6.73秒；格式/类型错误处理细化后`host-source-identity-v2`71 passed/6.55秒（wrapper7.49秒），不重复累计。Ruff新模块通过；既有composition/main/manifest在同py312配置下分别17/351/2项，和HEAD逐条(code,message)对照无新增。原始证据在SDK `.local-test-evidence/2026-09-12/p33-g/host-source-identity-v2.{log,json}`。
+
+
+### 源码 N1 v3 与长结果/取消缺口（2026-09-13 00:20 CST）
+
+源码身份接线已实际冷启动：Host d0c1ee4c clean、SDK a5c8fca 加当次未提交源码，307 个生产输入的聚合 SHA-256 `3851d2fc850c63d452f07cbe68876e25cb98bd7d12b76cf3f8efb09b894f4bc4`。manifest 为 editable-source / source_verified=true / installed_wheel_verified=false，Service 仍原 pin。真实 CUA 点击创建 Mission `mission-e2b63b91a02fde89`，文档 profile5；两份原始来源哈希仍 ad147a635d9292533bd440efbb12471beeba55b4e1df1637b514f93c2f28db8e / 505b4a72650cae886530ac980aeabd227eb76f0bbf80d2f091f88008c65d99f2，目标、三条条件与默认400000/12预算不变。Planner真实给三个Task均配format/rule/Critic；A/B/C预算120000/120000/160000。
+
+业务验收 **FAIL**，Mission 通过 UI **CANCELLED**，不是自然预算耗尽：首Worker已提交可解析信封，format/rule通过并实际进入Critic；但workspace_read_file全量结果经SDK Context超过2048tokens后只投递1024字符预览，编排未提供可用续读。模型重复读取仍只见开头1–8行，明确说无法查看后文表格；四条完整关键依据/报告价值门未过，故主取消，保留现场后修读取链。没有把局限说明或局部rule PASS当完整报告验收通过。实际13次deepseek-flash invocation：9 succeeded、2 failed、2在退出时仍handed_off；后两项不伪称已结算。
+
+另发现2342条HeartbeatReceived，其中2340条verifying，最高单秒20条；MissionCancelled seq2059后仍319条。候选因果链是Critic每0.05秒等待poll调用_hold_lease无节流、renew_lease无终态拒绝。正在补同事务终态/owner检查和半租期续租控制；未通过新控制前不标完成。
+
+正常菜单Quit后PG94878无残留：源码载体运行701.909秒、峰值622560KiB，return0。此时防熄屏PID83049仍在，不修改永久电源设置。Host本机证据根 `.local-test-evidence/2026-09-13/p33-g/source-ui-n1-v3/`，`failure-summary.json` SHA-256 `d4b99385e79ae7a1c31b63dc9efb87ed2ffc038c22870f03c91c277e69c11685`；索引含log/manifest/数据库及存在的WAL/SHM哈希。源码结果不代表安装包通过；N2–N6/O4仍OPEN。
+
+测试记录分层：doc5实际Critic输出证明/原子settlement gate最终`g-doc5-proof-v3`71 passed/4.07秒（wrapper4.32），独审限定ACCEPT；历史fixture显式冻结旧版本，不把新默认回退。完整P33兼容回归`g-p33-compat-v5`819 passed/22.71秒（wrapper23.02），这发生于分页/续租新修复之前，不能作为后续变更已验。失败诊断v1–v4与原始setup失败均保留。所有原始测试证据仅本机ignored目录，后续新修复/真实UI仍需独立重验。
+
+计时：从23:01恢复功能执行至00:20为79分钟；22:38–23:01的23分钟范围讨论另计。G已记录执行约212分钟（20:25–00:20扣讨论），P3.3先前191分钟加G为至少403分钟；未知A/B前段不补猜，不累计并行代理耗时。P3.3 G进行中；P3.4/P3.5仅设计准备，未实施完成；P3.6和打包暂停。
