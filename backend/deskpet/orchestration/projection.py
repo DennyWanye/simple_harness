@@ -371,7 +371,7 @@ def _attempt(raw: Mapping[str, Any]) -> dict[str, Any]:
 def _layer(raw: Mapping[str, Any]) -> dict[str, Any]:
     detail = raw.get("detail") if isinstance(raw.get("detail"), Mapping) else {}
     name = str(raw.get("layer") or "")
-    summary = raw.get("summary")
+    summary = raw.get("summary", detail.get("summary"))
     return {
         "layer": raw.get("layer"),
         "status": raw.get("status"),  # PASS / FAIL / ERROR / NOT_REQUIRED / … as recorded

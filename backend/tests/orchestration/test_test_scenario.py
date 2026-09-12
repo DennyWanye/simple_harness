@@ -30,7 +30,10 @@ ENV = "DESKPET_ORCHESTRATION_TEST_SCENARIO"
 
 def test_both_gates_are_required(tmp_path):
     evidence_userdata = tmp_path / ".local-test-evidence" / "2026-09-11" / "userdata"
-    plain_userdata = tmp_path / "userdata"
+    # The configured pytest base itself may be inside ignored evidence. This
+    # pure path-selection oracle must supply a genuinely unrelated path; it
+    # never creates or reads that directory.
+    plain_userdata = Path(tmp_path.anchor) / "ordinary-scenario-oracle" / "userdata"
     assert resolve_test_scenario({ENV: "approval-action"}, evidence_userdata) == "approval-action"
     assert resolve_test_scenario({ENV: "approval-action"}, plain_userdata) is None
     assert resolve_test_scenario({}, evidence_userdata) is None

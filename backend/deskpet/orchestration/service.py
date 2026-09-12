@@ -40,6 +40,7 @@ from .projection import (
     ui_state,
 )
 from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
+from .runtime_profile import source_runtime_options
 from .settings import OrchestrationSettings
 
 logger = logging.getLogger(__name__)
@@ -228,7 +229,8 @@ class OrchestrationService:
         )
         self._effective_provider = provider  # kept for a rebuild after repeated failures
         self._orchestrator = Orchestrator(
-            self._config, provider, owner=self.owner, connectors=self._connectors
+            self._config, provider, owner=self.owner, connectors=self._connectors,
+            **source_runtime_options(self._config, provider, self._snapshot),
         )
         await self._orchestrator.__aenter__()
         self._control = MissionControlV1(
@@ -402,7 +404,8 @@ class OrchestrationService:
         except Exception:  # noqa: BLE001
             logger.exception("orchestrator close during rebuild failed")
         self._orchestrator = Orchestrator(
-            self._config, self._effective_provider, owner=self.owner, connectors=self._connectors
+            self._config, self._effective_provider, owner=self.owner, connectors=self._connectors,
+            **source_runtime_options(self._config, self._effective_provider, self._snapshot),
         )
         await self._orchestrator.__aenter__()
         self._control = MissionControlV1(

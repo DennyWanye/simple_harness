@@ -120,6 +120,7 @@ def test_trust_scope_and_diagnostics_are_real_system_fields():
     }
     view["snapshot"]["results"][0]["verifications"] = [{
         "layer": "rule_check", "status": "FAIL", "detail": {
+            "summary": "document citation and limitations checked",
             "evidence_resolutions": [{"claim_id": "failed-claim", "resolution": {"status": "quote_mismatch"}}],
             "criterion_verdicts": [{"criterion_id": "file-criterion", "kind": "file", "verdict": "PASS", "scope": "structure"}],
         }}]
@@ -132,6 +133,9 @@ def test_trust_scope_and_diagnostics_are_real_system_fields():
     assert "self_reported_confidence" not in claim
     assert doc["diagnostics"][0]["evidence_resolutions"][0]["status"] == "quote_mismatch"
     assert doc["diagnostics"][0]["criterion_verdicts"][0]["kind"] == "file"
+    assert doc["diagnostics"][0]["summary"] == {
+        "text": "document citation and limitations checked", "source": "system",
+    }
 
 
 def test_sdk_lineage_issues_are_rendered_without_regrading_or_rederiving():

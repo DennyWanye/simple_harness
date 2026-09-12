@@ -13,7 +13,6 @@ import os
 import time
 
 import pytest
-
 from context import _VALID_SERVICES
 from deskpet.orchestration.paths import OrchestrationPathError, orchestration_root
 from deskpet.orchestration.service import (
@@ -41,7 +40,7 @@ def test_settings_default_on_and_conservative():
 def test_root_lives_beside_but_apart_from_the_sdk_execution_library(tmp_path):
     root = orchestration_root(tmp_path)
     assert root == tmp_path / "data" / "agent-orchestrator"
-    assert "simple-harness-sdk" not in root.parts
+    assert "simple-harness-sdk" not in root.relative_to(tmp_path).parts
 
 
 def test_root_refuses_a_symlink(tmp_path):

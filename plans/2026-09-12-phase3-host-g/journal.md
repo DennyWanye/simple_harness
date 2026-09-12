@@ -153,3 +153,47 @@ c41bfc14的PIv3成功107.754秒、Tauri v3成功36.372秒。最终包包含所�
 测试记录分层：doc5实际Critic输出证明/原子settlement gate最终`g-doc5-proof-v3`71 passed/4.07秒（wrapper4.32），独审限定ACCEPT；历史fixture显式冻结旧版本，不把新默认回退。完整P33兼容回归`g-p33-compat-v5`819 passed/22.71秒（wrapper23.02），这发生于分页/续租新修复之前，不能作为后续变更已验。失败诊断v1–v4与原始setup失败均保留。所有原始测试证据仅本机ignored目录，后续新修复/真实UI仍需独立重验。
 
 计时：从23:01恢复功能执行至00:20为79分钟；22:38–23:01的23分钟范围讨论另计。G已记录执行约212分钟（20:25–00:20扣讨论），P3.3先前191分钟加G为至少403分钟；未知A/B前段不补猜，不累计并行代理耗时。P3.3 G进行中；P3.4/P3.5仅设计准备，未实施完成；P3.6和打包暂停。
+
+
+## 2026-09-13 01:04 CST：N1v4b 实际失败与摘要显示修复
+
+最后更新：2026-09-13 01:04 CST。P3.3 G源码UI N1v4b已实际完成失败路径：Host e690bdcf、SDK e346689，Mission mission-61a22dea64fa4841为FAILED/budget_exhausted；真实flash35次成功、1次协议失败，已报告344854 tokens，不能说Mission花满400000。Worker1在90k Task预算下耗224780 tokens，Worker2耗115407，下一次Task预留时才拒绝。17页完整原文已实际可见，但模型一条引用错行、两条分析缺来源引用，rule正确拒绝。大页/逐请求预算与提交契约后继正在修复，N1/G未通过。原生正常退出PG2135无残留；不打包/P3.6。另修复Host诊断摘要读取：SDK摘要在detail内时不再显示空白；30项投影控制通过/8.31秒（wrapper8.97秒），实际UI后继重验尚待。
+- N1v4仅启动配置失败：debug binary绑定Vite15173，而临时配置用了15174；没有创建Mission。正常退出PG1638，remaining=[]，61.939秒，峰值312800KiB。v4b改回15173并单独留证，无重建安装包。
+- v4b root：`.local-test-evidence/2026-09-13/p33-g/source-ui-n1-v4b/`；failure-summary.json SHA-256 `f97d0e0d83e115a89810fe0e4e59f73642300830d16815743409d455168cccfe`。包含稳定数据库/日志hash。原生实际界面显示失败与Task取消/失败，未生成最终REPORT；不会用六条resolved或formatPASS代替业务门。
+- 固定来源ad147…与505b…，原目标/criteria/400k总预算不变。第5条quote位于134行却标133；第8/9条statement关联cite准则但无citations。Ohm逐页比对17页无错位，resolver正确。
+- Host summary fallback：`projection._layer`保留顶层summary优先，缺失时取SDK detail.summary，并按原model/system类别显示。命令 `backend/.venv/bin/python -m pytest backend/tests/orchestration/test_g_document_projection.py backend/tests/orchestration/test_projection.py -q`，由共享runner串行执行，30 passed/8.31秒；PG5427结束。当前只代表后端DTO软件验证，源码UI复验待做。
+
+## Source profile 与摘要投影组合验证（2026-09-13 01:51 CST）
+
+显式源码模式使用同一个 DeepSeek counter 构造 Context tokenizer 与 provider token admission；只在官方 deepseek-flash profile 与显式本地 tokenizer 文件存在时接入。已有无 Context 身份的执行池不自动升级；wheel 模式仍保持旧入口。官方 tokenizer 是可选本地开发依赖，不下载模型或复制凭据。
+
+主串行命令（工作目录 backend；绝对解释器为 Host ignored `source-sdk-venv/bin/python`）：`DEEPSEEK_TOKENIZER_PATH=<ignored pinned tokenizer> python -m pytest -q tests/orchestration/test_source_runtime_profile.py tests/orchestration/test_g_document_projection.py`。`g-host-source-profile-summary-v3`：16 passed / 0 skipped，pytest0.34秒、wrapper0.98秒，PG8677已退出。原始日志位于相邻 SDK `.local-test-evidence/2026-09-12/p33-g/g-host-source-profile-summary-v3.log`，SHA-256 `82b57a32cf2a6790a70040cb9eb52b4e2571a7b283c95c69a982acd880870d84`。
+
+这是 profile 选择与 projection 软件验证，不替代新原生 N1 业务报告、重启和历史回读。N1v4b失败与SDK预算冷恢复首次失败均保留；source launcher恢复身份仍在修复。没有创建发布制品，没有改变N1来源/目标/400k预算/准则。
+
+### Source launcher identity controls, 2026-09-13 01:57 CST
+
+Main serial run `g-source-launcher-v1`: 19 passed / 0 skipped; pytest 0.11s,
+wrapper 0.76s; PG9135 exited. Command from backend, using the isolated source SDK
+interpreter: `python -m pytest -q tests/orchestration/test_source_orchestrator_launcher.py`.
+Raw evidence remains in sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-source-launcher-v1.log`.
+SHA-256: `f36e1e392d59bef8578ffcad22a6c77bd2c42ec802b5034c3ddf93f7cf774009`.
+
+The source launcher now binds the venv entry, executable hash, venv config,
+distribution/pth manifests, resource/model directory metadata and small existing
+manifest hashes, and fixed model override bytes. Resource payload bytes are not
+verified; the identity explicitly records that limit. Carrier devUrl is an
+operator-attested config/binary-hash binding, not an extracted binary value or a
+new build receipt. This runs an existing debug carrier, one Vite and its managed
+source backend without compiling or packaging. New N1 native startup remains open.
+
+## Source compatibility checkpoint, 2026-09-13 02:08 CST
+
+**Current source checkpoint, 2026-09-13 02:08 CST.** Host source profile/projection16 controls and launcher19 controls pass. Full orchestration source run v4 observed180 PASS/5 FAIL (164.55s); three frozen-package inventory checks do not apply to editable installation and remain unpassed under the user-paused packaging gate. The document fixture omitted mandatory critic_review and a path assertion matched the runner ancestor; both corrected controls pass in v5 (2 PASS/4.78s). Remaining source modules v6:27 PASS/1 fixture-path FAIL (31.78s); the pure scenario-path oracle now supplies a path actually outside ignored evidence and passes v7 (1 PASS/0.04s). Production test gates remain unchanged. These are source software checks; new N1 native run remains open, v4b failure preserved. No release packaging or P3.6 work.
+
+The old document fixture was rejected with a durable `TaskGraphRejected`: missing critic_review. The updated fixture retains25 citations and now has the scripted independent Critic read actual REPORT.md before computing its verdict. It is a real SDK software path, not a real model or UI assertion. The lifecycle assertion is relative to supplied userdata, and the scenario oracle never creates its hypothetical ordinary directory.
+
+- Sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-host-orchestration-source-v4.log`, SHA-256 `b8043b60aee7d0755f4f14cd01f68f83443ad9bb5ec0a51f7be8abe7506318da`; exact command and elapsed time in adjacent JSON.
+- Sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-host-document-current-v5.log`, SHA-256 `dab39989e76a1c1cb46253b5d333f6bb139e9544bd9445697d8d40c1cb8295d8`; exact command and elapsed time in adjacent JSON.
+- Sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-host-remaining-source-v6.log`, SHA-256 `feb74ea58b82f180ee970676fe8d5540f6716d132e9c3f43f60c900e2164ca38`; exact command and elapsed time in adjacent JSON.
+- Sibling SDK `.local-test-evidence/2026-09-12/p33-g/g-host-scenario-path-v7.log`, SHA-256 `f4c77b58e2280613a49ba18da1c4a02d440e862c49a6c8fe5daaf277333ff99d`; exact command and elapsed time in adjacent JSON.

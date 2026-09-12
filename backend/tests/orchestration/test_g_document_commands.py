@@ -28,7 +28,6 @@ async def test_real_snapshot_domain_wrapper_drives_projection_and_source_current
     orchestration_root, principal, monkeypatch
 ):
     from agent_orchestrator.memory.verified_knowledge import KnowledgeIndex
-
     from deskpet.orchestration.projection import project_detail
 
     service = await opened(orchestration_root, principal)
@@ -196,6 +195,7 @@ async def test_citation_read_rejects_client_path_before_facade(tmp_path, princip
 async def test_real_sdk_accepted_report_25_claims_and_receipt_click(orchestration_root, principal):
     """Actual SDK runner/producer/storage; scripted provider, never a real model call."""
     import asyncio
+    import json
 
     from agent_orchestrator.testing.fixtures import (
         RoleScriptedProvider,
@@ -211,7 +211,8 @@ async def test_real_sdk_accepted_report_25_claims_and_receipt_click(orchestratio
     quotes = [f"第{i}项记录完整。" for i in range(1, 26)]
     content = "# 仅为资料记录\n\n" + "\n\n".join(quotes) + "\n"
     task = {**NOTES_TASK, "success_criteria": [f"cite:{path}"],
-            "verification_policy": ["format_check", "rule_check"], "outputs": ["REPORT.md"]}
+            "verification_policy": ["format_check", "rule_check", "critic_review"],
+            "outputs": ["REPORT.md"]}
 
     def worker(request):
         version = package_of(request)["source_versions"][path]
@@ -225,10 +226,20 @@ async def test_real_sdk_accepted_report_25_claims_and_receipt_click(orchestratio
         return envelope_step(summary="模型正文只是分析", artifacts=["REPORT.md"],
                              claims=quotes, override=cite)(request)
 
+    reviewed = []
+
+    def review(request):
+        tool_outputs = [json.loads(message.content) for message in request.messages
+                        if str(message.role) == "tool"]
+        actual = tool_outputs[-1]["value"]["content"]
+        reviewed.append(actual)
+        met = actual == content
+        return critic_step(verdict="PASS" if met else "FAIL", criteria_met=met)(request)
+
     provider = RoleScriptedProvider({
         "planner": [graph_proposal_step([task])],
         "worker": [("workspace_write_file", {"path": "REPORT.md", "content": content}), worker],
-        "critic": [critic_step(verdict="PASS", criteria_met=True)] * 3,
+        "critic": [("workspace_read_file", {"path": "REPORT.md"}), review] * 3,
     })
     service = OrchestrationService(orchestration_root, OrchestrationSettings(), principal=principal,
                                    provider=provider, drive=False)
@@ -243,6 +254,7 @@ async def test_real_sdk_accepted_report_25_claims_and_receipt_click(orchestratio
         await asyncio.wait_for(service.drain(), timeout=20)
         detail = service.mission_detail(mid)
         assert detail["mission"]["status"] == "COMPLETED", detail
+        assert reviewed and all(actual == content for actual in reviewed)
         doc = detail["document"]
         assert len(doc["claims"]) == 25
         assert all(c["source_trust"] == "untrusted_external" for c in doc["claims"])
