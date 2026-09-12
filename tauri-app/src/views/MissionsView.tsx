@@ -63,6 +63,14 @@ const LAYER_LABEL: Record<string, string> = {
   NEEDS_HUMAN: "待人工",
   SUSPENDED: "待人工",
 };
+const REJECTION_LABEL: Record<string, string> = {
+  stale_source: "来源已失效",
+  source_unavailable: "来源不可用",
+  used_knowledge_stale: "引用的知识已失效",
+  revoked: "已撤销",
+  superseded: "已替代",
+  not_current: "非当前版本",
+};
 const WAIT_LABEL: Record<string, string> = {
   source_change: "来源变更审批",
   review: "人工复核",
@@ -822,8 +830,26 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               {list(detail.results).map((result) => {
                 const attemptId = text(result.attempt_id);
                 const layers = list(result.verification_layers);
+                const verdict = text(result.verdict);
+                const verificationState = text(result.verification_state);
+                const failed = verificationState === "DONE" && verdict === "FAIL";
+                const rejection = failed ? record(result.final_rejection) : {};
+                const reason = text(rejection.reason);
                 return (
                   <div key={text(result.result_id) || attemptId} style={{ marginTop: tokens.space.sm }}>
+                    {(verdict || verificationState) && <div
+                      data-testid={`result-final-${text(result.result_id) || attemptId}`}
+                      data-verdict={verdict}
+                      data-verification-state={verificationState}
+                      style={{ color: failed ? tokens.color.danger.fg : dark.textMuted }}
+                    >
+                      <strong>{failed ? "结果最终未接受" : "结果判定"}（{verdict || "尚未判定"} / {verificationState || "未知"}）</strong>
+                      {reason && <div>拒绝原因：{REJECTION_LABEL[reason] ?? reason}（{reason}）</div>}
+                      {list(rejection.source_issues).map((issue, index) => <div key={index}>
+                        {text(issue.path) || "来源"} · {REJECTION_LABEL[text(issue.reason)] ?? text(issue.reason)}（{text(issue.reason) || text(issue.code)}）
+                        {issue.version ? ` · 版本：${text(issue.version)}` : ""}
+                      </div>)}
+                    </div>}
                     <div>{detail.document != null ? "分析 / 非结论（正文非结论陈述不做覆盖核对）" : "结果摘要"}：<ModelText value={result.summary} /></div>
                     <div style={{ display: "flex", gap: tokens.space.xs, flexWrap: "wrap" }}>
                       {layers.map((layer) => {

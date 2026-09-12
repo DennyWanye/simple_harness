@@ -80,6 +80,79 @@ def test_old_snapshot_does_not_invent_zero_budget_usage():
     assert usage["reserved_tokens"] is None and usage["settled_tokens"] is None
 
 
+def _final_rejection_view():
+    return {"snapshot": {
+        "mission": {"id": "m", "status": "FAILED", "stop_reason": "max_attempts_reached"},
+        "attempts": [{"id": "a1", "task_id": "t", "mission_id": "m", "failure": {
+            "reason": "verification_failed", "failures": [{
+                "layer": "rule_check", "status": "FAIL", "summary": "private summary",
+                "detail": {"reason": "stale_source", "internal": "hidden", "source_current_issues": [{
+                    "code": "stale_source", "reason": "revoked", "path": "sources/A.md",
+                    "version": "a" * 64, "storage_uri": "private-path",
+                }]},
+            }],
+        }}],
+        "results": [{"envelope": {"id": "r1", "attempt_id": "a1", "task_id": "t", "mission_id": "m"},
+                     "verification_state": "DONE", "verdict": "FAIL", "verifications": [
+                         {"layer": "rule_check", "status": "PASS"},
+                         {"layer": "human_review", "status": "PASS"},
+                     ]}],
+        "approvals": [{"request_id": "review-r1", "kind": "review", "state": "GRANTED"}],
+    }}
+
+
+def test_final_rejection_uses_same_attempt_without_rewriting_frozen_layers():
+    detail = project_detail(_final_rejection_view())
+    result = detail["results"][0]
+    assert result["verdict"] == "FAIL" and result["verification_state"] == "DONE"
+    assert result["final_rejection"] == {
+        "reason": "stale_source", "source_issues": [{
+            "code": "stale_source", "reason": "revoked", "path": "sources/A.md", "version": "a" * 64,
+        }],
+    }
+    assert [row["status"] for row in result["verification_layers"]] == ["PASS", "PASS"]
+    assert detail["mission"]["stop_reason"] == "max_attempts_reached"
+    assert detail["approvals"][0]["state"] == "GRANTED"
+
+
+def test_final_rejection_does_not_borrow_another_attempt_failure_on_same_task():
+    view = _final_rejection_view()
+    snapshot = view["snapshot"]
+    snapshot["attempts"].append({"id": "a2", "task_id": "t", "mission_id": "m"})
+    snapshot["results"].append({
+        "envelope": {"id": "r2", "attempt_id": "a2", "task_id": "t", "mission_id": "m"},
+        "verification_state": "DONE", "verdict": "FAIL",
+    })
+    first, other = project_detail(view)["results"]
+    assert first["final_rejection"]["reason"] == "stale_source"
+    assert other["verdict"] == "FAIL" and other["final_rejection"] is None
+
+
+@pytest.mark.parametrize("case", ["pending", "pass", "missing_attempt", "foreign_task", "foreign_mission",
+                                 "unknown_reason", "not_verification_failure", "passed_layer"])
+def test_final_rejection_requires_final_failure_and_whitelisted_attempt_reason(case):
+    view = _final_rejection_view()
+    result = view["snapshot"]["results"][0]
+    attempt = view["snapshot"]["attempts"][0]
+    if case == "pending":
+        result["verification_state"] = "PENDING"
+    elif case == "pass":
+        result["verdict"] = "PASS"
+    elif case == "missing_attempt":
+        result["envelope"]["attempt_id"] = "missing"
+    elif case == "foreign_task":
+        attempt["task_id"] = "foreign"
+    elif case == "foreign_mission":
+        attempt["mission_id"] = "foreign"
+    elif case == "unknown_reason":
+        attempt["failure"]["failures"][0]["detail"]["reason"] = "untrusted_model_reason"
+    elif case == "not_verification_failure":
+        attempt["failure"]["reason"] = "outcome_failure"
+    else:
+        attempt["failure"]["failures"][0]["status"] = "PASS"
+    assert project_detail(view)["results"][0]["final_rejection"] is None
+
+
 def test_search_projection_exposes_waiting_state_and_scoped_validation_without_raw_inputs():
     detail = project_detail({"snapshot": {
         "search": {

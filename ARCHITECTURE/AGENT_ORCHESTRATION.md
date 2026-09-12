@@ -1,3 +1,7 @@
+**最后更新：2026-09-13 06:26 CST — 最终拒绝原因投影。** Task结果现在直接显示持久的Result verdict/state；对于DONE/FAIL，仅从完全相同的Attempt/Task/Mission投影白名单拒绝原因与来源版本，保留先前layer通过记录和UNDER_REVIEW Claim，不从人工GRANTED推导结果接受。后端46 PASS/8.36s（SDK c8e2541隔离源码环境；旧backend venv产生1项预算usage兼容失败并保留），前端79 PASS/1.38s，typecheck PASS。新源码快照原生验证待完成；此前v11撤销runtime负例保持有效，新的显示修复尚非原生PASS。
+
+**最后更新：2026-09-13 06:15 CST — FIRST 与 N6 新证据。** SDK b0f8dd7 / Host c6beb926 源码快照 v11 原生 N6 已验证：1/2 不确定条件允许交付且明确保留不确定性；2/3 不确定条件任务PASS但Mission为 insufficient_evidence；active-revoke先批准撤销来源、再批准原报告，原结果DONE/FAIL（stale_source）、产物REJECTED、0 VERIFIED、唯一Attempt、Provider仍6次，900已结算/0预留。三例为受控原生UI，不代表真实模型质量；分别证据 `source-ui-n6-half-v11`、`source-ui-n6-two-thirds-v11`、`source-ui-n6-active-revoke-v11` 位于 Host `.local-test-evidence/2026-09-13/p33-g/`。原生最终拒绝原因未在Task验证列表直接展示的问题仍在修复。FIRST定向56 PASS仅SDK工作树，尚未纳入该UI快照；文档冲突仲裁UI、O4全量及P34/P35整体仍OPEN。
+
 **N6 显示修正 — 2026-09-13 05:44 CST：** 原生 n6-half 验证1/2不确定条件按原策略可交付，局限与INCONCLUSIVE均保存；UI“实际判定：满足”措辞会误导，已改为保留不确定性，Mission统一显示“通过交付判定”。新增UI反例先红，修复后26项通过；新快照原生复验待完成，不能把该措辞修正算原生PASS。
 
 **原生边界与恢复检查点 — 2026-09-13 05:40 CST：** 新冻结 SDK c8e2541 / Host b7dc4c64 综合1127 PASS/75.26s。N1v9真模型正式交付及同源冷恢复已核对；新Host显示修复在受控原生来源指令用例验证。N4来源指令归属、错误逐字引用、矛盾证据三例原生UI符合预期，独立原始证据保存在Host `.local-test-evidence/2026-09-13/p33-g/source-ui-n4-*-v10/`。实际OS SIGKILL后两库冷恢复2 PASS/9.59s：成功结果零重复Worker、独立Critic读产物；UNKNOWN保持原token/cost占用。仅覆盖该两边界，不覆盖完整Mission或P32逃逸进程恢复。FIRST新保护虽18PASS/0.91s，独立审查仍有系统hold丢cap和priced分别取整2项P1，修复中。P33剩余N6/active管理/O4、P34综合价值场景及P35其余门槛保持OPEN，不打包/P36/推送。

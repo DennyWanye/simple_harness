@@ -399,7 +399,38 @@ def _layer(raw: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _result(raw: Mapping[str, Any]) -> dict[str, Any]:
+def _final_rejection(raw: Mapping[str, Any], attempt: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Live acceptance failures are separate from the frozen verification layers."""
+    envelope = raw.get("envelope") or {}
+    if (raw.get("verification_state") != "DONE" or raw.get("verdict") != "FAIL"
+            or not envelope.get("attempt_id") or attempt.get("id") != envelope.get("attempt_id")
+            or attempt.get("task_id") != envelope.get("task_id")
+            or attempt.get("mission_id") != envelope.get("mission_id")):
+        return None
+    failure = attempt.get("failure")
+    if not isinstance(failure, Mapping) or failure.get("reason") != "verification_failed":
+        return None
+    for item in _rows(failure.get("failures")):
+        detail = item.get("detail")
+        if item.get("status") not in {"FAIL", "ERROR"} or not isinstance(detail, Mapping):
+            continue
+        reason = detail.get("reason")
+        if not isinstance(reason, str) or reason not in {
+            "stale_source", "source_unavailable", "used_knowledge_stale",
+        }:
+            continue
+        return {
+            "reason": reason,
+            "source_issues": [
+                {key: value[:SUMMARY_LIMIT] for key in ("code", "reason", "path", "version")
+                 if isinstance((value := issue.get(key)), str)}
+                for issue in _rows(detail.get("source_current_issues"))[:20]
+            ],
+        }
+    return None
+
+
+def _result(raw: Mapping[str, Any], attempt: Mapping[str, Any]) -> dict[str, Any]:
     envelope = dict(raw.get("envelope") or {})
     return {
         "result_id": envelope.get("id"),
@@ -410,6 +441,7 @@ def _result(raw: Mapping[str, Any]) -> dict[str, Any]:
         "claims": [model_text((c or {}).get("content")) for c in envelope.get("claims") or ()][:20],
         "verdict": raw.get("verdict"),
         "verification_state": raw.get("verification_state"),
+        "final_rejection": _final_rejection(raw, attempt),
         "verification_layers": [_layer(v) for v in raw.get("verifications") or ()],
     }
 
@@ -567,6 +599,7 @@ def project_events(page: Mapping[str, Any]) -> dict[str, Any]:
 def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, Any]] = (),
                    source_issues: Mapping[str, Any] | None = None) -> dict[str, Any]:
     snapshot = dict(view.get("snapshot") or {})
+    attempts_by_id = {a.get("id"): a for a in _rows(snapshot.get("attempts")) if a.get("id")}
     attempts = [_attempt(a) for a in snapshot.get("attempts") or ()]
     raw_actions = [dict(a) for a in snapshot.get("actions") or ()]
     latest_actions: dict[str, Mapping[str, Any]] = {}
@@ -590,7 +623,8 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         "mission": _mission(raw_mission, int(view.get("graph_version") or 0), state),
         "tasks": [_task(t) for t in snapshot.get("tasks") or ()],
         "attempts": attempts,
-        "results": [_result(r) for r in snapshot.get("results") or ()],
+        "results": [_result(r, attempts_by_id.get((r.get("envelope") or {}).get("attempt_id"), {}))
+                    for r in snapshot.get("results") or ()],
         "artifacts": [_artifact(a) for a in snapshot.get("artifacts") or ()],
         "actions": [_action(a) for a in latest_actions.values()],
         "approvals": approvals,

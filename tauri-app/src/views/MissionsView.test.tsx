@@ -720,6 +720,60 @@ describe("P1-5 缺失界面", () => {
   });
 });
 
+describe("Result final rejection", () => {
+  it("shows final stale rejection above historical PASS without upgrading a reviewed Claim", () => {
+    openMission({
+      ...DETAIL,
+      mission: { ...DETAIL.mission, status: "FAILED", stop_reason: "max_attempts_reached" },
+      tasks: [{ id: "task-1", goal: "原任务", status: "FAILED" }],
+      results: [{
+        result_id: "rejected", attempt_id: "attempt-1", verdict: "FAIL", verification_state: "DONE",
+        summary: { text: "原报告", source: "model" },
+        final_rejection: { reason: "stale_source", source_issues: [{
+          code: "stale_source", reason: "revoked", path: "sources/A.md", version: "old-version",
+        }] },
+        verification_layers: [
+          { layer: "rule_check", status: "PASS" }, { layer: "human_review", status: "PASS" },
+        ],
+      }, {
+        result_id: "other", attempt_id: "attempt-2", verdict: "FAIL", verification_state: "DONE",
+        final_rejection: null, verification_layers: [],
+      }],
+      document: {
+        claims: [{ id: "claim-1", status: "UNDER_REVIEW", content: "尚未被系统接受的主张", review_refs: ["review-r1"] }],
+        reviews: [{ request_id: "review-r1", state: "GRANTED" }],
+      },
+      approvals: [{ request_id: "review-r1", kind: "review", state: "GRANTED" }],
+    });
+    const rejected = screen.getByTestId("result-final-rejected");
+    expect(rejected.textContent).toContain("结果最终未接受（FAIL / DONE）");
+    expect(rejected.textContent).toContain("来源已失效（stale_source）");
+    expect(rejected.textContent).toContain("sources/A.md · 已撤销（revoked）");
+    expect(rejected.textContent).toContain("old-version");
+    expect(screen.getByTestId("layer-attempt-1-rule_check").getAttribute("data-status")).toBe("PASS");
+    expect(screen.getByTestId("layer-attempt-1-human_review").getAttribute("data-status")).toBe("PASS");
+    const other = screen.getByTestId("result-final-other");
+    expect(other.textContent).toContain("FAIL / DONE");
+    expect(other.textContent).not.toMatch(/stale_source|sources\/A.md|拒绝原因/);
+    const claim = screen.getByTestId("document-claim-claim-1");
+    expect(claim.textContent).toContain("待核验（UNDER_REVIEW）");
+    expect(claim.textContent).not.toContain("已核验（VERIFIED）");
+    expect(claim.textContent).not.toContain("有依据支持（SUPPORTED）");
+    expect(screen.getByText(/停止原因：max_attempts_reached/)).toBeTruthy();
+  });
+
+  it.each([["PASS", "DONE"], ["FAIL", "PENDING"]])("does not render rejection for %s/%s", (verdict, verificationState) => {
+    openMission({ ...DETAIL, results: [{
+      result_id: "not-final-failure", attempt_id: "attempt-1", verdict, verification_state: verificationState,
+      final_rejection: { reason: "stale_source", source_issues: [{ path: "sources/A.md" }] },
+      verification_layers: [],
+    }] });
+    const status = screen.getByTestId("result-final-not-final-failure");
+    expect(status.textContent).toContain(`${verdict} / ${verificationState}`);
+    expect(status.textContent).not.toMatch(/结果最终未接受|拒绝原因|stale_source|sources\/A.md/);
+  });
+});
+
 describe("P2-4 模型文本渲染", () => {
   it("Task goal、审批 summary、source=model 的验证层 summary 标注未核实；source=system 只显示文字", () => {
     openMission({
