@@ -107,3 +107,10 @@ c41bfc14的PIv3成功107.754秒、Tauri v3成功36.372秒。最终包包含所�
 第四版PI已完成112.858秒，无残留，但不再启动或打包。冻结sys.executable会被SDK探针用作Python -I/-c；新增frozen早退，清空旧executor，保持既有code_execution=off边界。先行控制1 failed/3 passed，修复后4 passed/0.05秒（watchdog0.71秒），Kepler独立限定ACCEPT；代码f14a82ba。未实际执行危险的冻结自启动探针，非真实沙箱PASS。execution manifest检查通过。文档首次写入使用系统python命令遇编码错误，代码提交先于文档，本提交补齐事实源，不把间隙说成任务完成。
 
 证据：SDK .local-test-evidence/2026-09-12/p33-g/host-frozen-sandbox-red-v1.{log,json} 与 host-frozen-sandbox-green-v1.{log,json}。随后运行Tauri dev，由Tauri管理唯一Vite与源码backend；独立userdata/端口，DEEPSEEKER_APIKEY只进入进程环境，deepseek-flash不变。
+
+
+### 源码启动与日志修复（23:09 CST）
+
+0e19fb48干净复验4 passed/0.07秒（wrapper0.77秒）。源码Tauri dev首次Rust编译1分28秒，实际sourcebackend启动，orchestration_ready=available、startup complete、UI控制连接成功。CUA按bundleID、exe绝对路径及进程名均无法识别未带macOS应用目录的开发进程，故未通过UI验收。随后给刚编译的debug executable临时应用标识供CUA识别，仍使用Vite源码页面和当前Python源码，不做PyInstaller/发布构建。
+
+实际访问日志发现连接query凭据未脱敏；立即停止PG83601，资源wrapper清理无残留（155.515秒、峰值1651920KiB、return125仅表示人工停后收子进程），本地旧log1文件补脱敏。read_key专用API key未落盘；不保留会话认证原文。为共享log helper新增query过滤，决定性测试先1 fail/25 deselected，修后完整26 passed/0.12秒（wrapper0.55秒）。Ruff与diff检查通过。此修复服务当前源码UI日志，不构成恢复打包。

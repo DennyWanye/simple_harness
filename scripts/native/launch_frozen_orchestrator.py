@@ -292,6 +292,11 @@ def prepare_run(path: Path, bundle: dict, port: int, resume: bool) -> Path:
 def redact(text: str, key: str) -> str:
     if key:
         text = text.replace(key, "[REDACTED]")
+    text = re.sub(
+        r"(?i)([?&](?:secret|token|api_key)=)[^&\s\"\\]+",
+        r"\1[REDACTED]",
+        text,
+    )
     text = re.sub(r"(?i)(\bBearer[ \t]+[\"']?)[^\s\"']+", r"\1[REDACTED]", text)
     return re.sub(
         r"(?i)(\bSHARED_SECRET[\"']?[=: \t]+[\"']?)[^\s\"',}]+",

@@ -1,4 +1,4 @@
-最后更新：2026-09-12 23:05 CST。用户批准P3.1–P3.5功能优先、直接源码Tauri UI验收；暂停PyInstaller/安装包发布，不含P3.6。P3.3 G源码接线已有SDK1302/安装组合921/Host49/前端86项通过，源码UI真实deepseek-flash文档任务待验，未交付。冻结探针修复4项控制通过并独立审查ACCEPT；不称安装包通过。见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)。
+最后更新：2026-09-12 23:05 CST。用户批准P3.1–P3.5功能优先、直接源码Tauri UI验收；暂停PyInstaller/安装包发布，不含P3.6。P3.3 G源码接线已有SDK1302/安装组合921/Host49/前端86项通过，源码后端与编排已启动；日志URL凭据过滤26项控制通过，真实UI文档任务待验，未交付。冻结探针修复4项控制通过并独立审查ACCEPT；不称安装包通过。见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)。
 
 # 当前状态总表（2026-09-09 22:05）
 

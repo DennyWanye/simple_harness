@@ -418,3 +418,10 @@ def test_log_byte_limit_still_drains_to_eof(launcher, monkeypatch):
         "truncated": True,
     }
     assert output.getvalue() == "visible\n"
+
+
+def test_redactor_removes_connection_query_credentials(launcher):
+    raw = 'WebSocket /ws/control?secret=opaque-session&session_id=default "accepted"\n'
+    assert launcher.redact(raw, 'dedicated-key') == raw.replace('opaque-session', '[REDACTED]')
+    for field in ('token', 'api_key'):
+        assert 'opaque-session' not in launcher.redact(f'https://local/?{field}=opaque-session&ok=1', '')
