@@ -338,3 +338,22 @@ OSkill selector：`tests/orchestrator/p35/test_process_kill_recovery.py`；raw `
 **N6 显示修正 — 2026-09-13 05:44 CST：** 原生 n6-half 验证1/2不确定条件按原策略可交付，局限与INCONCLUSIVE均保存；UI“实际判定：满足”措辞会误导，已改为保留不确定性，Mission统一显示“通过交付判定”。新增UI反例先红，修复后26项通过；新快照原生复验待完成，不能把该措辞修正算原生PASS。
 
 本机证据 `source-ui-n6-half-v10` 的 Mission `mission-e2c32d6b00f2d5dd`，Task PASS/Mission COMPLETED，原条件1/2 INCONCLUSIVE，900tokens预留0。UI反例与修复日志为 `g-ui-uncertainty-{red-v1,green-v2}.log`，来源/.local-test-evidence/2026-09-13/p33-g。底层判定/阈值/来源均未改变。
+
+## Functional checkpoint 2026-09-13 07:11 CST
+
+No packaging, P3.6, release or push. Host local source commit cbc89f81 contains current-doc7 arbitration fixture and real service-route oracle. SDK crossbranch production and cold-context tests are still in progress.
+
+| Main-run receipt | Exit | Wrapper seconds | Receipt SHA-256 |
+|---|---:|---:|---|
+| `g-checkpoint-integration-v20` | 1 | 97.21 | `f9a188d650e21399476e9ef47e4836b801019e32b862979ff10b40a154e05c70` |
+| `g-manager-active-dedup-v1` | 0 | 7.41 | `e1abc65f658d92deec24d5f40267f0b87b7adc1e3610e3ec11f28398b9903621` |
+| `g-queue-deadline-review-v4` | 0 | 8.27 | `702ec1ff96317f18839801206d99528a26453c2ed03375d24cd57fe897b5cf00` |
+| `g-host-doc7-route-v5` | 0 | 26.05 | `0714018bb72f7aef0c89aeef9cd164ae574b8b4e0dd6c57f1378c0040a4ceff2` |
+| `g-context-cold-v2` | 1 | 5.41 | `6c57ed5e76f8b18b586661ba3783b3b4c086647c8431f324f4cae39f7977e4b9` |
+| `g-context-cold-v3` | 1 | 6.23 | `44e6e3818204a0c8850e1a1fef55cbc525a51bbe06b96b0683534c532e33ff27` |
+
+Counts are per actual batch:integration1133 PASS/2 FAIL in96.74s; active Manager5 PASS/6.84s; queue/Manager6 PASS/8.02s; Host route14 PASS/25.55s. Context cold-v2 failed on logical-versus-wire hash assertion; v3 reached SIGKILL and failed in cold zero-call/retrieval assertion. Failures are preserved, not acceptance.
+
+All existing source native runs:16 closed orchestration DBs,17 Missions plus16 deployment streams,33 replay observations PASS/0 findings/0 errors,0.532s. Before/after Provider/tool/action/selection/event counts identical. Host `.local-test-evidence/2026-09-13/p33-g/replay-all-native-v1.json`, SHA256 `376f19c68746cee73c8f186fb8b66e4aa099e3f2cb944718d2db34013b15cce5`. This is orchestration replay of existing runs, not complete execution-DB replay nor future-run acceptance.
+
+Outcome: DEVELOPMENT IN PROGRESS; current P3.3/P3.4/P3.5 exit gates remain OPEN.

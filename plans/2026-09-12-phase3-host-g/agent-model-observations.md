@@ -19,3 +19,26 @@
 这些不是同等任务的对照实验，不能据此给模型排总榜或声称节省百分比。后续仍按语义复杂度、质量要求和返工风险选择模型；普通有界切片可用轻量模型，跨进程恢复和预算契约适合更强模型。主协调时间与本人的实现、原生UI交织，未独立计时；保留复核轮次和测试时间，不虚构协调分钟数。
 
 原始索引：`.local-test-evidence/2026-09-13/p33-g/agent-efficiency-0500/usage-0619.json`；SHA-256 `61aa6802eee4ac8d0238d4c1e57084c94b0d025c76aa27652fbc8f11614e858a`。原始记录仅本机 ignored 保存。
+
+## 2026-09-13 07:10 CST checkpoint
+
+Captured at 2026-09-12T23:10:41.190347+00:00. Lifecycle spans include multiple assignments and idle time; they are not isolated implementation durations. Cached input is a subset of input; output includes reasoning. Concurrent spans must not be summed.
+
+| Agent / observed model and effort | Lifecycle minutes | Uncached input | Cached input | Output | Outcome |
+|---|---:|---:|---:|---:|---|
+| Noether / gpt-5.6-terra medium | 22.08 | 167,521 | 4,790,528 | 28,909 | FAILED_ESCALATED_ASTRA |
+| Dalton / gpt-5.6-terra medium | 4.85 | 99,122 | 1,925,888 | 13,916 | HELPER_ACCEPTED_7PASS_0.15s_INTEGRATED_MAIN56PASS |
+| Aquinas / gpt-5.6-luna medium | 8.99 | 134,985 | 3,398,912 | 20,494 | ACCEPTED_CLASSIFICATION_WITH_OPEN_PRODUCTION_GAP |
+| Nietzsche / gpt-5.6-sol high | 115.53 | 846,364 | 58,966,784 | 175,776 | RUNNING |
+| Kierkegaard / gpt-5.6-luna medium | 5.77 | 136,093 | 1,217,280 | 12,023 | ACCEPTED |
+| Beauvoir / gpt-6-astra high | 103.15 | 829,516 | 17,738,752 | 96,645 | RUNNING |
+| Galileo / gpt-6-astra high | 56.46 | 587,809 | 6,392,960 | 22,880 | ACCEPTED |
+| Tesla / gpt-5.6-terra high | 5.05 | 130,221 | 1,179,136 | 14,268 | ACCEPTED_FAILURE_ORACLE_MAIN_FIXED |
+| Ohm / gpt-5.6-sol high | 18.29 | 183,573 | 6,013,184 | 21,933 | ACCEPTED_SOFTWARE_NATIVE_PENDING |
+| Zeno / gpt-6-astra high | 6.09 | 68,538 | 819,072 | 8,010 | RUNNING |
+
+Sol document arbitration required source-attribution versus world-candidate correction, followed by a parent fix to the post-drain status assertion. Actual service route and affected controls:14 PASS/25.55s; native UI pending. Astra context cold control also needed repairs: missing Orch heartbeat, logical versus wire request identities, then a still-open cold retrieval assertion. Stronger models still require independent verification. New external effect receipt-loss, SIGKILL and multi-database backup control uses Astra/high because of its recovery and idempotency risk.
+
+Parent rework is included: two queue-test field mistakes, one invalid test path, and lint rule selection briefly removed necessary noqa comments (restored, then checked under the full rule set). Queue strengthening and Manager controls:6 PASS/8.02s. Isolated parent coordination time is unavailable. These unmatched tasks cannot establish model rankings or a savings percentage.
+
+Raw local index: `.local-test-evidence/2026-09-13/p33-g/agent-efficiency-0500/usage-0710.json`; SHA-256 `9c1888ba8f00ec13d24de4bb7236c58b1a4058ff09a6a032b8f87d03195e2ebf`. Raw records remain ignored and local.
