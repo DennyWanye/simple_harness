@@ -236,12 +236,13 @@ describe("P33 G creation and explicit approval branches", () => {
     fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
     fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "条件：不支持。\r\n| A | B |" } });
+    fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
     fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
     expect(channel.all("mission_create")).toHaveLength(0);
     expect(channel.all("mission_source_register")).toHaveLength(0);
     const batch = channel.last("mission_create_with_sources")?.payload;
     expect(batch).toEqual({
-      mission: { domain: "doc-research-v1", goal: "比较文档", success_criteria: ["说明否定条件"], idempotency_key: expect.any(String) },
+      mission: { domain: "doc-research-v1", goal: "比较文档", success_criteria: ["说明否定条件"], conflict_reserve_tokens: 30000, idempotency_key: expect.any(String) },
       sources: [{ path: "sources/a.md", content: "条件：不支持。\n| A | B |", kind: "markdown" }],
     });
     expect((screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement).disabled).toBe(true);
@@ -863,6 +864,48 @@ describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
     const payload = channel.last("mission_create")?.payload as Record<string, unknown>;
     expect(payload.goal).toBe("写 NOTES.md");
     expect("budget" in payload).toBe(false); // the Host decides the defaults, the form never guesses
+  });
+
+  it("从原总预算中显式预留冲突核对额度", () => {
+    const channel = renderAvailable();
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "核对两份资料" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
+    fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "240000" } });
+    fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.last("mission_create")?.payload).toMatchObject({
+      budget: { max_tokens: 240000 }, conflict_reserve_tokens: 30000,
+    });
+  });
+
+  it("成功创建后新表单不继承上一任务的冲突预留", () => {
+    const channel = renderAvailable();
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "核对资料" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
+    fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    channel.reply("mission_create", { mission_id: "mission-new" });
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    expect((screen.getByLabelText("冲突核对预留 Token") as HTMLInputElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "写新报告" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:NEW.md" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.all("mission_create")).toHaveLength(2);
+    expect(channel.last("mission_create")?.payload).not.toHaveProperty("conflict_reserve_tokens");
+  });
+
+  it.each(["-1", "1.5", "NaN", "240001"])("拒绝无效冲突预留 %s", (reserve) => {
+    const channel = renderAvailable();
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "核对资料" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
+    fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "240000" } });
+    fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: reserve } });
+    expect((screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain("冲突核对预留");
+    expect(channel.all("mission_create")).toHaveLength(0);
   });
 
   it("没有下发默认值时，占位符仍是「可选」", () => {

@@ -312,6 +312,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const createTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [maxTokens, setMaxTokens] = useState("");
   const [maxAttempts, setMaxAttempts] = useState("");
+  const [conflictReserve, setConflictReserve] = useState("");
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [bases, setBases] = useState<Record<string, string>>({});
   const [comment, setComment] = useState("");
@@ -493,6 +494,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             setCreating(false);
             setGoal("");
             setCriteria("");
+            setConflictReserve("");
             setSources([]);
             setDomain("code");
             createRetry.current = null;
@@ -547,7 +549,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const domains = record(record(record(status?.deployment_manifest).features).domains);
   const canCreateDocument = domains.atomic_source_create === true && list(domains.items).some((item) => item.id === "doc-research-v1");
   const searchPolicies = list(store.policy?.eligible_search_policies);
-  const submittable = !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
+  const reserveTokens = Number(conflictReserve);
+  const totalTokens = maxTokens.trim() ? Number(maxTokens) : status?.mission_budget_defaults?.max_tokens;
+  const validReserve = !conflictReserve.trim() || (Number.isSafeInteger(reserveTokens) && reserveTokens >= 0 &&
+    (totalTokens == null || reserveTokens <= totalTokens));
+  const submittable = validReserve && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
     (!searchPolicy || searchPolicies.some((policy) => policy.version_id === searchPolicy)) &&
     (domain === "code" || (canCreateDocument && sources.length > 0 && sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0)));
 
@@ -560,6 +566,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       goal: goal.trim(),
       success_criteria: criteria.split("\n").map((line) => line.trim()).filter(Boolean),
       ...(Object.keys(budget).length ? { budget } : {}),
+      ...(conflictReserve.trim() ? { conflict_reserve_tokens: reserveTokens } : {}),
       ...(searchPolicy ? { search_policy_version_id: searchPolicy } : {}),
     };
     const fingerprint = JSON.stringify([domain, spec, domain === "code" ? [] : sources]);
@@ -702,6 +709,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               <input aria-label="Token 上限" placeholder={status?.mission_budget_defaults ? `Token 上限（留空=${status.mission_budget_defaults.max_tokens}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
               <input aria-label="尝试次数上限" placeholder={status?.mission_budget_defaults ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）` : "尝试次数上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
             </div>
+            <input aria-label="冲突核对预留 Token" aria-describedby="conflict-reserve-help" inputMode="numeric" placeholder="冲突核对预留 Token（可选）" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={conflictReserve} onChange={(e) => setConflictReserve(e.target.value)} />
+            <div id="conflict-reserve-help" style={muted}>从总预算中预留，出现冲突时用于独立核对；留空不预留。</div>
+            {!validReserve && <div role="alert" style={{ color: dark.danger }}>冲突核对预留必须是非负整数，且不超过总 Token 上限。</div>}
             <button type="button" style={button} disabled={!submittable} onClick={submit}>
               提交 Mission
             </button>

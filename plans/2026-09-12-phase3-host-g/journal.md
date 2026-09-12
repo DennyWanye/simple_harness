@@ -357,3 +357,12 @@ Counts are per actual batch:integration1133 PASS/2 FAIL in96.74s; active Manager
 All existing source native runs:16 closed orchestration DBs,17 Missions plus16 deployment streams,33 replay observations PASS/0 findings/0 errors,0.532s. Before/after Provider/tool/action/selection/event counts identical. Host `.local-test-evidence/2026-09-13/p33-g/replay-all-native-v1.json`, SHA256 `376f19c68746cee73c8f186fb8b66e4aa099e3f2cb944718d2db34013b15cce5`. This is orchestration replay of existing runs, not complete execution-DB replay nor future-run acceptance.
 
 Outcome: DEVELOPMENT IN PROGRESS; current P3.3/P3.4/P3.5 exit gates remain OPEN.
+
+## 2026-09-13 07:35 — Conflict reserve form and cold action backup
+
+**最后更新：2026-09-13 07:35 CST — 冲突核对预算表单。** 新建 Mission 可显式从总 Token 预算中预留冲突核对额度；留空不发送预留字段，非法值、负数、小数及超过总额会阻止提交。文档原子创建和重试保持该值，创建成功后新表单清空。Luna 独立审查发现并复验通过跨任务残留问题；主线程前端 85 PASS/1.33s、typecheck PASS。原始证据 Host `.local-test-evidence/2026-09-13/p33-g/g-ui-conflict-reserve-{green,typecheck}-v4.log`。当前源码原生仲裁表单仍待验，P33/P34/P35 整体 OPEN。
+
+- `g-ui-conflict-reserve-green-v4` SHA-256 `d3343335dfebc69bc8114482db2642b90e24412e41e85d0b5ac9a07cfcd52caa`.
+- `g-ui-conflict-reserve-typecheck-v4` SHA-256 `5b7678e1378357b8e083c5d0c9913336411378485c091e11ef7cbd1372a06460`.
+
+Actual external effect/SIGKILL/cold UNKNOWN/offline three-DB backup/restore/reconcile: 1 PASS/8.35s, wrapper8.57s. SDK receipt `g-action-cold-backup-v5.json` SHA-256 `464dbbac72963b78979206b97a161add1355199913bc98b52e1fcde5b6598080`. Main corrected ordered Critic fixture coverage and both unsettled NULL expectations; earlier failed runs retained. This is software recovery evidence, not native UI nor real-provider quality. P34 independent review has three P1s (retry identity, criterion coverage, eligible dependency identity), repair in progress.
