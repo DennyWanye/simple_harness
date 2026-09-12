@@ -53,6 +53,10 @@ def main():
     parser.add_argument('--fallback-model', default=None, help='used (and recorded) only when --model fails preflight')
     parser.add_argument('--fallback-env-file', type=Path, default=None, help='BASEURL/APIKEY for the fallback provider (else the primary credential file)')
     parser.add_argument('--launch', action='store_true')
+    parser.add_argument('--config-extra', type=Path, default=None,
+                        help='TOML whose top-level tables are merged into the run config, after the '
+                             'launcher own overrides.  Used to grant a test run something the product '
+                             'only takes from a person, e.g. [orchestration] publish_dir (P3.2 P32-14).')
     parser.add_argument('--orchestration-test-scenario', default=None,
                         help='passed to the backend as DESKPET_ORCHESTRATION_TEST_SCENARIO (the launcher drops inherited DESKPET_* variables); '
                              'the backend honours it only when --userdata lies under .local-test-evidence/')
@@ -135,6 +139,13 @@ def main():
     clear_credentials(config)
     config['backend']['port'] = args.port
     config['llm'].update(model=model, base_url=values['BASEURL'], api_key='', max_tokens=6144)
+    if args.config_extra:  # merged last: an explicit test authorisation wins
+        extra = tomlkit.parse(args.config_extra.read_text())
+        for table, body in extra.items():
+            if isinstance(body, dict) and isinstance(config.get(table), dict):
+                config[table].update(body)
+            else:
+                config[table] = body
     config_path = run / 'config.toml'
     config_path.write_text(tomlkit.dumps(config))
     if not args.userdata:
