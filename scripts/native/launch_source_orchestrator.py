@@ -225,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="Controlled document UI inputs under ignored test evidence; no real model")
     parser.add_argument("--fixture-case", choices=(
         "n4-instruction-attribution", "n4-bad-quote", "n4-contradictory-uncertainty",
+        "n4-document-contextual-arbitration",
         "n6-half", "n6-two-thirds", "n6-active-revoke",
     ), help="Controlled document boundary case; requires --fixture-dir")
     args = parser.parse_args(argv)
