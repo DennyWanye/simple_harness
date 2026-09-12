@@ -263,11 +263,65 @@ hiddenimports += [
 hiddenimports += _mypyc_modules
 
 # --- 2. Data files ------------------------------------------------------
+def _collect_startup_resources(repository):
+    # Lifespan and deferred startup readers use package-relative resources.
+    # Keep this inventory executable without Analysis so packaging contracts
+    # can exercise the real loaders against the exact destination layout.
+    repository = Path(repository)
+    resources = [
+        ("backend/memory/migrations", "memory/migrations"),
+        ("backend/deskpet/memory/migrations", "deskpet/memory/migrations"),
+        ("backend/deskpet/companion/migrations", "deskpet/companion/migrations"),
+        ("backend/deskpet/companion/eval_suites", "deskpet/companion/eval_suites"),
+        ("backend/deskpet/agent/assembler/policies", "deskpet/agent/assembler/policies"),
+        ("backend/verify/claim_patterns.yaml", "verify"),
+        ("backend/deskpet/tool_catalog/real_tool_manifest.json", "deskpet/tool_catalog"),
+        ("backend/deskpet/tool_catalog/schema_migrations.json", "deskpet/tool_catalog"),
+        ("backend/deskpet/capabilities/schemas", "deskpet/capabilities/schemas"),
+        # Preserve complete tracked packs, including declared code/DSL/support
+        # files. Do not synthesize manifests or weaken their hash validation.
+        ("capability-packs", "capability-packs"),
+        ("config.toml", "."),
+        ("backend/uv.lock", "."),
+        ("resources/diagnostic-redaction.json", "resources"),
+        ("backend/deskpet/tools/execution_build_sources.json", "deskpet/tools"),
+        ("backend/deskpet/tools/execution_build_manifest.json", "deskpet/tools"),
+        ("backend/deskpet/tools/tool_effect_policy_manifest.json", "deskpet/tools"),
+    ]
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "--", *(source for source, _ in resources)],
+        cwd=repository, check=True, capture_output=True, timeout=30,
+    ).stdout.decode("utf-8").split("\0")
+    entries = []
+    for relative, destination in resources:
+        source = repository / relative
+        if source.is_file():
+            if relative not in tracked:
+                raise RuntimeError(f"untracked startup resource: {relative}")
+            entries.append((str(source), destination))
+            continue
+        files = [name for name in tracked if name.startswith(relative + "/")
+                 and (relative == "capability-packs" or Path(name).suffix not in {".py", ".pyc"})]
+        if not source.is_dir() or not files:
+            raise RuntimeError(f"missing startup resource tree: {relative}")
+        for name in sorted(files):
+            path = repository / name
+            if not path.is_file():
+                raise RuntimeError(f"missing startup resource: {name}")
+            target = Path(destination) / path.relative_to(source).parent
+            entries.append((str(path), str(target)))
+    # collect_submodules does not collect importlib.resources SQL/JSON data.
+    # These packages were already verified against their immutable wheel pins.
+    for package in ("simple_harness", "simple_harness_service", "agent_orchestrator"):
+        entries.extend(collect_data_files(package))
+    return entries
+
+
 # (source, dest-inside-bundle) tuples. Use collect_data_files() for
 # installed packages; hardcode relative paths for our own repo files.
 datas: list[tuple[str, str]] = []
 datas.append((str(_host_identity_path), "."))
-datas += collect_data_files("agent_orchestrator")
+datas += _collect_startup_resources(_repo_root)
 datas += copy_metadata("simple-harness-sdk")
 datas += [
     (str(sdk_wheel_path()), "vendor"),
@@ -295,51 +349,10 @@ for _pkg in ["scrapling", "browserforge", "apify_fingerprint_datapoints"]:
     except Exception:
         print(f"[spec] WARN: {_pkg} data not importable, skip")
 datas += collect_data_files("agent_reach")
-datas += collect_data_files("simple_harness_service")
 datas += copy_metadata("simple-harness-service-sdk")
 datas += [
     (str(sdk_service_wheel_path()), "vendor"),
     (str(sdk_service_candidate_manifest_path()), "vendor"),
-    # P4-S22 fix: ship the canonical migrations directory under
-    # ``deskpet/memory/migrations`` (where the actual v9/v10/v11 SQL
-    # files live). The legacy ``memory/migrations`` only contains
-    # ``001_initial.sql`` (long stale) — keep both for back-compat
-    # with any tests that still touch the legacy path.
-    ("memory/migrations", "memory/migrations"),    # legacy path
-    ("deskpet/memory/migrations", "deskpet/memory/migrations"),  # canonical
-    ("deskpet/companion/migrations", "deskpet/companion/migrations"),
-    ("deskpet/companion/eval_suites", "deskpet/companion/eval_suites"),
-    # 2026-05-30 P0 bug fix #7: ship builtin skills directory.
-    # Production install had `skill.reload_ok count=0` because PyInstaller
-    # never bundled `deskpet/skills/builtin/` (it's a data tree, not a
-    # Python module). Result: B1-B10 skill tests all failed — LLM真选
-    # skill_invoke 但 SkillLoader 找不到 excel-generate / doc-edit / ppt-
-    # generate 等 → 没文件生成 → fake completion 漏网。
-    # Discovered via CDP-driven R3-3 test + backend log skill.reload_ok=0.
-    ("../capability-packs", "capability-packs"),
-    ("deskpet/capabilities/schemas", "deskpet/capabilities/schemas"),
-    # P4-S21 #12: ship the unified-schema config.toml so seed_user_config_if_missing
-    # has a source to seed from / migrate legacy installs against. Without this,
-    # frozen builds with no <exe_dir>/config.toml returned None and the migration
-    # path was a no-op.
-    ("../config.toml", "."),
-    # compile_workflow() fingerprints the exact dependency lock as part of
-    # every durable manifest. In frozen mode definition.py resolves this to
-    # _MEIPASS/uv.lock, so omitting it disables workflow startup.
-    ("uv.lock", "."),
-    ("../resources/diagnostic-redaction.json", "resources"),
-    (
-        "deskpet/tools/execution_build_sources.json",
-        "deskpet/tools",
-    ),
-    (
-        "deskpet/tools/execution_build_manifest.json",
-        "deskpet/tools",
-    ),
-    (
-        "deskpet/tools/tool_effect_policy_manifest.json",
-        "deskpet/tools",
-    ),
 ]
 
 # --- 2a-bis. busybox-w32 (P5-S2 — 2026-05-10) --------------------------
@@ -453,6 +466,10 @@ a = Analysis(
         "deskpet.workflows.definitions": "py",
         "deskpet.sdk_adapters.product_workflows": "pyz+py",
         "simple_harness.workflows": "pyz+py",
+        # On-demand capability/MCP provenance hashes these exact adapters via
+        # Path(__file__).read_bytes(); these are not lifespan registration data.
+        "deskpet.capabilities.platform": "pyz+py",
+        "deskpet.mcp.manager": "pyz+py",
     },
 )
 

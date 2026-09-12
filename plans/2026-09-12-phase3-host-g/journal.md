@@ -82,3 +82,19 @@ dfb3c7dc的PyInstaller v2成功178.554秒，Tauri v2成功93.365秒；两轮资�
 - `.local-test-evidence/2026-09-12/p33-g/native-n1-resource-v2/resource.json` SHA-256 `13e0e26d9f7104561fde4865674919a311918ad3f2e8582faec17be2068fe4f9`
 - `.local-test-evidence/2026-09-12/p33-g/tauri-artifact-check-v2.json` SHA-256 `11acbfaf74b5fcff069b2806ac5082cb6019076f4eeb5ea77aa7dd760bbd2504`
 - `.local-test-evidence/2026-09-12/p33-g/native-n1-v2/native-1789221804699242000.log` SHA-256 `7f847cc9e94aecebe7ed40448499566fbb51fd3dc5cafd914c0b83cb606c0cd7`
+
+
+### 第三次启动失败与启动资源核对（22:28 CST）
+
+c41bfc14的PIv3成功107.754秒、Tauri v3成功36.372秒。最终包包含所需workflow源码，真实lifespan越过前两项缺陷；随后build_explicit_product_tool_catalog缺deskpet/tool_catalog/real_tool_manifest.json而失败，第三次N1仍FAIL。通过原生界面跳过onboarding后仍未连接，实际菜单Quit退出；PG77745无残留。未发出本次真实模型任务请求。
+
+审计发现同级缺失：tool_catalog两JSON、SDK execution五SQL（fresh_descriptor真实读0005_fresh.sql）、可选assembler默认策略/示例及verify claim规则。新增集中资源清单；既有Host SQL/eval/packs/schemas/config/uv.lock/诊断/三execution manifest与SDK/Service数据目的路径保留，Host资源只枚举tracked文件，不采集ignored运行产物。新增platform/mcp manager的pyz+py仅供按需自身源码hash，不把它们说成lifespan必达。未找到capability templates当前生产读路径，不列为启动必需。
+
+14 passed/0.60秒：独立资源全集/3SDK RECORD、真实71Tool目录与迁移及缺失篡改负控、freshSQL真实执行/缺源拒绝、policy禁止synthetic fallback、verify非空规则、原pack语义与篡改拒绝、按需源码模式。主审及Kepler独立限定ACCEPT，Ruff/diff/原execution manifest检查通过；将提交后重建，尚未原生通过。
+
+独立遗留：legacy authority_accepts_handler以源码路径作admission，frozen资源路径未证明其支持；当前explicit SDK catalog不是该强校验的必达调用。不修改或弱化此守卫，不宣称所有legacy工具按需执行已验。
+
+- `.local-test-evidence/2026-09-12/p33-g/pyinstaller-resource-v3/resource.json` SHA-256 `f4f10a4977109294851b38a72240f29a81a130b8517e90d14c81daf8f618237c`
+- `.local-test-evidence/2026-09-12/p33-g/tauri-build-v3/resource.json` SHA-256 `096b9066d197493882f6a21016c2d90a47a135da9da1b96247b8ebc6ae604149`
+- `.local-test-evidence/2026-09-12/p33-g/native-n1-resource-v3/resource.json` SHA-256 `05cb0c553e73cd86a15e4d90ee8670faf9a78a5c810020113604e9aa4f57db67`
+- `.local-test-evidence/2026-09-12/p33-g/native-n1-v3/native-1789222653501786000.log` SHA-256 `a325e3a155fdfd3963e7cc1c7fe8a7dd61a98e3f1407bef5f6006c77c0f544db`

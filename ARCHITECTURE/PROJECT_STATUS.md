@@ -1,4 +1,4 @@
-最后更新：2026-09-12。P3.3 G实施中：SDK0.11.1接线、Host49项与前端86项定向通过。两版mac冻结构建成功，但原生先后暴露公开延迟导入/工作流源码收集缺陷；前者已修并真实越过，后者控制通过待重建。真实deepseek-flash文档任务未执行，P3.3未交付；P3.1/P3.2结论保持原范围。见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)。
+最后更新：2026-09-12。P3.3 G实施中：SDK0.11.1/Host接线定向已验。三版mac冻结构建成功，真实启动先后暴露SDK延迟导入、workflow源码、Tool目录/迁移资源遗漏；前两项已真实越过，资源修复14项控制通过待重建。真实deepseek-flash文档任务未执行，P3.3未交付；既有P3.1/P3.2结论保持原范围。见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)。
 
 # 当前状态总表（2026-09-09 22:05）
 
