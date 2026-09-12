@@ -28,7 +28,8 @@ from simple_harness.runtime import StartSnapshot
 from .runtime_paths import (
     ProductRuntimePathsAdapter,
     SdkCandidateIdentity,
-    verify_sdk_candidate,
+    SdkSourceIdentity,
+    verify_runtime_identity,
 )
 
 PortsFactory: TypeAlias = Callable[
@@ -258,7 +259,7 @@ class ProductSdkRuntimeStack:
         self,
         *,
         paths: ProductRuntimePathsAdapter,
-        candidate_identity: SdkCandidateIdentity,
+        candidate_identity: SdkCandidateIdentity | SdkSourceIdentity,
         dependency_loader: DependencyLoader,
         ready_publisher: Callable[[SdkRuntimeReady | None], None] | None = None,
         clock: Callable[[], float] = time.time,
@@ -267,8 +268,8 @@ class ProductSdkRuntimeStack:
             raise TypeError("paths must be ProductRuntimePathsAdapter")
         if not callable(dependency_loader):
             raise TypeError("dependency_loader must be callable")
-        if not isinstance(candidate_identity, SdkCandidateIdentity):
-            raise TypeError("candidate_identity must be SdkCandidateIdentity")
+        if not isinstance(candidate_identity, (SdkCandidateIdentity, SdkSourceIdentity)):
+            raise TypeError("candidate_identity must be an SDK wheel or source identity")
         self._paths = paths
         self._candidate_identity = candidate_identity
         self._dependency_loader = dependency_loader
@@ -358,7 +359,7 @@ class ProductSdkRuntimeStack:
             owned_resources: tuple[OwnedResourceCloser, ...] = ()
             workflow_registrations: tuple[object, ...] = ()
             try:
-                verify_sdk_candidate(self._candidate_identity)
+                verify_runtime_identity(self._candidate_identity)
                 # Official schema9 migration before any execution handle opens.
                 # The retained same-directory backup is never overwritten.
                 from simple_harness import migrate_execution_to_v9, migrate_execution_to_v10
@@ -1148,7 +1149,7 @@ class ProductSdkRuntimeStack:
 async def build_product_runtime(
     *,
     paths: ProductRuntimePathsAdapter,
-    candidate_identity: SdkCandidateIdentity,
+    candidate_identity: SdkCandidateIdentity | SdkSourceIdentity,
     dependency_loader: DependencyLoader,
     ready_publisher: Callable[[SdkRuntimeReady | None], None] | None = None,
 ) -> ProductSdkRuntimeStack:

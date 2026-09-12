@@ -228,7 +228,7 @@ from deskpet.tools.public_projection import (
 )
 from deskpet.sdk_adapters.sdk_candidate import (
     SDK_VERSION,
-    build_candidate_identity,
+    build_runtime_identity,
 )
 from observability.vram import classify_tier
 from router.hybrid_router import HybridRouter, LLMUnavailableError, RoutingStrategy
@@ -8980,10 +8980,10 @@ async def _build_product_sdk_runtime_stack(
             transaction_owner=production_ports["ports"].react_checkpoint,
         )
 
-    # Build SDK Runtime Stack (wheel identity from the single source of truth)
+    # Default pinned wheel, or an explicitly attested development source identity.
     stack = ProductSdkRuntimeStack(
         paths=ProductRuntimePathsAdapter(_paths.user_data_dir()),
-        candidate_identity=build_candidate_identity(),
+        candidate_identity=build_runtime_identity(),
         dependency_loader=lambda: SdkRuntimeBuildInputs(
             profiles={"agent.general": RuntimeProfile("agent.general", "react")},
             drivers={"react": driver},

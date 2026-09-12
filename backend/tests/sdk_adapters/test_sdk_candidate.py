@@ -24,6 +24,7 @@ from deskpet.sdk_adapters.sdk_candidate import (
     SDK_WHEEL_FILENAME,
     SDK_WHEEL_SHA256,
     build_candidate_identity,
+    build_runtime_identity,
     sdk_service_candidate_manifest_path,
     sdk_service_wheel_path,
     sdk_wheel_path,
@@ -112,7 +113,7 @@ def test_consumers_share_single_source_of_truth() -> None:
     assert not hasattr(desktop_runtime, "_SDK_WHEEL_SHA256")
     assert conformance._WHEEL == sdk_wheel_path()
     assert main.SDK_VERSION is SDK_VERSION
-    assert main.build_candidate_identity is build_candidate_identity
+    assert main.build_runtime_identity is build_runtime_identity
 
 
 # 2026-09-10：``test_memory_candidate_wrong_wheel_hash_fails_closed``

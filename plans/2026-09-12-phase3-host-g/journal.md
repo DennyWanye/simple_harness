@@ -114,3 +114,27 @@ c41bfc14的PIv3成功107.754秒、Tauri v3成功36.372秒。最终包包含所�
 0e19fb48干净复验4 passed/0.07秒（wrapper0.77秒）。源码Tauri dev首次Rust编译1分28秒，实际sourcebackend启动，orchestration_ready=available、startup complete、UI控制连接成功。CUA按bundleID、exe绝对路径及进程名均无法识别未带macOS应用目录的开发进程，故未通过UI验收。随后给刚编译的debug executable临时应用标识供CUA识别，仍使用Vite源码页面和当前Python源码，不做PyInstaller/发布构建。
 
 实际访问日志发现连接query凭据未脱敏；立即停止PG83601，资源wrapper清理无残留（155.515秒、峰值1651920KiB、return125仅表示人工停后收子进程），本地旧log1文件补脱敏。read_key专用API key未落盘；不保留会话认证原文。为共享log helper新增query过滤，决定性测试先1 fail/25 deselected，修后完整26 passed/0.12秒（wrapper0.55秒）。Ruff与diff检查通过。此修复服务当前源码UI日志，不构成恢复打包。
+
+
+### 源码真实 N1 失败与契约修复中（23:28 CST）
+
+本轮 source-ui-n1-v2 使用 Host 28c94cdc 的源码 backend、当次编译的 Tauri debug UI、原安装 SDK a5c8fca/0.11.1。实际点击创建文档 Mission `mission-ee86ae060f8376e8`，通过文件选择器登记真实 ARCHITECTURE/AGENT_ORCHESTRATION.md 与 Host acceptance.md（逻辑名 HOST_ACCEPTANCE.md），要求比较原生 verify 与冻结安装验证边界，四条逐字依据、完整表格行及冒号限定单元，不降低原 N1 判据。
+
+结果 **FAIL**。9 次真实 deepseek-flash Provider invocation：8 succeeded、1 failed。Worker A 三次把 #L、:行号、?lines= 当作文件路径，工具真实拒绝；输出把引用对象放入 `claim.evidence[]`，真实 parser 以 `claim.evidence[] must be a string` 拒绝。A 已消耗94642/100000 tokens，剩5358不足下一次20000预留，Mission budget_exhausted；不等于整个400000 Mission预算已花完。没有合格正式报告/Claim；HTTP成功与 UI启动不构成价值验收。
+
+源码运行持续978.064秒，峰值组RSS772256KiB；菜单Quit后return0、PG86187 remaining=[]，失败证据保留。此时正常退出只是资源回收成功。SDK正修文档prompt v2/profile5：字符串evidence与结构化citations分离、逐字归属范例、明确文件读取路径、不修改旧v1或doc3/4冻结合同。首轮新控9 fail/1 pass；修后定向65 passed/1.42秒。独立审查指出文档质量goal可能没有Critic，正在补新版提交门；这65项不是该门完成证据，更不是模型改善证明。Host另准备明确标识的SDK源码开发模式，保留正式wheel身份验证，不构建发布包。
+
+本机证据：
+- Host `.local-test-evidence/2026-09-12/p33-g/source-ui-n1-v2/native.log` SHA-256 `d2c0fc79d090d158879ea85033ba632d7ff9448d689999723dca802330f3b227`
+- Host `.local-test-evidence/2026-09-12/p33-g/source-ui-n1-v2/sources.json` SHA-256 `5485ffee38581c359aa59466b6bbd5312e56f9e7c6551c9edfd776501dc49c76`
+- Host `.local-test-evidence/2026-09-12/p33-g/source-ui-resource-v2/resource.json` SHA-256 `4ce1f9fb9fa2a881768650aef6e92590796c8f795624ac677c061f218ec1e77e`
+- SDK `.local-test-evidence/2026-09-12/p33-g/g-document-contract-green-v2.{log,json}`：65 passed/1.42秒，wrapper1.74秒，dirty a5c8fca。
+
+计时：23:01恢复执行至23:28已用27分钟；22:38–23:01范围讨论单列。G自20:25累计执行约160分钟（扣除23分钟讨论），P3.3已记录执行至少351分钟；未知A/B前段仍不补猜。P3.3 G未完成，P3.4仅准备就绪草案，P3.5未实施。
+
+
+### SDK源码开发身份接线（23:44 CST）
+
+2026-09-12 23:44 CST：P3.3 G 源码开发接线新增显式 `editable-source` SDK 身份。正式 wheel 默认与 Service 0.3.13 pin 保持；仅非frozen进程、显式模式及独立source attestation可加载SDK源码。校验Git根/commit、两个生产包与数据全集hash（含新增文件）、editable安装metadata、版本及实际模块origin；文档修改不改变生产输入。main组装与RuntimeStack启动接线，编排manifest分别显示source_verified与installed_wheel_verified，不把源码当成旧wheel。71项定向控制通过/6.55秒，含真实composition启动前拒绝与依赖边界；主审及Ohm独立限定ACCEPT。实际源码冷启动与N1复验尚待完成；首次源码N1真实deepseek-flash任务因引用字段schema及Task预算不足FAIL，详见Host G journal。功能仍进行中，P3.4/P3.5未验收，打包/P3.6暂不执行。
+
+独立开发venv以APFS clone复制依赖，editable只更新开发导入元数据；主backend/.venv仍旧wheel，未构建新的发布制品。`host-source-identity-v1`71 passed/6.73秒；格式/类型错误处理细化后`host-source-identity-v2`71 passed/6.55秒（wrapper7.49秒），不重复累计。Ruff新模块通过；既有composition/main/manifest在同py312配置下分别17/351/2项，和HEAD逐条(code,message)对照无新增。原始证据在SDK `.local-test-evidence/2026-09-12/p33-g/host-source-identity-v2.{log,json}`。

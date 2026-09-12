@@ -1,3 +1,5 @@
+最后更新：2026-09-12 23:44 CST：P3.3 G 源码开发接线新增显式 `editable-source` SDK 身份。正式 wheel 默认与 Service 0.3.13 pin 保持；仅非frozen进程、显式模式及独立source attestation可加载SDK源码。校验Git根/commit、两个生产包与数据全集hash（含新增文件）、editable安装metadata、版本及实际模块origin；文档修改不改变生产输入。main组装与RuntimeStack启动接线，编排manifest分别显示source_verified与installed_wheel_verified，不把源码当成旧wheel。71项定向控制通过/6.55秒，含真实composition启动前拒绝与依赖边界；主审及Ohm独立限定ACCEPT。实际源码冷启动与N1复验尚待完成；首次源码N1真实deepseek-flash任务因引用字段schema及Task预算不足FAIL，详见Host G journal。功能仍进行中，P3.4/P3.5未验收，打包/P3.6暂不执行。
+
 最后更新：2026-09-12 23:05 CST。用户批准P3.1–P3.5功能优先、直接源码Tauri UI验收；暂停PyInstaller/安装包发布，不含P3.6。P3.3 G源码接线已有SDK1302/安装组合921/Host49/前端86项通过，源码后端与编排已启动；日志URL凭据过滤26项控制通过，真实UI文档任务待验，未交付。冻结探针修复4项控制通过并独立审查ACCEPT；不称安装包通过。见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)。
 
 # 当前状态总表（2026-09-09 22:05）

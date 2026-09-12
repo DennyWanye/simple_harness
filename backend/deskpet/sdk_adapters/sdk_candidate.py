@@ -13,12 +13,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from importlib import metadata
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from deskpet.sdk_adapters.runtime_paths import SdkCandidateIdentity
+from deskpet.sdk_adapters.runtime_paths import (
+    SdkCandidateIdentity,
+    SdkSourceIdentity,
+    load_sdk_source_identity,
+    verify_runtime_identity,
+)
 
 SDK_VERSION = "0.11.1"
 SDK_WHEEL_FILENAME = "simple_harness_sdk-0.11.1-py3-none-any.whl"
@@ -28,6 +34,10 @@ SDK_CANDIDATE_MANIFEST_SHA256 = "bef6dae40cdd8ebcaa91c065aeabb210342124c766231b9
 SDK_SOURCE_COMMIT = "a5c8fca659be8b491d4d0f3f3f5536a5e711ce48"
 SDK_CI_RUN_ID = None
 SDK_CI_ARTIFACT_ID = None
+
+# An explicit local development choice; never inferred from DEV_MODE/PYTHONPATH.
+SDK_RUNTIME_MODE_ENV = "DESKPET_SDK_RUNTIME_MODE"
+SDK_SOURCE_ATTESTATION_ENV = "DESKPET_SDK_SOURCE_ATTESTATION"
 
 # 2026-09-10：认知记忆 SDK（simple-harness-memory-sdk 0.6.38）已从 Host 整条
 # 移除，其 candidate 常量与 ``verify_memory_candidate`` 一并删除。
@@ -112,6 +122,51 @@ def build_candidate_identity() -> SdkCandidateIdentity:
     return SdkCandidateIdentity(SDK_VERSION, SDK_WHEEL_SHA256, sdk_wheel_path())
 
 
+def build_runtime_identity() -> SdkCandidateIdentity | SdkSourceIdentity:
+    """Keep the wheel default; admit only an explicitly attested source run."""
+    mode = os.environ.get(SDK_RUNTIME_MODE_ENV, "wheel")
+    attestation = os.environ.get(SDK_SOURCE_ATTESTATION_ENV)
+    if mode == "wheel":
+        if attestation is not None:
+            raise RuntimeError("SDK source attestation requires explicit editable-source mode")
+        return build_candidate_identity()
+    if mode != "editable-source":
+        raise RuntimeError("SDK runtime mode is unknown")
+    if getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None) is not None:
+        raise RuntimeError("SDK source mode is unavailable in a frozen process")
+    if not attestation or not Path(attestation).is_absolute():
+        raise RuntimeError("SDK source mode requires an absolute attestation file path")
+    # The original immutable baseline manifest remains verified. It is not an
+    # assertion that the separately attested editable implementation equals it.
+    return load_sdk_source_identity(build_candidate_identity(), Path(attestation))
+
+
+def runtime_identity_report() -> dict[str, object]:
+    """Source attestation is verified; wheel provenance keeps its existing gate.
+
+    The orchestration version report has never verified installed wheel bytes.
+    Do not turn its old version-only `consistent` field into such a claim.
+    """
+    mode = os.environ.get(SDK_RUNTIME_MODE_ENV, "wheel")
+    if mode == "wheel" and SDK_SOURCE_ATTESTATION_ENV not in os.environ:
+        return {"mode": "wheel", "source_verified": False,
+                "installed_wheel_verified": False, "verification": "version-only"}
+    identity = verify_runtime_identity(build_runtime_identity())
+    if not isinstance(identity, SdkSourceIdentity):
+        raise RuntimeError("SDK source identity was not selected")  # noqa: TRY004 - configuration failure
+    return {
+        "mode": "editable-source", "source_verified": True,
+        "baseline_artifact_verified": True, "installed_wheel_verified": False,
+        "verification": "source-snapshot-at-startup",
+        "source": {
+            "root": str(identity.root), "commit": identity.commit,
+            "inputs_sha256": identity.inputs_sha256, "input_count": len(identity.inputs),
+            "module_origins": {name: str(identity.root / "src" / name / "__init__.py")
+                               for name in ("simple_harness", "agent_orchestrator")},
+        },
+    }
+
+
 def verify_service_candidate() -> None:
     """Verify Service SDK bytes, metadata, release unit and authority root."""
 
@@ -173,6 +228,7 @@ __all__ = (
     "SDK_CANDIDATE_MANIFEST_SHA256",
     "SDK_CI_ARTIFACT_ID",
     "SDK_CI_RUN_ID",
+    "SDK_RUNTIME_MODE_ENV",
     "SDK_SERVICE_AUTHORITY_ROOT_SHA256",
     "SDK_SERVICE_CANDIDATE_MANIFEST_FILENAME",
     "SDK_SERVICE_CANDIDATE_MANIFEST_SHA256",
@@ -180,11 +236,14 @@ __all__ = (
     "SDK_SERVICE_VERSION",
     "SDK_SERVICE_WHEEL_FILENAME",
     "SDK_SERVICE_WHEEL_SHA256",
+    "SDK_SOURCE_ATTESTATION_ENV",
     "SDK_SOURCE_COMMIT",
     "SDK_VERSION",
     "SDK_WHEEL_FILENAME",
     "SDK_WHEEL_SHA256",
     "build_candidate_identity",
+    "build_runtime_identity",
+    "runtime_identity_report",
     "sdk_candidate_manifest_path",
     "sdk_service_candidate_manifest_path",
     "sdk_service_wheel_path",

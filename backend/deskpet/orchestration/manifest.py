@@ -105,12 +105,24 @@ def distributions() -> dict[str, Any]:
     import agent_orchestrator
     import simple_harness
 
-    from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, SDK_WHEEL_SHA256
+    from deskpet.sdk_adapters.sdk_candidate import (
+        SDK_VERSION,
+        SDK_WHEEL_SHA256,
+        runtime_identity_report,
+    )
 
     try:
         installed = metadata.version("simple-harness-sdk")
     except metadata.PackageNotFoundError:
         installed = None
+    version_match = simple_harness.__version__ == SDK_VERSION == installed
+    try:
+        identity = runtime_identity_report()
+        identity_valid = True
+    except RuntimeError as exc:
+        identity = {"verification": "refused", "source_verified": False,
+                    "installed_wheel_verified": False, "error": str(exc)}
+        identity_valid = False
     return {
         "simple_harness": {"module_file": simple_harness.__file__, "version": simple_harness.__version__},
         "agent_orchestrator": {
@@ -119,7 +131,9 @@ def distributions() -> dict[str, Any]:
         },
         "distribution": {"name": "simple-harness-sdk", "version": installed},
         "pin": {"version": SDK_VERSION, "wheel_sha256": SDK_WHEEL_SHA256},
-        "consistent": simple_harness.__version__ == SDK_VERSION == installed,
+        "version_match": version_match,
+        "runtime_identity": identity,
+        "consistent": version_match and identity_valid,
     }
 
 
