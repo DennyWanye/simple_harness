@@ -177,9 +177,9 @@ def document_case_provider(case: str, root: Path) -> Any:
     def package(request: Any) -> dict[str, Any]:
         value = package_of(request)
         domain = value.get("domain", {})
-        if domain.get("id") != "doc-research-v1" or domain.get("version") != "6":
+        if domain.get("id") != "doc-research-v1" or domain.get("version") not in {"6", "7"}:
             raise ValueError(
-                "native document cases require the actual frozen doc6 domain"
+                "native document cases require the actual frozen doc6/doc7 domain"
             )
         return value
 

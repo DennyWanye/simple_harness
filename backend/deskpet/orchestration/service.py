@@ -171,7 +171,7 @@ class OrchestrationService:
                 )
         except ProviderUnavailable as error:
             await self._fail(str(error))
-        except Exception as error:  # noqa: BLE001 - never into the Host lifespan
+        except Exception as error:
             logger.exception("orchestration service failed to start")
             await self._fail(f"启动失败：{type(error).__name__}: {error}"[:300])
 
@@ -208,7 +208,11 @@ class OrchestrationService:
 
             fixture_root = Path(os.environ["DESKPET_ORCH_UI_FIXTURE_DIR"])
             case = os.environ.get("DESKPET_ORCH_UI_FIXTURE_CASE")
-            if case:
+            if case == "n4-document-contextual-arbitration":
+                from .native_arbitration import document_arbitration_provider
+
+                provider = document_arbitration_provider(fixture_root)
+            elif case:
                 from .native_cases import document_case_provider
 
                 provider = document_case_provider(case, fixture_root)
@@ -340,7 +344,7 @@ class OrchestrationService:
         if orchestrator is not None:
             try:
                 await orchestrator.__aexit__(None, None, None)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("orchestrator close failed")
         client, self._http_client = self._http_client, None
         if client is not None:
@@ -360,7 +364,7 @@ class OrchestrationService:
                 await asyncio.wait_for(driver, timeout=10)
             except (TimeoutError, asyncio.CancelledError):
                 driver.cancel()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("orchestration driver ended with an error")
         await self._close_runtime()
         self._lock.release()
@@ -398,7 +402,7 @@ class OrchestrationService:
                     self._state, self._reason = "available", None
             except asyncio.CancelledError:
                 raise
-            except Exception as error:  # noqa: BLE001 - the backend must not fall over
+            except Exception as error:
                 self._failures += 1
                 logger.exception("orchestrator run failed (%s in a row)", self._failures)
                 if self._failures >= self.settings.degraded_after_failures:
@@ -409,7 +413,7 @@ class OrchestrationService:
                 ):
                     try:
                         await self._rebuild()
-                    except Exception as rebuild_error:  # noqa: BLE001 - keep looping, and say so (review P1-2)
+                    except Exception as rebuild_error:
                         logger.exception("orchestrator rebuild failed")
                         self._state = "degraded"
                         self._reason = f"编排循环重建失败：{rebuild_error}"[:300]
@@ -432,7 +436,7 @@ class OrchestrationService:
         if old is not None:
             try:
                 await old.__aexit__(None, None, None)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("orchestrator close during rebuild failed")
         candidate = Orchestrator(
             self._config, self._effective_provider, owner=self.owner, connectors=self._connectors,
@@ -447,7 +451,7 @@ class OrchestrationService:
         except BaseException as error:
             try:
                 await candidate.__aexit__(type(error), error, error.__traceback__)
-            except BaseException as cleanup_error:
+            except BaseException as cleanup_error:  # noqa: BLE001 - preserve the original start failure
                 error.add_note(f"Rebuild resource cleanup failed: {type(cleanup_error).__name__}")
             raise
         # Publish only after enter and facade construction succeeded. A failed

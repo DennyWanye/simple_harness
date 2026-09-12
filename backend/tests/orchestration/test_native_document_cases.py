@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from agent_orchestrator.governance.domains import DOC_PROFILE
 from deskpet.orchestration.native_cases import (
     ATTACK,
     DOCUMENT_CASES,
@@ -49,7 +50,7 @@ async def test_native_case_uses_current_document_contract_and_real_verification(
         assert await service.drain(timeout=30), service.status()
         orch = service._orchestrator
         mission = orch.store.get_mission(created["mission_id"])
-        assert orch.commit.domain_for(mission.id).version == "6"
+        assert orch.commit.domain_for(mission.id).to_json() == DOC_PROFILE.to_json()
         assert list(mission.success_criteria) == request["success_criteria"]
         [task] = orch.store.list_tasks(mission.id)
         [attempt] = orch.store.list_attempts(task.id)
@@ -230,7 +231,7 @@ async def test_active_source_revoke_before_original_human_pass_cannot_accept(
         mid = created["mission_id"]
         mission = orch.store.get_mission(mid)
         assert mission.status.value == "ACTIVE"
-        assert orch.commit.domain_for(mid).version == "6"
+        assert orch.commit.domain_for(mid).to_json() == DOC_PROFILE.to_json()
         assert list(mission.success_criteria) == ["cite:" + SOURCE_PATH]
         original_budget = mission.to_json()["budget"]
         [task] = orch.store.list_tasks(mid)
