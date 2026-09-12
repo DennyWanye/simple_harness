@@ -180,6 +180,33 @@ async def test_citation_read_dispatch_preserves_binding_and_character_page(tmp_p
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scenario,offset,delayed", [("document-ui", 0, True), (None, 0, False), ("document-ui", 3, False)])
+async def test_only_native_fixture_first_page_delays_delivery(tmp_path, principal, monkeypatch, scenario, offset, delayed):
+    from unittest.mock import AsyncMock
+
+    from deskpet.orchestration import handlers
+
+    service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal,
+                                   test_scenario=scenario, drive=False)
+    service._state = "available"
+    original = {"text": "真实原文", "offset": offset, "next_offset": None,
+                "total_chars": 4, "path": "sources/A.md", "version_hash": "a" * 64}
+    service._call = Mock(return_value=original)
+    delay = AsyncMock()
+    monkeypatch.setattr(handlers.asyncio, "sleep", delay)
+    reply = await handle(service, "mission_citation_read", {
+        "mission_id": "m", "result_id": "r", "receipt_id": "receipt", "citation_index": 2,
+        "offset": offset, "limit": 4}, request_id="real-page")
+    assert reply["payload"]["ok"]
+    assert reply["payload"]["data"]["text"] == original["text"]
+    assert service._call.call_count == 1
+    if delayed:
+        delay.assert_awaited_once_with(1.5)
+    else:
+        delay.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_citation_read_rejects_client_path_before_facade(tmp_path, principal):
     service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal, drive=False)
     service._state = "available"
