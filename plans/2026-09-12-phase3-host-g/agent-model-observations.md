@@ -118,3 +118,16 @@ LC2 child final local measurement: Ptolemy actual[['gpt-6-astra', 'high']], wall
 | Erdos | Sol/high | 305.76 | 121520 | 2472448 | 15079 | 旧库脚本采用，父任务补第二来源登记并亲跑旧SDK/新原生；不由子代理宣称PASS |
 
 不同任务不可据此计算节省百分比。原始用量位于ignored agent-efficiency-0500/usage-native-v36.json。
+
+
+2026-09-14 native-v39 checkpoint. Assistant-led orchestration, no plan-test family skill. Completed children only; per-response local counters are not official subscription billing.
+
+| Child | Actual model/effort | Wall seconds | Uncached input | Cached input | Output | Acceptance / rework |
+|---|---|---:|---:|---:|---:|---|
+| Hooke | [['gpt-5.6-luna', 'medium']] | 93.35 | 33364 | 501248 | 3998 | WRAP_ACCEPTED_NATIVE37_AND39_UI; Parent kept concise list shortHash, full detail wraps; 87UI/typecheckPASS then actualv37/v39 screenshots. |
+| Kant | [['gpt-5.6-sol', 'high']] | 90.7 | 52832 | 431104 | 4238 | DETERMINISTIC_GAP_CONFIRMED_PARENT4RED_33GREEN; No production edits; exactlength/toolparse gap accepted. Does not diagnose missingfinishreason in historicalv12. |
+| Raman | [['gpt-5.6-sol', 'high']] | 210.04 | 44479 | 1009920 | 9889 | TWO_REAL_GUARD_CASES_ACCEPTED_PARENT_28PASS; Removed premature subject settlement; corrected denied second invocation CLAIMED/handoff0 expectation; real guard original grants and totals verified. SDK2957ed7. |
+| Lovelace | [['gpt-5.6-terra', 'high']] | 173.93 | 110717 | 994048 | 8300 | HOST_FIX_ACCEPTED_13PASS_PLUS2PASS; Parent supplied missing list_tasks/list_attempts in test store; first13PASS1FAIL. One parent cwd edit mistake caused redundant test FAIL; fixed2PASS0.09s. Actualkill controls passed. Native new version pending. |
+| Hegel | [['gpt-5.6-sol', 'high']] | 315.91 | 91191 | 2122496 | 15458 | ACCEPTED_56PASS_PLUS_ACCOUNTING_AND_NATIVE39; Parent preserves executed code result after Critic rejects; updates old accounting (unused6000 hold zero settlement, skip one Critic) and labels in-memory reuse correctly. Native explicit five-layer goal independently passes with real Critic input and pending cold. |
+
+Erdos fixture required a second parent correction: initial CREATED/manual-intent point differed from old production PLANNING; the corrected standard path passed native-v37. Parent review, integration and test wall time overlap with UI work and are not separately attributable. No matched-task savings claim. Two-child maximum in the latest repair batch; all children closed. Raw local usage-latest.json preserves actual IDs and response counts.

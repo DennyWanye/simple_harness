@@ -1,3 +1,5 @@
+**Last updated: 2026-09-14 CST. Native v39 code/isolated pytest, explicit Critic evidence and pending-human cold recovery PASS within scope.** Two one-Attempt Missions; real10calls26932tokens/cache16384/0reserve. Actual four files read; pending cold selected-table hashes identical, UI approval completes both with zero new model calls. Native176.367s/cold106.073s exit clean. Current cumulative and strict P34 remain OPEN; no packaging. [Evidence and boundaries](../plans/2026-09-12-phase3-host-g/native-v39-review.md).
+
 **最后更新：2026-09-14 CST — v37旧正常PLANNING恢复/产物换行/冷读通过限定验收；代码真测FAIL保留。** 原冻结规划一次提交，旧任务19真实调用112418tokens；旧/新报告冷读不变。代码用例因Critic先于code_test拿不到输出重复失败，UI取消后43调用172374tokens/0reserve。模型槽等待误报UNKNOWN已修复，实际kill恢复等13PASS19.84秒，新投影夹具补齐store读方法后2PASS0.09秒；新源码原生待验。 [证据与边界](../plans/2026-09-12-phase3-host-g/native-v37-review.md)。无打包发布。
 
 **最后更新：2026-09-14 CST — 源码v37诊断重建修复20PASS/17.44秒，产物详情换行87 UI PASS与正式typecheck通过。** 列表短hash保持；最新源码原生待验。旧累计Host303PASS/5FAIL中2个实际故障已定向复验，3个wheel-only检查按源码范围暂缓，不改测试。SDK新输出扩展受预算/用量/取消约束，严格P34与整体仍OPEN。 [证据和限制](../plans/2026-09-12-phase3-host-g/source-v37-checks.md)。
