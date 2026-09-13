@@ -1,3 +1,7 @@
+**2026-09-14 CST source checkpoint:** Host now distinguishes genuine old unguarded pools from guarded pre-context pools and exposes named256K/512K pools alongside both. Pinned tokenizer plus launcher45PASS0.52s; SDK mixed-pool recovery/action/diagnostics72PASS13.07s and adjacent56PASS13.64s. This closes scoped software controls only; native publish/coexistence and final cumulative audit still pending. P34v12 strictFAIL and historical no-routing-evidence limit remain. No packaging/release/push. [Current evidence](../plans/2026-09-12-phase3-host-g/journal.md).
+
+**2026-09-14 CST 更新：源码测试启动器新增隔离的本地发布目录显式开关，39项控制通过（0.17秒）；真实UI发布仍待。P34 v12严格FAIL：两臂交付、C合成失败后回退旧候选，167调用/1622330tokens/998.48秒。LC2共存与动作契约仍在修复测试，整体Phase3 OPEN。** 详见[当前验收记录](../plans/2026-09-12-phase3-host-g/journal.md)。无打包发布推送。
+
 **最后更新：2026-09-14 CST — 512K真实多轮与冷读已验证。** 冻结SDKdc2f156源码两次DeepSeek Flash调用，实际输入520288/521469tokens，输出2664/664，总1045085tokens、cache0；后轮历史折叠后按新条件精确筛选，冷读零新增调用。42.987秒（runner43.35秒），合成材料范围，非原始文档质量证明。P36诊断PD4已关闭；SDK6fb5c50修复P34知识ID提示冲突和分页完整读取观察器，44PASS与独立复审通过，新真实pair/LC2兼容/最终累计及整体Phase3仍OPEN，无打包发布。见[长上下文结果](../plans/2026-09-12-phase3-host-g/long-context-results.md)。
 
 **最后更新：2026-09-14 01:33 CST — P36 App诊断切片PD1–PD4已验证。** 当前Host `d093f55c` / SDK `dc2f156` 源码原生v33完成失败Mission诊断、重复导出及同源码冷启动重读。FAILED/34events/600tokens/0reserve保持；支持报告8205B及完整SHA一致，任务/事件/预算/执行等选定持久表hash不变，4受控调用/0重调。长路径回执已真实截图确认换行。源码UI生命周期1016.772秒（含等待），冷读62.016秒，均正常退出无残留。只关闭诊断切片，P34真实pair、P35补充与最终累计及总体Phase3仍OPEN；打包发布暂缓。证据与边界见[诊断验收](../plans/2026-09-12-phase3-host-g/p36-diagnostics-plan.md)。

@@ -27,6 +27,7 @@ from launch_frozen_orchestrator import (
     HOST_ROOT,
     STANDARD_ENV,
     LauncherError,
+    _no_symlinks,
     drain_log,
     prepare_run,
     read_key,
@@ -192,6 +193,8 @@ def source_identity(args, *, host_head: str) -> dict:
             "logical_slots": args.logical_slots,
             "model_slots": args.model_slots,
         },
+        **({"publish_test_dir": str(args.run_dir.absolute() / "published")}
+           if getattr(args, "publish_test_reports", False) else {}),
         **({"fixture": _inventory(args.fixture_dir)} if getattr(args, "fixture_dir", None) else {}),
         **({"fixture_case": args.fixture_case} if getattr(args, "fixture_case", None) else {}),
     }
@@ -248,6 +251,39 @@ def bind_slot_config(run: Path, *, logical_slots: int, model_slots: int, resume:
         raise LauncherError("source orchestration slot configuration missing or changed") from error
 
 
+def bind_test_publish_config(run: Path, *, enabled: bool, resume: bool) -> None:
+    """Enable the existing approved file-publish connector inside this isolated run."""
+    destination = run / "published"
+    config = run / "userdata/config.toml"
+    try:
+        _no_symlinks(destination)
+        _no_symlinks(config)
+        raw = config.read_text(encoding="utf-8")
+        configured = tomllib.loads(raw).get("orchestration", {}).get("publish_dir")
+    except (OSError, ValueError) as error:
+        raise LauncherError("source test publish configuration invalid") from error
+    if not enabled:
+        if configured:
+            raise LauncherError("source test publish directory requires explicit opt-in")
+        return
+    if resume:
+        if configured != str(destination) or not destination.is_dir():
+            raise LauncherError("source test publish directory changed")
+        return
+    if raw.count("[orchestration]\n") != 1:
+        raise LauncherError("source orchestration configuration missing")
+    raw = raw.replace(
+        "[orchestration]\n",
+        "[orchestration]\npublish_dir = " + json.dumps(str(destination)) + "\n",
+        1,
+    )
+    try:
+        destination.mkdir(mode=0o700, exist_ok=True)
+        config.write_text(raw, encoding="utf-8")
+    except OSError as error:
+        raise LauncherError("source test publish directory unavailable") from error
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, default=HOST_ROOT)
@@ -269,6 +305,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--logical-slots", type=int, choices=range(1, 5), default=1)
     parser.add_argument("--model-slots", type=int, choices=range(1, 5), default=1)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--publish-test-reports", action="store_true",
+                        help="Enable approved file publishing only in this run's published directory")
     parser.add_argument("--fixture-dir", type=Path,
                         help="Controlled UI inputs under ignored test evidence; no real model")
     parser.add_argument("--fixture-case", choices=(
@@ -331,6 +369,7 @@ def main(argv: list[str] | None = None) -> int:
         resume=args.resume,
     )
     bind_model_override(run, resume=args.resume)
+    bind_test_publish_config(run, enabled=args.publish_test_reports, resume=args.resume)
     app = run / "SimpleHarness Source UI.app"
     for path in (app, app / "Contents", app / "Contents/MacOS",
                  app / "Contents/MacOS/simple-harness", app / "Contents/Info.plist"):

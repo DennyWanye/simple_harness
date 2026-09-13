@@ -71,12 +71,10 @@ def source_runtime_options(
             )
         }
     }
-    if counter is not None and policy is None:
-        # A pre-admission execution pool has no durable global slot grants.
-        # Keep it fully legacy; mixing it with new guarded pools would silently
-        # lose the shared physical-call bound. A fresh library supports long input.
-        return options
     if counter is not None:
+        from agent_orchestrator.runtime.legacy_provider_slots import (
+            profile_has_frozen_admission,
+        )
         from simple_harness.agents.context.budget import ContextPolicy
 
         # New named pools coexist with the old default pool. Never reinterpret
@@ -98,4 +96,9 @@ def source_runtime_options(
                 default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
             )
         options["provider_token_estimators"] = {key: counter for key in options["profiles"]}
+        frozen_admission = profile_has_frozen_admission(config, "default")
+        if frozen_admission is False or (frozen_admission is None and policy is None):
+            # None preserves the old external admission identity. SDK composition
+            # separately supplies shared, durable physical slots for this pool.
+            options["provider_token_estimators"]["default"] = None
     return options

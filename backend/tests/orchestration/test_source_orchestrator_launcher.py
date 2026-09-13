@@ -82,6 +82,51 @@ def _required_cli(inputs):
     ]
 
 
+def test_publish_test_option_has_distinct_identity_and_fixed_local_destination(
+    launcher, inputs, tmp_path,
+):
+    original = launcher.source_identity(inputs, host_head="recorded-head")
+    assert "publish_test_dir" not in original
+    args = launcher.parse_args([*_required_cli(inputs), "--publish-test-reports"])
+    assert launcher.source_identity(args, host_head="recorded-head")["publish_test_dir"] == str(
+        args.run_dir.absolute() / "published"
+    )
+    user = tmp_path / "userdata"
+    user.mkdir()
+    config = user / "config.toml"
+    config.write_text('[orchestration]\nenabled = true\n')
+    launcher.bind_test_publish_config(tmp_path, enabled=False, resume=False)
+    assert 'publish_dir' not in config.read_text()
+    launcher.bind_test_publish_config(tmp_path, enabled=True, resume=False)
+    before = config.read_bytes()
+    launcher.bind_test_publish_config(tmp_path, enabled=True, resume=True)
+    assert config.read_bytes() == before
+    assert list((tmp_path / "published").iterdir()) == []  # directory ready, no publish action
+    with pytest.raises(launcher.LauncherError, match="explicit opt-in"):
+        launcher.bind_test_publish_config(tmp_path, enabled=False, resume=True)
+    config.write_text(config.read_text().replace('/published', '/other'))
+    with pytest.raises(launcher.LauncherError, match="publish directory changed"):
+        launcher.bind_test_publish_config(tmp_path, enabled=True, resume=True)
+
+
+@pytest.mark.parametrize("damage", ["missing", "symlink", "bad-toml"])
+def test_publish_resume_does_not_repair_missing_or_changed_destination(launcher, tmp_path, damage):
+    user = tmp_path / "userdata"
+    user.mkdir()
+    config = user / "config.toml"
+    config.write_text('[orchestration]\nenabled = true\n')
+    launcher.bind_test_publish_config(tmp_path, enabled=True, resume=False)
+    destination = tmp_path / "published"
+    if damage == "bad-toml":
+        config.write_text('[orchestration\n')
+    else:
+        destination.rmdir()
+        if damage == "symlink":
+            destination.symlink_to(user, target_is_directory=True)
+    with pytest.raises(launcher.LauncherError):
+        launcher.bind_test_publish_config(tmp_path, enabled=True, resume=True)
+
+
 @pytest.mark.parametrize("case", ["native-load-three-mission", "native-load-verifier-pressure",
                                   "p34-approved-compare", "native-context-rotation"])
 def test_load_case_requires_fixture_and_binds_actual_slot_limits(launcher, inputs, case):

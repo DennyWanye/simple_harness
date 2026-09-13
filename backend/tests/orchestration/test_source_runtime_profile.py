@@ -3,6 +3,7 @@
 
 """Source-only Host wiring: run against the attested editable SDK environment."""
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -69,13 +70,23 @@ def test_source_uses_same_counter_for_context_and_budget_and_keeps_legacy(
     assert profile.context_policy.max_input_tokens == 32768
     assert profile.context_policy.max_tool_result_tokens == 16384
     assert not source_config.evidence_root.exists()  # resolver is read-only
-    source_config.evidence_root.mkdir()
-    source_config.execution_db.touch()  # a pre-identity execution pool stays legacy
+    from agent_orchestrator.orchestrator.event_handler import Orchestrator
+
+    async def create_precontext_library():
+        # Genuine legacy runtime from its first open, with no context sidecar.
+        async with Orchestrator(source_config, Provider()):
+            pass
+
+    asyncio.run(create_precontext_library())
     old = source_runtime_options(source_config, Provider(), snapshot)
     assert old["profiles"]["default"].context_policy is None
     assert old["profiles"]["default"].tokenizer is None
-    assert "provider_token_estimators" not in old
-    assert set(old["profiles"]) == {"default"}
+    assert old["provider_token_estimators"]["default"] is None
+    assert set(old["profiles"]) == {
+        "default", "deepseek-context-256k-v1", "deepseek-context-512k-v1",
+    }
+    assert all(old["provider_token_estimators"][key] is old["profiles"][key].tokenizer
+               for key in old["profiles"] if key != "default")
 
 
 def test_another_endpoint_cannot_acquire_official_deepseek_counter(
@@ -95,3 +106,50 @@ def test_another_endpoint_cannot_acquire_official_deepseek_counter(
         options["profiles"]["default"].tokenizer.fingerprint
         == "upper-bound-utf8-bytes-div-2:v1"
     )
+
+
+@pytest.mark.parametrize("guarded", [False, True])
+def test_genuine_precontext_library_distinguishes_frozen_admission_and_adds_long_pools(
+    source_config, monkeypatch, guarded,
+):
+    from agent_orchestrator.orchestrator.commit_service import MissionSpec
+    from agent_orchestrator.orchestrator.event_handler import Orchestrator
+    from agent_orchestrator.runtime import deepseek_tokens
+    from simple_harness.agents.context.tokenizer import UpperBoundTokenizer
+
+    class FixtureCounter(UpperBoundTokenizer):
+        fingerprint = "host-lc2-fixture-v1"
+        bound_protocol = "host-lc2-fixture-text-v1"
+        requires_prior_output_reserve = False
+
+        def estimate_input_tokens(self, request):
+            raise AssertionError("Host configuration must never estimate a Provider request")
+
+    counter = FixtureCounter()
+    monkeypatch.setattr(deepseek_tokens, "DeepSeekV41TokenEstimator", lambda *a, **kw: counter)
+    monkeypatch.setenv("DESKPET_ORCH_TOKENIZER_PATH", str(source_config.evidence_root / "fixture.json"))
+
+    async def old_runtime():
+        kwargs = {"provider_token_estimators": {"default": counter}} if guarded else {}
+        async with Orchestrator(source_config, Provider(), **kwargs) as orch:
+            mission = await orch.submit_mission(MissionSpec(
+                goal="Write NOTES.md", success_criteria=("file:NOTES.md",),
+                tenant_id="lc2", idempotency_key="original",
+            ))
+            orch.commit.begin_planning(mission.id)
+            intent = await orch._create_planner_intent(mission.id, ordinal=1)
+            assert intent.config.get("runtime_context") is None
+            assert (intent.config.get("provider_admission_fingerprint") is not None) is guarded
+
+    asyncio.run(old_runtime())
+    # Hash the closed database: source_runtime_options must remain read-only.
+    before = source_config.orchestrator_db.read_bytes()
+    snapshot = ProviderSnapshot("deepseek", "https://api.deepseek.com", "deepseek-flash",
+                                "deepseek-flash", "unused-local")
+    options = source_runtime_options(source_config, Provider(), snapshot)
+    assert options["profiles"]["default"].context_policy is None
+    assert options["profiles"]["default"].tokenizer is None
+    assert options["provider_token_estimators"]["default"] is (counter if guarded else None)
+    assert options["profiles"]["deepseek-context-256k-v1"].context_policy.max_input_tokens == 262144
+    assert options["profiles"]["deepseek-context-512k-v1"].context_policy.max_input_tokens == 524288
+    assert source_config.orchestrator_db.read_bytes() == before

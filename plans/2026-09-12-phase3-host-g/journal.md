@@ -414,3 +414,15 @@ Controlled native load first software run2FAIL5.01s exposed queued-cancel late P
 ## 2026-09-14 01:33 CST — P36 diagnostics slice milestone
 
 PD1–PD4 complete against Hostd093f55c/SDKdc2f156. See [scoped results](p36-diagnostics-plan.md). Native v33 exact-source failure/read/repeat-export/cold-read PASS; all selected durable hashes unchanged and zero added model invocations. Support8205B/hash5baf9a5e…; case-summary SHA256223fc5e785295d5d226f66ba8ffcef1a11ce0b428a6c94ab7524ed7086210de7. Native1016.772s includes waiting; cold62.016s. Failed v31 setup and partialv32 retained. Whole Phase3 run continues; P34strictpairFAIL, P35pending and originalP36 cumulative remain OPEN. No run-final receipt, packaging or push.
+
+## Source publish launcher and v12 finding — 2026-09-14 CST
+
+Opt-in --publish-test-reports binds only an isolated run/published destination, creates it before backend startup and rejects changed/missing/symlink resume paths or implicit reuse. Existing connector approval remains required. Independent Luna review found missing mkdir and disabled-resume validation; both repaired by parent. Parent g-host-source-publish-launcher-v1:39PASS0.17s (runner0.69s). Source-native actual publish without manually supplied candidate schema remains pending, as does SDK action-context testing.
+
+P34 immutablev12 finished strictFAIL: both Missions delivered, FIRST60calls522350tokens347.602s; COMPARE107calls1099980tokens650.599s. C synth failed tool_parse on its fourth call and final selection accepted prior Worker candidate. Total1622330tokens /16m39s. Output8192 alone does not prove truncation; original response finish reason unavailable. FIRST frozen observer PASS has one separately retained SDK empty-response failure. Details and hashes in siblingSDK plans/2026-09-12-phase3/p34/v12-real-pair-review.md. No immediate paidreroll.
+
+Initial LC2/P32/observer batch48PASS8FAIL72.90s (runner73.38): three LC2 failures under repair; five actual-action tests failed on missingfixtureclaims and wrongMissiongraphversion field, corrected before successor. Observer diagnostic controls included in48PASS. No whole-slice closure from this batch.
+
+## Parent verified source checkpoint - 2026-09-14 CST
+
+After first48PASS8FAIL72.90s, bounded repairs passed72/72 in13.07s (runner13.51), including22 LC2 controls, actual action-wire context, protocol metadata, known/unknown billed-failure accounting and no resampling/tool execution. Adjacent budget identity/recovery/context/profile plus LC2/action56PASS13.64s (runner14.09). Host with pinned tokenizer45PASS0.52s (runner1.10), zero skip. SDK mypy120filesPASS; new LC2 formatting/imports and protocol detail typing repaired by parent. Native source acceptance and final cumulative audit remain pending. Evidence labels: g-lc2-p32-observation-v2, g-lc2-adjacent-v1, g-host-lc2-profile-v1 under SDK .local-test-evidence/2026-09-12/p33-g. Historical no-dispatch/no-default-evidence limit remains explicit. No packaging/installer/release/push.

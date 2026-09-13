@@ -90,3 +90,19 @@ Raw index .local-test-evidence/2026-09-13/p33-g/agent-efficiency-0500/usage-cont
 | Sagan Sol/high |234.00|117135|1354752|11306| Offline synthesis prompt contradiction and paged full-read false-negative established; no edits/tests/calls |
 
 All four closed. Raw usage-p36-final.json under the ignored agent-efficiency-0500 evidence directory; cached input is a subset, not additional input. Matched comparative tasks are unavailable, so no claimed savings. Parent overhead not separately timed; nativev31 setup163.682s andv32 partial249.911s are explicit rework, v33 lifecycle1016.772s includes reporting/user/analysis waiting and is not active UI time. Corrected no-op typecheck and broad-read waste recorded in retro. Next Heisenberg Sol/high owns bounded SDK P34 repair while parent finishes Host native/documentation; parent remains sole test/API runner and main settings untouched.
+
+## 2026-09-14 scoped child measurements
+
+Local deduplicated response_id usage, not subscription billed credits. Reasoning is included in output. Wall time spans dispatch to last return including waits; parallel durations must not be summed.
+
+| Child | Actual model/effort | Seconds | Uncached input | Cached input | Output | Acceptance/rework |
+|---|---|---:|---:|---:|---:|---|
+| Arendt | Sol/high |416.62|140804|3966976|20048|Action candidate; parent removed arbitrary8cap, fixed role filter and five fixture failures; successor pending|
+| Gibbs | Sol/medium |54.96|74964|304640|2419|Found second worker-only context filter; parent fixed|
+| Bohr | Luna/medium |110.40|56275|294144|4200|Found missing mkdir and resume opt-in validation; parent fixed,39PASS0.17s|
+| Mill | Sol/high |129.66|105383|960256|6203|LC2 cap/recovery/identity scoped ACCEPT; later routing repair excluded|
+| Pascal | Terra/medium |109.64|48195|300288|5317|Protocol diagnostic9PASS0.27s; parent ruff import fix; cumulative pending|
+
+Ptolemy Astra/high remains repairing3 LC2 failures; live counters are not final. Parent overhead includes centralized tests, v12 error-layer correction, native launcher review and fixture rework; not separately timed. Luna found two concrete defects in a small review, but unmatched tasks do not establish any savings percentage. Main session remains Astra/high; application DeepSeek API is separate.
+
+LC2 child final local measurement: Ptolemy actual[['gpt-6-astra', 'high']], wall1958.81s including waits, uncached input415410, cached input6062208, output45622. Parent first3LC2failures led to actual default-routing repair and two exact oracle expectation repairs; five additional routing evidence controls. Corrected focused72PASS13.07s, adjacent56PASS13.64s, Host45PASS0.52s. Native and final cumulative still pending; no-dispatch historical default is unprovable and not claimed preserved. Parent also fixed formatting and protocol metadata typing. No matched-task savings claim.
