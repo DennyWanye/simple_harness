@@ -79,3 +79,14 @@ Main overhead includes UI/file chooser work, fixture review, broad-test legacy d
 | Franklin Sol/high |1905.02|275244|4643072|31691| Four review issues fixed; new LC6 controls2PASS6.16s; no paid calls |
 
 Raw index .local-test-evidence/2026-09-13/p33-g/agent-efficiency-0500/usage-context-final.json. Wall intervals overlap, are not summed or claimed as active compute. Parent coordination active time was not separately instrumented; parent observer rework243.64+98.50runnerseconds explicitly recorded in long-context-results.md. Different task scopes prevent a matched savings claim. All three closed. New Plato Sol/high is scoped to three P34 experiment-test files, minimal initial prompt/no inherited full history; parent continues native/evidence and compatibility work. Main model settings untouched.
+
+## 2026-09-14 P36 and v11 diagnosis measurements
+
+| Child/model/effort | Dispatch-to-last-return seconds including waits | Uncached input | Cached input | Output | Outcome/rework |
+|---|---:|---:|---:|---:|---|
+| Carver Terra/high |379.58|166973|1805056|18615| Initial helper/tests; independent review rejected raw payload/path copying, required Sol repair |
+| Avicenna Sol/high |604.17|285301|3682048|27007| Four privacy/runtime findings plus explicit projection repair accepted in source/wheel tests and native PD4 |
+| Bernoulli Sol/high |393.51|113850|3100160|17323| Offline v11 strict FAIL classification accepted; no paid calls or edits |
+| Sagan Sol/high |234.00|117135|1354752|11306| Offline synthesis prompt contradiction and paged full-read false-negative established; no edits/tests/calls |
+
+All four closed. Raw usage-p36-final.json under the ignored agent-efficiency-0500 evidence directory; cached input is a subset, not additional input. Matched comparative tasks are unavailable, so no claimed savings. Parent overhead not separately timed; nativev31 setup163.682s andv32 partial249.911s are explicit rework, v33 lifecycle1016.772s includes reporting/user/analysis waiting and is not active UI time. Corrected no-op typecheck and broad-read waste recorded in retro. Next Heisenberg Sol/high owns bounded SDK P34 repair while parent finishes Host native/documentation; parent remains sole test/API runner and main settings untouched.

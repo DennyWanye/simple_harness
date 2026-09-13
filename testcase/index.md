@@ -4,6 +4,7 @@
 
 | ID | Path | Purpose | AC/Obligation | Surface | Type | Preconditions | Entry point | Reusable tags | Last validated | Status | Results | Replacement |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TC-P36-PD4 | 2026-09-14-phase3-diagnostics/TC-P36-PD4.md | Failed Mission diagnostics and cold support export | P36-A02, P36-A03, P36-A08, PD4 | desktop-ui | hybrid | committed isolated source | Mission details | phase3, diagnostics, cold-start | 2026-09-14 | active | plans/2026-09-12-phase3-host-g/p36-diagnostics-plan.md | — |
 | LEGACY-01E71BF30056 | workbench-ui/TC-WB-09-pet-code-removal.md | Review legacy testcase metadata: workbench-ui/TC-WB-09-pet-code-removal.md | — | unknown | hybrid | — | — | legacy, needs-metadata | — | needs-review | — | — |
 | LEGACY-01F20EC63FA1 | 2026-08-13-simple-harness-sdk/challenger-iteration-2.md | Review legacy testcase metadata: 2026-08-13-simple-harness-sdk/challenger-iteration-2.md | — | unknown | hybrid | — | — | legacy, needs-metadata | — | needs-review | — | — |
 | LEGACY-065CF41EECF9 | 2026-06-20-agent-loop-batch-c/batch-c-manual-test.md | Review legacy testcase metadata: 2026-06-20-agent-loop-batch-c/batch-c-manual-test.md | — | unknown | hybrid | — | — | legacy, needs-metadata | — | needs-review | — | — |

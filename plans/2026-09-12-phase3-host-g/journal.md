@@ -410,3 +410,7 @@ Controlled native load first software run2FAIL5.01s exposed queued-cancel late P
 
 
 **最后更新：2026-09-13 10:12 CST — 原生负载测试入口。** 增加独立源码受控场景：三Mission/两物理模型槽，以及两个真实Verifier在Critic前有界等待、第三个Result排队。仅控制外部Provider和验证等待；原Planner、工具、format/rule、Critic、人审、取消、预算与实际验证结果均由正式运行栈产生。控制文件在独立userdata目录，原fixture输入不变。等待最多20秒且保留租约余量，超时记录notobserved后放行真实Critic；仅证明2个Verifier占用+1个待验证，不声称压满pending上限4。受控路由/取消/长资料/启动器/搜索38 PASS/16.03s（runner16.61s），g-native-pressure-host-v4；静态复审normal runtime不受影响。该压力场景要求新控制目录，已有trace或marker时同目录重建会拒绝，不作为压力恢复证据。实际原生负载UI尚待；N1doc9原始资料及冷恢复已通过。P33累计审计/P34/P35整体仍OPEN，不打包/P36/推送。
+
+## 2026-09-14 01:33 CST — P36 diagnostics slice milestone
+
+PD1–PD4 complete against Hostd093f55c/SDKdc2f156. See [scoped results](p36-diagnostics-plan.md). Native v33 exact-source failure/read/repeat-export/cold-read PASS; all selected durable hashes unchanged and zero added model invocations. Support8205B/hash5baf9a5e…; case-summary SHA256223fc5e785295d5d226f66ba8ffcef1a11ce0b428a6c94ab7524ed7086210de7. Native1016.772s includes waiting; cold62.016s. Failed v31 setup and partialv32 retained. Whole Phase3 run continues; P34strictpairFAIL, P35pending and originalP36 cumulative remain OPEN. No run-final receipt, packaging or push.
