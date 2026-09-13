@@ -322,11 +322,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const [synthesisAttempts, setSynthesisAttempts] = useState("");
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [bases, setBases] = useState<Record<string, string>>({});
+  const [reviewPending, setReviewPending] = useState<Record<string, boolean>>({});
   const [comment, setComment] = useState("");
   const [artifact, setArtifact] = useState<Json | null>(null);
   const artifactRequest = useRef<{ requestId: string; missionId: string | null; artifactId: string } | null>(null);
   const selectedRef = useRef<string | null>(null);
   const flights = useRef<Record<string, Flight>>({});
+  /** UI request_id → review approval_id, so only a successful atomic decision clears its input. */
+  const reviewDecisionRequests = useRef(new Map<string, string>());
   /** request_id → mission_id（mission_get / mission_events 的应答按它归属）。 */
   const requests = useRef(new Map<string, string>());
   useEffect(() => {
@@ -341,6 +344,30 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       const message: ControlMessage = { type, request_id: requestId, payload };
       channel?.send(message);
       return requestId;
+    },
+    [channel],
+  );
+
+  /** Review decisions must either be in the response map before sending or remain retryable locally. */
+  const submitReviewDecision = useCallback(
+    (approvalId: string, decision: "review_pass" | "review_fail", note: string) => {
+      const requestId = newKey();
+      const payload: Json = {
+        approval_id: approvalId,
+        decision,
+        ...(note ? { note } : {}),
+      };
+      // Register and mark pending first: a synchronous response may arrive from a test or transport adapter.
+      reviewDecisionRequests.current.set(requestId, approvalId);
+      setReviewPending((pending) => ({ ...pending, [approvalId]: true }));
+      try {
+        if (channel?.send({ type: "mission_approval_decide", request_id: requestId, payload })) return;
+      } catch {
+        // A throwing transport has the same local outcome as a rejected send.
+      }
+      reviewDecisionRequests.current.delete(requestId);
+      setReviewPending((pending) => ({ ...pending, [approvalId]: false }));
+      useMissionsStore.getState().setError("连接不可用，复核请求未发送");
     },
     [channel],
   );
@@ -404,6 +431,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     // a new subscription: whatever was in flight on the old one will never answer
     flights.current = {};
     requests.current.clear();
+    reviewDecisionRequests.current.clear();
+    setReviewPending({});
     artifactRequest.current = null;
     setArtifact(null);
     if (createRequest.current) useMissionsStore.getState().setError("连接已变化，创建结果未知；可以使用原请求键重试");
@@ -431,6 +460,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       const ok = payload.ok === true;
       const data = record(payload.data);
       const requestId = text(payload.request_id);
+      const reviewApprovalId = type === "mission_approval_decide_response"
+        ? reviewDecisionRequests.current.get(requestId)
+        : undefined;
+      if (reviewApprovalId !== undefined) {
+        reviewDecisionRequests.current.delete(requestId);
+        setReviewPending((pending) => ({ ...pending, [reviewApprovalId]: false }));
+        if (ok) setReasons((current) => ({ ...current, [reviewApprovalId]: "" }));
+      }
       if ((type === "mission_create_response" || type === "mission_create_with_sources_response") && requestId !== createRequest.current) return;
       const tracked = requests.current.get(requestId);
       if ((type === "mission_get_response" || type === "mission_events_response") && tracked === undefined) return;
@@ -545,7 +582,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       refreshSelected(open);
     }
     const offState = channel.onStateChange?.((connection) => {
-      flights.current = {}; requests.current.clear(); artifactRequest.current = null; setArtifact(null);
+      flights.current = {}; requests.current.clear(); reviewDecisionRequests.current.clear(); setReviewPending({}); artifactRequest.current = null; setArtifact(null);
       useMissionsStore.getState().clearEventsLoading();
       if (createRequest.current) useMissionsStore.getState().setError("连接已变化，创建结果未知；可以使用原请求键重试");
       createRequest.current = null; setCreatePending(false);
@@ -875,10 +912,34 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                       </div>
                     </>
                   ) : kind === "review" ? (
-                    <div style={{ display: "flex", gap: tokens.space.sm }}>
-                      <button type="button" style={button} onClick={() => send("mission_approval_decide", { approval_id: requestId, decision: "review_pass" })}>复核通过</button>
-                      <button type="button" style={button} onClick={() => send("mission_approval_decide", { approval_id: requestId, decision: "review_fail" })}>复核不通过</button>
-                    </div>
+                    <>
+                      <textarea
+                        aria-label="复核理由"
+                        placeholder="通过可选；未通过请说明原因"
+                        style={field}
+                        value={reason}
+                        onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })}
+                      />
+                      <div style={{ display: "flex", gap: tokens.space.sm }}>
+                        <button
+                          type="button"
+                          style={button}
+                          disabled={reviewPending[requestId] === true}
+                          onClick={() => {
+                            const note = reason.trim();
+                            submitReviewDecision(requestId, "review_pass", note);
+                          }}
+                        >复核通过</button>
+                        <button
+                          type="button"
+                          style={button}
+                          disabled={!reason.trim() || reviewPending[requestId] === true}
+                          onClick={() => {
+                            submitReviewDecision(requestId, "review_fail", reason.trim());
+                          }}
+                        >复核不通过</button>
+                      </div>
+                    </>
                   ) : kind === "arbitration" ? (
                     <>
                       <textarea aria-label="仲裁依据" style={field} value={reason} onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })} />

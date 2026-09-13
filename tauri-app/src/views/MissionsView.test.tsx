@@ -581,6 +581,48 @@ describe("MissionsView（HA-10）", () => {
     expect(sent?.payload).not.toHaveProperty("request_id");
   });
 
+  it("人工复核把未通过理由原子提交；失败应答保留理由和可重试状态", () => {
+    const channel = openMission({
+      ...DETAIL,
+      approvals: [{ request_id: "review-1", kind: "review", state: "PENDING", summary: "请确认结果" }],
+    });
+    const approval = screen.getByTestId("approval-review-1");
+    const reject = within(approval).getByRole("button", { name: "复核不通过" }) as HTMLButtonElement;
+    expect(reject.disabled).toBe(true);
+
+    const reason = within(approval).getByRole("textbox", { name: "复核理由" }) as HTMLTextAreaElement;
+    fireEvent.change(reason, { target: { value: "引用未覆盖第二项准则" } });
+    fireEvent.click(reject);
+    expect(channel.last("mission_approval_decide")?.payload).toEqual({
+      approval_id: "review-1", decision: "review_fail", note: "引用未覆盖第二项准则",
+    });
+    expect(reject.disabled).toBe(true);
+
+    channel.reply("mission_approval_decide", null, false, "invalid_request");
+    expect(reason.value).toBe("引用未覆盖第二项准则");
+    expect(reject.disabled).toBe(false);
+  });
+
+  it("人工复核的 transport 拒绝不留下 pending 状态或丢失理由", () => {
+    const channel = openMission({
+      ...DETAIL,
+      approvals: [{ request_id: "review-transport", kind: "review", state: "PENDING", summary: "请确认结果" }],
+    });
+    const approval = screen.getByTestId("approval-review-transport");
+    const reason = within(approval).getByRole("textbox", { name: "复核理由" }) as HTMLTextAreaElement;
+    const reject = within(approval).getByRole("button", { name: "复核不通过" }) as HTMLButtonElement;
+    fireEvent.change(reason, { target: { value: "结果未满足准则" } });
+    const send = channel.send;
+    channel.send = () => false;
+    fireEvent.click(reject);
+    channel.send = send;
+
+    expect(channel.all("mission_approval_decide")).toHaveLength(0);
+    expect(reason.value).toBe("结果未满足准则");
+    expect(reject.disabled).toBe(false);
+    expect(screen.getByRole("alert").textContent).toContain("复核请求未发送");
+  });
+
   it("取消 Mission 发出 mission_cancel", () => {
     const channel = openMission();
     fireEvent.click(screen.getByRole("button", { name: "取消 Mission" }));
