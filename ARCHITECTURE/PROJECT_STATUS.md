@@ -1,3 +1,5 @@
+**最后更新：2026-09-13 09:48 CST — 独立备份恢复的原生 UI 核对。** SDK 1f0c536 / Host 65e05252（source-snapshot-v15）的失败原始文档任务，经官方 offline backup/restore API 恢复到独立源码实例。实际 UI 显示原任务 budget_exhausted、doc8、284857 已结算/0预留、两来源原版本与无正式 Claim；两库任务/预算/45事件/SDK journal计数完全相同，14条Provider记录的状态及0 rehandoff保持，未新增调用。原生载体56.508s，退出0且无残留。证据 `.local-test-evidence/2026-09-13/p33-g/source-ui-b1-restored-v15/case-summary.json`，SHA256 `2e9fde82becffbe655ca53bd0065c1266042280260e62291c88d99732d03d137`。只关闭这个终态失败任务的恢复可见性用例；不证明成功报告、待审批或UNKNOWN恢复全矩阵。P33/P34/P35整体仍OPEN，打包/P36/推送暂停。
+
 **Last updated: 2026-09-13 09:15 CST.**
 
 
