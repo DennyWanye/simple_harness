@@ -42,3 +42,15 @@ Sol document arbitration required source-attribution versus world-candidate corr
 Parent rework is included: two queue-test field mistakes, one invalid test path, and lint rule selection briefly removed necessary noqa comments (restored, then checked under the full rule set). Queue strengthening and Manager controls:6 PASS/8.02s. Isolated parent coordination time is unavailable. These unmatched tasks cannot establish model rankings or a savings percentage.
 
 Raw local index: `.local-test-evidence/2026-09-13/p33-g/agent-efficiency-0500/usage-0710.json`; SHA-256 `9c1888ba8f00ec13d24de4bb7236c58b1a4058ff09a6a032b8f87d03195e2ebf`. Raw records remain ignored and local.
+
+## 2026-09-13 07:39 adaptive-model checkpoint
+
+Main remains GPT-6 Astra/high. Three-slot limit retained. Small form review used Luna medium; cross-state review used Astra high; composite pressure fixture and P34 production repair use Sol high. Cached input is included in total input, not charged again as a separate token count. Local usage records do not expose official billed credit cost. This sample was actually collected at 2026-09-13 07:39:38 CST; its local filename label usage-0747 is not the collection time.
+
+| Agent / actual runtime | Lifecycle minutes (includes idle and reassignments) | Uncached input | Cached input | Output | Accepted result / limitation |
+|---|---:|---:|---:|---:|---|
+| Zeno / gpt-6-astra high | 35.04 | 188003 | 6085248 | 29525 | A08 external applied-once/cold/backup1PASS8.35s after main fixture repairs; three P34 production P1s identified; fixes pending. |
+| Mill / gpt-5.6-luna medium | 7.46 | 60863 | 293120 | 3354 | One real P1 reserve leak into next Mission; main fix/regression85PASS1.33s/typecheck; limited re-review ACCEPT. Closed. |
+| Nash / gpt-5.6-sol high | 3.40 | 67006 | 926208 | 7992 | New bounded A03 priority/drain test-only assignment; not yet tested or accepted. |
+
+These are unmatched tasks and overlapping lifecycle spans, not a controlled model ranking or savings percentage. Parent overhead is not isolated: main fixed Critic coverage/NULL test expectations, integrated reviews, ran tests, updated architecture and prepared source UI.

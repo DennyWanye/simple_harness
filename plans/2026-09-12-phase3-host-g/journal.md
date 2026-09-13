@@ -366,3 +366,12 @@ Outcome: DEVELOPMENT IN PROGRESS; current P3.3/P3.4/P3.5 exit gates remain OPEN.
 - `g-ui-conflict-reserve-typecheck-v4` SHA-256 `5b7678e1378357b8e083c5d0c9913336411378485c091e11ef7cbd1372a06460`.
 
 Actual external effect/SIGKILL/cold UNKNOWN/offline three-DB backup/restore/reconcile: 1 PASS/8.35s, wrapper8.57s. SDK receipt `g-action-cold-backup-v5.json` SHA-256 `464dbbac72963b78979206b97a161add1355199913bc98b52e1fcde5b6598080`. Main corrected ordered Critic fixture coverage and both unsettled NULL expectations; earlier failed runs retained. This is software recovery evidence, not native UI nor real-provider quality. P34 independent review has three P1s (retry identity, criterion coverage, eligible dependency identity), repair in progress.
+
+## Native arbitration source-v13
+
+**最后更新：2026-09-13 08:12 CST — doc7 原生仲裁与冷重开。** SDK aaa3593 / Host 648ad185 的源码快照v13，经真实表单导入两来源，240000/6总预算与30000冲突预留实际生效；两Worker/Arbiter/独立Critic后UI进入待仲裁，展开两份完整原句、通过UI提交contextual并打开实际245B仲裁报告。审批GRANTED、Conflict RESOLVED_BY_HUMAN；两原主张保持DISPUTED、0知识条目，Mission按claim_not_usable成为mission_criteria_unmet（不是交付成功），2850已结算/0预留。新建表单预留为空，原生复验了跨任务残留修复。相同源码/数据冷重开后原身份与状态保持，Provider19/19、0rehandoff、12工具效果不变。原始证据Host `.local-test-evidence/2026-09-13/p33-g/source-ui-arbitration-v13/case-summary.json` SHA256 `5c7946166a2593bdafd0edfb5f92a53bdf1400fec9d652c2297d232c41a9a967`。初始/冷进程组均退出0无残留，539.712s/43.737s为包含人工操作等待的载体生命周期，不是模型运行时间。此为受控原生仲裁边界通过，不是真实模型能力或Phase3整体完成。
+
+
+## Next source value/load acceptance (2026-09-13 08:15 CST)
+
+Native doc7 arbitration/cold is completed within the explicit boundary above. Next: real deepseek-flash original N1 input recheck on SDKaaa3593; native P34 real Manager/fragment/consumer/synthesis visibility and controlled search policy; multi-Mission source UI queue/cancel/UNKNOWN and backup visibility. P3.4/P3.5 overall remain OPEN. No packaging/P36/push. N1 original 400000/12 goal/criteria and both source byte hashes copied from prior successful v9 read-only DB/workspaces into ignored n1-original-inputs-v13; no changed acceptance.
