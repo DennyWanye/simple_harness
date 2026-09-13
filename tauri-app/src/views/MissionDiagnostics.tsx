@@ -108,7 +108,7 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
       </details>)}
       <details><summary>查看完整诊断与覆盖范围</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 400, overflow: "auto" }}>{JSON.stringify(report, null, 2)}</pre></details>
     </div>}
-    {receipt && <div aria-label="本地支持报告回执">
+    {receipt && <div aria-label="本地支持报告回执" style={{ overflowWrap: "anywhere" }}>
       <p>已保存：{asText(receipt.path)}</p>
       <p>SHA-256：{asText(receipt.sha256)} · {asText(receipt.size_bytes)} bytes</p>
     </div>}

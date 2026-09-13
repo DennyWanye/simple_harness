@@ -1,3 +1,5 @@
+**2026-09-14 CST P36 UI检查：** v32错误引用按预期拒绝，诊断/重复导出8205B且全持久表hash不变；截图发现回执长路径溢出，补自动换行后进行最终源码/冷读。PD4仍待最终验证，不提升整体完成状态。
+
 **2026-09-14 CST原生前补充：** P36首次原生v31为FAIL_SETUP（旧夹具仅识别doc6/7，实际doc9），不能当错误引用拒绝通过；已修正已登记doc8/9兼容，并把有预留/待结算时的诊断标为记录不完整，未知数明确只计已入账记录。当前实际文档链与诊断11PASS20.69秒，UI89PASS0.921秒/typecheck/lint通过；源码提交后重测PD4，整体仍OPEN。详见p36-diagnostics-plan.md。
 
 **最后更新：2026-09-14 CST — P36诊断与本地脱敏支持报告软件验证通过，原生验收待执行。** MissionControl鉴权后只读既有replay/attribution，逐字段投影原文/路径为hash，记录真实运行身份和未覆盖/未知/预留/未对齐用量；固定support目录内容寻址导出，不执行Provider/工具。源码6PASS10.26秒、已安装0.11.1 wheel16PASS24.37秒（身份仍version-only），UI86PASS0.941秒，正式typecheck/lint通过；SDK当前164PASS3真实opt-inSKIP214.27秒。独立审查发现的原文泄漏/能力判断/身份用量缺口已修复，PD4源码原生UI仍NOT_RUN。最新真实v11两组均完成交付但严格pair仍FAIL；P34/P35最终累计、旧pre-context兼容和总体Phase3仍OPEN。无打包发布推送。详见 plans/2026-09-12-phase3-host-g/p36-diagnostics-plan.md。
