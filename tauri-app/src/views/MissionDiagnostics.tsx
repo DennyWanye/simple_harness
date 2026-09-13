@@ -77,7 +77,8 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
   const usage = asRecord(asRecord(report?.costs).usage);
   const ledger = asRecord(cost.ledger);
   const unknownRows = typeof cost.unknown_usage_rows === "number" ? cost.unknown_usage_rows : null;
-  const incomplete = cost.reconciled !== true || unknownRows !== 0 || usage.reserved_tokens == null;
+  const incomplete = cost.reconciled !== true || unknownRows !== 0 ||
+    usage.reserved_tokens !== 0 || ledger.unsettled_usage_tokens !== 0;
   return <section aria-label="任务回放与支持报告" style={{ marginBlock: 16 }}>
     <h3>任务回放与支持报告</h3>
     <p>只读取当前任务的历史，不调用模型或重新执行任务。支持报告保存在本机。</p>
@@ -91,8 +92,9 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
       <p>{comparison.consistent === true ? "回放已覆盖字段与记录一致" : "回放存在差异或尚无法核对"}；未覆盖字段 {asList(comparison.not_covered).length} 项，差异 {asList(comparison.mismatches).length} 项。</p>
       <p>未知事件类型 {Object.keys(asRecord(replay.unknown_event_types)).length} 类 · 证据链缺口 {asList(attribution.breaks).length} 项。回放一致不代表任务交付成功。</p>
       <p>记录用量：{asText(total.tokens) || "未知"} tokens · 金额：{total.cost_micros == null ? "未计价" : `${asText(total.cost_micros)} 微单位`}</p>
-      <p>预留：{usage.reserved_tokens == null ? "未知" : asText(usage.reserved_tokens)} tokens · 未知用量记录：{unknownRows == null ? "未知" : unknownRows} · 账本核对：{cost.reconciled === true ? "一致" : "未对齐或不可用"}</p>
+      <p>预留：{usage.reserved_tokens == null ? "未知" : asText(usage.reserved_tokens)} tokens · 未知用量记录（已入账）：{unknownRows == null ? "未知" : unknownRows} · 账本核对：{cost.reconciled === true ? "一致" : "未对齐或不可用"}</p>
       <p>待结算用量：{ledger.unsettled_usage_tokens == null ? "未知" : asText(ledger.unsettled_usage_tokens)} tokens。{incomplete ? "记录不完整，以上已记录用量不能作为最终总消耗。" : "仅表示当前账本记录，不是供应商独立账单。"}</p>
+      <p>未知记录数只统计已入账数据，不包含尚未入账的在途调用。</p>
       <h4>尝试与贡献</h4>
       {asList(attribution.attempts).map((attempt) => <div key={asText(attempt.attempt_id)} style={{ marginBlock: 8 }}>
         <div>{asText(attempt.task_id)} / {asText(attempt.attempt_id)}</div>

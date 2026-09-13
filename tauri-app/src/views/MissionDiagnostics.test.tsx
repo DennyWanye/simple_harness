@@ -45,7 +45,7 @@ describe("P36 selected Mission diagnostics", () => {
     expect(screen.getByText(/未覆盖字段 1 项/)).toBeTruthy();
     expect(screen.getByText(/金额：未计价/)).toBeTruthy();
     expect(screen.getByText(/记录不完整/)).toBeTruthy();
-    expect(screen.getByText(/未知用量记录：未知/)).toBeTruthy();
+    expect(screen.getByText(/未知用量记录（已入账）：未知/)).toBeTruthy();
     expect(screen.getByText(/探索或未采用/)).toBeTruthy();
     expect(screen.getByText(/执行 50 tokens · 验证 30 tokens/)).toBeTruthy();
     exportReport(); expect(channel.last().type).toBe("mission_support_export");
@@ -98,7 +98,7 @@ describe("P36 selected Mission diagnostics", () => {
     const data = report();
     channel.reply(channel.last(), { ...data, costs: { usage: { reserved_tokens: 0 } },
       attribution: { ...data.attribution, cost: { ...data.attribution.cost, reconciled: true, unknown_usage_rows: 1, ledger: { unsettled_usage_tokens: 12 } } } });
-    expect(screen.getByText(/预留：0 tokens · 未知用量记录：1 · 账本核对：一致/)).toBeTruthy();
+    expect(screen.getByText(/预留：0 tokens · 未知用量记录（已入账）：1 · 账本核对：一致/)).toBeTruthy();
     expect(screen.getByText(/待结算用量：12 tokens。记录不完整/)).toBeTruthy();
   });
   it("does not claim freshness when an event arrives while the snapshot response is pending", () => {
@@ -107,4 +107,15 @@ describe("P36 selected Mission diagnostics", () => {
     channel.reply(channel.last(), report()); expect(screen.getByText(/任务已有新事件/)).toBeTruthy();
     read(); channel.reply(channel.last(), report()); expect(screen.queryByText(/任务已有新事件/)).toBeNull();
   });
+  it.each([[4000, 0, true], [0, 12, true], [0, 0, false]])(
+    "retains incomplete accounting with reserved=%s and unsettled=%s",
+    (reserved, unsettled, incomplete) => {
+      const channel = new Channel(); render(<MissionDiagnostics missionId="m1" channel={channel} />); read();
+      const data = report();
+      channel.reply(channel.last(), { ...data, costs: { usage: { reserved_tokens: reserved } },
+        attribution: { ...data.attribution, cost: { ...data.attribution.cost, reconciled: true, unknown_usage_rows: 0, ledger: { unsettled_usage_tokens: unsettled } } } });
+      expect(Boolean(screen.queryByText(/记录不完整/))).toBe(incomplete);
+      expect(screen.getByText(/不包含尚未入账的在途调用/)).toBeTruthy();
+    },
+  );
 });
