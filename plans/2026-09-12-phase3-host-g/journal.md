@@ -375,3 +375,6 @@ Actual external effect/SIGKILL/cold UNKNOWN/offline three-DB backup/restore/reco
 ## Next source value/load acceptance (2026-09-13 08:15 CST)
 
 Native doc7 arbitration/cold is completed within the explicit boundary above. Next: real deepseek-flash original N1 input recheck on SDKaaa3593; native P34 real Manager/fragment/consumer/synthesis visibility and controlled search policy; multi-Mission source UI queue/cancel/UNKNOWN and backup visibility. P3.4/P3.5 overall remain OPEN. No packaging/P36/push. N1 original 400000/12 goal/criteria and both source byte hashes copied from prior successful v9 read-only DB/workspaces into ignored n1-original-inputs-v13; no changed acceptance.
+
+
+Source-native slot binding (2026-09-13 08:24 CST): launcher supports explicit 1..4 logical/model slots, default 1/1; values are part of the source identity and are written only before first backend startup. Resume checks exact integer config without rewriting seeded policy. Older source runs require their recorded pre-slot launcher. Main verification: g-source-slots-search-v2, 32 PASS/2.09s (runner2.70s; includes controlled search software test). Terra rework fixed incomplete CLI oracle and TOML bool equality; native multi-Mission load remains OPEN.

@@ -19,6 +19,7 @@ import shutil
 import socket
 import subprocess
 import time
+import tomllib
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -32,6 +33,11 @@ from launch_frozen_orchestrator import (
 )
 
 MODEL_OVERRIDE = b'[models."deepseek-flash"]\ncontext_window = 32000\n'
+SLOT_CONFIG_TEMPLATE = (
+    "[orchestration]\nenabled = true\n"
+    "max_concurrency = {logical_slots}\n"
+    "max_concurrent_model_calls = {model_slots}\n"
+)
 
 
 def _sha(path: Path) -> str:
@@ -182,6 +188,10 @@ def source_identity(args, *, host_head: str) -> dict:
         "tokenizer_sha256": _sha(_path(args.tokenizer)),
         "model_override_sha256": hashlib.sha256(MODEL_OVERRIDE).hexdigest(),
         "vite_port": args.vite_port,
+        "orchestration_slots": {
+            "logical_slots": args.logical_slots,
+            "model_slots": args.model_slots,
+        },
         **({"fixture": _inventory(args.fixture_dir)} if getattr(args, "fixture_dir", None) else {}),
         **({"fixture_case": args.fixture_case} if getattr(args, "fixture_case", None) else {}),
     }
@@ -202,7 +212,45 @@ def bind_model_override(run: Path, *, resume: bool) -> None:
         raise LauncherError("source model override missing or changed") from error
 
 
-def main(argv: list[str] | None = None) -> int:
+def bind_slot_config(run: Path, *, logical_slots: int, model_slots: int, resume: bool) -> None:
+    """Bind source-native test slots before the backend sees its fresh config.
+
+    The frozen launcher seeds the rest of this private run configuration.  A
+    resume is verification only: it must not silently alter the policy that the
+    already-seeded orchestration database will continue to use.
+    """
+    path = run / "userdata/config.toml"
+    expected = {
+        "max_concurrency": logical_slots,
+        "max_concurrent_model_calls": model_slots,
+    }
+    try:
+        if path.is_symlink():
+            raise ValueError("linked config")
+        raw = path.read_text(encoding="utf-8")
+        if resume:
+            section = tomllib.loads(raw).get("orchestration")
+            if not isinstance(section, dict) or any(
+                type(section.get(key)) is not int or section[key] != value
+                for key, value in expected.items()
+            ):
+                raise ValueError("persisted slots differ")
+            return
+        seed = "[orchestration]\nenabled = true\n"
+        if raw.count(seed) != 1:
+            raise ValueError("unexpected fresh config")
+        path.write_text(
+            raw.replace(seed, SLOT_CONFIG_TEMPLATE.format(**{
+                "logical_slots": logical_slots, "model_slots": model_slots,
+            })),
+            encoding="utf-8",
+        )
+        path.chmod(0o600)
+    except (OSError, ValueError, tomllib.TOMLDecodeError) as error:
+        raise LauncherError("source orchestration slot configuration missing or changed") from error
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, default=HOST_ROOT)
     parser.add_argument("--binary", required=True, type=Path)
@@ -220,6 +268,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--backend-port", type=int, default=18140)
     parser.add_argument("--vite-port", type=int, default=15173)
+    parser.add_argument("--logical-slots", type=int, choices=range(1, 5), default=1)
+    parser.add_argument("--model-slots", type=int, choices=range(1, 5), default=1)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--fixture-dir", type=Path,
                         help="Controlled document UI inputs under ignored test evidence; no real model")
@@ -231,6 +281,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.fixture_case and args.fixture_dir is None:
         parser.error("--fixture-case requires --fixture-dir")
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     root = _path(args.source_root, directory=True)
     binary = _path(args.binary, executable=True)
     python = args.python.absolute()
@@ -266,6 +321,12 @@ def main(argv: list[str] | None = None) -> int:
         raise LauncherError("source backend/frontend must match their recorded commit")
     identity = source_identity(args, host_head=head)
     run = prepare_run(args.run_dir, identity, args.backend_port, args.resume)
+    bind_slot_config(
+        run,
+        logical_slots=args.logical_slots,
+        model_slots=args.model_slots,
+        resume=args.resume,
+    )
     bind_model_override(run, resume=args.resume)
     app = run / "SimpleHarness Source UI.app"
     for path in (app, app / "Contents", app / "Contents/MacOS",

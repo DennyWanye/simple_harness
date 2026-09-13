@@ -62,7 +62,24 @@ def inputs(tmp_path):
         resource_root=tmp_path / "resources", model_root=tmp_path / "models",
         carrier_config=config, carrier_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
         dev_url="http://localhost:15173", vite_port=15173,
+        logical_slots=1, model_slots=1,
     )
+
+
+def _required_cli(inputs):
+    return [
+        "--source-root", str(inputs.source_root),
+        "--binary", str(inputs.binary),
+        "--carrier-config", str(inputs.carrier_config),
+        "--carrier-sha256", inputs.carrier_sha256,
+        "--dev-url", inputs.dev_url,
+        "--python", str(inputs.python),
+        "--sdk-attestation", str(inputs.sdk_attestation),
+        "--tokenizer", str(inputs.tokenizer),
+        "--resource-root", str(inputs.resource_root),
+        "--model-root", str(inputs.model_root),
+        "--run-dir", str(inputs.source_root / ".local-test-evidence/run"),
+    ]
 
 
 def test_identity_keeps_venv_entry_and_names_honest_hash_scopes(launcher, inputs, monkeypatch):
@@ -97,10 +114,12 @@ def test_same_inputs_and_model_override_resume_without_launch(launcher, inputs, 
     monkeypatch.setitem(launcher.prepare_run.__globals__, "is_ignored", lambda path: True)
     run = tmp_path / ".local-test-evidence/run"
     launcher.prepare_run(run, identity, 18140, False)
+    launcher.bind_slot_config(run, logical_slots=1, model_slots=1, resume=False)
     launcher.bind_model_override(run, resume=False)
     assert launcher.prepare_run(
         run, launcher.source_identity(inputs, host_head="recorded-head"), 18140, True,
     ) == run
+    launcher.bind_slot_config(run, logical_slots=1, model_slots=1, resume=True)
     launcher.bind_model_override(run, resume=True)
     assert not list(run.glob("launch-*.json"))
 
@@ -114,6 +133,7 @@ def test_changed_runtime_input_cannot_resume_same_prepared_identity(launcher, in
     monkeypatch.setitem(prepare_globals, "is_ignored", lambda path: True)
     run = tmp_path / ".local-test-evidence/run"
     launcher.prepare_run(run, frozen, 18140, False)
+    launcher.bind_slot_config(run, logical_slots=1, model_slots=1, resume=False)
     launcher.bind_model_override(run, resume=False)
     if changed == "venv":
         (inputs.python.parent.parent / "pyvenv.cfg").write_text("home = changed\n")
@@ -133,6 +153,75 @@ def test_changed_runtime_input_cannot_resume_same_prepared_identity(launcher, in
     assert updated != frozen
     with pytest.raises(launcher.LauncherError, match="identity"):
         launcher.prepare_run(run, updated, 18140, True)
+
+
+def test_slots_are_attested_and_written_only_to_a_fresh_launcher_config(launcher, inputs, tmp_path, monkeypatch):
+    inputs.logical_slots = 3
+    inputs.model_slots = 2
+    identity = launcher.source_identity(inputs, host_head="recorded-head")
+    assert identity["orchestration_slots"] == {"logical_slots": 3, "model_slots": 2}
+    monkeypatch.setitem(launcher.prepare_run.__globals__, "HOST_ROOT", tmp_path)
+    monkeypatch.setitem(launcher.prepare_run.__globals__, "is_ignored", lambda path: True)
+    run = tmp_path / ".local-test-evidence/run"
+    launcher.prepare_run(run, identity, 18140, False)
+    launcher.bind_slot_config(run, logical_slots=3, model_slots=2, resume=False)
+    config = run / "userdata/config.toml"
+    section = launcher.tomllib.loads(config.read_text())["orchestration"]
+    assert section == {"enabled": True, "max_concurrency": 3, "max_concurrent_model_calls": 2}
+
+
+def test_slot_cli_accepts_explicit_bounds_and_keeps_defaults(launcher, inputs):
+    defaults = launcher.parse_args(_required_cli(inputs))
+    configured = launcher.parse_args(
+        _required_cli(inputs) + ["--logical-slots", "3", "--model-slots", "2"]
+    )
+    assert (defaults.logical_slots, defaults.model_slots) == (1, 1)
+    assert (configured.logical_slots, configured.model_slots) == (3, 2)
+
+
+@pytest.mark.parametrize("logical_slots,model_slots", [(0, 1), (1, 0), (5, 1), (1, 5)])
+def test_slot_cli_rejects_values_outside_one_through_four(launcher, inputs, capsys, logical_slots, model_slots):
+    with pytest.raises(SystemExit):
+        launcher.parse_args(_required_cli(inputs) + [
+            "--logical-slots", str(logical_slots), "--model-slots", str(model_slots),
+        ])
+    assert "invalid choice" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("damage", ["logical", "model", "missing", "bool"])
+def test_resume_rejects_changed_slot_config_without_repairing_seeded_policy(launcher, inputs, tmp_path, monkeypatch, damage):
+    identity = launcher.source_identity(inputs, host_head="recorded-head")
+    monkeypatch.setitem(launcher.prepare_run.__globals__, "HOST_ROOT", tmp_path)
+    monkeypatch.setitem(launcher.prepare_run.__globals__, "is_ignored", lambda path: True)
+    run = tmp_path / ".local-test-evidence/run"
+    launcher.prepare_run(run, identity, 18140, False)
+    launcher.bind_slot_config(run, logical_slots=1, model_slots=1, resume=False)
+    config = run / "userdata/config.toml"
+    original = config.read_text()
+    if damage == "logical":
+        config.write_text(original.replace("max_concurrency = 1", "max_concurrency = 2"))
+    elif damage == "model":
+        config.write_text(original.replace("max_concurrent_model_calls = 1", "max_concurrent_model_calls = 2"))
+    elif damage == "bool":
+        config.write_text(original.replace("max_concurrency = 1", "max_concurrency = true"))
+    else:
+        config.write_text(original.replace("max_concurrency = 1\n", ""))
+    changed = config.read_text()
+    with pytest.raises(launcher.LauncherError, match="slot configuration"):
+        launcher.bind_slot_config(run, logical_slots=1, model_slots=1, resume=True)
+    assert config.read_text() == changed
+
+
+def test_new_launcher_refuses_a_run_attested_by_the_pre_slot_launcher(launcher, inputs, tmp_path, monkeypatch):
+    identity = launcher.source_identity(inputs, host_head="recorded-head")
+    old_identity = dict(identity)
+    del old_identity["orchestration_slots"]
+    monkeypatch.setitem(launcher.prepare_run.__globals__, "HOST_ROOT", tmp_path)
+    monkeypatch.setitem(launcher.prepare_run.__globals__, "is_ignored", lambda path: True)
+    run = tmp_path / ".local-test-evidence/run"
+    launcher.prepare_run(run, old_identity, 18140, False)
+    with pytest.raises(launcher.LauncherError, match="identity"):
+        launcher.prepare_run(run, identity, 18140, True)
 
 
 @pytest.mark.parametrize("damage", ["content", "missing", "symlink"])
