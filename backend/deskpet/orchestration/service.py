@@ -943,8 +943,8 @@ class OrchestrationService:
         return []
 
     def _blocked(self, mission_id: str) -> list[dict[str, Any]]:
-        """Attempts whose SDK turn is blocked on an unknown outcome (a process killed
-        inside a model call): the last heartbeat says ``liveness.blocked``."""
+        """Attempts whose SDK turn has an unknown outcome (for example, a process
+        killed inside a model call), excluding the known non-billable slot wait."""
 
         try:
             store = self._orchestrator.store
@@ -960,7 +960,13 @@ class OrchestrationService:
             attempt = store.get_attempt(attempt_id)
             if attempt is None or str(attempt.status) in {"COMPLETED", "FAILED", "CANCELLED", "LOST"}:
                 continue
-            if liveness.get("blocked"):
+            # AgentWorkerClient reports a bounded provider-admission wait as blocked so
+            # its heartbeat can keep the Attempt alive.  It has not made a billable
+            # call and is ordinary queueing, not an uncertain turn outcome.  Keep this
+            # exact shape narrow: an unknown or future blocker must remain cautious.
+            if liveness.get("blocked") and liveness.get("blocker") != {
+                "kind": "provider_slot_wait", "billable": False
+            }:
                 blocked.append(
                     {"task_id": attempt.task_id, "attempt_id": attempt_id, "reason": "turn_outcome_unknown"}
                 )
