@@ -82,7 +82,8 @@ def _required_cli(inputs):
     ]
 
 
-@pytest.mark.parametrize("case", ["native-load-three-mission", "native-load-verifier-pressure"])
+@pytest.mark.parametrize("case", ["native-load-three-mission", "native-load-verifier-pressure",
+                                  "p34-approved-compare", "native-context-rotation"])
 def test_load_case_requires_fixture_and_binds_actual_slot_limits(launcher, inputs, case):
     argv = [*_required_cli(inputs), "--fixture-case", case,
             "--logical-slots", "3", "--model-slots", "2"]

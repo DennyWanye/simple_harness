@@ -213,6 +213,16 @@ class OrchestrationService:
                 from .native_search import native_search_provider
 
                 provider = native_search_provider()
+            elif case == "p34-approved-compare":
+                from .native_compare import native_compare_provider
+
+                provider = native_compare_provider()
+            elif case == "native-context-rotation":
+                from .native_context import native_context_provider
+
+                provider = native_context_provider(
+                    fixture_root, control_root=self.root / "native-context-controls"
+                )
             elif case in {"native-load-three-mission", "native-load-verifier-pressure"}:
                 from .native_load import native_load_provider
 
@@ -274,6 +284,12 @@ class OrchestrationService:
         self._policy = PolicyApi(
             self._orchestrator.commit, self._principal, deployment=self._deployment
         )
+        if self._test_scenario == "document-ui" and os.environ.get(
+            "DESKPET_ORCH_UI_FIXTURE_CASE"
+        ) == "p34-approved-compare":
+            from .native_compare import install_compare_policy
+
+            install_compare_policy(self._orchestrator, self._principal)
 
     def _publish_connector(self) -> Any:
         """The file publish connector, but only for a directory the user really authorised.

@@ -275,6 +275,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "n4-instruction-attribution", "n4-bad-quote", "n4-contradictory-uncertainty",
         "n4-document-contextual-arbitration",
         "p34-fragment-crossbranch",
+        "p34-approved-compare",
+        "native-context-rotation",
         "native-load-three-mission",
         "native-load-verifier-pressure",
         "n6-half", "n6-two-thirds", "n6-active-revoke",
