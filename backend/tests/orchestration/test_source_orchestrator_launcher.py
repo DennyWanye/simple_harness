@@ -82,6 +82,17 @@ def _required_cli(inputs):
     ]
 
 
+@pytest.mark.parametrize("case", ["native-load-three-mission", "native-load-verifier-pressure"])
+def test_load_case_requires_fixture_and_binds_actual_slot_limits(launcher, inputs, case):
+    argv = [*_required_cli(inputs), "--fixture-case", case,
+            "--logical-slots", "3", "--model-slots", "2"]
+    with pytest.raises(SystemExit):
+        launcher.parse_args(argv)
+    parsed = launcher.parse_args([*argv, "--fixture-dir", str(inputs.source_root)])
+    assert parsed.fixture_case == case
+    assert (parsed.logical_slots, parsed.model_slots) == (3, 2)
+
+
 def test_identity_keeps_venv_entry_and_names_honest_hash_scopes(launcher, inputs, monkeypatch):
     original = Path.read_bytes
 

@@ -19,10 +19,10 @@ import shutil
 import socket
 import subprocess
 import time
-import tomllib
 from pathlib import Path
 from urllib.parse import urlparse
 
+import tomllib
 from launch_frozen_orchestrator import (
     HOST_ROOT,
     STANDARD_ENV,
@@ -240,9 +240,7 @@ def bind_slot_config(run: Path, *, logical_slots: int, model_slots: int, resume:
         if raw.count(seed) != 1:
             raise ValueError("unexpected fresh config")
         path.write_text(
-            raw.replace(seed, SLOT_CONFIG_TEMPLATE.format(**{
-                "logical_slots": logical_slots, "model_slots": model_slots,
-            })),
+            raw.replace(seed, SLOT_CONFIG_TEMPLATE.format(logical_slots=logical_slots, model_slots=model_slots)),
             encoding="utf-8",
         )
         path.chmod(0o600)
@@ -277,6 +275,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "n4-instruction-attribution", "n4-bad-quote", "n4-contradictory-uncertainty",
         "n4-document-contextual-arbitration",
         "p34-fragment-crossbranch",
+        "native-load-three-mission",
+        "native-load-verifier-pressure",
         "n6-half", "n6-two-thirds", "n6-active-revoke",
     ), help="Controlled boundary case; requires --fixture-dir")
     args = parser.parse_args(argv)

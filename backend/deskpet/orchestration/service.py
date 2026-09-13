@@ -113,6 +113,7 @@ class OrchestrationService:
         self._lock = InstanceLock(self.root)
         self._orchestrator: Any = None
         self._effective_provider: Any = None
+        self._native_verifier_pressure = False
         self._config: Any = None
         self._connectors: dict[str, Any] = {}
         self._deployment: Any = None
@@ -212,6 +213,13 @@ class OrchestrationService:
                 from .native_search import native_search_provider
 
                 provider = native_search_provider()
+            elif case in {"native-load-three-mission", "native-load-verifier-pressure"}:
+                from .native_load import native_load_provider
+
+                provider = native_load_provider(
+                    fixture_root, control_root=self.root / "native-load-controls"
+                )
+                self._native_verifier_pressure = case == "native-load-verifier-pressure"
             elif case == "n4-document-contextual-arbitration":
                 from .native_arbitration import document_arbitration_provider
 
@@ -259,6 +267,7 @@ class OrchestrationService:
             **source_runtime_options(self._config, provider, self._snapshot),
         )
         await self._orchestrator.__aenter__()
+        self._install_native_verifier_pressure(self._orchestrator)
         self._control = MissionControlV1(
             self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
         )
@@ -429,6 +438,16 @@ class OrchestrationService:
                 pass
             self._wake.clear()
 
+    def _install_native_verifier_pressure(self, orchestrator: Any) -> None:
+        if not self._native_verifier_pressure:
+            return
+        from .native_load import verifier_pressure
+
+        orchestrator._router.verify = verifier_pressure(
+            orchestrator._router.verify, orchestrator=orchestrator,
+            control_root=self._effective_provider.control_root,
+        )
+
     async def _rebuild(self) -> None:
         from agent_orchestrator.api.facade import MissionControlV1
         from agent_orchestrator.api.policies import PolicyApi
@@ -448,6 +467,7 @@ class OrchestrationService:
         )
         try:
             await candidate.__aenter__()
+            self._install_native_verifier_pressure(candidate)
             control = MissionControlV1(
                 candidate, tenant_id=self.tenant_id, principal=self._principal
             )
