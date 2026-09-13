@@ -14,7 +14,7 @@ Independent Sol/high review found default-guard fingerprint drift, uncertain ret
 | Host g-long-context-old-intent-v1: actual old32K dispatch migration plus source wiring | 6 PASS | 1.49 / 1.99 |
 | Host g-long-context-host-allroles-v1: 256/512 all-role completion and cold zero-call reopen, creation identity | 4 PASS | 2.97 / 3.46 |
 | Host g-long-context-host-adjacent-v1: lifecycle, Mission/document create, restart, policy and isolation | 65 PASS | 105.00 /105.48 |
-| Host long-context-ui-unit-v3 | 78 PASS; tsc also PASS | 0.803 / 1.31 |
+| Host long-context-ui-unit-v3 | 78 PASS; earlier tsc command was ineffective (correction below) | 0.803 / 1.31 |
 | Real deepseek-flash256K synthetic SDK retrieval | PASS, input258149/output588/cache257920; 1 call, total258737 | 9.296 / 9.60 |
 | Real deepseek-flash512K synthetic SDK retrieval | PASS, input520283/output803/cache0; 1 call, total521086 | 22.855 / 23.18 |
 
@@ -59,3 +59,6 @@ LC1/3/4/5/7/8 have current software/real/native evidence as applicable. LC6 cont
 
 
 2026-09-14 real two-turn256K history semantic smoke PASS: first input258154tokens retrieves records; second actual259336tokens filters units>=5000 and sums exactly, despite recorded history range2..2 folding. Pinned wire count259337 conservatively differs by1token from reported259336, both under262144. Two actual calls total519027tokens,0cache,20.091s/runner20.42s; cold same-input replay no call and exact journal/result retained. Synthetic records, not original material or512K real multi-turn proof. Host long-history-real256-v1/summary.json SHA256f0d669c8852e1d556ae3a2625e0c40b5be39ffa6459c2c2a50487b642ce8cd60. Dry validation prior PASS3.791s/4.14s.
+
+
+2026-09-14 verification correction: earlier `npx tsc --noEmit` at tauri-app root did not check its referenced application project (`files: []`). Those earlier tsc PASS claims are withdrawn. The actual `npm run typecheck` (`tsc -b --noEmit`) now succeeds with the long-context code plus pending P36 UI (p36-typecheck-v2/v3/v4/v5 logs); new P36 component initially missed its closing brace and failed the first real typecheck, then was corrected. Native and Vitest evidence is unaffected. This is parent verification-command rework, not a new SDK defect.

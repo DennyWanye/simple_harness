@@ -128,6 +128,7 @@ class OrchestrationService:
         # P3.2 P32-14: whether a publish directory is authorised, and if not, why
         self._publish: dict[str, Any] = {"enabled": False, "reason": "尚未探测"}
         self._control: Any = None
+        self._diagnostics_available = False
         self._policy: Any = None
         self._manifest: dict[str, Any] | None = None
         self._driver: asyncio.Task[None] | None = None
@@ -287,6 +288,7 @@ class OrchestrationService:
         self._control = MissionControlV1(
             self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
         )
+        self._diagnostics_available = self._detect_diagnostics()
         self._policy = PolicyApi(
             self._orchestrator.commit, self._principal, deployment=self._deployment
         )
@@ -507,6 +509,7 @@ class OrchestrationService:
         # candidate leaves no runnable object; the existing driver retries rebuild.
         self._orchestrator = candidate
         self._control = control
+        self._diagnostics_available = self._detect_diagnostics()
         self._policy = policy
 
     async def drain(self, timeout: float = 60.0) -> bool:
@@ -572,6 +575,7 @@ class OrchestrationService:
             "sandbox": dict(self._sandbox or {"ok": False, "reason": "尚未探测"}),
             "publish": dict(self._publish),
             "test_scenario": self._test_scenario,
+            "diagnostics_available": self._diagnostics_available,
             "context_profiles": self._context_profiles(),
             "default_context_profile_id": self._context_default(),
             "context_unavailable_reason": (
@@ -847,6 +851,49 @@ class OrchestrationService:
     def events(self, mission_id: str, *, after_seq: Any = 0, limit: Any = 50) -> dict[str, Any]:
         # whitelisted rows: the raw payloads stay inside (review P2-3)
         return project_events(self._call("events", mission_id, after_seq=after_seq, limit=limit))
+
+    def _detect_diagnostics(self) -> bool:
+        """Inspect the running SDK APIs, equally for verified wheels and source builds."""
+        try:
+            from . import diagnostics
+        except ImportError:
+            return False
+        projection = diagnostics.Projection
+        return all(callable(value) for value in (
+            getattr(self._control, "snapshot", None),
+            getattr(self._orchestrator.store, "read_view", None),
+            getattr(self._orchestrator.store, "snapshot", None),
+            getattr(self._orchestrator.store, "iter_events", None),
+            diagnostics.events_from_store, diagnostics.formal_from_snapshot,
+            diagnostics.compare, diagnostics.failure_timeline, diagnostics.attribution,
+            getattr(projection, "feed", None), getattr(projection, "formal", None),
+            getattr(projection, "check_structure", None),
+        ))
+
+    def mission_diagnostics(self, request: Mapping[str, Any], *, export: bool = False) -> dict[str, Any]:
+        self._require()
+        if (set(request) != {"mission_id"} or not isinstance(request["mission_id"], str)
+                or not request["mission_id"].strip()):
+            raise OrchestrationRequestError("invalid_request", "只接受当前任务的 mission_id")
+        if not self.status()["diagnostics_available"]:
+            raise OrchestrationRequestError("diagnostics_unavailable", "当前运行版本未开放任务诊断")
+        from .diagnostics import build_diagnostics, export_support
+
+        mission_id = request["mission_id"]
+        with self._orchestrator.store.read_view():
+            # Authenticate before any event, attribution or support-file read/write.
+            snapshot = self._call("snapshot", mission_id)
+            report = build_diagnostics(
+                self._orchestrator, mission_id=mission_id, snapshot_view=snapshot,
+                versions=dict(self._manifest or {}),
+                extra_secrets=self._secret_values(),
+            )
+        if not export:
+            return report
+        try:
+            return export_support(self.root / "support", report)
+        except ValueError as error:
+            raise OrchestrationRequestError("support_export_refused", str(error)) from error
 
     def approvals(self, mission_id: str | None = None) -> list[dict[str, Any]]:
         return [project_approval(item) for item in self._call("approvals", mission_id)]

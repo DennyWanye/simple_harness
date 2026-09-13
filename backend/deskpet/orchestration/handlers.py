@@ -35,6 +35,8 @@ MESSAGE_TYPES = (
     "mission_takeover",
     "mission_comment",
     "mission_artifact_read",
+    "mission_diagnostics",
+    "mission_support_export",
     "orchestration_policy_status",
 )
 
@@ -84,7 +86,7 @@ async def handle(
         if hasattr(data, "__await__"):
             data = await data  # type: ignore[misc]
         return _ok(msg_type, request_id, data)
-    except Exception as error:  # noqa: BLE001 - the socket loop must never see an exception
+    except Exception as error:  # the socket loop must never see an exception
         code = getattr(error, "code", None)
         if isinstance(code, str) and code:
             return _error(msg_type, request_id, code, str(error))
@@ -178,6 +180,14 @@ def _policy(service: Any, body: Mapping[str, Any]) -> Any:
     return service.policy_status()
 
 
+def _diagnostics(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.mission_diagnostics(dict(body))
+
+
+def _support_export(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.mission_diagnostics(dict(body), export=True)
+
+
 _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = {
     "mission_create": _create,
     "mission_create_with_sources": _create_with_sources,
@@ -194,6 +204,8 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "mission_takeover": _takeover,
     "mission_comment": _comment,
     "mission_artifact_read": _artifact,
+    "mission_diagnostics": _diagnostics,
+    "mission_support_export": _support_export,
     "orchestration_policy_status": _policy,
 }
 

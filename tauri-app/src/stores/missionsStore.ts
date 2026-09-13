@@ -64,6 +64,7 @@ export interface OrchestrationStatus {
   context_profiles?: { profile_id: string; max_input_tokens: number; default_max_output_tokens: number; max_output_tokens_ceiling: number; mission_max_tokens: number }[];
   default_context_profile_id?: string | null;
   context_unavailable_reason?: string | null;
+  diagnostics_available?: boolean;
   deployment_manifest?: Record<string, unknown> | null;
 }
 

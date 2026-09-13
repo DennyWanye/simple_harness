@@ -25,6 +25,7 @@ import { dark } from "../theme/components";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { MissionDocument, SourceDrafts, type SourceDraft } from "./MissionDocument";
 import { MissionSearch } from "./MissionSearch";
+import { MissionDiagnostics } from "./MissionDiagnostics";
 import {
   asList as list,
   asRecord as record,
@@ -902,6 +903,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             })}
 
             {detail.document != null && <MissionDocument key={selectedId} missionId={selectedId} document={record(detail.document)} channel={channel} onChanged={() => refreshSelected(selectedId)} />}
+
+            {status?.diagnostics_available === true && <MissionDiagnostics key={selectedId} missionId={selectedId} channel={channel} />}
 
             <div style={box}>
               <div style={heading}>Task 与验证</div>

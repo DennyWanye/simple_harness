@@ -36,6 +36,8 @@ def test_message_types_are_the_planned_set():
         "mission_takeover",
         "mission_comment",
         "mission_artifact_read",
+        "mission_diagnostics",
+        "mission_support_export",
         "orchestration_policy_status",
     }
 
