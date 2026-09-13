@@ -859,11 +859,12 @@ class OrchestrationService:
         except ImportError:
             return False
         projection = diagnostics.Projection
+        store = getattr(self._orchestrator, "store", None)
         return all(callable(value) for value in (
             getattr(self._control, "snapshot", None),
-            getattr(self._orchestrator.store, "read_view", None),
-            getattr(self._orchestrator.store, "snapshot", None),
-            getattr(self._orchestrator.store, "iter_events", None),
+            getattr(store, "read_view", None),
+            getattr(store, "snapshot", None),
+            getattr(store, "iter_events", None),
             diagnostics.events_from_store, diagnostics.formal_from_snapshot,
             diagnostics.compare, diagnostics.failure_timeline, diagnostics.attribution,
             getattr(projection, "feed", None), getattr(projection, "formal", None),

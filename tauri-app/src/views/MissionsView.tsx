@@ -220,9 +220,9 @@ const ArtifactPanel: React.FC<{ artifact: Json }> = ({ artifact }) => {
   const content = typeof artifact.content === "string" ? artifact.content : null;
   const readable = encoding !== "binary" && content !== null;
   return (
-    <section aria-label="产物内容" style={box}>
-      <div style={heading}>产物：{text(artifact.path)}</div>
-      <div style={muted}>
+    <section aria-label="产物内容" style={{ ...box, minWidth: 0 }}>
+      <div style={{ ...heading, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>产物：{text(artifact.path)}</div>
+      <div style={{ ...muted, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
         {`hash：${text(artifact.content_hash)} · 大小：${formatBytes(artifact.size_bytes)}`}
       </div>
       {readable ? (
@@ -236,7 +236,9 @@ const ArtifactPanel: React.FC<{ artifact: Json }> = ({ artifact }) => {
               maxHeight: 360,
               overflow: "auto",
               whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
               wordBreak: "break-word",
+              minWidth: 0,
               fontSize: tokens.text.xs.size,
             }}
           >
@@ -262,7 +264,11 @@ function ActionOutcome({ action }: { action: Record<string, unknown> }): React.J
   const label =
     state === "SUCCEEDED" ? "已发布" : state === "UNKNOWN" ? "核对中" : "已生成，未发布";
   return (
-    <div style={muted} data-testid="action-outcome" data-action-state={state}>
+    <div
+      style={{ ...muted, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}
+      data-testid="action-outcome"
+      data-action-state={state}
+    >
       {label}
       {path ? ` · ${path}` : ""}
       {hash ? ` · 内容 ${shortHash(hash)}` : ""}
@@ -895,14 +901,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               const kind = text(approval.kind);
               const action = record(approval.action);
               return (
-                <div key={requestId} style={{ ...box, borderColor: tokens.color.accent.border }} data-testid={`approval-${requestId}`}>
+                <div key={requestId} style={{ ...box, minWidth: 0, overflowWrap: "anywhere", borderColor: tokens.color.accent.border }} data-testid={`approval-${requestId}`}>
                   <div style={heading}>
                     {WAIT_LABEL[kind] ?? `未知审批类型（${kind || "未提供"}）`}：<ModelText value={approval.summary} />
                   </div>
                   {action.reason ? <div>理由：<ModelText value={action.reason} /></div> : null}
                   {kind === "action" ? <ActionOutcome action={action} /> : null}
-                  {kind === "source_change" ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(record(approval.source_change), null, 2)}</pre> : null}
-                  {kind === "arbitration" && approval.arbitration != null ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(approval.arbitration, null, 2)}</pre> : null}
+                  {kind === "source_change" ? <pre style={{ minWidth: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>{JSON.stringify(record(approval.source_change), null, 2)}</pre> : null}
+                  {kind === "arbitration" && approval.arbitration != null ? <pre style={{ minWidth: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>{JSON.stringify(approval.arbitration, null, 2)}</pre> : null}
                   {kind === "action" || kind === "source_change" ? (
                     <>
                       <textarea aria-label="拒绝理由" style={field} value={reason} onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })} />
@@ -1046,9 +1052,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                     <div
                       key={artifactId}
                       data-testid={`artifact-${artifactId}`}
-                      style={{ display: "flex", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm }}
+                      style={{ display: "flex", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm, minWidth: 0 }}
                     >
-                      <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                      <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                         {`${text(item.path)} · ${formatBytes(item.size_bytes)} · 验证：${LAYER_LABEL[verification] ?? (verification || "—")} · ${shortHash(item.content_hash)}`}
                       </span>
                       <button type="button" style={button} onClick={() => {
@@ -1065,7 +1071,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               </div>
             ) : null}
 
-            {artifact ? <div>{detail.document != null && <div>分析 / 非结论（正文非结论陈述不做覆盖核对）</div>}<ArtifactPanel artifact={artifact} /></div> : null}
+            {artifact ? <div style={{ minWidth: 0 }}>{detail.document != null && <div>分析 / 非结论（正文非结论陈述不做覆盖核对）</div>}<ArtifactPanel artifact={artifact} /></div> : null}
 
             <div style={box}>
               <div style={heading}>评论</div>
