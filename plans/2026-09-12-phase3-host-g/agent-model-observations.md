@@ -68,3 +68,14 @@ Actual local turn_context confirms models below. Durations are child lifecycle (
 
 Arendt accepted after one review cycle corrected false-positive CLI bound tests and bool/int resume check. Locke P34 accepted after adapting to actual Host defaults and synthesis public shape (33PASS8.04s), now bounded load fixture. Boyle UI accepted after main requested decisive independent invalid/default/idempotency tests (101PASS1.47s), and independently reviewed P34. Plato authored a not-yet-run real search oracle and independently accepted doc8 compatibility; main requested deterministic baseline-audit materials before any paid run.
 Main overhead includes UI/file chooser work, fixture review, broad-test legacy drift diagnosis, and report analysis; not separately timed. Main fixed global-order old Critic fixture exhaustion and two obsolete assertions after interrupted full suite1487PASS2FAIL5opt-in-skips/499.90s. No reduction of correctness gates or hidden skipped acceptance.
+
+
+2026-09-14 long-context children (local numeric usage records, cached input is a subset):
+
+| Child/model/effort | Wall dispatch-to-last-return seconds, including waits | Uncached input | Cached input | Output | Accepted output/rework |
+|---|---:|---:|---:|---:|---|
+| Faraday Sol/high | 872.22 |199652|7513344|27753| Mission profile wiring; parent corrected global legacy floor and added per-pool guards; covered by SDK26PASS |
+| Mendel Terra/medium |495.36|126501|1498624|11655| P36 support-report privacy test; collection import rework, then PASS |
+| Franklin Sol/high |1905.02|275244|4643072|31691| Four review issues fixed; new LC6 controls2PASS6.16s; no paid calls |
+
+Raw index .local-test-evidence/2026-09-13/p33-g/agent-efficiency-0500/usage-context-final.json. Wall intervals overlap, are not summed or claimed as active compute. Parent coordination active time was not separately instrumented; parent observer rework243.64+98.50runnerseconds explicitly recorded in long-context-results.md. Different task scopes prevent a matched savings claim. All three closed. New Plato Sol/high is scoped to three P34 experiment-test files, minimal initial prompt/no inherited full history; parent continues native/evidence and compatibility work. Main model settings untouched.
