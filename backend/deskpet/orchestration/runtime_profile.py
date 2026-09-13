@@ -18,6 +18,13 @@ from urllib.parse import urlparse
 from .provider import DEEPSEEK_OFFICIAL_HOSTS, ProviderSnapshot
 
 TOKENIZER_PATH_ENV = "DESKPET_ORCH_TOKENIZER_PATH"
+CONTEXT_INPUT_LIMITS = (262_144, 524_288)
+
+
+def long_context_profile_id(tokens: int) -> str:
+    if type(tokens) is not int or tokens not in CONTEXT_INPUT_LIMITS:
+        raise ValueError("上下文仅支持 256K 或 512K")
+    return f"deepseek-context-{tokens // 1024}k-v1"
 
 
 def source_runtime_options(
@@ -64,6 +71,31 @@ def source_runtime_options(
             )
         }
     }
-    if counter is not None and policy is not None:
-        options["provider_token_estimator"] = counter
+    if counter is not None and policy is None:
+        # A pre-admission execution pool has no durable global slot grants.
+        # Keep it fully legacy; mixing it with new guarded pools would silently
+        # lose the shared physical-call bound. A fresh library supports long input.
+        return options
+    if counter is not None:
+        from simple_harness.agents.context.budget import ContextPolicy
+
+        # New named pools coexist with the old default pool. Never reinterpret
+        # a legacy Mission or an already frozen dispatch as a new capacity.
+        for tokens in CONTEXT_INPUT_LIMITS:
+            identifier = long_context_profile_id(tokens)
+            wanted = ContextPolicy(
+                max_input_tokens=tokens, output_reserve=32768,
+                max_tool_result_tokens=16384, render_slack_tokens=0,
+            )
+            frozen = resolve_profile_context_policy(
+                config, profile_id=identifier, tokenizer=counter, fresh_policy=wanted,
+            )
+            if frozen != wanted:
+                raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
+            options["profiles"][identifier] = RuntimeProfile(
+                identifier, provider, config.model, price_table=config.price_table,
+                provider_kind="env", context_policy=frozen, tokenizer=counter,
+                default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
+            )
+        options["provider_token_estimators"] = {key: counter for key in options["profiles"]}
     return options

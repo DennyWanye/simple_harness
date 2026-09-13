@@ -12,7 +12,7 @@
  */
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { useMissionsStore } from "../stores/missionsStore";
@@ -185,6 +185,94 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(screen.queryByRole("option", { name: "文档研究" })).toBeNull();
     expect((screen.getByLabelText("Mission 领域") as HTMLSelectElement).value).toBe("code");
   });
+  it("selects the actual long context and announces its separate total budget", () => {
+    const channel = renderAvailable();
+    channel.reply("orchestration_status", { ...AVAILABLE,
+      default_context_profile_id: "deepseek-context-256k-v1",
+      context_profiles: [262144, 524288].map((tokens) => ({
+        profile_id: `deepseek-context-${tokens / 1024}k-v1`, max_input_tokens: tokens,
+        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768,
+        mission_max_tokens: tokens === 262144 ? 4000000 : 8000000,
+      })),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    expect((screen.getByLabelText("输入上下文容量") as HTMLSelectElement).value).toBe("deepseek-context-256k-v1");
+    expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toContain("4000000");
+    fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-context-512k-v1" } });
+    expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toContain("8000000");
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "long references" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe("deepseek-context-512k-v1");
+  });
+
+  it("keeps the creation key and capacity when a lost receipt is retried after default drift", () => {
+    vi.useFakeTimers();
+    try {
+      const channel = renderAvailable();
+      const profiles = [262144, 524288].map((tokens) => ({
+        profile_id: `deepseek-context-${tokens / 1024}k-v1`, max_input_tokens: tokens,
+        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768,
+        mission_max_tokens: 8000000,
+      }));
+      channel.reply("orchestration_status", { ...AVAILABLE, context_profiles: profiles, default_context_profile_id: profiles[0].profile_id });
+      fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+      fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "lost receipt" } });
+      fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
+      fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+      const original = channel.last("mission_create")?.payload;
+      act(() => { vi.advanceTimersByTime(30001); });
+      channel.reply("orchestration_status", { ...AVAILABLE, context_profiles: profiles, default_context_profile_id: profiles[1].profile_id });
+      const send = channel.send;
+      channel.send = () => false;
+      fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+      channel.send = send;
+      fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+      expect(channel.last("mission_create")?.payload).toEqual(original);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("clears an unsent context selection when the replacement Host has no long profiles", () => {
+    const channel = renderAvailable();
+    channel.reply("orchestration_status", { ...AVAILABLE,
+      default_context_profile_id: "deepseek-context-512k-v1", context_profiles: [{
+        profile_id: "deepseek-context-512k-v1", max_input_tokens: 524288,
+        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 8000000,
+      }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-context-512k-v1" } });
+    channel.reply("orchestration_status", AVAILABLE);
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "legacy entry" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.all("mission_create")).toHaveLength(1);
+    expect(channel.last("mission_create")?.payload).not.toHaveProperty("runtime_profile_id");
+  });
+
+  it("allows creation on a legacy Host after the initial long-context send was refused", () => {
+    const channel = renderAvailable();
+    channel.reply("orchestration_status", { ...AVAILABLE,
+      default_context_profile_id: "deepseek-context-512k-v1", context_profiles: [{
+        profile_id: "deepseek-context-512k-v1", max_input_tokens: 524288,
+        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 8000000,
+      }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "never sent" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
+    const send = channel.send;
+    channel.send = () => false;
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.all("mission_create")).toHaveLength(0);
+    channel.send = send;
+    channel.reply("orchestration_status", AVAILABLE);
+    expect(screen.queryByLabelText("输入上下文容量")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.all("mission_create")).toHaveLength(1);
+    expect(channel.last("mission_create")?.payload).not.toHaveProperty("runtime_profile_id");
+  });
+
   it("only offers approved search policies and submits the selected registry identity", () => {
     const channel = renderAvailable();
     channel.reply("orchestration_policy_status", { eligible_search_policies: [

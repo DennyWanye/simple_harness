@@ -40,7 +40,11 @@ from .projection import (
     ui_state,
 )
 from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
-from .runtime_profile import source_runtime_options
+from .runtime_profile import (
+    CONTEXT_INPUT_LIMITS,
+    long_context_profile_id,
+    source_runtime_options,
+)
 from .settings import OrchestrationSettings
 
 logger = logging.getLogger(__name__)
@@ -115,6 +119,7 @@ class OrchestrationService:
         self._effective_provider: Any = None
         self._native_verifier_pressure = False
         self._config: Any = None
+        self._runtime_options: dict[str, Any] = {}
         self._connectors: dict[str, Any] = {}
         self._deployment: Any = None
         # P3.2: what the sandbox capability probe found here, and the executor it proved
@@ -272,9 +277,10 @@ class OrchestrationService:
             **knobs,
         )
         self._effective_provider = provider  # kept for a rebuild after repeated failures
+        self._runtime_options = source_runtime_options(self._config, provider, self._snapshot)
         self._orchestrator = Orchestrator(
             self._config, provider, owner=self.owner, connectors=self._connectors,
-            **source_runtime_options(self._config, provider, self._snapshot),
+            **self._runtime_options,
         )
         await self._orchestrator.__aenter__()
         self._install_native_verifier_pressure(self._orchestrator)
@@ -477,9 +483,12 @@ class OrchestrationService:
                 await old.__aexit__(None, None, None)
             except Exception:
                 logger.exception("orchestrator close during rebuild failed")
+        self._runtime_options = source_runtime_options(
+            self._config, self._effective_provider, self._snapshot,
+        )
         candidate = Orchestrator(
             self._config, self._effective_provider, owner=self.owner, connectors=self._connectors,
-            **source_runtime_options(self._config, self._effective_provider, self._snapshot),
+            **self._runtime_options,
         )
         try:
             await candidate.__aenter__()
@@ -511,6 +520,29 @@ class OrchestrationService:
             return False
 
     # ------------------------------------------------------------ status
+    def _context_profiles(self) -> list[dict[str, Any]]:
+        profiles = self._runtime_options.get("profiles", {})
+        return [
+            {
+                "profile_id": long_context_profile_id(tokens),
+                "max_input_tokens": profiles[long_context_profile_id(tokens)].context_policy.input_budget(),
+                "default_max_output_tokens": 8192,
+                "max_output_tokens_ceiling": 32768,
+                # A bounded multi-turn allowance, not a charge for unused capacity.
+                "mission_max_tokens": 4_000_000 if tokens == 262_144 else 8_000_000,
+            }
+            for tokens in CONTEXT_INPUT_LIMITS if long_context_profile_id(tokens) in profiles
+        ]
+
+    def _context_default(self) -> str | None:
+        selected = long_context_profile_id(self.settings.context_input_tokens)
+        return selected if any(p["profile_id"] == selected for p in self._context_profiles()) else None
+
+    def _mission_token_default(self, profile_id: str | None = None) -> int:
+        selected = profile_id or self._context_default()
+        return next((p["mission_max_tokens"] for p in self._context_profiles()
+                     if p["profile_id"] == selected), self.settings.default_mission_max_tokens)
+
     def status(self) -> dict[str, Any]:
         import agent_orchestrator
         import simple_harness
@@ -540,8 +572,17 @@ class OrchestrationService:
             "sandbox": dict(self._sandbox or {"ok": False, "reason": "尚未探测"}),
             "publish": dict(self._publish),
             "test_scenario": self._test_scenario,
+            "context_profiles": self._context_profiles(),
+            "default_context_profile_id": self._context_default(),
+            "context_unavailable_reason": (
+                "旧执行库尚未具备按请求计量的恢复身份；当前保留原配置，长上下文需使用新的执行库。"
+                if self._runtime_options.get("profiles")
+                and self._snapshot is not None and self._snapshot.requested_model == "deepseek-flash"
+                and not self._context_profiles()
+                and self._runtime_options["profiles"]["default"].context_policy is None else None
+            ),
             "mission_budget_defaults": {
-                "max_tokens": self.settings.default_mission_max_tokens,
+                "max_tokens": self._mission_token_default(),
                 "max_attempts": self.settings.default_mission_max_attempts,
             },
             "deployment_manifest": self._manifest,
@@ -634,6 +675,29 @@ class OrchestrationService:
         # Mission cannot succeed.  A blank item takes the deployment default; an item the
         # person gave stays as written; a non-positive one is refused.  Filled here, before
         # the facade, so the persisted receipt's spec hash includes the defaults.
+        # Default selection applies only to new Missions. Old blank-request retries
+        # must preserve their original charter and budget across a source upgrade.
+        found = self._orchestrator.store.find_mission(
+            self.tenant_id, str(body.get("idempotency_key", "")),
+        ) if self._orchestrator is not None else None
+        existing = found[0] if found else None
+        profiles = self._context_profiles()
+        if "runtime_profile_id" in body:
+            selected = body["runtime_profile_id"]
+            if not isinstance(selected, str) or not any(p["profile_id"] == selected for p in profiles):
+                raise OrchestrationRequestError("invalid_request", "所选上下文配置当前不可用")
+        elif existing is not None:
+            selected = (existing.final_report or {}).get("runtime_profile_id")
+            if selected is not None:
+                body["runtime_profile_id"] = selected
+        else:
+            selected = self._context_default()
+            if selected is not None:
+                body["runtime_profile_id"] = selected
+        token_default = (existing.budget.max_tokens if existing is not None
+                         else self._mission_token_default(selected))
+        attempt_default = (existing.budget.max_attempts if existing is not None
+                           else self.settings.default_mission_max_attempts)
         budget = body.get("budget")
         if budget is None:
             budget = {}
@@ -641,8 +705,8 @@ class OrchestrationService:
             raise OrchestrationRequestError("invalid_request", "预算必须是一个对象")
         budget = dict(budget)
         for name, default in (
-            ("max_tokens", self.settings.default_mission_max_tokens),
-            ("max_attempts", self.settings.default_mission_max_attempts),
+            ("max_tokens", token_default),
+            ("max_attempts", attempt_default),
         ):
             value = budget.get(name)
             if value is None:
@@ -768,7 +832,17 @@ class OrchestrationService:
                 used.update(kid for claim in view["snapshot"].get("claims", ())
                             for kid in claim.get("dependencies", ()))
                 stale = index.stale(sorted(used))
-            return project_detail(view, blocked=self._blocked(mission_id), source_issues=stale)
+            detail = project_detail(view, blocked=self._blocked(mission_id), source_issues=stale)
+            raw = view["snapshot"].get("mission", {})
+            identifier = (raw.get("final_report") or {}).get("runtime_profile_id", "default")
+            profile = self._runtime_options.get("profiles", {}).get(identifier)
+            if profile is not None and profile.context_policy is not None:
+                detail["runtime_context"] = {
+                    "profile_id": identifier,
+                    "max_input_tokens": profile.context_policy.input_budget(),
+                    "fingerprint": profile.context_snapshot()["fingerprint"],
+                }
+            return detail
 
     def events(self, mission_id: str, *, after_seq: Any = 0, limit: Any = 50) -> dict[str, Any]:
         # whitelisted rows: the raw payloads stay inside (review P2-3)

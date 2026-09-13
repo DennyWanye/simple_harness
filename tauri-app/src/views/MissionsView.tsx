@@ -312,6 +312,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const createTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [maxTokens, setMaxTokens] = useState("");
   const [maxAttempts, setMaxAttempts] = useState("");
+  const [contextProfile, setContextProfile] = useState<string | null>(null);
   const [conflictReserve, setConflictReserve] = useState("");
   const [synthesisEnabled, setSynthesisEnabled] = useState(false);
   const [synthesisGoal, setSynthesisGoal] = useState("");
@@ -508,6 +509,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             setSources([]);
             setDomain("code");
             createRetry.current = null;
+            setContextProfile(null);
             state.setError(null);
             send("mission_list");
             const missionId = text(data.mission_id);
@@ -560,7 +562,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const canCreateDocument = domains.atomic_source_create === true && list(domains.items).some((item) => item.id === "doc-research-v1");
   const searchPolicies = list(store.policy?.eligible_search_policies);
   const reserveTokens = Number(conflictReserve);
-  const missionTokenCap = maxTokens.trim() ? Number(maxTokens) : status?.mission_budget_defaults?.max_tokens;
+  const proposedContextId = contextProfile ?? status?.default_context_profile_id ?? "";
+  const contextOffered = status?.context_profiles ?? [];
+  const selectedContextId = createRetry.current || contextOffered.some((p) => p.profile_id === proposedContextId)
+    ? proposedContextId : status?.default_context_profile_id ?? "";
+  const selectedContext = status?.context_profiles?.find((p) => p.profile_id === selectedContextId);
+  const defaultTokenCap = selectedContext?.mission_max_tokens ?? status?.mission_budget_defaults?.max_tokens;
+  const missionTokenCap = maxTokens.trim() ? Number(maxTokens) : defaultTokenCap;
   const missionAttemptCap = maxAttempts.trim() ? Number(maxAttempts) : status?.mission_budget_defaults?.max_attempts;
   const effectiveMissionTokenCap = typeof missionTokenCap === "number" && Number.isSafeInteger(missionTokenCap) && missionTokenCap > 0
     ? missionTokenCap : null;
@@ -580,17 +588,23 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     reserveTokens + synthesisTokenCap <= effectiveMissionTokenCap
   );
   const submittable = validReserve && validSynthesis && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
+    (!selectedContextId || !!selectedContext) &&
     (!searchPolicy || searchPolicies.some((policy) => policy.version_id === searchPolicy)) &&
     (domain === "code" || (canCreateDocument && sources.length > 0 && sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0)));
 
   const submit = () => {
     if (!submittable) return;
+    const previousRetry = createRetry.current;
+    const previousContext = contextProfile;
+    // Retrying an uncertain creation must not adopt a changed deployment default.
+    setContextProfile(selectedContextId);
     const budget: Json = {};
     if (Number(maxTokens) > 0) budget.max_tokens = Math.floor(Number(maxTokens));
     if (Number(maxAttempts) > 0) budget.max_attempts = Math.floor(Number(maxAttempts));
     const spec = {
       goal: goal.trim(),
       success_criteria: criteria.split("\n").map((line) => line.trim()).filter(Boolean),
+      ...(selectedContext ? { runtime_profile_id: selectedContext.profile_id } : {}),
       ...(Object.keys(budget).length ? { budget } : {}),
       ...(conflictReserve.trim() ? { conflict_reserve_tokens: reserveTokens } : {}),
       ...(searchPolicy ? { search_policy_version_id: searchPolicy } : {}),
@@ -613,7 +627,15 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       type: domain === "code" ? "mission_create" : "mission_create_with_sources", request_id: requestId,
       payload: domain === "code" ? missionSpec : { mission: { ...missionSpec, domain }, sources },
     });
-    if (!accepted) { createRequest.current = null; setCreatePending(false); store.setError("连接不可用，创建请求未发送"); return; }
+    if (!accepted) {
+      // No new request left the client. Preserve an earlier uncertain request, if any.
+      createRetry.current = previousRetry;
+      setContextProfile(previousContext);
+      createRequest.current = null;
+      setCreatePending(false);
+      store.setError("连接不可用，创建请求未发送");
+      return;
+    }
     createTimer.current = setTimeout(() => {
       if (createRequest.current === requestId) { createRequest.current = null; setCreatePending(false); useMissionsStore.getState().setError("创建超时，结果未知；可以使用原请求键重试"); }
     }, 30000);
@@ -738,8 +760,15 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               </select>
             </label>}
             {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
+            {!!status?.context_profiles?.length && <label style={muted}>输入上下文容量
+              <select aria-label="输入上下文容量" style={field} value={selectedContextId} disabled={createPending} onChange={(e) => setContextProfile(e.target.value)}>
+                {status.context_profiles.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{profile.max_input_tokens / 1024}K tokens</option>)}
+              </select>
+              <span>容量包含本轮材料与历史；单次输出另计，上限 32K。总预算按实际调用消耗。</span>
+            </label>}
+            {status?.context_unavailable_reason && <div role="status" style={muted}>{status.context_unavailable_reason}</div>}
             <div style={{ display: "flex", gap: tokens.space.sm }}>
-              <input aria-label="Token 上限" placeholder={status?.mission_budget_defaults ? `Token 上限（留空=${status.mission_budget_defaults.max_tokens}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
+              <input aria-label="Token 上限" placeholder={defaultTokenCap ? `Token 上限（留空=${defaultTokenCap}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
               <input aria-label="尝试次数上限" placeholder={status?.mission_budget_defaults ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）` : "尝试次数上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
             </div>
             <input aria-label="冲突核对预留 Token" aria-describedby="conflict-reserve-help" inputMode="numeric" placeholder="冲突核对预留 Token（可选）" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={conflictReserve} onChange={(e) => setConflictReserve(e.target.value)} />
@@ -787,6 +816,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 {`预算：Token 上限 ${text(record(mission.budget).max_tokens) || "—"} · 尝试次数上限 ${text(record(mission.budget).max_attempts) || "—"}`}
               </div>
               <MissionSearch value={detail.search} />
+              {!!record(detail.runtime_context).max_input_tokens && <div style={muted} data-testid="mission-context">
+                本任务输入上下文 {Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens
+              </div>}
               {waiting.length ? (
                 <div aria-label="等待原因" style={{ marginTop: tokens.space.sm }}>
                   {waiting.map((item, index) => (

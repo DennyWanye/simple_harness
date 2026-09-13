@@ -65,7 +65,7 @@ def test_source_uses_same_counter_for_context_and_budget_and_keeps_legacy(
     )
     options = source_runtime_options(source_config, Provider(), snapshot)
     profile = options["profiles"]["default"]
-    assert profile.tokenizer is options["provider_token_estimator"]
+    assert profile.tokenizer is options["provider_token_estimators"]["default"]
     assert profile.context_policy.max_input_tokens == 32768
     assert profile.context_policy.max_tool_result_tokens == 16384
     assert not source_config.evidence_root.exists()  # resolver is read-only
@@ -74,7 +74,8 @@ def test_source_uses_same_counter_for_context_and_budget_and_keeps_legacy(
     old = source_runtime_options(source_config, Provider(), snapshot)
     assert old["profiles"]["default"].context_policy is None
     assert old["profiles"]["default"].tokenizer is None
-    assert "provider_token_estimator" not in old
+    assert "provider_token_estimators" not in old
+    assert set(old["profiles"]) == {"default"}
 
 
 def test_another_endpoint_cannot_acquire_official_deepseek_counter(
