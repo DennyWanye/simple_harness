@@ -208,7 +208,11 @@ class OrchestrationService:
 
             fixture_root = Path(os.environ["DESKPET_ORCH_UI_FIXTURE_DIR"])
             case = os.environ.get("DESKPET_ORCH_UI_FIXTURE_CASE")
-            if case == "n4-document-contextual-arbitration":
+            if case == "p34-fragment-crossbranch":
+                from .native_search import native_search_provider
+
+                provider = native_search_provider()
+            elif case == "n4-document-contextual-arbitration":
                 from .native_arbitration import document_arbitration_provider
 
                 provider = document_arbitration_provider(fixture_root)

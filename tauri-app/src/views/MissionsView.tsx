@@ -313,6 +313,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const [maxTokens, setMaxTokens] = useState("");
   const [maxAttempts, setMaxAttempts] = useState("");
   const [conflictReserve, setConflictReserve] = useState("");
+  const [synthesisEnabled, setSynthesisEnabled] = useState(false);
+  const [synthesisGoal, setSynthesisGoal] = useState("");
+  const [synthesisCriteria, setSynthesisCriteria] = useState("");
+  const [synthesisTokens, setSynthesisTokens] = useState("");
+  const [synthesisAttempts, setSynthesisAttempts] = useState("");
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [bases, setBases] = useState<Record<string, string>>({});
   const [comment, setComment] = useState("");
@@ -495,6 +500,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             setGoal("");
             setCriteria("");
             setConflictReserve("");
+            setSynthesisEnabled(false);
+            setSynthesisGoal("");
+            setSynthesisCriteria("");
+            setSynthesisTokens("");
+            setSynthesisAttempts("");
             setSources([]);
             setDomain("code");
             createRetry.current = null;
@@ -550,10 +560,26 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const canCreateDocument = domains.atomic_source_create === true && list(domains.items).some((item) => item.id === "doc-research-v1");
   const searchPolicies = list(store.policy?.eligible_search_policies);
   const reserveTokens = Number(conflictReserve);
-  const totalTokens = maxTokens.trim() ? Number(maxTokens) : status?.mission_budget_defaults?.max_tokens;
+  const missionTokenCap = maxTokens.trim() ? Number(maxTokens) : status?.mission_budget_defaults?.max_tokens;
+  const missionAttemptCap = maxAttempts.trim() ? Number(maxAttempts) : status?.mission_budget_defaults?.max_attempts;
+  const effectiveMissionTokenCap = typeof missionTokenCap === "number" && Number.isSafeInteger(missionTokenCap) && missionTokenCap > 0
+    ? missionTokenCap : null;
+  const effectiveMissionAttemptCap = typeof missionAttemptCap === "number" && Number.isSafeInteger(missionAttemptCap) && missionAttemptCap > 0
+    ? missionAttemptCap : null;
   const validReserve = !conflictReserve.trim() || (Number.isSafeInteger(reserveTokens) && reserveTokens >= 0 &&
-    (totalTokens == null || reserveTokens <= totalTokens));
-  const submittable = validReserve && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
+    (missionTokenCap == null || reserveTokens <= missionTokenCap));
+  const synthesisTokenCap = Number(synthesisTokens);
+  const synthesisAttemptCap = Number(synthesisAttempts);
+  const synthesisCriteriaList = synthesisCriteria.split("\n").map((line) => line.trim()).filter(Boolean);
+  const validSynthesis = !synthesisEnabled || (
+    synthesisGoal.trim().length > 0 && synthesisCriteriaList.length > 0 &&
+    Number.isSafeInteger(synthesisTokenCap) && synthesisTokenCap > 0 &&
+    Number.isSafeInteger(synthesisAttemptCap) && synthesisAttemptCap > 0 &&
+    effectiveMissionTokenCap !== null && effectiveMissionAttemptCap !== null &&
+    synthesisTokenCap <= effectiveMissionTokenCap && synthesisAttemptCap <= effectiveMissionAttemptCap &&
+    reserveTokens + synthesisTokenCap <= effectiveMissionTokenCap
+  );
+  const submittable = validReserve && validSynthesis && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
     (!searchPolicy || searchPolicies.some((policy) => policy.version_id === searchPolicy)) &&
     (domain === "code" || (canCreateDocument && sources.length > 0 && sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0)));
 
@@ -568,6 +594,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       ...(Object.keys(budget).length ? { budget } : {}),
       ...(conflictReserve.trim() ? { conflict_reserve_tokens: reserveTokens } : {}),
       ...(searchPolicy ? { search_policy_version_id: searchPolicy } : {}),
+      ...(synthesisEnabled ? {
+        synthesis: {
+          goal: synthesisGoal.trim(),
+          success_criteria: synthesisCriteriaList,
+          budget: { max_tokens: synthesisTokenCap, max_attempts: synthesisAttemptCap },
+        },
+      } : {}),
     };
     const fingerprint = JSON.stringify([domain, spec, domain === "code" ? [] : sources]);
     if (createRetry.current?.fingerprint !== fingerprint) createRetry.current = { fingerprint, key: newKey() };
@@ -712,6 +745,20 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <input aria-label="冲突核对预留 Token" aria-describedby="conflict-reserve-help" inputMode="numeric" placeholder="冲突核对预留 Token（可选）" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={conflictReserve} onChange={(e) => setConflictReserve(e.target.value)} />
             <div id="conflict-reserve-help" style={muted}>从总预算中预留，出现冲突时用于独立核对；留空不预留。</div>
             {!validReserve && <div role="alert" style={{ color: dark.danger }}>冲突核对预留必须是非负整数，且不超过总 Token 上限。</div>}
+            <label style={{ display: "flex", alignItems: "center", gap: tokens.space.xs }}>
+              <input aria-label="最终独立综合" type="checkbox" checked={synthesisEnabled} disabled={createPending} onChange={(e) => setSynthesisEnabled(e.target.checked)} />
+              最终独立综合
+            </label>
+            {synthesisEnabled && <div style={{ ...box, display: "flex", flexDirection: "column", gap: tokens.space.sm }} aria-label="最终独立综合设置">
+              <div style={muted}>在各分支完成后，独立整理已验证的结果并再次验收，作为最终交付。</div>
+              <textarea aria-label="最终独立综合目标" placeholder="最终独立综合目标" style={field} disabled={createPending} value={synthesisGoal} onChange={(e) => setSynthesisGoal(e.target.value)} />
+              <textarea aria-label="最终独立综合成功条件" placeholder="成功条件（每行一条）" style={field} disabled={createPending} value={synthesisCriteria} onChange={(e) => setSynthesisCriteria(e.target.value)} />
+              <div style={{ display: "flex", gap: tokens.space.sm }}>
+                <input aria-label="最终独立综合 Token 上限" inputMode="numeric" placeholder="Token 上限" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} disabled={createPending} value={synthesisTokens} onChange={(e) => setSynthesisTokens(e.target.value)} />
+                <input aria-label="最终独立综合尝试次数上限" inputMode="numeric" placeholder="尝试次数上限" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} disabled={createPending} value={synthesisAttempts} onChange={(e) => setSynthesisAttempts(e.target.value)} />
+              </div>
+              {!validSynthesis && <div role="alert" style={{ color: dark.danger }}>最终独立综合需要目标、成功条件和正整数预算；两项预算不得超过 Mission 上限，且与冲突核对预留之和不得超过 Token 上限。</div>}
+            </div>}
             <button type="button" style={button} disabled={!submittable} onClick={submit}>
               提交 Mission
             </button>

@@ -378,3 +378,17 @@ Native doc7 arbitration/cold is completed within the explicit boundary above. Ne
 
 
 Source-native slot binding (2026-09-13 08:24 CST): launcher supports explicit 1..4 logical/model slots, default 1/1; values are part of the source identity and are written only before first backend startup. Resume checks exact integer config without rewriting seeded policy. Older source runs require their recorded pre-slot launcher. Main verification: g-source-slots-search-v2, 32 PASS/2.09s (runner2.70s; includes controlled search software test). Terra rework fixed incomplete CLI oracle and TOML bool equality; native multi-Mission load remains OPEN.
+
+
+## Source synthesis and P34 Host wiring
+
+Source-native checkpoint, 2026-09-13 08:44 CST. Optional final independent synthesis is now exposed in Mission creation with explicit goal, criteria and bounded token/attempt budgets. Code/document requests use the same public schema; failed retries keep identity until content changes; success clears synthesis fields. UI101 PASS/1.47s and typecheck PASS (g-ui-synthesis-v2). Controlled P34 Host/default-policy fixture preserves two failed A Attempts, independently verifies F, keeps B, retargets C, executes C and final S probes, and cold-reopens without Provider replay: 33 PASS/8.04s (g-native-search-host-v2). Independent Terra review found no P1/P2. These are software results; source-native P34/synthesis UI is still pending.
+
+## N1 v14 split verdict
+
+Real N1 v14 (SDK4e79dac/Hoste6a1dac7) reached verification_passed in223.94s: seven literal VERIFIED,three SUPPORTED,224843tokens settled/0reserved,12Providerhandoffs (10succeeded/2failed withusage),0rehandoffs. Actual UI opened REPORT and full table citation; cold same-state12->12. Raw case-summary SHA25684d7385071c30cab20e668f5b25eef41e4f53c1f1abcbf6212649b74bd81fc04 under Host .local-test-evidence/2026-09-13/p33-g/source-ui-n1-v14/. Manual quality FAIL: REPORT3.1 says both sources lack frozen build/install/verification records, contradicted sourceAline7 historical builds/startup failures. Both Worker/Critic had read whole sources. Runtime/citation/cold PASS does not close N1 report quality. Doc8 successor guidance and original400000/12 recheck in progress. Native owned groups94307/97182 exited0,noresidual; lifecycles477.554/80.27s include UI/analysis waiting. No packaging/P36/push.
+
+
+## 2026-09-13 09:15 CST — Source synthesis checkpoint
+
+Host doc8 compatibility plus controlled search and launcher regression: 34 PASS/12.33s (g-native-search-doc8-host-v4; wrapper12.83s). Synthesis form UI101 PASS/1.47s and typecheck remain unchanged. Native P34 and real N1 doc8 quality recheck are pending. This commits the already reviewed source feature/wiring; new native load files remain a separate unverified slice. SDK1f0c536 preserves legacy runtime controls; full regression has not yet passed after the three old-test assumption repairs (focused16PASS9.33s). No packaging, P36, release or push.

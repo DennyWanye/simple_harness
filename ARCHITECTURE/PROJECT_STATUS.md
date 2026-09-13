@@ -1,3 +1,14 @@
+**Last updated: 2026-09-13 09:15 CST.**
+
+
+## 2026-09-13 09:15 CST — Source synthesis checkpoint
+
+Host doc8 compatibility plus controlled search and launcher regression: 34 PASS/12.33s (g-native-search-doc8-host-v4; wrapper12.83s). Synthesis form UI101 PASS/1.47s and typecheck remain unchanged. Native P34 and real N1 doc8 quality recheck are pending. This commits the already reviewed source feature/wiring; new native load files remain a separate unverified slice. SDK1f0c536 preserves legacy runtime controls; full regression has not yet passed after the three old-test assumption repairs (focused16PASS9.33s). No packaging, P36, release or push.
+
+**Last updated: 2026-09-13 08:44 CST.**
+
+Source-native checkpoint, 2026-09-13 08:44 CST. Optional final independent synthesis is now exposed in Mission creation with explicit goal, criteria and bounded token/attempt budgets. Code/document requests use the same public schema; failed retries keep identity until content changes; success clears synthesis fields. UI101 PASS/1.47s and typecheck PASS (g-ui-synthesis-v2). Controlled P34 Host/default-policy fixture preserves two failed A Attempts, independently verifies F, keeps B, retargets C, executes C and final S probes, and cold-reopens without Provider replay: 33 PASS/8.04s (g-native-search-host-v2). Independent Terra review found no P1/P2. These are software results; source-native P34/synthesis UI is still pending.
+
 **Last updated: 2026-09-13 08:24 CST - source-native slot binding.**
 **最后更新：2026-09-13 08:12 CST — doc7 原生仲裁与冷重开。** SDK aaa3593 / Host 648ad185 的源码快照v13，经真实表单导入两来源，240000/6总预算与30000冲突预留实际生效；两Worker/Arbiter/独立Critic后UI进入待仲裁，展开两份完整原句、通过UI提交contextual并打开实际245B仲裁报告。审批GRANTED、Conflict RESOLVED_BY_HUMAN；两原主张保持DISPUTED、0知识条目，Mission按claim_not_usable成为mission_criteria_unmet（不是交付成功），2850已结算/0预留。新建表单预留为空，原生复验了跨任务残留修复。相同源码/数据冷重开后原身份与状态保持，Provider19/19、0rehandoff、12工具效果不变。原始证据Host `.local-test-evidence/2026-09-13/p33-g/source-ui-arbitration-v13/case-summary.json` SHA256 `5c7946166a2593bdafd0edfb5f92a53bdf1400fec9d652c2297d232c41a9a967`。初始/冷进程组均退出0无残留，539.712s/43.737s为包含人工操作等待的载体生命周期，不是模型运行时间。此为受控原生仲裁边界通过，不是真实模型能力或Phase3整体完成。
 
@@ -4084,3 +4095,5 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 
 
 Source-native slot binding (2026-09-13 08:24 CST): launcher supports explicit 1..4 logical/model slots, default 1/1; values are part of the source identity and are written only before first backend startup. Resume checks exact integer config without rewriting seeded policy. Older source runs require their recorded pre-slot launcher. Main verification: g-source-slots-search-v2, 32 PASS/2.09s (runner2.70s; includes controlled search software test). Terra rework fixed incomplete CLI oracle and TOML bool equality; native multi-Mission load remains OPEN.
+
+Real N1 v14 (SDK4e79dac/Hoste6a1dac7) reached verification_passed in223.94s: seven literal VERIFIED,three SUPPORTED,224843tokens settled/0reserved,12Providerhandoffs (10succeeded/2failed withusage),0rehandoffs. Actual UI opened REPORT and full table citation; cold same-state12->12. Raw case-summary SHA25684d7385071c30cab20e668f5b25eef41e4f53c1f1abcbf6212649b74bd81fc04 under Host .local-test-evidence/2026-09-13/p33-g/source-ui-n1-v14/. Manual quality FAIL: REPORT3.1 says both sources lack frozen build/install/verification records, contradicted sourceAline7 historical builds/startup failures. Both Worker/Critic had read whole sources. Runtime/citation/cold PASS does not close N1 report quality. Doc8 successor guidance and original400000/12 recheck in progress. Native owned groups94307/97182 exited0,noresidual; lifecycles477.554/80.27s include UI/analysis waiting. No packaging/P36/push.

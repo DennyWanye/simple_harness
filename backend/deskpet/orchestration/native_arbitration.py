@@ -62,8 +62,8 @@ def _package(request: Any) -> dict[str, Any]:
 
     value = package_of(request)
     domain = value.get("domain") or {}
-    if domain.get("id") != "doc-research-v1" or domain.get("version") != "7":
-        raise ValueError("arbitration fixture requires the current registered doc7")
+    if domain.get("id") != "doc-research-v1" or domain.get("version") not in {"7", "8"}:
+        raise ValueError("arbitration fixture requires registered doc7 or doc8")
     expected = {path: hashlib.sha256(text.encode()).hexdigest() for path, text in SOURCES.items()}
     if value.get("source_versions") != expected:
         raise ValueError("arbitration fixture requires both exact registered source versions")

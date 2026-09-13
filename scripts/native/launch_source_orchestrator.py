@@ -272,12 +272,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model-slots", type=int, choices=range(1, 5), default=1)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--fixture-dir", type=Path,
-                        help="Controlled document UI inputs under ignored test evidence; no real model")
+                        help="Controlled UI inputs under ignored test evidence; no real model")
     parser.add_argument("--fixture-case", choices=(
         "n4-instruction-attribution", "n4-bad-quote", "n4-contradictory-uncertainty",
         "n4-document-contextual-arbitration",
+        "p34-fragment-crossbranch",
         "n6-half", "n6-two-thirds", "n6-active-revoke",
-    ), help="Controlled document boundary case; requires --fixture-dir")
+    ), help="Controlled boundary case; requires --fixture-dir")
     args = parser.parse_args(argv)
     if args.fixture_case and args.fixture_dir is None:
         parser.error("--fixture-case requires --fixture-dir")

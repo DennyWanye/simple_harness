@@ -48,7 +48,7 @@ async def test_current_document_conflict_contextual_ruling_survives_cold_reopen(
         assert await asyncio.wait_for(service.drain(timeout=8), 10), service.status()
         orch = service._orchestrator
         store = orch.store
-        assert DOC_PROFILE.version == "7"
+        assert DOC_PROFILE.version == "8"
         assert orch.commit.domain_for(mission_id).to_json() == DOC_PROFILE.to_json()
         assert list(store.get_mission(mission_id).success_criteria) == request["success_criteria"]
 

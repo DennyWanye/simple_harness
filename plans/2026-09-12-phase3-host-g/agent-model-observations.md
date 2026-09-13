@@ -54,3 +54,17 @@ Main remains GPT-6 Astra/high. Three-slot limit retained. Small form review used
 | Nash / gpt-5.6-sol high | 3.40 | 67006 | 926208 | 7992 | New bounded A03 priority/drain test-only assignment; not yet tested or accepted. |
 
 These are unmatched tasks and overlapping lifecycle spans, not a controlled model ranking or savings percentage. Parent overhead is not isolated: main fixed Critic coverage/NULL test expectations, integrated reviews, ran tests, updated architecture and prepared source UI.
+
+## Checkpoint 2026-09-13 08:40 CST
+
+Actual local turn_context confirms models below. Durations are child lifecycle (work, waits and rework), not isolated active work. Counts deduplicate response_id; cache is separate. No savings percentage can be inferred.
+
+| Child | Actual model/effort | Lifecycle at snapshot | Uncached input | Cached input | Output |
+|---|---|---:|---:|---:|---:|
+| Arendt | gpt-5.6-terra/medium | 588.16s | 58645 | 545024 | 9219 |
+| Locke | gpt-5.6-sol/high | 1621.34s | 184227 | 7542784 | 33946 |
+| Boyle | gpt-5.6-terra/high | 902.39s | 132466 | 2241792 | 24552 |
+| Plato | gpt-6-astra/high | 782.45s | 96414 | 2245888 | 15886 |
+
+Arendt accepted after one review cycle corrected false-positive CLI bound tests and bool/int resume check. Locke P34 accepted after adapting to actual Host defaults and synthesis public shape (33PASS8.04s), now bounded load fixture. Boyle UI accepted after main requested decisive independent invalid/default/idempotency tests (101PASS1.47s), and independently reviewed P34. Plato authored a not-yet-run real search oracle and independently accepted doc8 compatibility; main requested deterministic baseline-audit materials before any paid run.
+Main overhead includes UI/file chooser work, fixture review, broad-test legacy drift diagnosis, and report analysis; not separately timed. Main fixed global-order old Critic fixture exhaustion and two obsolete assertions after interrupted full suite1487PASS2FAIL5opt-in-skips/499.90s. No reduction of correctness gates or hidden skipped acceptance.
