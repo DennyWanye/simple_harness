@@ -438,3 +438,6 @@ Raw Hostrelative root .local-test-evidence/2026-09-13/p33-g/source-ui-p32-publis
 Successor source changes remain UNCOMMITTED / nativeNOT_RUN: shared scopedPlanner+Worker action-contract-v2 distinguishes content/source/destination and L2/L3action approval from contenthumanreview. Planneractualrequest+binding/retrieval35PASS6.80s/runner6.98s afterone testexpectedlate omission butactualdisabledconnector was correctlyrejected atMissioningress (first34PASS1FAIL7.08s). Originalgateunchanged. Mypy119PASS. IndependentLuna scopedreview noP1; approvalcountguidance suggestion and strongerordinarybyte/nativebehavior validation noted; current requestpresence isnotmodelqualityproof.
 
 Host humanreview UI now sends note in existingatomic review_fail, so feedbackpersisted before nextAttempt. Failure keepsreason; onlysuccessfulresponseclears. Parentcaught disconnectedtransport pendingdeadlock andchildfixed false/absent/throw handling. UI117PASS1.47s plus actual tsc-b --noEmit PASS (combined4.685s); source-native replaypending. No packaging/release/push; P32/wholePhase3 notclosed.
+
+
+2026-09-14 CST：v36 原生发布、复核理由直接回传与冷读通过。详见 [native-v36-review.md](native-v36-review.md)。累计14真实调用40392tokens，无冷启动重调；旧v35FAIL保留。

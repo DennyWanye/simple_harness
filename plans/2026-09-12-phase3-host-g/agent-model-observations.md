@@ -106,3 +106,15 @@ Local deduplicated response_id usage, not subscription billed credits. Reasoning
 Ptolemy Astra/high remains repairing3 LC2 failures; live counters are not final. Parent overhead includes centralized tests, v12 error-layer correction, native launcher review and fixture rework; not separately timed. Luna found two concrete defects in a small review, but unmatched tasks do not establish any savings percentage. Main session remains Astra/high; application DeepSeek API is separate.
 
 LC2 child final local measurement: Ptolemy actual[['gpt-6-astra', 'high']], wall1958.81s including waits, uncached input415410, cached input6062208, output45622. Parent first3LC2failures led to actual default-routing repair and two exact oracle expectation repairs; five additional routing evidence controls. Corrected focused72PASS13.07s, adjacent56PASS13.64s, Host45PASS0.52s. Native and final cumulative still pending; no-dispatch historical default is unprovable and not claimed preserved. Parent also fixed formatting and protocol metadata typing. No matched-task savings claim.
+
+
+2026-09-14 原生v36后记：主模型Astra/high保持，按任务自编排，无plan-test skill。下表取本地去重response_id记录，不是订阅官方计费。墙钟含等待，各项不可相加；父任务独立协调时间未精确分离。
+
+| 子代理 | 实际模型/推理 | 墙钟秒 | 非缓存输入 | 缓存输入 | 输出 | 接受/返工 |
+|---|---|---:|---:|---:|---:|---|
+| Meitner | Terra/high | 275.96 | 138929 | 1445888 | 10930 | UI117测试与原生v36通过；父审发现发送失败挂起后修复 |
+| Cicero | Luna/medium | 117.56 | 74275 | 649728 | 5216 | 审批数量与普通请求byte基线建议采用，真实行为由父测v36 |
+| Aquinas | Terra/medium | 128.76 | 60398 | 411904 | 6431 | 48AC清单仅作线索，部分状态/条件过期，父审修订；不作为完成数量 |
+| Erdos | Sol/high | 305.76 | 121520 | 2472448 | 15079 | 旧库脚本采用，父任务补第二来源登记并亲跑旧SDK/新原生；不由子代理宣称PASS |
+
+不同任务不可据此计算节省百分比。原始用量位于ignored agent-efficiency-0500/usage-native-v36.json。
