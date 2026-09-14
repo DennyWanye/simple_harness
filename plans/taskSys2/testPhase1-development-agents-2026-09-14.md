@@ -14,7 +14,7 @@
 |Hypatia|gpt-5.6-terra/medium|166.40|61263|610816|5707|7 legacy defects addressed; parent44PASS1too-broad dict equalityFAIL; parent corrected worker-key assertion then126combinedPASS|
 |Galileo|gpt-5.6-sol/medium|149.87|95988|1341440|6245|parent accepted after correction of concurrent perAttempt nested field; 9Host regressions PASS24.39seconds|
 |Ohm|gpt-5.6-sol/medium|46.06|39695|275712|1846|20seconds nested Attempt key fix; parent9HostregressionsPASS24.39seconds|
-|Noether|gpt-5.6-terra/medium|155.83|56523|615936|7080|aggregate script delivered; parent renamed outputs to avoid overwrite of coordinator summary; actual matrix not yet available|
+|Noether|gpt-5.6-terra/medium|155.83|56523|615936|7080|聚合脚本已用于16次记录；父代理增加SDK工具对账与有效闭环判据，保留2次R自选失败，未重解析晋级|
 |Boyle|gpt-5.6-sol/high|166.08|59611|1086208|7739|accepted production change; parent23+16+196focusedPASS; parent critic recovery witness required3 oracle/fixture corrections, not attributed to child production code|
 
 合计未缓存输入984,382、缓存输入15,337,600、输出129,883。推理tokens是输出子集，不再加一次。缓存输入不能称为免费。
@@ -26,3 +26,5 @@
 当前可观察结论：Terra适合范围清楚的断言迁移和统计辅助，但夹具仍需父代理校正；Sol承担计量、启动恢复、矩阵控制等跨层任务，仍须父代理独立运行测试。对同一个小问题追加代理有上下文成本，后续优先让父代理直接收尾。没有同任务同条件的主代理独做对照，不能据此宣称某模型更省钱或固定提速。
 
 本地数值回执：`.local-test-evidence/2026-09-14/gap-phase1/usage-latest.json` SHA256 `fa85e5d19f9c84f0fd95c49b48fdac524e84e1964c49cd8a5fe0ac96e6d24241`。不提交消息、日志或原始回执。
+
+最终验收补充：12个子代理均已关闭，无新增代理调用。父代理核对发现R两题官方终态成功但自选JSON解析失败，因此最终报告增加有效闭环判据；从SDK补齐缺失网关outcome和R异常未返回的工具计数。上述审阅与文档时间未独立计时，不能从子代理耗时推算净节省。原数值回执仍保留15:33检查点，token计数未改。
