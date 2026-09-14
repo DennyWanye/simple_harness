@@ -1,3 +1,5 @@
+**最后更新：2026-09-14 17:55 CST — testPhase1三项修复进入真实复测。** AppWorld Mission显式256K池绑定接通现有522240任务预算下限；R改为有界版本化选择且独立valid_success；网关异常/取消补终态审计。定向155PASS/11.88秒；完整编排2096PASS/20SKIP/0FAIL，686.51秒，runner687.033秒，退出无残留；当前源码原生v47冷读通过，12表/15调用精确一致、0新调用，228.444秒；原四题16次本地模型复测进行中，首题S/R有效成功，D后续多轮仍受Task硬上限停止，预算规划效果不宣称全面完成。旧16次失败保持原样；默认256K/物理1，DeepSeek0调用，不打包。 [修复边界、耗时与证据](../plans/taskSys2/testPhase1-followup-2026-09-14.md)。
+
 **最后更新：2026-09-14 16:47 CST — testPhase1测试执行完成，3项后续修复明确保留。** 功能源码全编排2079PASS/20SKIP/0FAIL，879.28秒；原生v45可信知识两Task/真实pytest/独立Critic/人工复核与冷恢复通过，v46复制数据重开通过，0重调。正式四臂16/16完成，282调用3076186tokens，5758.78秒；S有效3/4，R有效2/4（官方终态4/4，另2次自选JSON解析失败），D/F各0/4且均任务级预算停止。D/F无已观察知识复用/动态图收益；全部终态预留0、SDK工具重下发0，保留1工具失败/1拒绝及1网关outcome缺失。剩余Planner预算可行性、R选择协议、异常网关终态3项尚未修复。默认本地256K/物理1，DeepSeek0调用；不打包、不扩大96次。 [完整结果与证据](../plans/taskSys2/testPhase1-results-2026-09-14.md)。
 
 ## testPhase1 当前Host链路（2026-09-14）
@@ -5,7 +7,7 @@
 - `backend/deskpet/orchestration/service.py`部署默认工具门包含knowledge_list/knowledge_read，code_test仍按已有本地执行许可接通；新Mission会冻结该权限，旧Mission不回写扩大权限。
 - 跨分支原生夹具以真实system test_observation为可复用依据，下游实际查目录、读原文并引用精确观察ID/工作区hash；用户在源码UI查看代码、测试、报告后批准，两个Task及Mission进入COMPLETED，最终产物VERIFIED。
 - 当前源码验证依赖配套SDK editable checkout；旧固定wheel不包含新增实现。AppWorld本轮通过SDK独立评测入口，不是新增Host跨应用业务UI。
-- 最新功能源对应SDK84c3235/Host23cb7d37；全编排2079PASS/20SKIP及原生证据各保留自己的快照身份。效果实验的预算与R协议失败仍是公开待修事项，不能从UI交付成功外推为编排普遍有效。
+- 最新功能源对应SDK84c3235/Host23cb7d37；全编排2079PASS/20SKIP及原生证据各保留自己的快照身份。原效果实验失败保留；预算与R协议的SDK后继修复已通过定向测试，真实复测仍待，不能从UI交付成功外推为编排普遍有效。
 
 **最后更新：2026-09-14 13:15 CST — testPhase1仍在执行。** 新code profile v2默认范围化pytest观察，17项新正负控通过；知识原文分页/精确引用/撤回投影通过离线检查，真实本地中英消费5调用24405tokens/113.63秒通过。AppWorld第三领域及真实保存恢复/独立评分接通；首技术探针预算失败保留，5题校准进行中。S/R实际BaseAgent身份/自选控制及计量离线通过；D/F整体、16episodes、T6、最新原生UI仍待。不覆盖历史Phase3验收，不打包。 [执行证据](../plans/taskSys2/agent-orchestrator-gap-review-testPhase1-2026-09-14.execution.md)。
 
