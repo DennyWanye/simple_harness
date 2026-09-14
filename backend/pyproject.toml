@@ -36,7 +36,7 @@ dependencies = [
     "edge-tts>=7.0",
     "faster-whisper>=1.1",
     # P2-0-S4: scripts/perf/rss_sampler.py uses psutil to watch process RSS.
-    "psutil>=5.9.0",
+    "psutil>=7.2.2,<8",
     # P2-1-S6: /metrics endpoint exposes TTFT Histogram.
     "prometheus-client>=0.25.0",
     # P2-1-S8: zoneinfo needs a tz database on Windows (no system

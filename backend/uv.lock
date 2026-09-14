@@ -7707,7 +7707,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "playwright", specifier = "==1.61.0" },
     { name = "prometheus-client", specifier = ">=0.25.0" },
-    { name = "psutil", specifier = ">=5.9.0" },
+    { name = "psutil", specifier = ">=7.2.2,<8" },
     { name = "pyautogui", specifier = ">=0.9.54" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=6.11" },
