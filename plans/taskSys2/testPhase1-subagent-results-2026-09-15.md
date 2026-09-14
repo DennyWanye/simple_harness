@@ -34,3 +34,11 @@ Latest N2 read-only Sol identified the missing generic semantics but overreached
 Latest bounded meter adapter child: requested/actual Sol high; 352.56 seconds; uncached input 77117, cached input 1478656, output 16533. Parent reviewed code, preserved window/posthandoff distinctions, combined 69PASS and decisive old-source 2FAIL/1PASS. All 22 children closed. Main remains Astra/high; no matched savings claim.
 
 N3 helper child actual [['gpt-5.6-sol', 'medium']], elapsed 338.17s, uncached input 77506, cached input 1108736, output 15268. Scaffold only: parent corrected LAN rejection, invalid KnowledgeRecord status, incomplete paging proof, aggregate-versus-peak tokens and batch failure handling. Parent offline core/scorer checks now pass, real runs not yet begun. All 23 children closed. This narrow helper required material parent rework; no savings conclusion.
+
+## N1 边界侧审（第24个；当前均已关闭）
+
+|子代理|请求/实际模型与推理|返回时间|未缓存输入|缓存输入|输出|接受与返工|
+|---|---|---:|---:|---:|---:|---|
+|01a0a13a-b423-7630-95de-63248c85ffae|Sol medium / [['gpt-5.6-sol', 'medium']]|102.3秒|71908|328320|4680|只读定位UI主对话/编排/实验三入口，确认同机共享容量必须保留handoff后未知；实现/真实跨客户端验收尚未完成|
+
+限定12个文件、无历史fork、最多600中文词、无模型试验。父级同时完成N3回归/原生证据和提交；父级协调未独立计时。未将该只读结果算作功能完成，也无匹配任务对照来声称节省百分比。真实模型保持Qwen256K；主会话模型未改。
