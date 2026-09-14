@@ -105,7 +105,7 @@ async def test_p34_fragment_crossbranch_public_orchestrator(tmp_path: Path):
         assert manager_packages[1]["validated_fragment"]["validation_task_id"] == f.id
         synthesis_packages = [package_of(item) for item in provider.requests
                               if role_of(item) == "synthesizer"]
-        assert any(any(row.get("content") == "C incorporated accepted F and independent B"
+        assert any(any(row.get("type") == "test_observation" and PROBE in row.get("content", "")
                        for row in package["verified_knowledge"])
                    for package in synthesis_packages)
         assert provider.by_role["worker"] > 0

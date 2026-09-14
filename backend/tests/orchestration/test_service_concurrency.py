@@ -20,7 +20,7 @@ import asyncio
 
 import pytest
 
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider, critic_step, graph_proposal_step
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider, critic_step, graph_proposal_step, package_of
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import NOTES_TASK, _notes_worker, notes_request, review_provider
@@ -40,11 +40,21 @@ async def _until(service, mission_id: str, status: str, seconds: float = 30.0) -
 
 @pytest.mark.asyncio
 async def test_writes_interleaved_with_a_running_loop_do_not_collide(orchestration_root, principal):
+    worker_steps = {}
+
+    def worker_step(request):
+        # Different Missions can interleave their model turns. Each Attempt
+        # must write its own file before returning its own result envelope.
+        attempt_id = package_of(request)["attempt"]["attempt_id"]
+        steps = worker_steps.setdefault(attempt_id, _notes_worker())
+        step = steps.pop(0)
+        return step(request) if callable(step) else step
+
     provider = RoleScriptedProvider(
         {
-            # identical steps per role, so the order two Missions consume them does not matter
+            # Planner/critic steps are independent; Worker sequences are per Attempt.
             "planner": [graph_proposal_step([NOTES_TASK]) for _ in range(3)],
-            "worker": _notes_worker() + _notes_worker(),
+            "worker": [worker_step] * 6,
             "critic": [critic_step(verdict="PASS", criteria_met=True) for _ in range(6)],
         }
     )

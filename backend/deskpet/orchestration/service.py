@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 TENANT = "local-desktop"
 WORKSPACE_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list")
+KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 FACADE_CODES = {
     "invalid_request": "invalid_request",
@@ -258,7 +259,8 @@ class OrchestrationService:
         self._sandbox = await self._probe_sandbox()
         sandboxed = bool(self._sandbox.get("ok"))
         self._deployment = DeploymentPolicy(
-            allowed_tools=(*WORKSPACE_TOOLS, "run_tests") if sandboxed else WORKSPACE_TOOLS,
+            allowed_tools=(*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "run_tests")
+            if sandboxed else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS),
             code_execution="sandboxed" if sandboxed else "off",
             enabled_connectors=enabled_connectors,
             max_action_level="L2",  # one person: L3's two distinct people cannot be met

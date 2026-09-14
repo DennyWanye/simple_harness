@@ -34,7 +34,7 @@ def native_search_mission() -> dict[str, Any]:
         "idempotency_key": CASE,
         "budget": {"max_tokens": 450_000, "max_attempts": 20},
         "synthesis": {
-            "goal": "independently synthesize consumer C",
+            "goal": f"independently synthesize consumer C using pytest:{PROBE}",
             "success_criteria": ["file:final.md", f"pytest:{SYNTHESIS_PROBE}"],
             "budget": {"max_tokens": 30_000, "max_attempts": 2},
         },
@@ -201,7 +201,9 @@ def native_search_provider() -> Any:
     def synthesis(request: Any) -> Any:
         package = package_of(request)
         verified = [item["id"] for item in package["verified_knowledge"]
-                    if item.get("content") == "C incorporated accepted F and independent B"]
+                    if item.get("type") == "test_observation"
+                    and f"pytest target {PROBE!r} passed on workspace SHA-256 "
+                    in item.get("content", "")]
         if len(verified) != 1:
             raise ValueError("S did not receive exactly one verified C knowledge")
         pending = _read(request, "consumer.md", CONSUMER)

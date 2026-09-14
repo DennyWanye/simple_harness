@@ -10,8 +10,6 @@ local tests are off, however the Planner fills in ``verification_policy``.
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from agent_orchestrator.testing.fixtures import (
@@ -25,9 +23,11 @@ from deskpet.orchestration.settings import OrchestrationSettings
 
 from ._support import WORKSPACE_TOOLS, notes_provider, notes_request
 
+KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
+
 
 @pytest.mark.asyncio
-async def test_default_deployment_offers_only_workspace_tools(orchestration_root, principal):
+async def test_default_deployment_offers_workspace_and_scoped_knowledge_tools(orchestration_root, principal):
     service = OrchestrationService(
         orchestration_root,
         OrchestrationSettings(),
@@ -37,17 +37,17 @@ async def test_default_deployment_offers_only_workspace_tools(orchestration_root
     )
     await service.start()
     try:
-        # P3.2 (plan D9): the workspace tools are always there; ``run_tests`` is there when
+        # Workspace and Mission-scoped knowledge reads are always there; ``run_tests`` is there when
         # — and only when — the sandbox probe passed on this machine, because that is the
         # only way model-written code may run at all
         status = service.status()
         sandboxed = bool(status["sandbox"].get("ok"))
-        expected = sorted([*WORKSPACE_TOOLS, "run_tests"] if sandboxed else WORKSPACE_TOOLS)
+        expected = sorted([*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, *(["run_tests"] if sandboxed else [])])
         assert sorted(status["allowed_tools"]) == expected
         assert status["code_execution"] == ("sandboxed" if sandboxed else "off")
         created = service.create_mission(notes_request("k-tools"))
         mission = service.mission_detail(created["mission_id"])["mission"]
-        assert set(mission["allowed_tools"]) <= set(expected)  # never the SDK default four
+        assert set(mission["allowed_tools"]) <= set(expected)
     finally:
         await service.close()
 
@@ -138,8 +138,17 @@ async def test_model_written_tests_never_run_when_local_tests_are_off(
             # P3.2: the file *does* run now — inside the sandbox — so the Attempt is real;
             # what stops the side effect is the isolation, not a refusal to execute
             assert detail["attempts"], detail["mission"]
-            ran = json.dumps(detail["attempts"], ensure_ascii=False)
-            assert "pytest" in ran, "code_test should have run the model-written file"
+            # Attempt failures are UI-truncated; inspect the durable verification receipt.
+            with service._orchestrator.store.read_view():
+                snapshot = service._orchestrator.store.snapshot(created["mission_id"])
+            runs = [run
+                    for result in snapshot["results"]
+                    for layer in result["verifications"]
+                    if layer["layer"] == "code_test"
+                    for run in layer["detail"].get("runs", [])]
+            assert any(run.get("receipt", {}).get("status") == "ok"
+                       and run["receipt"].get("execution_id")
+                       for run in runs), "code_test needs a durable execution receipt"
         else:
             # refused honestly, not left hanging (review P2-10: a Mission has no RUNNING
             # status, so the old ``!= "RUNNING"`` could never fail): every plan asks for the
@@ -162,13 +171,15 @@ async def test_no_host_tool_reaches_the_orchestration_runtime(orchestration_root
     )
     await service.start()
     try:
-        # nothing of the Host's own chat surface reaches the orchestration runtime: the set
-        # is exactly the workspace tools, plus ``run_tests`` when the sandbox proved itself
+        # Nothing of the Host's own chat surface reaches the orchestration runtime: the set
+        # is exactly workspace tools and Mission-scoped knowledge reads, plus ``run_tests``
+        # when the sandbox proved itself
         # here (P3.2 plan D9).  Anything else would be a leak (review P2-10).
         offered = set(service.runtime_tool_names())
         sandboxed = bool(service.status()["sandbox"].get("ok"))
-        assert offered - set(WORKSPACE_TOOLS) <= {"run_tests"}
+        assert offered - set(WORKSPACE_TOOLS) <= {*KNOWLEDGE_TOOLS, "run_tests"}
         assert ("run_tests" in offered) is sandboxed
         assert set(WORKSPACE_TOOLS) <= offered
+        assert set(KNOWLEDGE_TOOLS) <= offered
     finally:
         await service.close()
