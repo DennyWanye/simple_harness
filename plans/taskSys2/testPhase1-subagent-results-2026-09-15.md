@@ -1,6 +1,6 @@
 # Development subagent results
 
-Collected 2026-09-14T16:06:16.843309+00:00. Main session remains GPT-6 Astra/high. At most three simultaneous children. Durations are first launch to final return, include gaps/review/idle; not active CPU or billable time. Cache is not inferred as free. No matched-task savings or subscription dollar estimate claimed. Parent development and coordination are not independently time-separated. Raw numeric records stay ignored.
+Collected 2026-09-14T16:49:24.624873+00:00. Main remains GPT-6 Astra/high. At most three concurrent children; 21 cumulative, all closed. Durations include gaps/review/idle, not billable time; cache is not assumed free. No matched-task savings or subscription dollar estimate. Parent coordination time is not independently separated.
 
 |Scope|Requested / observed model-effort|Elapsed span s|Uncached input|Cached input|Output|Outcome|
 |---|---|---:|---:|---:|---:|---|
@@ -23,5 +23,10 @@ Collected 2026-09-14T16:06:16.843309+00:00. Main session remains GPT-6 Astra/hig
 |N2 zero-call real AppWorld calibration launcher|gpt-5.6-sol/medium / gpt-5.6-sol/medium|576.77|216325|2754560|17724|HELPER_PARENT_FIXED_PROCESS_GROUP_AND_DENIAL_AUDIT_DRY_V2_PASS_LIVE_RUNNING|
 |cold recovery warm timeout diagnosis|gpt-5.6-sol/high / gpt-5.6-sol/high|594.37|127437|2253696|26142|DIAGNOSTIC_WATCHDOG_TEST_ONLY_PARENT6PASS_RUNTIME_ROOTCAUSE_UNPROVEN|
 |N2 failed model run read-only forensic|gpt-5.6-terra/high / gpt-5.6-terra/high|572.83|102642|1426176|23596|FORENSIC_ACCEPTED_PARENT_CORRECTED_CAUSAL_INFERENCE_NO_MODEL_CALLS|
+|N2 v2 task budget read-only forensics|gpt-5.6-sol/high / gpt-5.6-sol/high|392.41|96154|2358784|17239|PARENT_ACCEPTED_MISSING_SEMANTICS_FINDING_REJECTED_FULL_POOL_VALIDATION_AND_CORRECTED_CAUSAL_CLAIM|
+|N7 task-block uncertainty analysis|gpt-5.6-sol/high / gpt-5.6-sol/high|369.01|58632|957824|17312|PARENT_ACCEPTED_TASK_BLOCK_BOOTSTRAP_87_COMBINED_PASS_NO_MODELS|
 
 Observed tradeoffs: scoped Terra schema/statistics reviews found useful concrete defects, but forensic causality needed parent correction. Sol delivered executable adapters/helpers, with parent rework on source identity, detached process cleanup, stale-state checks and denied-call auditing. Some resumed children recorded Astra/high despite lower initial requested models; actual models are retained above, not billed/credited as Sol-only. Do not resume a lower-model child without verifying its actual model on the next turn. For future slices use a short contract and one acceptance boundary, stop nonreproducing rerun loops, and review helpers before expensive model calls. No universal cheapest-model conclusion follows from these unmatched tasks.
+
+
+Latest N2 read-only Sol identified the missing generic semantics but overreached into mandatory full-pool validation; parent rejected that policy and corrected the causal claim. Narrow diagnosis still consumed substantial context; terminate once the required evidence is found. N7 Sol delivered two-file optional offline analysis with parent 87-test combined verification and no provider calls.
