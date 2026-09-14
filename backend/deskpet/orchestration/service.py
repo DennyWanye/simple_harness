@@ -828,12 +828,19 @@ class OrchestrationService:
                     "ui_state": ui_state(
                         mission["status"],
                         attempt_statuses=self._attempt_statuses(mission_id),
+                        task_statuses=self._task_statuses(mission_id),
                         waiting=bool(mission.get("pending_approvals")) or self._waiting(mission_id),
                         blocked=blocked,
                     ),
                 }
             )
         return rows
+
+    def _task_statuses(self, mission_id: str) -> list[str]:
+        try:
+            return [str(t.status) for t in self._orchestrator.store.list_tasks(mission_id)]
+        except Exception:  # noqa: BLE001
+            return []
 
     def _attempt_statuses(self, mission_id: str) -> list[str]:
         try:

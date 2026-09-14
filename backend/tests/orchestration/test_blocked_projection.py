@@ -157,3 +157,24 @@ def test_bounded_billable_response_wait_is_running_but_unknown_remains_visible()
         detail = service.mission_detail("mission-1")
         assert row["ui_state"] == detail["mission"]["ui_state"] == expected
         assert bool(detail["blocked"]) == (expected == "unknown")
+
+
+def test_completed_tasks_await_mission_judgment_in_list_and_detail() -> None:
+    from deskpet.orchestration.projection import project_detail, ui_state
+
+    service = _service(heartbeats=[], statuses={"done": "COMPLETED"})
+    service._orchestrator.store.list_tasks = lambda mid: [
+        SimpleNamespace(id="task-done", status="COMPLETED")
+    ]
+    [row] = service.list_missions()
+    detail = project_detail({"snapshot": {
+        "mission": {"id": "mission-1", "status": "ACTIVE"},
+        "tasks": [{"id": "task-done", "status": "COMPLETED"}],
+        "attempts": [{"id": "done", "task_id": "task-done", "status": "COMPLETED"}],
+    }})
+    assert row["ui_state"] == detail["mission"]["ui_state"] == "verifying"
+    assert ui_state("ACTIVE", task_statuses=["COMPLETED", "READY"]) == "queued"
+    assert ui_state("ACTIVE", task_statuses=[]) == "queued"
+    assert ui_state("ACTIVE", task_statuses=["COMPLETED"], waiting=True) == "waiting_person"
+    assert ui_state("ACTIVE", task_statuses=["COMPLETED"], blocked=True) == "unknown"
+    assert ui_state("COMPLETED", task_statuses=["COMPLETED"]) == "delivered"

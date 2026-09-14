@@ -88,3 +88,32 @@ SDK实际工具：38次appworld_execute、workspace_list和workspace_write_file�
 ### 原生在途状态展示修复
 
 v59实机仍有旧Host投影缺陷：SDK真实provider_response_wait（billable=true,bounded=true）被通用blocked分支显示为“进程退出/UNKNOWN”，但模型持续返回、进程存活。这是展示误判，未触发接管或重试。Host仅排除SDK明确的有界在途等待及原排队等待；真实未知、缺bounded和未识别blocker仍显示UNKNOWN。原定向1FAIL/2PASS，新Host投影36PASS/8.39秒，ruff通过；新Host源码实机复验待。旧证据v59/live-wait-projection-before.png和ui-wait-old.log保留。
+
+
+### 原生同题 v59 正式交付（保留 UI 展示缺陷）
+
+Host a7518d19 / SDK f122b8c，题目/成功条件/预算/工具与v58完全相同。Mission mission-6165b70b4c813fd2正式COMPLETED，Task Critic PASS、实际code_test 65PASS；Planner另选human_review，父级读源码/测试/报告后在UI填写“助手测试复核，非用户本人审阅”并通过，三个产物VERIFIED。83事件回放差异0/未知事件0/缺口0，预留0。此轮最终Mission复用了Task Critic，不能据此声称独立Mission judge增长路径已实机验证。
+
+本地SDK和HTTP均14次真实调用、112753已知tokens（Mission109099，前台3654）；无新未知、无AttemptTimedOut。模型跨度988.051秒，包含助手审批等待后终态1095.251秒；观察器1190.643秒不算模型时长。共池14grants全部SETTLED，峰值2槽/271582、抢占增量0。服务全局计数+15，比本地SDK/HTTP多1，无法归属的那次不编造tokens，也不声称服务独占。
+
+累计本轮续作299个本地可归属调用、6875081已知tokens下限，1早先未知保留；另记服务全局未归属增量1。Flash0。新Host a93073ce更新后v60冷复制129文件逐个hash相同，源码启动中；独立的针对性case先固定于v60-focused-protocol.json，不替换同题结果。
+
+- Host `.local-test-evidence/2026-09-15/shared-capacity/native-wave-a-context-v59/final-audit.json` SHA256 `641de67192a38cecdb70d518b70cdbedde4df3cd7811752781493a8e602139f3`
+
+- Host `.local-test-evidence/2026-09-15/shared-capacity/native-wave-a-context-v59/delivered.png` SHA256 `c68abe420a1fc16429d211211bec56ef75f14ce26715664e7a75962cc3fba183`
+
+- Host `.local-test-evidence/2026-09-15/shared-capacity/native-wave-a-context-v59/replay.png` SHA256 `8689222a7a668e6e81797dd0a32e9321caf0e3387e0e14aba0122e4a0d34c5ac`
+
+- Host `.local-test-evidence/2026-09-15/shared-capacity/native-wave-a-context-v59/mixed-capacity/summary.json` SHA256 `56ab65e86598e05a8a5434b74cdc99ba948c7e2d90be921f304892c7aa05c0cf`
+
+- Host `.local-test-evidence/2026-09-15/shared-capacity/v60-focused-protocol.json` SHA256 `4f66e574d6b7102e79b5d2104d43d4d251d85cc66821972adada7781ba037b4e`
+
+
+新Host a93073ce / SDK f122b8c原生v60已验证实际在途等待：Mission mission-ad21508d89234c57，真实Heartbeat为provider_response_wait/billable=true/bounded=true，父级当场读取原生页面为“运行”，无错误进程退出/UNKNOWN接管警报。新Task确为rule_check/code_test，未配置Task Critic；最终独立Mission评审仍待。四个旧Mission冷恢复JSON完全相同，旧正式交付状态与三个VERIFIED产物已实点确认。
+
+本机证据 `.local-test-evidence/2026-09-15/shared-capacity/native-wave-a-context-v60/bounded-response-ui-audit.json` SHA256 `da9ed638e63bb4590b27e2bdec2d84b6ee8cb894e82aba2d0c74417540dc027c`。
+
+
+### Mission 最终验收状态词
+
+原生v60独立Judge实际运行，但旧Host只有终态Task时投影为“排队”。新增仅针对ACTIVE Mission且非空Task状态全部COMPLETED的“待验证”映射；待人、UNKNOWN、终态优先级不变，尚有READY的任务不提前认为在验收。列表和详情共同应用，37关联PASS/8.47秒、ruff通过。隔离加载a93073ce旧Host时新回归决定性FAIL（ui-judge-state-old-v2.log）；第一次未隔离conftest的旧源重跑实际加载当前源而PASS，保留日志但不作为旧源证据。最新Host原生分支待验。

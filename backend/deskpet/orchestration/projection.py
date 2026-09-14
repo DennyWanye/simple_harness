@@ -314,6 +314,7 @@ def ui_state(
     status: Any,
     *,
     attempt_statuses: Iterable[Any] = (),
+    task_statuses: Iterable[Any] = (),
     waiting: bool = False,
     blocked: bool = False,
 ) -> str:
@@ -335,6 +336,9 @@ def ui_state(
         return "running"
     if attempts & _VERIFYING_ATTEMPTS:
         return "verifying"
+    tasks = {str(s) for s in task_statuses}
+    if mission == "ACTIVE" and tasks == {"COMPLETED"}:
+        return "verifying"  # Task PASS still awaits the Mission's final judgment.
     if mission in _RECEIVED_MISSIONS and not attempts:
         return "received"
     return "queued"
@@ -616,6 +620,7 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
     state = ui_state(
         raw_mission.get("status"),
         attempt_statuses=(a["status"] for a in attempts),
+        task_statuses=(t.get("status") for t in snapshot.get("tasks") or ()),
         waiting=bool(waiting_on) or any(a.get("state") == "PENDING" for a in approvals),
         blocked=bool(blocked),
     )
