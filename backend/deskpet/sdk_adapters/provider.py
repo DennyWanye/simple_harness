@@ -1207,6 +1207,9 @@ class ProductProviderAdapter:
             frozen_model,
             Secret(secret_value),
             timeout,
+            # This endpoint is explicitly selected from the user's registry.
+            # SDK validation still rejects public/DNS/link-local plaintext URLs.
+            allow_private_http=True,
             provider_id=provider_id,
             pricing_key=pricing_key,
             reasoning_wire=self.reasoning_wire,
