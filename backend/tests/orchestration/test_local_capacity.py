@@ -56,8 +56,10 @@ def test_only_selected_local_endpoint_gets_capacity(profile, tmp_path):
 def test_mismatched_model_and_unbounded_request_are_rejected(profile):
     with pytest.raises(ValueError, match='differs'):
         bind_local_capacity(Provider(), profile, base_url='http://127.0.0.1:11434/v1', model='wrong')
+    class Counter:
+        fingerprint = 'bounded-wire-counter'
     bound = bind_local_capacity(Provider(), profile, base_url='http://127.0.0.1:11434/v1',
-                                model='local-test')
+                                model='local-test', counter=Counter())
     with pytest.raises(ValueError, match='output'):
         bound.deployment_capacity.estimate(ProviderRequest(RequestId('r'), (Message(MessageRole.USER, 'hello'),)))
 
@@ -72,3 +74,19 @@ def test_repeated_binding_is_idempotent_and_conflicting_counter_rejected(profile
     with pytest.raises(ValueError, match='different local capacity'):
         bind_local_capacity(first, profile, counter=Counter(), **kwargs)
     assert first.deployment_capacity.ledger.snapshot().held_slots == 0
+
+
+def test_foreground_default_output_reserves_entire_server_window(profile):
+    """The actual foreground runtime leaves output policy in its bound adapter."""
+    kwargs = {'base_url': 'http://127.0.0.1:11434/v1', 'model': 'local-test'}
+    request = ProviderRequest(RequestId('foreground-default-output'),
+                              (Message(MessageRole.USER, 'hello'),))
+    foreground = bind_local_capacity(Provider(), profile, **kwargs)
+    assert foreground.deployment_capacity.estimate(request) == 262144
+    class Counter:
+        fingerprint = 'wire-counter'
+        def estimate_input_tokens(self, request):
+            return 100
+    orchestration = bind_local_capacity(Provider(), profile, counter=Counter(), **kwargs)
+    with pytest.raises(ValueError, match='output'):
+        orchestration.deployment_capacity.estimate(request)

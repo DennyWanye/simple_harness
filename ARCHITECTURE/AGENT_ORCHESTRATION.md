@@ -1,3 +1,5 @@
+最后更新：2026-09-15 05:53 CST。N1共享容量SDK完整2302PASS/32条件SKIP/669.22秒，620hash不变。原生v55前台None输出误拒绝已定位并修复（12定向PASS，原0调用失败保留），真实多进程与新UI待验，整体N1–N8仍OPEN。 [本轮证据](../plans/taskSys2/testPhase1-shared-capacity-2026-09-15.md)。
+
 最后更新：2026-09-15 05:40 CST。N1同机共享2槽/393216容量接纳实现，SDK40定向PASS、Host15PASS；重复绑定与PID复用问题已修复，未知出站保留。完整回归/真实多进程/当前源码UI仍待；N1–N8/正式A96B96仍OPEN、Flash0，无打包。 [当前范围](../plans/taskSys2/testPhase1-shared-capacity-2026-09-15.md)。
 
 最后更新：2026-09-15 02:44 CST。code profile v4生产3e2792f：原分页/时间例外两个失败题自然复验均VERIFIED（16调用139927tokens/290.623秒），旧失败保留。完整v9为2275PASS32SKIP1旧版本断言FAIL，后继28PASS及官方ARE50PASS，无生产再改；当前源码UI v54冷恢复实点通过，0新调用。累计261本地调用5430502已知tokens下限/1早先未知，Flash0。N1–N8/A96B96仍OPEN，无打包。 [最新证据与边界](../plans/taskSys2/testPhase1-result-contract-followup-2026-09-15.md)。

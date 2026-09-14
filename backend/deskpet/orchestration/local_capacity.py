@@ -44,7 +44,11 @@ def bind_local_capacity(provider, profile_path, *, base_url, model, counter=None
 
     def weight(request):
         output = request.max_output_tokens
-        if type(output) is not int or not 0 < output <= 262144:
+        # Foreground's bound adapter supplies its output policy later. None is
+        # safe only when reserving the entire server-enforced context window.
+        if not (counter is None and output is None) and (
+            type(output) is not int or not 0 < output <= 262144
+        ):
             raise ValueError('local capacity requires a positive bounded output cap')
         if counter is None:
             # Foreground uses a different payload restorer. Reserve its entire

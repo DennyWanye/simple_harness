@@ -1,6 +1,6 @@
 # N1 同机共享模型容量接纳
 
-最后更新：2026-09-15 05:40 CST。实现与定向测试已完成；新完整回归、真实Qwen多进程及源码UI联调待验。N1–N8整体仍OPEN，Flash0。
+最后更新：2026-09-15 05:53 CST。SDK完整回归2302PASS/32条件SKIP（669.22秒），620源/测试hash不变。原生v55发现前台None输出参数被误拒绝，0物理调用；修复后Host12定向PASS/0.13秒，新原生复验与真实多进程待验。N1–N8整体仍OPEN，Flash0。
 
 同一个规范化local profile文件的相邻capacity-v1.sqlite3为共同账本，物理endpoint作为池身份（模型别名不另开容量），上限2槽/393216在途tokens。配置冲突拒绝，重复同配置绑定幂等，冲突嵌套绑定在出站前拒绝。主对话保守预留整个262144服务窗口，编排/实验使用已绑定tokenizer的最终wire输入加输出上限。两个执行器内部2槽不再等于两份独立总容量。
 
@@ -15,9 +15,11 @@ SQLite FIFO/短事务保存WAITING、RESERVED、HANDED_OFF、UNKNOWN和终态；
 |定向检查|结果|实测时间|
 |---|---|---|
 |SDK原语/出站/Orchestrator/计量/恢复/历史结果合同|40PASS；含进程杀死、PID复用、取消、缺usage未知保持、同DB可信对账、错DB拒绝、实际runtime嵌套一次占用|2.59秒|
-|Host本地profile/主对话与编排共池/绑定幂等及原LAN请求|15PASS，配置不符拒绝、原provider身份保持|以host-review-v4.log原始时间为准|
-|静态检查|5个SDK源mypy通过；Ruff检查收尾中|工程未独立计时|
+|Host本地profile/主对话与编排共池/绑定幂等及原LAN请求|15PASS，配置不符拒绝、原provider身份保持|0.25秒|
+|静态检查|5个SDK源mypy通过；Ruff通过|工程未独立计时|
 
 保留初始失败：父级把Agent.run_id(str)当RunId.value导致真实runtime用例失败，已修正；Host测试夹具空messages先于输出cap校验失败，已补真实消息。独立审查发现重复绑定自锁和PID复用陈旧队列，已新增回归与修复，未通过放宽断言隐藏。
 
 真实协议预声明：Qwen256K；三个160K输入进程（最多2并行），两个210K输入进程（加权后串行），每请求输出上限4096、超时600秒；先查服务idle，未知用量停止后继接纳。具体任务文本、源hash和实际server usage将在运行前后存本机ignored证据，不把预声明当已执行。
+
+前台真实缺口：ProviderRequest.max_output_tokens=None表示下游绑定adapter管理输出，并非没有服务总窗口。容量层仅在前台整窗262144预留分支接受None；精确tokenizer分支仍必须有明确正整数输出上限。原生v55拒绝前handoff=0、provider_calls=0保留；新反例先FAIL，再12PASS。
