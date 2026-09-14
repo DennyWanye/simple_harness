@@ -134,3 +134,21 @@ Erdos fixture required a second parent correction: initial CREATED/manual-intent
 
 
 2026-09-14 tool diagnostics v40: Dewey actual Sol/medium,107.49wall seconds including waits,58775uncached input/388864cached input/5116output. Adapter plus metadata tests accepted after parent added failed AgentTurn cold persistence and fixed invalid-id fixture missing function. Expanded checks exposed a pre-existing accounting public-API snapshot omission; parent added four existing exports. Final67PASS1.90s. No new retry, raw argument retention or historical-v13 exact-cause claim. All children closed; parent active coordination not separately timed. Raw usage-tool-diagnostics-final-v40.json in ignored agent-efficiency-0500; local deduplicated counters are not official subscription charges or evidence of savings.
+
+
+## 2026-09-14 strict provider implementation and review
+
+Main remains GPT-6 Astra/high. Actual child runtime identities below come from turn_context, not requested labels. All four are closed; no child ran pytest, native UI or paid API calls. Parent owns source integration and the completed fixed v15 pair (both strictPASS,1029.73seconds).
+
+| Child | Actual model/effort | Session wall seconds | Uncached input | Cached input | Output | Accepted result and parent rework |
+|---|---|---:|---:|---:|---:|---|
+| Kuhn | gpt-5.6-sol/medium | 56.19 | 46223 | 233984 | 2164 | REVIEW_ACCEPTED_NO_CONFIRMED_PARSER_BUG; Read-only review; no edits or tests. Parent diagnostic probe required production wire reconstruction; historical cause not inferred. |
+| Hume | gpt-5.6-sol/high | 181.21 | 75822 | 834048 | 8427 | ACCEPTED_COMMITTED_158PASS_PARENT_EXTENDED_STRICT_V9; Parent added missing test Counter estimate_input_tokens; integrated distinct v9 profile while preserving original semantic criteria and v7 hash. |
+| Poincare | gpt-5.6-sol/medium, gpt-6-astra/high | 1682.74 | 200280 | 953600 | 4682 | ACCEPTED_READONLY_DESIGN_AND_FINAL_NO_FINDINGS; Resumed for final bounded adapter/counter/profile/P34 review; no findings. Session wall includes closed waiting; no separate active-time measurement. |
+| Hubble | gpt-5.6-sol/high | 462.78 | 162793 | 2528000 | 20908 | ACCEPTED_COMMITTED_158PASS_AND_V15_PAIR_PASS; Parent corrected absolute end string pattern, unsupported nullable/array-length constraints, canonical branch ordering and trailing-slash test expectations; integrated shared serializer token counting and profile isolation. |
+
+Poincare began as Sol/medium; the resumed final review actually ran Astra/high. Its 1682.74-second session span includes closed waiting and is not active review time. Actual task event spans were87.467seconds(Sol) and43.937seconds(Astra),131.404seconds in total; these include each turn's tool waits. This is an observed child runtime change, not a change to the main session. Future resumed children must have actual model/effort checked again; planned labels cannot stand in for runtime evidence.
+
+Committed SDK ae8d37b targeted regression:158PASS6.76s (runner7.26s), including unchanged legacy wire/fingerprint, strict counted-body/HTTP equality, durable canonical roundtrip, profile isolation, priced length recovery and malformed-JSON refusal. Earlier red checks retained. Parent coordination and integration time were not isolated from implementation/API waits; no matched-task efficiency or subscription savings percentage is claimed. Cached input is a subset of input; reasoning is a subset of output. These local counters are not official subscription charges.
+
+Raw numeric index: .local-test-evidence/2026-09-13/p33-g/agent-efficiency-0500/usage-p34-strict-final.json; SHA256 bdb31343472d5ee2e7066c53373eb139a2531af88394f0185b0070f57a344556.
