@@ -81,15 +81,17 @@ def snapshot_from_registry(registry: Any) -> ProviderSnapshot:
     )
 
 
-def build_provider(snapshot: ProviderSnapshot) -> tuple[Any, Any]:
+def build_provider(snapshot: ProviderSnapshot, *, timeout: float = 180.0,
+                   allow_private_http: bool = False) -> tuple[Any, Any]:
     """``(provider, http_client)`` — the caller closes the client on shutdown."""
 
     import httpx
     from simple_harness.providers import OpenAICompatibleProvider, Secret
 
     client = httpx.AsyncClient()
+    options = {"allow_private_http": True} if allow_private_http else {}
     provider = OpenAICompatibleProvider(
-        client, snapshot.base_url, snapshot.requested_model, Secret(snapshot.api_key), timeout=180.0
+        client, snapshot.base_url, snapshot.requested_model, Secret(snapshot.api_key), timeout=timeout, **options
     )
     return provider, client
 

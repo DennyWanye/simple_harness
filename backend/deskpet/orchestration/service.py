@@ -278,7 +278,11 @@ class OrchestrationService:
             **knobs,
         )
         self._effective_provider = provider  # kept for a rebuild after repeated failures
-        self._runtime_options = source_runtime_options(self._config, provider, self._snapshot)
+        self._runtime_options = source_runtime_options(
+            self._config, provider, self._snapshot,
+            **({"local_profile_path": self.settings.local_model_profile}
+               if self.settings.local_model_profile else {}),
+        )
         self._orchestrator = Orchestrator(
             self._config, provider, owner=self.owner, connectors=self._connectors,
             **self._runtime_options,
@@ -487,6 +491,8 @@ class OrchestrationService:
                 logger.exception("orchestrator close during rebuild failed")
         self._runtime_options = source_runtime_options(
             self._config, self._effective_provider, self._snapshot,
+            **({"local_profile_path": self.settings.local_model_profile}
+               if self.settings.local_model_profile else {}),
         )
         candidate = Orchestrator(
             self._config, self._effective_provider, owner=self.owner, connectors=self._connectors,
@@ -525,6 +531,21 @@ class OrchestrationService:
     # ------------------------------------------------------------ status
     def _context_profiles(self) -> list[dict[str, Any]]:
         profiles = self._runtime_options.get("profiles", {})
+        from .local_profile import LOCAL_PROFILE_ID
+
+        if LOCAL_PROFILE_ID in profiles:
+            profile = profiles[LOCAL_PROFILE_ID]
+            policy = profile.context_policy
+            return [{
+                "profile_id": LOCAL_PROFILE_ID,
+                "max_input_tokens": policy.input_budget(),
+                "max_total_tokens": policy.max_total_tokens,
+                "output_reserve": policy.output_reserve,
+                "safety_margin": policy.safety_margin,
+                "default_max_output_tokens": profile.default_max_output_tokens,
+                "max_output_tokens_ceiling": profile.max_output_tokens_ceiling,
+                "mission_max_tokens": 4_000_000,
+            }]
         return [
             {
                 "profile_id": long_context_profile_id(tokens),
@@ -538,6 +559,10 @@ class OrchestrationService:
         ]
 
     def _context_default(self) -> str | None:
+        from .local_profile import LOCAL_PROFILE_ID
+
+        if LOCAL_PROFILE_ID in self._runtime_options.get("profiles", {}):
+            return LOCAL_PROFILE_ID
         selected = long_context_profile_id(self.settings.context_input_tokens)
         return selected if any(p["profile_id"] == selected for p in self._context_profiles()) else None
 
@@ -844,6 +869,8 @@ class OrchestrationService:
                 detail["runtime_context"] = {
                     "profile_id": identifier,
                     "max_input_tokens": profile.context_policy.input_budget(),
+                    **({"max_total_tokens": profile.context_policy.max_total_tokens}
+                       if profile.context_policy.max_total_tokens is not None else {}),
                     "fingerprint": profile.context_snapshot()["fingerprint"],
                 }
             return detail

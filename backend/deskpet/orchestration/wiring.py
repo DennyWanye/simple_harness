@@ -20,7 +20,12 @@ from pathlib import Path
 from typing import Any
 
 from .paths import orchestration_root, test_scenario_root
-from .provider import NO_MODEL, ProviderUnavailable, build_provider, snapshot_from_registry
+from .provider import (
+    NO_MODEL,
+    ProviderUnavailable,
+    build_provider,
+    snapshot_from_registry,
+)
 from .pump import MissionChangePump
 from .service import OrchestrationService
 from .settings import load_settings, resolve_test_scenario
@@ -83,7 +88,8 @@ async def activate_orchestration(
         if scenario is None:
             try:
                 snapshot = snapshot_from_registry(service_context.get("provider_registry"))
-                provider, client = build_provider(snapshot)
+                provider, client = (build_provider(snapshot, timeout=900.0, allow_private_http=True)
+                                    if settings.local_model_profile else build_provider(snapshot))
             except ProviderUnavailable as error:
                 logger.info("orchestration_without_model reason=%s", error)
         service = OrchestrationService(
@@ -96,7 +102,7 @@ async def activate_orchestration(
             test_scenario=scenario,
         )
         await service.start()
-    except Exception as error:  # noqa: BLE001 - never fail the Host lifespan
+    except Exception as error:
         logger.exception("orchestration activation failed")
         record_startup_error("orchestration", error)
         return None

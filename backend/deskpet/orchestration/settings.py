@@ -45,6 +45,8 @@ class OrchestrationSettings:
     # every Task (3 would fail a three-Task Mission on its first retry).
     default_mission_max_tokens: int = 400_000
     default_mission_max_attempts: int = 12
+    # Secret-free, pinned local-model profile selected by this deployment.
+    local_model_profile: str = ""
     # New official DeepSeek source Missions; existing Missions keep their profile.
     context_input_tokens: int = 262_144
     # P3.2 (plan D9 / P32-14): the one directory the user authorised for published files.
@@ -69,6 +71,8 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         enabled=enabled if isinstance(enabled, bool) else True,
         max_concurrency=_bounded_int(raw.get("max_concurrency"), 1, 1, 4),
         max_concurrent_model_calls=_bounded_int(raw.get("max_concurrent_model_calls"), 1, 1, 4),
+        local_model_profile=(str(raw.get("local_model_profile", "")).strip()
+                             if isinstance(raw.get("local_model_profile", ""), str) else ""),
         context_input_tokens=(524_288 if type(raw.get("context_input_tokens")) is int
                               and raw["context_input_tokens"] == 524_288 else 262_144),
         # a path only; whether it exists and can carry a hard link is decided at start-up,

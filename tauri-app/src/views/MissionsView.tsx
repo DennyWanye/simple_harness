@@ -806,9 +806,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
             {!!status?.context_profiles?.length && <label style={muted}>输入上下文容量
               <select aria-label="输入上下文容量" style={field} value={selectedContextId} disabled={createPending} onChange={(e) => setContextProfile(e.target.value)}>
-                {status.context_profiles.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{profile.max_input_tokens / 1024}K tokens</option>)}
+                {status.context_profiles.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{profile.max_total_tokens ? `${profile.max_total_tokens / 1024}K 总窗口` : `${profile.max_input_tokens / 1024}K tokens`}</option>)}
               </select>
-              <span>容量包含本轮材料与历史；单次输出另计，上限 32K。总预算按实际调用消耗。</span>
+              <span>{selectedContext?.max_total_tokens
+                ? `输入与输出共享 ${selectedContext.max_total_tokens / 1024}K 总窗口；输入最多 ${selectedContext.max_input_tokens / 1024}K，已预留输出与安全余量。总预算按实际调用消耗。`
+                : "容量包含本轮材料与历史；单次输出另计，上限 32K。总预算按实际调用消耗。"}</span>
             </label>}
             {status?.context_unavailable_reason && <div role="status" style={muted}>{status.context_unavailable_reason}</div>}
             <div style={{ display: "flex", gap: tokens.space.sm }}>
@@ -861,7 +863,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               </div>
               <MissionSearch value={detail.search} />
               {!!record(detail.runtime_context).max_input_tokens && <div style={muted} data-testid="mission-context">
-                本任务输入上下文 {Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens
+                {record(detail.runtime_context).max_total_tokens
+                  ? `本任务总上下文 ${Number(record(detail.runtime_context).max_total_tokens) / 1024}K，输入最多 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`
+                  : `本任务输入上下文 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`}
               </div>}
               {waiting.length ? (
                 <div aria-label="等待原因" style={{ marginTop: tokens.space.sm }}>

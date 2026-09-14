@@ -61,7 +61,7 @@ export interface OrchestrationStatus {
   test_scenario?: string | null;
   /** 部署默认预算：表单留空的项由后端按它补齐（没有无上限的 Mission）。 */
   mission_budget_defaults?: { max_tokens: number; max_attempts: number } | null;
-  context_profiles?: { profile_id: string; max_input_tokens: number; default_max_output_tokens: number; max_output_tokens_ceiling: number; mission_max_tokens: number }[];
+  context_profiles?: { profile_id: string; max_input_tokens: number; max_total_tokens?: number; output_reserve?: number; safety_margin?: number; default_max_output_tokens: number; max_output_tokens_ceiling: number; mission_max_tokens: number }[];
   default_context_profile_id?: string | null;
   context_unavailable_reason?: string | null;
   diagnostics_available?: boolean;

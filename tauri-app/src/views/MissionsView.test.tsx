@@ -185,6 +185,24 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(screen.queryByRole("option", { name: "文档研究" })).toBeNull();
     expect((screen.getByLabelText("Mission 领域") as HTMLSelectElement).value).toBe("code");
   });
+  it("shows the local shared256K window and submits its default profile", () => {
+    const channel = renderAvailable();
+    channel.reply("orchestration_status", { ...AVAILABLE,
+      default_context_profile_id: "local-context-256k-v1",
+      context_profiles: [{ profile_id: "local-context-256k-v1", max_input_tokens: 228352,
+        max_total_tokens: 262144, output_reserve: 32768, safety_margin: 1024,
+        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 4000000 }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    expect(screen.getByRole("option", { name: "256K 总窗口" })).toBeTruthy();
+    expect(screen.getByText(/输入与输出共享 256K 总窗口；输入最多 223K/)).toBeTruthy();
+    expect(screen.queryByText(/单次输出另计/)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "local model report" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe("local-context-256k-v1");
+  });
+
   it("selects the actual long context and announces its separate total budget", () => {
     const channel = renderAvailable();
     channel.reply("orchestration_status", { ...AVAILABLE,

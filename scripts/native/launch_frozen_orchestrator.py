@@ -22,9 +22,8 @@ import stat
 import subprocess
 import sys
 import time
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 HOST_ROOT = Path(__file__).resolve().parents[2]
 BASE_URL = "https://api.deepseek.com"
@@ -221,7 +220,10 @@ def _no_symlinks(path: Path) -> None:
         raise LauncherError("run paths must not contain symlinks")
 
 
-def prepare_run(path: Path, bundle: dict, port: int, resume: bool) -> Path:
+def prepare_run(
+    path: Path, bundle: dict, port: int, resume: bool, *,
+    base_url: str = BASE_URL, model: str = MODEL,
+) -> Path:
     path = path.absolute()
     _no_symlinks(path)
     run = path.resolve()
@@ -231,6 +233,8 @@ def prepare_run(path: Path, bundle: dict, port: int, resume: bool) -> Path:
             "run-dir must be under the Host ignored .local-test-evidence directory"
         )
     marker = {"owner": OWNER, "run_dir": str(run), "bundle": bundle, "port": port}
+    if (base_url, model) != (BASE_URL, MODEL):
+        marker["provider"] = {"base_url": base_url, "model": model}
     user = run / "userdata"
     if resume:
         try:
@@ -247,12 +251,12 @@ def prepare_run(path: Path, bundle: dict, port: int, resume: bool) -> Path:
             runtime = json.loads((user / "llm_runtime.json").read_text())
             llm = config["llm"]
             if (
-                llm.get("base_url") != BASE_URL
-                or llm.get("model") != MODEL
+                llm.get("base_url") != base_url
+                or llm.get("model") != model
                 or llm.get("api_key") != "$DESKPET_CLOUD_API_KEY"
                 or llm.get("local")
                 or llm.get("endpoints")
-                or runtime != {"base_url": BASE_URL, "model": MODEL}
+                or runtime != {"base_url": base_url, "model": model}
                 or config["backend"]["port"] != port
             ):
                 raise LauncherError(
@@ -274,14 +278,14 @@ def prepare_run(path: Path, bundle: dict, port: int, resume: bool) -> Path:
         config_path = user / "config.toml"
         config_path.write_text(
             f'[backend]\nhost = "127.0.0.1"\nport = {port}\n\n'
-            f'[llm]\nbase_url = "{BASE_URL}"\nmodel = "{MODEL}"\n'
+            f'[llm]\nbase_url = {json.dumps(base_url)}\nmodel = {json.dumps(model)}\n'
             'api_key = "$DESKPET_CLOUD_API_KEY"\n\n'
             "[voice]\nenabled = false\n\n[supervisor]\nenabled = false\n\n"
             "[orchestration]\nenabled = true\n",
             encoding="utf-8",
         )
         config_path.chmod(0o600)
-        _write_json(user / "llm_runtime.json", {"base_url": BASE_URL, "model": MODEL})
+        _write_json(user / "llm_runtime.json", {"base_url": base_url, "model": model})
         _write_json(run / "prepared.json", marker)
     for name in ("logs", "cache"):
         _no_symlinks(run / name)
