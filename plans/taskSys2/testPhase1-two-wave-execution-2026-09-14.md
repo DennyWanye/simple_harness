@@ -1,5 +1,85 @@
 # 两轮评测执行记录
 
+已验证SDK功能提交 `d49538224fd5d73901382c3986e2cf1c2a7be5b7` 已推送远程main；完整2240PASS对应此提交源码/测试，后继N7若改动另行验收。
+
+## 2026-09-15 00:37 当前检查点
+
+完整编排v6：**2240 PASS、32条件SKIP、0FAIL，668.77秒**；受管生命周期669.273秒、0残留。645份源码/测试逐hash复核无变化。跳过的真实Provider/固定tokenizer条件另列；不把此前fragment偶发停滞与context.prepare延迟归因为已修复。
+
+N2本地v2：**FAIL**，官方效用False、Mission FAILED/budget_exhausted，429.665秒，17次调用236536tokens、未知0、24工具调用。Mission总上限4M但第一Task上限261120，已结算229903；下一请求49926tokens需扩增41919，账户可扩增仅23210。是Task累计预算接纳失败，未触及1800秒时限；不能归因本地模型超时或把256K窗口当累计任务预算。Planner分配原因正在独立只读核查，未直接提高预算或补跑。0acceptedTask导致0验收后知识为预期，N2真实复用仍未通过。
+
+两轮增量累计132次本地物理调用、3,178,359已知tokens下界；旧v1的一次未知仍保留。Flash0。当前源码UI v51保持运行，已有实际冷恢复/回放/产物与支持报告验收；没有新UI调用。N1–N8整体仍OPEN，正式A96/B96均未开始。[N7分析预声明](testPhase1-analysis-preregistration-2026-09-15.md)已写，统计区间/机制消融仍待。当前新增一个Sol/high只读子代理定位N2，其余19个已关闭；主会话不改模型。
+
+|证据相对Host .local-test-evidence/索引|SHA-256|
+|---|---|
+|2026-09-15/gap-two-wave/core-regression-v6/command.log|66cca3b67cbcce0c6a3f28d4c12b2682c4096b9ae8c528832c307dad6957093d|
+|2026-09-15/gap-two-wave/core-regression-v6/resource.json|3ec1be10e96000ec79b5cce27218c929e94d1d12e902067b3f9e966976982fa3|
+|2026-09-15/gap-two-wave/core-regression-v6-source-audit.json|8c2dfb7ae2d9e33713b37712ab146c8508a9c8ad6b7d192f2db9a403b00f75ed|
+|2026-09-14/gap-two-wave/appworld-n2-local-v2/result.json|94f03c741390edb327667b7651774704a59007ddd1411c520c80c87c499bfa36|
+|2026-09-14/gap-two-wave/appworld-n2-local-v2/parent-audit.json|41589a908a0dabfcf23f51b94497764220eab6318ef294c5befd152e16f5e685|
+|2026-09-15/gap-two-wave/appworld-n2-local-v2-process/resource.json|4483c9244b62cd075029f1b417e7b27bba7d9b5df0ef9cca301c26e0a54d8625|
+
+## 2026-09-15 00:09 当前检查点
+
+|新增事项|事实及边界|实际时间|
+|---|---|---|
+|当前SDK源码UI冷恢复v51|360项源码/元数据固定；77个数据文件冷复制核对；Mission/Task/42事件/5调用/4工具效果完全保留，三份产物仅storage_uri按新根自动重定位、内容hash与VERIFIED不变；真实点击Mission和代码产物成功，设置仍Qwen262144|首冷启动约102秒至编排available，实际操作跨23:55–00:07，非独占工程时间|
+|原生回放与支持报告|41回放事件、未覆盖0、差异0、链缺口0、账本一致；本地报告9169bytes，SHA已核对；原5调用不增加|界面操作未独立计时，0新模型调用|
+|冷恢复测试诊断|旧测试10秒覆盖导入/启动/12轮/写marker；旧失败DB已有10次成功调用，最后卡在context.prepare，无足够证据断定runtime根因。改为已有20秒子进程总硬界＋10秒启动/无进展watchdog，保留负控；不能声称修复SDK停滞|子测3PASS5.77秒，父测历史profile与冷恢复6PASS5.85秒|
+|N2失败因果更正|0acceptedTask→0验收后知识是预期，非独立知识缺陷。两条长规划调用输出8192(6490reasoning)/6451(5286reasoning)，第一条length且无完整task_graph_proposal；削减输出上限缺乏依据|两调用334.66/263.09秒，原15分钟失败完整保留|
+|N2后继独立校准|唯一协议变更墙钟900→1800秒；Qwen256K/1槽/40调用/4M总tokens/8192起始输出/32768顶保持。新episode，不重放未知旧调用、不混入正式96次|运行中，按实际usage下界另计|
+
+旧v4 fragment偶发停滞及v5 context.prepare慢的因果仍OPEN。新完整回归v6正在跑，源/测试已冻结；不得用局部通过写成最新全量通过。N1–N8整体、正式A/B96次、独立judge和付费上限仍有待办。本轮Flash0，无打包。开发子代理实际模型、cache/非cache、返工及时间跨度见SUBAGENT-RESULTS；19个累计开发子代理不是19路并行，最多3路，当前均已关闭。
+
+|证据索引（相对Host .local-test-evidence/）|SHA-256|
+|---|---|
+|2026-09-14/gap-two-wave/native-wave-a-context-v51/parent-result.json|8625766de9197d43e006be91e477f815e089397027d7aae256ebce5ab5b1f03b|
+|2026-09-14/gap-two-wave/native-wave-a-context-v51/replay-support-audit.json|fe767270fc6ce85697dcd72baa49c25e864f237221eac23243f4fe0f006f27e8|
+|2026-09-14/gap-two-wave/forensic.audit.json|864bea894d7fa77299039839ac81c93e6d22cf41fef04d893cd224816adb1d62|
+|2026-09-15/gap-two-wave/cold-parent-v1.log|c865bbc231418d709ca34da82378a76419a2c7c287e15d9258072165cd8e35de|
+
+
+## 23:57 检查点：ARE完成，N2真实超时与回归失败保留
+
+|增量|结果|实际耗时|
+|---|---|---|
+|ARE迟到条件真实校准|Qwen256K/1槽，官方hard_success=True且Mission COMPLETED；11调用58017tokens，未知0；11份实际wire admission输入与server usage逐项相同|275.301秒；进程生命周期279.377秒，0残留|
+|ARE限定边界|官方50PASS；host-authored Scenario而非Gaia2 dataset；完整三阶段/独立judge仍OPEN|最新父测16.23秒|
+|AgentDojo契约复测|最新源35PASS|3.88秒|
+|完整编排v5|2237PASS/32SKIP/1FAIL，冷恢复warm marker10秒未到；645源码/测试hash未变；原v4 fragment停滞本次通过但根因仍OPEN|822.16秒；生命周期822.747秒|
+|N2官方AppWorld真实F|530b157_1：900秒截止，官方utility=False；16调用160659已知tokens，1未知，不能视为完整用量或知识消费通过|904.029秒；生命周期910.968秒，0残留|
+|最新SDK源码UI|后继v51已准备：360项源/元数据绑定；原77文件冷复制逐hash验证。完整服务启动与实际冷恢复检查继续|本轮未完成|
+
+累计已结算批次含失败为115次物理调用、2,941,823已知tokens下界，N2含1未知不可估成零；本轮Flash0。失败后不自动提高时限或切付费模型。N2 timeout使launcher runtime字段缺失，消费/晋级null须回查真实DB，不能报告0或PASS。原v4失败DB被pytest默认临时目录保留策略删除，已保留trace和证据损失说明；v5开始使用显式ignored basetemp，保留失败DB并继续定位，不重复盲跑。
+
+|证据相对索引|SHA-256|
+|---|---|
+|are-local-dynamic-v1/result.json|12763e13049fc3d488b25dc4b3efa21652f401284255b496af9d1b87663aef29|
+|are-local-dynamic-v1/parent-audit.json|d8d525cc1f6374f01acc1ff6b347f3cab24f69ee2b06750ed99dbf4b7e34c58b|
+|core-regression-v5/resource.json|e1be3929bac009aa5bbd6068fccc62085a6aab68811cbe67b26a7f84ed42d5ea|
+|core-regression-v5-source-audit.json|3435aca8ff3c9d107d0521f11534e4564e5769a0ad7ca2519684f6a42e850ac1|
+|appworld-n2-local-v1/result.json|bdb38330a4b25fb1e83126061a7efc08e1e7874b4f6b68fa0552bc8b1227b132|
+|appworld-n2-local-v1-process/resource.json|689f8b9e441026bb69424021fc05dd4c977409fc1b6fad187c39f4e134c2b58a|
+
+
+## 23:26 增量：源码UI Mission完成，最新回归仍有失败
+
+源码UI v50实点提交的 `mission-a45ea6d60f2102b5` 已 COMPLETED / verification_passed：5次本地物理调用、20,708 tokens、212.420616秒，实际code_test执行10PASS/0.01秒；三份产物均VERIFIED且父级读内容、验hash。此任务策略Critic=NOT_REQUIRED，不能写成Critic通过。原生工具可以打开代码，但scroll返回noWindowsAvailable；完整内容由文件读取与哈希补充，不宣称滚动UI通过。ModelContextCard修复已提交并push Host main `62c8ce1037ec8cbc9ad2b3a06788f45d000cf48b`。UI SDK为冻结N3快照，不覆盖后来N2/N6实现。
+
+最新完整编排回归v4：2236PASS、32SKIP、2FAIL，659.01秒；645份源码/测试hash保持不变。失败为历史code profile版本断言和fragment跨分支20秒超时，正在独立定位，不提高超时掩盖问题。前一2180PASS不用于替代这次失败。ARE官方ScenarioRunner硬判接线父测50PASS/16.12秒，仅自定义Scenario；完整Gaia2及独立judge仍OPEN。
+
+ARE计数环境保留官方固定huggingface-hub依赖，HF tokenizer在独立固定环境计数，经SDK ProviderRequest序列化传输。5个复杂请求的RPC/直接计数相同，两个原SDK约160K请求与已有服务端usage精确一致（159993/159995），0新模型调用。旧误把Host装配前请求与装配后usage比对的失败保留；Host会补回工具参数，因此不把这项RPC校验冒充Host wire parity。ARE动态条件真实Qwen校准已启动、尚未判分。累计已结算本地88调用/2,723,147tokens，另有ARE在途；Flash仍0调用。
+
+新增代码ruff发现1处测试长行，已拆分。mypy正常配置只报13项可选ARE/AgentDojo缺依赖；忽略missing-imports的限定检查19源文件通过，不声称官方依赖完整类型检查通过。
+
+|证据相对索引|SHA-256|
+|---|---|
+|native-wave-a-context-v50/parent-audit.json|d9297d91667c5e28508e6d47d55c7c76300da7347e87640be7beb3ba92fde02d|
+|core-regression-v4/resource.json|48b02068aaf1cf936435a10da8c188d221843630e8b2e3ee3c91447d71e35288|
+|core-regression-v4-source-audit.json|609c754fcadfd967da0bc551ef1d8f2677e825381e85c454ac37b913b0597fde|
+|are-counter-parity-v3.json|6f259fdb3011c7f36d209b2dbaf37e4ff71d56fbb33571734e388b1369b9a87b|
+
+
 ## 22:55 增量：真实攻击配对、回归及UI发现
 
 本回合约116分钟墙钟。已结束Qwen批次累计83调用、2,702,439已知tokens；新原生UI Mission正在运行，另计。Flash仍0调用。

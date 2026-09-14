@@ -1,3 +1,9 @@
+最后更新：2026-09-15 00:37 CST。最新完整编排2240PASS/32条件SKIP/0FAIL，668.77秒，645源码/测试hash不变。N2本地第二次校准429.665秒因Task预算失败，17调用236536tokens/0未知，未碰1800秒时限；真实知识复用仍OPEN。最新源码UI v51冷恢复/回放/产物/支持报告实点通过并保持运行。N1–N8与正式A/B96仍OPEN，本轮Flash0、无打包。历史偶发停滞根因不因回归通过而宣称修复。
+
+最后更新：2026-09-15 00:09 CST。当前SDK源码UI v51冷恢复实点通过，旧Mission/Task/事件/5调用保持，3产物只重定位storage_uri且hash/VERIFIED不变，回放41事件差异0、支持报告9169bytes哈希核对，0新调用。首冷启动约102秒有未连接等待；并非全N8关闭。ARE真实动态硬判通过11调用58017tokens/275.301秒；N2官方复杂任务15分钟超时、1未知，30分钟同配置独立校准运行中。最新完整回归v5为2237PASS32SKIP1FAIL；冷恢复诊断父6PASS后v6运行中，原偶发停滞根因仍OPEN。N1–N8整体未关闭，Flash0，无打包。 [记录](../plans/taskSys2/testPhase1-two-wave-execution-2026-09-14.md)。
+
+最后更新：2026-09-14 23:26 CST。源码UI v50 Mission已COMPLETED，实际code_test 10PASS，5次Qwen调用20708tokens/212.420616秒，3产物VERIFIED；Critic为NOT_REQUIRED。Host模型卡修复62c8ce10已push。此UI只覆盖固定N3 SDK，不覆盖后继N2/N6。最新SDK完整回归2236PASS/32SKIP/2FAIL659.01秒，失败正在定位；ARE硬判接线官方50PASS但真实动态校准尚未判分，完整Gaia2/judge仍OPEN。N1–N8仍未整体完成，0Flash、无打包。 [执行证据](../plans/taskSys2/testPhase1-two-wave-execution-2026-09-14.md)。
+
 最后更新：2026-09-14 22:55 CST。ModelContextCard首选来自models_list_response.default_model，不再固定gpt-5.5；异步旧model响应不得覆盖当前选择，用户手动选择优先，保存/ack重读绑定当前model。13项组件/消息检查通过0.506秒，tsc通过；原生v50实际点击设置可见qwen38-flash-next与262144全局窗口（卡片十进制262.1K），Mission表单仍256K/223K。旧新lint均同5导出错误/1原有warning，不声称lint全绿。前后截图和源码哈希见[两轮记录](../plans/taskSys2/testPhase1-two-wave-execution-2026-09-14.md)。此UI slice完成不代表N2/N6后继core或完整Mission验收完成。
 
 2026-09-10 删记忆 SDK：侧栏「更多」折叠组的「记忆管理」入口、主对话右侧「记忆」抽屉（记忆列表 / 关系图 / 记忆审计 / 任务页签）、App 层 MemoryPanel 覆盖层、设置页 BGE-M3 嵌入器状态卡全部下线；主对话视图、PrimaryRunPanel、PrimaryTaskPanel（task scope，不是记忆）与 PrimaryWorkspaceBindings 原样保留。详见 `plans/2026-09-10-remove-memory-sdk/journal.md`。
