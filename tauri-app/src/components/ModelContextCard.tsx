@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ControlChannel } from "../ws/ControlChannel";
 import type {
   ContextCompactionGetResponse,
@@ -104,7 +104,9 @@ type State =
 
 export function ModelContextCard({ getChannel }: Props) {
   const [state, setState] = useState<State>({ kind: "loading" });
-  const [model, setModel] = useState<string>("gpt-5.5");
+  const [model, setModel] = useState("");
+  const selectedModel = useRef("");
+  const userSelectedModel = useRef(false);
   // 编辑缓冲（字符串便于受控输入；保存时解析为数值）
   const [windowEdit, setWindowEdit] = useState<string>("");
   const [compactEdit, setCompactEdit] = useState<string>("");
@@ -125,6 +127,8 @@ export function ModelContextCard({ getChannel }: Props) {
         setState({ kind: "error", reason: "控制通道未连接" });
         return;
       }
+      selectedModel.current = m;
+      setModel(m);
       setState({ kind: "loading" });
       ch.send(buildModelContextGetMessage(m));
     },
@@ -138,6 +142,7 @@ export function ModelContextCard({ getChannel }: Props) {
       if (msg.type === "model_context_get_response") {
         const m = msg as ModelContextGetResponse;
         const p = m.payload;
+        if (p.model !== selectedModel.current) return;
         if (p.reason || !p.resolved || !("context_window" in p.resolved)) {
           setState({
             kind: "error",
@@ -156,7 +161,7 @@ export function ModelContextCard({ getChannel }: Props) {
         const a = msg as ModelContextSetAck;
         if (a.payload.ok) {
           setSaveMsg("已保存，已重新解析");
-          requestGet(model);
+          requestGet(selectedModel.current);
         } else {
           setSaveMsg(`保存失败：${a.payload.reason || "未知错误"}`);
         }
@@ -171,15 +176,23 @@ export function ModelContextCard({ getChannel }: Props) {
         );
       } else if ((msg as { type?: string }).type === "models_list_response") {
         // 中转站 live 目录 → 下拉全量(旁路订阅,不影响主分发)
-        const p = (msg as { payload?: { models?: Array<{ id?: string }> } }).payload;
+        const p = (msg as { payload?: {
+          models?: Array<{ id?: string }>;
+          default_model?: string;
+        } }).payload;
         const ids = (p?.models ?? [])
           .map((m) => (m && typeof m.id === "string" ? m.id : ""))
           .filter(Boolean);
         if (ids.length > 0) setCatalogIds(ids);
+        if (!userSelectedModel.current) {
+          const active = p?.default_model?.trim() || ids[0] || "";
+          if (active && active !== selectedModel.current) requestGet(active);
+          else if (!active) setState({ kind: "error", reason: "未配置默认模型，请先配置 Provider。" });
+        }
       }
     });
-    requestGet(model);
-    // 拉中转站目录(复用 models_list 通道;失败静默,下拉退化为 builtin)
+    if (selectedModel.current) requestGet(selectedModel.current);
+    // Ask the active provider catalog before choosing the initial model.
     ch.send({ type: "models_list" } as never);
     ch.send(buildContextCompactionGetMessage());
     return unsub;
@@ -189,7 +202,7 @@ export function ModelContextCard({ getChannel }: Props) {
 
   const onModelChange = useCallback(
     (m: string) => {
-      setModel(m);
+      userSelectedModel.current = true;
       setSaveMsg(null);
       requestGet(m);
     },
@@ -264,7 +277,7 @@ export function ModelContextCard({ getChannel }: Props) {
             return merged.length > 0 ? (
               merged.map((m) => <option key={m}>{m}</option>)
             ) : (
-              <option>{model}</option>
+              <option value="">等待当前 Provider 模型…</option>
             );
           })()}
         </select>
