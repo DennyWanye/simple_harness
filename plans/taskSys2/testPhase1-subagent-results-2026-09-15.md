@@ -1,6 +1,6 @@
 # Development subagent results
 
-Collected 2026-09-14T16:49:24.624873+00:00. Main remains GPT-6 Astra/high. At most three concurrent children; 22 cumulative, all closed. Durations include gaps/review/idle, not billable time; cache is not assumed free. No matched-task savings or subscription dollar estimate. Parent coordination time is not independently separated.
+Collected 2026-09-14T16:49:24.624873+00:00. Main remains GPT-6 Astra/high. At most three concurrent children; 23 cumulative, all closed. Durations include gaps/review/idle, not billable time; cache is not assumed free. No matched-task savings or subscription dollar estimate. Parent coordination time is not independently separated.
 
 |Scope|Requested / observed model-effort|Elapsed span s|Uncached input|Cached input|Output|Outcome|
 |---|---|---:|---:|---:|---:|---|
@@ -32,3 +32,5 @@ Observed tradeoffs: scoped Terra schema/statistics reviews found useful concrete
 Latest N2 read-only Sol identified the missing generic semantics but overreached into mandatory full-pool validation; parent rejected that policy and corrected the causal claim. Narrow diagnosis still consumed substantial context; terminate once the required evidence is found. N7 Sol delivered two-file optional offline analysis with parent 87-test combined verification and no provider calls.
 
 Latest bounded meter adapter child: requested/actual Sol high; 352.56 seconds; uncached input 77117, cached input 1478656, output 16533. Parent reviewed code, preserved window/posthandoff distinctions, combined 69PASS and decisive old-source 2FAIL/1PASS. All 22 children closed. Main remains Astra/high; no matched savings claim.
+
+N3 helper child actual [['gpt-5.6-sol', 'medium']], elapsed 338.17s, uncached input 77506, cached input 1108736, output 15268. Scaffold only: parent corrected LAN rejection, invalid KnowledgeRecord status, incomplete paging proof, aggregate-versus-peak tokens and batch failure handling. Parent offline core/scorer checks now pass, real runs not yet begun. All 23 children closed. This narrow helper required material parent rework; no savings conclusion.
