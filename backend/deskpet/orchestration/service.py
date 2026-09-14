@@ -973,7 +973,7 @@ class OrchestrationService:
 
     def _blocked(self, mission_id: str) -> list[dict[str, Any]]:
         """Attempts whose SDK turn has an unknown outcome (for example, a process
-        killed inside a model call), excluding the known non-billable slot wait."""
+        killed inside a model call), excluding known bounded live waits."""
 
         try:
             store = self._orchestrator.store
@@ -989,13 +989,14 @@ class OrchestrationService:
             attempt = store.get_attempt(attempt_id)
             if attempt is None or str(attempt.status) in {"COMPLETED", "FAILED", "CANCELLED", "LOST"}:
                 continue
-            # AgentWorkerClient reports a bounded provider-admission wait as blocked so
-            # its heartbeat can keep the Attempt alive.  It has not made a billable
-            # call and is ordinary queueing, not an uncertain turn outcome.  Keep this
-            # exact shape narrow: an unknown or future blocker must remain cautious.
-            if liveness.get("blocked") and liveness.get("blocker") != {
-                "kind": "provider_slot_wait", "billable": False
-            }:
+            # Queueing and a bounded, still-awaited response keep the Attempt
+            # alive. The latter is billable, but neither proves a lost process.
+            # Match the SDK shapes exactly; unknown/future blockers stay visible.
+            known_wait = liveness.get("blocker") in (
+                {"kind": "provider_slot_wait", "billable": False},
+                {"kind": "provider_response_wait", "billable": True, "bounded": True},
+            )
+            if liveness.get("blocked") and not known_wait:
                 blocked.append(
                     {"task_id": attempt.task_id, "attempt_id": attempt_id, "reason": "turn_outcome_unknown"}
                 )

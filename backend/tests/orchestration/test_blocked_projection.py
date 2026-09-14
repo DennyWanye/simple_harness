@@ -140,3 +140,20 @@ def test_nonbillable_slot_wait_projects_as_running_in_list_and_detail() -> None:
     assert (row["blocked"], row["ui_state"]) == (False, "running")
     assert detail["blocked"] == []
     assert detail["mission"]["ui_state"] == "running"
+
+
+def test_bounded_billable_response_wait_is_running_but_unknown_remains_visible() -> None:
+    for blocker, expected in [
+        ({"kind": "provider_response_wait", "billable": True, "bounded": True}, "running"),
+        ({"kind": "provider_response_wait", "billable": True}, "unknown"),
+        ({"kind": "provider_response_wait", "billable": True, "bounded": False}, "unknown"),
+        ({"kind": "provider", "billable": True, "bounded": True}, "unknown"),
+    ]:
+        service = _service(
+            heartbeats=[_heartbeat("response", {"blocked": True, "blocker": blocker})],
+            statuses={"response": "RUNNING"},
+        )
+        [row] = service.list_missions()
+        detail = service.mission_detail("mission-1")
+        assert row["ui_state"] == detail["mission"]["ui_state"] == expected
+        assert bool(detail["blocked"]) == (expected == "unknown")
