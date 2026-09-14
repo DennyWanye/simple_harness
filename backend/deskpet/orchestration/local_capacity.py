@@ -10,7 +10,10 @@ from urllib.parse import urlsplit
 
 
 def bind_local_capacity(provider, profile_path, *, base_url, model, counter=None):
-    from simple_harness.execution.deployment_capacity import CapacityProvider, DeploymentCapacity
+    from simple_harness.execution.deployment_capacity import (
+        CapacityProvider,
+        DeploymentCapacity,
+    )
     from simple_harness.execution.shared_capacity import CapacityLedger
 
     path = Path(profile_path)

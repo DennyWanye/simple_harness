@@ -2,9 +2,11 @@
 import json
 
 import pytest
-
-from deskpet.orchestration.local_capacity import bind_local_capacity, bind_selected_local_capacity
-from simple_harness import RequestId, Message, MessageRole
+from deskpet.orchestration.local_capacity import (
+    bind_local_capacity,
+    bind_selected_local_capacity,
+)
+from simple_harness import Message, MessageRole, RequestId
 from simple_harness.providers import ProviderRequest
 
 
