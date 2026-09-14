@@ -55,6 +55,11 @@ def local_runtime_options(config: Any, provider: Any, snapshot: ProviderSnapshot
     if frozen != wanted:
         raise RuntimeError("本地 256K 执行库配置不一致")
     legacy = resolve_profile_context_policy(config, tokenizer=counter)
+    from .local_capacity import bind_local_capacity
+    provider = bind_local_capacity(
+        provider, profile_path, base_url=snapshot.base_url,
+        model=snapshot.requested_model, counter=counter,
+    )
     profiles = {
         "default": RuntimeProfile(
             "default", provider, config.model, price_table=config.price_table,
