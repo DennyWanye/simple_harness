@@ -1,3 +1,5 @@
+最后更新：2026-09-15 08:51 CST。N5 AgentDojo黑板传播确定性正负控通过（系统工具观察晋级、错误/伪造负控、40 PASS / 7.11 秒、0 应用模型调用）。完整对照与 A96/B96 仍 OPEN。[记录](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)。
+
 最后更新：2026-09-15。Host374aa70a/SDKf122b8c：共享容量、长响应及最终Mission评审后继完成限定实机验收。v60独立评审正式交付60实跑PASS；v61亲自捕获列表/详情待验证→交付和冷恢复。累计335本地归属调用7157983已知tokens下限，1早先未知另列，Flash0。最新广回归2304PASS/32SKIP/6环境FAIL，关联兼容环境49PASS。N1–N8/正式A96B96仍OPEN，未打包。
 
 最后更新：2026-09-15 06:01 CST。N1真实三进程v1为FAIL：两次物理调用321104tokens、0新增抢占，第三路前置排队被错误释放（已知0出站）。系统校时影响psutil.create_time造成身份误判，旧源3反例FAIL；改为psutil稳定process hash（>=7.2.2），新25PASS/1.85秒，完整及实机后继待验。N1–N8仍OPEN，Flash0。

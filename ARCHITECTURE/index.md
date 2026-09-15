@@ -1,4 +1,6 @@
-接手入口（2026-09-15）：[后续评测 HANDOFF](../plans/taskSys2/HANDOFF-2026-09-15.md)，含当前源码、运行环境、四表和N5下一步；N1–N8仍未整体关闭。
+接手入口（2026-09-15）：[后续评测 HANDOFF](../plans/taskSys2/HANDOFF-2026-09-15.md)；N5黑板传播机制见[本切片记录](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)。N1–N8仍未整体关闭。
+
+最后更新：2026-09-15 08:51 CST。N5 AgentDojo黑板传播确定性正负控通过：成功工具原文经 accept_result 晋级为系统 `tool_observation`；错误回执/伪造 id/模型语义 Claim 不升 VERIFIED。AgentDojo 两文件 40 PASS / 7.11 秒，0 应用模型调用。自动入模仍受词面检索门槛。正式对照、A96/B96、N1–N8 仍 OPEN，Flash0，未打包。
 
 最后更新：2026-09-15。Host374aa70a/SDKf122b8c：共享容量、长响应及最终Mission评审后继完成限定实机验收。v60独立评审正式交付60实跑PASS；v61亲自捕获列表/详情待验证→交付和冷恢复。累计335本地归属调用7157983已知tokens下限，1早先未知另列，Flash0。最新广回归2304PASS/32SKIP/6环境FAIL，关联兼容环境49PASS。N1–N8/正式A96B96仍OPEN，未打包。
 
