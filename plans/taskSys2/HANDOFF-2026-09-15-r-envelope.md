@@ -81,7 +81,7 @@ Git 里的文字结论是「测试文档」；ignored 目录才是原始收据�
 | [testPhase1-a96-flash256k-r-envelope-v2-2026-09-15.md](testPhase1-a96-flash256k-r-envelope-v2-2026-09-15.md) | **本次 R 信封小复验结论**（2 例） |
 | 本文件 | 当前接手入口 |
 
-### 4.3 本机原始收据（gitignore，不要 commit，不要删）
+### 4.3 本机原始收据（`matrix-v2/` 仍 gitignore；其余已按用户要求进 Host main，不要删）
 
 根：`/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-15/a96/`
 
@@ -167,4 +167,4 @@ S 与 R 在 v1 是同一条第一轮预算路径（S 也是 24/24 `experiment_bu
 
 ## 8. 给新 session 的指令（可整段粘贴）
 
-> 请接手 `/Users/denny/projects/simple_harness/plans/taskSys2/HANDOFF-2026-09-15-r-envelope.md`。原始测试文档链在第 4 节：v1 96 收条是 `testPhase1-a96-flash256k-2026-09-15.md`，只读拆解是 `testPhase1-a96-flash256k-dissection-2026-09-15.md`，R 信封小复验是 `testPhase1-a96-flash256k-r-envelope-v2-2026-09-15.md`；更早的四臂原文是 `testPhase1-results-2026-09-14.md` / `testPhase1-followup-2026-09-14.md`。不要重跑 v1 的 96，不要补 Qwen 96，不要混身份，不要开 Flash 512K，不要打包。代码以 SDK `f7432dc` 为准。后续真实测试目前只许 `deepseek-flash`。v1 的 19/96 和 Qwen 16/96 截断、N5 攻击未成功都必须保留。S 若要复测必须冻新身份、数例即可。原始 JSON 在 ignored `.local-test-evidence/2026-09-15/a96/`，不要 commit、不要删。按总体 / 当前 / 距上次三张表报告。
+> 请接手 `/Users/denny/projects/simple_harness/plans/taskSys2/HANDOFF-2026-09-15-r-envelope.md`。原始测试文档链在第 4 节：v1 96 收条是 `testPhase1-a96-flash256k-2026-09-15.md`，只读拆解是 `testPhase1-a96-flash256k-dissection-2026-09-15.md`，R 信封小复验是 `testPhase1-a96-flash256k-r-envelope-v2-2026-09-15.md`；更早的四臂原文是 `testPhase1-results-2026-09-14.md` / `testPhase1-followup-2026-09-14.md`。不要重跑 v1 的 96，不要补 Qwen 96，不要混身份，不要开 Flash 512K，不要打包。代码以 SDK `f7432dc` 为准。后续真实测试目前只许 `deepseek-flash`。v1 的 19/96 和 Qwen 16/96 截断、N5 攻击未成功都必须保留。S 若要复测必须冻新身份、数例即可。原始收据除 Qwen `matrix-v2/` 外已在 Host `.local-test-evidence/2026-09-15/a96/` 并推远程 main；`matrix-v2/` 仍只留本机，不要删。按总体 / 当前 / 距上次三张表报告。

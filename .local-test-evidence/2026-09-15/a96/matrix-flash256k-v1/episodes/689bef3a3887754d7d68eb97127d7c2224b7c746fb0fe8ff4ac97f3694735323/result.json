@@ -1,0 +1,85 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:2",
+      "seconds": 0.00018929108045995235,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    },
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:3",
+      "seconds": 0.00012837513349950314,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "R",
+  "elapsed_seconds": 2.68447770900093,
+  "error_type": "ValueError",
+  "knowledge_reuse_events": null,
+  "known_usage_lower_bound": {
+    "calls": 1,
+    "input_tokens": 973,
+    "model": "deepseek-flash",
+    "output_tokens": 97,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 1070
+  },
+  "mission_success": null,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 1,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match spotify.MusicPlayer.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert model changes match spotify.MusicPlayer.\n    \"\"\"\n):\n    test.case(models.changed_model_names(), \"==\", {\"spotify.MusicPlayer\"})\n```\n----------\nAssertionError:  set() == {'spotify.MusicPlayer'}\n\nIn right but not left:\n['spotify.MusicPlayer']"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert 1 spotify.MusicPlayer has been updated using models.changed_records.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert 1 spotify.MusicPlayer has been updated using models.changed_records.\n    \"\"\"\n):\n    _, updated_music_players, _ = models.changed_records(\"spotify.MusicPlayer\")\n    test.case(len(updated_music_players), \"==\", 1)\n```\n----------\nAssertionError:  0 == 1"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "get the end-state queue_song_ids and\nassert all private_data.existing_queue_song_ids are in end-state queue_song_ids.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    get the end-state queue_song_ids and\n    assert all private_data.existing_queue_song_ids are in end-state queue_song_ids.\n    \"\"\"\n):\n    updated_music_player = updated_music_players[0]\n    test.case(\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all private_data.to_be_added_queue_song_ids are in the end state queue_song_ids",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert all private_data.to_be_added_queue_song_ids are in the end state queue_song_ids\n    \"\"\"\n):\n    test.case(\n        private_data.to_be_added_queue_song_ids, \"all in\", updated_music_player.queue_song_ids\n    )\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert union of private_data.to_be_added_queue_song_ids and private_data.existing_queue_song_ids\nmatch the end-state queue_song_ids.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert union of private_data.to_be_added_queue_song_ids and private_data.existing_queue_song_ids\n    match the end-state queue_song_ids.\n    \"\"\"\n):\n    test.case(\n        set(private_data.existing_queue_song_ids + private_data.to_be_added_queue_song_ids),\n```\n----------"
+      }
+    ],
+    "num_tests": 6,
+    "passes": [],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "689bef3a3887754d7d68eb97127d7c2224b7c746fb0fe8ff4ac97f3694735323",
+  "status": "official_scored",
+  "task_id": "396c5a2_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98245
+}

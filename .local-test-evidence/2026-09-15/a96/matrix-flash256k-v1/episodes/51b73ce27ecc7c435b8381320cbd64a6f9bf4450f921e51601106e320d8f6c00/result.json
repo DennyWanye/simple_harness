@@ -1,0 +1,80 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-6800700202212f9a66b0e6cb084e2763:provider-turn:1",
+      "seconds": 0.00010512489825487137,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "F",
+  "elapsed_seconds": 116.45228025014512,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 27,
+    "input_tokens": 298139,
+    "model": "deepseek-flash",
+    "output_tokens": 22261,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 320400
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    ground_truth_song_titles = ground_truth_answer.split(\",\")\n    predicted_song_titles = predicted_answer.split(\",\")\n    test.case(\n```\n----------\nAssertionError:\n['crimson veil', 'fire and ice', 'haunted memories', 'mysteries of the silent sea']\n==\n['<<not_given>>']\n\nIn left but not right:\n['crimson veil', 'fire and ice', 'haunted memories', 'mysteries of the silent sea']\n\nIn right but not left:\n['<<not_given>>']\n\nOriginal values:\n['Mysteries of the Silent Sea', 'Crimson Veil', 'Haunted Memories', 'Fire and Ice']\n==\n['<<NOT_GIVEN>>']"
+      }
+    ],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "Assert no model changes"
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 1,
+  "run_id": "51b73ce27ecc7c435b8381320cbd64a6f9bf4450f921e51601106e320d8f6c00",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 1,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-2c3916d5020304d8",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-2c3916d5020304d8:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-2c3916d5020304d8:task-2",
+        "status": "FAILED"
+      },
+      {
+        "id": "mission-2c3916d5020304d8:task-3",
+        "status": "BLOCKED"
+      }
+    ],
+    "tool_calls": 26
+  },
+  "status": "official_scored",
+  "task_id": "50e1ac9_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98242
+}

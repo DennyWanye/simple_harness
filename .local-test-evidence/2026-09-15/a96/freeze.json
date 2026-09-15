@@ -1,0 +1,36 @@
+{
+  "identity": "a96-qwen256k-v1",
+  "frozen_at": "2026-09-15T10:55:00+08:00",
+  "host_commit": "43e5cd19",
+  "sdk_commit": "69d679c1e880c5903a4d6c95b49c6061ff6514de",
+  "model": "qwen38-flash-next",
+  "context_window": 262144,
+  "split": "dev",
+  "taskset": "appworld-taskset.json",
+  "instruction_hashes_verified": true,
+  "repetitions": 2,
+  "arms": ["S", "R", "D", "F"],
+  "episodes": 96,
+  "per_episode_budget": {
+    "total_tokens": 4000000,
+    "input_tokens": 4000000,
+    "output_tokens": 262144,
+    "calls": 40,
+    "seconds": 900,
+    "physical_slots": 1,
+    "max_inflight_tokens": 393216,
+    "output_default": 4096,
+    "output_ceiling": 32768
+  },
+  "smoke": {
+    "task_id": "37a8675_1",
+    "arm": "D",
+    "reason": "predeclared small calibration control; D arm exercises host knowledge"
+  },
+  "notes": [
+    "Taskset was already public-spec predeclared; this freeze adds code/budget/source hashes.",
+    "Do not start 96 episodes before smoke.",
+    "N2 v4 1.2M failure retained; smoke uses 4M default and a different smaller task.",
+    "UI remains on 18140; AppWorld smoke owns 18246 only for its process."
+  ]
+}

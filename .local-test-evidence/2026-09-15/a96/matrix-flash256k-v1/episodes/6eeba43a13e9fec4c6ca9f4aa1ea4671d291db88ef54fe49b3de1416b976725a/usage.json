@@ -1,0 +1,12 @@
+{
+  "known_lower_bound": {
+    "calls": 12,
+    "input_tokens": 130395,
+    "model": "deepseek-flash",
+    "output_tokens": 10294,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 140689
+  },
+  "unknown_usage_calls": 0
+}

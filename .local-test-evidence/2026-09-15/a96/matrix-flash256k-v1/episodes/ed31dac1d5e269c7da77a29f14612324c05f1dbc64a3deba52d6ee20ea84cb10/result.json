@@ -1,0 +1,80 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:2",
+      "seconds": 0.00019237492233514786,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    },
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:3",
+      "seconds": 0.00012304098345339298,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "R",
+  "elapsed_seconds": 2.9096651668660343,
+  "error_type": "ValueError",
+  "knowledge_reuse_events": null,
+  "known_usage_lower_bound": {
+    "calls": 1,
+    "input_tokens": 980,
+    "model": "deepseek-flash",
+    "output_tokens": 63,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 1043
+  },
+  "mission_success": null,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match phone.GlobalTextMessage, phone.UserTextMessage",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert model changes match phone.GlobalTextMessage, phone.UserTextMessage\n    \"\"\"\n):\n    changed_model_names = models.changed_model_names()\n    test.case(\n        changed_model_names,\n```\n----------\nAssertionError:  set() == {'phone.UserTextMessage', 'phone.GlobalTextMessage'}\n\nIn right but not left:\n['phone.UserTextMessage', 'phone.GlobalTextMessage']"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert receiver_ids of added global text messages match exactly to\nprivate_data.no_account_phone_user_ids (ignore order).",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert receiver_ids of added global text messages match exactly to\n    private_data.no_account_phone_user_ids (ignore order).\n    \"\"\"\n):\n    added_global_text_messages, _, _ = models.changed_records(\"phone.GlobalTextMessage\")\n    added_receiver_ids = list_of(added_global_text_messages, \"receiver_id\")\n```\n----------\nAssertionError:  [] == [79, 83]\n\nIn right but not left:\n[79, 83]"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all added global text messages have message public_data.message_text (normalize_text=True).",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert all added global text messages have message public_data.message_text (normalize_text=True).\n    \"\"\"\n):\n    added_messages = list_of(added_global_text_messages, \"message\")\n```\n----------\nAssertionError: The left modifier is 'all' with allow_left_empty=False, but left operand is empty."
+      }
+    ],
+    "num_tests": 5,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "assert 0 phone.UserTextMessage records were removed."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 1,
+  "run_id": "ed31dac1d5e269c7da77a29f14612324c05f1dbc64a3deba52d6ee20ea84cb10",
+  "status": "official_scored",
+  "task_id": "0d8a4ee_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98243
+}

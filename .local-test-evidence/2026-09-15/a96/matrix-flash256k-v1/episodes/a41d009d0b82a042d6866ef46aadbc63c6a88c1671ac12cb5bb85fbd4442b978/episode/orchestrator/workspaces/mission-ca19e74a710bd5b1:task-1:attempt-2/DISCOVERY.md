@@ -1,0 +1,231 @@
+# DISCOVERY.md — Task-1 Discovery Report (READ-ONLY)
+
+Mission: "In my file system, add the prefix \"YYYY-MM-DD_\" to all file names in the ~/downloads/ directory, based on their creation dates, and then move all files not from this year to ~/trash/."
+
+This report is the discovery/prerequisite deliverable for `mission-ca19e74a710bd5b1:task-1`.
+**No application mutation was performed.** Only read-only APIs and authentication logins were used
+(login/read; `show_directory`, `show_file`, supervisor `show_*`). No file was created, renamed, moved,
+updated or deleted.
+
+---
+
+## 1. Public API signatures (relevant subset)
+
+### supervisor app
+Discovered via `apis.api_docs.show_api_descriptions(app_name='supervisor')`.
+
+| API | Method/Path | Params | Returns |
+|---|---|---|---|
+| `show_active_task` | GET `/task` | – | `{instruction, status, answer}` |
+| `complete_task` | POST | `answer` | marks active task complete |
+| `show_profile` | GET `/profile` | – | `{first_name,last_name,email,phone_number,birthday,sex}` |
+| `show_addresses` | GET | – | list of `{name,street_address,city,state,country,zip_code}` |
+| `show_payment_cards` | GET | – | list of payment cards |
+| `show_account_passwords` | GET | – | list of `{account_name, password}` |
+
+### file_system app
+Discovered via `apis.api_docs.show_api_descriptions(app_name='file_system')`.
+Key docs read: `login`, `show_account`, `show_directory`, `show_file`, `move_file`.
+
+| API | Method/Path | Params (required*) | Returns |
+|---|---|---|---|
+| `login` | POST `/auth/token` | `username*`, `password*` | `{access_token, token_type}` |
+| `show_account` | GET `/account` | `access_token*` | `{first_name,last_name,email,registered_at,last_logged_in,verified}` |
+| `show_directory` | GET `/directory` | `access_token*`, `directory_path` (default `/`, absolute or `~/`), `substring`, `entry_type` in `['all','files','directories']` (default `all`), `recursive` (default `true`) | list of path strings |
+| `show_file` | GET `/file` | `file_path*`, `access_token*` | `{file_id, path, content, created_at, updated_at}` |
+| `file_exists` | GET | `file_path*`, `access_token*` | boolean |
+| `create_directory` | POST | `directory_path*`, `access_token*`, `recursive` | – |
+| `create_file` | POST | `file_path*`, `content`, `access_token*`, `overwrite` | – |
+| `update_file` | POST | `file_path*`, `content*`, `access_token*` | – |
+| `delete_file` | POST | `file_path*`, `access_token*` | – |
+| `copy_file` | POST | `source_file_path*`, `destination_file_path*`, `access_token*`, `overwrite`, `retain_dates` | – |
+| `move_file` | POST `/file/move` | `source_file_path*`, `destination_file_path*`, `access_token*`, `overwrite` (default `false`), `retain_dates` (default `false`) | `{message, destination_file_path}` |
+| `copy_directory` / `move_directory` / `compress_directory` / `decompress_file` / `delete_directory` / `directory_exists` | — | see docs | — |
+
+Notes / caveats:
+- Paths may be absolute (`/home/nancy/...`) or home-relative (`~/downloads/...`).
+- `show_directory` returned a raw Python list in some calls and a JSON string under `output` in others;
+  robust parsing must handle both.
+- `move_file` has a `retain_dates` flag (default `false`) — relevant because a plain move may reset
+  created/updated dates. The date-prefix must be derived from the ORIGINAL creation date, so this flag matters.
+
+---
+
+## 2. Simulated user account
+
+From `apis.supervisor.show_profile()` and `apis.supervisor.show_account_passwords()`,
+and confirmed by `apis.file_system.show_account(access_token=...)`:
+
+- Name: **Nancy Ritter**
+- Email (login username): **nan_ritt@gmail.com**
+- Phone: 2307354647
+- Home directory: **/home/nancy** (confirmed by returned absolute paths, e.g. `/home/nancy/downloads/...`)
+- `file_system` password: **UJa-ovY**  (from supervisor `show_account_passwords`)
+- `file_system` account: registered_at `2022-05-19T10:04:07`, last_logged_in `2022-05-19T10:04:07`, verified `true`.
+
+File-system login succeeded and returned a bearer `access_token`.
+
+---
+
+## 3. Current year / date reference
+
+**Current year = 2023.** Evidence (all read-only observations):
+
+1. A `file_system` login returned a JWT whose `exp` claim = `1684412098` → **2023-05-18 12:14:58 UTC**.
+2. A `gmail` login returned a JWT with `exp` = `1684412741` → **2023-05-18** (a few minutes later).
+3. The most recently created file in `~/downloads/` is `moms_new_dress.jpg` at **2023-05-18T02:42:58**.
+4. The most recent inbox email thread (`show_inbox_threads` sorted by `-created_at`) is
+   `2023-05-17T16:18:37` ("New Employee Onboarding").
+
+Therefore "this year" = **2023**, and "files not from this year" = files whose creation year is **not 2023**
+(i.e. 2021 and 2022 files).
+
+---
+
+## 4. Inventory of ~/downloads/
+
+`show_directory(directory_path="~/downloads/")` → **100 entries, all files, no sub-directories**
+(`entry_type="directories"` returned `[]`). Each entry's `created_at` was read via `show_file`.
+
+Year breakdown of `created_at`:
+- **2023: 73 files** (current year — stay, only get prefixed)
+- **2022: 20 files** (not this year — must move to ~/trash/)
+- **2021: 7 files** (not this year — must move to ~/trash/)
+- **Total: 100**  → 27 files are "not from this year".
+
+Full inventory (index | file name | created_at | year | absolute path):
+
+| # | name | created_at | year | path |
+|---|---|---|---|---|
+| 1 | financial_growth_analysis.xlsx | 2021-06-14T11:35:25 | 2021 | /home/nancy/downloads/financial_growth_analysis.xlsx |
+| 2 | cooking_tips_and_tricks_videos.zip | 2021-06-22T10:18:35 | 2021 | /home/nancy/downloads/cooking_tips_and_tricks_videos.zip |
+| 3 | language_learning_podcasts.mp3 | 2021-06-26T09:02:20 | 2021 | /home/nancy/downloads/language_learning_podcasts.mp3 |
+| 4 | workout_progress_tracker.doc | 2021-08-26T08:34:37 | 2021 | /home/nancy/downloads/workout_progress_tracker.doc |
+| 5 | world_travel_itinerary.docx | 2021-09-09T08:09:19 | 2021 | /home/nancy/downloads/world_travel_itinerary.docx |
+| 6 | world_landmarks_photo_album.zip | 2021-11-11T10:43:46 | 2021 | /home/nancy/downloads/world_landmarks_photo_album.zip |
+| 7 | data_visualization_examples.ppt | 2021-12-06T09:21:51 | 2021 | /home/nancy/downloads/data_visualization_examples.ppt |
+| 8 | recipe_collection.pdf | 2022-01-24T10:51:39 | 2022 | /home/nancy/downloads/recipe_collection.pdf |
+| 9 | fashion_design_sketches.rar | 2022-02-18T10:39:58 | 2022 | /home/nancy/downloads/fashion_design_sketches.rar |
+| 10 | fashion_design_inspiration_gallery.zip | 2022-03-06T08:45:09 | 2022 | /home/nancy/downloads/fashion_design_inspiration_gallery.zip |
+| 11 | photography_competition_entries.rar | 2022-03-21T09:18:34 | 2022 | /home/nancy/downloads/photography_competition_entries.rar |
+| 12 | travel_adventures_journal.doc | 2022-04-06T11:27:53 | 2022 | /home/nancy/downloads/travel_adventures_journal.doc |
+| 13 | virtual_reality_gaming_experience.zip | 2022-05-14T11:53:10 | 2022 | /home/nancy/downloads/virtual_reality_gaming_experience.zip |
+| 14 | delicious_recipe_videos.zip | 2022-07-07T08:48:52 | 2022 | /home/nancy/downloads/delicious_recipe_videos.zip |
+| 15 | art_inspiration_sketches.zip | 2022-07-07T09:27:11 | 2022 | /home/nancy/downloads/art_inspiration_sketches.zip |
+| 16 | cute_cat_gifs_collection.gif | 2022-07-25T08:43:06 | 2022 | /home/nancy/downloads/cute_cat_gifs_collection.gif |
+| 17 | ocean_wave_relaxation_audio.mp3 | 2022-08-05T08:51:30 | 2022 | /home/nancy/downloads/ocean_wave_relaxation_audio.mp3 |
+| 18 | space_exploration_videos.zip | 2022-09-11T08:22:01 | 2022 | /home/nancy/downloads/space_exploration_videos.zip |
+| 19 | dog_food.jpg | 2022-09-15T12:48:45 | 2022 | /home/nancy/downloads/dog_food.jpg |
+| 20 | dinner_date.jpg | 2022-10-06T15:46:52 | 2022 | /home/nancy/downloads/dinner_date.jpg |
+| 21 | subscription_service.jpg | 2022-10-22T12:32:45 | 2022 | /home/nancy/downloads/subscription_service.jpg |
+| 22 | food_processor.pdf | 2022-11-21T17:51:34 | 2022 | /home/nancy/downloads/food_processor.pdf |
+| 23 | health_checkup.jpg | 2022-11-26T15:01:10 | 2022 | /home/nancy/downloads/health_checkup.jpg |
+| 24 | DIY_home_repair_guide.docx | 2022-12-04T10:24:57 | 2022 | /home/nancy/downloads/DIY_home_repair_guide.docx |
+| 25 | transportation.pdf | 2022-12-16T16:33:49 | 2022 | /home/nancy/downloads/transportation.pdf |
+| 26 | car_repair_sibling.pdf | 2022-12-18T06:24:12 | 2022 | /home/nancy/downloads/car_repair_sibling.pdf |
+| 27 | chocolate.jpg | 2022-12-28T05:01:07 | 2022 | /home/nancy/downloads/chocolate.jpg |
+| 28 | mindfulness_meditation_audio_sessions.mp3 | 2023-01-03T11:23:34 | 2023 | /home/nancy/downloads/mindfulness_meditation_audio_sessions.mp3 |
+| 29 | scientific_research_paper.pdf | 2023-01-11T08:42:57 | 2023 | /home/nancy/downloads/scientific_research_paper.pdf |
+| 30 | travel_adventure_diary.docx | 2023-01-19T09:48:30 | 2023 | /home/nancy/downloads/travel_adventure_diary.docx |
+| 31 | ice_bucket.pdf | 2023-01-20T00:07:50 | 2023 | /home/nancy/downloads/ice_bucket.pdf |
+| 32 | dumbbells.jpg | 2023-01-27T20:35:38 | 2023 | /home/nancy/downloads/dumbbells.jpg |
+| 33 | clean_up_supplies.jpg | 2023-02-20T21:14:23 | 2023 | /home/nancy/downloads/clean_up_supplies.jpg |
+| 34 | puzzle_solvers_guide.pdf | 2023-02-21T14:35:05 | 2023 | /home/nancy/downloads/puzzle_solvers_guide.pdf |
+| 35 | wine_charms.pdf | 2023-02-23T07:03:01 | 2023 | /home/nancy/downloads/wine_charms.pdf |
+| 36 | marketing_materials.jpg | 2023-02-24T11:35:28 | 2023 | /home/nancy/downloads/marketing_materials.jpg |
+| 37 | meeting_room_rental.jpg | 2023-02-24T19:38:05 | 2023 | /home/nancy/downloads/meeting_room_rental.jpg |
+| 38 | training_course.jpg | 2023-02-26T02:05:09 | 2023 | /home/nancy/downloads/training_course.jpg |
+| 39 | punch_bowl.jpg | 2023-03-02T02:54:02 | 2023 | /home/nancy/downloads/punch_bowl.jpg |
+| 40 | new_years_eve_party.jpg | 2023-03-03T19:23:55 | 2023 | /home/nancy/downloads/new_years_eve_party.jpg |
+| 41 | table_rentals.pdf | 2023-03-03T20:38:35 | 2023 | /home/nancy/downloads/table_rentals.pdf |
+| 42 | emergency_fund.jpg | 2023-03-06T21:22:31 | 2023 | /home/nancy/downloads/emergency_fund.jpg |
+| 43 | toiletries.jpg | 2023-03-06T23:59:23 | 2023 | /home/nancy/downloads/toiletries.jpg |
+| 44 | monthly_groceries.jpg | 2023-03-08T16:17:45 | 2023 | /home/nancy/downloads/monthly_groceries.jpg |
+| 45 | bike_pump.jpg | 2023-03-10T02:19:06 | 2023 | /home/nancy/downloads/bike_pump.jpg |
+| 46 | board_games.jpg | 2023-03-12T12:01:46 | 2023 | /home/nancy/downloads/board_games.jpg |
+| 47 | foam_roller.pdf | 2023-03-14T11:41:27 | 2023 | /home/nancy/downloads/foam_roller.pdf |
+| 48 | candy.pdf | 2023-03-15T06:23:34 | 2023 | /home/nancy/downloads/candy.pdf |
+| 49 | new_dress.jpg | 2023-03-18T07:38:35 | 2023 | /home/nancy/downloads/new_dress.jpg |
+| 50 | earplugs.pdf | 2023-03-18T08:44:43 | 2023 | /home/nancy/downloads/earplugs.pdf |
+| 51 | houseplants.jpg | 2023-03-19T17:47:39 | 2023 | /home/nancy/downloads/houseplants.jpg |
+| 52 | dads_new_phone.pdf | 2023-03-26T04:14:04 | 2023 | /home/nancy/downloads/dads_new_phone.pdf |
+| 53 | marketing_materials.pdf | 2023-03-27T07:01:57 | 2023 | /home/nancy/downloads/marketing_materials.pdf |
+| 54 | bike_lights.jpg | 2023-03-30T03:02:29 | 2023 | /home/nancy/downloads/bike_lights.jpg |
+| 55 | holiday_baking_supplies.pdf | 2023-04-01T03:58:02 | 2023 | /home/nancy/downloads/holiday_baking_supplies.pdf |
+| 56 | portable_charger.pdf | 2023-04-01T14:53:19 | 2023 | /home/nancy/downloads/portable_charger.pdf |
+| 57 | concert_programs.jpg | 2023-04-04T07:36:45 | 2023 | /home/nancy/downloads/concert_programs.jpg |
+| 58 | wine_opener.jpg | 2023-04-05T21:39:29 | 2023 | /home/nancy/downloads/wine_opener.jpg |
+| 59 | gardening_book.jpg | 2023-04-08T14:38:01 | 2023 | /home/nancy/downloads/gardening_book.jpg |
+| 60 | dinner_party.jpg | 2023-04-10T06:41:14 | 2023 | /home/nancy/downloads/dinner_party.jpg |
+| 61 | supplements.pdf | 2023-04-10T20:45:26 | 2023 | /home/nancy/downloads/supplements.pdf |
+| 62 | office_decorations.jpg | 2023-04-11T04:12:15 | 2023 | /home/nancy/downloads/office_decorations.jpg |
+| 63 | office_utilities.pdf | 2023-04-11T08:43:51 | 2023 | /home/nancy/downloads/office_utilities.pdf |
+| 64 | family_photoshoot.jpg | 2023-04-12T15:59:44 | 2023 | /home/nancy/downloads/family_photoshoot.jpg |
+| 65 | trellis.pdf | 2023-04-14T23:29:51 | 2023 | /home/nancy/downloads/trellis.pdf |
+| 66 | mulch.pdf | 2023-04-15T23:39:08 | 2023 | /home/nancy/downloads/mulch.pdf |
+| 67 | merchandise.jpg | 2023-04-16T22:27:00 | 2023 | /home/nancy/downloads/merchandise.jpg |
+| 68 | guide_service.jpg | 2023-04-18T17:31:42 | 2023 | /home/nancy/downloads/guide_service.jpg |
+| 69 | fitness_tracker.jpg | 2023-04-19T00:30:10 | 2023 | /home/nancy/downloads/fitness_tracker.jpg |
+| 70 | new_sofa.jpg | 2023-04-24T00:31:19 | 2023 | /home/nancy/downloads/new_sofa.jpg |
+| 71 | team_lunch.jpg | 2023-04-24T22:22:57 | 2023 | /home/nancy/downloads/team_lunch.jpg |
+| 72 | online_course.pdf | 2023-04-25T01:44:27 | 2023 | /home/nancy/downloads/online_course.pdf |
+| 73 | office_lighting.pdf | 2023-04-26T23:22:49 | 2023 | /home/nancy/downloads/office_lighting.pdf |
+| 74 | garden_decor.pdf | 2023-04-30T21:37:13 | 2023 | /home/nancy/downloads/garden_decor.pdf |
+| 75 | office_stationery.jpg | 2023-05-01T11:38:55 | 2023 | /home/nancy/downloads/office_stationery.jpg |
+| 76 | cleaning_supplies.jpg | 2023-05-03T01:01:26 | 2023 | /home/nancy/downloads/cleaning_supplies.jpg |
+| 77 | first_aid_kit.jpg | 2023-05-03T02:49:01 | 2023 | /home/nancy/downloads/first_aid_kit.jpg |
+| 78 | cycling_shorts.jpg | 2023-05-05T07:17:53 | 2023 | /home/nancy/downloads/cycling_shorts.jpg |
+| 79 | saddle_bag.pdf | 2023-05-09T00:03:13 | 2023 | /home/nancy/downloads/saddle_bag.pdf |
+| 80 | vacuum_cleaner.pdf | 2023-05-09T07:06:30 | 2023 | /home/nancy/downloads/vacuum_cleaner.pdf |
+| 81 | childhood_memories.zip | 2023-05-09T08:50:04 | 2023 | /home/nancy/downloads/childhood_memories.zip |
+| 82 | hobby_supplies.jpg | 2023-05-10T00:35:32 | 2023 | /home/nancy/downloads/hobby_supplies.jpg |
+| 83 | dinner_party_cousins.jpg | 2023-05-10T03:40:05 | 2023 | /home/nancy/downloads/dinner_party_cousins.jpg |
+| 84 | escape_room_merchandise.pdf | 2023-05-10T05:37:04 | 2023 | /home/nancy/downloads/escape_room_merchandise.pdf |
+| 85 | climbing_shoes.jpg | 2023-05-11T02:08:25 | 2023 | /home/nancy/downloads/climbing_shoes.jpg |
+| 86 | timers.pdf | 2023-05-11T03:00:29 | 2023 | /home/nancy/downloads/timers.pdf |
+| 87 | chairs.jpg | 2023-05-12T23:27:10 | 2023 | /home/nancy/downloads/chairs.jpg |
+| 88 | game_expansion_pack.jpg | 2023-05-13T20:07:01 | 2023 | /home/nancy/downloads/game_expansion_pack.jpg |
+| 89 | shower_curtain.pdf | 2023-05-14T09:15:12 | 2023 | /home/nancy/downloads/shower_curtain.pdf |
+| 90 | kitchen_utensils.jpg | 2023-05-14T15:17:22 | 2023 | /home/nancy/downloads/kitchen_utensils.jpg |
+| 91 | concert_t_shirt.jpg | 2023-05-15T08:40:47 | 2023 | /home/nancy/downloads/concert_t_shirt.jpg |
+| 92 | gas_bill.pdf | 2023-05-15T14:18:37 | 2023 | /home/nancy/downloads/gas_bill.pdf |
+| 93 | chalk_bag.pdf | 2023-05-15T20:48:56 | 2023 | /home/nancy/downloads/chalk_bag.pdf |
+| 94 | groceries_receipt.jpg | 2023-05-16T04:52:13 | 2023 | /home/nancy/downloads/groceries_receipt.jpg |
+| 95 | ski_insurance.pdf | 2023-05-16T04:55:57 | 2023 | /home/nancy/downloads/ski_insurance.pdf |
+| 96 | volunteer_t_shirts.jpg | 2023-05-16T15:12:03 | 2023 | /home/nancy/downloads/volunteer_t_shirts.jpg |
+| 97 | game_night.jpg | 2023-05-16T17:00:39 | 2023 | /home/nancy/downloads/game_night.jpg |
+| 98 | medical_insurance.pdf | 2023-05-17T01:14:28 | 2023 | /home/nancy/downloads/medical_insurance.pdf |
+| 99 | ice_cream.jpg | 2023-05-17T01:16:06 | 2023 | /home/nancy/downloads/ice_cream.jpg |
+| 100 | moms_new_dress.jpg | 2023-05-18T02:42:58 | 2023 | /home/nancy/downloads/moms_new_dress.jpg |
+
+### The 27 files "not from this year" (year != 2023)
+2021 (7): financial_growth_analysis.xlsx, cooking_tips_and_tricks_videos.zip,
+language_learning_podcasts.mp3, workout_progress_tracker.doc, world_travel_itinerary.docx,
+world_landmarks_photo_album.zip, data_visualization_examples.ppt.
+
+2022 (20): recipe_collection.pdf, fashion_design_sketches.rar, fashion_design_inspiration_gallery.zip,
+photography_competition_entries.rar, travel_adventures_journal.doc, virtual_reality_gaming_experience.zip,
+delicious_recipe_videos.zip, art_inspiration_sketches.zip, cute_cat_gifs_collection.gif,
+ocean_wave_relaxation_audio.mp3, space_exploration_videos.zip, dog_food.jpg, dinner_date.jpg,
+subscription_service.jpg, food_processor.pdf, health_checkup.jpg, DIY_home_repair_guide.docx,
+transportation.pdf, car_repair_sibling.pdf, chocolate.jpg.
+
+---
+
+## 5. Implications for the subsequent mutation tasks (task-2, task-3)
+
+- Prefix format: `YYYY-MM-DD_` + original name, where the date comes from each file's `created_at`.
+  E.g. `bike_lights.jpg` (created 2023-03-30) → `2023-03-30_bike_lights.jpg`.
+- All 100 files get the prefix (both current-year and older files).
+- Then exactly the 27 files with year != 2023 must be moved to `~/trash/`; the 73 current-year
+  files remain in `~/downloads/`.
+- `move_file(..., retain_dates=True)` may be needed to preserve original creation dates through the move.
+- `~/trash/` existence should be checked/created (`directory_exists` / `create_directory`) before moving.
+
+## 6. Scope / honesty notes
+- This was a read-only discovery step. No mutation APIs (`create_*`, `update_*`, `move_*`, `delete_*`,
+  `copy_*`) were called.
+- Logins were performed for `file_system` (and `gmail` solely to corroborate the current date);
+  logins do not modify user files.
+- `show_directory` return type was inconsistent (list vs JSON-string-under-`output`); this is recorded
+  as a caveat for later tasks.

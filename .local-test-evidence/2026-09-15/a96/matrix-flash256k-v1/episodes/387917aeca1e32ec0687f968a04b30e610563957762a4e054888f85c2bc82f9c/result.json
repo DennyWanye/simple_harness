@@ -1,0 +1,67 @@
+{
+  "admission_denials": [],
+  "arm": "D",
+  "elapsed_seconds": 323.96079833293334,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 63,
+    "input_tokens": 771683,
+    "model": "deepseek-flash",
+    "output_tokens": 68716,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 840399
+  },
+  "mission_success": true,
+  "official": {
+    "declared_task_status": "success",
+    "difficulty": 2,
+    "failures": [],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match."
+      },
+      {
+        "label": "no_op_pass",
+        "requirement": "assert no model changes."
+      }
+    ],
+    "success": true
+  },
+  "official_utility": true,
+  "repetition": 1,
+  "run_id": "387917aeca1e32ec0687f968a04b30e610563957762a4e054888f85c2bc82f9c",
+  "runtime": {
+    "arm": "D",
+    "dynamic_graph": false,
+    "host_observation_errors": 1,
+    "host_observations_committed": 2,
+    "knowledge_protocol": "appworld-d-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-743a835b4a6039e5",
+    "mission_status": "COMPLETED",
+    "stop_reason": "verification_passed",
+    "tasks": [
+      {
+        "id": "mission-743a835b4a6039e5:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-743a835b4a6039e5:task-2",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-743a835b4a6039e5:task-3",
+        "status": "COMPLETED"
+      }
+    ],
+    "tool_calls": 70
+  },
+  "status": "official_scored",
+  "task_id": "fac291d_1",
+  "unknown_usage_calls": 0,
+  "valid_success": true,
+  "worker_pid": 98243
+}

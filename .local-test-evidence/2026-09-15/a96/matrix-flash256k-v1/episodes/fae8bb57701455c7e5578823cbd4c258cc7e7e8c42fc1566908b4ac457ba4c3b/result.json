@@ -1,0 +1,105 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:2",
+      "seconds": 0.00015179184265434742,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    },
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:3",
+      "seconds": 0.00010525016114115715,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "R",
+  "elapsed_seconds": 2.757034417008981,
+  "error_type": "ValueError",
+  "knowledge_reuse_events": null,
+  "known_usage_lower_bound": {
+    "calls": 1,
+    "input_tokens": 1006,
+    "model": "deepseek-flash",
+    "output_tokens": 77,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 1083
+  },
+  "mission_success": null,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 3,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match venmo.Transaction, phone.GlobalTextMessage, phone.UserTextMessage,\nignoring venmo.User and venmo.Notification",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert model changes match venmo.Transaction, phone.GlobalTextMessage, phone.UserTextMessage,\n    ignoring venmo.User and venmo.Notification\n    \"\"\"\n):\n    changed_model_names = models.changed_model_names(\n        ignore=[\"venmo.User\", \"venmo.Notification\"]\n```\n----------\nAssertionError:\nset()\n==\n{'phone.UserTextMessage', 'phone.GlobalTextMessage', 'venmo.Transaction'}\n\nIn right but not left:\n['phone.UserTextMessage', 'phone.GlobalTextMessage', 'venmo.Transaction']"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "obtain added, updated, deleted venmo.Transactions using models.changed_records\nassert 1 is added, 0 is updated, and 0 is deleted.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    obtain added, updated, deleted venmo.Transactions using models.changed_records\n    assert 1 is added, 0 is updated, and 0 is deleted.\n    \"\"\"\n):\n    added_transactions, updated_transactions, deleted_transactions = models.changed_records(\n        \"venmo.Transaction\"\n```\n----------\nAssertionError:  0 == 1"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction receiver_id is private_data.friend_venmo_user_id.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added transaction receiver_id is private_data.friend_venmo_user_id.\n    \"\"\"\n):\n    added_transaction = added_transactions[0]\n    test.case(added_transaction.receiver_id, \"==\", private_data.friend_venmo_user_id)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction has description public_data.note.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added transaction has description public_data.note.\n    \"\"\"\n):\n    test.case(added_transaction.description, \"==\", public_data.note, ignore_case=True)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction has amount private_data.grocery_cost.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added transaction has amount private_data.grocery_cost.\n    \"\"\"\n):\n    test.case(added_transaction.amount, \"==\", private_data.grocery_cost)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "obtain added, updated, deleted phone.GlobalTextMessage using models.changed_records\nassert 1 is added, 0 is updated, and 0 is deleted.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    obtain added, updated, deleted phone.GlobalTextMessage using models.changed_records\n    assert 1 is added, 0 is updated, and 0 is deleted.\n    \"\"\"\n):\n    (\n        added_global_text_messages,\n```\n----------\nAssertionError:  0 == 1"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added global_text_message's receiver_id is to private_data.friend_phone_user_id.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added global_text_message's receiver_id is to private_data.friend_phone_user_id.\n    \"\"\"\n):\n    added_global_text_message = added_global_text_messages[0]\n    test.case(added_global_text_message.receiver_id, \"==\", private_data.friend_phone_user_id)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added global_text_message has message, public_data.message_text (ignore case).",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added global_text_message has message, public_data.message_text (ignore case).\n    \"\"\"\n):\n    test.case(\n        added_global_text_message.message, \"==\", public_data.message_text, ignore_case=True\n    )\n```\n----------"
+      }
+    ],
+    "num_tests": 10,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "assert none of the records from phone.UserTextMessage have been deleted"
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "fae8bb57701455c7e5578823cbd4c258cc7e7e8c42fc1566908b4ac457ba4c3b",
+  "status": "official_scored",
+  "task_id": "530b157_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98245
+}

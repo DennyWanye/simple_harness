@@ -1,0 +1,74 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-adf5f5e4493e47ae235d280ff1075860:provider-turn:1",
+      "seconds": 0.0001441671047359705,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "D",
+  "elapsed_seconds": 74.93188566714525,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 27,
+    "input_tokens": 290240,
+    "model": "deepseek-flash",
+    "output_tokens": 12470,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 302710
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "success",
+    "difficulty": 1,
+    "failures": [],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match."
+      },
+      {
+        "label": "no_op_pass",
+        "requirement": "assert no model changes."
+      }
+    ],
+    "success": true
+  },
+  "official_utility": true,
+  "repetition": 1,
+  "run_id": "e52818b1fde2f77f6369f1654c8432d407fb93040c5c8993627eb4454f560a3c",
+  "runtime": {
+    "arm": "D",
+    "dynamic_graph": false,
+    "host_observation_errors": 1,
+    "host_observations_committed": 0,
+    "knowledge_protocol": "appworld-d-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-5228dc45ee3d21b7",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-5228dc45ee3d21b7:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-5228dc45ee3d21b7:task-2",
+        "status": "FAILED"
+      }
+    ],
+    "tool_calls": 26
+  },
+  "status": "official_scored",
+  "task_id": "23cf851_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98245
+}

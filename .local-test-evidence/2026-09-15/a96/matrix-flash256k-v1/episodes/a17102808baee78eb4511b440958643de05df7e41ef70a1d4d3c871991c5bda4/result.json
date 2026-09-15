@@ -1,0 +1,80 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-d18f079960a684b96e29ff508ed65680:provider-turn:7",
+      "seconds": 0.00426370813511312,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "D",
+  "elapsed_seconds": 351.8701322921552,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 80,
+    "input_tokens": 1167987,
+    "model": "deepseek-flash",
+    "output_tokens": 64821,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 1232808
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "success",
+    "difficulty": 1,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '$227' == '227'"
+      }
+    ],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "assert no model changes."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 1,
+  "run_id": "a17102808baee78eb4511b440958643de05df7e41ef70a1d4d3c871991c5bda4",
+  "runtime": {
+    "arm": "D",
+    "dynamic_graph": false,
+    "host_observation_errors": 0,
+    "host_observations_committed": 2,
+    "knowledge_protocol": "appworld-d-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-df32ba16cdada324",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-df32ba16cdada324:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-df32ba16cdada324:task-2",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-df32ba16cdada324:task-3",
+        "status": "FAILED"
+      }
+    ],
+    "tool_calls": 106
+  },
+  "status": "official_scored",
+  "task_id": "383cbac_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98244
+}

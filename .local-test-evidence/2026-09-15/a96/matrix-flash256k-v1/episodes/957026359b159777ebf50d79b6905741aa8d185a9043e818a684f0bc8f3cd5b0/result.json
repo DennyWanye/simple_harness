@@ -1,0 +1,84 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-6fee2523b342bd19d5e550d766d82f82:provider-turn:1",
+      "seconds": 0.013195666018873453,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "F",
+  "elapsed_seconds": 124.10055179195479,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 34,
+    "input_tokens": 384376,
+    "model": "deepseek-flash",
+    "output_tokens": 22784,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 407160
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 1,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == '227'"
+      }
+    ],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "assert no model changes."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "957026359b159777ebf50d79b6905741aa8d185a9043e818a684f0bc8f3cd5b0",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 1,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-63ff754c07cc12e9",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-63ff754c07cc12e9:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-63ff754c07cc12e9:task-2",
+        "status": "FAILED"
+      },
+      {
+        "id": "mission-63ff754c07cc12e9:task-3",
+        "status": "CANCELLED"
+      },
+      {
+        "id": "mission-63ff754c07cc12e9:task-4",
+        "status": "BLOCKED"
+      }
+    ],
+    "tool_calls": 42
+  },
+  "status": "official_scored",
+  "task_id": "383cbac_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98247
+}

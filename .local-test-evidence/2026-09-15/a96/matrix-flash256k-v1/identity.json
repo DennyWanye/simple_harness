@@ -1,0 +1,26 @@
+{
+  "base_url_host": "api.deepseek.com",
+  "calls": 80,
+  "context_window": 262144,
+  "experiment_id": "a96-flash256k-v1",
+  "model": "deepseek-flash",
+  "n_runs": 96,
+  "note": "new identity; not mixed with Qwen a96-qwen256k-v2",
+  "sdk_commit": "69d679c1e880c5903a4d6c95b49c6061ff6514de",
+  "seconds": 1800,
+  "task_ids": [
+    "50e1ac9_1",
+    "fac291d_1",
+    "530b157_1",
+    "0d8a4ee_1",
+    "37a8675_1",
+    "383cbac_1",
+    "23cf851_1",
+    "68ee2c9_1",
+    "6171bbc_1",
+    "6c2c621_1",
+    "396c5a2_1",
+    "4fab96f_1"
+  ],
+  "workers": 6
+}

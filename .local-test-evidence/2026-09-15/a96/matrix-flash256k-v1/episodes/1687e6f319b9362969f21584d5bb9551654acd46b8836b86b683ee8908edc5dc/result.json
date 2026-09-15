@@ -1,0 +1,85 @@
+{
+  "admission_denials": [],
+  "arm": "F",
+  "elapsed_seconds": 209.27362379105762,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 58,
+    "input_tokens": 826771,
+    "model": "deepseek-flash",
+    "output_tokens": 38303,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 865074
+  },
+  "mission_success": true,
+  "official": {
+    "declared_task_status": "success",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match venmo.Notification, venmo.Transaction ignoring venmo.User.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert model changes match venmo.Notification, venmo.Transaction ignoring venmo.User.\n    \"\"\"\n):\n    changed_model_names = models.changed_model_names(ignore=[\"venmo.User\"])\n    test.case(changed_model_names, \"==\", {\"venmo.Notification\", \"venmo.Transaction\"})\n```\n----------\nAssertionError:\n{'venmo.Transaction', 'venmo.Notification', 'file_system.Directory', 'file_system.File'}\n==\n{'venmo.Transaction', 'venmo.Notification'}\n\nIn left but not right:\n['file_system.Directory', 'file_system.File']"
+      }
+    ],
+    "num_tests": 6,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "obtain added, updated, removed venmo.Transaction records using models.changed_records,\nand assert 1 is added, 0 is updated, and 0 is deleted."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction's receiver_id is private_data.person_venmo_user_id."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction has amount public_data.payment_amount."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction is private/public as per public_data.privacy."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 1,
+  "run_id": "1687e6f319b9362969f21584d5bb9551654acd46b8836b86b683ee8908edc5dc",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 3,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-973ba17db3cd7121",
+    "mission_status": "COMPLETED",
+    "stop_reason": "verification_passed",
+    "tasks": [
+      {
+        "id": "mission-973ba17db3cd7121:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-973ba17db3cd7121:task-2",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-973ba17db3cd7121:task-3",
+        "status": "COMPLETED"
+      }
+    ],
+    "tool_calls": 64
+  },
+  "status": "official_scored",
+  "task_id": "37a8675_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98245
+}

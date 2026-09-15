@@ -1,0 +1,109 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-e1bdf2076cfd7c1699c979144480a1ae:provider-turn:1",
+      "seconds": 9.85830556601286e-05,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "F",
+  "elapsed_seconds": 53.07572566717863,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 12,
+    "input_tokens": 130395,
+    "model": "deepseek-flash",
+    "output_tokens": 10294,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 140689
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match spotify.Playlist, spotify.PlaylistSong.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert model changes match spotify.Playlist, spotify.PlaylistSong.\n    \"\"\"\n):\n    test.case(\n        models.changed_model_names(),\n        \"==\",\n```\n----------\nAssertionError:  set() == {'spotify.PlaylistSong', 'spotify.Playlist'}\n\nIn right but not left:\n['spotify.PlaylistSong', 'spotify.Playlist']"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "obtain added, updated, removed spotify.Playlist records using models.changed_records,\nand assert 1 has been added, and 0 have been updated or removed.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    obtain added, updated, removed spotify.Playlist records using models.changed_records,\n    and assert 1 has been added, and 0 have been updated or removed.\n    \"\"\"\n):\n    added_playlists, updated_playlists, removed_playlists = models.changed_records(\n        \"spotify.Playlist\"\n```\n----------\nAssertionError:  0 == 1"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added playlist is named public_data.playlist_title.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added playlist is named public_data.playlist_title.\n    \"\"\"\n):\n    added_playlist = added_playlists[0]\n    test.case(added_playlist.title, \"==\", public_data.playlist_title)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all song_ids of added playlist_songs match private_data.playlist_song_ids (ignore_order)",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert all song_ids of added playlist_songs match private_data.playlist_song_ids (ignore_order)\n    \"\"\"\n):\n    test.case(\n        list_of(added_playlist_songs, \"song_id\"),\n        \"==\",\n```\n----------\nAssertionError:  [] == [36, 45, 51, 54, 66, 73, 74, 80]\n\nIn right but not left:\n[36, 45, 51, 54, 66, 73, 74, 80]"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the playlist_id of all added playlist_songs match added_playlist.id.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the playlist_id of all added playlist_songs match added_playlist.id.\n    \"\"\"\n):\n```\n----------"
+      }
+    ],
+    "num_tests": 7,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "obtain added, removed spotify.PlaylistSong records using models.changed_records,\nand assert 0 have been removed."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "6eeba43a13e9fec4c6ca9f4aa1ea4671d291db88ef54fe49b3de1416b976725a",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 0,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-a594ca29000d2641",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-a594ca29000d2641:task-1",
+        "status": "FAILED"
+      },
+      {
+        "id": "mission-a594ca29000d2641:task-2",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "mission-a594ca29000d2641:task-3",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "mission-a594ca29000d2641:task-4",
+        "status": "BLOCKED"
+      }
+    ],
+    "tool_calls": 10
+  },
+  "status": "official_scored",
+  "task_id": "6171bbc_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98246
+}

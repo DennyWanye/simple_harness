@@ -1,0 +1,69 @@
+{
+  "admission_denials": [],
+  "arm": "F",
+  "elapsed_seconds": 228.8283354579471,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 63,
+    "input_tokens": 913034,
+    "model": "deepseek-flash",
+    "output_tokens": 47851,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 960885
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    ground_truth_song_titles = ground_truth_answer.split(\",\")\n    predicted_song_titles = predicted_answer.split(\",\")\n    test.case(\n```\n----------\nAssertionError:\n['crimson veil', 'fire and ice', 'haunted memories', 'mysteries of the silent sea']\n==\n['<<not_given>>']\n\nIn left but not right:\n['crimson veil', 'fire and ice', 'haunted memories', 'mysteries of the silent sea']\n\nIn right but not left:\n['<<not_given>>']\n\nOriginal values:\n['Mysteries of the Silent Sea', 'Crimson Veil', 'Haunted Memories', 'Fire and Ice']\n==\n['<<NOT_GIVEN>>']"
+      }
+    ],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "Assert no model changes"
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "41b1b25622e1acf5d868c2480ebf3d023a98e290f7901ec0068b7ae14d9c43b4",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 0,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-6ecdcb78d9bc324b",
+    "mission_status": "FAILED",
+    "stop_reason": "max_attempts_reached",
+    "tasks": [
+      {
+        "id": "mission-6ecdcb78d9bc324b:task-1",
+        "status": "FAILED"
+      },
+      {
+        "id": "mission-6ecdcb78d9bc324b:task-2",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "mission-6ecdcb78d9bc324b:task-3",
+        "status": "BLOCKED"
+      }
+    ],
+    "tool_calls": 65
+  },
+  "status": "official_scored",
+  "task_id": "50e1ac9_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98247
+}

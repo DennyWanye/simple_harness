@@ -1,0 +1,55 @@
+{
+  "admission_denials": [],
+  "arm": "S",
+  "elapsed_seconds": 2.478356041945517,
+  "knowledge_reuse_events": null,
+  "known_usage_lower_bound": {
+    "calls": 1,
+    "input_tokens": 931,
+    "model": "deepseek-flash",
+    "output_tokens": 101,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 1032
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 1,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == '11'"
+      }
+    ],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "assert no model changes."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "9775cf03e160fb6ed7f9939ea113c2dc2b6d7d2cc60554aeddd58d46ad0fcf24",
+  "runtime": {
+    "agent_ids": [
+      "agent-28d24b4fd5b29e2ad0c9088570c4f1a3"
+    ],
+    "arm": "S",
+    "runtime_states": [
+      "failed"
+    ],
+    "selected_candidate": null,
+    "tool_calls": 0,
+    "turns": 1
+  },
+  "status": "official_scored",
+  "task_id": "23cf851_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98247
+}

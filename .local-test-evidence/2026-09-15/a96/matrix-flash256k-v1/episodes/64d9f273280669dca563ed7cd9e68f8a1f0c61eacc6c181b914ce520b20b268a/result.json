@@ -1,0 +1,99 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-3a9becda78f9a820daf3dd0cca18db92:provider-turn:1",
+      "seconds": 0.0001873329747468233,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "F",
+  "elapsed_seconds": 81.60638241702691,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 19,
+    "input_tokens": 273418,
+    "model": "deepseek-flash",
+    "output_tokens": 16642,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 290060
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 1,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match file_system.File, file_system.Directory.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert model changes match file_system.File, file_system.Directory.\n    \"\"\"\n):\n    test.case(models.changed_model_names(), \"==\", {\"file_system.File\", \"file_system.Directory\"})\n```\n----------\nAssertionError:  set() == {'file_system.File', 'file_system.Directory'}\n\nIn right but not left:\n['file_system.File', 'file_system.Directory']"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "prepare start_file_path_to_content and end_file_path_to_content from start and end state of user.files,\nthen assert the files have been renamed (with proper content) as per private_data.before_this_year_start_to_end_file_path.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    prepare start_file_path_to_content and end_file_path_to_content from start and end state of user.files,\n    then assert the files have been renamed (with proper content) as per private_data.before_this_year_start_to_end_file_path.\n    \"\"\"\n):\n    files_user_start = models.start.file_system.User.find_from(main_user)\n    files_user_end = models.end.file_system.User.find_from(main_user)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the files have been renamed (with proper content) as per private_data.this_year_start_to_end_file_path.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the files have been renamed (with proper content) as per private_data.this_year_start_to_end_file_path.\n    \"\"\"\n):\n    start_content = []\n    end_content = []\n    for start_path, end_path in private_data.this_year_start_to_end_file_path.items():\n```\n----------"
+      }
+    ],
+    "num_tests": 5,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "obtain all the file paths from start_file_path_to_content's keys that are neither in\nprivate_data.this_year_start_to_end_file_path nor in private_data.before_this_year_start_to_end_file_path.\nThese are the file_paths that should not have been renamed. Assert their paths and contents are identical\nin the start and the end state."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "64d9f273280669dca563ed7cd9e68f8a1f0c61eacc6c181b914ce520b20b268a",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 0,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-6d8a01b2bee4f17a",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-6d8a01b2bee4f17a:task-1",
+        "status": "FAILED"
+      },
+      {
+        "id": "mission-6d8a01b2bee4f17a:task-2",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "mission-6d8a01b2bee4f17a:task-3",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "mission-6d8a01b2bee4f17a:task-4",
+        "status": "BLOCKED"
+      }
+    ],
+    "tool_calls": 16
+  },
+  "status": "official_scored",
+  "task_id": "68ee2c9_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98246
+}

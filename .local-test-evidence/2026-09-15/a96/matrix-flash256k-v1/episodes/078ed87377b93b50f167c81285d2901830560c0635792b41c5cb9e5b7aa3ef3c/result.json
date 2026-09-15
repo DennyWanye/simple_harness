@@ -1,0 +1,83 @@
+{
+  "admission_denials": [],
+  "arm": "F",
+  "elapsed_seconds": 281.09358075005,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 71,
+    "input_tokens": 858766,
+    "model": "deepseek-flash",
+    "output_tokens": 51725,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 910491
+  },
+  "mission_success": true,
+  "official": {
+    "declared_task_status": "success",
+    "difficulty": 2,
+    "failures": [],
+    "num_tests": 6,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match venmo.Notification, venmo.Transaction ignoring venmo.User."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "obtain added, updated, removed venmo.Transaction records using models.changed_records,\nand assert 1 is added, 0 is updated, and 0 is deleted."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction's receiver_id is private_data.person_venmo_user_id."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction has amount public_data.payment_amount."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction is private/public as per public_data.privacy."
+      }
+    ],
+    "success": true
+  },
+  "official_utility": true,
+  "repetition": 0,
+  "run_id": "078ed87377b93b50f167c81285d2901830560c0635792b41c5cb9e5b7aa3ef3c",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 3,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-012f935e0b6943a0",
+    "mission_status": "COMPLETED",
+    "stop_reason": "verification_passed",
+    "tasks": [
+      {
+        "id": "mission-012f935e0b6943a0:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-012f935e0b6943a0:task-2",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-012f935e0b6943a0:task-3",
+        "status": "COMPLETED"
+      }
+    ],
+    "tool_calls": 79
+  },
+  "status": "official_scored",
+  "task_id": "37a8675_1",
+  "unknown_usage_calls": 0,
+  "valid_success": true,
+  "worker_pid": 98246
+}

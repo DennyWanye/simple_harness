@@ -1,0 +1,90 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:2",
+      "seconds": 0.00022245803847908974,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    },
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:3",
+      "seconds": 0.00013641687110066414,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "R",
+  "elapsed_seconds": 2.250932708149776,
+  "error_type": "ValueError",
+  "knowledge_reuse_events": null,
+  "known_usage_lower_bound": {
+    "calls": 1,
+    "input_tokens": 981,
+    "model": "deepseek-flash",
+    "output_tokens": 73,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 1054
+  },
+  "mission_success": null,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match spotify.Playlist, spotify.PlaylistSong.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert model changes match spotify.Playlist, spotify.PlaylistSong.\n    \"\"\"\n):\n    test.case(\n        models.changed_model_names(),\n        \"==\",\n```\n----------\nAssertionError:  set() == {'spotify.PlaylistSong', 'spotify.Playlist'}\n\nIn right but not left:\n['spotify.PlaylistSong', 'spotify.Playlist']"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "obtain added, updated, removed spotify.Playlist records using models.changed_records,\nand assert 1 has been added, and 0 have been updated or removed.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    obtain added, updated, removed spotify.Playlist records using models.changed_records,\n    and assert 1 has been added, and 0 have been updated or removed.\n    \"\"\"\n):\n    added_playlists, updated_playlists, removed_playlists = models.changed_records(\n        \"spotify.Playlist\"\n```\n----------\nAssertionError:  0 == 1"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added playlist is named public_data.playlist_title.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added playlist is named public_data.playlist_title.\n    \"\"\"\n):\n    added_playlist = added_playlists[0]\n    test.case(added_playlist.title, \"==\", public_data.playlist_title)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all song_ids of added playlist_songs match private_data.playlist_song_ids (ignore_order)",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert all song_ids of added playlist_songs match private_data.playlist_song_ids (ignore_order)\n    \"\"\"\n):\n    test.case(\n        list_of(added_playlist_songs, \"song_id\"),\n        \"==\",\n```\n----------\nAssertionError:  [] == [36, 45, 51, 54, 66, 73, 74, 80]\n\nIn right but not left:\n[36, 45, 51, 54, 66, 73, 74, 80]"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the playlist_id of all added playlist_songs match added_playlist.id.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the playlist_id of all added playlist_songs match added_playlist.id.\n    \"\"\"\n):\n```\n----------"
+      }
+    ],
+    "num_tests": 7,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "obtain added, removed spotify.PlaylistSong records using models.changed_records,\nand assert 0 have been removed."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 1,
+  "run_id": "e9186d1352617bc115c9f30c47ae3d659735692bad7b117f045c4c0ed424badc",
+  "status": "official_scored",
+  "task_id": "6171bbc_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98242
+}

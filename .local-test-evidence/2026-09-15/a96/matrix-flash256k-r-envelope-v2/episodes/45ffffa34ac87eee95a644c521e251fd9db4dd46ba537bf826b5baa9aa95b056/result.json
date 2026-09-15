@@ -1,0 +1,197 @@
+{
+  "admission_denials": [],
+  "arm": "R",
+  "elapsed_seconds": 43.73889675014652,
+  "experiment_id": "a96-flash256k-r-envelope-v2",
+  "known_usage_lower_bound": {
+    "calls": 25,
+    "input_tokens": 306361,
+    "model": "deepseek-flash",
+    "output_tokens": 5418,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 311779
+  },
+  "meter_observations": [
+    {
+      "input_reserve": 1549,
+      "input_tokens": 980,
+      "ordinal": 1,
+      "output_cap": 4096,
+      "output_tokens": 95,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:1",
+      "status": "completed",
+      "total_tokens": 1075
+    },
+    {
+      "input_reserve": 2539,
+      "input_tokens": 1523,
+      "ordinal": 2,
+      "output_cap": 4096,
+      "output_tokens": 108,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:2",
+      "status": "completed",
+      "total_tokens": 1631
+    },
+    {
+      "input_reserve": 7890,
+      "input_tokens": 4533,
+      "ordinal": 3,
+      "output_cap": 4096,
+      "output_tokens": 106,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:3",
+      "status": "completed",
+      "total_tokens": 4639
+    },
+    {
+      "input_reserve": 8391,
+      "input_tokens": 4753,
+      "ordinal": 4,
+      "output_cap": 4096,
+      "output_tokens": 103,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:4",
+      "status": "completed",
+      "total_tokens": 4856
+    },
+    {
+      "input_reserve": 9235,
+      "input_tokens": 5296,
+      "ordinal": 5,
+      "output_cap": 4096,
+      "output_tokens": 152,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:5",
+      "status": "completed",
+      "total_tokens": 5448
+    },
+    {
+      "input_reserve": 11625,
+      "input_tokens": 6739,
+      "ordinal": 6,
+      "output_cap": 4096,
+      "output_tokens": 88,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:6",
+      "status": "completed",
+      "total_tokens": 6827
+    },
+    {
+      "input_reserve": 12101,
+      "input_tokens": 7041,
+      "ordinal": 7,
+      "output_cap": 4096,
+      "output_tokens": 190,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:7",
+      "status": "completed",
+      "total_tokens": 7231
+    },
+    {
+      "input_reserve": 14248,
+      "input_tokens": 8419,
+      "ordinal": 8,
+      "output_cap": 4096,
+      "output_tokens": 246,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:8",
+      "status": "completed",
+      "total_tokens": 8665
+    },
+    {
+      "input_reserve": 17911,
+      "input_tokens": 11023,
+      "ordinal": 9,
+      "output_cap": 4096,
+      "output_tokens": 666,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:9",
+      "status": "completed",
+      "total_tokens": 11689
+    },
+    {
+      "input_reserve": 19994,
+      "input_tokens": 12535,
+      "ordinal": 10,
+      "output_cap": 4096,
+      "output_tokens": 164,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:10",
+      "status": "completed",
+      "total_tokens": 12699
+    },
+    {
+      "input_reserve": 20711,
+      "input_tokens": 12918,
+      "ordinal": 11,
+      "output_cap": 4096,
+      "output_tokens": 376,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:11",
+      "status": "completed",
+      "total_tokens": 13294
+    },
+    {
+      "input_reserve": 21844,
+      "input_tokens": 13691,
+      "ordinal": 12,
+      "output_cap": 4096,
+      "output_tokens": 137,
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:12",
+      "status": "completed",
+      "total_tokens": 13828
+    }
+  ],
+  "model": "deepseek-flash",
+  "official": {
+    "declared_task_status": "success",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:\n\"sent 'please get on venmo.' to eric bailey (parents, 9272583586) and sherry smith (sibling, 2114992604) — the parents/siblings without a venmo account. skipped kiara bailey and melissa bailey who already have venmo accounts.\"\n==\n'null'"
+      }
+    ],
+    "num_tests": 5,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match phone.GlobalTextMessage, phone.UserTextMessage"
+      },
+      {
+        "label": "no_op_pass",
+        "requirement": "assert 0 phone.UserTextMessage records were removed."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert receiver_ids of added global text messages match exactly to\nprivate_data.no_account_phone_user_ids (ignore order)."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all added global text messages have message public_data.message_text (normalize_text=True)."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "45ffffa34ac87eee95a644c521e251fd9db4dd46ba537bf826b5baa9aa95b056",
+  "runtime": {
+    "agent_ids": [
+      "agent-28d24b4fd5b29e2ad0c9088570c4f1a3"
+    ],
+    "arm": "R",
+    "runtime_states": [
+      "committed",
+      "committed",
+      "committed"
+    ],
+    "selected_candidate": 1,
+    "tool_calls": 22,
+    "turns": 3
+  },
+  "runtime_states": [
+    "committed",
+    "committed",
+    "committed"
+  ],
+  "selected_candidate": 1,
+  "status": "official_scored",
+  "task_id": "0d8a4ee_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 11447
+}

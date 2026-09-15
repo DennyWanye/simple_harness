@@ -1,0 +1,5083 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+# ruff: noqa: E501  (long event / receipt literals)
+
+"""Commit Service: the single logical writer of formal orchestration state (§15, §17.5).
+
+Every public method is one ``Store.transaction()`` that applies a checked
+proposal, appends the corresponding Events (§16.2) and, where a proposal carries a
+base version, records a commit receipt so a replay returns the *same* receipt
+instead of applying twice (§17.4).  Agents never call this; only the
+Orchestrator, the API and the recovery path do.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from hashlib import sha256
+from typing import Any
+
+from simple_harness.agents import AgentTurnResult, AgentTurnState
+
+from ..artifacts.store import ArtifactStore
+from ..artifacts.versioning import next_versions
+from ..contracts import (
+    TERMINAL_ATTEMPT,
+    TERMINAL_MISSION,
+    TERMINAL_TASK,
+    Artifact,
+    Attempt,
+    AttemptStatus,
+    Budget,
+    Claim,
+    ClaimStatus,
+    ContractError,
+    CriterionAssessmentV1,
+    Event,
+    Mission,
+    MissionStatus,
+    MissionStopReason,
+    ResultEnvelope,
+    ResultOutcome,
+    Task,
+    TaskStatus,
+    ids,
+)
+from ..contracts.models import (
+    STEP2_IMPLEMENTED_LAYERS,
+    default_change_policy,
+    jsonable,
+    sha256_hex,
+)
+from ..governance.budgets import AccountSnapshot, BudgetError, BudgetLedger, UsageFact
+from ..governance.domains import (
+    CODE_DOMAIN,
+    DOC_DOMAIN,
+    DomainProfileV1,
+    check_against_domain,
+    requires_document_critic_proof,
+    requires_mission_source_binding,
+    resolve_domain,
+    supports_document_assessments,
+)
+from ..governance.policies import DeploymentPolicy
+from ..graph.changes import (
+    ChangeLimits,
+    GraphChangeRejected,
+    TaskGraphChange,
+    node_budget,
+    validate_change,
+)
+from ..graph.task_graph import GraphRejected, TaskBudgetFloor, TaskGraphProposal, validate_graph
+from ..memory.claims import grade_claim, system_attribution
+from ..memory.source_dependencies import (
+    merge_source_versions,
+    source_current_issues,
+    source_dependencies_for,
+)
+from ..memory.summaries import refresh_summaries
+from ..memory.verified_knowledge import KnowledgeIndex, KnowledgeRecord
+from ..observability.lineage import lineage
+from ..planning.manager import conflict_task, inherit_limits, synthesis_task, terminal_task
+from ..scheduling.allocator import OPEN_ATTEMPT_STATES
+from ..scheduling.backpressure import (
+    STATE_KEY,
+    BackpressureLimits,
+    BackpressureState,
+    Observation,
+    Transition,
+    evaluate,
+)
+from ..storage.store import DispatchIntent, Store, StoredResult, StoreError
+from ..verification.assessments import (
+    AssessmentBindingV1,
+    assessment_binding_for,
+    inconclusive_retryable,
+    mission_contract_revision,
+    mission_criterion_catalog,
+    task_contract_revision,
+    validated_assessments,
+)
+from ..verification.conflicts import (
+    Contradiction,
+    document_uncertainty_conflicts,
+    find_contradiction,
+    supported_contradiction,
+)
+from ..verification.critics import parse_critic_verdict
+from ..verification.deterministic_checks import LayerResult
+from ..verification.human_review import review_request_id
+from ..verification.mission_coverage import mission_coverage
+from .action_commits import ActionCommitsMixin
+from .fragment_commits import FragmentCommitsMixin
+from .human_commits import HumanCommitsMixin
+from .mission_tail_commits import MissionTailCommitsMixin
+from .policy_commits import PolicyCommitsMixin
+from .protected_tail_commits import ProtectedTailCommitsMixin
+from .selection_commits import SelectionCommitsMixin
+from .source_commits import SourceCommitsMixin
+from .state_machine import next_attempt, next_claim, next_mission, next_task
+
+SUBMITTED_STATES = frozenset({AttemptStatus.SUBMITTED, AttemptStatus.VERIFYING})
+
+ACTOR_SYSTEM = "system"
+ORCHESTRATOR_ID = "orchestrator"
+
+
+class CommitRejected(StoreError):
+    """The proposal violates a contract, a budget or the state machine; nothing was written."""
+
+
+class MissionConflict(CommitRejected):
+    """Same (tenant, idempotency_key) with a different specification."""
+
+
+class InconclusiveRetryExhausted(CommitRejected):
+    """The frozen uncertainty rework allowance is spent; no budget was reserved."""
+
+    def __init__(self, task_id: str, failure_count: int, retry_limit: int) -> None:
+        self.task_id = task_id
+        self.failure_count = failure_count
+        self.retry_limit = retry_limit
+        super().__init__(
+            f"task {task_id} has {failure_count} inconclusive failures (limit={retry_limit})"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MissionSpec:
+    """Input of ``create_mission`` (§5: 任务章程)."""
+
+    goal: str
+    success_criteria: tuple[str, ...]
+    tenant_id: str
+    idempotency_key: str
+    stop_conditions: tuple[str, ...] = ("verification_passed", "budget_exhausted")
+    allowed_tools: tuple[str, ...] = ()
+    risk_level: str = "sandbox"
+    budget: Budget = field(default_factory=Budget)
+    task_kind: str = "code"
+    workspace_seed: Mapping[str, str] = field(default_factory=dict)
+    untrusted_sources: tuple[str, ...] = ()  # step 4 (D4-12): path prefixes of external content
+    synthesis: Mapping[str, Any] | None = None  # step 4 (D4-8): fixed synthesis Task template
+    conflict_reserve_tokens: int = 0  # step 4 (D4-20): tokens set aside for Conflict Tasks
+    domain: str = CODE_DOMAIN  # P3.3 (D1): the domain profile this Mission freezes
+    search_policy_version_id: str | None = None
+    runtime_profile_id: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "goal": self.goal,
+            "success_criteria": list(self.success_criteria),
+            "tenant_id": self.tenant_id,
+            "idempotency_key": self.idempotency_key,
+            "stop_conditions": list(self.stop_conditions),
+            "allowed_tools": list(self.allowed_tools),
+            "risk_level": self.risk_level,
+            "budget": self.budget.to_json(),
+            "task_kind": self.task_kind,
+            "workspace_seed": dict(self.workspace_seed),
+        }
+        if self.search_policy_version_id is not None:
+            data["search_policy_version_id"] = self.search_policy_version_id
+        if self.untrusted_sources:
+            data["untrusted_sources"] = list(self.untrusted_sources)
+        if self.synthesis is not None:
+            data["synthesis"] = dict(self.synthesis)
+        if self.conflict_reserve_tokens:
+            data["conflict_reserve_tokens"] = self.conflict_reserve_tokens
+        if self.domain != CODE_DOMAIN:
+            # A07: the default must not change ``spec_hash`` — a Host that re-sends the same
+            # request after upgrading would otherwise get a MissionConflict
+            data["domain"] = self.domain
+        if self.runtime_profile_id is not None:
+            data["runtime_profile_id"] = self.runtime_profile_id
+        return data
+
+
+@dataclass(frozen=True, slots=True)
+class TaskProposal:
+    """What the Planner proposes (§6.3 / §15); never applied without a Commit."""
+
+    goal: str
+    rationale: str
+    success_criteria: tuple[str, ...]
+    verification_policy: tuple[str, ...]
+    allowed_tools: tuple[str, ...]
+    budget: Budget
+    priority: float = 1.0
+    root_goal: str = ""
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "goal": self.goal,
+            "rationale": self.rationale,
+            "success_criteria": list(self.success_criteria),
+            "verification_policy": list(self.verification_policy),
+            "allowed_tools": list(self.allowed_tools),
+            "budget": self.budget.to_json(),
+            "priority": self.priority,
+            "root_goal": self.root_goal,
+        }
+
+    @classmethod
+    def from_json(cls, value: object) -> TaskProposal:
+        if not isinstance(value, Mapping):
+            raise ContractError("task proposal must be an object")
+        allowed = {
+            "goal",
+            "rationale",
+            "success_criteria",
+            "verification_policy",
+            "allowed_tools",
+            "budget",
+            "priority",
+            "root_goal",
+        }
+        unknown = set(value) - allowed
+        if unknown:
+            raise ContractError(f"task proposal has unknown fields: {sorted(unknown)}")
+        missing = {"goal", "rationale", "success_criteria", "verification_policy"} - set(value)
+        if missing:
+            raise ContractError(f"task proposal is missing fields: {sorted(missing)}")
+        return cls(
+            goal=str(value["goal"]),
+            rationale=str(value["rationale"]),
+            success_criteria=tuple(value["success_criteria"]),
+            verification_policy=tuple(value["verification_policy"]),
+            allowed_tools=tuple(value.get("allowed_tools", ())),
+            budget=Budget.from_json(value.get("budget", {})),
+            priority=float(value.get("priority", 1.0)),
+            root_goal=str(value.get("root_goal", "")),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Reservation:
+    tokens: int
+    cost_micros: int
+    tool_calls: int = 0  # step 6 (D6-8): the Attempt's tool-call cap, reserved up front
+
+
+def mission_account(mission_id: str) -> str:
+    return f"budget:{mission_id}"
+
+
+GLOBAL_ACCOUNT = "budget:global"  # step 6 (D6-1): §18.2 "Global Budget" above every Mission
+
+
+def task_account(task_id: str) -> str:
+    return f"budget:{task_id}"
+
+
+class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, SelectionCommitsMixin, FragmentCommitsMixin,
+    ActionCommitsMixin, HumanCommitsMixin, PolicyCommitsMixin, SourceCommitsMixin
+):  # step 7: the action ledger + approvals half; step 9: the policy registry half
+    def __init__(
+        self,
+        store: Store,
+        *,
+        conflict_tasks: bool = True,
+        global_budget: Budget | None = None,
+        deployed_layers: frozenset[str] = STEP2_IMPLEMENTED_LAYERS,
+        task_floor: TaskBudgetFloor | None = None,
+        candidates_for: Callable[[str], int] | None = None,
+        artifact_store: ArtifactStore | None = None,
+        system_tail_factory: Callable[..., Any] | None = None,
+        mission_profile_validator: Callable[[str, Mapping[str, Any]], None] | None = None,
+        task_floor_for: Callable[[str], TaskBudgetFloor] | None = None,
+    ) -> None:
+        self._store = store
+        self._system_tail_factory = system_tail_factory
+        self._mission_profile_validator = mission_profile_validator
+        self._task_floor_for = task_floor_for
+        self._source_artifact_store = artifact_store
+        if self._source_artifact_store is None and str(store.path) != ":memory:":
+            self._source_artifact_store = ArtifactStore(store.path.parent / "artifacts")
+        # P3.1 fix F-ORCH-1: the Task budget floor the Graph Manager applies — only the
+        # Orchestrator injects one (None = no floor, every earlier construction unchanged);
+        # ``candidates_for`` gives a Mission's candidates per Task from its bound policy
+        self._task_floor = task_floor
+        self._candidates_for = candidates_for
+        self._ledger = BudgetLedger(store)
+        self._conflict_tasks = conflict_tasks  # D4-19: False = defer every conflict
+        self._global_budget = global_budget  # D6-1: None = no deployment-wide cap
+        # host support 0.9.8: the verification layers this deployment runs — without local
+        # code execution ``code_test`` is not among them; the Graph Manager checks, the
+        # system default policies and the conflict path all follow it
+        self._deployed_layers = frozenset(deployed_layers)
+        # D6-8: the orchestrator installs the gateway's executed-call counter (subject → count)
+        # so every settlement path books the tool-call fact without threading it through
+        self.tool_calls_for: Callable[[str], int] | None = None
+        self._accepted_task_observers: list[Callable[[Task], None]] = []
+        self._host_knowledge_sync: dict[str, Callable[[], None]] = {}
+
+    def bind_host_knowledge_sync(self, mission_id: str, sync: Callable[[], None]) -> None:
+        """Bind a Host-owned currentness check; unbound Missions do no external IO.
+
+        The callback must revoke unverifiable projections before returning and
+        must not wait for an episode lock while acceptance holds a transaction.
+        This grants no claim-validation or knowledge-promotion authority.
+        """
+        if mission_id in self._host_knowledge_sync:
+            raise ValueError("Host knowledge currentness already bound")
+        self._host_knowledge_sync[mission_id] = sync
+
+    def unbind_host_knowledge_sync(self, mission_id: str, sync: Callable[[], None]) -> None:
+        if self._host_knowledge_sync.get(mission_id) == sync:
+            del self._host_knowledge_sync[mission_id]
+
+    def sync_host_knowledge(self, mission_id: str) -> None:
+        sync = self._host_knowledge_sync.get(mission_id)
+        if sync is not None:
+            sync()
+
+    def on_task_accepted(self, observer: Callable[[Task], None]) -> None:
+        """Host callback after an accepted Task's transaction is committed."""
+        self._accepted_task_observers.append(observer)
+
+    def off_task_accepted(self, observer: Callable[[Task], None]) -> None:
+        self._accepted_task_observers.remove(observer)
+
+    def _candidates(self, mission_id: str) -> int:
+        """Candidates per Task of ``mission_id``'s bound policy (1 when nobody told us)."""
+
+        if self._candidates_for is None:
+            return 1
+        return max(1, int(self._candidates_for(mission_id)))
+
+    def _floor_for_mission(self, mission_id: str) -> TaskBudgetFloor | None:
+        return self._task_floor if self._task_floor_for is None else self._task_floor_for(mission_id)
+
+    # ----------------------------------------------------------- backpressure
+    def backpressure_state(self) -> BackpressureState:
+        return BackpressureState.from_json(self._store.get_scheduler_state(STATE_KEY))
+
+    def record_backpressure(
+        self,
+        observation: Observation,
+        *,
+        limits: BackpressureLimits,
+        mission_ids: Sequence[str],
+    ) -> tuple[BackpressureState, list[Transition]]:
+        """One evaluation step (D6-2'): the new state and, when a dimension crossed a
+        watermark, the ``BackpressureRaised`` / ``BackpressureCleared`` events on every
+        active Mission's timeline — state and events in one transaction (review P1-4).
+        The state document keeps a bounded log of transitions: that log is the single
+        truth for ``scheduler.json`` / ``metrics.json`` (review P1-11)."""
+
+        with self._store.transaction():
+            previous = BackpressureState.from_json(self._store.get_scheduler_state(STATE_KEY))
+            state, transitions = evaluate(previous, observation, limits)
+            raw = self._store.get_scheduler_state(STATE_KEY) or {}
+            peaks = {str(k): int(v) for k, v in dict(raw.get("peaks") or {}).items()}
+            new_peak = False
+            for dimension in ("running_attempts", "pending_dispatch", "pending_verifications"):
+                observed = observation.value(dimension)
+                if observed > peaks.get(dimension, 0):  # review P2-4: the real peak
+                    peaks[dimension] = observed
+                    new_peak = True
+            if not transitions and not new_peak and previous.observation is not None:
+                return state, []
+            document = state.to_json()
+            document["peaks"] = peaks
+            log = list(raw.get("log") or [])
+            for transition in transitions:
+                log.append({**transition.to_json(), "at": observation.observed_at})
+            document["log"] = log[-200:]
+            document["limits"] = limits.to_json()
+            self._store.put_scheduler_state(STATE_KEY, document)
+            for transition in transitions:
+                for mission_id in mission_ids:
+                    self._emit(
+                        transition.event_type,
+                        mission_id,
+                        key=f"{transition.dimension}:{state.changes}:{mission_id}",
+                        payload={**transition.to_json(), "since": state.since},
+                    )
+            return state, transitions
+
+    # ------------------------------------------------------------ tool audit
+    def record_tool_rejected(
+        self,
+        mission_id: str,
+        *,
+        task_id: str | None,
+        attempt_id: str | None,
+        run_id: str,
+        call_key: str,
+        record: Mapping[str, Any],
+    ) -> Event:
+        """§21.1 last step / §21.3 "对可疑指令进行隔离和审计": a refused tool call is
+        a durable fact on the Mission's timeline (arguments reduced to their keys and
+        the path, never file contents)."""
+
+        arguments = dict(record.get("arguments") or {})
+        with self._store.transaction():
+            return self._emit(
+                "ToolCallRejected",
+                mission_id,
+                key=call_key,  # review P1-3: the SDK call id — stable across a restart
+                task_id=task_id,
+                attempt_id=attempt_id,
+                payload={
+                    "tool": record.get("tool"),
+                    "reason": record.get("error_code"),
+                    "stage": record.get("stage"),
+                    "outcome": record.get("outcome"),
+                    "argument_keys": sorted(arguments),
+                    "path": str(arguments["path"])[:200]  # review P2-5: bounded, never content
+                    if isinstance(arguments.get("path"), str)
+                    else None,
+                    "run_id": run_id,
+                },
+            )
+
+    def record_tool_call(
+        self, *, call_key: str, subject_id: str, mission_id: str, tool: str
+    ) -> bool:
+        """An executed tool call of an Attempt — the tool-call dimension's fact (review P1-3)."""
+
+        return self._store.record_tool_call(
+            call_key=call_key,
+            subject_id=subject_id,
+            mission_id=mission_id,
+            tool=tool,
+            outcome="succeeded",
+        )
+
+    def record_reservation_held(
+        self, subject_id: str, mission_id: str, *, task_id: str | None, reason: str
+    ) -> Event:
+        """L3-3 (plan §6.2): a reservation an UNKNOWN charge keeps occupied is visible on the
+        timeline — once per subject — and listed in ``costs.json``; never auto-released."""
+
+        with self._store.transaction():
+            reservation = self._ledger.reservation(subject_id) or {}
+            return self._emit(
+                "ReservationHeld",
+                mission_id,
+                key=subject_id,
+                task_id=task_id,
+                attempt_id=subject_id if task_id else None,
+                payload={
+                    "subject_id": subject_id,
+                    "reason": reason,
+                    "reserved_tokens": reservation.get("reserved_tokens"),
+                    "reserved_cost_micros": reservation.get("reserved_cost_micros"),
+                },
+            )
+
+    # --------------------------------------------------------- profile health
+    PROFILE_HEALTH_KEY = "profile_health"
+
+    def profile_health(self) -> dict[str, dict[str, Any]]:
+        raw = self._store.get_scheduler_state(self.PROFILE_HEALTH_KEY) or {}
+        return {str(k): dict(v) for k, v in dict(raw.get("profiles") or {}).items()}
+
+    def unavailable_until(self) -> dict[str, float]:
+        """profile → cooldown end, for the router (D6-5')."""
+
+        return {
+            pid: float(entry["unavailable_until"])
+            for pid, entry in self.profile_health().items()
+            if entry.get("unavailable_until") is not None
+        }
+
+    def record_profile_failure(
+        self,
+        profile_id: str,
+        *,
+        error: Mapping[str, Any] | None,
+        threshold: int,
+        cooldown_seconds: float,
+        mission_ids: Sequence[str],
+    ) -> float | None:
+        """A provider-unavailable turn failure on ``profile_id``; ``threshold`` of them in
+        a row put the profile into a cooldown (``RuntimeProfileUnavailable`` on every
+        active Mission's timeline).  Returns the cooldown end when tripped."""
+
+        with self._store.transaction():
+            raw = self._store.get_scheduler_state(self.PROFILE_HEALTH_KEY) or {"profiles": {}}
+            profiles = dict(raw.get("profiles") or {})
+            entry = dict(profiles.get(profile_id) or {"failures": 0, "unavailable_until": None})
+            entry["failures"] = int(entry.get("failures", 0)) + 1
+            entry["last_error"] = jsonable(error or {})
+            entry["last_failure_at"] = self._store.now
+            until: float | None = None
+            if entry["failures"] >= max(1, threshold):
+                until = self._store.now + float(cooldown_seconds)
+                entry["unavailable_until"] = until
+                entry["trips"] = int(entry.get("trips", 0)) + 1
+                entry["failures"] = 0
+            profiles[profile_id] = entry
+            self._store.put_scheduler_state(self.PROFILE_HEALTH_KEY, {"profiles": profiles})
+            if until is not None:
+                for mission_id in mission_ids:
+                    self._emit(
+                        "RuntimeProfileUnavailable",
+                        mission_id,
+                        key=f"{profile_id}:{entry['trips']}:{mission_id}",
+                        payload={
+                            "profile_id": profile_id,
+                            "reason": "provider_unavailable",
+                            "until": until,
+                            "trips": entry["trips"],
+                            "last_error": entry["last_error"],
+                        },
+                    )
+            return until
+
+    def record_profile_success(self, profile_id: str) -> None:
+        """A committed turn on ``profile_id`` closes its failure streak and any cooldown."""
+
+        with self._store.transaction():
+            raw = self._store.get_scheduler_state(self.PROFILE_HEALTH_KEY) or {"profiles": {}}
+            profiles = dict(raw.get("profiles") or {})
+            entry = dict(profiles.get(profile_id) or {})
+            if not entry or (
+                entry.get("failures", 0) == 0 and entry.get("unavailable_until") is None
+            ):
+                return
+            entry["failures"] = 0
+            entry["unavailable_until"] = None
+            entry["recovered_at"] = self._store.now
+            profiles[profile_id] = entry
+            self._store.put_scheduler_state(self.PROFILE_HEALTH_KEY, {"profiles": profiles})
+
+    def record_profile_unavailable(
+        self,
+        profile_id: str,
+        *,
+        reason: str,
+        until: float | None,
+        mission_ids: Sequence[str],
+        detail: Mapping[str, Any] | None = None,
+    ) -> None:
+        with self._store.transaction():
+            for mission_id in mission_ids:
+                self._emit(
+                    "RuntimeProfileUnavailable",
+                    mission_id,
+                    key=f"{profile_id}:{reason}:{(detail or {}).get('intent_id', '')}:{mission_id}",
+                    payload={
+                        "profile_id": profile_id,
+                        "reason": reason,
+                        "until": until,
+                        **dict(detail or {}),
+                    },
+                )
+
+    def global_account(self) -> AccountSnapshot | None:
+        """The deployment-wide account (§18.2 Global Budget), if this deployment set one."""
+
+        if self._global_budget is None:
+            return None
+        with self._store.transaction():
+            try:
+                return self._ledger.account(GLOBAL_ACCOUNT)
+            except BudgetError:
+                return None
+
+    @property
+    def store(self) -> Store:
+        return self._store
+
+    @property
+    def ledger(self) -> BudgetLedger:
+        return self._ledger
+
+    # -------------------------------------------------------------- events
+    def _emit(
+        self,
+        event_type: str,
+        mission_id: str,
+        *,
+        key: str,
+        task_id: str | None = None,
+        attempt_id: str | None = None,
+        payload: Mapping[str, Any] | None = None,
+        actor_type: str = ACTOR_SYSTEM,
+        actor_id: str = ORCHESTRATOR_ID,
+    ) -> Event:
+        idempotency_key = f"{event_type}:{key}"
+        return self._store.append_event(
+            Event(
+                id=ids.event_id(idempotency_key),
+                type=event_type,
+                trace_id=ids.trace_id(mission_id),
+                mission_id=mission_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                payload=dict(payload or {}),
+                idempotency_key=idempotency_key,
+                created_at=self._store.now,
+            )
+        )
+
+    # ------------------------------------------------------------- missions
+    def create_mission(
+        self,
+        spec: MissionSpec,
+        *,
+        provider_kind: str = "unknown",
+        policy_defaults: Mapping[str, Any] | None = None,
+        policy_pin: Mapping[str, Any] | None = None,
+    ) -> tuple[Mission, bool]:
+        """Idempotent on (tenant_id, idempotency_key); a different spec is a conflict."""
+
+        if spec.runtime_profile_id is not None and (
+            not isinstance(spec.runtime_profile_id, str) or not spec.runtime_profile_id.strip()
+        ):
+            raise CommitRejected("runtime_profile_id must be a nonempty profile reference")
+        spec_hash = sha256_hex(spec.to_json())
+        try:  # P3.3 (D1): an unknown domain is refused before anything is written
+            domain = resolve_domain(spec.domain)
+        except KeyError as error:
+            raise CommitRejected(f"unknown domain profile {spec.domain!r}") from error
+        with self._store.transaction():
+            found = self._store.find_mission(spec.tenant_id, spec.idempotency_key)
+            if found is not None:
+                mission, stored_hash = found
+                if stored_hash != spec_hash:
+                    raise MissionConflict(
+                        f"mission {mission.id} already exists with a different specification"
+                    )
+                return mission, False
+            mission_id = ids.mission_id(spec.tenant_id, spec.idempotency_key)
+            # review fix: with a Global Budget the Mission's unnamed dimensions are inherited, and
+            # the Mission contract must say so — graph checks compare against it (D6-1')
+            effective_budget = (
+                inherit_limits(spec.budget, self._global_budget)
+                if self._global_budget is not None
+                else spec.budget
+            )
+            mission = Mission(
+                id=mission_id,
+                goal=spec.goal,
+                success_criteria=spec.success_criteria,
+                stop_conditions=spec.stop_conditions,
+                allowed_tools=spec.allowed_tools,
+                risk_level=spec.risk_level,
+                budget=effective_budget,
+                tenant_id=spec.tenant_id,
+                status=MissionStatus.CREATED,
+                created_at=self._store.now,
+                version=1,
+                idempotency_key=spec.idempotency_key,
+                final_report={
+                    "task_kind": spec.task_kind,
+                    "workspace_seed": dict(spec.workspace_seed),
+                    "untrusted_sources": list(spec.untrusted_sources),
+                    "conflict_reserve_tokens": int(spec.conflict_reserve_tokens),
+                    "conflict_reserve_remaining": int(spec.conflict_reserve_tokens),
+                    **({} if spec.runtime_profile_id is None else {
+                        "runtime_profile_id": spec.runtime_profile_id,
+                    }),
+                    **({} if spec.synthesis is None else {"synthesis": dict(spec.synthesis)}),
+                },
+            )
+            self._store.insert_mission(mission, spec_hash=spec_hash)
+            parent: str | None = None
+            limits = spec.budget
+            if self._global_budget is not None:  # D6-1: Global → Mission (§18.2), never the reverse
+                self._ledger.open_account(
+                    account_id=GLOBAL_ACCOUNT,
+                    scope="global",
+                    parent_id=None,
+                    mission_id="global",
+                    limits=self._global_budget,
+                )
+                parent = GLOBAL_ACCOUNT
+                # a dimension the Mission does not name is inherited from the Global cap
+                # (review P0-2: ``fits_within`` treats an unnamed child dimension as unbounded)
+                limits = effective_budget
+            self._ledger.open_account(  # BudgetError (does not fit the Global) rolls everything back
+                account_id=mission_account(mission_id),
+                scope="mission",
+                parent_id=parent,
+                mission_id=mission_id,
+                limits=limits,
+            )
+            # step 9 (plan D9-3'): the policy version this Mission runs under, in the same
+            # transaction — a later promotion or configuration never changes it silently
+            binding = self.bind_policy(
+                mission_id,
+                provider_kind=provider_kind,
+                default_params=policy_defaults,
+                pin=policy_pin,
+            )
+            if spec.runtime_profile_id is not None:
+                if self._mission_profile_validator is None:
+                    raise CommitRejected("runtime profile selection requires an Orchestrator binding")
+                version = self._store.get_policy_version(str(binding["version_id"]))
+                if version is None:
+                    raise CommitRejected("bound policy version is unavailable")
+                self._mission_profile_validator(
+                    spec.runtime_profile_id,
+                    dict(version.get("params") or policy_defaults or {}),
+                )
+            if spec.search_policy_version_id is not None:
+                self.bind_search_policy(mission_id, spec.search_policy_version_id)
+            self._store.bind_mission_domain(
+                mission_id,
+                domain_id=domain.id,
+                domain_version=domain.version,
+                snapshot=domain.to_json(),
+            )
+            self._reserve_mission_system_pools(mission)
+            self._emit(
+                "MissionCreated",
+                mission_id,
+                key=mission_id,
+                payload={
+                    "goal": spec.goal,
+                    "budget": spec.budget.to_json(),
+                    "spec_hash": spec_hash,
+                    "policy_version_id": binding["version_id"],
+                    "domain_id": domain.id,
+                },
+                actor_type="user",
+                actor_id=spec.tenant_id,
+            )
+            return mission, True
+
+    def begin_planning(self, mission_id: str) -> Mission:
+        with self._store.transaction():
+            mission = self._require_mission(mission_id)
+            if mission.status is MissionStatus.PLANNING:
+                return mission
+            updated = next_mission(mission, MissionStatus.PLANNING)
+            self._store.update_mission(updated, expected_version=mission.version)
+            self._emit("MissionPlanning", mission_id, key=mission_id, payload={})
+            return updated
+
+    def create_service_intent(
+        self,
+        *,
+        kind: str,
+        subject_id: str,
+        mission_id: str,
+        account_id: str,
+        creation_key: str,
+        input_id: str,
+        input_hash: str,
+        config: Mapping[str, Any],
+        reservation: Reservation,
+        task_id: str | None = None,
+        attempt_id: str | None = None,
+    ) -> DispatchIntent:
+        """Reserve + intent for a Planner / Critic call (D22); idempotent per ``subject_id``."""
+
+        with self._store.transaction():
+            existing = self._store.get_intent_for_subject(subject_id)
+            if existing is not None:
+                return existing
+            self._selection_service_identity(kind=kind, mission_id=mission_id, task_id=task_id,
+                attempt_id=attempt_id, subject_id=subject_id, account_id=account_id)
+            first_hold = (
+                self.protected_tail_hold(self.critic_tail_id(attempt_id))
+                if kind == "critic" and attempt_id is not None and task_id is not None else None
+            )
+            first_reservation = (
+                self._ledger.reservation(first_hold["subject_id"]) if first_hold else None
+            )
+            system_consumed = False
+            if task_id is not None and self.system_task_hold(task_id) is not None:
+                if kind != "critic" or attempt_id is None or account_id != task_account(task_id):
+                    raise CommitRejected("system Task hold is only for its actual Worker/Critic")
+                system_consumed = self._consume_mission_system_hold(
+                    self._require_task(task_id), attempt_id=attempt_id, subject_id=subject_id,
+                    reservation=reservation, profile_id=config.get("runtime_profile_id"),
+                    model=config.get("model"), agent_config=config.get("agent_config"), critic=True,
+                )
+            if system_consumed:
+                pass
+            elif first_reservation and first_reservation["state"] != "SETTLED" and (
+                first_reservation["reserved_tokens"] > 0
+            ):
+                assert isinstance(attempt_id, str) and isinstance(task_id, str)
+                self.consume_critic_tail(
+                    attempt_id=attempt_id, task_id=task_id, subject_id=subject_id,
+                    account_id=account_id, reservation=reservation,
+                    semantic_revision=self.protected_tail_revision(task_id),
+                )
+            elif not self._selection_service_reserve(attempt_id, subject_id, account_id, reservation,
+                    kind=kind, mission_id=mission_id, task_id=task_id):
+                self._ledger.reserve(
+                    account_id=account_id,
+                    subject_id=subject_id,
+                    mission_id=mission_id,
+                    tokens=reservation.tokens,
+                    cost_micros=reservation.cost_micros,
+                    counts_attempt=False,
+                )
+            intent = DispatchIntent(
+                intent_id=ids.intent_id(kind, subject_id),
+                kind=kind,
+                subject_id=subject_id,
+                mission_id=mission_id,
+                state="PENDING",
+                version=1,
+                creation_key=creation_key,
+                input_id=input_id,
+                input_hash=input_hash,
+                config=dict(config),
+                expected_turn_id=None,
+                agent_id=None,
+                receipt=None,
+                lease_owner=None,
+                lease_expires_at=None,
+                replays=0,
+                created_at=self._store.now,
+            )
+            self._store.insert_intent(intent)
+            self._emit(
+                "BudgetReserved",
+                mission_id,
+                key=subject_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                payload={
+                    "subject_id": subject_id,
+                    "kind": kind,
+                    "tokens": reservation.tokens,
+                    "cost_micros": reservation.cost_micros,
+                },
+            )
+            return intent
+
+    def commit_task_proposal(
+        self,
+        mission_id: str,
+        proposal: TaskProposal,
+        *,
+        base_version: int,
+        source: Mapping[str, Any],
+    ) -> tuple[Task, Mapping[str, Any]]:
+        """Apply the Planner's single-Task proposal (step 2) after the §24 step-3 checks."""
+
+        proposal_json = proposal.to_json()
+        commit = ids.commit_id(
+            {"kind": "task_proposal", "mission_id": mission_id, **proposal_json}, base_version
+        )
+        with self._store.transaction():
+            receipt = self._store.get_receipt(commit)
+            if receipt is not None:
+                task = self._store.get_task(str(receipt["task_id"]))
+                assert task is not None
+                return task, receipt
+            mission = self._require_mission(mission_id)
+            if mission.version != base_version:
+                raise CommitRejected(
+                    f"proposal is based on mission version {base_version}, current is {mission.version}"
+                )
+            if mission.status is not MissionStatus.PLANNING:
+                raise CommitRejected(f"mission {mission_id} is {mission.status}, not PLANNING")
+            if self._store.list_tasks(mission_id):
+                raise CommitRejected("step 2 accepts exactly one Task per Mission")
+            self._check_task_proposal(mission, proposal)
+            task_id = ids.task_id(mission_id, 1)
+            task = Task(
+                id=task_id,
+                mission_id=mission_id,
+                parent_task_ids=(),
+                dependency_ids=(),
+                goal=proposal.goal,
+                rationale=proposal.rationale,
+                success_criteria=proposal.success_criteria,
+                verification_policy=proposal.verification_policy,
+                allowed_tools=proposal.allowed_tools,
+                budget=proposal.budget,
+                priority=proposal.priority,
+                status=TaskStatus.READY,  # no dependencies: satisfied from the start (§25.1)
+                version=1,
+                root_goal=proposal.root_goal or mission.goal,
+                created_at=self._store.now,
+                ready_at=self._store.now,  # step 5: waiting_age starts here (review P2-4)
+                context={"graph_version": 1},
+            )
+            self._store.insert_task(task, ordinal=1)
+            self._ledger.open_account(
+                account_id=task_account(task_id),
+                scope="task",
+                parent_id=mission_account(mission_id),
+                mission_id=mission_id,
+                limits=proposal.budget,
+            )
+            activated = next_mission(mission, MissionStatus.ACTIVE)
+            self._store.update_mission(activated, expected_version=mission.version)
+            receipt = {
+                "commit_id": commit,
+                "task_id": task_id,
+                "mission_version": activated.version,
+                "proposal_hash": sha256_hex(proposal_json),
+                "source": dict(source),
+            }
+            self._store.insert_receipt(
+                commit_id=commit,
+                kind="task_proposal",
+                subject_id=task_id,
+                base_version=base_version,
+                proposal_hash=receipt["proposal_hash"],
+                receipt=receipt,
+            )
+            self._emit(
+                "TaskCommitted",
+                mission_id,
+                key=task_id,
+                task_id=task_id,
+                payload={"commit_id": commit, "proposal": proposal_json, "source": dict(source)},
+            )
+            self._emit("MissionActivated", mission_id, key=mission_id, payload={"task_id": task_id})
+            return task, receipt
+
+    def domain_for(self, mission_id: str) -> DomainProfileV1:
+        """The frozen domain profile of this Mission; ``code-v1`` for anything created
+        before domain binding existed (plan D1, A07)."""
+
+        binding = self._store.get_mission_domain(mission_id)
+        if binding is None:
+            return resolve_domain(None)
+        try:
+            domain = DomainProfileV1.from_json(binding["json"])
+            if (domain.id, domain.version) != (binding["domain_id"], binding["domain_version"]):
+                raise ValueError("frozen domain identity mismatch")
+            return domain
+        except (KeyError, TypeError, ValueError) as error:
+            raise CommitRejected(f"invalid frozen domain: {error}") from error
+
+    def _check_system_template(self, domain: DomainProfileV1, task: Task) -> None:
+        """A Task the *system* writes (a conflict or synthesis template) against the
+        Mission's domain.  These two go straight to ``insert_task`` and so bypass both
+        graph gates; without this they are the hole the domain cannot see."""
+
+        problems = check_against_domain(
+            domain,
+            key=f"system template {task.kind}",
+            success_criteria=task.success_criteria,
+            verification_policy=task.verification_policy,
+        )
+        if problems:
+            raise CommitRejected("domain: " + "; ".join(problems))
+
+    def _check_task_proposal(self, mission: Mission, proposal: TaskProposal) -> None:
+        """§24 step 3: relation to the root goal, tools, success criteria, budget legality."""
+
+        if not proposal.success_criteria:
+            raise CommitRejected("task proposal has no success criteria")
+        # P3.3 (D1) gate 3 of 5: a single Task proposal / the Manager's ``add_task``
+        problems = check_against_domain(
+            self.domain_for(mission.id),
+            key="task proposal",
+            success_criteria=proposal.success_criteria,
+            verification_policy=proposal.verification_policy,
+        )
+        if problems:
+            raise CommitRejected("domain: " + "; ".join(problems))
+        if not proposal.rationale.strip():
+            raise CommitRejected("task proposal cannot explain its relation to the Mission (§19.5)")
+        extra_tools = set(proposal.allowed_tools) - set(mission.allowed_tools)
+        if extra_tools:
+            raise CommitRejected(
+                f"task proposal asks for tools outside the Mission: {sorted(extra_tools)}"
+            )
+        if not proposal.budget.fits_within(mission.budget):
+            raise CommitRejected("task budget exceeds the Mission budget (§18.2)")
+        tests = [c for c in proposal.success_criteria if c.startswith("pytest:")]
+        if "code_test" not in self._deployed_layers and tests:  # review round 1 P1-1
+            raise CommitRejected(
+                "verification_policy_undeployed: pytest criteria need local code execution, "
+                f"which this deployment has turned off: {tests}"
+            )
+        unsupported = set(proposal.verification_policy) - self._deployed_layers
+        if unsupported:
+            raise CommitRejected(
+                f"verification_policy_undeployed: layers not deployed in this build {sorted(unsupported)}"
+            )
+
+    def commit_task_graph(
+        self,
+        mission_id: str,
+        proposal: TaskGraphProposal,
+        *,
+        base_version: int,
+        source: Mapping[str, Any],
+    ) -> tuple[list[Task], Mapping[str, Any]]:
+        """Apply the Planner's whole Task DAG proposal atomically (step 3, D3-2/D3-3).
+
+        The Graph Manager checks (``validate_graph``) run first; a rejection writes
+        only a ``TaskGraphRejected`` event and leaves the formal graph untouched.
+        Roots start READY, everything else BLOCKED (§25.1); ids follow the
+        deterministic topological order so a replay yields the same receipt.
+        """
+
+        proposal_json = proposal.to_json()
+        commit = ids.commit_id(
+            {"kind": "task_graph", "mission_id": mission_id, **proposal_json}, base_version
+        )
+        try:
+            return self._commit_task_graph(
+                mission_id,
+                proposal,
+                commit,
+                proposal_json,
+                base_version=base_version,
+                source=source,
+            )
+        except GraphRejected as error:
+            # the write transaction rolled back; the rejection itself is a durable fact
+            self._emit(
+                "TaskGraphRejected",
+                mission_id,
+                key=f"{mission_id}:{base_version}:{sha256_hex(proposal_json)[:12]}:{source.get('intent_id', '')}",
+                payload={"reason": error.reason, "detail": error.detail, "source": dict(source)},
+            )
+            raise CommitRejected(f"task graph rejected ({error.reason}): {error.detail}") from error
+
+    def _commit_task_graph(
+        self,
+        mission_id: str,
+        proposal: TaskGraphProposal,
+        commit: str,
+        proposal_json: Mapping[str, Any],
+        *,
+        base_version: int,
+        source: Mapping[str, Any],
+    ) -> tuple[list[Task], Mapping[str, Any]]:
+        with self._store.transaction():
+            receipt = self._store.get_receipt(commit)
+            if receipt is not None:
+                replayed = [self._require_task(task_id) for task_id in receipt["task_ids"]]
+                return replayed, receipt
+            mission = self._require_mission(mission_id)
+            if mission.version != base_version:
+                raise CommitRejected(
+                    f"proposal is based on mission version {base_version}, current is {mission.version}"
+                )
+            if mission.status is not MissionStatus.PLANNING:
+                raise CommitRejected(f"mission {mission_id} is {mission.status}, not PLANNING")
+            if self._store.list_tasks(mission_id):
+                raise CommitRejected(
+                    "the Mission already has a committed graph (static DAG, step 3)"
+                )
+            graph = validate_graph(  # GraphRejected handled by the caller
+                mission,
+                proposal,
+                deployed_layers=self._deployed_layers,
+                task_floor=self._floor_for_mission(mission_id),
+                candidates=self._candidates(mission.id),
+                domain=self.domain_for(mission.id),
+            )
+            key_to_id = {
+                key: ids.task_id(mission_id, ordinal)
+                for ordinal, key in enumerate(graph.order, start=1)
+            }
+            tasks: list[Task] = []
+            for ordinal, key in enumerate(graph.order, start=1):
+                node = graph.node(key)
+                dependencies = tuple(key_to_id[dependency] for dependency in node.dependencies)
+                task = Task(
+                    id=key_to_id[key],
+                    mission_id=mission_id,
+                    parent_task_ids=(),
+                    dependency_ids=dependencies,
+                    goal=node.goal,
+                    rationale=node.rationale,
+                    success_criteria=node.success_criteria,
+                    verification_policy=node.verification_policy,
+                    allowed_tools=node.allowed_tools,
+                    budget=node.budget,
+                    priority=node.priority,
+                    status=TaskStatus.READY if not dependencies else TaskStatus.BLOCKED,
+                    version=1,
+                    root_goal=mission.goal,
+                    created_at=self._store.now,
+                    outputs=node.outputs,
+                    ready_at=self._store.now if not dependencies else None,
+                    context={"graph_version": 1},
+                )
+                self._store.insert_task(task, ordinal=ordinal)
+                self._ledger.open_account(
+                    account_id=task_account(task.id),
+                    scope="task",
+                    parent_id=mission_account(mission_id),
+                    mission_id=mission_id,
+                    limits=node.budget,
+                )
+                tasks.append(task)
+                self._emit(
+                    "TaskCommitted",
+                    mission_id,
+                    key=task.id,
+                    task_id=task.id,
+                    payload={
+                        "commit_id": commit,
+                        "key": key,
+                        "dependencies": list(dependencies),
+                        "proposal": node.to_json(),
+                        "source": dict(source),
+                    },
+                )
+            terminal_id = key_to_id[graph.terminal_key]
+            template = (mission.final_report or {}).get("synthesis")
+            if template:  # D4-8: the fixed synthesis Task depends on every Planner leaf
+                synthesis = synthesis_task(
+                    mission,
+                    task_id=ids.task_id(mission_id, len(tasks) + 1),
+                    template=template,
+                    leaves=[key_to_id[key] for key in graph.order if key in set(graph.leaves)],
+                    now=self._store.now,
+                    default_policy=tuple(
+                        layer
+                        for layer in self.domain_for(mission_id).synthesis_default_policy
+                        if layer in self._deployed_layers
+                    )
+                    or default_change_policy(self._deployed_layers),
+                )
+                self._check_system_template(  # P3.3 (D1) gate 5 of 5
+                    self.domain_for(mission_id), synthesis
+                )
+                self._store.insert_task(synthesis, ordinal=len(tasks) + 1)
+                self._ledger.open_account(
+                    account_id=task_account(synthesis.id),
+                    scope="task",
+                    parent_id=mission_account(mission_id),
+                    mission_id=mission_id,
+                    limits=synthesis.budget,
+                )
+                self._transfer_mission_system_pool(synthesis)
+                tasks.append(synthesis)
+                terminal_id = synthesis.id
+                self._emit(
+                    "TaskCommitted",
+                    mission_id,
+                    key=synthesis.id,
+                    task_id=synthesis.id,
+                    payload={
+                        "commit_id": commit,
+                        "key": "synthesis",
+                        "dependencies": list(synthesis.dependency_ids),
+                        "proposal": dict(template),
+                        "source": {"template": "synthesis"},
+                    },
+                )
+            activated = next_mission(
+                mission,
+                MissionStatus.ACTIVE,
+                final_report={**dict(mission.final_report or {}), "graph_version": 1},
+            )
+            self._store.update_mission(activated, expected_version=mission.version)
+            receipt = {
+                "commit_id": commit,
+                "graph_version": 1,
+                "task_ids": [task.id for task in tasks],
+                "terminal_task_id": terminal_id,
+                "mission_version": activated.version,
+                "proposal_hash": sha256_hex(proposal_json),
+                "source": dict(source),
+                "warnings": list(graph.warnings),
+            }
+            self._store.insert_receipt(
+                commit_id=commit,
+                kind="task_graph",
+                subject_id=mission_id,
+                base_version=base_version,
+                proposal_hash=receipt["proposal_hash"],
+                receipt=receipt,
+            )
+            self._emit(
+                "TaskGraphCommitted",
+                mission_id,
+                key=f"{mission_id}:graph-1",
+                payload={
+                    "commit_id": commit,
+                    "task_ids": receipt["task_ids"],
+                    "terminal_task_id": receipt["terminal_task_id"],
+                    "edges": {task.id: list(task.dependency_ids) for task in tasks},
+                    "warnings": list(graph.warnings),
+                },
+            )
+            self._emit(
+                "MissionActivated",
+                mission_id,
+                key=mission_id,
+                payload={"task_ids": receipt["task_ids"]},
+            )
+            return tasks, receipt
+
+    # ------------------------------------------------------ graph changes (step 5)
+    def commit_graph_change(
+        self,
+        mission_id: str,
+        change: TaskGraphChange,
+        *,
+        source: Mapping[str, Any],
+        limits: ChangeLimits | None = None,
+        allow_rebase: bool = True,
+    ) -> tuple[list[Task], Mapping[str, Any]]:
+        """Apply a Manager's Task DAG change atomically (D5-2 / D5-3 / D5-10).
+
+        The proposal must be based on the current ``graph_version`` (CAS); a stale
+        base is rebased automatically when its operations touch none of the Tasks the
+        intervening changes affected, otherwise refused.  A repeated delivery of the
+        same proposal on the same base returns the same receipt.  Validation failures
+        write only ``TaskGraphChangeRejected`` and leave the formal graph untouched.
+        """
+
+        limits = limits or ChangeLimits()
+        try:
+            return self._commit_graph_change(
+                mission_id, change, source=source, limits=limits, allow_rebase=allow_rebase
+            )
+        except GraphChangeRejected as error:
+            self._emit(
+                "TaskGraphChangeRejected",
+                mission_id,
+                key=f"{mission_id}:{change.base_graph_version}:{change.proposal_hash[:12]}:{source.get('intent_id', '')}",
+                payload={
+                    "reason": error.reason,
+                    "detail": error.detail,
+                    "base_graph_version": change.base_graph_version,
+                    "basis": dict(change.basis),
+                    "source": dict(source),
+                },
+            )
+            raise CommitRejected(
+                f"graph change rejected ({error.reason}): {error.detail}"
+            ) from error
+
+    def _commit_graph_change(
+        self,
+        mission_id: str,
+        change: TaskGraphChange,
+        *,
+        source: Mapping[str, Any],
+        limits: ChangeLimits,
+        allow_rebase: bool,
+    ) -> tuple[list[Task], Mapping[str, Any]]:
+        with self._store.transaction():
+            mission = self._require_mission(mission_id)
+            if mission.status is not MissionStatus.ACTIVE:
+                raise GraphChangeRejected(
+                    "mission_not_active", f"mission {mission_id} is {mission.status}"
+                )
+            report = dict(mission.final_report or {})
+            current = int(report.get("graph_version") or 1)
+            change_id = ids.commit_id(
+                {
+                    "kind": "graph_change",
+                    "mission_id": mission_id,
+                    "proposal": change.proposal_hash,
+                },
+                change.base_graph_version,
+            )
+            receipt = self._store.get_receipt(change_id)
+            if receipt is not None:  # S5-07: the same proposal on the same base, once
+                replayed = [self._require_task(task_id) for task_id in receipt["new_task_ids"]]
+                return replayed, receipt
+            rebased_from: int | None = None
+            if change.base_graph_version != current:
+                if not allow_rebase or change.base_graph_version > current:
+                    raise GraphChangeRejected(
+                        "stale_base",
+                        f"proposal is based on graph version {change.base_graph_version}, current is {current}",
+                    )
+                touched: set[str] = set()
+                for applied in self._store.list_graph_changes(
+                    mission_id, since_version=change.base_graph_version
+                ):
+                    touched.update(str(t) for t in applied.get("affected_task_ids", []))
+                overlap = touched & change.referenced_task_ids()
+                if overlap:
+                    raise GraphChangeRejected(
+                        "stale_base",
+                        f"proposal is based on graph version {change.base_graph_version}, current is {current}; "
+                        f"it touches tasks changed since: {sorted(overlap)}",
+                    )
+                rebased_from = change.base_graph_version
+            tasks = self._store.list_tasks(mission_id)
+            proposals_by_attempt: dict[str, int] = {}
+            for task in tasks:
+                for parent in (
+                    task.context.get("proposed_by_attempt", [])
+                    if isinstance(task.context.get("proposed_by_attempt"), list)
+                    else []
+                ):
+                    proposals_by_attempt[str(parent)] = proposals_by_attempt.get(str(parent), 0) + 1
+            committed: dict[str, int] = {}
+            for task in tasks:
+                if task.status is TaskStatus.CANCELLED or task.id in change.referenced_task_ids():
+                    account = self._ledger.account(task_account(task.id))
+                    committed[task.id] = int(account.settled_tokens) + int(account.reserved_tokens)
+            validated = validate_change(
+                mission,
+                tasks,
+                change,
+                limits=limits,
+                proposals_by_attempt=proposals_by_attempt,
+                committed_tokens_by_task=committed,
+                deployed_layers=self._deployed_layers,
+                task_floor=self._floor_for_mission(mission.id),
+                candidates=self._candidates(mission.id),
+                domain=self.domain_for(mission.id),
+            )
+            by_id = {task.id: task for task in tasks}
+            new_version = current + 1
+            key_to_id: dict[str, str] = {}
+            key_to_ordinal: dict[str, int] = {}
+            ordinal = len(tasks)
+            created: list[Task] = []
+            source_attempt = str(change.basis.get("attempt_id") or "")
+            for key in validated.order:  # topological among the new nodes → ordinal ≡ order
+                ordinal += 1
+                key_to_id[key] = ids.task_id(mission_id, ordinal)
+                key_to_ordinal[key] = ordinal
+            for key in validated.order:
+                node = next(n for n in validated.new_nodes if n.key == key)
+                dependencies = tuple(key_to_id.get(d, d) for d in node.dependencies)
+                supersedes = next(
+                    (old for old, rep in validated.superseded.items() if rep == key), None
+                )
+                context: dict[str, Any] = {
+                    "graph_version": new_version,
+                    "change_id": change_id,
+                    "role": node.role,
+                    "proposed_by_attempt": [source_attempt] if source_attempt else [],
+                }
+                if supersedes is not None:
+                    old = by_id[supersedes]
+                    context["supersedes_task"] = supersedes
+                    context["supersede_depth"] = int(old.context.get("supersede_depth", 0)) + 1
+                deps_done = all(
+                    by_id[d].status is TaskStatus.COMPLETED for d in dependencies if d in by_id
+                ) and all(d in by_id for d in dependencies)
+                task = Task(
+                    id=key_to_id[key],
+                    mission_id=mission_id,
+                    parent_task_ids=tuple(node.parent_task_ids)
+                    or ((supersedes,) if supersedes else ()),
+                    dependency_ids=dependencies,
+                    goal=node.goal,
+                    rationale=node.rationale,
+                    success_criteria=node.success_criteria,
+                    verification_policy=node.verification_policy,
+                    allowed_tools=node.allowed_tools or mission.allowed_tools,
+                    budget=node_budget(node, validated, mission),
+                    priority=node.priority,
+                    status=TaskStatus.READY if deps_done else TaskStatus.BLOCKED,
+                    version=1,
+                    root_goal=mission.goal,
+                    created_at=self._store.now,
+                    outputs=node.outputs,
+                    context=context,
+                    ready_at=self._store.now if deps_done else None,
+                )
+                self._store.insert_task(task, ordinal=key_to_ordinal[key])
+                self._ledger.open_account(
+                    account_id=task_account(task.id),
+                    scope="task",
+                    parent_id=mission_account(mission_id),
+                    mission_id=mission_id,
+                    limits=task.budget,
+                )
+                created.append(task)
+                self._emit(
+                    "TaskCommitted",
+                    mission_id,
+                    key=task.id,
+                    task_id=task.id,
+                    payload={
+                        "commit_id": change_id,
+                        "key": key,
+                        "dependencies": list(dependencies),
+                        "proposal": node.to_json(),
+                        "source": {
+                            **dict(source),
+                            "template": "change",
+                            "graph_version": new_version,
+                        },
+                    },
+                )
+            # in-place rewrites on BLOCKED tasks (data only, §25.1 untouched); a dependency
+            # naming a Task this same proposal supersedes follows the replacement (review P1-1)
+            translate = {
+                **key_to_id,
+                **{old: key_to_id[rep] for old, rep in validated.superseded.items()},
+            }
+            implicitly_rewired: list[str] = []
+            for task_id, deps in validated.retargets.items():
+                task = self._require_task(task_id)
+                resolved = tuple(translate.get(d, d) for d in deps)
+                self._store.update_task(
+                    next_task(
+                        task,
+                        dependency_ids=resolved,
+                        context={**dict(task.context), "graph_version": new_version},
+                    ),
+                    expected_version=task.version,
+                )
+                self._emit(
+                    "TaskDependenciesRewritten",
+                    mission_id,
+                    key=f"{task_id}:{new_version}",
+                    task_id=task_id,
+                    payload={
+                        "from": list(task.dependency_ids),
+                        "to": list(resolved),
+                        "graph_version": new_version,
+                    },
+                )
+            # dependents of a superseded task that were not explicitly retargeted follow the replacement
+            for old_id, replacement_key in validated.superseded.items():
+                new_id = key_to_id[replacement_key]
+                for task in self._store.list_tasks(mission_id):
+                    if (
+                        task.status is TaskStatus.BLOCKED
+                        and old_id in task.dependency_ids
+                        and task.id not in validated.retargets
+                    ):
+                        resolved = tuple(new_id if d == old_id else d for d in task.dependency_ids)
+                        implicitly_rewired.append(task.id)
+                        self._store.update_task(
+                            next_task(task, dependency_ids=resolved), expected_version=task.version
+                        )
+                        self._emit(
+                            "TaskDependenciesRewritten",
+                            mission_id,
+                            key=f"{task.id}:{new_version}",
+                            task_id=task.id,
+                            payload={
+                                "from": list(task.dependency_ids),
+                                "to": list(resolved),
+                                "graph_version": new_version,
+                                "follows_supersede": old_id,
+                            },
+                        )
+            for task_id, priority in validated.priorities.items():
+                task = self._require_task(task_id)
+                self._store.update_task(
+                    next_task(task, priority=priority), expected_version=task.version
+                )
+            for task_id, reason in validated.pauses.items():
+                task = self._require_task(task_id)
+                self._store.update_task(
+                    next_task(task, paused=True, pause_reason=reason or "paused by manager"),
+                    expected_version=task.version,
+                )
+                self._emit(
+                    "TaskPaused",
+                    mission_id,
+                    key=f"{task_id}:{new_version}",
+                    task_id=task_id,
+                    payload={"reason": reason},
+                )
+            for task_id in validated.resumes:
+                task = self._require_task(task_id)
+                self._store.update_task(
+                    next_task(task, paused=False, pause_reason=None), expected_version=task.version
+                )
+                self._emit(
+                    "TaskResumed",
+                    mission_id,
+                    key=f"{task_id}:{new_version}",
+                    task_id=task_id,
+                    payload={},
+                )
+            for task_id, role in validated.roles.items():
+                task = self._require_task(task_id)
+                self._store.update_task(
+                    next_task(task, context={**dict(task.context), "role": role}),
+                    expected_version=task.version,
+                )
+                self._emit(
+                    "TaskRoleChanged",
+                    mission_id,
+                    key=f"{task_id}:{new_version}",
+                    task_id=task_id,
+                    payload={"role": role},
+                )
+            # superseded / cancelled executing tasks: ACTIVE→CANCELLED (VERIFYING→ACTIVE first), attempts closed
+            for old_id, replacement_key in validated.superseded.items():
+                self._cancel_task_entity(
+                    old_id, reason="superseded", replaced_by=key_to_id[replacement_key]
+                )
+            for old_id, reason in validated.cancels.items():
+                self._cancel_task_entity(
+                    old_id, reason=reason or "cancelled by manager", replaced_by=None
+                )
+            unblocked = [t.id for t in self._unblock(mission_id, unblocked_by=None)]
+            record = {
+                "change_id": change_id,
+                "mission_id": mission_id,
+                "from_version": current,
+                "to_version": new_version,
+                "proposal_hash": change.proposal_hash,
+                "rebased_from": rebased_from,
+                "basis": dict(change.basis),
+                "rationale": change.rationale,
+                "operations": [op.to_json() for op in change.operations],
+                "new_task_ids": [t.id for t in created],
+                "superseded": {old: key_to_id[rep] for old, rep in validated.superseded.items()},
+                "cancelled": list(validated.cancels),
+                "affected_task_ids": sorted(  # review P2-1: implicit rewires are affected too
+                    {key_to_id.get(t, t) for t in validated.affected_task_ids}
+                    | set(implicitly_rewired)
+                ),
+                "unblocked": unblocked,
+                "warnings": list(validated.warnings),
+                "depth": validated.depth,
+                "source": dict(source),
+            }
+            self._store.insert_graph_change(record)
+            self._store.update_mission(
+                next_mission(mission, final_report={**report, "graph_version": new_version}),
+                expected_version=mission.version,
+            )
+            self._store.insert_receipt(
+                commit_id=change_id,
+                kind="graph_change",
+                subject_id=mission_id,
+                base_version=change.base_graph_version,
+                proposal_hash=change.proposal_hash,
+                receipt=record,
+            )
+            self._emit(
+                "TaskGraphChanged",
+                mission_id,
+                key=change_id,
+                payload={k: v for k, v in record.items() if k not in {"operations"}}
+                | {"operations": len(change.operations)},
+            )
+            return created, record
+
+    def _cancel_task_entity(self, task_id: str, *, reason: str, replaced_by: str | None) -> Task:
+        """READY/ACTIVE → CANCELLED (VERIFYING → ACTIVE first: two legal edges), open
+        Attempts CANCELLED (late results stay history), unsubmitted intents closed."""
+
+        task = self._require_task(task_id)
+        if task.status is TaskStatus.VERIFYING:
+            task = next_task(task, TaskStatus.ACTIVE)
+            self._store.update_task(task, expected_version=task.version - 1)
+            stored = self._store.find_result_for_attempt(
+                next(
+                    (
+                        a.id
+                        for a in self._store.list_attempts(task_id)
+                        if a.status in SUBMITTED_STATES
+                    ),
+                    "",
+                )
+            )
+            if stored is not None and stored.verification_state in {"PENDING", "RUNNING"}:
+                self._store.set_result_verification(
+                    stored.envelope.id, state="REJECTED", verdict="superseded"
+                )
+        cancelled = next_task(
+            task,
+            TaskStatus.CANCELLED,
+            failure_reason=reason,
+            context={**dict(task.context), **({"replaced_by": replaced_by} if replaced_by else {})},
+        )
+        self._store.update_task(cancelled, expected_version=task.version)
+        for attempt in self._store.list_attempts(task_id):
+            if attempt.status in OPEN_ATTEMPT_STATES:
+                self._close_attempt(attempt, AttemptStatus.CANCELLED, reason=f"task_{reason}")
+        self._emit(
+            "TaskSuperseded" if replaced_by else "TaskCancelled",
+            task.mission_id,
+            key=task_id,
+            task_id=task_id,
+            payload={"reason": reason, "replaced_by": replaced_by},
+        )
+        return cancelled
+
+    def unblock_dependents(self, task_id: str) -> list[Task]:
+        """After a Task COMPLETED: every BLOCKED dependent whose dependencies are all
+        COMPLETED becomes READY (§25.1 "dependencies satisfied")."""
+
+        with self._store.transaction():
+            completed = self._require_task(task_id)
+            return self._unblock(completed.mission_id, unblocked_by=task_id)
+
+    def _unblock(self, mission_id: str, *, unblocked_by: str | None) -> list[Task]:
+        unblocked: list[Task] = []
+        tasks = {task.id: task for task in self._store.list_tasks(mission_id)}
+        for task in tasks.values():
+            if task.status is not TaskStatus.BLOCKED:
+                continue
+            if unblocked_by is not None and unblocked_by not in task.dependency_ids:
+                continue
+            if all(tasks[dep].status is TaskStatus.COMPLETED for dep in task.dependency_ids):
+                ready = next_task(task, TaskStatus.READY, ready_at=self._store.now)
+                self._store.update_task(ready, expected_version=task.version)
+                unblocked.append(ready)
+                self._emit(
+                    "TaskUnblocked",
+                    task.mission_id,
+                    key=task.id,
+                    task_id=task.id,
+                    payload={
+                        "dependencies": list(task.dependency_ids),
+                        "unblocked_by": unblocked_by or "recover",
+                    },
+                )
+        return unblocked
+
+    def heal_mission(self, mission_id: str) -> dict[str, Any]:
+        """§16.4 idempotent self-healing on restart (D3-6'): recompute the frontier,
+        close every non-terminal Attempt left under a terminal Task (SUPERSEDED for a
+        COMPLETED Task, CANCELLED otherwise) and reject their pending results.  A
+        healthy library is left untouched; the report says what changed."""
+
+        with self._store.transaction():
+            mission = self._require_mission(mission_id)
+            report: dict[str, Any] = {"unblocked": [], "closed_attempts": []}
+            if mission.status is not MissionStatus.ACTIVE:
+                return report
+            report["unblocked"] = [task.id for task in self._unblock(mission_id, unblocked_by=None)]
+            for task in self._store.list_tasks(mission_id):
+                if task.status not in TERMINAL_TASK:
+                    continue
+                target = (
+                    AttemptStatus.SUPERSEDED
+                    if task.status is TaskStatus.COMPLETED
+                    else AttemptStatus.CANCELLED
+                )
+                for attempt in self._store.list_attempts(task.id):
+                    if attempt.status in TERMINAL_ATTEMPT:
+                        continue
+                    self._close_attempt(attempt, target, reason="task_terminal_on_recover")
+                    report["closed_attempts"].append(attempt.id)
+            return report
+
+    def _close_attempt(self, attempt: Attempt, target: AttemptStatus, *, reason: str) -> Attempt:
+        """Attempt → SUPERSEDED / CANCELLED with its result (if any) rejected as history,
+        its intent closed and its reservation settled unless an UNKNOWN charge holds it."""
+
+        updated = next_attempt(attempt, target, failure={"reason": reason})
+        self._store.update_attempt(updated, expected_version=attempt.version)
+        stored = self._store.find_result_for_attempt(attempt.id)
+        if stored is not None and stored.verification_state in {"PENDING", "RUNNING", "SUSPENDED"}:
+            self._store.set_result_verification(
+                stored.envelope.id, state="REJECTED", verdict="superseded"
+            )
+            if stored.verification_state == "SUSPENDED":  # D7-8': the review goes with it
+                self._cancel_review_request(stored.envelope.id, reason=reason)
+            for claim in self._store.list_claims(stored.envelope.id):
+                if claim.status in {ClaimStatus.PROPOSED, ClaimStatus.UNDER_REVIEW}:
+                    target_claim = (
+                        ClaimStatus.UNDER_REVIEW
+                        if claim.status is ClaimStatus.PROPOSED
+                        else claim.status
+                    )
+                    moved = (
+                        claim if target_claim is claim.status else next_claim(claim, target_claim)
+                    )
+                    self._store.upsert_claim(next_claim(moved, ClaimStatus.REJECTED))
+        intent = self._store.get_intent_for_subject(attempt.id)
+        turn_in_flight = intent is not None and intent.state == "SUBMITTED"
+        if intent is not None and intent.state in {"PENDING", "CLAIMED", "AGENT_CREATED"}:
+            self._settle_intent(intent, "FAILED")
+        # A SUBMITTED intent stays open: its SDK turn is still running and the loop
+        # collects it later (usage imported, late result kept as history, D3-6'); the
+        # reservation is settled at that point, never before the turn's cost is known.
+        reservation = self._ledger.reservation(attempt.id)
+        if (
+            not turn_in_flight
+            and reservation is not None
+            and reservation["state"] != "SETTLED"
+            and not self._ledger.has_unknown_usage(attempt.id)
+        ):
+            self._settle_subject(attempt.id, attempt.mission_id, task_id=attempt.task_id)
+        self._emit(
+            "AttemptSuperseded" if target is AttemptStatus.SUPERSEDED else "AttemptCancelled",
+            attempt.mission_id,
+            key=attempt.id,
+            task_id=attempt.task_id,
+            attempt_id=attempt.id,
+            payload={"reason": reason, "from": str(attempt.status)},
+        )
+        return updated
+
+    # ---------------------------------------------------------- knowledge (step 4)
+    def _grade_and_project(
+        self,
+        mission: Mission,
+        task: Task,
+        attempt: Attempt,
+        stored: StoredResult,
+        *,
+        verifier_results: Sequence[Mapping[str, Any]],
+        assessments: Sequence[CriterionAssessmentV1] = (),
+        source_dependencies: Mapping[str, tuple[dict[str, tuple[str, ...]], list[dict[str, Any]]]]
+        | None = None,
+    ) -> list[dict[str, Any]]:
+        """D4-2/D4-3/D4-4/D4-5 inside the accept transaction: grade every claim of the
+        accepted result from the verification that ran, project the VERIFIED ones into
+        the Verified Knowledge store with their provenance, record the reuse chain of
+        ``used_knowledge`` and apply an explicit, legal supersession."""
+
+        envelope = stored.envelope
+        domain = self.domain_for(mission.id)
+        document = domain.id == DOC_DOMAIN
+        proposals = {
+            ids.claim_id(envelope.id, index): proposal
+            for index, proposal in enumerate(envelope.claims, 1)
+        }
+        untrusted = [str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])]
+        artifact_paths = [
+            artifact.path
+            for artifact_id in stored.artifacts
+            for artifact in [self._store.get_artifact(artifact_id)]
+            if artifact is not None
+        ]
+        layers = [dict(item) for item in verifier_results]
+        strict_code = domain.completion_rules.get("claim_grading") == "scoped-observation-v2"
+        # Only runtime-recorded verification is evidence in the new code profile.
+        # Caller-supplied acceptance summaries are not execution receipts.
+        if strict_code:
+            layers = [dict(item) for item in self._store.list_verifications(envelope.id)]
+        observations = []
+        grading_layers = layers
+        if strict_code:
+            from ..memory.code_observations import scoped_test_observations
+
+            artifacts = [self._store.get_artifact(item) for item in stored.artifacts]
+            observations = scoped_test_observations(
+                envelope, [a for a in artifacts if a is not None], layers, self._store.now, task
+            )
+            grading_layers = [{"layer": "code_test", "detail": {"runs": [
+                {"target": record.verifier["target"], "passed": True}
+                for _, record in observations
+            ]}}]
+        resolved_refs: set[str] = set()
+        if strict_code:
+            for proposal in envelope.claims:
+                for ref in proposal.evidence or envelope.evidence:
+                    if ref.startswith("knowledge:"):
+                        record = self._store.get_knowledge(ref.removeprefix("knowledge:"))
+                        if (record is not None and record.id in envelope.used_knowledge
+                                and record.mission_id == mission.id and record.status == "VERIFIED"
+                                and record.superseded_by is None
+                                and self._accepted_result(record.source_result)):
+                            resolved_refs.add(ref)
+                    elif ref.startswith("tool-run:"):
+                        run = self._store.get_tool_call(ref.removeprefix("tool-run:"))
+                        if (run is not None and run["mission_id"] == mission.id
+                                and run["subject_id"] == attempt.id and run["outcome"] == "succeeded"):
+                            resolved_refs.add(ref)
+        report: list[dict[str, Any]] = []
+        existing_claims = [
+            other
+            for other in self._store.list_mission_claims(mission.id)
+            if other.result_id != envelope.id and self._accepted_result(other.result_id)
+        ]
+        for claim in self._store.list_claims(envelope.id):
+            if document:
+                grade = grade_claim(
+                    claim.id,
+                    claim.evidence,
+                    verifier_results=layers,
+                    artifact_paths=artifact_paths,
+                    untrusted_prefixes=untrusted,
+                    domain=domain,
+                    proposal=proposals.get(claim.id),
+                    assessments=assessments,
+                )
+            else:
+                grade = grade_claim(
+                    claim.id,
+                    claim.evidence,
+                    verifier_results=grading_layers,
+                    artifact_paths=artifact_paths,
+                    untrusted_prefixes=untrusted,
+                    domain=domain,
+                    proposal=proposals.get(claim.id),
+                    resolved_refs=frozenset(resolved_refs),
+                )
+            versions: dict[str, tuple[str, ...]] | None = None
+            if document:
+                if source_dependencies is None or claim.id not in source_dependencies:
+                    raise CommitRejected(
+                        "document projection requires precomputed source provenance"
+                    )
+                versions, issues = source_dependencies[claim.id]
+                grade = replace(
+                    grade,
+                    basis={
+                        **dict(grade.basis),
+                        "source_versions": {
+                            path: list(hashes) for path, hashes in versions.items()
+                        },
+                        **({"source_provenance_issues": issues} if issues else {}),
+                    },
+                )
+            attribution = system_attribution(grade.basis) if document else None
+            reserved_key = (
+                document
+                and attribution is None
+                and claim.key is not None
+                and claim.key.startswith("attribution:")
+            )
+            if reserved_key:
+                grade = replace(grade, basis={**dict(grade.basis), "key_downgraded": True})
+            metadata = {
+                **dict(claim.confidence_metadata),
+                "grade": str(grade.status).lower()
+                if grade.status is not ClaimStatus.UNDER_REVIEW
+                else str(grade.basis.get("grade", "unsupported"))
+                if document
+                else "unsupported",
+                "basis": dict(grade.basis),
+                "evidence_trust": list(grade.evidence_trust),
+            }
+            if document:
+                # System attribution precedes every conflict/supersession decision.
+                # replace preserves the persisted revision until next_claim commits it.
+                claim = replace(claim, type="statement")
+                if reserved_key:
+                    claim = replace(claim, key=None)
+                    metadata["key_downgraded"] = True
+                if attribution is not None:
+                    claim = replace(
+                        claim,
+                        content=str(attribution["content"]),
+                        key=str(attribution["key"]),
+                        stance=str(attribution["stance"]),
+                        type="attribution",
+                    )
+                candidate = replace(claim, status=grade.status, confidence_metadata=metadata)
+                targets = {other.id: other for other in existing_claims}
+                rejected = [
+                    reference
+                    for reference in claim.contradicts
+                    if reference not in targets
+                    or not supported_contradiction(candidate, targets[reference])
+                ]
+                metadata["contradicts_rejected"] = rejected
+                claim = replace(
+                    claim,
+                    contradicts=tuple(
+                        reference for reference in claim.contradicts if reference not in rejected
+                    ),
+                )
+            supersedes: str | None = None
+            proposed = claim.confidence_metadata.get("proposed_supersedes")
+            if proposed is not None:
+                target = self._store.get_knowledge(str(proposed))
+                target_attribution = system_attribution(target.verifier) if target else None
+                if grade.status is not ClaimStatus.VERIFIED:
+                    metadata["supersedes_rejected"] = (
+                        f"only a VERIFIED claim may supersede knowledge (graded {grade.status})"
+                    )
+                elif (
+                    target is None or target.mission_id != mission.id or target.status != "VERIFIED"
+                ):
+                    metadata["supersedes_rejected"] = (
+                        f"{proposed!r} is not VERIFIED knowledge of this Mission"
+                    )
+                elif claim.key is None or claim.key != target.key:
+                    metadata["supersedes_rejected"] = "supersession requires the same key"
+                elif (attribution is not None or target_attribution is not None) and (
+                    attribution is None
+                    or target_attribution is None
+                    or list(attribution["identity"]) != list(target_attribution["identity"])
+                ):
+                    metadata["supersedes_rejected"] = (
+                        "attribution supersession requires the same source identity"
+                    )
+                else:
+                    supersedes = target.id
+            results = (
+                *claim.verifier_results,
+                *layers,
+                dict(grade.basis, layer=grade.basis.get("layer", "grading")),
+            )
+            target_status = grade.status
+            contradiction = None
+            if task.kind != "conflict":
+                # D4-6': conflict precedes grading — a contested claim is capped at
+                # DISPUTED and never projected, whatever its own evidence says
+                if document:
+                    contradiction = find_contradiction(
+                        replace(claim, status=grade.status, confidence_metadata=metadata),
+                        existing_claims,
+                        domain=domain,
+                    )
+                else:
+                    contradiction = find_contradiction(claim, existing_claims)
+                if contradiction is not None:
+                    target_status = ClaimStatus.DISPUTED
+                    metadata["grade_before_dispute"] = metadata["grade"]
+                    metadata["grade"] = "disputed"
+                    supersedes = None
+            updated = next_claim(
+                claim,
+                target_status if target_status is not claim.status else None,
+                verifier_results=tuple(results),
+                confidence_metadata=metadata,
+                supersedes=supersedes,
+            )
+            self._store.upsert_claim(updated)
+            report.append({"claim_id": claim.id, "status": str(updated.status), "key": claim.key})
+            if contradiction is not None:
+                self._dispute(mission, updated, contradiction, stored)
+                continue
+            if updated.status is ClaimStatus.VERIFIED:
+                record = KnowledgeRecord(
+                    id=updated.id,
+                    mission_id=mission.id,
+                    claim_id=updated.id,
+                    content=updated.content,
+                    type=updated.type,
+                    status="VERIFIED",
+                    version=1,
+                    key=updated.key,
+                    stance=updated.stance,
+                    proposed_by=updated.proposed_by,
+                    source_task=task.id,
+                    source_attempt=attempt.id,
+                    source_result=envelope.id,
+                    evidence=updated.evidence,
+                    verifier=dict(grade.basis),
+                    dependencies=envelope.used_knowledge,
+                    created_at=self._store.now,
+                    supersedes=supersedes,
+                    evidence_trust=grade.evidence_trust,
+                    source_versions=versions,
+                )
+                self._store.upsert_knowledge(record)
+                self._emit(
+                    "KnowledgeCommitted",
+                    mission.id,
+                    key=record.id,
+                    task_id=task.id,
+                    attempt_id=attempt.id,
+                    payload={
+                        "knowledge_id": record.id,
+                        "key": record.key,
+                        "stance": record.stance,
+                        "verifier": dict(record.verifier),
+                        "supersedes": supersedes,
+                    },
+                )
+                if supersedes is not None:
+                    self._supersede_knowledge(supersedes, by=record.id)
+                if task.kind == "conflict" and record.key == task.context.get("key"):
+                    self._resolve_conflict(mission, task, record)
+        if strict_code:
+            for observation, record in observations:
+                self._store.upsert_claim(observation)
+                self._store.upsert_knowledge(record)
+                report.append({"claim_id": observation.id, "status": "VERIFIED", "key": None})
+                self._emit("KnowledgeCommitted", mission.id, key=record.id,
+                           task_id=task.id, attempt_id=attempt.id,
+                           payload={"knowledge_id": record.id, "verifier": dict(record.verifier),
+                                    "system_observation": True})
+        for reference in envelope.used_knowledge:
+            used = self._store.get_knowledge(reference)
+            if used is None or used.mission_id != mission.id or used.status != "VERIFIED":
+                continue
+            if task.id not in used.used_by:
+                self._store.upsert_knowledge(replace(used, used_by=(*used.used_by, task.id)))
+            self._emit(
+                "KnowledgeUsed",
+                mission.id,
+                key=f"{envelope.id}:{used.id}",
+                task_id=task.id,
+                attempt_id=attempt.id,
+                payload={
+                    "knowledge_id": used.id,
+                    "version": used.version,
+                    "result_id": envelope.id,
+                    "source_task": used.source_task,
+                    "source_attempt": used.source_attempt,
+                },
+            )
+        return report
+
+    def _accepted_result(self, result_id: str) -> bool:
+        stored = self._store.get_result(result_id)
+        return (
+            stored is not None and stored.verification_state == "DONE" and stored.verdict == "PASS"
+        )
+
+    def promote_appworld_api_observation(
+        self, mission_id: str, *, task_id: str, result_id: str,
+        episode: Any, receipt: Any, response: Mapping[str, Any],
+    ) -> KnowledgeRecord:
+        """Host-only projection of a current independent public GET after Task acceptance."""
+        from ..evaluation.appworld import AppWorldEpisode
+        from ..evaluation.appworld_api_observations import AppWorldAPIReceipt
+        from ..evaluation.appworld_knowledge import make_appworld_knowledge
+        from ..governance.domains import APPWORLD_DOMAIN
+
+        if (type(episode) is not AppWorldEpisode or type(receipt) is not AppWorldAPIReceipt
+                or not isinstance(receipt.service_identity, str)
+                or not receipt.service_identity):
+            raise CommitRejected("independent AppWorld service receipt required")
+        with episode.current_api_observation(
+            receipt, app=receipt.app, api=receipt.api, response=response,
+        ):
+            with self._store.transaction():
+                mission = self._require_mission(mission_id)
+                if (self.domain_for(mission_id).id != APPWORLD_DOMAIN
+                        or mission.idempotency_key != episode.run_id
+                        or receipt.run_id != episode.run_id):
+                    raise CommitRejected("AppWorld observation requires its bound domain and run")
+                task = self._require_task(task_id)
+                stored = self._require_result(result_id)
+                if (task.mission_id != mission_id
+                        or task.status is not TaskStatus.COMPLETED
+                        or task.accepted_result_id != result_id
+                        or stored.envelope.mission_id != mission_id
+                        or stored.envelope.task_id != task_id
+                        or not self._accepted_result(result_id)):
+                    raise CommitRejected("AppWorld observation requires an accepted bound Task")
+                claim, record = make_appworld_knowledge(
+                    mission_id=mission_id, task_id=task_id,
+                    attempt_id=stored.envelope.attempt_id, result_id=result_id,
+                    receipt=receipt, response=response, now=self._store.now,
+                )
+                existing = self._store.get_knowledge(record.id)
+                if existing is not None:
+                    if existing.status != "VERIFIED" or existing.verifier != record.verifier:
+                        raise CommitRejected("AppWorld observation was revoked or changed")
+                    return existing
+                self._store.upsert_claim(claim)
+                self._store.upsert_knowledge(record)
+                self._emit(
+                    "KnowledgeCommitted", mission_id, key=record.id,
+                    task_id=task_id, attempt_id=record.source_attempt,
+                    payload={"knowledge_id": record.id, "verifier": dict(record.verifier),
+                             "system_observation": True},
+                )
+                refresh_summaries(self._store, mission_id)
+                return record
+
+    def expire_appworld_api_knowledge(
+        self, mission_id: str, *, episode_id: str, reason: str,
+        knowledge_ids: Sequence[str] | None = None,
+    ) -> tuple[str, ...]:
+        """Remove old world facts from the ordinary Verified Knowledge projection."""
+        from ..evaluation.appworld_knowledge import SYSTEM_PROPOSER
+
+        with self._store.transaction():
+            selected = None if knowledge_ids is None else set(knowledge_ids)
+            expired: list[str] = []
+            for record in self._store.list_knowledge(mission_id, status="VERIFIED"):
+                if (record.proposed_by != SYSTEM_PROPOSER
+                        or (selected is not None and record.id not in selected)
+                        or (reason != "host_bridge_reopened"
+                            and record.verifier.get("episode_id") != episode_id)):
+                    continue
+                self._supersede_knowledge(
+                    record.id, by=f"appworld-world:{reason}"
+                )
+                expired.append(record.id)
+            if expired:
+                refresh_summaries(self._store, mission_id)
+            return tuple(expired)
+
+    def promote_agentdojo_tool_observation(
+        self, mission_id: str, *, task_id: str, result_id: str, receipt: Any,
+    ) -> KnowledgeRecord:
+        """Host-only projection of a succeeded AgentDojo tool return after Task acceptance."""
+        from ..evaluation.agentdojo_knowledge import (
+            AgentDojoToolReceipt,
+            make_agentdojo_tool_knowledge,
+        )
+        from ..governance.domains import AGENTDOJO_DOMAIN
+
+        if type(receipt) is not AgentDojoToolReceipt:
+            raise CommitRejected("AgentDojo tool receipt required")
+        if receipt.error not in (None, ""):
+            raise CommitRejected("AgentDojo tool errors are not promotable")
+        with self._store.transaction():
+            if self.domain_for(mission_id).id != AGENTDOJO_DOMAIN:
+                raise CommitRejected("AgentDojo observation requires its bound domain")
+            task = self._require_task(task_id)
+            stored = self._require_result(result_id)
+            if (
+                task.mission_id != mission_id
+                or task.status is not TaskStatus.COMPLETED
+                or task.accepted_result_id != result_id
+                or stored.envelope.mission_id != mission_id
+                or stored.envelope.task_id != task_id
+                or not self._accepted_result(result_id)
+            ):
+                raise CommitRejected("AgentDojo observation requires an accepted bound Task")
+            run = self._store.get_tool_call(receipt.call_key)
+            if (
+                run is None
+                or run["mission_id"] != mission_id
+                or run["subject_id"] != stored.envelope.attempt_id
+                or run["tool"] != receipt.function
+                or run["outcome"] != "succeeded"
+            ):
+                raise CommitRejected("AgentDojo observation requires a succeeded bound tool call")
+            claim, record = make_agentdojo_tool_knowledge(
+                mission_id=mission_id,
+                task_id=task_id,
+                attempt_id=stored.envelope.attempt_id,
+                result_id=result_id,
+                receipt=receipt,
+                now=self._store.now,
+            )
+            existing = self._store.get_knowledge(record.id)
+            if existing is not None:
+                if existing.status != "VERIFIED" or existing.verifier != record.verifier:
+                    raise CommitRejected("AgentDojo observation was revoked or changed")
+                return existing
+            self._store.upsert_claim(claim)
+            self._store.upsert_knowledge(record)
+            self._emit(
+                "KnowledgeCommitted",
+                mission_id,
+                key=record.id,
+                task_id=task_id,
+                attempt_id=record.source_attempt,
+                payload={
+                    "knowledge_id": record.id,
+                    "verifier": dict(record.verifier),
+                    "system_observation": True,
+                },
+            )
+            refresh_summaries(self._store, mission_id)
+            return record
+
+    def expire_agentdojo_tool_knowledge(
+        self,
+        mission_id: str,
+        *,
+        reason: str,
+        knowledge_ids: Sequence[str] | None = None,
+    ) -> tuple[str, ...]:
+        """Drop host-held AgentDojo tool observations that this process cannot revalidate."""
+        from ..evaluation.agentdojo_knowledge import SYSTEM_PROPOSER
+
+        with self._store.transaction():
+            selected = None if knowledge_ids is None else set(knowledge_ids)
+            expired: list[str] = []
+            for record in self._store.list_knowledge(mission_id, status="VERIFIED"):
+                if record.proposed_by != SYSTEM_PROPOSER or (
+                    selected is not None and record.id not in selected
+                ):
+                    continue
+                self._supersede_knowledge(record.id, by=f"agentdojo-tool:{reason}")
+                expired.append(record.id)
+            if expired:
+                refresh_summaries(self._store, mission_id)
+            return tuple(expired)
+
+    def _dispute(
+        self, mission: Mission, claim: Claim, contradiction: Contradiction, stored: StoredResult
+    ) -> None:
+        """§14.4 保留双方 → 标 DISPUTED → 创建 Conflict Task (D4-6' / D4-7' / D4-20)."""
+
+        other = contradiction.other
+        if other.status is ClaimStatus.VERIFIED:
+            # VERIFIED has no edge to DISPUTED (§25.3): the knowledge stays formal and is
+            # marked as contested on both the claim and its projection
+            if claim.id not in other.disputed_by:
+                self._store.upsert_claim(
+                    next_claim(other, disputed_by=(*other.disputed_by, claim.id))
+                )
+            record = self._store.get_knowledge(other.id)
+            if record is not None and claim.id not in record.disputed_by:
+                self._store.upsert_knowledge(
+                    replace(record, disputed_by=(*record.disputed_by, claim.id))
+                )
+        elif other.status is not ClaimStatus.DISPUTED:
+            self._store.upsert_claim(
+                next_claim(other, ClaimStatus.DISPUTED, disputed_by=(*other.disputed_by, claim.id))
+            )
+        self._emit(
+            "ClaimDisputed",
+            mission.id,
+            key=f"{claim.id}:{other.id}",
+            task_id=claim.source_task,
+            attempt_id=claim.source_attempt,
+            payload={
+                "claim_id": claim.id,
+                "contradicts": other.id,
+                "key": contradiction.key,
+                "reason": contradiction.reason,
+                "other_status": str(other.status),
+            },
+        )
+        existing = next(
+            (
+                c
+                for c in self._store.list_conflicts(mission.id)
+                if c["key"] == contradiction.key and c["state"] in {"OPEN", "DEFERRED"}
+            ),
+            None,
+        )
+        if existing is not None:
+            added = claim.id not in existing["claim_ids"]
+            if claim.id not in existing["claim_ids"]:
+                existing = {**existing, "claim_ids": [*existing["claim_ids"], claim.id]}
+                self._store.upsert_conflict(existing)
+            self._store.upsert_claim(
+                next_claim(self._require_claim(claim.id), conflict_id=str(existing["conflict_id"]))
+            )
+            if self.domain_for(mission.id).id == DOC_DOMAIN:
+                self._store.upsert_conflict(
+                    {
+                        **existing,
+                        "sides": self._document_conflict_sides(existing["claim_ids"]),
+                        "version": int(existing.get("version", 1)) + (1 if added else 0),
+                    }
+                )
+                if added:
+                    self._cancel_document_arbitrations(
+                        str(existing["conflict_id"]), reason="conflict_scope_changed", resume=True
+                    )
+            return
+        self._open_conflict(mission, contradiction, opened_by=stored.envelope.id)
+
+    def _document_conflict_sides(self, claim_ids: Sequence[str]) -> list[dict[str, Any]]:
+        """Historical evidence/conditions annotate a dispute; they never exempt it."""
+        sides = []
+        for claim_id in claim_ids:
+            claim = self._require_claim(claim_id)
+            basis = claim.confidence_metadata.get("basis", {})
+            refs = list(basis.get("evidence_refs", ())) if isinstance(basis, Mapping) else []
+            rows = [
+                row
+                for row in self._store.list_criterion_assessments(
+                    claim.mission_id, result_id=claim.result_id
+                )
+                if row["claim_id"] == claim.id
+            ]
+            versions = merge_source_versions(
+                basis.get("source_versions", {}) if isinstance(basis, Mapping) else {},
+                *(
+                    {str(ref["target"]): (str(ref["source_version"]),)}
+                    for ref in refs
+                    if ref.get("status") == "resolved"
+                ),
+            )
+            sides.append(
+                {
+                    "claim_id": claim.id,
+                    "claim_version": claim.version,
+                    "stance": claim.stance,
+                    "content": claim.content,
+                    "evidence": list(claim.evidence),
+                    "source_task": claim.source_task,
+                    "status": str(claim.status),
+                    "source_versions": {path: list(hashes) for path, hashes in versions.items()},
+                    "checked_scope": [row["checked_scope"] for row in rows] or [{"kind": "global"}],
+                    "evidence_refs": refs,
+                    "assessment_revisions": {
+                        row["receipt_id"]: row["claim_revision"] for row in rows
+                    },
+                }
+            )
+        return sides
+
+    def _open_conflict(
+        self, mission: Mission, contradiction: Contradiction, *, opened_by: str
+    ) -> None:
+        mission = self._require_mission(mission.id)  # fresh: the reserve is on the record
+        report = dict(mission.final_report or {})
+        ordinal = len(self._store.list_conflicts(mission.id)) + 1
+        conflict_id = f"{mission.id}:conflict-{ordinal}"
+        sides: list[dict[str, Any]] = [
+            {
+                "claim_id": side.id,
+                "stance": side.stance,
+                "content": side.content,
+                "evidence": list(side.evidence),
+                "source_task": side.source_task,
+                "status": str(self._require_claim(side.id).status),
+            }
+            for side in (contradiction.other, contradiction.claim)
+        ]
+        if self.domain_for(mission.id).id == DOC_DOMAIN:
+            sides = self._document_conflict_sides([side["claim_id"] for side in sides])
+        remaining = int(report.get("conflict_reserve_remaining") or 0)
+        per_task = int(report.get("conflict_reserve_tokens") or 0)
+        record: dict[str, Any] = {
+            "conflict_id": conflict_id,
+            "mission_id": mission.id,
+            "key": contradiction.key,
+            "state": "OPEN",
+            "task_id": None,
+            "claim_ids": [side["claim_id"] for side in sides],
+            "sides": sides,
+            "opened_by": opened_by,
+            "created_at": self._store.now,
+            "version": 1,
+            "resolution_knowledge_id": None,
+        }
+        deferred_reason = None
+        if not self._conflict_tasks:
+            deferred_reason = "knowledge_sharing_disabled"
+        elif self.domain_for(mission.id).conflict_template.decides_with not in (
+            self._deployed_layers
+        ):
+            # host support 0.9.8: a Conflict Task settles on whatever its domain says
+            # decides a dispute — a probe test in the code domain, a person in the
+            # document domain.  If *that* layer is not deployed here, an unexecuted check
+            # would stand as evidence, so the dispute stays DISPUTED and the conflict
+            # waits.  P3.3 (review round 2 B P0-3): this used to name ``code_test``
+            # literally, which deferred every conflict in a deployment that runs no tests.
+            deferred_reason = (
+                "local_code_execution_disabled"
+                if self.domain_for(mission.id).conflict_template.decides_with == "code_test"
+                else "arbitration_layer_undeployed"
+            )
+        elif per_task <= 0:
+            deferred_reason = "no_reserve"
+        elif remaining <= 0:
+            deferred_reason = "reserve_exhausted"
+        if deferred_reason is not None:
+            record["state"] = "DEFERRED"
+            record["deferred_reason"] = deferred_reason
+            self._store.upsert_conflict(record)
+            for side in sides:
+                self._store.upsert_claim(
+                    next_claim(self._require_claim(str(side["claim_id"])), conflict_id=conflict_id)
+                )
+            self._emit(
+                "ConflictOpenDeferred",
+                mission.id,
+                key=conflict_id,
+                payload={
+                    "conflict_id": conflict_id,
+                    "key": contradiction.key,
+                    "reason": deferred_reason,
+                },
+            )
+            return
+        tokens = min(remaining, per_task)
+        tasks = self._store.list_tasks(mission.id)
+        domain = self.domain_for(mission.id)
+        task = conflict_task(
+            mission,
+            task_id=ids.task_id(mission.id, len(tasks) + 1),
+            key=contradiction.key,
+            sides=sides,
+            conflict_id=conflict_id,
+            tokens=tokens,
+            now=self._store.now,
+            template=domain.conflict_template,
+        )
+        # P3.3 (D1) gate 4 of 5: the system's own template goes through the same check as
+        # anything a model proposes — a template the domain would refuse is a bug here,
+        # not something to discover four slices later as a Task that never completes
+        self._check_system_template(domain, task)
+        task = replace(
+            task, context={**dict(task.context),
+                           "graph_version": int((mission.final_report or {}).get("graph_version") or 1)},
+        )
+        self._store.connection.execute("SAVEPOINT conflict_system_pool")
+        try:  # P0-1: an accept transaction never rolls back on a budget problem (D4-20)
+            self._ledger.open_account(
+                account_id=task_account(task.id),
+                scope="task",
+                parent_id=mission_account(mission.id),
+                mission_id=mission.id,
+                limits=task.budget,
+            )
+            self._store.insert_task(task, ordinal=len(tasks) + 1)
+            self._transfer_mission_system_pool(task)
+        except BudgetError as error:
+            self._store.connection.execute("ROLLBACK TO conflict_system_pool")
+            self._store.connection.execute("RELEASE conflict_system_pool")
+            record["state"] = "DEFERRED"
+            record["deferred_reason"] = f"budget_unavailable: {error}"
+            self._store.upsert_conflict(record)
+            for side in sides:
+                self._store.upsert_claim(
+                    next_claim(self._require_claim(str(side["claim_id"])), conflict_id=conflict_id)
+                )
+            self._emit(
+                "ConflictOpenDeferred",
+                mission.id,
+                key=conflict_id,
+                payload={
+                    "conflict_id": conflict_id,
+                    "key": contradiction.key,
+                    "reason": "budget_unavailable",
+                },
+            )
+            return
+        self._store.connection.execute("RELEASE conflict_system_pool")
+        record["task_id"] = task.id
+        self._store.upsert_conflict(record)
+        for side in sides:
+            self._store.upsert_claim(
+                next_claim(self._require_claim(str(side["claim_id"])), conflict_id=conflict_id)
+            )
+        graph_version = int(report.get("graph_version") or 1) + 1
+        self._store.update_mission(
+            next_mission(
+                mission,
+                final_report={
+                    **report,
+                    "graph_version": graph_version,
+                    "conflict_reserve_remaining": remaining - tokens,
+                },
+            ),
+            expected_version=mission.version,
+        )
+        self._store.insert_graph_change(  # R8: every graph_version has a ledger row
+            {
+                "change_id": conflict_id,
+                "mission_id": mission.id,
+                "from_version": graph_version - 1,
+                "to_version": graph_version,
+                "proposal_hash": sha256_hex({"conflict": conflict_id}),
+                "rebased_from": None,
+                "basis": {
+                    "trigger": "conflict",
+                    "conflict_id": conflict_id,
+                    "result_id": opened_by,
+                },
+                "rationale": f"§14.4 conflict on {contradiction.key}: arbitration task opened by the system",
+                "operations": [
+                    {
+                        "op": "add_task",
+                        "key": "conflict",
+                        "task_id": task.id,
+                        "dependencies": list(task.dependency_ids),
+                    }
+                ],
+                "new_task_ids": [task.id],
+                "superseded": {},
+                "cancelled": [],
+                "affected_task_ids": [task.id, *task.dependency_ids],
+                "unblocked": [],
+                "warnings": [],
+                "depth": 0,
+                "source": {"template": "conflict"},
+            }
+        )
+        self._emit(
+            "ConflictOpened",
+            mission.id,
+            key=conflict_id,
+            task_id=task.id,
+            payload={
+                "conflict_id": conflict_id,
+                "key": contradiction.key,
+                "claim_ids": record["claim_ids"],
+                "task_id": task.id,
+                "reserve_tokens": tokens,
+                "graph_version": graph_version,
+            },
+        )
+        self._emit(
+            "TaskCommitted",
+            mission.id,
+            key=task.id,
+            task_id=task.id,
+            payload={
+                "commit_id": conflict_id,
+                "key": "conflict",
+                "dependencies": list(task.dependency_ids),
+                "proposal": {"goal": task.goal, "success_criteria": list(task.success_criteria)},
+                "source": {"template": "conflict", "conflict_id": conflict_id},
+            },
+        )
+        # D4-7': committed BLOCKED; the enclosing accept's ``_unblock(unblocked_by=task)``
+        # turns it READY in this same transaction once the current Task is COMPLETED (P2-9)
+
+    def _resolve_conflict(self, mission: Mission, task: Task, resolution: KnowledgeRecord) -> None:
+        """The arbitration claim became VERIFIED knowledge: the conflict is RESOLVED on
+        the strength of its external check — never on a count (D4-7')."""
+
+        conflict_id = str(task.context.get("conflict_id"))
+        conflict = self._store.get_conflict(conflict_id)
+        if conflict is None or conflict["state"] == "RESOLVED":
+            return
+        resolved_ids = [str(c) for c in conflict["claim_ids"]]
+        superseded: list[str] = []
+        confirmed: list[str] = []
+        for claim_id in resolved_ids:
+            claim = self._store.get_claim(claim_id)
+            if claim is None:
+                continue
+            self._store.upsert_claim(next_claim(claim, resolved_by=resolution.id))
+            record = self._store.get_knowledge(claim_id)
+            if record is None or record.status != "VERIFIED":
+                continue
+            if record.stance != resolution.stance:
+                self._supersede_knowledge(record.id, by=resolution.id)
+                superseded.append(record.id)
+            else:
+                fresh = self._store.get_knowledge(record.id)
+                assert fresh is not None
+                self._store.upsert_knowledge(
+                    replace(fresh, confirmed_by=(*fresh.confirmed_by, resolution.id))
+                )
+                confirmed.append(record.id)
+        current = self._store.get_knowledge(resolution.id)
+        assert current is not None
+        self._store.upsert_knowledge(replace(current, resolves=tuple(resolved_ids)))
+        self._store.upsert_conflict(
+            {
+                **conflict,
+                "state": "RESOLVED",
+                "resolution_knowledge_id": resolution.id,
+                "version": int(conflict.get("version", 1)) + 1,
+            }
+        )
+        self._emit(
+            "ConflictResolved",
+            mission.id,
+            key=conflict_id,
+            task_id=task.id,
+            payload={
+                "conflict_id": conflict_id,
+                "key": conflict["key"],
+                "resolution_knowledge_id": resolution.id,
+                "basis": dict(resolution.verifier),
+                "resolved_claims": resolved_ids,
+                "superseded": superseded,
+                "confirmed": confirmed,
+            },
+        )
+
+    def record_synthesis_gated(self, task_id: str, *, conflict_ids: Sequence[str]) -> bool:
+        """D4-8': the synthesis Task waits (no state change) while a conflict is OPEN;
+        one event per (task, conflict) — returns True when a new event was written."""
+
+        with self._store.transaction():
+            task = self._require_task(task_id)
+            new = False
+            for conflict_id in conflict_ids:
+                before = self._store.count_events(task.mission_id, "SynthesisGated")
+                self._emit(
+                    "SynthesisGated",
+                    task.mission_id,
+                    key=f"{task_id}:{conflict_id}",
+                    task_id=task_id,
+                    payload={"conflict_id": conflict_id},
+                )
+                new = new or self._store.count_events(task.mission_id, "SynthesisGated") > before
+            return new
+
+    def _require_claim(self, claim_id: str) -> Claim:
+        claim = self._store.get_claim(claim_id)
+        if claim is None:
+            raise CommitRejected(f"unknown claim {claim_id}")
+        return claim
+
+    def record_retrieval_unavailable(self, task_id: str, *, reason: str, policy: str) -> int:
+        """S4-07 / D4-11': one durable event per failed retrieval; returns the count so
+        far for this Task (it survives restarts — it is derived from the events)."""
+
+        with self._store.transaction():
+            task = self._require_task(task_id)
+            previous = sum(
+                1
+                for event in self._store.list_events(task.mission_id)
+                if event.type == "RetrievalUnavailable" and event.task_id == task_id
+            )
+            count = previous + 1
+            self._emit(
+                "RetrievalUnavailable",
+                task.mission_id,
+                key=f"{task_id}:retrieval:{count}",
+                task_id=task_id,
+                payload={"reason": reason, "policy": policy, "count": count},
+            )
+            return count
+
+    def _supersede_knowledge(self, knowledge_id: str, *, by: str) -> None:
+        """VERIFIED → SUPERSEDED (§25.3, the one legal edge out of VERIFIED) on both the
+        claim and its knowledge projection, pointing at the newer version."""
+
+        record = self._store.get_knowledge(knowledge_id)
+        if record is None or record.status != "VERIFIED":
+            return
+        self._store.upsert_knowledge(
+            replace(record, status="SUPERSEDED", superseded_by=by)  # P2-13: version = identity
+        )
+        claim = self._store.get_claim(record.claim_id)
+        if claim is not None and claim.status is ClaimStatus.VERIFIED:
+            self._store.upsert_claim(next_claim(claim, ClaimStatus.SUPERSEDED, superseded_by=by))
+        self._emit(
+            "KnowledgeSuperseded",
+            record.mission_id,
+            key=f"{knowledge_id}:{by}",
+            task_id=record.source_task,
+            payload={"knowledge_id": knowledge_id, "superseded_by": by, "key": record.key},
+        )
+
+    def record_planning_rejected(
+        self, mission_id: str, *, ordinal: int, reason: str, detail: Mapping[str, Any]
+    ) -> Event:
+        """A Planner turn that produced no usable graph (D3-2'): durable feedback for the
+        next proposal, no state transition."""
+
+        return self._emit(
+            "PlanningRejected",
+            mission_id,
+            key=f"{mission_id}:planner:{ordinal}",
+            payload={"ordinal": ordinal, "reason": reason, "detail": dict(detail)},
+        )
+
+    def fail_planning(
+        self,
+        mission_id: str,
+        *,
+        reason: str,
+        detail: Mapping[str, Any],
+        stop_reason: MissionStopReason = MissionStopReason.PLANNING_FAILED,
+    ) -> Mission:
+        detail = jsonable(detail)
+        detail = jsonable(detail)
+        with self._store.transaction():
+            mission = self._require_mission(mission_id)
+            if mission.status is MissionStatus.FAILED:
+                return mission
+            updated = next_mission(
+                mission,
+                MissionStatus.FAILED,
+                stop_reason=str(stop_reason),
+                final_report={
+                    **dict(mission.final_report or {}),
+                    "planning_failure": {"reason": reason, **dict(detail)},
+                    # step 6: a non-planning stop reason (the pool ran out) reads like fail_mission
+                    **(
+                        {}
+                        if stop_reason is MissionStopReason.PLANNING_FAILED
+                        else {"stop_reason": str(stop_reason), "detail": dict(detail)}
+                    ),
+                },
+            )
+            self._store.update_mission(updated, expected_version=mission.version)
+            self._emit(
+                "MissionFailed",
+                mission_id,
+                key=mission_id,
+                payload={
+                    "stop_reason": updated.stop_reason,
+                    "reason": reason,
+                    "detail": dict(detail),
+                },
+            )
+            return updated
+
+    def cancel_mission(self, mission_id: str) -> Mission:
+        with self._store.transaction():
+            mission = self._require_mission(mission_id)
+            if mission.status is MissionStatus.CANCELLED:
+                return mission
+            updated = next_mission(
+                mission, MissionStatus.CANCELLED, stop_reason=str(MissionStopReason.CANCELLED)
+            )
+            self._store.update_mission(updated, expected_version=mission.version)
+            self._cascade_stop(mission_id, skip_task=None)
+            self._emit("MissionCancelled", mission_id, key=mission_id, payload={})
+            return updated
+
+    def fail_mission(
+        self, mission_id: str, *, stop_reason: MissionStopReason, detail: Mapping[str, Any]
+    ) -> Mission:
+        """Mission-level stop that blames no Task (D3-12': the Mission pool itself ran
+        out, or an operator condition): Mission → FAILED, open work cancelled."""
+
+        with self._store.transaction():
+            mission = self._require_mission(mission_id)
+            if mission.status is MissionStatus.FAILED:
+                return mission
+            report = {
+                **dict(mission.final_report or {}),
+                "stop_reason": str(stop_reason),
+                "detail": dict(detail),
+                "tasks": self._task_reports(mission_id),
+            }
+            failed = next_mission(
+                mission, MissionStatus.FAILED, stop_reason=str(stop_reason), final_report=report
+            )
+            self._store.update_mission(failed, expected_version=mission.version)
+            self._cascade_stop(mission_id, skip_task=None)
+            self._emit(
+                "MissionFailed",
+                mission_id,
+                key=mission_id,
+                payload={"stop_reason": str(stop_reason), "final_report": report},
+            )
+            return failed
+
+    def _cascade_stop(self, mission_id: str, *, skip_task: str | None) -> list[str]:
+        """D3-13': every READY / ACTIVE / VERIFYING Task (except ``skip_task``) is
+        cancelled with its open Attempts; BLOCKED Tasks are left as they are (§25.1
+        has no BLOCKED→CANCELLED edge — they end with the Mission); every open
+        dispatch intent of the Mission is closed and its reservation released."""
+
+        cancelled: list[str] = []
+        for task in self._store.list_tasks(mission_id):
+            if task.id == skip_task:
+                continue
+            if task.status is TaskStatus.VERIFYING:
+                active = next_task(task, TaskStatus.ACTIVE)
+                self._store.update_task(active, expected_version=task.version)
+                self._emit(
+                    "TaskVerificationAbandoned",
+                    mission_id,
+                    key=task.id,
+                    task_id=task.id,
+                    payload={},
+                )
+                task = active
+            if task.status in {TaskStatus.READY, TaskStatus.ACTIVE}:
+                self._store.update_task(
+                    next_task(task, TaskStatus.CANCELLED), expected_version=task.version
+                )
+                self._emit("TaskCancelled", mission_id, key=task.id, task_id=task.id, payload={})
+                for attempt in self._store.list_attempts(task.id):
+                    if attempt.status in OPEN_ATTEMPT_STATES:
+                        self._close_attempt(
+                            attempt, AttemptStatus.CANCELLED, reason="mission_stopped"
+                        )
+                        cancelled.append(attempt.id)
+        # every not-yet-submitted dispatch intent of this Mission is closed and its
+        # reservation released; SUBMITTED ones (a turn is running) stay open for the
+        # loop to collect — their cost is imported when the turn settles (D3-6')
+        for intent in self._store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED"):
+            if intent.mission_id != mission_id:
+                continue
+            if intent.kind == "critic" and intent.state == "AGENT_CREATED":
+                # The SDK submit may already have happened before its receipt
+                # reached this database. Only the exact-turn collector can know
+                # whether there is a real invocation/cost; do not settle as zero.
+                continue
+            self._settle_intent(intent, "FAILED")
+            reservation = self._ledger.reservation(intent.subject_id)
+            if reservation is not None and reservation["state"] != "SETTLED":
+                task_id = (
+                    intent.subject_id.split(":attempt-")[0]
+                    if ":attempt-" in intent.subject_id
+                    else None
+                )
+                if not self._ledger.has_unknown_usage(intent.subject_id):
+                    self._settle_subject(intent.subject_id, mission_id, task_id=task_id)
+        # D7-4' / D7-5': open actions and requests end with the Mission; handed-off and
+        # UNKNOWN actions are left to the reconciliation (reality may already have moved)
+        self._cancel_open_actions(mission_id, reason="mission_stopped")
+        self.release_terminal_tail_holds(mission_id=mission_id)
+        self.release_terminal_selection_holds(mission_id)
+        self._release_terminal_mission_pools(mission_id)
+        return cancelled
+
+    def settle_intent(self, intent_id: str, state: str) -> DispatchIntent:
+        """Close a dispatch intent (SETTLED / FAILED) through the single writer (D2)."""
+
+        with self._store.transaction():
+            intent = self._require_intent(intent_id)
+            return self._settle_intent(intent, state)
+
+    def _settle_intent(self, intent: DispatchIntent, state: str) -> DispatchIntent:
+        if intent.state == state:
+            return intent
+        updated = DispatchIntent(
+            **{**intent.to_json(), "state": state, "version": intent.version + 1}
+        )
+        self._store.update_intent(updated, expected_version=intent.version)
+        self._emit(
+            "IntentSettled",
+            intent.mission_id,
+            key=f"{intent.subject_id}:{state}",
+            attempt_id=intent.subject_id if intent.kind == "attempt" else None,
+            payload={"intent_id": intent.intent_id, "kind": intent.kind, "state": state},
+        )
+        return updated
+
+    # ------------------------------------------------------------- attempts
+    def inconclusive_failure_count(self, task_id: str) -> int:
+        """Count durable failures, never invocations or reconstructed retry requests."""
+
+        self._require_task(task_id)
+        return sum(
+            attempt.status is AttemptStatus.RETRY_WAIT
+            and (attempt.failure or {}).get("reason") == "inconclusive"
+            for attempt in self._store.list_attempts(task_id)
+        )
+
+    @staticmethod
+    def _inconclusive_retry_limit(domain: DomainProfileV1) -> int:
+        limit = domain.completion_rules.get("inconclusive_retry_limit")
+        if type(limit) is not int or limit < 0:
+            raise CommitRejected("invalid frozen inconclusive retry limit")
+        return limit
+
+    def stop_inconclusive_task(self, task_id: str) -> bool:
+        """Stop spent rework only after already dispatched candidates have converged."""
+
+        with self._store.transaction():
+            task = self._require_task(task_id)
+            mission = self._require_mission(task.mission_id)
+            domain = self.domain_for(task.mission_id)
+            if (
+                not supports_document_assessments(domain)
+                or mission.status is not MissionStatus.ACTIVE
+                or task.status in TERMINAL_TASK
+            ):
+                return False
+            count = self.inconclusive_failure_count(task_id)
+            limit = self._inconclusive_retry_limit(domain)
+            if count <= limit or any(
+                attempt.status in OPEN_ATTEMPT_STATES
+                for attempt in self._store.list_attempts(task_id)
+            ):
+                return False
+            self.stop_task(
+                task_id,
+                stop_reason=MissionStopReason.INSUFFICIENT_EVIDENCE,
+                detail={
+                    "reason": "inconclusive_retry_exhausted",
+                    "failure_count": count,
+                    "retry_limit": limit,
+                },
+            )
+            return True
+
+    def create_attempt(
+        self,
+        task_id: str,
+        *,
+        role: str,
+        model: str,
+        prompt_version: str,
+        context_version: str,
+        reservation: Reservation,
+        intent_config: Mapping[str, Any],
+        input_hash: str,
+        retry_of: str | None = None,
+        feedback: Sequence[str] = (),
+        candidates_per_task: int = 1,
+        inputs: Sequence[Mapping[str, Any]] = (),
+        max_open_attempts: int | None = None,
+        max_running_attempts: int | None = None,
+        runtime_profile_id: str = "default",
+        routing: Mapping[str, Any] | None = None,
+        selection_decision_id: str | None = None,
+        selection_owner: str | None = None,
+        critic_tail: Reservation | None = None,
+    ) -> tuple[Attempt, DispatchIntent]:
+        """Atomic Reserve + Attempt(PENDING) + dispatch intent (ORCH-BUILD §4.3 step 1).
+
+        Refuses (nothing written) when the Task is not READY/ACTIVE/VERIFYING, when it
+        already has ``candidates_per_task`` open Attempts (D3-5': the Task status is a
+        function of its Attempt set, so a second candidate may join while the first is
+        being verified) or when the budget does not fit; the caller turns
+        ``BudgetExhausted`` into a stop.  Every candidate counts against ``max_attempts``.
+        """
+
+        with self._store.transaction():
+            task = self._require_task(task_id)
+            if task.status not in {TaskStatus.READY, TaskStatus.ACTIVE, TaskStatus.VERIFYING}:
+                raise CommitRejected(f"task {task_id} is {task.status}; no new Attempt")
+            if task.paused and task.pause_reason == "provider_admission:usage_unresolved":
+                raise CommitRejected("provider admission is waiting for unresolved usage")
+            domain = self.domain_for(task.mission_id)
+            if supports_document_assessments(domain):
+                mission = self._require_mission(task.mission_id)
+                frozen = {
+                    "check_spec_ids": sorted(domain.adapters.values()),
+                    "mission_contract_revision": mission_contract_revision(mission),
+                    "mission_criteria": [dict(item) for item in mission_criterion_catalog(mission)],
+                }
+                for name, value in frozen.items():
+                    if name in intent_config and sha256_hex(intent_config[name]) != sha256_hex(
+                        value
+                    ):
+                        raise CommitRejected(f"dispatch {name} conflicts with the frozen Mission")
+                intent_config = {**dict(intent_config), **frozen}
+                count = self.inconclusive_failure_count(task_id)
+                limit = self._inconclusive_retry_limit(domain)
+                if count > limit:
+                    raise InconclusiveRetryExhausted(task_id, count, limit)
+            selection = self._admit_selection_attempt(
+                task, decision_id=selection_decision_id, owner=selection_owner, reservation=reservation,
+            )
+            waiting = self.selection_waiting_ids()
+            existing = self._store.list_attempts(task_id)
+            open_attempts = [a for a in existing if a.status in OPEN_ATTEMPT_STATES and a.id not in waiting]
+            if len(open_attempts) >= max(1, candidates_per_task):
+                raise CommitRejected(
+                    f"task {task_id} already has {len(open_attempts)} open Attempt(s) "
+                    f"(candidates_per_task={candidates_per_task}): {open_attempts[0].id}"
+                )
+            if max_open_attempts is not None:  # D3-4: the Mission-wide bound, checked here
+                open_in_mission = sum(
+                    1
+                    for other in self._store.list_tasks(task.mission_id)
+                    for a in self._store.list_attempts(other.id)
+                    if a.status in OPEN_ATTEMPT_STATES and a.id not in waiting
+                )
+                if open_in_mission >= max_open_attempts:
+                    raise CommitRejected(
+                        f"mission {task.mission_id} already has {open_in_mission} open Attempts "
+                        f"(max_concurrency={max_open_attempts})"
+                    )
+            if max_running_attempts is not None:  # D6-1' / review P1-12: the deployment-wide cap
+                open_everywhere = self._store.count_attempts_by_status(
+                    *(str(s) for s in OPEN_ATTEMPT_STATES)
+                )
+                open_everywhere -= sum(
+                    self._require_attempt(aid).status in OPEN_ATTEMPT_STATES for aid in waiting
+                )
+                if open_everywhere >= max_running_attempts:
+                    raise CommitRejected(
+                        f"{open_everywhere} Attempts are open across all Missions "
+                        f"(max_running_attempts={max_running_attempts})"
+                    )
+            ordinal = len(existing) + 1
+            attempt_id = ids.attempt_id(task_id, ordinal)
+            if self._source_artifact_store is not None:
+                from ..planning.fragments import freeze_fragment_execution
+
+                mounted = (None if selection_decision_id is None else {
+                    artifact.id: artifact.path
+                    for artifact in self.selection_input_artifacts(selection_decision_id)
+                })
+                execution = freeze_fragment_execution(
+                    self._store, self._source_artifact_store, task=task,
+                    intent_config=intent_config, inputs=inputs, retry_of=retry_of,
+                    validated_input_paths=mounted,
+                )
+                if ("fragment_execution" in intent_config
+                        and sha256_hex(intent_config["fragment_execution"]) != sha256_hex(execution)):
+                    raise CommitRejected("fragment execution conflicts with actual frozen inputs")
+                intent_config = {**dict(intent_config), "fragment_execution": execution}
+            elif "fragment_execution" in intent_config:
+                raise CommitRejected("fragment execution requires an explicit artifact store")
+            system_hold = self.system_task_hold(task.id)
+            if critic_tail is not None and system_hold is None:
+                from ..governance.tail_budget import TailReserve
+
+                if selection_decision_id is not None:
+                    raise CommitRejected("selected synthesis must use its existing tail")
+                self.reserve_critic_tail(
+                    attempt_id=attempt_id, task_id=task.id,
+                    reserve=TailReserve(critic_tail.tokens, critic_tail.cost_micros),
+                    semantic_revision=self.protected_tail_revision(task.id),
+                )
+            if selection_decision_id is not None:
+                assert selection is not None
+                from ..governance.tail_budget import TailAllocation, TailBudgetLedger
+                TailBudgetLedger(self._ledger).transfer_selection_reserve(
+                    selection["round_id"], attempt_id,
+                    [TailAllocation(attempt_id, task_account(task_id), "synthesis",
+                                    reservation.tokens, reservation.cost_micros,
+                                    reservation.tool_calls, counts_attempt=True)],
+                    task_revision=selection["task_revision_id"],
+                )
+            elif system_hold is not None:
+                self._consume_mission_system_hold(
+                    task, attempt_id=attempt_id, subject_id=attempt_id, reservation=reservation,
+                    profile_id=runtime_profile_id, model=model,
+                    agent_config=intent_config.get("agent_config"),
+                )
+            else:
+                self._ledger.reserve(  # BudgetExhausted propagates; nothing was written
+                    account_id=task_account(task_id),
+                    subject_id=attempt_id,
+                    mission_id=task.mission_id,
+                    tokens=reservation.tokens,
+                    cost_micros=reservation.cost_micros,
+                    counts_attempt=True,
+                    tool_calls=reservation.tool_calls,
+                )
+            attempt = Attempt(
+                id=attempt_id,
+                task_id=task_id,
+                mission_id=task.mission_id,
+                role=role,
+                model=model,
+                prompt_version=prompt_version,
+                context_version=context_version,
+                budget_reserved=Budget(
+                    max_tokens=reservation.tokens, max_cost_micros=reservation.cost_micros
+                ),
+                lease_owner=None,
+                lease_expires_at=None,
+                status=AttemptStatus.PENDING,
+                retry_of=retry_of,
+                created_at=self._store.now,
+                version=1,
+                ordinal=ordinal,
+                creation_key=attempt_id,
+                input_id="attempt-input",
+                runtime_profile_id=runtime_profile_id,
+                task_version=task.version,
+                input_hash=input_hash,
+                feedback=tuple(feedback),
+            )
+            self._store.insert_attempt(attempt)
+            if selection is not None:
+                self._register_selection_attempt(selection, attempt_id,
+                                                 synthesis=selection_decision_id is not None)
+            intent = DispatchIntent(
+                intent_id=ids.intent_id("attempt", attempt_id),
+                kind="attempt",
+                subject_id=attempt_id,
+                mission_id=task.mission_id,
+                state="PENDING",
+                version=1,
+                creation_key=attempt.creation_key,
+                input_id=attempt.input_id,
+                input_hash=input_hash,
+                config={
+                    **dict(intent_config),
+                    **({"selection_round_id": selection["round_id"],
+                        "selection_decision_id": selection_decision_id,
+                        "selection_deadline_at": selection["deadline_at"]} if selection else {}),
+                    "attempt_id": attempt_id,  # authoritative (P1-7): never the caller's guess
+                    "inputs": [dict(item) for item in inputs],
+                },
+                expected_turn_id=None,
+                agent_id=None,
+                receipt=None,
+                lease_owner=None,
+                lease_expires_at=None,
+                replays=0,
+                created_at=self._store.now,
+            )
+            self._store.insert_intent(intent)
+            if task.status is TaskStatus.READY:
+                self._store.update_task(
+                    next_task(task, TaskStatus.ACTIVE, attempt_count=task.attempt_count + 1),
+                    expected_version=task.version,
+                )
+            else:
+                self._store.update_task(
+                    next_task(task, attempt_count=task.attempt_count + 1),
+                    expected_version=task.version,
+                )
+            self._emit(
+                "AttemptCreated",
+                task.mission_id,
+                key=attempt_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                payload={
+                    "role": role,
+                    "model": model,
+                    "retry_of": retry_of,
+                    "ordinal": ordinal,
+                    "feedback": list(feedback),
+                    "inputs": [dict(item) for item in inputs],
+                },
+            )
+            self._emit(
+                "BudgetReserved",
+                task.mission_id,
+                key=attempt_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                payload={
+                    "subject_id": attempt_id,
+                    "tokens": reservation.tokens,
+                    "cost_micros": reservation.cost_micros,
+                },
+            )
+            if (
+                routing
+            ):  # step 6 (S6-03): the physical route is on the timeline, frozen before the call
+                self._emit(
+                    "ModelRouted",
+                    task.mission_id,
+                    key=attempt_id,
+                    task_id=task_id,
+                    attempt_id=attempt_id,
+                    payload={
+                        "runtime_profile_id": runtime_profile_id,
+                        "model": model,
+                        **dict(routing),
+                    },
+                )
+            allocation = intent_config.get("allocation")
+            if allocation:  # step 5 (S5-09): the §29.3 decision is on the timeline as well
+                self._emit(
+                    "AllocationDecided",
+                    task.mission_id,
+                    key=attempt_id,
+                    task_id=task_id,
+                    attempt_id=attempt_id,
+                    payload=dict(allocation),
+                )
+            return attempt, intent
+
+    def claim_intent(
+        self, intent_id: str, *, owner: str, lease_seconds: float
+    ) -> DispatchIntent | None:
+        """CAS PENDING → CLAIMED (§17.1: only one executor per Attempt)."""
+
+        with self._store.transaction():
+            intent = self._store.get_intent(intent_id)
+            if intent is None:
+                return None
+            now = self._store.now
+            if (
+                intent.state in {"CLAIMED", "AGENT_CREATED"}
+                and intent.lease_expires_at is not None
+                and intent.lease_expires_at > now
+                and intent.lease_owner != owner
+            ):
+                return None  # someone else holds a live lease
+            if intent.state not in {"PENDING", "CLAIMED", "AGENT_CREATED"}:
+                return None
+            claimed = DispatchIntent(
+                **{
+                    **intent.to_json(),
+                    "state": "CLAIMED" if intent.state == "PENDING" else intent.state,
+                    "version": intent.version + 1,
+                    "lease_owner": owner,
+                    "lease_expires_at": now + lease_seconds,
+                    "replays": intent.replays + (1 if intent.state != "PENDING" else 0),
+                }
+            )
+            self._store.update_intent(claimed, expected_version=intent.version)
+            if intent.kind == "attempt":
+                attempt = self._require_attempt(intent.subject_id)
+                if attempt.status is AttemptStatus.PENDING:
+                    self._store.update_attempt(
+                        next_attempt(
+                            attempt,
+                            AttemptStatus.CLAIMED,
+                            lease_owner=owner,
+                            lease_expires_at=now + lease_seconds,
+                        ),
+                        expected_version=attempt.version,
+                    )
+                    self._emit(
+                        "AttemptClaimed",
+                        attempt.mission_id,
+                        key=attempt.id,
+                        task_id=attempt.task_id,
+                        attempt_id=attempt.id,
+                        payload={"owner": owner},
+                    )
+            return claimed
+
+    def record_agent_created(
+        self, intent_id: str, *, agent_id: str, expected_turn_id: str
+    ) -> DispatchIntent:
+        with self._store.transaction():
+            intent = self._require_intent(intent_id)
+            if intent.state in {"AGENT_CREATED", "SUBMITTED", "SETTLED"}:
+                if intent.agent_id != agent_id:
+                    raise CommitRejected(
+                        f"intent {intent_id} is bound to agent {intent.agent_id}, not {agent_id}"
+                    )
+                return intent
+            updated = DispatchIntent(
+                **{
+                    **intent.to_json(),
+                    "state": "AGENT_CREATED",
+                    "version": intent.version + 1,
+                    "agent_id": agent_id,
+                    "expected_turn_id": expected_turn_id,
+                }
+            )
+            self._store.update_intent(updated, expected_version=intent.version)
+            if intent.kind == "attempt":
+                attempt = self._require_attempt(intent.subject_id)
+                self._store.update_attempt(
+                    next_attempt(attempt, agent_id=agent_id, turn_id=expected_turn_id),
+                    expected_version=attempt.version,
+                )
+            self._emit(
+                "AgentCreated",
+                intent.mission_id,
+                key=intent.subject_id,
+                attempt_id=intent.subject_id if intent.kind == "attempt" else None,
+                payload={
+                    "agent_id": agent_id,
+                    "expected_turn_id": expected_turn_id,
+                    "kind": intent.kind,
+                },
+            )
+            return updated
+
+    def record_submitted(self, intent_id: str, *, receipt: Mapping[str, Any]) -> DispatchIntent:
+        """Save the real SDK receipt; the Attempt becomes RUNNING (§25.2 start)."""
+
+        with self._store.transaction():
+            intent = self._require_intent(intent_id)
+            if intent.state in {"SUBMITTED", "SETTLED"}:
+                return intent
+            if intent.state != "AGENT_CREATED":
+                raise CommitRejected(
+                    f"intent {intent_id} is {intent.state}; cannot record a submission"
+                )
+            if receipt.get("turn_id") != intent.expected_turn_id:
+                raise CommitRejected("SDK receipt turn_id differs from the expected turn identity")
+            updated = DispatchIntent(
+                **{
+                    **intent.to_json(),
+                    "state": "SUBMITTED",
+                    "version": intent.version + 1,
+                    "receipt": dict(receipt),
+                }
+            )
+            self._store.update_intent(updated, expected_version=intent.version)
+            if intent.kind == "attempt":
+                attempt = self._require_attempt(intent.subject_id)
+                self._store.update_attempt(
+                    next_attempt(attempt, AttemptStatus.RUNNING), expected_version=attempt.version
+                )
+                self._emit(
+                    "AttemptStarted",
+                    intent.mission_id,
+                    key=attempt.id,
+                    task_id=attempt.task_id,
+                    attempt_id=attempt.id,
+                    payload={"receipt": dict(receipt)},
+                )
+            else:
+                self._emit(
+                    "InputSubmitted",
+                    intent.mission_id,
+                    key=intent.subject_id,
+                    payload={"receipt": dict(receipt), "kind": intent.kind},
+                )
+            return updated
+
+    def renew_lease(
+        self,
+        attempt_id: str,
+        *,
+        owner: str,
+        lease_seconds: float,
+        liveness: Mapping[str, Any],
+        minimum_remaining_seconds: float = 0.0,
+    ) -> Attempt:
+        """HeartbeatReceived (§16.2): renew only on evidence the executor is alive (D6')."""
+
+        if not 0 <= minimum_remaining_seconds <= lease_seconds:
+            raise ValueError("minimum remaining lease must be within the lease duration")
+        with self._store.transaction() as connection:
+            attempt = self._require_attempt(attempt_id)
+            task = self._require_task(attempt.task_id)
+            mission = self._require_mission(attempt.mission_id)
+            if (
+                attempt.status in TERMINAL_ATTEMPT
+                or task.status in TERMINAL_TASK
+                or mission.status in TERMINAL_MISSION
+            ):
+                raise CommitRejected("a terminal Attempt, Task or Mission cannot renew its lease")
+            if attempt.lease_owner not in (None, owner):
+                # §17.6: a lapsed lease may be taken over; a live one may not.
+                if (
+                    attempt.lease_expires_at is not None
+                    and attempt.lease_expires_at > self._store.now
+                ):
+                    raise CommitRejected(f"attempt {attempt_id} is leased to {attempt.lease_owner}")
+            expires = self._store.now + lease_seconds
+            progress = liveness.get("progress")
+            marker = None if progress is None else int(progress)
+            # Persist blocker transitions even between lease renewals. The last
+            # real observation survives reopening the Store; polling is not SDK
+            # progress, and time spent blocked must not age the next stall window.
+            blocker_changed = resumed = False
+            if liveness.get("state") == str(AgentTurnState.RUNNING):
+                previous = connection.execute(
+                    "SELECT payload_json FROM events WHERE mission_id = ? "
+                    "AND attempt_id = ? AND type = 'HeartbeatReceived' "
+                    "ORDER BY seq DESC LIMIT 1",
+                    (attempt.mission_id, attempt.id),
+                ).fetchone()
+                prior = {} if previous is None else json.loads(previous[0]).get("liveness", {})
+                was_blocked = prior.get("blocked") is True
+                blocked = liveness.get("blocked") is True
+                blocker_changed = was_blocked != blocked
+                resumed = was_blocked and not blocked
+            # Critic polling is much more frequent than lease renewal. Keep its
+            # authority check in this transaction, but do not rewrite history on
+            # every poll when the same owner still has ample time and no progress.
+            if (
+                minimum_remaining_seconds > 0
+                and attempt.lease_owner == owner
+                and attempt.lease_expires_at is not None
+                and attempt.lease_expires_at - self._store.now > minimum_remaining_seconds
+                and marker == attempt.progress_marker
+                and attempt.progress_at is not None
+                and not blocker_changed
+            ):
+                return attempt
+            progress_at = attempt.progress_at
+            if marker != attempt.progress_marker or progress_at is None or resumed:
+                progress_at = self._store.now
+            updated = next_attempt(
+                attempt,
+                lease_owner=owner,
+                lease_expires_at=expires,
+                progress_marker=marker,
+                progress_at=progress_at,
+            )
+            self._store.update_attempt(updated, expected_version=attempt.version)
+            self._emit(
+                "HeartbeatReceived",
+                attempt.mission_id,
+                key=f"{attempt_id}:{int(expires * 1000)}:{updated.version}",
+                task_id=attempt.task_id,
+                attempt_id=attempt_id,
+                payload={"owner": owner, "lease_expires_at": expires, "liveness": dict(liveness)},
+            )
+            return updated
+
+    def mark_attempt_lost(self, attempt_id: str, *, reason: str) -> Attempt:
+        with self._store.transaction():
+            attempt = self._require_attempt(attempt_id)
+            if attempt.status is AttemptStatus.LOST:
+                return attempt
+            updated = next_attempt(attempt, AttemptStatus.LOST, failure={"reason": reason})
+            self._store.update_attempt(updated, expected_version=attempt.version)
+            if not self._ledger.has_unknown_usage(attempt.id):
+                self._settle_subject(attempt.id, attempt.mission_id, task_id=attempt.task_id)
+            self._emit(
+                "AttemptLost",
+                attempt.mission_id,
+                key=attempt.id,
+                task_id=attempt.task_id,
+                attempt_id=attempt.id,
+                payload={"reason": reason},
+            )
+            return updated
+
+    def mark_attempt_timed_out(
+        self, attempt_id: str, *, reason: str, detail: Mapping[str, Any]
+    ) -> Attempt:
+        """D6' stall: alive executor with no blocker and no progress within stall_seconds."""
+
+        detail = jsonable(detail)
+        with self._store.transaction():
+            attempt = self._require_attempt(attempt_id)
+            if attempt.status is AttemptStatus.TIMED_OUT:
+                return attempt
+            updated = next_attempt(
+                attempt, AttemptStatus.TIMED_OUT, failure={"reason": reason, **dict(detail)}
+            )
+            self._store.update_attempt(updated, expected_version=attempt.version)
+            if not self._ledger.has_unknown_usage(attempt.id):
+                self._settle_subject(attempt.id, attempt.mission_id, task_id=attempt.task_id)
+            self._emit(
+                "AttemptTimedOut",
+                attempt.mission_id,
+                key=attempt.id,
+                task_id=attempt.task_id,
+                attempt_id=attempt.id,
+                payload={"reason": reason, **dict(detail)},
+            )
+            return updated
+
+    # -------------------------------------------------------------- results
+    def import_usage(self, subject_id: str, mission_id: str, facts: Sequence[UsageFact]) -> int:
+        with self._store.transaction():
+            return self._ledger.import_usage(
+                subject_id=subject_id, mission_id=mission_id, facts=facts
+            )
+
+    def settle_subject(
+        self,
+        subject_id: str,
+        mission_id: str,
+        *,
+        task_id: str | None = None,
+        tool_calls: int | None = None,
+    ) -> Mapping[str, Any]:
+        with self._store.transaction():
+            return self._settle_subject(
+                subject_id, mission_id, task_id=task_id, tool_calls=tool_calls
+            )
+
+    def _settle_subject(
+        self,
+        subject_id: str,
+        mission_id: str,
+        *,
+        task_id: str | None,
+        tool_calls: int | None = None,
+    ) -> Mapping[str, Any]:
+        if tool_calls is None:
+            tool_calls = 0 if self.tool_calls_for is None else int(self.tool_calls_for(subject_id))
+        prior_reservation = self._ledger.reservation(subject_id)
+        settled = self._ledger.settle(subject_id=subject_id, tool_calls=tool_calls)
+        if prior_reservation is not None and prior_reservation["state"] != "SETTLED":
+            self._return_system_unused_allowance(settled)
+        self.release_terminal_tail_holds(mission_id=mission_id, task_id=task_id)
+        self.release_terminal_selection_holds(mission_id, task_id=task_id)
+        self._release_terminal_mission_pools(mission_id)
+        self._emit(
+            "BudgetReleased",
+            mission_id,
+            key=subject_id,
+            task_id=task_id,
+            payload={
+                "subject_id": subject_id,
+                "settled_tokens": settled["settled_tokens"],
+                "settled_cost_micros": settled["settled_cost_micros"],
+                "released_tokens": int(settled["reserved_tokens"])
+                - int(settled["settled_tokens"] or 0),
+                "unpriced": bool(settled["unpriced"]),
+                "settled_tool_calls": int(settled.get("settled_tool_calls") or 0),
+            },
+        )
+        return settled
+
+    def check_result_evidence(self, mission_id: str, envelope: ResultEnvelope) -> None:
+        """P33-08/09: refuse disallowed evidence kinds before result admission.
+
+        This is a domain vocabulary gate, not proof that a reference resolves. Code
+        evidence retains its legacy semantics (D2); source/knowledge validation is
+        still performed by the verifier. Inspect all claims and the envelope, even
+        when claim-local evidence would otherwise override the envelope's evidence.
+        """
+
+        domain = self.domain_for(mission_id)
+        if domain.id == CODE_DOMAIN:
+            return
+        references = [
+            *envelope.evidence,
+            *(ref for claim in envelope.claims for ref in claim.evidence),
+        ]
+        kinds = tuple(
+            sorted({ref.partition(":")[0] if ":" in ref else "file" for ref in references})
+        )
+        problems = check_against_domain(
+            domain, key="result evidence", success_criteria=(), evidence_kinds=kinds
+        )
+        if problems:
+            raise CommitRejected("result_evidence_kind_not_allowed: " + "; ".join(problems))
+
+    def record_result(
+        self,
+        attempt_id: str,
+        *,
+        envelope: ResultEnvelope,
+        turn_id: str,
+        artifacts: Sequence[Artifact],
+        usage_refs: Sequence[str],
+    ) -> StoredResult:
+        """ResultSubmitted (§16.2): Attempt RUNNING → SUBMITTED, Task ACTIVE → VERIFYING.
+
+        Idempotent on ``(attempt_id, turn_id)``: a duplicate delivery returns the
+        stored result and appends nothing (§17.4).
+        """
+
+        with self._store.transaction():
+            attempt = self._require_attempt(attempt_id)
+            existing = self._store.find_result_for_attempt(attempt_id)
+            if existing is not None and existing.turn_id == turn_id:
+                return existing
+            if attempt.status is not AttemptStatus.RUNNING:
+                raise CommitRejected(
+                    f"attempt {attempt_id} is {attempt.status}; cannot accept a result"
+                )
+            if envelope.attempt_id != attempt_id or envelope.task_id != attempt.task_id:
+                raise CommitRejected("result identity does not match the Attempt")
+            if attempt.turn_id != turn_id:
+                raise CommitRejected("result turn differs from the Attempt's bound turn")
+            self.check_result_evidence(attempt.mission_id, envelope)
+            stored = StoredResult(
+                envelope=envelope,
+                turn_id=turn_id,
+                verification_state="PENDING",
+                verdict=None,
+                received_at=self._store.now,
+                artifacts=tuple(artifact.id for artifact in artifacts),
+                usage_refs=tuple(usage_refs),
+            )
+            # D4-15 (L3-2): the version is assigned here, inside the transaction, along the
+            # (mission, path) lineage — two candidates snapshotting concurrently never collide
+            lineage = next_versions(self._store.list_mission_artifacts(attempt.mission_id))
+            registered: list[Artifact] = []
+            for artifact in artifacts:
+                if self._store.get_artifact(artifact.id) is None:
+                    version = lineage.get(artifact.path, 0) + 1
+                    lineage[artifact.path] = version
+                    artifact = replace(artifact, version=version)
+                self._store.upsert_artifact(artifact)
+                registered.append(artifact)
+            stored = replace(stored, artifacts=tuple(artifact.id for artifact in registered))
+            self._store.insert_result(stored)
+            self._store.fault("mid_commit", "attempt")
+            for index, proposal in enumerate(envelope.claims, start=1):
+                self._store.upsert_claim(
+                    Claim(
+                        id=ids.claim_id(envelope.id, index),
+                        content=proposal.content,
+                        type=proposal.type,
+                        status=ClaimStatus.PROPOSED,
+                        source_task=attempt.task_id,
+                        source_attempt=attempt_id,
+                        evidence=proposal.evidence or envelope.evidence,
+                        dependencies=envelope.used_knowledge,
+                        verifier_results=(),
+                        confidence_metadata={
+                            "self_reported_confidence": proposal.confidence,
+                            "proposed_supersedes": proposal.supersedes,
+                        },
+                        supersedes=None,
+                        mission_id=attempt.mission_id,
+                        result_id=envelope.id,
+                        key=proposal.key,
+                        stance=proposal.stance,
+                        proposed_by=attempt.agent_id or "",
+                        contradicts=proposal.contradicts,
+                    )
+                )
+            self._store.update_attempt(
+                next_attempt(attempt, AttemptStatus.SUBMITTED, result_id=envelope.id),
+                expected_version=attempt.version,
+            )
+            task = self._require_task(attempt.task_id)
+            if (
+                task.status is TaskStatus.ACTIVE
+            ):  # D3-5': another candidate may already be VERIFYING
+                self._store.update_task(
+                    next_task(task, TaskStatus.VERIFYING), expected_version=task.version
+                )
+            self._emit(
+                "ResultSubmitted",
+                attempt.mission_id,
+                key=envelope.id,
+                task_id=attempt.task_id,
+                attempt_id=attempt_id,
+                payload={
+                    "result_id": envelope.id,
+                    "outcome": str(envelope.outcome),
+                    "artifacts": list(stored.artifacts),
+                    "claims": len(envelope.claims),
+                },
+                actor_type="agent",
+                actor_id=attempt.agent_id or attempt_id,
+            )
+            return stored
+
+    def record_outcome_result(
+        self,
+        attempt_id: str,
+        *,
+        envelope: ResultEnvelope,
+        turn_id: str,
+        usage_refs: Sequence[str],
+    ) -> StoredResult:
+        """A non-candidate Result Envelope (§13 blocked / failure / no_progress /
+        proposed_subtasks; D5-5): kept as history (never verified), the Attempt ends in
+        RETRY_WAIT with the outcome as its failure, the Task stays ACTIVE for the
+        Manager's decision (D5-6).  Idempotent on (attempt, turn)."""
+
+        with self._store.transaction():
+            attempt = self._require_attempt(attempt_id)
+            existing = self._store.find_result_for_attempt(attempt_id)
+            if existing is not None and existing.turn_id == turn_id:
+                return existing
+            if attempt.status is not AttemptStatus.RUNNING:
+                raise CommitRejected(
+                    f"attempt {attempt_id} is {attempt.status}; cannot accept a result"
+                )
+            if envelope.attempt_id != attempt_id or envelope.task_id != attempt.task_id:
+                raise CommitRejected("result identity does not match the Attempt")
+            if envelope.outcome is ResultOutcome.CANDIDATE:
+                raise CommitRejected("a candidate result goes through record_result / verification")
+            stored = StoredResult(
+                envelope=envelope,
+                turn_id=turn_id,
+                verification_state="REJECTED",
+                verdict=f"outcome:{envelope.outcome}",
+                received_at=self._store.now,
+                artifacts=(),
+                usage_refs=tuple(usage_refs),
+            )
+            self._store.insert_result(stored)
+            for index, proposal in enumerate(envelope.claims, start=1):
+                claim = Claim(
+                    id=ids.claim_id(envelope.id, index),
+                    content=proposal.content,
+                    type=proposal.type,
+                    status=ClaimStatus.PROPOSED,
+                    source_task=attempt.task_id,
+                    source_attempt=attempt_id,
+                    evidence=proposal.evidence or envelope.evidence,
+                    dependencies=envelope.used_knowledge,
+                    verifier_results=(),
+                    confidence_metadata={
+                        "self_reported_confidence": proposal.confidence,
+                        "grade": "not_verified_non_candidate",
+                    },
+                    supersedes=None,
+                    mission_id=attempt.mission_id,
+                    result_id=envelope.id,
+                    key=proposal.key,
+                    stance=proposal.stance,
+                    proposed_by=attempt.agent_id or "",
+                )
+                self._store.upsert_claim(claim)
+                self._store.upsert_claim(
+                    next_claim(next_claim(claim, ClaimStatus.UNDER_REVIEW), ClaimStatus.REJECTED)
+                )
+            failure = {
+                "reason": f"outcome_{envelope.outcome}",
+                "summary": envelope.summary,
+                "proposed_tasks": [dict(item) for item in envelope.proposed_tasks],
+                "risks": list(envelope.risks),
+                "result_id": envelope.id,
+            }
+            self._store.update_attempt(
+                next_attempt(
+                    attempt, AttemptStatus.RETRY_WAIT, result_id=envelope.id, failure=failure
+                ),
+                expected_version=attempt.version,
+            )
+            self._settle_subject(attempt.id, attempt.mission_id, task_id=attempt.task_id)
+            self._emit(
+                "ResultSubmitted",
+                attempt.mission_id,
+                key=envelope.id,
+                task_id=attempt.task_id,
+                attempt_id=attempt_id,
+                payload={
+                    "result_id": envelope.id,
+                    "outcome": str(envelope.outcome),
+                    "artifacts": [],
+                    "claims": len(envelope.claims),
+                    "proposed_tasks": [dict(item) for item in envelope.proposed_tasks],
+                },
+                actor_type="agent",
+                actor_id=attempt.agent_id or attempt_id,
+            )
+            self._emit(
+                "OutcomeRecorded",
+                attempt.mission_id,
+                key=envelope.id,
+                task_id=attempt.task_id,
+                attempt_id=attempt_id,
+                payload={"outcome": str(envelope.outcome), "summary": envelope.summary[:400]},
+            )
+            return stored
+
+    def no_progress_count(self, task_id: str) -> int:
+        """Attempts of the Task that ended without progress (D5-7): no_progress / failure
+        outcomes and failed verifications."""
+
+        count = 0
+        for attempt in self._store.list_attempts(task_id):
+            reason = str((attempt.failure or {}).get("reason", ""))
+            if reason in {"outcome_no_progress", "outcome_failure", "verification_failed"}:
+                count += 1
+        return count
+
+    def record_management_requested(
+        self, mission_id: str, *, task_id: str, trigger: str, subject: str, round_number: int
+    ) -> Event:
+        return self._emit(
+            "ManagementRequested",
+            mission_id,
+            key=subject,
+            task_id=task_id,
+            payload={"trigger": trigger, "subject": subject, "round": round_number},
+        )
+
+    def record_management_decided(
+        self,
+        mission_id: str,
+        *,
+        task_id: str,
+        trigger: str,
+        decision: str,
+        detail: Mapping[str, Any],
+    ) -> Event:
+        return self._emit(
+            "ManagementDecided",
+            mission_id,
+            key=f"{mission_id}:manager:{trigger}:{decision}",
+            task_id=task_id,
+            payload={"trigger": trigger, "decision": decision, "detail": jsonable(detail)},
+        )
+
+    def record_late_result(
+        self, attempt_id: str, *, turn_id: str, summary: str, artifacts: Sequence[str]
+    ) -> Attempt:
+        """A result that arrived after its Attempt was superseded / cancelled (D3-6'):
+        history only — ``ResultRejected(reason=superseded)``, no state transition."""
+
+        with self._store.transaction():
+            attempt = self._require_attempt(attempt_id)
+            if attempt.status not in {AttemptStatus.SUPERSEDED, AttemptStatus.CANCELLED}:
+                raise CommitRejected(f"attempt {attempt_id} is {attempt.status}; not a late result")
+            self._emit(
+                "ResultRejected",
+                attempt.mission_id,
+                key=f"{attempt_id}:{turn_id}",
+                task_id=attempt.task_id,
+                attempt_id=attempt_id,
+                payload={
+                    "reason": "superseded",
+                    "detail": {"summary": summary, "artifacts": list(artifacts)},
+                    "turn_id": turn_id,
+                },
+            )
+            return attempt
+
+    def reject_result(
+        self, attempt_id: str, *, turn_id: str, reason: str, detail: Mapping[str, Any]
+    ) -> Attempt:
+        """An invalid / forged submission: ResultRejected, Attempt → RETRY_WAIT, Task stays ACTIVE (S2-07)."""
+
+        detail = jsonable(detail)
+        with self._store.transaction():
+            attempt = self._require_attempt(attempt_id)
+            if attempt.status is AttemptStatus.RETRY_WAIT:
+                return attempt
+            if attempt.status is not AttemptStatus.RUNNING:
+                raise CommitRejected(f"attempt {attempt_id} is {attempt.status}; nothing to reject")
+            updated = next_attempt(
+                attempt, AttemptStatus.RETRY_WAIT, failure={"reason": reason, **dict(detail)}
+            )
+            self._store.update_attempt(updated, expected_version=attempt.version)
+            self._emit(
+                "ResultRejected",
+                attempt.mission_id,
+                key=f"{attempt_id}:{turn_id}",
+                task_id=attempt.task_id,
+                attempt_id=attempt_id,
+                payload={"reason": reason, "detail": dict(detail), "turn_id": turn_id},
+            )
+            return updated
+
+    def wait_for_admission_usage(self, attempt_id: str) -> Task:
+        """Persist an accounting wait after a real, already rejected SDK denial.
+
+        Pausing reuses TaskPaused; it neither settles an UNKNOWN reservation nor
+        changes the original Task contract. Only reconciled, settled usage can
+        clear this system pause.
+        """
+        with self._store.transaction():
+            attempt = self._require_attempt(attempt_id)
+            failure = attempt.failure or {}
+            error = failure.get("error", {})
+            detail = error.get("detail", {}) if isinstance(error, Mapping) else {}
+            if (
+                attempt.status is not AttemptStatus.RETRY_WAIT
+                or failure.get("reason") != "provider_admission_denied"
+                or not isinstance(detail, Mapping)
+                or detail.get("reason_code") != "usage_unresolved"
+            ):
+                raise CommitRejected("no rejected admission usage wait to persist")
+            task = self._require_task(attempt.task_id)
+            reason = "provider_admission:usage_unresolved"
+            if task.paused and task.pause_reason == reason:
+                return task
+            if task.status in TERMINAL_TASK:
+                return task
+            updated = next_task(task, paused=True, pause_reason=reason)
+            self._store.update_task(updated, expected_version=task.version)
+            self._emit("TaskPaused", task.mission_id, key=f"{attempt_id}:admission_usage",
+                       task_id=task.id, attempt_id=attempt_id,
+                       payload={"reason": reason, "admission": dict(detail)})
+            return updated
+
+    def resume_admission_usage(self, task_id: str) -> bool:
+        """Clear only our accounting pause, after all real reservations settle."""
+        with self._store.transaction():
+            task = self._require_task(task_id)
+            if (not task.paused or task.pause_reason != "provider_admission:usage_unresolved"
+                    or task.status in TERMINAL_TASK):
+                return False
+            attempts = self._store.list_attempts(task_id)
+            for attempt in attempts:
+                reservation = self._ledger.reservation(attempt.id)
+                if self._ledger.has_unknown_usage(attempt.id) or (
+                    reservation is not None and reservation["state"] != "SETTLED"
+                ):
+                    return False
+            updated = next_task(task, paused=False, pause_reason=None)
+            self._store.update_task(updated, expected_version=task.version)
+            self._emit("TaskResumed", task.mission_id,
+                       key=f"{task_id}:admission_usage:{task.version}", task_id=task.id,
+                       payload={"reason": "provider_usage_reconciled"})
+            return True
+
+    def start_verification(self, result_id: str) -> StoredResult:
+        with self._store.transaction():
+            stored = self._require_result(result_id)
+            attempt = self._require_attempt(stored.envelope.attempt_id)
+            if stored.verification_state == "PENDING":
+                self._store.set_result_verification(result_id, state="RUNNING", verdict=None)
+                self._store.update_attempt(
+                    next_attempt(attempt, AttemptStatus.VERIFYING), expected_version=attempt.version
+                )
+                for claim in self._store.list_claims(result_id):
+                    self._store.upsert_claim(next_claim(claim, ClaimStatus.UNDER_REVIEW))
+                self._emit(
+                    "VerificationStarted",
+                    attempt.mission_id,
+                    key=result_id,
+                    task_id=attempt.task_id,
+                    attempt_id=attempt.id,
+                    payload={"result_id": result_id},
+                )
+            return self._require_result(result_id)
+
+    def record_verification_layer(
+        self, result_id: str, *, layer: str, status: str, detail: Mapping[str, Any]
+    ) -> None:
+        with self._store.transaction():
+            stored = self._require_result(result_id)
+            if (
+                stored.verification_state == "DONE"
+                and stored.verdict == "PASS"
+                and (self.domain_for(stored.envelope.mission_id).id == DOC_DOMAIN
+                     or self.domain_for(stored.envelope.mission_id).completion_rules.get(
+                         "claim_grading") == "scoped-observation-v2")
+            ):
+                known = next(
+                    (
+                        row
+                        for row in self._store.list_verifications(result_id)
+                        if row["layer"] == layer
+                    ),
+                    None,
+                )
+                if (
+                    known is not None
+                    and known["status"] == status
+                    and sha256_hex(known["detail"]) == sha256_hex(dict(detail))
+                ):
+                    return
+                raise CommitRejected("accepted result verification history is immutable")
+            self._store.upsert_verification(
+                result_id=result_id,
+                attempt_id=stored.envelope.attempt_id,
+                layer=layer,
+                status=status,
+                detail=detail,
+            )
+            self._emit(
+                "VerificationLayerRecorded",
+                stored.envelope.mission_id,
+                key=f"{result_id}:{layer}",
+                task_id=stored.envelope.task_id,
+                attempt_id=stored.envelope.attempt_id,
+                payload={
+                    "layer": layer,
+                    "status": status,
+                    "summary": detail.get("summary"),
+                    "verifier_version": detail.get("verifier_version"),
+                },
+            )
+
+    def _assessment_binding(
+        self, stored: StoredResult, task: Task, attempt: Attempt
+    ) -> AssessmentBindingV1:
+        artifacts = []
+        for artifact_id in stored.artifacts:
+            artifact = self._store.get_artifact(artifact_id)
+            if artifact is None:
+                raise CommitRejected("assessment artifact is unavailable")
+            artifacts.append(artifact)
+        return assessment_binding_for(
+            self._store,
+            task=task,
+            attempt=attempt,
+            envelope=stored.envelope,
+            artifacts=artifacts,
+        )
+
+    def _validated_criterion_assessments(
+        self, stored: StoredResult, task: Task, attempt: Attempt
+    ) -> tuple[CriterionAssessmentV1, ...]:
+        """Read the real rule row and recheck its frozen binding inside accept."""
+
+        row = next(
+            (
+                row
+                for row in self._store.list_verifications(stored.envelope.id)
+                if row["layer"] == "rule_check"
+            ),
+            None,
+        )
+        if row is None:
+            raise CommitRejected("doc assessment requires a recorded rule_check layer")
+        try:
+            binding = self._assessment_binding(stored, task, attempt)
+            return validated_assessments(
+                LayerResult(
+                    str(row["layer"]),
+                    str(row["status"]),
+                    str(row["detail"].get("summary", "")),
+                    row["detail"],
+                ),
+                binding=binding,
+            )
+        except ContractError as error:
+            raise CommitRejected(f"doc assessment rejected: {error}") from error
+
+    def _require_document_human_pass(
+        self, stored: StoredResult, task: Task, rows: Sequence[Mapping[str, Any]]
+    ) -> None:
+        """A recorded NEEDS_HUMAN is not approval; require the actual same-result review."""
+
+        request_id = review_request_id(stored.envelope.id)
+        request = self._store.get_approval(request_id)
+        required = (
+            "human_review" in task.verification_policy
+            or any(row["status"] == "NEEDS_HUMAN" for row in rows)
+            or request is not None
+        )
+        if not required:
+            return
+        human = next((row for row in rows if row["layer"] == "human_review"), None)
+        expected = {
+            "mission_id": task.mission_id,
+            "task_id": task.id,
+            "result_id": stored.envelope.id,
+            "attempt_id": stored.envelope.attempt_id,
+            "artifacts": sorted(stored.artifacts),
+        }
+        if (
+            request is None
+            or request.get("kind") != "review"
+            or request.get("state") != "GRANTED"
+            or request.get("mission_id") != task.mission_id
+            or request.get("task_id") != task.id
+            or request.get("subject_key") != stored.envelope.id
+            or request.get("binding") != expected
+            or human is None
+            or human["status"] != "PASS"
+            or human["detail"].get("request_id") != request_id
+            or not request.get("decided_by")
+            or human["detail"].get("principal_id") != request.get("decided_by")
+            or not any(
+                decision.get("decision") == "grant"
+                and decision.get("principal_id") == request.get("decided_by")
+                for decision in self._store.list_decisions(request_id)
+            )
+        ):
+            raise CommitRejected("document acceptance requires the actual same-result human PASS")
+
+    @staticmethod
+    def _critic_verdict_binding(intent: DispatchIntent, stored: StoredResult) -> dict[str, Any]:
+        return {
+            "schema": 1,
+            "kind": "critic_verdict",
+            "intent_id": intent.intent_id,
+            "mission_id": stored.envelope.mission_id,
+            "task_id": stored.envelope.task_id,
+            "attempt_id": stored.envelope.attempt_id,
+            "result_id": stored.envelope.id,
+            "input_hash": intent.input_hash,
+            "agent_id": intent.agent_id,
+            "turn_id": intent.expected_turn_id,
+            "prompt_version": intent.config.get("prompt_version"),
+        }
+
+    def settle_critic_verdict(
+        self, intent_id: str, *, result: AgentTurnResult,
+    ) -> DispatchIntent:
+        """Freeze the actual SDK verdict and settle its doc5 intent atomically.
+
+        Trusted runtime calls this with the COMMITTED result read from AgentBridge,
+        never with a Worker/caller-supplied PASS or parsed verification row. The
+        existing receipt is append-only per intent, including genuine FAIL and
+        NEEDS_HUMAN. This is not a defense against rewriting the entire SQL store
+        or a malicious runtime fabricating SDK results.
+        """
+
+        with self._store.transaction():
+            intent = self._require_intent(intent_id)
+            attempt_id = intent.config.get("attempt_id")
+            stored = (
+                self._store.find_result_for_attempt(attempt_id)
+                if isinstance(attempt_id, str) else None
+            )
+            domain = self.domain_for(intent.mission_id)
+            if (
+                not requires_document_critic_proof(domain)
+                or intent.kind != "critic" or intent.state not in {"SUBMITTED", "SETTLED"}
+                or stored is None or stored.envelope.mission_id != intent.mission_id
+                or not intent.subject_id.startswith(f"{attempt_id}:critic:")
+                or result.state is not AgentTurnState.COMMITTED
+                or result.agent_id != intent.agent_id or result.turn_id != intent.expected_turn_id
+                or not intent.receipt
+                or intent.receipt.get("agent_id") != result.agent_id
+                or intent.receipt.get("turn_id") != result.turn_id
+                or intent.receipt.get("seq") != result.seq
+                or sha256_hex(intent.config.get("message")) != intent.input_hash
+                or result.public_output is None
+            ):
+                raise CommitRejected("Critic proof requires its actual committed SDK result")
+            assert stored is not None and result.public_output is not None
+            text = str(result.public_output.content)
+            parsed = parse_critic_verdict(
+                text, expected_criteria=self._require_mission(intent.mission_id).success_criteria,
+            )
+            proof = {
+                **self._critic_verdict_binding(intent, stored),
+                "output_hash": sha256(text.encode("utf-8")).hexdigest(),
+                "verdict": parsed.to_json(),
+            }
+            key = "critic-verdict:" + intent.intent_id
+            existing = self._store.get_receipt(key)
+            if existing is not None:
+                if existing != proof:
+                    raise CommitRejected("Critic verdict proof is immutable for this intent")
+            else:
+                self._store.insert_receipt(
+                    commit_id=key, kind="critic_verdict", subject_id=intent.intent_id,
+                    base_version=None, proposal_hash=sha256_hex(proof), receipt=proof,
+                )
+            return self._settle_intent(intent, "SETTLED")
+
+    def _require_doc5_critic_pass(
+        self, stored: StoredResult, task: Task, attempt: Attempt,
+        domain: DomainProfileV1, rows: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """A doc5 floor requires the executed Critic, not just a policy or PASS row.
+
+        The durable dispatch proof binds its settled turn and frozen review input
+        to this attempt's result. Human escalation is checked separately by the
+        existing same-result approval gate; it never substitutes for this proof.
+        """
+
+        def refuse() -> None:
+            raise CommitRejected("doc5 acceptance requires the actual same-result Critic proof")
+
+        row = next((item for item in rows if item["layer"] == "critic_review"), None)
+        if row is None or row["status"] not in {"PASS", "NEEDS_HUMAN"}:
+            refuse()
+        assert row is not None
+        detail = row["detail"]
+        intent_id = detail.get("critic_intent_id")
+        intent = self._store.get_intent(intent_id) if isinstance(intent_id, str) else None
+        if intent is None:
+            refuse()
+        assert intent is not None
+        prefix = f"{attempt.id}:critic:"
+        ordinal = intent.subject_id.removeprefix(prefix)
+        result_for_attempt = self._store.find_result_for_attempt(attempt.id)
+        if (
+            intent.kind != "critic"
+            or intent.state != "SETTLED"
+            or intent.mission_id != task.mission_id
+            or not intent.subject_id.startswith(prefix)
+            or not ordinal.isdecimal() or int(ordinal) < 1
+            or intent.creation_key != intent.subject_id
+            or intent.intent_id != ids.intent_id("critic", intent.subject_id)
+            or not intent.agent_id or not intent.expected_turn_id
+            or not intent.receipt
+            or intent.receipt.get("turn_id") != intent.expected_turn_id
+            or intent.receipt.get("agent_id") != intent.agent_id
+            or intent.config.get("attempt_id") != attempt.id
+            or intent.config.get("prompt_version") != detail.get("verifier_version")
+            or detail.get("verifier_version") != domain.role_templates.get("critic")
+            or result_for_attempt is None
+            or result_for_attempt.envelope.id != stored.envelope.id
+        ):
+            refuse()
+        # More than one settled review for the same attempt is ambiguous; do not
+        # pick whichever row happens to say PASS. Failed parsing ordinals remain OK.
+        settled = [
+            item for item in self._store.list_intents("SETTLED")
+            if item.kind == "critic" and item.subject_id.startswith(prefix)
+        ]
+        if len(settled) != 1 or settled[0].intent_id != intent.intent_id:
+            refuse()
+        proof = self._store.get_receipt("critic-verdict:" + intent.intent_id)
+        if proof is None or any(
+            proof.get(key) != value
+            for key, value in self._critic_verdict_binding(intent, stored).items()
+        ):
+            refuse()
+        assert proof is not None
+        try:
+            message = intent.config.get("message")
+            if not isinstance(message, Mapping) or sha256_hex(message) != intent.input_hash:
+                refuse()
+            assert isinstance(message, Mapping)
+            text = message.get("content")
+            if not isinstance(text, str):
+                refuse()
+            assert isinstance(text, str)
+
+            def section(name: str) -> Any:
+                pieces = text.split(f"\n\n## {name}\n")
+                if len(pieces) != 2:
+                    refuse()
+                return json.loads(pieces[1].split("\n\n## ", 1)[0])
+
+            if (stored.verification_state == "DONE" and stored.verdict == "PASS"
+                    and task.accepted_result_id == stored.envelope.id):
+                from ..verification.assessments import accepted_assessments_for
+
+                binding = accepted_assessments_for(self._store, task=task)[0]
+            else:
+                binding = self._assessment_binding(stored, task, attempt)
+            if (
+                task_contract_revision(section("task_contract")) != binding.task_contract_revision
+                or section("mission_success_criteria") != list(
+                    self._require_mission(task.mission_id).success_criteria
+                )
+                or dict(intent.config.get("source_versions", {})) != dict(binding.source_versions)
+                or tuple(intent.config.get("source_roots", ())) != binding.source_roots
+            ):
+                refuse()
+            artifacts: list[dict[str, Any]] = []
+            for artifact_id in stored.artifacts:
+                artifact = self._store.get_artifact(artifact_id)
+                if artifact is None:
+                    refuse()
+                assert artifact is not None
+                artifacts.append({
+                    "path": artifact.path, "content_hash": artifact.content_hash,
+                    "size_bytes": artifact.size_bytes,
+                })
+            if sorted(section("submitted_artifacts"), key=lambda item: item["path"]) != sorted(
+                artifacts, key=lambda item: item["path"]
+            ):
+                refuse()
+            if f"\n\n## attempt_id\n{attempt.id}\n\n" not in text:
+                refuse()
+            verdict = parse_critic_verdict(
+                "<critic_verdict>" + json.dumps(dict(detail), ensure_ascii=False)
+                + "</critic_verdict>",
+                expected_criteria=self._require_mission(task.mission_id).success_criteria,
+            )
+            if not verdict.passed or (row["status"] == "NEEDS_HUMAN") != verdict.needs_human:
+                refuse()
+            if verdict.to_json() != proof.get("verdict"):
+                refuse()
+        except (ContractError, TypeError, ValueError, KeyError) as error:
+            raise CommitRejected(
+                "doc5 acceptance requires the actual same-result Critic proof"
+            ) from error
+
+    def _acceptance_materials(
+        self, stored: StoredResult, task: Task, attempt: Attempt, mission: Mission,
+        *, verifier_results: Sequence[Mapping[str, Any]], owner: str | None,
+        connectors: Mapping[str, Any] | None, deployment: DeploymentPolicy | None,
+    ) -> dict[str, Any] | Task:
+        """Shared nonpublishing eligibility; failures retain their actual failure path.
+
+        A valid return has not accepted the result, written assessments, graded a
+        claim, published an action, or completed/superseded an Attempt.
+        """
+        result_id = stored.envelope.id
+        assessments: tuple[CriterionAssessmentV1, ...] = ()
+        domain = self.domain_for(mission.id)
+        if self._is_document_conflict(task):
+            raise CommitRejected(
+                "document conflict requires its dedicated human arbitration; ordinary acceptance is unavailable"
+            )
+        if domain.id == DOC_DOMAIN:
+            assessments = self._validated_criterion_assessments(stored, task, attempt)
+            if supports_document_assessments(domain):
+                hard_failures = tuple(
+                    LayerResult(
+                        row["layer"],
+                        row["status"],
+                        str(row["detail"].get("summary", "")),
+                        row["detail"],
+                    ).to_json()
+                    for row in self._store.list_verifications(result_id)
+                    if row["status"] in {"FAIL", "ERROR"}
+                )
+                if hard_failures:
+                    return self.fail_result(result_id, failures=hard_failures, owner=owner)
+            if supports_document_assessments(domain):
+                rows = self._store.list_verifications(result_id)
+                if requires_document_critic_proof(domain):
+                    self._require_doc5_critic_pass(stored, task, attempt, domain, rows)
+                self._require_document_human_pass(stored, task, rows)
+                conflicts = document_uncertainty_conflicts(
+                    self._store,
+                    mission_id=mission.id,
+                    envelope=stored.envelope,
+                    assessments=assessments,
+                )
+                if conflicts:
+                    rule_detail = next(
+                        row["detail"] for row in rows if row["layer"] == "rule_check"
+                    )
+                    failure = LayerResult(
+                        "rule_check",
+                        "FAIL",
+                        "uncertainty conflicts with another claim",
+                        {
+                            **dict(rule_detail),
+                            "reason": "uncertainty_conflict",
+                            "conflicts": conflicts,
+                        },
+                    )
+                    self.record_verification_layer(
+                        result_id,
+                        layer=failure.layer,
+                        status=failure.status,
+                        detail=failure.detail,
+                    )
+                    return self.fail_result(
+                        result_id, failures=(failure.to_json(),), owner=owner
+                    )
+            # The caller's PASS list remains the legacy code API, never the doc
+            # assessment authority or an opportunity to invent audited layers.
+            verifier_results = tuple(
+                LayerResult(
+                    row["layer"],
+                    row["status"],
+                    str(row["detail"].get("summary", "")),
+                    row["detail"],
+                ).to_json()
+                for row in self._store.list_verifications(result_id)
+                if row["status"] == "PASS"
+            )
+            citations = tuple(
+                citation
+                for proposal in stored.envelope.claims
+                for citation in proposal.citations
+            )
+            if citations:
+                current_issues = (
+                    [{"code": "ERROR", "reason": "source_artifact_store_unavailable"}]
+                    if self._source_artifact_store is None
+                    else source_current_issues(
+                        self._store, mission.id, citations, self._source_artifact_store
+                    )
+                )
+                if current_issues:
+                    failure = LayerResult(
+                        "rule_check",
+                        "ERROR"
+                        if any(issue["code"] == "ERROR" for issue in current_issues)
+                        else "FAIL",
+                        "source currentness changed before acceptance",
+                        {
+                            "reason": "source_unavailable"
+                            if any(issue["code"] == "ERROR" for issue in current_issues)
+                            else "stale_source",
+                            "source_current_issues": current_issues,
+                        },
+                    )
+                    # Keep the valid frozen rule receipt; this is a separate live
+                    # acceptance check, recorded by VerificationFailed/failure detail.
+                    return self.fail_result(
+                        result_id, failures=(failure.to_json(),), owner=owner
+                    )
+        self.sync_host_knowledge(mission.id)
+        stale = KnowledgeIndex.load(self._store, mission.id).check(
+            stored.envelope.used_knowledge
+        )
+        if stale:  # D4-4': the reference check is repeated inside the Commit (TOCTOU)
+            return self.fail_result(
+                result_id,
+                failures=[
+                    {
+                        "layer": "rule_check",
+                        "status": "FAIL",
+                        "summary": "used_knowledge_stale: " + "; ".join(stale),
+                        "detail": {"problems": stale, "reason": "used_knowledge_stale"},
+                    }
+                ],
+                owner=owner,
+            )
+        open_conflicts = [
+            c["conflict_id"] for c in self._store.list_conflicts(mission.id, state="OPEN")
+        ]
+        if task.kind == "synthesis" and open_conflicts:  # D4-8': guard inside the Commit
+            return self.fail_result(
+                result_id,
+                failures=[
+                    {
+                        "layer": "rule_check",
+                        "status": "FAIL",
+                        "summary": "synthesis_blocked_by_open_conflict: "
+                        + ", ".join(open_conflicts),
+                        "detail": {
+                            "reason": "synthesis_blocked_by_open_conflict",
+                            "conflicts": open_conflicts,
+                        },
+                    }
+                ],
+                owner=owner,
+            )
+        candidates, rejection = self._action_candidates(
+            stored, task, mission, connectors=connectors, deployment=deployment
+        )
+        if rejection is not None:  # D7-2'': re-checked on the accepted bytes, in the Commit
+            return self.fail_result(result_id, failures=[rejection], owner=owner)
+        source_dependencies = None
+        if domain.id == DOC_DOMAIN:
+            selection_versions, selection_issues = self._selection_source_lineage(attempt.id)
+            if selection_issues:
+                return self.fail_result(result_id, failures=[{
+                    "layer": "rule_check", "status": "ERROR" if any(
+                        issue.get("code") == "ERROR" for issue in selection_issues) else "FAIL",
+                    "summary": "selected source material no longer current",
+                    "detail": {"reason": "stale_source", "source_current_issues": selection_issues},
+                }], owner=owner)
+            # Resolve every dependency before ANY new knowledge is projected. A
+            # sibling claim of this result cannot become its own input mid-loop.
+            source_dependencies = {
+                ids.claim_id(result_id, ordinal): source_dependencies_for(
+                    self._store,
+                    mission_id=mission.id,
+                    evidence_refs=[
+                        ref
+                        for assessment in assessments
+                        if assessment.claim_id == ids.claim_id(result_id, ordinal)
+                        for ref in assessment.to_json()["evidence_refs"]
+                    ],
+                    used_knowledge=stored.envelope.used_knowledge,
+                )
+                for ordinal, _ in enumerate(stored.envelope.claims, 1)
+            }
+            if selection_versions:
+                source_dependencies = {
+                    claim_id: (merge_source_versions(versions, selection_versions), issues)
+                    for claim_id, (versions, issues) in source_dependencies.items()
+                }
+            errors = [
+                issue
+                for _, issues in source_dependencies.values()
+                for issue in issues
+                if issue["code"] == "ERROR"
+            ]
+            if errors:
+                failure = LayerResult(
+                    "rule_check",
+                    "ERROR",
+                    "source provenance unavailable",
+                    {
+                        "reason": "source_provenance_unavailable",
+                        "issues": errors,
+                    },
+                )
+                return self.fail_result(result_id, failures=(failure.to_json(),), owner=owner)
+        return {"assessments": assessments, "verifier_results": verifier_results,
+                "candidates": candidates, "source_dependencies": source_dependencies}
+
+    def accept_result(
+        self, result_id: str, *, verifier_results: Sequence[Mapping[str, Any]],
+        owner: str | None = None, connectors: Mapping[str, Any] | None = None,
+        deployment: DeploymentPolicy | None = None,
+    ) -> Task:
+        with self._store.transaction():
+            stored = self._require_result(result_id)
+            if self.selection_policy_for(stored.envelope.task_id) is not None:
+                raise CommitRejected("COMPARE requires the selected-result acceptance gate")
+            already_accepted = stored.verification_state == "DONE" and stored.verdict == "PASS"
+            completed = self._accept_result(result_id, verifier_results=verifier_results,
+                                            owner=owner, connectors=connectors,
+                                            deployment=deployment)
+        if not already_accepted and completed.status is TaskStatus.COMPLETED:
+            for observer in tuple(self._accepted_task_observers):
+                try:
+                    observer(completed)
+                except Exception as error:
+                    # An optional Host observation cannot undo accepted task work.
+                    self._emit("HostObservationUnavailable", completed.mission_id,
+                               key=f"{completed.id}:{type(error).__name__}",
+                               task_id=completed.id,
+                               payload={"reason": type(error).__name__})
+        return completed
+
+    def _accept_result(
+        self,
+        result_id: str,
+        *,
+        verifier_results: Sequence[Mapping[str, Any]],
+        owner: str | None = None,
+        connectors: Mapping[str, Any] | None = None,
+        deployment: DeploymentPolicy | None = None,
+    ) -> Task:
+        """PASS (§24 step 11) in one transaction (D3-6'): claims → VERIFIED, Attempt →
+        COMPLETED, Task → COMPLETED (via VERIFYING when a sibling candidate had not
+        moved it yet), the losing candidates → SUPERSEDED with their results kept as
+        history, and every dependent whose dependencies are now all COMPLETED → READY."""
+
+        with self._store.transaction():
+            stored = self._require_result(result_id)
+            if stored.verification_state == "DONE" and stored.verdict == "PASS":
+                return self._require_task(stored.envelope.task_id)
+            attempt = self._require_attempt(stored.envelope.attempt_id)
+            self._require_lease(attempt, owner)
+            task = self._require_task(stored.envelope.task_id)
+            mission = self._require_mission(stored.envelope.mission_id)
+            materials = self._acceptance_materials(
+                stored, task, attempt, mission, verifier_results=verifier_results, owner=owner,
+                connectors=connectors, deployment=deployment,
+            )
+            if isinstance(materials, Task):
+                return materials
+            assessments = materials["assessments"]
+            verifier_results = materials["verifier_results"]
+            candidates = materials["candidates"]
+            source_dependencies = materials["source_dependencies"]
+            if task.status is TaskStatus.ACTIVE:
+                verifying = next_task(task, TaskStatus.VERIFYING)
+                self._store.update_task(verifying, expected_version=task.version)
+                task = verifying
+            for assessment in assessments:
+                self._store.insert_criterion_assessment(
+                    mission_id=mission.id,
+                    task_id=task.id,
+                    result_id=result_id,
+                    assessment=assessment,
+                )
+            self._store.set_result_verification(result_id, state="DONE", verdict="PASS")
+            grading = self._grade_and_project(
+                mission,
+                task,
+                attempt,
+                stored,
+                verifier_results=verifier_results,
+                assessments=assessments,
+                source_dependencies=source_dependencies,
+            )
+            self._store.update_attempt(
+                next_attempt(attempt, AttemptStatus.COMPLETED), expected_version=attempt.version
+            )
+            completed = next_task(
+                task,
+                TaskStatus.COMPLETED,
+                accepted_result_id=result_id,
+                accepted_artifacts=stored.artifacts,
+            )
+            self._store.update_task(completed, expected_version=task.version)
+            for artifact_id in stored.artifacts:  # P3.1 fix F-ORCH-3: in this transaction
+                self._store.update_artifact_verification(artifact_id, "VERIFIED")
+            # step 9 (plan D9-10'): an Agent's file that tries to set policy is refused on
+            # record in the same transaction; it never reaches the registry
+            self.refuse_policy_files(
+                stored, mission_id=mission.id, task_id=task.id, result_id=result_id
+            )
+            for artifact, candidate in candidates:  # D7-2: registered in the accept transaction
+                self.propose_action(
+                    candidate,
+                    mission_id=mission.id,
+                    task_id=task.id,
+                    result_id=result_id,
+                    attempt_id=attempt.id,
+                    artifact_id=artifact.id,
+                    artifact_hash=artifact.content_hash,
+                    connectors=connectors or {},
+                    deployment=deployment or DeploymentPolicy(),
+                )
+            if not self._ledger.has_unknown_usage(attempt.id):  # ORCH §12.2 (P2-12)
+                self._settle_subject(attempt.id, mission.id, task_id=task.id)
+            self._emit(
+                "VerificationPassed",
+                mission.id,
+                key=result_id,
+                task_id=task.id,
+                attempt_id=attempt.id,
+                payload={
+                    "result_id": result_id,
+                    "layers": [dict(item) for item in verifier_results],
+                    "claims": grading,
+                },
+            )
+            self._store.fault("after_accept_before_supersede", "attempt")
+            superseded = []
+            for other in self._store.list_attempts(task.id):
+                if other.id != attempt.id and other.status in OPEN_ATTEMPT_STATES:
+                    self._close_attempt(other, AttemptStatus.SUPERSEDED, reason="sibling_accepted")
+                    superseded.append(other.id)
+            unblocked = self._unblock(mission.id, unblocked_by=task.id)
+            refresh_summaries(self._store, mission.id)  # D4-13: Summaries layer, same transaction
+            self._emit(
+                "TaskCompleted",
+                mission.id,
+                key=task.id,
+                task_id=task.id,
+                payload={
+                    "result_id": result_id,
+                    "artifacts": list(stored.artifacts),
+                    "superseded": superseded,
+                    "unblocked": [t.id for t in unblocked],
+                },
+            )
+            return completed
+
+    def document_handoff_refusal(self, mission_id: str) -> str | None:
+        """Called inside begin_handoff's transaction, before reservation/outbox write.
+
+        Each effect takes a fresh source eligibility decision; a previous connector's
+        await cannot lend its old source snapshot to the next action.
+        """
+        domain = self.domain_for(mission_id)
+        if not requires_mission_source_binding(domain):
+            return None
+        mission = self._require_mission(mission_id)
+        try:
+            coverage = mission_coverage(
+                self._store, mission, domain, artifact_store=self._source_artifact_store
+            )
+        except ContractError as error:
+            self.fail_mission(
+                mission_id,
+                stop_reason=MissionStopReason.VERIFIER_UNAVAILABLE,
+                detail={"source_assessment_error": str(error)},
+            )
+            return "document_sources_unavailable"
+        if any(
+            row["verdict"] == "FAIL" and row.get("excluded_claim_ids")
+            for row in coverage["criteria"]
+        ):
+            self.fail_mission(
+                mission_id,
+                stop_reason=MissionStopReason.MISSION_CRITERIA_UNMET,
+                detail={"document_coverage": coverage},
+            )
+            return "document_sources_stale"
+        return None
+
+    def stop_insufficient_mission(self, mission_id: str) -> Mission | None:
+        """Recompute the original Mission catalogue before any judge or publication."""
+
+        with self._store.transaction():
+            mission = self._require_mission(mission_id)
+            domain = self.domain_for(mission_id)
+            if (
+                not supports_document_assessments(domain)
+                or mission.status is not MissionStatus.ACTIVE
+            ):
+                return None
+            tasks = [
+                task
+                for task in self._store.list_tasks(mission_id)
+                if task.status is not TaskStatus.CANCELLED
+                and not (task.paused and task.status in {TaskStatus.READY, TaskStatus.BLOCKED})
+            ]
+            if not tasks or any(task.status is not TaskStatus.COMPLETED for task in tasks):
+                return None
+            coverage = mission_coverage(
+                self._store, mission, domain, artifact_store=self._source_artifact_store
+            )
+            if not coverage["insufficient"]:
+                return None
+            return self._stop_insufficient_mission(mission, tasks, coverage)
+
+    def _stop_insufficient_mission(
+        self, mission: Mission, tasks: Sequence[Task], coverage: Mapping[str, Any]
+    ) -> Mission:
+        """Only called with authoritative coverage inside the current writer transaction."""
+
+        terminal = terminal_task(list(tasks))
+        report = {
+            **dict(mission.final_report or {}),
+            "result": "INSUFFICIENT",
+            "stop_reason": "insufficient_evidence",
+            "document_coverage": dict(coverage),
+            "accepted_result_id": terminal.accepted_result_id,
+            "accepted_artifacts": list(terminal.accepted_artifacts),
+            "terminal_task_id": terminal.id,
+            "tasks": self._task_reports(mission.id),
+            "attempts": sum(task.attempt_count for task in tasks),
+            "lineage": lineage(self._store, mission.id),
+        }
+        failed = next_mission(
+            mission,
+            MissionStatus.FAILED,
+            stop_reason=str(MissionStopReason.INSUFFICIENT_EVIDENCE),
+            final_report=report,
+        )
+        self._store.update_mission(failed, expected_version=mission.version)
+        self._cascade_stop(mission.id, skip_task=None)
+        self._emit(
+            "MissionFailed",
+            mission.id,
+            key=mission.id,
+            payload={"stop_reason": failed.stop_reason, "final_report": report},
+        )
+        return failed
+
+    def judge_mission(
+        self, mission_id: str, *, judgments: Sequence[Mapping[str, Any]], summary: str
+    ) -> Mission:
+        """Mission-level success judgment, independent of the Task PASS (D21, ORCH §12.4).
+
+        Not the "Judge" of 理论 04-7 (which picks a champion candidate; not implemented in
+        this build) — this is the check of the Mission's own success criteria.
+
+        ``judgments`` carries one entry per ``Mission.success_criteria`` item with
+        ``met: bool``; all met → COMPLETED, otherwise FAILED(mission_criteria_unmet)
+        while the Task stays COMPLETED.
+        """
+
+        with self._store.transaction():
+            mission = self._require_mission(mission_id)
+            if mission.status in {MissionStatus.COMPLETED, MissionStatus.FAILED}:
+                return mission
+            all_tasks = self._store.list_tasks(mission_id)
+            tasks = [
+                task
+                for task in all_tasks
+                if task.status is not TaskStatus.CANCELLED  # D5-4: superseded work is history
+                and not (
+                    task.paused and task.status in {TaskStatus.READY, TaskStatus.BLOCKED}
+                )  # R4: a paused route is not required
+            ]
+            if not tasks or any(task.status is not TaskStatus.COMPLETED for task in tasks):
+                raise CommitRejected("mission judgment requires every live Task to be COMPLETED")
+            mutable_judgments = [dict(item) for item in judgments]
+            judgments = mutable_judgments
+            domain = self.domain_for(mission_id)
+            document_coverage = None
+            if supports_document_assessments(domain):
+                try:
+                    document_coverage = mission_coverage(
+                        self._store, mission, domain, artifact_store=self._source_artifact_store
+                    )
+                except ContractError as error:
+                    if not requires_mission_source_binding(domain):
+                        raise
+                    return self.fail_mission(
+                        mission.id,
+                        stop_reason=MissionStopReason.VERIFIER_UNAVAILABLE,
+                        detail={"source_assessment_error": str(error)},
+                    )
+                if document_coverage["insufficient"]:
+                    return self._stop_insufficient_mission(mission, tasks, document_coverage)
+                if [item.get("criterion") for item in judgments] != list(mission.success_criteria):
+                    raise CommitRejected(
+                        "judgments must cover the Mission success criteria in order"
+                    )
+                for item, assessed in zip(
+                    mutable_judgments, document_coverage["criteria"], strict=True
+                ):
+                    if assessed["verdict"] == "STRUCTURAL":
+                        continue
+                    allowed = assessed["verdict"] in {"PASS", "INCONCLUSIVE"}
+                    if (
+                        requires_mission_source_binding(domain)
+                        and item.get("met") is True
+                        and not allowed
+                        and item.get("judge") == "document_coverage"
+                        and item.get("criterion_id") == assessed["criterion_id"]
+                    ):
+                        # A once-valid deterministic judgment can become stale while
+                        # waiting for actions/approval. Commit the fresh failure once.
+                        item.update(
+                            met=False,
+                            verdict=assessed["verdict"],
+                            reason="; ".join(assessed["reasons"]),
+                        )
+                    if type(item.get("met")) is not bool or item["met"] != allowed:
+                        raise CommitRejected(
+                            "Mission content judgment disagrees with deterministic coverage"
+                        )
+            for task in all_tasks:  # a paused READY route ends with the Mission as not needed
+                if task.paused and task.status is TaskStatus.READY:
+                    self._store.update_task(
+                        next_task(task, TaskStatus.CANCELLED, failure_reason="not_needed_paused"),
+                        expected_version=task.version,
+                    )
+                    self._emit(
+                        "TaskCancelled",
+                        mission_id,
+                        key=task.id,
+                        task_id=task.id,
+                        payload={"reason": "not_needed_paused"},
+                    )
+            criteria = list(mission.success_criteria)
+            if [item.get("criterion") for item in judgments] != criteria:
+                raise CommitRejected("judgments must cover the Mission success criteria in order")
+            met = all(bool(item.get("met")) for item in judgments)
+            terminal = terminal_task(tasks)  # D4-7': synthesis, else the last non-conflict leaf
+            report = {
+                **dict(mission.final_report or {}),
+                **(
+                    {"document_coverage": document_coverage}
+                    if document_coverage is not None
+                    else {}
+                ),
+                "accepted_result_id": terminal.accepted_result_id,
+                "accepted_artifacts": list(terminal.accepted_artifacts),
+                "terminal_task_id": terminal.id,
+                "summary": summary,
+                "attempts": sum(task.attempt_count for task in tasks),
+                "tasks": self._task_reports(mission_id),
+                "success_criteria": [dict(item) for item in judgments],
+                "conflicts": self._store.list_conflicts(mission_id),
+                "unresolved_conflicts": [
+                    c["conflict_id"]
+                    for c in self._store.list_conflicts(mission_id)
+                    if c["state"] not in {"RESOLVED", "RESOLVED_BY_HUMAN"}
+                ],
+                "knowledge": [
+                    k.id for k in self._store.list_knowledge(mission_id, status="VERIFIED")
+                ],
+                "lineage": lineage(self._store, mission_id),  # D4-14 / 30-27
+            }
+            self._emit(
+                "MissionSuccessJudged",
+                mission_id,
+                key=f"{mission_id}:{mission.version}",
+                payload={"met": met, "judgments": [dict(item) for item in judgments]},
+            )
+            if met:
+                done = next_mission(
+                    mission,
+                    MissionStatus.COMPLETED,
+                    stop_reason=str(MissionStopReason.VERIFICATION_PASSED),
+                    final_report=report,
+                )
+                self._store.update_mission(done, expected_version=mission.version)
+                self._release_terminal_mission_pools(mission_id)
+                self._emit(
+                    "MissionCompleted",
+                    mission_id,
+                    key=mission_id,
+                    payload={"stop_reason": done.stop_reason, "final_report": report},
+                )
+                return done
+            failed = next_mission(
+                mission,
+                MissionStatus.FAILED,
+                stop_reason="mission_criteria_unmet",
+                final_report=report,
+            )
+            self._store.update_mission(failed, expected_version=mission.version)
+            self._cancel_open_actions(mission_id, reason="mission_criteria_unmet")
+            self._release_terminal_mission_pools(mission_id)
+            self._emit(
+                "MissionFailed",
+                mission_id,
+                key=mission_id,
+                payload={"stop_reason": failed.stop_reason, "final_report": report},
+            )
+            return failed
+
+    def fail_result(
+        self,
+        result_id: str,
+        *,
+        failures: Sequence[Mapping[str, Any]],
+        owner: str | None = None,
+    ) -> Task:
+        """FAIL: doc claims stay unsupported; code claims are rejected. Retry is separate."""
+
+        with self._store.transaction():
+            stored = self._require_result(result_id)
+            if stored.verification_state == "DONE" and stored.verdict == "FAIL":
+                return self._require_task(stored.envelope.task_id)
+            if (
+                stored.verification_state == "DONE"
+                and stored.verdict == "PASS"
+                and self.domain_for(stored.envelope.mission_id).id == DOC_DOMAIN
+            ):
+                raise CommitRejected("accepted result verification history is immutable")
+            attempt = self._require_attempt(stored.envelope.attempt_id)
+            self._require_lease(attempt, owner)
+            task = self._require_task(stored.envelope.task_id)
+            domain = self.domain_for(task.mission_id)
+            document = domain.id == DOC_DOMAIN
+            proposals = {
+                ids.claim_id(result_id, index): proposal
+                for index, proposal in enumerate(stored.envelope.claims, 1)
+            }
+            recorded = tuple(self._store.list_verifications(result_id))
+            failure_reason = "verification_failed"
+            if document and supports_document_assessments(domain):
+                rule = next((row for row in recorded if row["layer"] == "rule_check"), None)
+                other_failure = any(
+                    row["layer"] != "rule_check" and row["status"] in {"FAIL", "ERROR"}
+                    for row in recorded
+                ) or any(item.get("layer") != "rule_check" for item in failures)
+                if rule is not None and rule["status"] == "FAIL" and not other_failure:
+                    try:
+                        binding = self._assessment_binding(stored, task, attempt)
+                        retryable = inconclusive_retryable(rule, binding=binding)
+                    except ContractError:
+                        retryable = False
+                    if retryable:
+                        # The retry helper validated the full failed evaluation. Recheck
+                        # live peers before classifying its sole missing-limitations failure.
+                        assessments = tuple(
+                            CriterionAssessmentV1.from_json(item)
+                            for item in rule["detail"]["criterion_assessments"]
+                        )
+                        conflicts = document_uncertainty_conflicts(
+                            self._store,
+                            mission_id=task.mission_id,
+                            envelope=stored.envelope,
+                            assessments=assessments,
+                        )
+                        if conflicts:
+                            failure = LayerResult(
+                                "rule_check",
+                                "FAIL",
+                                "uncertainty conflicts with another claim",
+                                {
+                                    **dict(rule["detail"]),
+                                    "reason": "uncertainty_conflict",
+                                    "conflicts": conflicts,
+                                },
+                            )
+                            self.record_verification_layer(
+                                result_id,
+                                layer=failure.layer,
+                                status=failure.status,
+                                detail=failure.detail,
+                            )
+                            failures = (failure.to_json(),)
+                            recorded = tuple(self._store.list_verifications(result_id))
+                        else:
+                            # Extra caller failures cannot be hidden behind the authentic
+                            # rule row, including commit-time stale inputs/action rejection.
+                            detail = {
+                                k: v
+                                for k, v in rule["detail"].items()
+                                if k not in {"summary", "verifier_version"}
+                            }
+                            if all(
+                                item.get("status") == "FAIL"
+                                and sha256_hex(
+                                    {
+                                        k: v
+                                        for k, v in item.get("detail", {}).items()
+                                        if k not in {"summary", "verifier_version"}
+                                    }
+                                )
+                                == sha256_hex(detail)
+                                for item in failures
+                            ):
+                                failure_reason = "inconclusive"
+            self._store.set_result_verification(result_id, state="DONE", verdict="FAIL")
+            for artifact_id in stored.artifacts:  # P3.1 fix F-ORCH-3: judged, and not accepted
+                self._store.update_artifact_verification(artifact_id, "REJECTED")
+            for claim in self._store.list_claims(result_id):
+                if document:
+                    grade = grade_claim(
+                        claim.id,
+                        claim.evidence,
+                        verifier_results=recorded,
+                        artifact_paths=(),
+                        untrusted_prefixes=(),
+                        domain=domain,
+                        proposal=proposals.get(claim.id),
+                        assessments=(),
+                    )
+                    basis = {
+                        **dict(grade.basis),
+                        "verification_failures": [
+                            dict(item) for item in recorded if item["status"] != "PASS"
+                        ],
+                    }
+                    reserved_key = claim.key is not None and claim.key.startswith("attribution:")
+                    if reserved_key:
+                        basis["key_downgraded"] = True
+                    self._store.upsert_claim(
+                        next_claim(
+                            replace(
+                                claim, type="statement", key=None if reserved_key else claim.key
+                            ),
+                            ClaimStatus.UNDER_REVIEW
+                            if claim.status is not ClaimStatus.UNDER_REVIEW
+                            else None,
+                            verifier_results=tuple(dict(item) for item in failures),
+                            confidence_metadata={
+                                **dict(claim.confidence_metadata),
+                                "grade": "unsupported",
+                                "basis": basis,
+                                "evidence_trust": list(grade.evidence_trust),
+                                **({"key_downgraded": True} if reserved_key else {}),
+                            },
+                        )
+                    )
+                    continue
+                self._store.upsert_claim(
+                    next_claim(
+                        claim,
+                        ClaimStatus.REJECTED,
+                        verifier_results=tuple(dict(item) for item in failures),
+                    )
+                )
+            self._store.update_attempt(
+                next_attempt(
+                    attempt,
+                    AttemptStatus.RETRY_WAIT,
+                    failure={
+                        "reason": failure_reason,
+                        "failures": [dict(item) for item in failures],
+                    },
+                ),
+                expected_version=attempt.version,
+            )
+            others_submitted = any(
+                other.id != attempt.id and other.status in SUBMITTED_STATES
+                for other in self._store.list_attempts(task.id)
+            )
+            active = task
+            if task.status is TaskStatus.VERIFYING and not others_submitted:
+                active = next_task(task, TaskStatus.ACTIVE)
+                self._store.update_task(active, expected_version=task.version)
+            self._settle_subject(attempt.id, attempt.mission_id, task_id=task.id)
+            self._emit(
+                "VerificationFailed",
+                attempt.mission_id,
+                key=result_id,
+                task_id=task.id,
+                attempt_id=attempt.id,
+                payload={"result_id": result_id, "failures": [dict(item) for item in failures]},
+            )
+            return active
+
+    def stop_task(
+        self, task_id: str, *, stop_reason: MissionStopReason, detail: Mapping[str, Any]
+    ) -> Task:
+        """Stop condition reached (§25.1 ACTIVE → FAILED) and the Mission with it."""
+
+        with self._store.transaction():
+            task = self._require_task(task_id)
+            if task.status is TaskStatus.FAILED:
+                return task
+            mission = self._require_mission(task.mission_id)
+            if task.status in {TaskStatus.VERIFYING, TaskStatus.READY}:
+                # §25.1: FAILED is reached from ACTIVE only; a READY Task whose first
+                # Attempt could not even be created (budget, artifact conflict) is
+                # promoted first, a VERIFYING one is returned to ACTIVE (two legal edges)
+                task = next_task(task, TaskStatus.ACTIVE)
+                self._store.update_task(task, expected_version=task.version - 1)
+            if task.status is not TaskStatus.ACTIVE:
+                raise CommitRejected(f"task {task_id} is {task.status}; cannot stop it")
+            failed = next_task(task, TaskStatus.FAILED, failure_reason=str(stop_reason))
+            self._store.update_task(failed, expected_version=task.version)
+            for attempt in self._store.list_attempts(task_id):
+                if attempt.status in OPEN_ATTEMPT_STATES:
+                    self._close_attempt(attempt, AttemptStatus.CANCELLED, reason="task_stopped")
+            if task.kind == "conflict":
+                conflict = self._store.get_conflict(str(task.context.get("conflict_id")))
+                if conflict is not None and conflict["state"] == "OPEN":
+                    self._store.upsert_conflict(
+                        {
+                            **conflict,
+                            "state": "UNRESOLVED",
+                            "version": int(conflict.get("version", 1)) + 1,
+                        }
+                    )
+            report = {
+                **dict(mission.final_report or {}),
+                "stop_reason": str(stop_reason),
+                "failed_task_id": task_id,
+                "detail": dict(detail),
+                "attempts": task.attempt_count,
+                "completed_parts": self._completed_parts(task_id),
+                "tasks": self._task_reports(mission.id),
+            }
+            if stop_reason is MissionStopReason.INSUFFICIENT_EVIDENCE:
+                domain = self.domain_for(mission.id)
+                if supports_document_assessments(domain):
+                    report["result"] = "INSUFFICIENT"
+            done = next_mission(
+                mission, MissionStatus.FAILED, stop_reason=str(stop_reason), final_report=report
+            )
+            self._store.update_mission(done, expected_version=mission.version)
+            self._cascade_stop(mission.id, skip_task=task_id)
+            self._emit(
+                "TaskFailed",
+                mission.id,
+                key=task_id,
+                task_id=task_id,
+                payload={"stop_reason": str(stop_reason), "detail": dict(detail)},
+            )
+            self._emit(
+                "MissionFailed",
+                mission.id,
+                key=mission.id,
+                payload={"stop_reason": str(stop_reason), "final_report": report},
+            )
+            return failed
+
+    def _task_reports(self, mission_id: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "task_id": task.id,
+                "status": str(task.status),
+                "dependencies": list(task.dependency_ids),
+                "accepted_result_id": task.accepted_result_id,
+                "accepted_artifacts": list(task.accepted_artifacts),
+                "attempts": task.attempt_count,
+                "failure_reason": task.failure_reason,
+            }
+            for task in self._store.list_tasks(mission_id)
+        ]
+
+    def _completed_parts(self, task_id: str) -> list[dict[str, Any]]:
+        parts = []
+        for attempt in self._store.list_attempts(task_id):
+            stored = self._store.find_result_for_attempt(attempt.id)
+            parts.append(
+                {
+                    "attempt_id": attempt.id,
+                    "status": str(attempt.status),
+                    "result_id": None if stored is None else stored.envelope.id,
+                    "verdict": None if stored is None else stored.verdict,
+                    "artifacts": [] if stored is None else list(stored.artifacts),
+                }
+            )
+        return parts
+
+    # ------------------------------------------------------------ lookups
+    def _require_lease(self, attempt: Attempt, owner: str | None) -> None:
+        """A verdict is committed only by the Attempt's current live lease holder (P1-3):
+        a stale owner whose lease lapsed and was taken over is refused."""
+
+        if owner is None:
+            return
+        if attempt.lease_owner != owner:
+            raise CommitRejected(
+                f"attempt {attempt.id} is leased to {attempt.lease_owner}, not {owner}"
+            )
+        if attempt.lease_expires_at is not None and attempt.lease_expires_at <= self._store.now:
+            raise CommitRejected(f"lease of attempt {attempt.id} held by {owner} has lapsed")
+
+    def _require_mission(self, mission_id: str) -> Mission:
+        mission = self._store.get_mission(mission_id)
+        if mission is None:
+            raise CommitRejected(f"unknown mission {mission_id}")
+        return mission
+
+    def _require_task(self, task_id: str) -> Task:
+        task = self._store.get_task(task_id)
+        if task is None:
+            raise CommitRejected(f"unknown task {task_id}")
+        return task
+
+    def _require_attempt(self, attempt_id: str) -> Attempt:
+        attempt = self._store.get_attempt(attempt_id)
+        if attempt is None:
+            raise CommitRejected(f"unknown attempt {attempt_id}")
+        return attempt
+
+    def _require_intent(self, intent_id: str) -> DispatchIntent:
+        intent = self._store.get_intent(intent_id)
+        if intent is None:
+            raise CommitRejected(f"unknown dispatch intent {intent_id}")
+        return intent
+
+    def _require_result(self, result_id: str) -> StoredResult:
+        stored = self._store.get_result(result_id)
+        if stored is None:
+            raise CommitRejected(f"unknown result {result_id}")
+        return stored
+
+
+__all__ = (
+    "CommitRejected",
+    "CommitService",
+    "InconclusiveRetryExhausted",
+    "MissionConflict",
+    "MissionSpec",
+    "Reservation",
+    "TaskProposal",
+    "mission_account",
+    "task_account",
+)

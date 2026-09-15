@@ -1,0 +1,19 @@
+{
+  "arms": [
+    "R"
+  ],
+  "base_url_host": "api.deepseek.com",
+  "calls": 80,
+  "context_window": 262144,
+  "experiment_id": "a96-flash256k-r-envelope-v2",
+  "model": "deepseek-flash",
+  "n_runs": 2,
+  "note": "new identity; R envelope small retest after tool-schema reservation fix; not mixed with a96-flash256k-v1 or Qwen",
+  "sdk_commit": "f7432dc49b64b1f5c5d71291dcd4985dfc7847f9",
+  "seconds": 1800,
+  "task_ids": [
+    "530b157_1",
+    "0d8a4ee_1"
+  ],
+  "workers": 1
+}

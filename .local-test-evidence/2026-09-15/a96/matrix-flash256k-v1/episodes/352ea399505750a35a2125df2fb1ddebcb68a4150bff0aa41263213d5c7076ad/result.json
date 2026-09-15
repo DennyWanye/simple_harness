@@ -1,0 +1,80 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-5879f228a2226c4616b20f7b5667ca53:provider-turn:1",
+      "seconds": 0.00010958290658891201,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "F",
+  "elapsed_seconds": 160.9118897919543,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 34,
+    "input_tokens": 485547,
+    "model": "deepseek-flash",
+    "output_tokens": 35770,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 521317
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == '81'"
+      }
+    ],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "assert no model changes."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 1,
+  "run_id": "352ea399505750a35a2125df2fb1ddebcb68a4150bff0aa41263213d5c7076ad",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 0,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-5fe5b30ca16bc4cd",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-5fe5b30ca16bc4cd:task-1",
+        "status": "FAILED"
+      },
+      {
+        "id": "mission-5fe5b30ca16bc4cd:task-2",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "mission-5fe5b30ca16bc4cd:task-3",
+        "status": "BLOCKED"
+      }
+    ],
+    "tool_calls": 41
+  },
+  "status": "official_scored",
+  "task_id": "fac291d_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98245
+}

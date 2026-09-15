@@ -1,0 +1,104 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-ea07bdbf69ac4572c78479b3bc7981ed:provider-turn:1",
+      "seconds": 0.001895542023703456,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "D",
+  "elapsed_seconds": 247.77043458400294,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 49,
+    "input_tokens": 723519,
+    "model": "deepseek-flash",
+    "output_tokens": 42958,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 766477
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      }
+    ],
+    "num_tests": 8,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match venmo.Notification"
+      },
+      {
+        "label": "no_op_pass",
+        "requirement": "obtain added, removed venmo.Notification records using models.changed_records,\nand assert 0 notifications were removed."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all receiver ids of added notifications match keys of\nprivate_data.venmo_user_id_to_notification_messages ignoring order."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert set of added notfications messages match flattened values\nof private_data.venmo_user_id_to_notification_messages."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert user_id to message mapping from notifications match private_data.venmo_user_id_to_notification_messages"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert set of added notfications payment_request_ids match flattened values\nof private_data.venmo_user_id_to_notification_payment_request_ids."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert user_id to message mapping from notifications match\nprivate_data.venmo_user_id_to_notification_messages"
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "873f1b411ce58ca0d7a641d67c037a31c5ddbc14f76a8ef4e9f2f8b6ba1c5787",
+  "runtime": {
+    "arm": "D",
+    "dynamic_graph": false,
+    "host_observation_errors": 0,
+    "host_observations_committed": 2,
+    "knowledge_protocol": "appworld-d-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-dfa80e406536b063",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-dfa80e406536b063:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-dfa80e406536b063:task-2",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-dfa80e406536b063:task-3",
+        "status": "FAILED"
+      }
+    ],
+    "tool_calls": 60
+  },
+  "status": "official_scored",
+  "task_id": "4fab96f_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98243
+}

@@ -1,0 +1,91 @@
+[
+  {
+    "schema_version": 1,
+    "turn_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:input:candidate-0",
+    "agent_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3",
+    "seq": 1,
+    "state": "failed",
+    "public_output": null,
+    "artifact_refs": [],
+    "usage_refs": [],
+    "delegation_count": 0,
+    "error": {
+      "detail": {
+        "usage": {
+          "cache_tokens": 768,
+          "input_tokens": 981,
+          "output_tokens": 127,
+          "reasoning_tokens": 10,
+          "total_tokens": 1108
+        }
+      },
+      "error_code": "experiment_budget_exhausted",
+      "error_type": "ExperimentBudgetExhausted",
+      "source_kind": "tool_parse"
+    }
+  },
+  {
+    "schema_version": 1,
+    "turn_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:input:candidate-1",
+    "agent_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3",
+    "seq": 2,
+    "state": "failed",
+    "public_output": null,
+    "artifact_refs": [],
+    "usage_refs": [],
+    "delegation_count": 0,
+    "error": {
+      "detail": {
+        "account_id": null,
+        "bound_protocol": null,
+        "dimension": null,
+        "handoff_ordinal": null,
+        "invocation_id": null,
+        "mission_id": null,
+        "reason_code": "budget_exhausted",
+        "remaining": null,
+        "request_cost_micros": null,
+        "request_tokens": null,
+        "requested": null,
+        "schema_version": 1,
+        "subject_id": null
+      },
+      "error_code": "provider_admission_denied",
+      "error_type": "_ExperimentBudgetAdmissionDenied",
+      "retryable": false,
+      "source_kind": "provider_admission"
+    }
+  },
+  {
+    "schema_version": 1,
+    "turn_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:input:self-selection",
+    "agent_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3",
+    "seq": 3,
+    "state": "failed",
+    "public_output": null,
+    "artifact_refs": [],
+    "usage_refs": [],
+    "delegation_count": 0,
+    "error": {
+      "detail": {
+        "account_id": null,
+        "bound_protocol": null,
+        "dimension": null,
+        "handoff_ordinal": null,
+        "invocation_id": null,
+        "mission_id": null,
+        "reason_code": "budget_exhausted",
+        "remaining": null,
+        "request_cost_micros": null,
+        "request_tokens": null,
+        "requested": null,
+        "schema_version": 1,
+        "subject_id": null
+      },
+      "error_code": "provider_admission_denied",
+      "error_type": "_ExperimentBudgetAdmissionDenied",
+      "retryable": false,
+      "source_kind": "provider_admission"
+    }
+  }
+]

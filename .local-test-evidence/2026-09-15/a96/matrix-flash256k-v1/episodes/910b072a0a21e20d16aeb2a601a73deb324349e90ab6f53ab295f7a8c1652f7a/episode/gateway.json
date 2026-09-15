@@ -1,0 +1,251 @@
+[
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.api_docs.show_app_descriptions())"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-b79a9be593f69604a7fdafcfe08b6356d90c791f37458a5fb5cefa741927320a",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "workspace_list",
+    "arguments": {},
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-db0eacfdb5095b1c89b586bd7aee51a9721fa999ca0fcd4b050b3a76c51fa999",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.api_docs.show_api_descriptions(app_name='venmo'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_descriptions(app_name='supervisor'))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-66461937087a1153d4c06435f3857c409c6580609361b745e85aa35dbf396f40",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.supervisor.show_profile())\nprint(\"=====\")\nprint(apis.supervisor.show_account_passwords())"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-0b8134ab1b2147fd87993cf55b79b954ce7f7b4e8f0c079d474ee002995725fd",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.api_docs.show_api_doc(app_name='venmo', api_name='create_transaction'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='venmo', api_name='search_users'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='venmo', api_name='show_transactions'))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-e7b85e1409fe9625692eaa40889de37af830a92bcdd0a082a187a5ca44697769",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.api_docs.show_api_descriptions(app_name='phone'))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-5a20e5dcc77347dc242d2e7014ebc968fa5e8638910ffd0f6bff06ef5aa480bd",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.api_docs.show_api_doc(app_name='venmo', api_name='login'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='venmo', api_name='show_account'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='venmo', api_name='show_venmo_balance'))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-d47018bedd68fc1d812562eed4ae5cb12fb7a3dce878fc639a82c499bec20eed",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "r = apis.venmo.login(username='jes.mill@gmail.com', password='*mR5XTY')\nprint(r)"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-db29380e4b97230a8be1b1d3eb3f69fbae4f187cebae4ccbad135e89758b6ffe",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.api_docs.show_api_doc(app_name='phone', api_name='login'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='phone', api_name='search_contacts'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='phone', api_name='show_contact_relationships'))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-1648ea650a7eb408ddb8a37262abec5b97bc72bdcf21401e7279666c277326c0",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "ph = apis.phone.login(username='3808719492', password='5!Dkf5d')\nprint(ph)\naccess_token_phone = ph['access_token']\nres = apis.phone.search_contacts(access_token=access_token_phone, query='2192158297')\nprint(\"Search by phone:\", res)\nres2 = apis.phone.search_contacts(access_token=access_token_phone, query='219')\nprint(\"Search by 219:\", res2)"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-430870d4dfeb585cae06d82eb12cb70d61a76fe84b4c7b48b3bd70bb9ac6d05c",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "access_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZW5tbytqZXMubWlsbEBnbWFpbC5jb20iLCJleHAiOjE2ODQ0MTIwOTh9.GFy9FN5TEgbUopBFeuqdEnTZYmN4i3IMczDtfnDLSa0'\nprint(\"search by email:\", apis.venmo.search_users(access_token=access_token, query='thomas.solomon@gmail.com'))\nprint(\"search by name:\", apis.venmo.search_users(access_token=access_token, query='Thomas Solomon'))\nprint(\"account:\", apis.venmo.show_account(access_token=access_token))\nprint(\"balance:\", apis.venmo.show_venmo_balance(access_token=access_token))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-7597fa56872444a86b41430be5c5dbfdd6acce96cd8ae00b7d315fc868cb451e",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "access_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZW5tbytqZXMubWlsbEBnbWFpbC5jb20iLCJleHAiOjE2ODQ0MTIwOTh9.GFy9FN5TEgbUopBFeuqdEnTZYmN4i3IMczDtfnDLSa0'\nprint(\"venmo cards:\", apis.venmo.show_payment_cards(access_token=access_token))\nprint(\"supervisor cards:\", apis.supervisor.show_payment_cards())\nprint(\"supervisor addresses:\", apis.supervisor.show_addresses())"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-9537d976d2a1c25b0bf42753ff39973055cc5b84b0b3687216b269f61e12112c",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.api_docs.show_api_doc(app_name='venmo', api_name='add_to_venmo_balance'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='venmo', api_name='show_transaction'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='venmo', api_name='show_payment_cards'))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-8d627e08bac418db90378269fd2b47a364d73ed1ee92c5da81fef6c19ca45667",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "access_token_phone = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwaG9uZSszODA4NzE5NDkyIiwiZXhwIjoxNjg0NDEyNzQxfQ.yNVZGQk6_8fI180VZpMt9JY0QIpZvr6jw9sXxGW562w'\nprint(apis.phone.get_current_date_and_time(access_token=access_token_phone))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-42ee72f9d0f4923ed99ae326d58b9530d47510fe142857e3d1711c6a80044593",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "access_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZW5tbytqZXMubWlsbEBnbWFpbC5jb20iLCJleHAiOjE2ODQ0MTIwOTh9.GFy9FN5TEgbUopBFeuqdEnTZYmN4i3IMczDtfnDLSa0'\nr = apis.venmo.create_transaction(receiver_email='thomas.solomon@gmail.com', amount=91, access_token=access_token, description='Payment', private=True, payment_card_id=96)\nprint(r)"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-397003f5bbd7cba848859050b84700b9792be79dd5fd8d5b3ba41a948fced864",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.api_docs.show_api_doc(app_name='venmo', api_name='show_payment_card'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='venmo', api_name='show_bank_transfer_history'))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-fc89a4e1944a1b872203bc263ebc407f0a9494ef3e3c6a1da1ce1c50a628e5d0",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "access_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZW5tbytqZXMubWlsbEBnbWFpbC5jb20iLCJleHAiOjE2ODQ0MTIwOTh9.GFy9FN5TEgbUopBFeuqdEnTZYmN4i3IMczDtfnDLSa0'\nfor cid in [95,96,97,98,99]:\n    print(cid, apis.venmo.show_payment_card(payment_card_id=cid, access_token=access_token))\nprint(\"bank transfers:\", apis.venmo.show_bank_transfer_history(access_token=access_token))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-d875a6b49ad8e72c11abb4b5878287d609288dc27d118501b4d013269d47487e",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "access_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZW5tbytqZXMubWlsbEBnbWFpbC5jb20iLCJleHAiOjE2ODQ0MTIwOTh9.GFy9FN5TEgbUopBFeuqdEnTZYmN4i3IMczDtfnDLSa0'\nr = apis.venmo.create_transaction(receiver_email='thomas.solomon@gmail.com', amount=91, access_token=access_token, description='Payment', private=True, payment_card_id=98)\nprint(r)"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-0bfc8a038cefda017425c3f9666a2d87ed56ba9a105137d83d7a4e6af07045a8",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "access_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZW5tbytqZXMubWlsbEBnbWFpbC5jb20iLCJleHAiOjE2ODQ0MTIwOTh9.GFy9FN5TEgbUopBFeuqdEnTZYmN4i3IMczDtfnDLSa0'\nfor cid in [95,96,97,98,99]:\n    try:\n        r = apis.venmo.create_transaction(receiver_email='thomas.solomon@gmail.com', amount=1, access_token=access_token, description='test', private=True, payment_card_id=cid)\n        print(cid, r)\n    except Exception as e:\n        print(cid, \"EXC\", e)"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-45f85b1a8ba70ac96b7bd3148a8173de12df82178919518dad22bb8364c4a430",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "print(apis.api_docs.show_api_doc(app_name='venmo', api_name='update_transaction'))\nprint(\"=====\")\nprint(apis.api_docs.show_api_doc(app_name='venmo', api_name='download_transaction_receipt'))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-20d3233e88999c85d8d3cf8ba53bd88d439de4c1c19ff34073d0646c1740e118",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "access_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZW5tbytqZXMubWlsbEBnbWFpbC5jb20iLCJleHAiOjE2ODQ0MTIwOTh9.GFy9FN5TEgbUopBFeuqdEnTZYmN4i3IMczDtfnDLSa0'\nr = apis.venmo.create_transaction(receiver_email='thomas.solomon@gmail.com', amount=91, access_token=access_token, description='Payment', private=True, payment_card_id=99)\nprint(r)"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-e971f242622b9793a5e577100c8805af2b83faf538064ee3ce1ec0193a43eb7a",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "appworld_execute",
+    "arguments": {
+      "code": "access_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZW5tbytqZXMubWlsbEBnbWFpbC5jb20iLCJleHAiOjE2ODQ0MTIwOTh9.GFy9FN5TEgbUopBFeuqdEnTZYmN4i3IMczDtfnDLSa0'\nprint(\"txn 8217:\", apis.venmo.show_transaction(transaction_id=8217, access_token=access_token))\nprint(\"txn 8216:\", apis.venmo.show_transaction(transaction_id=8216, access_token=access_token))\nprint(\"sent txns:\", apis.venmo.show_transactions(access_token=access_token, direction='sent', user_email='thomas.solomon@gmail.com'))\nprint(\"balance:\", apis.venmo.show_venmo_balance(access_token=access_token))"
+    },
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-22772cc247854e4601405e1a74cc3e93a73524f8632ea44ce5c8bee1582f8187",
+    "view": "work",
+    "outcome": "succeeded"
+  },
+  {
+    "run_id": "agent-a634e0996703b85d8758f0b1a3ae5a7b",
+    "tool": "knowledge_list",
+    "arguments": {},
+    "attempt_id": "mission-20dae150a5107597:task-1:attempt-1",
+    "call_id": "call-0405b2f97075cbe6f2c07fbb93ff8ac26e8e9d30d1afc5a0720ec9f385efe20b",
+    "view": "work",
+    "outcome": "succeeded"
+  }
+]

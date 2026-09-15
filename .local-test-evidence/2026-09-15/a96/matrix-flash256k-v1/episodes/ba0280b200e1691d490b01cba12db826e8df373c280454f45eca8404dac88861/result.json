@@ -1,0 +1,87 @@
+{
+  "admission_denials": [],
+  "arm": "F",
+  "elapsed_seconds": 258.35307054198347,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 55,
+    "input_tokens": 702913,
+    "model": "deepseek-flash",
+    "output_tokens": 46795,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 749708
+  },
+  "mission_success": true,
+  "official": {
+    "declared_task_status": "success",
+    "difficulty": 1,
+    "failures": [],
+    "num_tests": 6,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match spotify.MusicPlayer."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert 1 spotify.MusicPlayer has been updated using models.changed_records."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "get the end-state queue_song_ids and\nassert all private_data.existing_queue_song_ids are in end-state queue_song_ids."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all private_data.to_be_added_queue_song_ids are in the end state queue_song_ids"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert union of private_data.to_be_added_queue_song_ids and private_data.existing_queue_song_ids\nmatch the end-state queue_song_ids."
+      }
+    ],
+    "success": true
+  },
+  "official_utility": true,
+  "repetition": 1,
+  "run_id": "ba0280b200e1691d490b01cba12db826e8df373c280454f45eca8404dac88861",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 4,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-c3859a9c84d7a5c9",
+    "mission_status": "COMPLETED",
+    "stop_reason": "verification_passed",
+    "tasks": [
+      {
+        "id": "mission-c3859a9c84d7a5c9:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-c3859a9c84d7a5c9:task-2",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-c3859a9c84d7a5c9:task-3",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-c3859a9c84d7a5c9:task-4",
+        "status": "COMPLETED"
+      }
+    ],
+    "tool_calls": 70
+  },
+  "status": "official_scored",
+  "task_id": "396c5a2_1",
+  "unknown_usage_calls": 0,
+  "valid_success": true,
+  "worker_pid": 98245
+}

@@ -1,0 +1,12 @@
+{
+  "known_lower_bound": {
+    "calls": 26,
+    "input_tokens": 601903,
+    "model": "qwen38-flash-next",
+    "output_tokens": 19861,
+    "peak_physical_slots": 1,
+    "provider": "192.168.10.27",
+    "total_tokens": 621764
+  },
+  "unknown_usage_calls": 1
+}

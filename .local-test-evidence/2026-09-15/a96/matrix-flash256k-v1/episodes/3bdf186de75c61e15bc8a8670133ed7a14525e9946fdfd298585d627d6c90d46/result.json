@@ -1,0 +1,73 @@
+{
+  "admission_denials": [],
+  "arm": "F",
+  "elapsed_seconds": 332.3889555421192,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 63,
+    "input_tokens": 1196378,
+    "model": "deepseek-flash",
+    "output_tokens": 62800,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 1259178
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 1,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == '227'"
+      }
+    ],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "assert no model changes."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 1,
+  "run_id": "3bdf186de75c61e15bc8a8670133ed7a14525e9946fdfd298585d627d6c90d46",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 2,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-c4e1fb6baf6ce0e1",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-c4e1fb6baf6ce0e1:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-c4e1fb6baf6ce0e1:task-2",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-c4e1fb6baf6ce0e1:task-3",
+        "status": "FAILED"
+      },
+      {
+        "id": "mission-c4e1fb6baf6ce0e1:task-4",
+        "status": "BLOCKED"
+      }
+    ],
+    "tool_calls": 80
+  },
+  "status": "official_scored",
+  "task_id": "383cbac_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98243
+}

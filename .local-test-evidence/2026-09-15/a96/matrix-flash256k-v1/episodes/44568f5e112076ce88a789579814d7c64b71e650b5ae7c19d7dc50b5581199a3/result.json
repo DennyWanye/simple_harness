@@ -1,0 +1,75 @@
+{
+  "admission_denials": [],
+  "arm": "S",
+  "elapsed_seconds": 2.501659540925175,
+  "knowledge_reuse_events": null,
+  "known_usage_lower_bound": {
+    "calls": 1,
+    "input_tokens": 933,
+    "model": "deepseek-flash",
+    "output_tokens": 108,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 1041
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match venmo.Notification, venmo.Transaction ignoring venmo.User.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert model changes match venmo.Notification, venmo.Transaction ignoring venmo.User.\n    \"\"\"\n):\n    changed_model_names = models.changed_model_names(ignore=[\"venmo.User\"])\n    test.case(changed_model_names, \"==\", {\"venmo.Notification\", \"venmo.Transaction\"})\n```\n----------\nAssertionError:  set() == {'venmo.Notification', 'venmo.Transaction'}\n\nIn right but not left:\n['venmo.Notification', 'venmo.Transaction']"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "obtain added, updated, removed venmo.Transaction records using models.changed_records,\nand assert 1 is added, 0 is updated, and 0 is deleted.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    obtain added, updated, removed venmo.Transaction records using models.changed_records,\n    and assert 1 is added, 0 is updated, and 0 is deleted.\n    \"\"\"\n):\n    added_transactions, updated_transactions, removed_transactions = models.changed_records(\n        \"venmo.Transaction\"\n```\n----------\nAssertionError:  0 == 1"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction's receiver_id is private_data.person_venmo_user_id.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added transaction's receiver_id is private_data.person_venmo_user_id.\n    \"\"\"\n):\n    added_transaction = added_transactions[0]\n    test.case(added_transaction.receiver_id, \"==\", private_data.person_venmo_user_id)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction has amount public_data.payment_amount.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added transaction has amount public_data.payment_amount.\n    \"\"\"\n):\n    test.case(added_transaction.amount, \"==\", public_data.payment_amount)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction is private/public as per public_data.privacy.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added transaction is private/public as per public_data.privacy.\n    \"\"\"\n):\n```\n----------"
+      }
+    ],
+    "num_tests": 6,
+    "passes": [],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "44568f5e112076ce88a789579814d7c64b71e650b5ae7c19d7dc50b5581199a3",
+  "runtime": {
+    "agent_ids": [
+      "agent-28d24b4fd5b29e2ad0c9088570c4f1a3"
+    ],
+    "arm": "S",
+    "runtime_states": [
+      "failed"
+    ],
+    "selected_candidate": null,
+    "tool_calls": 0,
+    "turns": 1
+  },
+  "status": "official_scored",
+  "task_id": "37a8675_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98245
+}

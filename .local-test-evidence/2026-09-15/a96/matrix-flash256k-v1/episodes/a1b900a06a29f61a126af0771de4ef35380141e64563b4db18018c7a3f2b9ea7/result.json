@@ -1,0 +1,65 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:2",
+      "seconds": 0.00025683315470814705,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    },
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-28d24b4fd5b29e2ad0c9088570c4f1a3:provider-turn:3",
+      "seconds": 0.00014883303083479404,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "R",
+  "elapsed_seconds": 4.167265333002433,
+  "error_type": "ValueError",
+  "knowledge_reuse_events": null,
+  "known_usage_lower_bound": {
+    "calls": 1,
+    "input_tokens": 982,
+    "model": "deepseek-flash",
+    "output_tokens": 78,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 1060
+  },
+  "mission_success": null,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    ground_truth_song_titles = ground_truth_answer.split(\",\")\n    predicted_song_titles = predicted_answer.split(\",\")\n    test.case(\n```\n----------\nAssertionError:\n['crimson veil', 'fire and ice', 'haunted memories', 'mysteries of the silent sea']\n==\n['<<not_given>>']\n\nIn left but not right:\n['crimson veil', 'fire and ice', 'haunted memories', 'mysteries of the silent sea']\n\nIn right but not left:\n['<<not_given>>']\n\nOriginal values:\n['Mysteries of the Silent Sea', 'Crimson Veil', 'Haunted Memories', 'Fire and Ice']\n==\n['<<NOT_GIVEN>>']"
+      }
+    ],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "Assert no model changes"
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 1,
+  "run_id": "a1b900a06a29f61a126af0771de4ef35380141e64563b4db18018c7a3f2b9ea7",
+  "status": "official_scored",
+  "task_id": "50e1ac9_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98149
+}

@@ -246,7 +246,17 @@ plans/**/verification/**/.plan-test-gate.lock
 
 # Project-wide local-only test evidence policy (AGENTS.md, 2026-08-13).
 # Raw evidence stays on this Mac until a verified LAN NAS archive exists.
-/.local-test-evidence/
+/.local-test-evidence/*
+!/.local-test-evidence/2026-09-15/
+/.local-test-evidence/2026-09-15/*
+!/.local-test-evidence/2026-09-15/a96/
+# User-requested exception 2026-09-15: publish A96 Flash receipts on origin/main,
+# but keep the truncated Qwen matrix-v2 local-only.
+/.local-test-evidence/2026-09-15/a96/matrix-v2/
+/.local-test-evidence/2026-09-15/a96/**/__pycache__/
+/.local-test-evidence/2026-09-15/a96/**/*.pyc
+/.local-test-evidence/2026-09-15/a96/**/*.db-wal
+/.local-test-evidence/2026-09-15/a96/**/*.db-shm
 /local-test-evidence/
 # Raw verification logs remain local, including legacy artifact directories.
 # AGENTS.md requires only reviewed summaries and evidence hashes in new commits.

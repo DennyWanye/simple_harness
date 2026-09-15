@@ -1,0 +1,630 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+
+"""Durable hard limits for the official ReAct Driver."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
+from enum import StrEnum
+from typing import cast
+
+from simple_harness.contracts import HarnessError, JsonValue
+from simple_harness.execution.budget import BudgetSnapshot
+from simple_harness.execution.context_action import MandatoryContextFeedbackV1
+
+_TERMINATION_V1_FIELDS = frozenset(
+    {
+        "schema_version",
+        "started_at",
+        "last_observed_at",
+        "provider_turns_reserved_total",
+        "tool_calls_reserved_total",
+        "repeat_key",
+        "repeat_streak",
+        "phase",
+        "provider_request_id",
+        "tool_batch_id",
+        "context_revision",
+        "provider_request_snapshot",
+        "provider_request_fingerprint",
+        "provider_response_snapshot",
+        "provider_response_digest",
+        "tool_result_progress",
+        "workflow_spawn_wait_receipt_id",
+        "pending_child_completion",
+        "pending_child_completion_hash",
+        "pending_child_completion_append_id",
+        "last_workflow_spawn_wait_receipt_id",
+        "workflow_catalog_selection",
+        "workflow_catalog_selection_hash",
+    }
+)
+_TERMINATION_FIELDS_BY_SCHEMA = {
+    1: _TERMINATION_V1_FIELDS,
+    2: _TERMINATION_V1_FIELDS | {"policy_fingerprint"},
+    3: _TERMINATION_V1_FIELDS | {"policy_fingerprint", "tool_exposure_state"},
+    4: _TERMINATION_V1_FIELDS
+    | {
+        "policy_fingerprint",
+        "tool_exposure_state",
+        "route_state",
+        "route_receipt",
+        "route_receipt_hash",
+        "context_authority_receipt",
+        "context_authority_receipt_hash",
+    },
+    5: _TERMINATION_V1_FIELDS
+    | {
+        "policy_fingerprint",
+        "tool_exposure_state",
+        "route_state",
+        "route_receipt",
+        "route_receipt_hash",
+        "context_authority_receipt",
+        "context_authority_receipt_hash",
+        "context_snapshot_revision",
+        "context_snapshot_bindings",
+    },
+    6: _TERMINATION_V1_FIELDS
+    | {
+        "policy_fingerprint",
+        "tool_exposure_state",
+        "route_state",
+        "route_receipt",
+        "route_receipt_hash",
+        "context_authority_receipt",
+        "context_authority_receipt_hash",
+        "context_snapshot_revision",
+        "context_snapshot_bindings",
+    },
+}
+_TERMINATION_V1_REQUIRED_FIELDS = frozenset(
+    {
+        "schema_version",
+        "started_at",
+        "last_observed_at",
+        "provider_turns_reserved_total",
+        "tool_calls_reserved_total",
+        "repeat_key",
+        "repeat_streak",
+        "phase",
+        "provider_request_id",
+        "tool_batch_id",
+        "context_revision",
+    }
+)
+_TERMINATION_FIELDS_BY_SCHEMA[7] = _TERMINATION_FIELDS_BY_SCHEMA[6] | {
+    "context_use_attempt",
+    "active_turn_id",
+    "active_continuation_id",
+    "context_use_authority_scope",
+}
+
+_TERMINATION_FIELDS_BY_SCHEMA[8] = _TERMINATION_FIELDS_BY_SCHEMA[7] | {"mandatory_context_repairs"}
+
+
+class TerminationReason(StrEnum):
+    MAX_TURNS = "max_turns"
+    MAX_TOOL_CALLS = "max_tool_calls"
+    WALL_CLOCK = "wall_clock"
+    COST = "cost"
+    REPEATED_TOOL = "repeated_tool"
+    CANCELLED = "cancelled"
+
+
+class TerminationBudgetExceeded(HarnessError):
+    __slots__ = ("reason",)
+
+    def __init__(self, reason: TerminationReason) -> None:
+        self.reason = TerminationReason(reason)
+        super().__init__(
+            f"react_{self.reason.value}_exceeded",
+            f"ReAct execution stopped by the {self.reason.value} hard limit.",
+            retryable=False,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TerminationLimits:
+    max_turns: int = 32
+    max_tool_calls: int = 64
+    max_wall_seconds: float = 900.0
+    max_cost_micros: int = 10_000_000
+    max_consecutive_same_tool: int = 3
+
+    def __post_init__(self) -> None:
+        for name in (
+            "max_turns",
+            "max_tool_calls",
+            "max_cost_micros",
+            "max_consecutive_same_tool",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if not math.isfinite(self.max_wall_seconds) or self.max_wall_seconds <= 0:
+            raise ValueError("max_wall_seconds must be finite and positive")
+
+
+@dataclass(frozen=True, slots=True)
+class TerminationState:
+    """Checkpoint payload; totals are reservations and never reset on restart."""
+
+    started_at: float
+    last_observed_at: float | None = None
+    provider_turns_reserved_total: int = 0
+    tool_calls_reserved_total: int = 0
+    repeat_key: str | None = None
+    repeat_streak: int = 0
+    phase: str = "ready"
+    provider_request_id: str | None = None
+    tool_batch_id: str | None = None
+    context_revision: int | None = None
+    provider_request_snapshot: JsonValue | None = None
+    provider_request_fingerprint: str | None = None
+    provider_response_snapshot: JsonValue | None = None
+    provider_response_digest: str | None = None
+    tool_result_progress: int = 0
+    workflow_spawn_wait_receipt_id: str | None = None
+    pending_child_completion: JsonValue | None = None
+    pending_child_completion_hash: str | None = None
+    pending_child_completion_append_id: str | None = None
+    last_workflow_spawn_wait_receipt_id: str | None = None
+    workflow_catalog_selection: JsonValue | None = None
+    workflow_catalog_selection_hash: str | None = None
+    tool_exposure_state: JsonValue | None = None
+    policy_fingerprint: str = ""
+    route_state: str = "unrouted"
+    route_receipt: JsonValue | None = None
+    route_receipt_hash: str | None = None
+    context_authority_receipt: JsonValue | None = None
+    context_authority_receipt_hash: str | None = None
+    context_snapshot_revision: int = 0
+    context_snapshot_bindings: tuple[tuple[str, str], ...] = ()
+    source_schema_version: int = 6
+    context_use_authority_scope: str | None = None
+    context_use_attempt: JsonValue | None = None
+    active_turn_id: str | None = None
+    active_continuation_id: str | None = None
+    mandatory_context_repairs: tuple[MandatoryContextFeedbackV1, ...] = ()
+
+    @property
+    def turns(self) -> int:
+        return self.provider_turns_reserved_total
+
+    @property
+    def tool_calls(self) -> int:
+        return self.tool_calls_reserved_total
+
+    @property
+    def consecutive_same_tool(self) -> int:
+        return self.repeat_streak
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.started_at) or self.started_at < 0:
+            raise ValueError("started_at must be a finite Unix epoch")
+        observed = self.started_at if self.last_observed_at is None else self.last_observed_at
+        if not math.isfinite(observed) or observed < self.started_at:
+            raise ValueError("clock rollback detected")
+        object.__setattr__(self, "last_observed_at", observed)
+        for value in (
+            self.provider_turns_reserved_total,
+            self.tool_calls_reserved_total,
+            self.repeat_streak,
+            self.tool_result_progress,
+            self.context_snapshot_revision,
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError("durable termination totals must be non-negative")
+        if self.context_revision is not None and self.context_revision < 0:
+            raise ValueError("context_revision must be non-negative")
+        pending_values = (
+            self.workflow_spawn_wait_receipt_id,
+            self.pending_child_completion,
+            self.pending_child_completion_hash,
+            self.pending_child_completion_append_id,
+        )
+        if any(value is not None for value in pending_values) and not all(
+            value is not None for value in pending_values
+        ):
+            raise ValueError("pending workflow child completion is incomplete")
+        if (
+            self.pending_child_completion_hash is not None
+            and len(self.pending_child_completion_hash) != 64
+        ):
+            raise ValueError("pending child completion hash is invalid")
+        catalog_pin_values = (
+            self.workflow_catalog_selection,
+            self.workflow_catalog_selection_hash,
+        )
+        if any(value is not None for value in catalog_pin_values) and not all(
+            value is not None for value in catalog_pin_values
+        ):
+            raise ValueError("workflow catalog selection pin is incomplete")
+        if (
+            self.workflow_catalog_selection_hash is not None
+            and len(self.workflow_catalog_selection_hash) != 64
+        ):
+            raise ValueError("workflow catalog selection hash is invalid")
+        if self.policy_fingerprint and (
+            len(self.policy_fingerprint) != 64
+            or any(ch not in "0123456789abcdef" for ch in self.policy_fingerprint)
+        ):
+            raise ValueError("termination policy fingerprint must be lowercase SHA-256")
+        if self.route_state not in {"unrouted", "routed_standalone", "routed_task"}:
+            raise ValueError("invalid durable route state")
+        if self.source_schema_version not in {1, 2, 3, 4, 5, 6, 7, 8}:
+            raise ValueError("invalid source ReAct checkpoint schema")
+        if self.source_schema_version == 7 or self.context_use_authority_scope is not None:
+            for item in (self.active_turn_id, self.context_use_authority_scope):
+                if type(item) is not str or not item.strip() or "\0" in item:
+                    raise ValueError("context_use_checkpoint_identity_missing")
+        if self.mandatory_context_repairs:
+            if self.source_schema_version != 8 or len(self.mandatory_context_repairs) > 2:
+                raise ValueError("mandatory_context_repair_schema_or_bound_differs")
+            previous_turn = 0
+            previous_run = None
+            for ordinal, feedback in enumerate(self.mandatory_context_repairs, 1):
+                if type(feedback) is not MandatoryContextFeedbackV1 or feedback.repair_ordinal != ordinal:
+                    raise ValueError("mandatory_context_repair_sequence_differs")
+                if (feedback.rejection.provider_turn_ordinal <= previous_turn
+                        or feedback.rejection.provider_turn_ordinal > self.provider_turns_reserved_total
+                        or (previous_run is not None and feedback.rejection.run_id != previous_run)):
+                    raise ValueError("mandatory_context_repair_lineage_differs")
+                previous_turn = feedback.rejection.provider_turn_ordinal
+                previous_run = feedback.rejection.run_id
+        if self.phase == "context_action_reserved":
+            if not self.mandatory_context_repairs:
+                raise ValueError("mandatory_context_repair_phase_lacks_feedback")
+            last = self.mandatory_context_repairs[-1]
+            if (last.provider_request_id != self.provider_request_id
+                    or last.response_digest != self.provider_response_digest
+                    or last.rejection.request_fingerprint != self.provider_request_fingerprint
+                    or last.rejection.provider_turn_ordinal != self.provider_turns_reserved_total):
+                raise ValueError("mandatory_context_repair_checkpoint_differs")
+        if self.context_use_attempt is not None:
+            from simple_harness.execution.context_use import ProviderContextUseAttemptV1
+
+            attempt = ProviderContextUseAttemptV1.from_json(self.context_use_attempt)
+            if (
+                attempt.turn_id != self.active_turn_id
+                or attempt.continuation_id != self.active_continuation_id
+                or attempt.authority_scope_ref != self.context_use_authority_scope
+            ):
+                raise ValueError("context_use_checkpoint_identity_differs")
+        snapshot_ids: set[str] = set()
+        for snapshot_id, payload_hash in self.context_snapshot_bindings:
+            if not isinstance(snapshot_id, str) or not snapshot_id.strip() or "\x00" in snapshot_id:
+                raise ValueError("Context snapshot identity is invalid")
+            if snapshot_id in snapshot_ids:
+                raise ValueError("Context snapshot identity is duplicated")
+            snapshot_ids.add(snapshot_id)
+            if (
+                not isinstance(payload_hash, str)
+                or len(payload_hash) != 64
+                or any(character not in "0123456789abcdef" for character in payload_hash)
+            ):
+                raise ValueError("Context snapshot payload hash is invalid")
+        if (self.route_receipt is None) != (self.route_receipt_hash is None):
+            raise ValueError("route receipt and hash must be paired")
+        if (self.route_state == "unrouted") != (self.route_receipt is None):
+            raise ValueError("route state and receipt differ")
+        if (self.context_authority_receipt is None) != (
+            self.context_authority_receipt_hash is None
+        ):
+            raise ValueError("Context authority receipt and hash must be paired")
+        for payload, digest, name in (
+            (self.route_receipt, self.route_receipt_hash, "route receipt"),
+            (
+                self.context_authority_receipt,
+                self.context_authority_receipt_hash,
+                "Context authority receipt",
+            ),
+        ):
+            if digest is not None:
+                import hashlib
+
+                from simple_harness.contracts import canonical_json
+
+                if (
+                    len(digest) != 64
+                    or hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest() != digest
+                ):
+                    raise ValueError(f"{name} hash is invalid")
+        if self.route_receipt is not None:
+            from simple_harness.execution.context_authority import ContextRouteReceipt
+
+            if not isinstance(self.route_receipt, Mapping):
+                raise TypeError("route receipt must be an object")
+            receipt = ContextRouteReceipt.from_json(self.route_receipt)
+            if receipt.route_state.value != self.route_state:
+                raise ValueError("route receipt state differs")
+
+    def before_provider(
+        self, limits: TerminationLimits, *, now: float, budget: BudgetSnapshot
+    ) -> TerminationState:
+        _check_common(self, limits, now=now, budget=budget)
+        if self.provider_turns_reserved_total >= limits.max_turns:
+            raise TerminationBudgetExceeded(TerminationReason.MAX_TURNS)
+        ordinal = self.provider_turns_reserved_total + 1
+        return replace(
+            self,
+            last_observed_at=now,
+            provider_turns_reserved_total=ordinal,
+            phase="provider_reserved",
+            provider_request_id=f"provider-turn:{ordinal}",
+            tool_batch_id=None,
+            context_revision=None,
+            context_use_attempt=None,
+            provider_request_snapshot=None,
+            provider_request_fingerprint=None,
+            provider_response_snapshot=None,
+            provider_response_digest=None,
+            tool_result_progress=0,
+            context_authority_receipt=None,
+            context_authority_receipt_hash=None,
+        )
+
+    def before_tool_batch(
+        self,
+        tool_keys: Sequence[str],
+        limits: TerminationLimits,
+        *,
+        now: float,
+        budget: BudgetSnapshot,
+    ) -> TerminationState:
+        _check_common(self, limits, now=now, budget=budget)
+        if self.tool_calls_reserved_total + len(tool_keys) > limits.max_tool_calls:
+            raise TerminationBudgetExceeded(TerminationReason.MAX_TOOL_CALLS)
+        repeat_key = self.repeat_key
+        repeat_streak = self.repeat_streak
+        for key in tool_keys:
+            repeat_streak = repeat_streak + 1 if repeat_key == key else 1
+            repeat_key = key
+            if repeat_streak > limits.max_consecutive_same_tool:
+                raise TerminationBudgetExceeded(TerminationReason.REPEATED_TOOL)
+        return replace(
+            self,
+            last_observed_at=now,
+            tool_calls_reserved_total=self.tool_calls_reserved_total + len(tool_keys),
+            repeat_key=repeat_key,
+            repeat_streak=repeat_streak,
+            phase="tool_batch_reserved",
+            tool_batch_id=f"tool-batch:{self.provider_turns_reserved_total}",
+        )
+
+    def before_tool(
+        self,
+        tool_name: str,
+        limits: TerminationLimits,
+        *,
+        now: float,
+        budget: BudgetSnapshot,
+    ) -> TerminationState:
+        return self.before_tool_batch((tool_name,), limits, now=now, budget=budget)
+
+    def to_json(self) -> dict[str, JsonValue]:
+        result: dict[str, JsonValue] = {
+            "schema_version": 6,
+            "started_at": self.started_at,
+            "last_observed_at": self.last_observed_at,
+            "provider_turns_reserved_total": self.provider_turns_reserved_total,
+            "tool_calls_reserved_total": self.tool_calls_reserved_total,
+            "repeat_key": self.repeat_key,
+            "repeat_streak": self.repeat_streak,
+            "phase": self.phase,
+            "provider_request_id": self.provider_request_id,
+            "tool_batch_id": self.tool_batch_id,
+            "context_revision": self.context_revision,
+            "provider_request_snapshot": self.provider_request_snapshot,
+            "provider_request_fingerprint": self.provider_request_fingerprint,
+            "provider_response_snapshot": self.provider_response_snapshot,
+            "provider_response_digest": self.provider_response_digest,
+            "tool_result_progress": self.tool_result_progress,
+            "workflow_spawn_wait_receipt_id": self.workflow_spawn_wait_receipt_id,
+            "pending_child_completion": self.pending_child_completion,
+            "pending_child_completion_hash": self.pending_child_completion_hash,
+            "pending_child_completion_append_id": (self.pending_child_completion_append_id),
+            "last_workflow_spawn_wait_receipt_id": (self.last_workflow_spawn_wait_receipt_id),
+            "workflow_catalog_selection": self.workflow_catalog_selection,
+            "workflow_catalog_selection_hash": self.workflow_catalog_selection_hash,
+            "tool_exposure_state": self.tool_exposure_state,
+            "policy_fingerprint": self.policy_fingerprint,
+            "route_state": self.route_state,
+            "route_receipt": self.route_receipt,
+            "route_receipt_hash": self.route_receipt_hash,
+            "context_authority_receipt": self.context_authority_receipt,
+            "context_authority_receipt_hash": self.context_authority_receipt_hash,
+            "context_snapshot_revision": self.context_snapshot_revision,
+            "context_snapshot_bindings": {
+                snapshot_id: payload_hash
+                for snapshot_id, payload_hash in self.context_snapshot_bindings
+            },
+        }
+        if self.active_turn_id is not None or self.source_schema_version in {7, 8}:
+            result.update(
+                schema_version=7,
+                context_use_attempt=self.context_use_attempt,
+                active_turn_id=self.active_turn_id,
+                active_continuation_id=self.active_continuation_id,
+                context_use_authority_scope=self.context_use_authority_scope,
+            )
+        if self.source_schema_version == 8:
+            result.update(schema_version=8, mandatory_context_repairs=[f.to_json() for f in self.mandatory_context_repairs])
+        return result
+
+    @classmethod
+    def from_json(cls, value: Mapping[str, object]) -> TerminationState:
+        source_schema_version = value.get("schema_version")
+        if (
+            isinstance(source_schema_version, bool)
+            or not isinstance(source_schema_version, int)
+            or source_schema_version not in {1, 2, 3, 4, 5, 6, 7, 8}
+        ):
+            raise ValueError("unsupported ReAct checkpoint schema")
+        expected_fields = _TERMINATION_FIELDS_BY_SCHEMA[source_schema_version]
+        actual_fields = set(value)
+        if source_schema_version == 1:
+            if not _TERMINATION_V1_REQUIRED_FIELDS.issubset(actual_fields):
+                raise ValueError("legacy ReAct checkpoint fields are missing")
+            if not actual_fields.issubset(expected_fields):
+                raise ValueError("legacy ReAct checkpoint fields differ")
+        elif actual_fields != expected_fields:
+            raise ValueError("ReAct checkpoint fields differ")
+        raw_snapshot_bindings = (
+            value["context_snapshot_bindings"] if source_schema_version in {5, 6, 7, 8} else {}
+        )
+        if not isinstance(raw_snapshot_bindings, Mapping):
+            raise TypeError("Context snapshot bindings must be an object")
+        snapshot_bindings: list[tuple[str, str]] = []
+        for snapshot_id, payload_hash in raw_snapshot_bindings.items():
+            if not isinstance(snapshot_id, str) or not isinstance(payload_hash, str):
+                raise TypeError("Context snapshot bindings must map strings to strings")
+            snapshot_bindings.append((snapshot_id, payload_hash))
+        raw_repairs = value.get("mandatory_context_repairs", [])
+        if not isinstance(raw_repairs, list):
+            raise ValueError("mandatory_context_repairs_must_be_array")
+        return cls(
+            mandatory_context_repairs=tuple(MandatoryContextFeedbackV1.from_json(f) for f in raw_repairs),
+            started_at=_float(value["started_at"]),
+            last_observed_at=_float(value["last_observed_at"]),
+            provider_turns_reserved_total=_int(value["provider_turns_reserved_total"]),
+            tool_calls_reserved_total=_int(value["tool_calls_reserved_total"]),
+            repeat_key=_optional_string(value.get("repeat_key")),
+            repeat_streak=_int(value["repeat_streak"]),
+            phase=_required_checkpoint_string(value["phase"], "phase"),
+            provider_request_id=_optional_string(value.get("provider_request_id")),
+            tool_batch_id=_optional_string(value.get("tool_batch_id")),
+            context_revision=(
+                None if value.get("context_revision") is None else _int(value["context_revision"])
+            ),
+            provider_request_snapshot=_optional_checkpoint_object(
+                value.get("provider_request_snapshot"), "provider_request_snapshot"
+            ),
+            provider_request_fingerprint=_optional_string(
+                value.get("provider_request_fingerprint")
+            ),
+            provider_response_snapshot=_optional_checkpoint_object(
+                value.get("provider_response_snapshot"), "provider_response_snapshot"
+            ),
+            provider_response_digest=_optional_string(value.get("provider_response_digest")),
+            tool_result_progress=_int(value.get("tool_result_progress", 0)),
+            workflow_spawn_wait_receipt_id=_optional_string(
+                value.get("workflow_spawn_wait_receipt_id")
+            ),
+            pending_child_completion=_optional_checkpoint_object(
+                value.get("pending_child_completion"), "pending_child_completion"
+            ),
+            pending_child_completion_hash=_optional_string(
+                value.get("pending_child_completion_hash")
+            ),
+            pending_child_completion_append_id=_optional_string(
+                value.get("pending_child_completion_append_id")
+            ),
+            last_workflow_spawn_wait_receipt_id=_optional_string(
+                value.get("last_workflow_spawn_wait_receipt_id")
+            ),
+            workflow_catalog_selection=_optional_checkpoint_object(
+                value.get("workflow_catalog_selection"), "workflow_catalog_selection"
+            ),
+            workflow_catalog_selection_hash=_optional_string(
+                value.get("workflow_catalog_selection_hash")
+            ),
+            tool_exposure_state=_optional_checkpoint_object(
+                value.get("tool_exposure_state"), "tool_exposure_state"
+            ),
+            policy_fingerprint=(
+                ""
+                if source_schema_version == 1
+                else _required_checkpoint_string(
+                    value["policy_fingerprint"], "policy_fingerprint", allow_empty=True
+                )
+            ),
+            route_state=(
+                "unrouted"
+                if source_schema_version < 4
+                else _required_checkpoint_string(value["route_state"], "route_state")
+            ),
+            route_receipt=_optional_checkpoint_object(value.get("route_receipt"), "route_receipt"),
+            route_receipt_hash=_optional_string(value.get("route_receipt_hash")),
+            context_authority_receipt=_optional_checkpoint_object(
+                value.get("context_authority_receipt"), "context_authority_receipt"
+            ),
+            context_authority_receipt_hash=_optional_string(
+                value.get("context_authority_receipt_hash")
+            ),
+            context_snapshot_revision=(
+                _int(value["context_snapshot_revision"])
+                if source_schema_version in {5, 6, 7, 8}
+                else 0
+            ),
+            context_snapshot_bindings=tuple(sorted(snapshot_bindings)),
+            source_schema_version=source_schema_version,
+            context_use_authority_scope=_optional_string(value.get("context_use_authority_scope")),
+            context_use_attempt=cast(JsonValue, value.get("context_use_attempt")),
+            active_turn_id=_optional_string(value.get("active_turn_id")),
+            active_continuation_id=_optional_string(value.get("active_continuation_id")),
+        )
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError("checkpoint identity must be a non-empty string")
+    return value
+
+
+def _required_checkpoint_string(value: object, name: str, *, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or (not allow_empty and not value) or "\x00" in value:
+        raise TypeError(f"checkpoint {name} must be a string")
+    return value
+
+
+def _optional_checkpoint_object(value: object, name: str) -> JsonValue | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise TypeError(f"checkpoint {name} must be an object or null")
+    return cast(JsonValue, dict(value))
+
+
+def _int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("checkpoint integer is malformed")
+    return value
+
+
+def _float(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError("checkpoint number is malformed")
+    return float(value)
+
+
+def _check_common(
+    state: TerminationState,
+    limits: TerminationLimits,
+    *,
+    now: float,
+    budget: BudgetSnapshot,
+) -> None:
+    assert state.last_observed_at is not None
+    if not math.isfinite(now) or now < state.last_observed_at:
+        raise TerminationBudgetExceeded(TerminationReason.WALL_CLOCK)
+    if now - state.started_at >= limits.max_wall_seconds:
+        raise TerminationBudgetExceeded(TerminationReason.WALL_CLOCK)
+    if budget.has_unknown_charge or (
+        budget.committed_micros + budget.reserved_micros >= limits.max_cost_micros
+    ):
+        raise TerminationBudgetExceeded(TerminationReason.COST)
+
+
+__all__ = (
+    "TerminationBudgetExceeded",
+    "TerminationLimits",
+    "TerminationReason",
+    "TerminationState",
+)

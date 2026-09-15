@@ -1,0 +1,6 @@
+{
+  "error_type": "ValueError",
+  "provider_calls": 0,
+  "stage": "preflight",
+  "status": "failed_unscored"
+}

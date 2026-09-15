@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "split": "dev",
+  "status": "TASKSET_PREDECLARED_BUDGET_AND_CODE_NOT_FROZEN",
+  "selection": "public specs instruction only; 12 distinct families with one small calibration control; no hidden ground_truth read",
+  "repetitions": 2,
+  "arms": [
+    "S",
+    "R",
+    "D",
+    "F"
+  ],
+  "episodes_per_wave": 96,
+  "tasks": [
+    {
+      "task_id": "50e1ac9_1",
+      "task_family": "50e1ac9",
+      "selection_reason": "跨歌曲/专辑/歌单聚合、排序与答案格式",
+      "instruction_sha256": "48940cac5af02a921d596148a45a92c7dce56da60d1d0111c57d065d672fb1cf"
+    },
+    {
+      "task_id": "fac291d_1",
+      "task_family": "fac291d",
+      "selection_reason": "跨集合去重计数",
+      "instruction_sha256": "027fa6fa6f1b718d3df30a9efd13cad8f1e8f4f57bf521dd8b73f28683786d39"
+    },
+    {
+      "task_id": "530b157_1",
+      "task_family": "530b157",
+      "selection_reason": "聊天记录取值、转账与通知依赖",
+      "instruction_sha256": "6fb7d0e97698da2270d7ccdd2260ae4115245421adfeae60424223a422bbff19"
+    },
+    {
+      "task_id": "0d8a4ee_1",
+      "task_family": "0d8a4ee",
+      "selection_reason": "联系人关系与跨应用排除条件",
+      "instruction_sha256": "b1c44db2b6b1ec11986600c8d2912921709c60bcedbab884c79e40477309a30c"
+    },
+    {
+      "task_id": "37a8675_1",
+      "task_family": "37a8675",
+      "selection_reason": "小型对照：定位收款人和私密转账",
+      "instruction_sha256": "3a9a7f14463de62250e3dc3bd4ed65cfc843a307601e584dd4c4887f4f6645ab"
+    },
+    {
+      "task_id": "383cbac_1",
+      "task_family": "383cbac",
+      "selection_reason": "人物关系、日期过滤与交易求和",
+      "instruction_sha256": "747dada6606e30b353fd7d9b8386529148ffb701a45b5dcae0f36fdcbacf2d08"
+    },
+    {
+      "task_id": "23cf851_1",
+      "task_family": "23cf851",
+      "selection_reason": "日期范围与嵌套点赞计数",
+      "instruction_sha256": "9a9a8ff332d87dfb688878e6c5d0c538b606add99a3cc4df42196b2c461d005e"
+    },
+    {
+      "task_id": "68ee2c9_1",
+      "task_family": "68ee2c9",
+      "selection_reason": "批量改名、日期规则及移动副作用",
+      "instruction_sha256": "ca86f295011f6dc202a9e6ca54eb74237d34fbd220d1f92b737aca63b68b82fb"
+    },
+    {
+      "task_id": "6171bbc_1",
+      "task_family": "6171bbc",
+      "selection_reason": "分组取最值与创建歌单",
+      "instruction_sha256": "fd8858799530256dc4a9fe5baa619cef8179518642f904355800de91e18b6a9d"
+    },
+    {
+      "task_id": "6c2c621_1",
+      "task_family": "6c2c621",
+      "selection_reason": "跨应用导出、文件名变换与内容",
+      "instruction_sha256": "496b394ad5b63b57dd057bf00851c28996c0879e8bbda0aa4527826b9958302c"
+    },
+    {
+      "task_id": "396c5a2_1",
+      "task_family": "396c5a2",
+      "selection_reason": "阈值筛选与队列写入",
+      "instruction_sha256": "f6f56cedcc0069c098901c07e1039803ed30686dc4ab30776afb36917090f48b"
+    },
+    {
+      "task_id": "4fab96f_1",
+      "task_family": "4fab96f",
+      "selection_reason": "人物关系、状态/年龄条件和提醒",
+      "instruction_sha256": "9ff7243e2f5eba0eb5a08b4b7b578f8d8131121e899eb7291038658fd65631fc"
+    }
+  ]
+}

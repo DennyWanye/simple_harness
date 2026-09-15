@@ -1,0 +1,104 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-24c5319ad9ad4bacf3f7ca3e3f1a9d56:provider-turn:1",
+      "seconds": 0.0001325418706983328,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "F",
+  "elapsed_seconds": 110.46768912510015,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 29,
+    "input_tokens": 343222,
+    "model": "deepseek-flash",
+    "output_tokens": 21081,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 364303
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      }
+    ],
+    "num_tests": 8,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match file_system.File, file_system.Directory."
+      },
+      {
+        "label": "no_op_pass",
+        "requirement": "obtain added, updated, removed file_system.File records using models.changed_records,\nand assert 0 were updated or removed."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all added files have tilde_path starting with public_data.backup_directory_path."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all added files have path ending with \".md\"."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all added file_system.File records' paths match keys of\nprivate_data.file_path_to_content. (ignore_case)"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all added file_system.File records' contents\nmatch values of private_data.file_path_to_content (strip)."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all added file_system.File records' path to content\nmapping match that of private_data.file_path_to_content\n(strip and ignore case)."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "dff7d4db03bfa579c0d0213be7b49489c4a75f00fa6ef08ff6c6b36fb414df91",
+  "runtime": {
+    "arm": "F",
+    "dynamic_graph": true,
+    "host_observation_errors": 0,
+    "host_observations_committed": 1,
+    "knowledge_protocol": "appworld-f-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-8146a39116397bdb",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-8146a39116397bdb:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-8146a39116397bdb:task-2",
+        "status": "FAILED"
+      },
+      {
+        "id": "mission-8146a39116397bdb:task-3",
+        "status": "BLOCKED"
+      }
+    ],
+    "tool_calls": 28
+  },
+  "status": "official_scored",
+  "task_id": "6c2c621_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98243
+}

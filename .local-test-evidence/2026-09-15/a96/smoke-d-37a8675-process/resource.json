@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "group_id": 87511,
+  "parent_returncode": 1,
+  "stop_reason": null,
+  "peak_group_rss_kib": 1246880,
+  "rss_limit_mib": 3072,
+  "deadline_seconds": 1320.0,
+  "elapsed_seconds": 907.099,
+  "remaining_group_members": [],
+  "cleanup_error": null,
+  "scope": "owned_process_group_only",
+  "disk_scope": "working_directory_and_evidence_volumes",
+  "min_disk_free_mib": 7068,
+  "disk_admission_mib": 1024,
+  "disk_stop_mib": 256,
+  "returncode": 1
+}

@@ -1,0 +1,18 @@
+{
+  "calls": 2120,
+  "completed": 96,
+  "errors": 24,
+  "official_true": 19,
+  "pending": 0,
+  "tokens": 28574880,
+  "unknown_episodes": 0,
+  "valid_success": 16,
+  "worker_exit_codes": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ]
+}

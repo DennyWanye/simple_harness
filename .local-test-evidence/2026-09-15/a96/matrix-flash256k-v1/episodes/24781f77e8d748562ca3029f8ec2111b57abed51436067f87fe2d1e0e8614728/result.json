@@ -1,0 +1,79 @@
+{
+  "admission_denials": [],
+  "arm": "D",
+  "elapsed_seconds": 235.60637670801952,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 54,
+    "input_tokens": 765467,
+    "model": "deepseek-flash",
+    "output_tokens": 41400,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 806867
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "success",
+    "difficulty": 2,
+    "failures": [],
+    "num_tests": 5,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match phone.GlobalTextMessage, phone.UserTextMessage"
+      },
+      {
+        "label": "no_op_pass",
+        "requirement": "assert 0 phone.UserTextMessage records were removed."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert receiver_ids of added global text messages match exactly to\nprivate_data.no_account_phone_user_ids (ignore order)."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert all added global text messages have message public_data.message_text (normalize_text=True)."
+      }
+    ],
+    "success": true
+  },
+  "official_utility": true,
+  "repetition": 0,
+  "run_id": "24781f77e8d748562ca3029f8ec2111b57abed51436067f87fe2d1e0e8614728",
+  "runtime": {
+    "arm": "D",
+    "dynamic_graph": false,
+    "host_observation_errors": 0,
+    "host_observations_committed": 2,
+    "knowledge_protocol": "appworld-d-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-645a27bef0ff4d2f",
+    "mission_status": "ACTIVE",
+    "stop_reason": null,
+    "tasks": [
+      {
+        "id": "mission-645a27bef0ff4d2f:task-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-645a27bef0ff4d2f:task-2",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "mission-645a27bef0ff4d2f:task-3",
+        "status": "VERIFYING"
+      }
+    ],
+    "tool_calls": 66
+  },
+  "status": "official_scored",
+  "task_id": "0d8a4ee_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98242
+}

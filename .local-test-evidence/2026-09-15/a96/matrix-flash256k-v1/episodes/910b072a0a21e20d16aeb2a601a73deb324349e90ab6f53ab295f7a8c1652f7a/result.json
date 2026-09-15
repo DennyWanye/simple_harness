@@ -1,0 +1,93 @@
+{
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "ExperimentBudgetExhausted",
+      "request_id": "agent-a883f4f4ff9a1b58c54e6dee8c656cfc:provider-turn:1",
+      "seconds": 0.00019283290021121502,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "D",
+  "elapsed_seconds": 131.36075070803054,
+  "knowledge_reuse_events": 0,
+  "known_usage_lower_bound": {
+    "calls": 22,
+    "input_tokens": 355469,
+    "model": "deepseek-flash",
+    "output_tokens": 26215,
+    "peak_physical_slots": 1,
+    "provider": "api.deepseek.com",
+    "total_tokens": 381684
+  },
+  "mission_success": false,
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "obtain added, updated, removed venmo.Transaction records using models.changed_records,\nand assert 1 is added, 0 is updated, and 0 is deleted.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    obtain added, updated, removed venmo.Transaction records using models.changed_records,\n    and assert 1 is added, 0 is updated, and 0 is deleted.\n    \"\"\"\n):\n    added_transactions, updated_transactions, removed_transactions = models.changed_records(\n        \"venmo.Transaction\"\n```\n----------\nAssertionError:  2 == 1"
+      }
+    ],
+    "num_tests": 6,
+    "passes": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match venmo.Notification, venmo.Transaction ignoring venmo.User."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction's receiver_id is private_data.person_venmo_user_id."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction has amount public_data.payment_amount."
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction is private/public as per public_data.privacy."
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "repetition": 0,
+  "run_id": "910b072a0a21e20d16aeb2a601a73deb324349e90ab6f53ab295f7a8c1652f7a",
+  "runtime": {
+    "arm": "D",
+    "dynamic_graph": false,
+    "host_observation_errors": 0,
+    "host_observations_committed": 0,
+    "knowledge_protocol": "appworld-d-host-public-knowledge-v3",
+    "knowledge_reuse_events": 0,
+    "mission_id": "mission-20dae150a5107597",
+    "mission_status": "FAILED",
+    "stop_reason": "budget_exhausted",
+    "tasks": [
+      {
+        "id": "mission-20dae150a5107597:task-1",
+        "status": "FAILED"
+      },
+      {
+        "id": "mission-20dae150a5107597:task-2",
+        "status": "BLOCKED"
+      }
+    ],
+    "tool_calls": 23
+  },
+  "status": "official_scored",
+  "task_id": "37a8675_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 98245
+}
