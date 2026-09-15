@@ -1,3 +1,5 @@
+最后更新：2026-09-16 00:20 CST。Grok Build lane 接通：grok-4.6 经 SuperGrok 订阅（`cli-chat-proxy.grok.com`，Grok Build CLI 登录 token + 4 个客户端 header）作为 Host OpenAI 兼容端点，不用 API credits；新增 `provider_extra_headers.py` + `scripts/grok_build_runtime.py`，单元 6 PASS、回归 32 PASS、S5a real_provider 1 PASS（9.18s）后已 restore 主线配置。[用法](../docs/GROK-BUILD-LANE.md) ｜ 证据 `.local-test-evidence/2026-09-16/grok-build-lane/`。未提交。
+
 最后更新：2026-09-15 23:27 CST。当前接手入口改为 R 信封交接；v1 96/拆解/Qwen 截断均保留。[交接](../plans/taskSys2/HANDOFF-2026-09-15-r-envelope.md)。
 
 最后更新：2026-09-15 21:33 CST。Flash R 信封小复验新身份 2/2 选择闭环，官方 1/2，未知 0。v1 19/96 不改写。[R信封](../plans/taskSys2/testPhase1-a96-flash256k-r-envelope-v2-2026-09-15.md)。

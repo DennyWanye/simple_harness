@@ -3,7 +3,7 @@
 > 本档回答一个问题：**桌宠收到一句话后，agent 是怎么把一个任务跑完的？**
 > 聚焦后端 ReAct 执行引擎（P6 重构后现状）。细节散在各 `plans/` 与 `openspec/`，本档只做一页式骨架 + 关键代码引用。
 >
-> 最后更新：2026-07-29 ｜ 调研基线：读码核实（master）｜ 主入口 [`backend/agent/agent_loop.py`](../backend/agent/agent_loop.py)
+> 最后更新：2026-09-16（Grok Build lane 附加 header）；正文调研基线 2026-07-29 ｜ 调研基线：读码核实（master）｜ 主入口 [`backend/agent/agent_loop.py`](../backend/agent/agent_loop.py)
 >
 > 配套实施记录见 [`plans/2026-06-20-agent-loop-optimization/00-PLAN.md`](../plans/2026-06-20-agent-loop-optimization/00-PLAN.md)（缺陷审计、落地路线与验证结果）。
 
@@ -253,6 +253,7 @@ transport 发出唯一物理请求。handoff 以后发生 timeout/cancel/断连�
 | 工具注册/分发 | [`backend/deskpet/tools/registry.py`](../backend/deskpet/tools/registry.py) ｜ [`error_classifier.py`](../backend/deskpet/tools/error_classifier.py) ｜ [`tool_search.py`](../backend/deskpet/tools/tool_search.py) |
 | 权限 gate | [`backend/deskpet/permissions/gate.py`](../backend/deskpet/permissions/gate.py) |
 | 守门 | [`verify_gate.py`](../backend/deskpet/agent/verify_gate.py) ｜ [`goal_checker.py`](../backend/deskpet/agent/goal_checker.py) ｜ [`external_evaluator.py`](../backend/deskpet/agent/external_evaluator.py) ｜ [`receipt_store.py`](../backend/deskpet/tools/receipt_store.py) |
+| 端点附加 header（Grok Build lane，2026-09-16） | [`backend/deskpet/provider_extra_headers.py`](../backend/deskpet/provider_extra_headers.py)：`llm_runtime.json` 的 `extra_headers` / `extra_headers_by_host` 按 host 注入 `OpenAICompatibleProvider._client()` 与 SDK 适配器 httpx 客户端（`main.py` / `orchestration/provider.py` 的 request hook）。用法 [`docs/GROK-BUILD-LANE.md`](../docs/GROK-BUILD-LANE.md)；验证：单元 6 PASS + S5a real_provider 1 PASS（grok-4.6-build） |
 | 装配 + WS | `backend/main.py`（`_run_product_harness_chat` / `_build_product_harness_stack` / `_build_product_agent_loop` / provider 解析 / 事件转发） |
 | 架构原文档 | [`docs/P6-agent-loop-architecture.md`](../docs/P6-agent-loop-architecture.md) ｜ [`docs/P6-migration-decisions.md`](../docs/P6-migration-decisions.md) |
 

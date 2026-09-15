@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 import httpx
 import structlog
 from deskpet.execution.dispatch import current_dispatch_handoff
+from deskpet.provider_extra_headers import extra_headers_for
 from providers.dispatch_transport import DispatchAwareAsyncTransport
 
 from agent.context_messages import (
@@ -131,12 +132,17 @@ class OpenAICompatibleProvider:
         sanitize_inline_cot_dsml: bool = True,
         code_params: dict | None = None,
         is_relay: bool = False,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.temperature = temperature
         self._is_relay = is_relay
+        # 2026-09-16 Grok Build lane: endpoint-specific headers. Explicit
+        # ctor value wins over llm_runtime.json ``extra_headers`` (matched by
+        # host in ``_client``). Never logged.
+        self.extra_headers: dict[str, str] = dict(extra_headers or {})
         # code-session-model-params: per-code-session request fragment
         # (e.g. {"reasoning_effort":"high","extra_body":{...}}) produced
         # by llm.code_params; merged into the chat payload. None/{} = no
@@ -284,6 +290,11 @@ class OpenAICompatibleProvider:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        # Grok Build lane (2026-09-16): cli-chat-proxy.grok.com rejects
+        # requests without the CLI identification headers (426). They come
+        # from llm_runtime.json ``extra_headers`` (host-matched) or the ctor.
+        headers.update(extra_headers_for(self.base_url))
+        headers.update(self.extra_headers)
         from deskpet.context_os_e2e_hooks import trusted_provider_headers
         headers.update(trusted_provider_headers(self.base_url))
         # P5-S2 F1 (2026-05-12) — the relay integration guide root cause for

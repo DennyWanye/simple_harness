@@ -8056,7 +8056,10 @@ async def _build_product_sdk_runtime_stack(
         raise RuntimeError("SDK Runtime requires provider_registry")
 
     import httpx
-    client = httpx.AsyncClient()
+    from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
+    # Grok Build lane (2026-09-16): SDK provider builds its own headers, so
+    # endpoint-specific ones (llm_runtime.json extra_headers) ride a hook.
+    client = install_httpx_extra_headers_hook(httpx.AsyncClient())
     budget_policy = BudgetPolicy()
     provider_binding_resolver = _ProductSdkProviderBindingResolver(
         provider_registry, client

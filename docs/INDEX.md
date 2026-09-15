@@ -80,6 +80,8 @@
 
 ## 关键文档
 
+- [GROK-BUILD-LANE.md](GROK-BUILD-LANE.md) — 2026-09-16：用 SuperGrok 订阅（Grok Build CLI 登录态）在 Host 跑 grok-4.6，一键脚本 write/probe/apply/restore
+
 | 文档 | 角色 |
 |---|---|
 | [`P4-agent-harness-prd.md`](./P4-agent-harness-prd.md) | P4 主 PRD（已签字，已落地） |

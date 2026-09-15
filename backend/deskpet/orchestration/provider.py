@@ -88,7 +88,9 @@ def build_provider(snapshot: ProviderSnapshot, *, timeout: float = 180.0,
     import httpx
     from simple_harness.providers import OpenAICompatibleProvider, Secret
 
-    client = httpx.AsyncClient()
+    from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
+
+    client = install_httpx_extra_headers_hook(httpx.AsyncClient())
     options = {"allow_private_http": True} if allow_private_http else {}
     provider = OpenAICompatibleProvider(
         client, snapshot.base_url, snapshot.requested_model, Secret(snapshot.api_key), timeout=timeout, **options

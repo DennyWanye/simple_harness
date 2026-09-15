@@ -118,7 +118,11 @@ class RealRelayProvider:
         async with httpx.AsyncClient(timeout=180) as client:
             response = await client.post(
                 self._runtime["base_url"] + "/chat/completions",
-                headers={"Authorization": f"Bearer {self._runtime['api_key']}"},
+                headers={
+                    "Authorization": f"Bearer {self._runtime['api_key']}",
+                    # Grok Build lane: proxy needs the CLI identification headers.
+                    **(self._runtime.get("extra_headers") or {}),
+                },
                 json=payload,
             )
         response.raise_for_status()
