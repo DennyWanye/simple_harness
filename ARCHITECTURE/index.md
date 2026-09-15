@@ -1,3 +1,7 @@
+接手入口（2026-09-16）：[Grok A96 交接](../plans/taskSys2/HANDOFF-2026-09-16-grok-a96.md)。评测统一 grok-4.6 medium（用户决定，A/B 轮取消）；N4 `a96-grok46-256k-v2` 96/96 完成、官方 93、未知 1；N7 配对：D/F 未多解任何题、成本 3.4–4.0×、错误宣布完成 2 例均在编排臂、知识复用 0；题单与 runner 已冻结（FREEZE.json），其余停手。[结论](../plans/taskSys2/testPhase1-a96-grok46-2026-09-16.md)。
+
+最后更新：2026-09-16 05:10 CST。Grok 通路 Host `d107ba10`（extra_headers 按 host 注入，`scripts/grok_build_runtime.py`）。A96 runner 级适配：usage 归一（completion+reasoning）、回显映射、reasoning_effort；SDK 未改。v1 身份因输出预留 4096 被推理 token 撑爆而废弃（9 局保留）。
+
 接手入口（2026-09-15）：[R信封交接](../plans/taskSys2/HANDOFF-2026-09-15-r-envelope.md)。上一份只读拆解交接：[A轮](../plans/taskSys2/HANDOFF-2026-09-15-a-round.md)。
 
 最后更新：2026-09-15 23:27 CST。当前接手入口为 R 信封交接（原始测试文档链见该文件第 4 节）。v1 96/拆解/Qwen 截断均保留。[交接](../plans/taskSys2/HANDOFF-2026-09-15-r-envelope.md)。

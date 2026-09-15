@@ -1,0 +1,58 @@
+{
+  "abandoned_at": "2026-09-16T01:14:11+0800",
+  "abandoned_reason": "output reservation default 4096 too small: Grok bills reasoning tokens as output (normalised into output_tokens); D 50e1ac9_1 planner call output 4214 > 4096 -> ExperimentBudgetExhausted -> planning_failed. Stopped after 7 episodes via STOP; S/R episodes here are valid observations but not part of the v2 identity",
+  "appworld_root": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/a96-grok",
+  "appworld_version": "0.1.3.post1",
+  "arms": {
+    "D": "appworld-d-host-public-knowledge-v3",
+    "F": "appworld-f-host-public-knowledge-v3",
+    "R": "appworld-r-self-select-v2",
+    "S": "appworld-s-base-agent-v1"
+  },
+  "base_url_host": "cli-chat-proxy.grok.com",
+  "calls": 80,
+  "context_window": 262144,
+  "created_at": "2026-09-16T01:00:28+0800",
+  "experiment_id": "a96-grok46-256k-v1",
+  "host": {
+    "commit": "5c71f9dc4837180934bfc033c65012ac9a50d278",
+    "dirty_files": 12,
+    "note": "12 dirty files at freeze = Grok lane, committed as d107ba10 before the smoke rerun; runner does not import Host code"
+  },
+  "lane": "grok-build-subscription",
+  "model": "grok-4.6",
+  "n_runs": 96,
+  "note": "new identity; single-model programme (grok-4.6 medium) per user decision 2026-09-16; not mixed with a96-flash256k-v1, r-envelope-v2 or Qwen; smoke subset is part of this manifest",
+  "provider_adapter": {
+    "first_smoke_attempt": "S 530b157_1 rep0 aborted after call 1: meter flagged 'provider total has unallocated tokens'; episode dir renamed episode-incomplete-*, rerun under same run id",
+    "reasoning_effort": "medium",
+    "server_model_echo": "grok-4.6-build",
+    "usage_normalisation": "output_tokens = completion_tokens + reasoning_tokens so that total == input + output (Grok reports completion without reasoning); raw usage in grok-usage-audit.jsonl"
+  },
+  "reasoning_effort": "medium",
+  "schedule_version": "latin-square-v1",
+  "sdk": {
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "dirty_files": 0
+  },
+  "seconds": 1800,
+  "seed": 100,
+  "superseded_by": "a96-grok46-256k-v2",
+  "task_ids": [
+    "50e1ac9_1",
+    "fac291d_1",
+    "530b157_1",
+    "0d8a4ee_1",
+    "37a8675_1",
+    "383cbac_1",
+    "23cf851_1",
+    "68ee2c9_1",
+    "6171bbc_1",
+    "6c2c621_1",
+    "396c5a2_1",
+    "4fab96f_1"
+  ],
+  "taskset": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-15/a96/appworld-taskset.json",
+  "total_tokens_per_episode": 4000000,
+  "workers": 1
+}

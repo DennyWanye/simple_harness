@@ -1,0 +1,41 @@
+{
+  "frozen_at": "2026-09-16T04:54:34+0800",
+  "purpose": "N4 Grok baseline (pre-HTN half of the future paired comparison); taskset and runner must not change",
+  "files": {
+    "taskset": {
+      "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-15/a96/appworld-taskset.json",
+      "sha256": "b789d356e8246093d54817f05be86fbe304a3367170188c47bc9ed9a36d8da61"
+    },
+    "runner": {
+      "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/a96-grok/run-a96-grok46.py",
+      "sha256": "4c372ad046cee3c9ed0b28f42ad9f37f673668f3a4ba500aa4c3771f02e84b62"
+    },
+    "summarize": {
+      "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/a96-grok/summarize.py",
+      "sha256": "3e8747fdb39db78f41c10f46d44a1dffa26ea3ba28c35d298c6e3344783b5d61"
+    },
+    "n7_analysis": {
+      "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/a96-grok/n7-paired-analysis.py",
+      "sha256": "d6c7532bb08c3a0f81cc4bc7f8c75d4e0e5d38dc82047adce13234e4d36f79b3"
+    },
+    "identity_v2": {
+      "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/identity.json",
+      "sha256": "7210dfcaaae0e19169294a32f1eb9e6eb398782a192209140809436a2030a9ec"
+    }
+  },
+  "sdk_commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+  "host_commit": "d107ba104a5e2bae6527c0b7b8626a0696ce8757",
+  "appworld_version": "0.1.3.post1",
+  "model": "grok-4.6",
+  "reasoning_effort": "medium",
+  "per_episode_budget": {
+    "total_tokens": 4000000,
+    "calls": 80,
+    "seconds": 1800,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1
+  },
+  "episodes_expected": 96
+}

@@ -1,0 +1,53 @@
+{
+  "appworld_root": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/a96-grok",
+  "appworld_version": "0.1.3.post1",
+  "arms": {
+    "D": "appworld-d-host-public-knowledge-v3",
+    "F": "appworld-f-host-public-knowledge-v3",
+    "R": "appworld-r-self-select-v2",
+    "S": "appworld-s-base-agent-v1"
+  },
+  "base_url_host": "cli-chat-proxy.grok.com",
+  "calls": 80,
+  "context_window": 262144,
+  "created_at": "2026-09-16T01:17:14+0800",
+  "default_output_tokens": 16384,
+  "experiment_id": "a96-grok46-256k-v2",
+  "host": {
+    "commit": "d107ba104a5e2bae6527c0b7b8626a0696ce8757",
+    "dirty_files": 1
+  },
+  "lane": "grok-build-subscription",
+  "maximum_output_tokens": 32768,
+  "model": "grok-4.6",
+  "n_runs": 96,
+  "note": "new identity; single-model programme (grok-4.6 medium) per user decision 2026-09-16; not mixed with a96-flash256k-v1, r-envelope-v2, Qwen or grok46 v1; smoke subset is part of this manifest",
+  "reasoning_effort": "medium",
+  "schedule_version": "latin-square-v1",
+  "sdk": {
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "dirty_files": 0
+  },
+  "seconds": 1800,
+  "seed": 100,
+  "supersedes": {
+    "a96-grok46-256k-v1": "abandoned after 7 episodes (S3 R3 D1): output reservation 4096 < completion+reasoning on the D planning call -> ExperimentBudgetExhausted -> planning_failed; S/R results there are retained as evidence only"
+  },
+  "task_ids": [
+    "50e1ac9_1",
+    "fac291d_1",
+    "530b157_1",
+    "0d8a4ee_1",
+    "37a8675_1",
+    "383cbac_1",
+    "23cf851_1",
+    "68ee2c9_1",
+    "6171bbc_1",
+    "6c2c621_1",
+    "396c5a2_1",
+    "4fab96f_1"
+  ],
+  "taskset": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-15/a96/appworld-taskset.json",
+  "total_tokens_per_episode": 4000000,
+  "workers": 2
+}

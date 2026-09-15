@@ -1,0 +1,42 @@
+{
+  "by_arm": {
+    "D": {
+      "completed": 24,
+      "errors": 1,
+      "official_true": 22,
+      "valid_success": 22
+    },
+    "F": {
+      "completed": 24,
+      "errors": 0,
+      "official_true": 23,
+      "valid_success": 23
+    },
+    "R": {
+      "completed": 24,
+      "errors": 0,
+      "official_true": 24,
+      "valid_success": 24
+    },
+    "S": {
+      "completed": 24,
+      "errors": 0,
+      "official_true": 24,
+      "valid_success": 24
+    }
+  },
+  "calls": 2234,
+  "completed": 96,
+  "errors": 1,
+  "official_true": 93,
+  "pending": 0,
+  "stopped": false,
+  "tokens": 30229683,
+  "unknown_episodes": 1,
+  "updated_at": "2026-09-16T04:54:19+0800",
+  "valid_success": 93,
+  "worker_exit_codes": [
+    0,
+    0
+  ]
+}

@@ -1,0 +1,6 @@
+Unpacked apps source code 
+  - from: /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/a96-grok/appworld-venv/lib/python3.11/site-packages/appworld/.source/apps.bundle
+  - in  : /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/a96-grok/appworld-venv/lib/python3.11/site-packages/appworld
+Unpacked tests source code 
+  - from: /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/a96-grok/appworld-venv/lib/python3.11/site-packages/appworld/.source/tests.bundle
+  - in  : /Users/taiwan/.appworld/tests

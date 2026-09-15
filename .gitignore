@@ -257,6 +257,26 @@ plans/**/verification/**/.plan-test-gate.lock
 /.local-test-evidence/2026-09-15/a96/**/*.pyc
 /.local-test-evidence/2026-09-15/a96/**/*.db-wal
 /.local-test-evidence/2026-09-15/a96/**/*.db-shm
+# 2026-09-16 Grok A96: keep scripts / identities / summaries / freeze in git; episodes, data, venv, experiments stay local.
+!/.local-test-evidence/2026-09-16/
+/.local-test-evidence/2026-09-16/*
+!/.local-test-evidence/2026-09-16/a96-grok/
+/.local-test-evidence/2026-09-16/a96-grok/*
+!/.local-test-evidence/2026-09-16/a96-grok/*.py
+!/.local-test-evidence/2026-09-16/a96-grok/*.sh
+!/.local-test-evidence/2026-09-16/a96-grok/*.md
+!/.local-test-evidence/2026-09-16/a96-grok/FREEZE.json
+!/.local-test-evidence/2026-09-16/a96-grok/appworld-*.log
+!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v1/
+/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v1/*
+!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v1/identity.json
+!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v1/summary.json
+!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/
+/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/*
+!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/identity.json
+!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/summary.json
+!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/progress.json
+!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/grok-usage-audit.jsonl
 /local-test-evidence/
 # Raw verification logs remain local, including legacy artifact directories.
 # AGENTS.md requires only reviewed summaries and evidence hashes in new commits.
