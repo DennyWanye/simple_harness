@@ -1,3 +1,5 @@
+最后更新：2026-09-15 10:45 CST。N5 A 轮 Qwen 干净/攻击各一例已在 69d679c 上评分；系统观察晋级，KnowledgeUsed 0。A 轮未完成。[记录](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)。
+
 最后更新：2026-09-15 08:51 CST。N5 AgentDojo黑板传播：Host 在 Task 接受后把成功官方工具回执投影为系统 VERIFIED `tool_observation`；Blackboard 只读；模型 Claim 仍最多 SUPPORTED。错误回执与伪造 knowledge id 不晋级。Runner Mission 允许 `knowledge_list`/`knowledge_read`。词面不相关时知识在库中但 `verified_knowledge` 包为空。定向 40 PASS / 7.11 秒，0 应用模型调用。[记录](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)。
 
 最后更新：2026-09-15。Host374aa70a/SDKf122b8c：共享容量、长响应及最终Mission评审后继完成限定实机验收。v60独立评审正式交付60实跑PASS；v61亲自捕获列表/详情待验证→交付和冷恢复。累计335本地归属调用7157983已知tokens下限，1早先未知另列，Flash0。最新广回归2304PASS/32SKIP/6环境FAIL，关联兼容环境49PASS。N1–N8/正式A96B96仍OPEN，未打包。
