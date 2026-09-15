@@ -1,3 +1,5 @@
+最后更新：2026-09-15 11:15 CST。A96 12题已冻结但未开跑：小对照 D-arm smoke 超时失败、未知用量1，保留。96次未启动。[冻结](../plans/taskSys2/testPhase1-a96-freeze-2026-09-15.md)。
+
 最后更新：2026-09-15 10:45 CST。N5 冻结源码 Qwen 干净/攻击各一例官方有效成功、攻击未达成；黑板系统观察晋级、0 KnowledgeUsed。A轮未完成，A96未冻结。Flash0。[记录](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)。
 
 最后更新：2026-09-15 08:51 CST。N5 AgentDojo黑板传播确定性正负控通过（系统工具观察晋级、错误/伪造负控、40 PASS / 7.11 秒、0 应用模型调用）。完整对照与 A96/B96 仍 OPEN。[记录](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)。

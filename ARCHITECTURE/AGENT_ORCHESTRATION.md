@@ -1,3 +1,5 @@
+最后更新：2026-09-15 11:15 CST。A96 已冻结12个dev题，小对照 D-arm smoke 超时失败（未知用量1），96次未启动。[冻结](../plans/taskSys2/testPhase1-a96-freeze-2026-09-15.md)。
+
 最后更新：2026-09-15 10:45 CST。N5 A 轮 Qwen 干净/攻击各一例已在 69d679c 上评分；系统观察晋级，KnowledgeUsed 0。A 轮未完成。[记录](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)。
 
 最后更新：2026-09-15 08:51 CST。N5 AgentDojo黑板传播：Host 在 Task 接受后把成功官方工具回执投影为系统 VERIFIED `tool_observation`；Blackboard 只读；模型 Claim 仍最多 SUPPORTED。错误回执与伪造 knowledge id 不晋级。Runner Mission 允许 `knowledge_list`/`knowledge_read`。词面不相关时知识在库中但 `verified_knowledge` 包为空。定向 40 PASS / 7.11 秒，0 应用模型调用。[记录](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)。
