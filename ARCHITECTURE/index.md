@@ -1,4 +1,6 @@
-接手入口（2026-09-15）：[后续评测 HANDOFF](../plans/taskSys2/HANDOFF-2026-09-15.md)；N5见[黑板传播](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)；A96见[冻结与smoke](../plans/taskSys2/testPhase1-a96-freeze-2026-09-15.md)。A轮未完成。
+接手入口（2026-09-15）：[HANDOFF](../plans/taskSys2/HANDOFF-2026-09-15.md)。A轮未完成。
+
+最后更新：2026-09-15 15:35 CST。Qwen A96 已停在 16/96。新身份 Flash 256K `a96-flash256k-v1` 6 路并行已启动（deepseek-flash / 262144）。不与 Qwen 分数混算。[Flash 身份](../plans/taskSys2/testPhase1-a96-flash256k-2026-09-15.md)。
 
 最后更新：2026-09-15 11:15 CST。A96：12题dev instruction hash已核对并冻结到 SDK 69d679c；小对照 37a8675_1 D-arm smoke **FAIL**（900秒超时、official_utility false、未知用量1、26调用621764tokens、知识0）。96次未启动、不重跑。N5 Qwen干净/攻击各一例仍有效。Flash0。无打包。
 
