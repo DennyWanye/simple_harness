@@ -1,3 +1,5 @@
+最后更新：2026-09-15 17:05 CST。Flash A96 只读：S/R 协议未执行（0 工具 / 无选择信封），D/F 有官方分但知识复用 0。不重跑。[拆解](../plans/taskSys2/testPhase1-a96-flash256k-dissection-2026-09-15.md)。
+
 最后更新：2026-09-15 16:14 CST。Flash 256K A96 96/96 收条，官方 utility 19/96，未知用量 0。Qwen A96 停在 16/96，不混算。[Flash](../plans/taskSys2/testPhase1-a96-flash256k-2026-09-15.md)。
 
 最后更新：2026-09-15 11:15 CST。A96 12题已冻结但未开跑：小对照 D-arm smoke 超时失败、未知用量1，保留。96次未启动。[冻结](../plans/taskSys2/testPhase1-a96-freeze-2026-09-15.md)。

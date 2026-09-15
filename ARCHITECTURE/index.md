@@ -1,4 +1,6 @@
-接手入口（2026-09-15）：[HANDOFF](../plans/taskSys2/HANDOFF-2026-09-15.md)。
+接手入口（2026-09-15）：[A轮交接](../plans/taskSys2/HANDOFF-2026-09-15-a-round.md)。
+
+最后更新：2026-09-15 17:05 CST。Flash A96 只读拆解：S 0/24（1 调用 0 工具）、R 0/24（self-selection 无输出）、D 11/24、F 8/24；知识复用 48 例全 0。19/96 不能当编排收益。不重跑。[拆解](../plans/taskSys2/testPhase1-a96-flash256k-dissection-2026-09-15.md)。
 
 最后更新：2026-09-15 16:14 CST。Flash 256K A96 `a96-flash256k-v1` **96/96 收条**，6 worker 均 exit 0，未知用量 0。官方 utility 19/96 true（S/R 0，D 11/24，F 8/24）。Qwen A96 停在 16/96，不混算。N5 Qwen 官方各一例仍有效。[Flash 结果](../plans/taskSys2/testPhase1-a96-flash256k-2026-09-15.md)。
 
