@@ -1,4 +1,4 @@
-最后更新：2026-09-15。共享容量与长响应实机后继：v59同题正式交付，65实跑PASS、14归属调用112753tokens；v60真实在途UI“运行”通过，独立Mission judge增长/出站已验证，最终结论待。Host又修复最终验收误标“排队”，37关联PASS，新源码UI待；N1–N8仍OPEN。详见 [共享容量记录](../plans/taskSys2/testPhase1-shared-capacity-2026-09-15.md)。
+最后更新：2026-09-15。Host374aa70a/SDKf122b8c：共享容量、长响应及最终Mission评审后继完成限定实机验收。v60独立评审正式交付60实跑PASS；v61亲自捕获列表/详情待验证→交付和冷恢复。累计335本地归属调用7157983已知tokens下限，1早先未知另列，Flash0。最新广回归2304PASS/32SKIP/6环境FAIL，关联兼容环境49PASS。N1–N8/正式A96B96仍OPEN，未打包。
 
 最后更新：2026-09-15 06:01 CST。N1真实三进程v1为FAIL：两次物理调用321104tokens、0新增抢占，第三路前置排队被错误释放（已知0出站）。系统校时影响psutil.create_time造成身份误判，旧源3反例FAIL；改为psutil稳定process hash（>=7.2.2），新25PASS/1.85秒，完整及实机后继待验。N1–N8仍OPEN，Flash0。
 
