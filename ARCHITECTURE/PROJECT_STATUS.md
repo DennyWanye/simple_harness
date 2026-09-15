@@ -1,3 +1,5 @@
+最后更新：2026-09-15 23:27 CST。当前接手入口改为 R 信封交接；v1 96/拆解/Qwen 截断均保留。[交接](../plans/taskSys2/HANDOFF-2026-09-15-r-envelope.md)。
+
 最后更新：2026-09-15 21:33 CST。Flash R 信封小复验新身份 2/2 选择闭环，官方 1/2，未知 0。v1 19/96 不改写。[R信封](../plans/taskSys2/testPhase1-a96-flash256k-r-envelope-v2-2026-09-15.md)。
 
 最后更新：2026-09-15 17:05 CST。Flash A96 只读：S/R 协议未执行（0 工具 / 无选择信封），D/F 有官方分但知识复用 0。不重跑。[拆解](../plans/taskSys2/testPhase1-a96-flash256k-dissection-2026-09-15.md)。

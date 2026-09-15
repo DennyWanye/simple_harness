@@ -1,4 +1,6 @@
-接手入口（2026-09-15）：[A轮交接](../plans/taskSys2/HANDOFF-2026-09-15-a-round.md)。
+接手入口（2026-09-15）：[R信封交接](../plans/taskSys2/HANDOFF-2026-09-15-r-envelope.md)。上一份只读拆解交接：[A轮](../plans/taskSys2/HANDOFF-2026-09-15-a-round.md)。
+
+最后更新：2026-09-15 23:27 CST。当前接手入口为 R 信封交接（原始测试文档链见该文件第 4 节）。v1 96/拆解/Qwen 截断均保留。[交接](../plans/taskSys2/HANDOFF-2026-09-15-r-envelope.md)。
 
 最后更新：2026-09-15 21:33 CST。Flash R 信封新身份 `a96-flash256k-r-envelope-v2`：计量计入 tools 后 2/2 选择闭环（信封均写出），官方 1/2，未知 0。不重跑 96，不混 v1/Qwen。[R信封](../plans/taskSys2/testPhase1-a96-flash256k-r-envelope-v2-2026-09-15.md)。
 
