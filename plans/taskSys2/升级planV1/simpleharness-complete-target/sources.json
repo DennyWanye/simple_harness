@@ -1,0 +1,450 @@
+{
+  "audit_date": "2026-09-16",
+  "baseline_commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+  "scope": "targeted source and requirements review; no repository tests executed",
+  "sources": [
+    {
+      "id": "S01",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/planning/planner.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/planning/planner.py",
+      "citation": "turn254file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "whole returned file",
+      "note": "Initial task graph proposal parsing; not the entire LLM planner.",
+      "executed": false
+    },
+    {
+      "id": "S02",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/graph/task_graph.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/graph/task_graph.py",
+      "citation": "turn256file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "returned source including TaskNode/validate_graph",
+      "note": "Task graph contracts; no first-class HTN methods in this contract.",
+      "executed": false
+    },
+    {
+      "id": "S03",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/graph/changes.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/graph/changes.py",
+      "citation": "turn259file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-260",
+      "note": "Eight graph operations and bounded NewTaskNode.",
+      "executed": false
+    },
+    {
+      "id": "S04",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/planning/manager.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/planning/manager.py",
+      "citation": "turn262file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "whole returned file",
+      "note": "System conflict/synthesis construction and terminal_task convention.",
+      "executed": false
+    },
+    {
+      "id": "S05",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/planning/candidate_selection.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/planning/candidate_selection.py",
+      "citation": "turn264file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "whole returned file",
+      "note": "Bounded FIRST/COMPARE and immutable selection references.",
+      "executed": false
+    },
+    {
+      "id": "S06",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/scheduling/allocator.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/scheduling/allocator.py",
+      "citation": "turn265file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "whole returned file",
+      "note": "Heuristic scores, fairness, backpressure and candidate allocations.",
+      "executed": false
+    },
+    {
+      "id": "S07",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/context/retrieval.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/context/retrieval.py",
+      "citation": "turn267file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-250",
+      "note": "Updated exact-reference, unrelated and stale filtering; lexical overlap.",
+      "executed": false
+    },
+    {
+      "id": "S08",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/context/compression.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/context/compression.py",
+      "citation": "turn268file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "whole returned file",
+      "note": "Deterministic character-bounded summaries.",
+      "executed": false
+    },
+    {
+      "id": "S09",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/memory/claims.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/memory/claims.py",
+      "citation": "turn269file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-240",
+      "note": "New scoped-observation path and retained legacy grading.",
+      "executed": false
+    },
+    {
+      "id": "S10",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/governance/domains.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/governance/domains.py",
+      "citation": "turn270file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "220-480",
+      "note": "Code/doc and AppWorld/AgentDojo/ARE profiles; preserved versions.",
+      "executed": false
+    },
+    {
+      "id": "S11",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/governance/learning.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/governance/learning.py",
+      "citation": "turn271file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-230",
+      "note": "rules-v1 explicitly not a trained model.",
+      "executed": false
+    },
+    {
+      "id": "S12",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/observability/replay.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/observability/replay.py",
+      "citation": "turn272file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-190",
+      "note": "Pure partial formal projection; exclusions explicit.",
+      "executed": false
+    },
+    {
+      "id": "S13",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/orchestrator/commit_service.py",
+      "citation": "turn273file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-180",
+      "note": "Single logical writer, MissionSpec and mixin boundaries.",
+      "executed": false
+    },
+    {
+      "id": "S14",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/verification/verifier_router.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/verification/verifier_router.py",
+      "citation": "turn274file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-230",
+      "note": "Explicit handler routing and independent Critic callback.",
+      "executed": false
+    },
+    {
+      "id": "S15",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/simple_harness/agents/base.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/simple_harness/agents/base.py",
+      "citation": "turn277file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-220",
+      "note": "Durable BaseAgent identity, input, results and waiting.",
+      "executed": false
+    },
+    {
+      "id": "S16",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/simple_harness/agents/context/composer.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/simple_harness/agents/context/composer.py",
+      "citation": "turn281file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "whole returned file",
+      "note": "Bounded closed-group selection and structural summary.",
+      "executed": false
+    },
+    {
+      "id": "S17",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/orchestrator/event_handler.py",
+      "citation": "turn278file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "full tool response plus targeted management excerpts; not exhaustive line audit",
+      "note": "Actual manager/result/fragment orchestration calls; initial module docstring is stale.",
+      "executed": false
+    },
+    {
+      "id": "S18",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/agent_orchestrator/storage/schema.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/storage/schema.py",
+      "citation": "turn279file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-100",
+      "note": "Existing event/state store schema and separate execution DB.",
+      "executed": false
+    },
+    {
+      "id": "S19",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "examples/base_agent_delegation.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/examples/base_agent_delegation.py",
+      "citation": "turn275file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "whole returned file",
+      "note": "Delegation demo exists, not a run result.",
+      "executed": false
+    },
+    {
+      "id": "S20",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/simple_harness/agents/memory",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/tree/61a85eb7e8c003fa894497090f5de893419ebbd1/src/simple_harness/agents/memory",
+      "citation": "turn282file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "directory tree",
+      "note": "Memory embedding/retrieval files exist; filenames alone do not prove activation.",
+      "executed": false
+    },
+    {
+      "id": "S21",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "src/simple_harness/version.py",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/simple_harness/version.py",
+      "citation": "turn263file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "whole returned file",
+      "note": "Version 0.11.1.",
+      "executed": false
+    },
+    {
+      "id": "S22",
+      "kind": "repository_source",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "path": "plans/2026-09-12-phase3/HANDOFF.md",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/plans/2026-09-12-phase3/HANDOFF.md",
+      "citation": "turn253file0",
+      "citation_lines": "L2-L2",
+      "read_scope": "1-180",
+      "note": "Historical bounded source-acceptance claims, not re-executed.",
+      "executed": false
+    },
+    {
+      "id": "S23",
+      "kind": "repository_ref",
+      "repository": "DennyWanye/simple-harness-sdk",
+      "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+      "url": "https://api.github.com/repos/DennyWanye/simple-harness-sdk/git/ref/heads/main",
+      "citation": "turn249file0",
+      "note": "ref observed at audit; all code claims pinned to this commit"
+    },
+    {
+      "id": "S24",
+      "kind": "external_primary_repository",
+      "repository": "panda-planner-dev/pandaPIparser",
+      "path": "README.md",
+      "url": "https://github.com/panda-planner-dev/pandaPIparser/blob/master/README.md",
+      "citation": "turn283file0",
+      "blob_sha": "2dcd11890263bbb1044465eaabda1af547319a2c",
+      "note": "HDDL, validation, incomplete arbitrary partial-order conversion to SHOP2; no planner executed"
+    },
+    {
+      "id": "S25",
+      "kind": "repository_ref",
+      "repository": "DennyWanye/simple-harness-service-sdk",
+      "commit": "47f372adc641d8d3516599dd21cb94cf5955d6a7",
+      "citation": "turn250file0",
+      "note": "Ref only in this audit; actual Host loading path not verified"
+    },
+    {
+      "id": "H0",
+      "kind": "access_limitation",
+      "repository": "DennyWanye/simple_harness",
+      "result": "404 via current GitHub connection",
+      "status": "UNVERIFIED",
+      "note": "No inferred current frontend/source paths; must not equate inaccessible with absent"
+    },
+    {
+      "id": "R1",
+      "kind": "external_primary_reference",
+      "title": "SHOP description",
+      "url": "https://www.cs.umd.edu/projects/shop/description.html",
+      "citation": "turn380569search0",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "R2",
+      "kind": "external_primary_reference",
+      "title": "ADaPT: As-Needed Decomposition and Planning with Language Models",
+      "url": "https://aclanthology.org/2024.findings-naacl.264/",
+      "citation": "turn175439search0",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "R3",
+      "kind": "external_primary_reference",
+      "title": "Deliberative Acting, Online Planning and Learning with Hierarchical Operational Models",
+      "url": "https://arxiv.org/abs/2010.01909",
+      "citation": "turn175439academia49",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "R4",
+      "kind": "external_primary_reference",
+      "title": "ChatHTN and method learning",
+      "url": "https://proceedings.mlr.press/v288/munoz-avila25a.html",
+      "citation": "turn175439search12",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "R4b",
+      "kind": "external_primary_reference",
+      "title": "Online Learning of HTN Methods for integrated LLM-HTN Planning",
+      "url": "https://arxiv.org/abs/2511.12901",
+      "citation": "turn380569academia35",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "R5",
+      "kind": "external_primary_reference",
+      "title": "PANDA Planning Framework",
+      "url": "https://panda-planner-dev.github.io/",
+      "citation": "turn445875view0",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "R6",
+      "kind": "external_primary_reference",
+      "title": "Effective context engineering for AI agents",
+      "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+      "citation": "turn774826view0",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "R7",
+      "kind": "external_primary_reference",
+      "title": "Event Sourcing Pattern",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing",
+      "citation": "turn774826view2",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "R8",
+      "kind": "external_primary_reference",
+      "title": "International Planning Competition 2023 HTN Tracks",
+      "url": "https://ipc2023-htn.github.io/",
+      "citation": "turn774826view3",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "R9",
+      "kind": "external_primary_reference",
+      "title": "Demystifying evals for AI agents",
+      "url": "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+      "citation": "turn774826view1",
+      "note": "Research grounding, not SimpleHarness performance evidence"
+    },
+    {
+      "id": "D1",
+      "kind": "user_basis",
+      "name": "agent-orchestration-layer-complete-design.md",
+      "citation": "turn248file0",
+      "range": "L1-L2362",
+      "sha256": "4d821e388b6c406792ec5256cfcc67fb195aab8be574f24925d012f95c3dc91b"
+    },
+    {
+      "id": "D2",
+      "kind": "user_basis",
+      "name": "personal-agent-task-orchestration-framework-v1.zh-CN.md",
+      "citation": "turn266file0",
+      "range": "ADR L9-L21; see turn266file1/2 for timers/HTN",
+      "sha256": null
+    },
+    {
+      "id": "D3",
+      "kind": "user_basis",
+      "name": "Subsequent explicit conversation decisions",
+      "citation": "current_conversation",
+      "range": null,
+      "sha256": null
+    },
+    {
+      "id": "D4",
+      "kind": "user_basis",
+      "name": "agent-orchestrator-incremental-build-plan.zh-CN.md",
+      "citation": "turn255file1",
+      "range": "L9-L19; turn251file5 L203-L213",
+      "sha256": "805007bf7e6cc28c7505f86b688299790f9729a13bfa0f86d46e84aab96fc217"
+    },
+    {
+      "id": "R10",
+      "title": "scikit-learn Probability calibration",
+      "url": "https://scikit-learn.org/stable/modules/calibration.html"
+    },
+    {
+      "id": "R11",
+      "title": "SQLite FTS5",
+      "url": "https://www.sqlite.org/fts5.html"
+    }
+  ]
+}

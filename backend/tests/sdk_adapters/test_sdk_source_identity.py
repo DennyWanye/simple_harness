@@ -26,7 +26,9 @@ def source_install(tmp_path, monkeypatch):
     for name in ("simple_harness", "agent_orchestrator"):
         package = root / "src" / name
         package.mkdir(parents=True)
-        (package / "__init__.py").write_text('__version__ = "0.11.1"\n')
+        (package / "__init__.py").write_text(
+            f'__version__ = "{candidate.SDK_VERSION}"\n'
+        )
         (package / "schema.sql").write_text("CREATE TABLE example(id INTEGER);\n")
         module = ModuleType(name)
         module.__file__ = str(package / "__init__.py")
@@ -40,10 +42,11 @@ def source_install(tmp_path, monkeypatch):
          "commit", "-qm", "fixture"),
     ):
         subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
-    dist = tmp_path / "simple_harness_sdk-0.11.1.dist-info"
+    dist = tmp_path / f"simple_harness_sdk-{candidate.SDK_VERSION}.dist-info"
     dist.mkdir()
     (dist / "METADATA").write_text(
-        "Metadata-Version: 2.1\nName: simple-harness-sdk\nVersion: 0.11.1\n"
+        "Metadata-Version: 2.1\nName: simple-harness-sdk\n"
+        f"Version: {candidate.SDK_VERSION}\n"
     )
     (dist / "direct_url.json").write_text(json.dumps({
         "url": root.as_uri(), "dir_info": {"editable": True},

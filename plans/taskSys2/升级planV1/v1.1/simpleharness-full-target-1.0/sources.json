@@ -1,0 +1,433 @@
+[
+  {
+    "id": "S01",
+    "title": "SDK main",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/commit/61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "path": null,
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "Git ref",
+    "citation_marker": "turn249file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S02",
+    "title": "SDK version",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/simple_harness/version.py",
+    "path": "src/simple_harness/version.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "full",
+    "citation_marker": "turn283file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S03",
+    "title": "Planner parser",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/planning/planner.py",
+    "path": "src/agent_orchestrator/planning/planner.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "full",
+    "citation_marker": "turn256file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S04",
+    "title": "Initial Task DAG contract",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/graph/task_graph.py",
+    "path": "src/agent_orchestrator/graph/task_graph.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–320",
+    "citation_marker": "turn257file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S05",
+    "title": "Dynamic graph change contract",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/graph/changes.py",
+    "path": "src/agent_orchestrator/graph/changes.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–300",
+    "citation_marker": "turn260file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S06",
+    "title": "System task templates and terminal selection",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/planning/manager.py",
+    "path": "src/agent_orchestrator/planning/manager.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "full",
+    "citation_marker": "turn258file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S07",
+    "title": "Candidate selection",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/planning/candidate_selection.py",
+    "path": "src/agent_orchestrator/planning/candidate_selection.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "full",
+    "citation_marker": "turn263file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S08",
+    "title": "Frontier and allocation",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/scheduling/allocator.py",
+    "path": "src/agent_orchestrator/scheduling/allocator.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–270",
+    "citation_marker": "turn264file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S09",
+    "title": "Blackboard retrieval",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/context/retrieval.py",
+    "path": "src/agent_orchestrator/context/retrieval.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–260",
+    "citation_marker": "turn268file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S10",
+    "title": "Blackboard summaries",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/context/compression.py",
+    "path": "src/agent_orchestrator/context/compression.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "full",
+    "citation_marker": "turn269file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S11",
+    "title": "Claim grading",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/memory/claims.py",
+    "path": "src/agent_orchestrator/memory/claims.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–300",
+    "citation_marker": "turn272file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S12",
+    "title": "Knowledge contracts",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/memory/verified_knowledge.py",
+    "path": "src/agent_orchestrator/memory/verified_knowledge.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–220",
+    "citation_marker": "turn287file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S13",
+    "title": "Source lineage",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/memory/source_dependencies.py",
+    "path": "src/agent_orchestrator/memory/source_dependencies.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–230",
+    "citation_marker": "turn288file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S14",
+    "title": "Rule learner",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/governance/learning.py",
+    "path": "src/agent_orchestrator/governance/learning.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–245",
+    "citation_marker": "turn271file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S15",
+    "title": "Replay coverage",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/observability/replay.py",
+    "path": "src/agent_orchestrator/observability/replay.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–260",
+    "citation_marker": "turn270file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S16",
+    "title": "Storage DDL",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/storage/schema.py",
+    "path": "src/agent_orchestrator/storage/schema.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–165",
+    "citation_marker": "turn276file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S17",
+    "title": "Domain registry",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/governance/domains.py",
+    "path": "src/agent_orchestrator/governance/domains.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–370 and 420–710",
+    "citation_marker": "turn273file0;turn274file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S18",
+    "title": "Verifier dispatch",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/verification/verifier_router.py",
+    "path": "src/agent_orchestrator/verification/verifier_router.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–390",
+    "citation_marker": "turn275file0;turn289file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S19",
+    "title": "Agent-scoped short-term retrieval",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/simple_harness/agents/memory/retrieval.py",
+    "path": "src/simple_harness/agents/memory/retrieval.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–260",
+    "citation_marker": "turn284file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S20",
+    "title": "BaseAgent delegation example",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/examples/base_agent_delegation.py",
+    "path": "examples/base_agent_delegation.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "full; example not execution proof",
+    "citation_marker": "turn278file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S21",
+    "title": "Actual orchestration entry",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/orchestrator/event_handler.py",
+    "path": "src/agent_orchestrator/orchestrator/event_handler.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "full response retrieved; targeted prefix and management sections inspected, not a full audit of every branch",
+    "citation_marker": "turn281file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S22",
+    "title": "Product facade",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/api/facade.py",
+    "path": "src/agent_orchestrator/api/facade.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–245",
+    "citation_marker": "turn285file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S23",
+    "title": "Core contracts",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/src/agent_orchestrator/contracts/models.py",
+    "path": "src/agent_orchestrator/contracts/models.py",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–190",
+    "citation_marker": "turn286file0",
+    "evidence": "source_inspected"
+  },
+  {
+    "id": "S24",
+    "title": "Phase3 scope and historical results",
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/61a85eb7e8c003fa894497090f5de893419ebbd1/plans/2026-09-12-phase3/HANDOFF.md",
+    "path": "plans/2026-09-12-phase3/HANDOFF.md",
+    "commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+    "read_scope": "1–140; newest scope block distinguished from historical log",
+    "citation_marker": "turn261file0",
+    "evidence": "repository_report_not_rerun"
+  },
+  {
+    "id": "W01",
+    "title": "HDDL / PANDA and plan validation",
+    "url": "https://panda-planner-dev.github.io/",
+    "read_scope": "official page/abstract/docs",
+    "note": "Formal task/method representation and decomposition witnesses; not a universal real-world correctness guarantee.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W02",
+    "title": "pandaPIparser",
+    "url": "https://github.com/panda-planner-dev/pandaPIparser",
+    "read_scope": "official page/abstract/docs",
+    "note": "HDDL parsing and plan validation; JSHOP2 export does not preserve arbitrary partial orders.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W03",
+    "title": "pandaPIengine",
+    "url": "https://github.com/panda-planner-dev/pandaPIengine",
+    "read_scope": "official page/abstract/docs",
+    "note": "Actual HTN solving backend; fix binary, mode and input semantics.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W04",
+    "title": "ADaPT, NAACL Findings 2024",
+    "url": "https://aclanthology.org/2024.findings-naacl.264/",
+    "read_scope": "official page/abstract/docs",
+    "note": "As-needed recursive decomposition; adapting the idea does not import benchmark gains or worker self-certification.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W05",
+    "title": "RAE/UPOM, deliberative acting",
+    "url": "https://arxiv.org/abs/2010.01909",
+    "read_scope": "official page/abstract/docs",
+    "note": "Interleaved refinement/acting; simulated model-based lookahead must remain separate from real side effects.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W06",
+    "title": "ChatHTN, PMLR 288 (2025)",
+    "url": "https://proceedings.mlr.press/v288/munoz-avila25a.html",
+    "read_scope": "official page/abstract/docs",
+    "note": "Combines symbolic HTN with LLM-proposed decompositions; formal guarantees depend on the represented model.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W07",
+    "title": "Online Learning of HTN Methods (2025 preprint)",
+    "url": "https://arxiv.org/abs/2511.12901",
+    "read_scope": "official page/abstract/docs",
+    "note": "Parameterized reusable methods; limited-domain research, not permission to promote online policies automatically.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W08",
+    "title": "AdaPlan-H, ACL Findings July 2026",
+    "url": "https://aclanthology.org/2026.findings-acl.77/",
+    "read_scope": "official page/abstract/docs",
+    "note": "Coarse-to-fine adaptive granularity; reference for refinement policy, not replacement for formal contracts.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W09",
+    "title": "HCL-GP, May 2026 preprint",
+    "url": "https://arxiv.org/abs/2605.06957",
+    "read_scope": "official page/abstract/docs",
+    "note": "Reuse parameterized policy components; evaluation/data protocol must be checked before comparing numbers.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W10",
+    "title": "Context engineering",
+    "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+    "read_scope": "official page/abstract/docs",
+    "note": "Just-in-time retrieval, compaction, structured notes and scoped subagents; no universal optimal context size.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W11",
+    "title": "IPC HTN benchmark sets",
+    "url": "https://ipc2020.hierarchical-task.net/benchmarks/benchmarks",
+    "read_scope": "official page/abstract/docs",
+    "note": "Formal planning benchmark/validator; dynamic perturbations must be reported as extensions.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "W12",
+    "title": "Unified Planning HierarchicalPlan",
+    "url": "https://unified-planning.readthedocs.io/en/v1.2.0/api/plans/HierarchicalPlan.html",
+    "read_scope": "official page/abstract/docs",
+    "note": "Action plan plus explicit decomposition; cited version is 1.2.0, not claimed latest.",
+    "evidence": "external_primary_source"
+  },
+  {
+    "id": "D1",
+    "title": "agent-orchestration-layer-complete-design(1).md",
+    "sha256": "4d821e388b6c406792ec5256cfcc67fb195aab8be574f24925d012f95c3dc91b",
+    "evidence": "user_uploaded_or_prior_conversation_artifact",
+    "role": "original_target"
+  },
+  {
+    "id": "D3",
+    "title": "agent-orchestrator-incremental-build-plan.zh-CN.md",
+    "sha256": "805007bf7e6cc28c7505f86b688299790f9729a13bfa0f86d46e84aab96fc217",
+    "evidence": "user_uploaded_or_prior_conversation_artifact",
+    "role": "prior_plan_not_completion_evidence"
+  },
+  {
+    "id": "D4",
+    "title": "base-agent-phase1-plan.zh-CN.md",
+    "sha256": "c56d57c42f8adc3590f12d57c0fdeb431980d81f99c12bac0051188d4c21f946",
+    "evidence": "user_uploaded_or_prior_conversation_artifact",
+    "role": "prior_plan_not_completion_evidence"
+  },
+  {
+    "id": "D5",
+    "title": "run-dynamic-context-256k-design.zh-CN.md",
+    "sha256": "e8290e64387d324ef4fdeebe650abf39b849aa7c25f139a4497059c846e8589d",
+    "evidence": "user_uploaded_or_prior_conversation_artifact",
+    "role": "prior_plan_not_completion_evidence"
+  },
+  {
+    "id": "D6",
+    "title": "mission-critical-contract-hardening-plan.zh-CN.md",
+    "sha256": "70bc0657674bd51bfa6760630a15f7c49cf4a21bb4f13316778a828a0dc3a517",
+    "evidence": "user_uploaded_or_prior_conversation_artifact",
+    "role": "prior_plan_not_completion_evidence"
+  },
+  {
+    "id": "T",
+    "title": "agent-orchestration-theory.zip",
+    "sha256": "4d68f4887a380cd6722b611204d574d2b217574822d81b4fee4c1facfb537f1b",
+    "evidence": "user_uploaded_or_prior_conversation_artifact",
+    "role": "theory_reference"
+  },
+  {
+    "id": "D2",
+    "title": "personal-agent-task-orchestration-framework-v1.zh-CN.md",
+    "file_id": "file_00000000f58c82118590c8f533b47185",
+    "citation_markers": [
+      "turn254file0",
+      "turn255file0",
+      "turn255file1",
+      "turn255file2"
+    ],
+    "evidence": "earlier_library_design",
+    "note": "Read via Files; no local byte/hash assertion. Conflicts with D1 resolved explicitly in ADRs; not silently treated as latest authority."
+  },
+  {
+    "id": "H0",
+    "title": "Host simple_harness",
+    "url": "https://github.com/DennyWanye/simple_harness",
+    "evidence": "unavailable",
+    "observed": "GitHub connector returned 404",
+    "note": "No conclusion about absence of Host functionality; actual UI file mapping is a blocking implementation gate."
+  },
+  {
+    "id": "SVC",
+    "title": "Service SDK main",
+    "commit": "47f372adc641d8d3516599dd21cb94cf5955d6a7",
+    "citation_marker": "turn250file0",
+    "evidence": "ref_only",
+    "note": "No claim that this public commit is the version loaded by the current App."
+  },
+  {
+    "id": "W13",
+    "title": "scikit-learn probability calibration",
+    "url": "https://scikit-learn.org/stable/modules/calibration.html",
+    "read_scope": "official current docs",
+    "evidence": "external_primary_source",
+    "note": "Use held-out calibration data; model probability is not automatically calibrated."
+  },
+  {
+    "id": "W14",
+    "title": "HistGradientBoostingClassifier",
+    "url": "https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingClassifier.html",
+    "read_scope": "official estimator docs",
+    "evidence": "external_primary_source",
+    "note": "Concrete candidate implementation, not a claim of superiority for this project."
+  },
+  {
+    "id": "W15",
+    "title": "Lean proof validation and axiom dependencies",
+    "url": "https://lean-lang.org/doc/reference/latest/ValidatingProofs/",
+    "read_scope": "official proof validation docs",
+    "evidence": "external_primary_source",
+    "note": "Check expected theorem and permitted axiom dependencies, not compilation alone."
+  }
+]

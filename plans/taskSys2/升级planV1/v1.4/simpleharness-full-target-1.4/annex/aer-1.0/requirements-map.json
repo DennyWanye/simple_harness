@@ -1,0 +1,712 @@
+[
+  {
+    "requirement_id": "R01",
+    "upstream_title": "稳定 BaseAgent 身份，多轮输出不等于关闭",
+    "upstream_work_package": "P1",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R02",
+    "upstream_title": "单用户主Agent，子Agent弹性创建但物理并发有界",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R03",
+    "upstream_title": "Task、Attempt、AgentTurn、外部操作身份分离",
+    "upstream_work_package": "P1",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-X01",
+      "AER-X02",
+      "AER-X03"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R04",
+    "upstream_title": "复合/原子Task语义，不把抽象目标当Worker工作直接派发",
+    "upstream_work_package": "P2",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R05",
+    "upstream_title": "版本化参数化MethodContract与适用前提",
+    "upstream_work_package": "P2",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-K10"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R06",
+    "upstream_title": "世界状态区分已知真/假/未知/有争议",
+    "upstream_work_package": "P1",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-K01",
+      "AER-K07",
+      "AER-K09",
+      "AER-K12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R07",
+    "upstream_title": "方法生成、验证、注册、检索和淘汰闭环",
+    "upstream_work_package": "P2",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R08",
+    "upstream_title": "递归HTN与任意部分序；展开后的执行图无环",
+    "upstream_work_package": "P2",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R09",
+    "upstream_title": "按能力与风险决定直做/分解/取证/重规划",
+    "upstream_work_package": "P3",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R10",
+    "upstream_title": "AND子成果与OR方法路线分离",
+    "upstream_work_package": "P2",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V02",
+      "AER-I06"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R11",
+    "upstream_title": "共享子目标及适用性证明",
+    "upstream_work_package": "P2",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-I01"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R12",
+    "upstream_title": "父目标组合判据与显式GoalResolution",
+    "upstream_work_package": "P2",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V01",
+      "AER-V02",
+      "AER-V06",
+      "AER-V09",
+      "AER-V10",
+      "AER-V12",
+      "AER-I06",
+      "AER-I12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R13",
+    "upstream_title": "结构化观察、诊断与建议分别存储",
+    "upstream_work_package": "P3",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R14",
+    "upstream_title": "局部计划修复，尽量保留有效执行与产物",
+    "upstream_work_package": "P3",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V11",
+      "AER-I01",
+      "AER-I03"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R15",
+    "upstream_title": "DATA/ORDER/ASSUMPTION边分离",
+    "upstream_work_package": "P1",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V09"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R16",
+    "upstream_title": "计划读集、原子激活、在途工作generation",
+    "upstream_work_package": "P3",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V06",
+      "AER-K08",
+      "AER-X08",
+      "AER-X09",
+      "AER-I02",
+      "AER-I03"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R17",
+    "upstream_title": "完成历史不改写，当前验收有效性可失效",
+    "upstream_work_package": "P3",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V11",
+      "AER-K10",
+      "AER-K11",
+      "AER-I03",
+      "AER-I04",
+      "AER-I12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R18",
+    "upstream_title": "真正的Plan-space搜索、frontier与可恢复搜索状态",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R19",
+    "upstream_title": "Best-first/Beam与有模型时的模拟lookahead",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R20",
+    "upstream_title": "分层Manager、独立scope与权限代次",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R21",
+    "upstream_title": "失败片段复用与跨方法综合再验证",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R22",
+    "upstream_title": "角色作为搜索偏置而非名称，支持多样性约束",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R23",
+    "upstream_title": "真实进展、剩余不确定性与边际价值信号",
+    "upstream_work_package": "P8",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R24",
+    "upstream_title": "按Task/Method分配角色、模型、候选与预算",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R25",
+    "upstream_title": "稳定Obligation阻止拆分/改名/换角色刷重试与预算",
+    "upstream_work_package": "P1",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-X12",
+      "AER-I01",
+      "AER-I11"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R26",
+    "upstream_title": "现实Provider容量、上下文上界与预算尾部一致",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-I11"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R27",
+    "upstream_title": "验证积压触发真实背压、探索保底、抗振荡",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-I11"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R28",
+    "upstream_title": "独立语义Verifier与结构/权限检查分工",
+    "upstream_work_package": "P6",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V01",
+      "AER-V02",
+      "AER-V03",
+      "AER-V04",
+      "AER-V05",
+      "AER-V06",
+      "AER-V07",
+      "AER-V08",
+      "AER-V10",
+      "AER-V12",
+      "AER-K03",
+      "AER-I09",
+      "AER-I11",
+      "AER-I12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R29",
+    "upstream_title": "条件化Knowledge及多重Justification",
+    "upstream_work_package": "P1",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V03",
+      "AER-V10",
+      "AER-K01",
+      "AER-K02",
+      "AER-K03",
+      "AER-K04",
+      "AER-K05",
+      "AER-K06",
+      "AER-K07",
+      "AER-K11",
+      "AER-I02",
+      "AER-I09"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R30",
+    "upstream_title": "依赖失效贯通知识、摘要、方法和验收",
+    "upstream_work_package": "P3",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-K02",
+      "AER-K04",
+      "AER-K06",
+      "AER-K08",
+      "AER-K09",
+      "AER-K11",
+      "AER-I02",
+      "AER-I04",
+      "AER-I12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R31",
+    "upstream_title": "Agent短期记忆按token预算取最近完整交互",
+    "upstream_work_package": "P5",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R32",
+    "upstream_title": "所有保留历史均可检索，不能只搜最近2000条",
+    "upstream_work_package": "P5",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R33",
+    "upstream_title": "共享知识混合检索与带条件的分层摘要",
+    "upstream_work_package": "P5",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R34",
+    "upstream_title": "Context按scope/用途隔离，已冻结请求不可重组",
+    "upstream_work_package": "P5",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V07",
+      "AER-K08",
+      "AER-K12",
+      "AER-I09"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R35",
+    "upstream_title": "父子任务交接、typed inbox、澄清与回执",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R36",
+    "upstream_title": "Proposal/Commit唯一逻辑写入",
+    "upstream_work_package": "P1",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-X01",
+      "AER-X04",
+      "AER-I02",
+      "AER-I12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R37",
+    "upstream_title": "所有关键业务投影可由事件与受控基线重建",
+    "upstream_work_package": "P7",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-I07",
+      "AER-I08"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R38",
+    "upstream_title": "重放不执行工具，恢复不复活租约或已批准旧权限",
+    "upstream_work_package": "P7",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-K09",
+      "AER-X04",
+      "AER-X05",
+      "AER-X06",
+      "AER-X08",
+      "AER-X12",
+      "AER-I05",
+      "AER-I06",
+      "AER-I07",
+      "AER-I08"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R39",
+    "upstream_title": "execution/orchestrator双库有可靠收据与去重",
+    "upstream_work_package": "P7",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-X04",
+      "AER-X05",
+      "AER-X12",
+      "AER-I07",
+      "AER-I12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R40",
+    "upstream_title": "外部Operation跨Attempt稳定、UNKNOWN先核对",
+    "upstream_work_package": "P6",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V12",
+      "AER-K10",
+      "AER-X01",
+      "AER-X02",
+      "AER-X03",
+      "AER-X05",
+      "AER-X06",
+      "AER-X07",
+      "AER-X09",
+      "AER-X10",
+      "AER-I01",
+      "AER-I04",
+      "AER-I05",
+      "AER-I06",
+      "AER-I12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R41",
+    "upstream_title": "补偿是独立授权任务，不是回滚模型搜索树",
+    "upstream_work_package": "P6",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-X10",
+      "AER-X11"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R42",
+    "upstream_title": "长期Commitment与有限ExecutionCycle",
+    "upstream_work_package": "P7",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-I05"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R43",
+    "upstream_title": "持久定时、时区、错过周期策略",
+    "upstream_work_package": "P7",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R44",
+    "upstream_title": "要求版本变更与独立重新验收",
+    "upstream_work_package": "P3",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V01",
+      "AER-V11"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R45",
+    "upstream_title": "单主助手跨Mission通知Outbox与收执",
+    "upstream_work_package": "P9",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-I05",
+      "AER-I10",
+      "AER-I12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R46",
+    "upstream_title": "同一Mission内不同Task使用不同领域能力",
+    "upstream_work_package": "P6",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R47",
+    "upstream_title": "实际形式化检查，不只formal_check枚举",
+    "upstream_work_package": "P6",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V04"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R48",
+    "upstream_title": "能力注册/可达/健康/授权彼此分开",
+    "upstream_work_package": "P6",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R49",
+    "upstream_title": "Windows/Linux/macOS执行语义隔离",
+    "upstream_work_package": "P6",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R50",
+    "upstream_title": "最小权限、证据来源与提示注入隔离",
+    "upstream_work_package": "P6",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V05",
+      "AER-K12",
+      "AER-X08",
+      "AER-X09",
+      "AER-X11",
+      "AER-I09"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R51",
+    "upstream_title": "完整Trace/贡献链/版本/费用归因",
+    "upstream_work_package": "P8",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V07",
+      "AER-X12"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R52",
+    "upstream_title": "独立外部评测而非内部Verifier自报",
+    "upstream_work_package": "P9",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R53",
+    "upstream_title": "学习型路由/分解/优先级的可训练实现与校准",
+    "upstream_work_package": "P8",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R54",
+    "upstream_title": "策略离线评测/审批/回退，禁止在线自提升",
+    "upstream_work_package": "P8",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R55",
+    "upstream_title": "用户长期记忆保持当前排除范围",
+    "upstream_work_package": "P9",
+    "required_in_master": false,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R56",
+    "upstream_title": "Workflow仍是工具层可调用能力",
+    "upstream_work_package": "P6",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R57",
+    "upstream_title": "关键契约类型/边界校验/事务归属检查",
+    "upstream_work_package": "P1",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-V08",
+      "AER-X02",
+      "AER-I10"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R58",
+    "upstream_title": "Host与UI共享协议/后端唯一状态投影",
+    "upstream_work_package": "P9",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-I10"
+    ],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R59",
+    "upstream_title": "停止、反复重规划、死锁和饥饿治理",
+    "upstream_work_package": "P4",
+    "required_in_master": true,
+    "contribution": "not closed by this specialization",
+    "scenario_ids": [],
+    "upstream_status_not_changed": true
+  },
+  {
+    "requirement_id": "R60",
+    "upstream_title": "隐私、冷热归档、恢复manifest与删除不复活",
+    "upstream_work_package": "P7",
+    "required_in_master": true,
+    "contribution": "direct/interface; not full requirement completion",
+    "scenario_ids": [
+      "AER-X07",
+      "AER-I07"
+    ],
+    "upstream_status_not_changed": true
+  }
+]

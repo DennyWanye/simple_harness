@@ -1,0 +1,307 @@
+[
+  {
+    "chapter": 1,
+    "title": "定位与边界",
+    "work_packages": [
+      "P1",
+      "P9"
+    ],
+    "coverage": "D1原文定位；不要把已定义模块当成完成。"
+  },
+  {
+    "chapter": 2,
+    "title": "目标与原则",
+    "work_packages": [
+      "P1",
+      "P9"
+    ],
+    "coverage": "R01–R60范围及唯一Commit、不伪造事实。"
+  },
+  {
+    "chapter": 3,
+    "title": "总体架构",
+    "work_packages": [
+      "P1",
+      "P2",
+      "P4",
+      "P6",
+      "P7"
+    ],
+    "coverage": "保留控制/状态/执行/治理，新增关系非第二权威。"
+  },
+  {
+    "chapter": 4,
+    "title": "控制闭环",
+    "work_packages": [
+      "P2",
+      "P3",
+      "P4"
+    ],
+    "coverage": "观察、细化/取证、执行、验收、Commit。"
+  },
+  {
+    "chapter": 5,
+    "title": "Mission",
+    "work_packages": [
+      "P1",
+      "P3",
+      "P7"
+    ],
+    "coverage": "要求、预算与长期承诺分层，不更换Mission名称。"
+  },
+  {
+    "chapter": 6,
+    "title": "Task DAG",
+    "work_packages": [
+      "P2",
+      "P3"
+    ],
+    "coverage": "原文动态DAG+对话新增HTN/Method/AND–OR。"
+  },
+  {
+    "chapter": 7,
+    "title": "Planner/Manager/Search",
+    "work_packages": [
+      "P2",
+      "P3",
+      "P4"
+    ],
+    "coverage": "计划空间frontier与分层scope。"
+  },
+  {
+    "chapter": 8,
+    "title": "Frontier/Allocator/Scheduler",
+    "work_packages": [
+      "P4",
+      "P8"
+    ],
+    "coverage": "资源选择与物理派发分开。"
+  },
+  {
+    "chapter": 9,
+    "title": "角色与模型路由",
+    "work_packages": [
+      "P4",
+      "P8"
+    ],
+    "coverage": "角色搜索偏置、真实路由/可训练候选。"
+  },
+  {
+    "chapter": 10,
+    "title": "Context/检索",
+    "work_packages": [
+      "P5"
+    ],
+    "coverage": "有界输入，全保留历史可查；权限/版本/覆盖。"
+  },
+  {
+    "chapter": 11,
+    "title": "Blackboard/压缩",
+    "work_packages": [
+      "P1",
+      "P3",
+      "P5"
+    ],
+    "coverage": "条件理由、失效、分层摘要、跨分支综合。"
+  },
+  {
+    "chapter": 12,
+    "title": "Agent生命周期",
+    "work_packages": [
+      "P1",
+      "P4"
+    ],
+    "coverage": "稳定BaseAgent、可替换执行，Task/Attempt/Turn分离。"
+  },
+  {
+    "chapter": 13,
+    "title": "结果协议",
+    "work_packages": [
+      "P1",
+      "P3"
+    ],
+    "coverage": "观察/诊断/建议/真实成本与产物引用。"
+  },
+  {
+    "chapter": 14,
+    "title": "Verifier",
+    "work_packages": [
+      "P6"
+    ],
+    "coverage": "独立语义审阅和强制实际检查，非单一硬编码业务函数。"
+  },
+  {
+    "chapter": 15,
+    "title": "Proposal/Commit",
+    "work_packages": [
+      "P1",
+      "P3"
+    ],
+    "coverage": "方法、图、预算、事件一条逻辑写入。"
+  },
+  {
+    "chapter": 16,
+    "title": "State/Event/Durable",
+    "work_packages": [
+      "P7"
+    ],
+    "coverage": "全新模式业务投影重建；旧历史不补造。"
+  },
+  {
+    "chapter": 17,
+    "title": "并发冲突幂等",
+    "work_packages": [
+      "P1",
+      "P3",
+      "P7"
+    ],
+    "coverage": "语义read-set、generation、共享责任。"
+  },
+  {
+    "chapter": 18,
+    "title": "预算与背压",
+    "work_packages": [
+      "P1",
+      "P4",
+      "P8"
+    ],
+    "coverage": "稳定责任预算、全角色成本、实际资源压力。"
+  },
+  {
+    "chapter": 19,
+    "title": "停止/停滞/死锁/漂移",
+    "work_packages": [
+      "P3",
+      "P4"
+    ],
+    "coverage": "有限搜索燃料、反复改图检测、授权要求版本。"
+  },
+  {
+    "chapter": 20,
+    "title": "Workspace/Artifact",
+    "work_packages": [
+      "P6",
+      "P7"
+    ],
+    "coverage": "真实输入/输出身份、共享消费、再次验收。"
+  },
+  {
+    "chapter": 21,
+    "title": "工具安全",
+    "work_packages": [
+      "P6"
+    ],
+    "coverage": "现实时效、稳定Operation、平台能力与注入隔离。"
+  },
+  {
+    "chapter": 22,
+    "title": "人工介入",
+    "work_packages": [
+      "P3",
+      "P6",
+      "P9"
+    ],
+    "coverage": "授权/不确定性/仲裁/接管都成事件与回执。"
+  },
+  {
+    "chapter": 23,
+    "title": "观测评估",
+    "work_packages": [
+      "P8",
+      "P9"
+    ],
+    "coverage": "trace、规划证据、外部结果和全角色成本。"
+  },
+  {
+    "chapter": 24,
+    "title": "完整任务时序",
+    "work_packages": [
+      "P2",
+      "P3",
+      "P6",
+      "P9"
+    ],
+    "coverage": "真实闭环、显式根Resolution、不要求所有替代分支完成。"
+  },
+  {
+    "chapter": 25,
+    "title": "状态机",
+    "work_packages": [
+      "P1",
+      "P3",
+      "P7"
+    ],
+    "coverage": "旧终态不改；当前有效性单独表达；新语义版本化。"
+  },
+  {
+    "chapter": 26,
+    "title": "核心数据契约",
+    "work_packages": [
+      "P1",
+      "P2",
+      "P3"
+    ],
+    "coverage": "扩展不是替换六个合同，typed codecs保护历史。"
+  },
+  {
+    "chapter": 27,
+    "title": "模块组织",
+    "work_packages": [
+      "P1",
+      "P2",
+      "P4",
+      "P6",
+      "P7"
+    ],
+    "coverage": "模块化单体+独立能力端口，无强制微服务。"
+  },
+  {
+    "chapter": 28,
+    "title": "阶段路线",
+    "work_packages": [
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5",
+      "P6",
+      "P7",
+      "P8",
+      "P9"
+    ],
+    "coverage": "九工作包是排程，最终能力全部必达，学习不再无限推后。"
+  },
+  {
+    "chapter": 29,
+    "title": "初始配置",
+    "work_packages": [
+      "P4",
+      "P8"
+    ],
+    "coverage": "初始公式为基线，不等于最终最优；容量明确冻结。"
+  },
+  {
+    "chapter": 30,
+    "title": "验收",
+    "work_packages": [
+      "P9"
+    ],
+    "coverage": "原29条保留并扩展90场景，不以计数代替充分性。"
+  },
+  {
+    "chapter": 31,
+    "title": "最终心智模型",
+    "work_packages": [
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5",
+      "P6",
+      "P7",
+      "P8",
+      "P9"
+    ],
+    "coverage": "Agent探索不确定性，程序守确定性；方法与证据闭环。"
+  }
+]

@@ -1,0 +1,65 @@
+{
+  "purpose": "artifact integrity only; not implementation/test evidence",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1174,
+      "sha256": "ebfed7be86afc676abc51b9c2f07eae849880adfc3aeb738640a265382c33e88"
+    },
+    {
+      "path": "acceptance-scenarios.json",
+      "bytes": 78871,
+      "sha256": "df79315f348a151cf8e435b24950e55eeb08622562cbe45b22d3ee8cd4e43a0f"
+    },
+    {
+      "path": "code-changes.json",
+      "bytes": 17271,
+      "sha256": "9806ebcefad3ae4606f23e614714d964834fded76549c042e624678c6eb0f2e9"
+    },
+    {
+      "path": "original-31-chapters-map.zh-CN.md",
+      "bytes": 5099,
+      "sha256": "8daa6a17d96bce8b52bd9fffcfa344670d17ae079ded11527ce14fc5538cfd43"
+    },
+    {
+      "path": "original-chapter-map.json",
+      "bytes": 10764,
+      "sha256": "77dbd3246cc5c6691d529eecdbbde180854e88e9ebf9db3bd699c94ecc6811c4"
+    },
+    {
+      "path": "plan.zh-CN.md",
+      "bytes": 80000,
+      "sha256": "2149d3716aef4d318c9f7cdd1c674b7ad567cc890e6cee8b5f62089ca99bab4f"
+    },
+    {
+      "path": "requirements-traceability.zh-CN.md",
+      "bytes": 12061,
+      "sha256": "5b87cd5993a68ae3921f93a942fb2de8006717cc126b3dd627b05cedc6b9c0f2"
+    },
+    {
+      "path": "requirements.json",
+      "bytes": 37452,
+      "sha256": "77360b887d7ea14db625b32536eba18b783fd8f79fb9c2f85cd76feed6b6dcd3"
+    },
+    {
+      "path": "scope-decisions.zh-CN.md",
+      "bytes": 1839,
+      "sha256": "e119f3fa8a5588c7220a2f0e7b50330534e28a178eea5912fb9837aecaa72774"
+    },
+    {
+      "path": "scripts/validate_plan.py",
+      "bytes": 1588,
+      "sha256": "45b5e55fed8e5c2d267fc8ea43862e1e42acfdc46516d0f8db15140ab6a2ac06"
+    },
+    {
+      "path": "sources.json",
+      "bytes": 19322,
+      "sha256": "27df310673fbdf6eaff4264ab0fbc88d4ae04a6e7ef51966ec5357c28e115c22"
+    },
+    {
+      "path": "work-packages.json",
+      "bytes": 4675,
+      "sha256": "eb441d55464b10736a4b4a4dafbbc59a0277061748566e3e49805fb5977cee74"
+    }
+  ]
+}

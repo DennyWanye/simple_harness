@@ -1,0 +1,692 @@
+{
+  "baseline_commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+  "changes": [
+    {
+      "path": "src/agent_orchestrator/planning/htn/contracts.py",
+      "action": "proposed_new",
+      "work_package": "W1",
+      "requirements": [
+        "FULL-01",
+        "FULL-02",
+        "FULL-03",
+        "FULL-04",
+        "FULL-05",
+        "FULL-60"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/planning/htn/predicates.py",
+      "action": "proposed_new",
+      "work_package": "W1",
+      "requirements": [
+        "FULL-01",
+        "FULL-02",
+        "FULL-03",
+        "FULL-04",
+        "FULL-05",
+        "FULL-60"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/planning/htn/registry.py",
+      "action": "proposed_new",
+      "work_package": "W1",
+      "requirements": [
+        "FULL-01",
+        "FULL-02",
+        "FULL-03",
+        "FULL-04",
+        "FULL-05",
+        "FULL-60"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/planning/htn/refiner.py",
+      "action": "proposed_new",
+      "work_package": "W1",
+      "requirements": [
+        "FULL-01",
+        "FULL-02",
+        "FULL-03",
+        "FULL-04",
+        "FULL-05",
+        "FULL-60"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/planning/htn/compiler.py",
+      "action": "proposed_new",
+      "work_package": "W1",
+      "requirements": [
+        "FULL-01",
+        "FULL-02",
+        "FULL-03",
+        "FULL-04",
+        "FULL-05",
+        "FULL-60"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/planning/htn/solver_port.py",
+      "action": "proposed_new",
+      "work_package": "W1",
+      "requirements": [
+        "FULL-01",
+        "FULL-02",
+        "FULL-03",
+        "FULL-04",
+        "FULL-05",
+        "FULL-60"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/planning/htn/hddl_adapter.py",
+      "action": "proposed_new",
+      "work_package": "W1",
+      "requirements": [
+        "FULL-01",
+        "FULL-02",
+        "FULL-03",
+        "FULL-04",
+        "FULL-05",
+        "FULL-60"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/orchestrator/refinement_commits.py",
+      "action": "proposed_new",
+      "work_package": "W1",
+      "requirements": [
+        "FULL-01",
+        "FULL-02",
+        "FULL-03",
+        "FULL-04",
+        "FULL-05",
+        "FULL-60"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/planning/htn/repair.py",
+      "action": "proposed_new",
+      "work_package": "W2",
+      "requirements": [
+        "FULL-06",
+        "FULL-07",
+        "FULL-08",
+        "FULL-09",
+        "FULL-10",
+        "FULL-14",
+        "FULL-43",
+        "FULL-47"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/planning/htn/impact.py",
+      "action": "proposed_new",
+      "work_package": "W2",
+      "requirements": [
+        "FULL-06",
+        "FULL-07",
+        "FULL-08",
+        "FULL-09",
+        "FULL-10",
+        "FULL-14",
+        "FULL-43",
+        "FULL-47"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/planning/world_model.py",
+      "action": "proposed_new",
+      "work_package": "W2",
+      "requirements": [
+        "FULL-06",
+        "FULL-07",
+        "FULL-08",
+        "FULL-09",
+        "FULL-10",
+        "FULL-14",
+        "FULL-43",
+        "FULL-47"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/graph/changes.py",
+      "action": "modify_existing",
+      "work_package": "W2",
+      "requirements": [
+        "FULL-06",
+        "FULL-07",
+        "FULL-08",
+        "FULL-09",
+        "FULL-10",
+        "FULL-14",
+        "FULL-43",
+        "FULL-47"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "action": "modify_existing",
+      "work_package": "W2",
+      "requirements": [
+        "FULL-06",
+        "FULL-07",
+        "FULL-08",
+        "FULL-09",
+        "FULL-10",
+        "FULL-14",
+        "FULL-43",
+        "FULL-47"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/memory/acceptance_support.py",
+      "action": "proposed_new",
+      "work_package": "W3",
+      "requirements": [
+        "FULL-16",
+        "FULL-17",
+        "FULL-18",
+        "FULL-19",
+        "FULL-20",
+        "FULL-22",
+        "FULL-23",
+        "FULL-24",
+        "FULL-25"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/context/retrieval.py",
+      "action": "modify_existing",
+      "work_package": "W3",
+      "requirements": [
+        "FULL-16",
+        "FULL-17",
+        "FULL-18",
+        "FULL-19",
+        "FULL-20",
+        "FULL-22",
+        "FULL-23",
+        "FULL-24",
+        "FULL-25"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/context/compression.py",
+      "action": "modify_existing",
+      "work_package": "W3",
+      "requirements": [
+        "FULL-16",
+        "FULL-17",
+        "FULL-18",
+        "FULL-19",
+        "FULL-20",
+        "FULL-22",
+        "FULL-23",
+        "FULL-24",
+        "FULL-25"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/context/context_builder.py",
+      "action": "modify_existing",
+      "work_package": "W3",
+      "requirements": [
+        "FULL-16",
+        "FULL-17",
+        "FULL-18",
+        "FULL-19",
+        "FULL-20",
+        "FULL-22",
+        "FULL-23",
+        "FULL-24",
+        "FULL-25"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/coordination/scopes.py",
+      "action": "proposed_new",
+      "work_package": "W4",
+      "requirements": [
+        "FULL-21",
+        "FULL-26",
+        "FULL-27",
+        "FULL-28",
+        "FULL-29",
+        "FULL-30",
+        "FULL-44",
+        "FULL-56",
+        "FULL-57"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/coordination/messages.py",
+      "action": "proposed_new",
+      "work_package": "W4",
+      "requirements": [
+        "FULL-21",
+        "FULL-26",
+        "FULL-27",
+        "FULL-28",
+        "FULL-29",
+        "FULL-30",
+        "FULL-44",
+        "FULL-56",
+        "FULL-57"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/api/planning_facade.py",
+      "action": "proposed_new",
+      "work_package": "W4",
+      "requirements": [
+        "FULL-21",
+        "FULL-26",
+        "FULL-27",
+        "FULL-28",
+        "FULL-29",
+        "FULL-30",
+        "FULL-44",
+        "FULL-56",
+        "FULL-57"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/runtime/operator_registry.py",
+      "action": "proposed_new",
+      "work_package": "W5",
+      "requirements": [
+        "FULL-31",
+        "FULL-32",
+        "FULL-33",
+        "FULL-34",
+        "FULL-35",
+        "FULL-40",
+        "FULL-46",
+        "FULL-48",
+        "FULL-49"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/governance/domains.py",
+      "action": "modify_existing",
+      "work_package": "W5",
+      "requirements": [
+        "FULL-31",
+        "FULL-32",
+        "FULL-33",
+        "FULL-34",
+        "FULL-35",
+        "FULL-40",
+        "FULL-46",
+        "FULL-48",
+        "FULL-49"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/verification/domain_handlers.py",
+      "action": "modify_existing",
+      "work_package": "W5",
+      "requirements": [
+        "FULL-31",
+        "FULL-32",
+        "FULL-33",
+        "FULL-34",
+        "FULL-35",
+        "FULL-40",
+        "FULL-46",
+        "FULL-48",
+        "FULL-49"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/verification/verifier_router.py",
+      "action": "modify_existing",
+      "work_package": "W5",
+      "requirements": [
+        "FULL-31",
+        "FULL-32",
+        "FULL-33",
+        "FULL-34",
+        "FULL-35",
+        "FULL-40",
+        "FULL-46",
+        "FULL-48",
+        "FULL-49"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/commitments/service.py",
+      "action": "proposed_new",
+      "work_package": "W6",
+      "requirements": [
+        "FULL-36",
+        "FULL-37",
+        "FULL-38",
+        "FULL-39",
+        "FULL-41",
+        "FULL-42",
+        "FULL-45",
+        "FULL-58"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/commitments/timers.py",
+      "action": "proposed_new",
+      "work_package": "W6",
+      "requirements": [
+        "FULL-36",
+        "FULL-37",
+        "FULL-38",
+        "FULL-39",
+        "FULL-41",
+        "FULL-42",
+        "FULL-45",
+        "FULL-58"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/observability/replay.py",
+      "action": "modify_existing",
+      "work_package": "W6",
+      "requirements": [
+        "FULL-36",
+        "FULL-37",
+        "FULL-38",
+        "FULL-39",
+        "FULL-41",
+        "FULL-42",
+        "FULL-45",
+        "FULL-58"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/storage/schema.py",
+      "action": "modify_existing",
+      "work_package": "W6",
+      "requirements": [
+        "FULL-36",
+        "FULL-37",
+        "FULL-38",
+        "FULL-39",
+        "FULL-41",
+        "FULL-42",
+        "FULL-45",
+        "FULL-58"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/governance/learning.py",
+      "action": "modify_existing",
+      "work_package": "W7",
+      "requirements": [
+        "FULL-11",
+        "FULL-12",
+        "FULL-13",
+        "FULL-15",
+        "FULL-50",
+        "FULL-51",
+        "FULL-52",
+        "FULL-53",
+        "FULL-54",
+        "FULL-55",
+        "FULL-59"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/scheduling/allocator.py",
+      "action": "modify_existing",
+      "work_package": "W7",
+      "requirements": [
+        "FULL-11",
+        "FULL-12",
+        "FULL-13",
+        "FULL-15",
+        "FULL-50",
+        "FULL-51",
+        "FULL-52",
+        "FULL-53",
+        "FULL-54",
+        "FULL-55",
+        "FULL-59"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/runtime/model_router.py",
+      "action": "modify_existing",
+      "work_package": "W7",
+      "requirements": [
+        "FULL-11",
+        "FULL-12",
+        "FULL-13",
+        "FULL-15",
+        "FULL-50",
+        "FULL-51",
+        "FULL-52",
+        "FULL-53",
+        "FULL-54",
+        "FULL-55",
+        "FULL-59"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    },
+    {
+      "path": "src/agent_orchestrator/observability/evaluation.py",
+      "action": "modify_existing",
+      "work_package": "W7",
+      "requirements": [
+        "FULL-11",
+        "FULL-12",
+        "FULL-13",
+        "FULL-15",
+        "FULL-50",
+        "FULL-51",
+        "FULL-52",
+        "FULL-53",
+        "FULL-54",
+        "FULL-55",
+        "FULL-59"
+      ],
+      "do_not_change": [
+        "existing frozen request bytes",
+        "legacy identity/hash semantics",
+        "single logical commit authority"
+      ],
+      "status": "PROPOSED_NOT_APPLIED"
+    }
+  ],
+  "host": {
+    "status": "ACCESS_UNVERIFIED",
+    "action": "Map real Host projection/IPC/store/UI to the public planning contracts; do not invent current paths"
+  },
+  "notes": [
+    "Paths marked proposed_new are design targets, not existing source.",
+    "Storage migrations must allocate the next actual descriptor and preserve historical checksums."
+  ]
+}

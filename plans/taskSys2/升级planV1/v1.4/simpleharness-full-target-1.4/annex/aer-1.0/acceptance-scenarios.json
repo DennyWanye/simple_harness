@@ -1,0 +1,1004 @@
+[
+  {
+    "id": "AER-V01",
+    "group": "V",
+    "title": "漏掉根要求",
+    "setup": "用户要求 Windows AND Linux；候选仅 Linux 有测试",
+    "trigger": "提交 PASS Review",
+    "oracle": "缺 Windows 准则不得根 ACCEPT",
+    "requirements": [
+      "R12",
+      "R28",
+      "R44"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V02",
+    "group": "V",
+    "title": "OR 与硬门分离",
+    "setup": "结果允许证明 OR 反例；隐私是硬门",
+    "trigger": "反例通过但隐私失败",
+    "oracle": "总体拒绝，不被 OR 掩盖",
+    "requirements": [
+      "R10",
+      "R12",
+      "R28"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V03",
+    "group": "V",
+    "title": "测试范围过宽",
+    "setup": "测试只覆盖样例输入",
+    "trigger": "Claim声称所有输入和线程安全",
+    "oracle": "无关扩大部分不能获得对应 assurance",
+    "requirements": [
+      "R28",
+      "R29"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V04",
+    "group": "V",
+    "title": "未执行检查",
+    "setup": "规定编译/测试/独立审阅",
+    "trigger": "测试工具不可用而模型给 PASS",
+    "oracle": "ERROR/UNKNOWN如实保存，不接受",
+    "requirements": [
+      "R28",
+      "R47"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V05",
+    "group": "V",
+    "title": "独立性",
+    "setup": "候选由agent-A生产",
+    "trigger": "用A的自评或Reviewer修改候选后提交",
+    "oracle": "自批拒绝；修改产生新候选另行审阅",
+    "requirements": [
+      "R28",
+      "R50"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V06",
+    "group": "V",
+    "title": "冻结产物",
+    "setup": "Review绑定hash-H1",
+    "trigger": "把同路径文件替换为H2",
+    "oracle": "hash不符；不能接纳H1 Review给H2",
+    "requirements": [
+      "R12",
+      "R16",
+      "R28"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V07",
+    "group": "V",
+    "title": "动态取证",
+    "setup": "ReviewPackage固定目标",
+    "trigger": "Verifier获取新的受权工具证据",
+    "oracle": "保存append和最终证据manifest，旧模型请求不改",
+    "requirements": [
+      "R28",
+      "R34",
+      "R51"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V08",
+    "group": "V",
+    "title": "基础设施与判断分离",
+    "setup": "独立Reviewer请求失败",
+    "trigger": "解析器生成默认REJECTED/PASS",
+    "oracle": "不得伪造语义结论；记录执行错误",
+    "requirements": [
+      "R28",
+      "R57"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V09",
+    "group": "V",
+    "title": "局部完成与组合错误",
+    "setup": "两个孩子分别通过",
+    "trigger": "输入schema/版本组合不兼容",
+    "oracle": "组合Review失败，根不完成",
+    "requirements": [
+      "R12",
+      "R15"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V10",
+    "group": "V",
+    "title": "有限报告",
+    "setup": "用户要求客观调查并列出未知项",
+    "trigger": "确有未知外部主张",
+    "oracle": "可接受披露合格的报告，不把未知主张变TRUE",
+    "requirements": [
+      "R12",
+      "R28",
+      "R29"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V11",
+    "group": "V",
+    "title": "要求修订复用",
+    "setup": "r2只改变一个准则",
+    "trigger": "旧Review迟到并复用无关子成果",
+    "oracle": "旧Review不改；carry-forward显式绑定r2",
+    "requirements": [
+      "R14",
+      "R17",
+      "R44"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-V12",
+    "group": "V",
+    "title": "验收与发送分阶段",
+    "setup": "报告PASS且需要获批发送",
+    "trigger": "报告提交时推进Mission",
+    "oracle": "可接受报告但根等待实际发送要求；不出现循环门",
+    "requirements": [
+      "R12",
+      "R28",
+      "R40"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K01",
+    "group": "K",
+    "title": "未知不是假",
+    "setup": "命题无合法记录",
+    "trigger": "查询其否定",
+    "oracle": "UNKNOWN；不得依absence生成FALSE",
+    "requirements": [
+      "R06",
+      "R29"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K02",
+    "group": "K",
+    "title": "多组理由",
+    "setup": "K由(E1 AND A1) OR E2支持",
+    "trigger": "撤回E1",
+    "oracle": "E2充分时K仍有支持，旧引用不改",
+    "requirements": [
+      "R29",
+      "R30"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K03",
+    "group": "K",
+    "title": "来源相关性",
+    "setup": "10份材料转述同一来源",
+    "trigger": "政策需要两个独立来源",
+    "oracle": "不满足独立性；不得按数量计票",
+    "requirements": [
+      "R28",
+      "R29"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K04",
+    "group": "K",
+    "title": "互相引用",
+    "setup": "A支持B，B支持A，无anchor",
+    "trigger": "运行闭包",
+    "oracle": "都不产生有根TRUE",
+    "requirements": [
+      "R29",
+      "R30"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K05",
+    "group": "K",
+    "title": "带外部但不充分的循环",
+    "setup": "A需要A AND E；E已知",
+    "trigger": "运行闭包",
+    "oracle": "A仍UNKNOWN，不能只看SCC有入边",
+    "requirements": [
+      "R29"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K06",
+    "group": "K",
+    "title": "anchor撤回",
+    "setup": "E→A→B→A曾为真",
+    "trigger": "E撤回重新求值",
+    "oracle": "派生循环不能自行维持TRUE",
+    "requirements": [
+      "R29",
+      "R30"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K07",
+    "group": "K",
+    "title": "正负冲突",
+    "setup": "同scope同时间有充分正/反证",
+    "trigger": "方法要求该条件TRUE",
+    "oracle": "CONFLICT阻止放行，不按多数覆盖",
+    "requirements": [
+      "R06",
+      "R29"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K08",
+    "group": "K",
+    "title": "异步传播窗口",
+    "setup": "旧witness已缓存",
+    "trigger": "提交来源撤回后暂停dirty worker",
+    "oracle": "epoch不符的Scheduler/Context/action立即复核或阻断",
+    "requirements": [
+      "R16",
+      "R30",
+      "R34"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K09",
+    "group": "K",
+    "title": "过期事件延迟",
+    "setup": "witness.not_after到期",
+    "trigger": "计时器暂未运行但工具准备handoff",
+    "oracle": "实时门拒绝；Replay历史结果不改",
+    "requirements": [
+      "R06",
+      "R30",
+      "R38"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K10",
+    "group": "K",
+    "title": "用途时间语义",
+    "setup": "库存为START前提，操作合法消耗库存",
+    "trigger": "验收时库存已变",
+    "oracle": "不倒推开始非法；其他ACCEPT条件仍重查",
+    "requirements": [
+      "R05",
+      "R17",
+      "R40"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K11",
+    "group": "K",
+    "title": "来源替换与原文引用",
+    "setup": "报告字面引用撤回E1；E2同结论",
+    "trigger": "尝试改绑支持后直接发送原报告",
+    "oracle": "引用合同仍失败；修报告、重审重批",
+    "requirements": [
+      "R17",
+      "R29",
+      "R30"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-K12",
+    "group": "K",
+    "title": "隐藏证据与权限",
+    "setup": "scope外存在支持/反证",
+    "trigger": "低权限Agent查询命题",
+    "oracle": "不得泄露隐藏来源存在；缺权限不等于假",
+    "requirements": [
+      "R06",
+      "R34",
+      "R50"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X01",
+    "group": "X",
+    "title": "相同命令丢回执",
+    "setup": "创建action已Commit",
+    "trigger": "客户端重发同命令同内容",
+    "oracle": "返回原回执；不新建操作/审批",
+    "requirements": [
+      "R03",
+      "R36",
+      "R40"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X02",
+    "group": "X",
+    "title": "同操作不同参数",
+    "setup": "已有Operation O1冻结H1",
+    "trigger": "同O1请求H2",
+    "oracle": "PAYLOAD_CONFLICT；不执行",
+    "requirements": [
+      "R03",
+      "R40",
+      "R57"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X03",
+    "group": "X",
+    "title": "同目标两个合法意图",
+    "setup": "用户同Mission明确两次不同发生位置",
+    "trigger": "相同connector/target提交",
+    "oracle": "生成两个合法occurrence，各自授权，不误吞第二次",
+    "requirements": [
+      "R03",
+      "R40"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X04",
+    "group": "X",
+    "title": "Commit后未派发",
+    "setup": "Outbox及命令回执已提交",
+    "trigger": "强制退出/重启",
+    "oracle": "同ID重发，execution去重接原工作",
+    "requirements": [
+      "R36",
+      "R38",
+      "R39"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X05",
+    "group": "X",
+    "title": "应用成功丢回执",
+    "setup": "服务原子写目标与key",
+    "trigger": "杀掉客户端响应接收",
+    "oracle": "lookup确认原效果，不重复写/发",
+    "requirements": [
+      "R38",
+      "R39",
+      "R40"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X06",
+    "group": "X",
+    "title": "迟到请求空查询",
+    "setup": "旧请求仍在网络或队列",
+    "trigger": "lookup暂时空",
+    "oracle": "不能判NOT_APPLIED_FINAL；保持核对或有效同key去重",
+    "requirements": [
+      "R38",
+      "R40"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X07",
+    "group": "X",
+    "title": "去重窗口过期",
+    "setup": "UNKNOWN且服务key TTL已过",
+    "trigger": "恢复并请求重试",
+    "oracle": "禁止自动重发，不把长期OperationId当远端永久记忆",
+    "requirements": [
+      "R40",
+      "R60"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X08",
+    "group": "X",
+    "title": "旧执行者和撤权",
+    "setup": "旧worker通过部分准备后暂停",
+    "trigger": "撤权/新epoch，然后旧worker继续",
+    "oracle": "未准入的请求拒绝；已外发只核对不假装撤回",
+    "requirements": [
+      "R16",
+      "R38",
+      "R50"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X09",
+    "group": "X",
+    "title": "外部目标改变",
+    "setup": "approval绑定目标version-v1",
+    "trigger": "另一写者改到v2后请求执行",
+    "oracle": "条件写失败/拒绝，不覆盖新值",
+    "requirements": [
+      "R16",
+      "R40",
+      "R50"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X10",
+    "group": "X",
+    "title": "部分效果",
+    "setup": "批动作只完成一部分",
+    "trigger": "返回PARTIAL/崩溃",
+    "oracle": "已知部分保留，剩余与补偿独立计划，不整体重发",
+    "requirements": [
+      "R40",
+      "R41"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X11",
+    "group": "X",
+    "title": "补偿冲突",
+    "setup": "原操作将A改B，别人改C",
+    "trigger": "系统想回退A",
+    "oracle": "检查当前版本，不无条件覆盖C；补偿独立授权",
+    "requirements": [
+      "R41",
+      "R50"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-X12",
+    "group": "X",
+    "title": "晚到费用",
+    "setup": "Mission已终态，原调用后来确认用量",
+    "trigger": "重复导入usage receipt",
+    "oracle": "计入原责任一次；不复活内容任务/授权",
+    "requirements": [
+      "R25",
+      "R38",
+      "R39",
+      "R51"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I01",
+    "group": "I",
+    "title": "改方法保留成果",
+    "setup": "A/B路线共享已接受C",
+    "trigger": "A前提失效切B",
+    "oracle": "保留C的有效引用，旧未知动作先核对，费用累计",
+    "requirements": [
+      "R11",
+      "R14",
+      "R25",
+      "R40"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I02",
+    "group": "I",
+    "title": "并发反证与接受",
+    "setup": "accept读取旧支持集合",
+    "trigger": "另一事务增加反证",
+    "oracle": "集合revision/epoch使旧提交复核或拒绝",
+    "requirements": [
+      "R16",
+      "R29",
+      "R30",
+      "R36"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I03",
+    "group": "I",
+    "title": "无关变化不重做",
+    "setup": "Review针对Task B",
+    "trigger": "A分支计划有无关变化",
+    "oracle": "B局部read-set仍适用可接纳；不全盘失效",
+    "requirements": [
+      "R14",
+      "R16",
+      "R17"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I04",
+    "group": "I",
+    "title": "验收后来源改版",
+    "setup": "报告接受但尚未执行批准动作",
+    "trigger": "来源撤回",
+    "oracle": "hand-off发现stale阻断，旧批准不能批准新报告",
+    "requirements": [
+      "R17",
+      "R30",
+      "R40"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I05",
+    "group": "I",
+    "title": "取消移交",
+    "setup": "Mission取消但外部操作UNKNOWN",
+    "trigger": "尝试直接终态删除队列",
+    "oracle": "必须保留或确认移交RecoveryObligation及通知",
+    "requirements": [
+      "R38",
+      "R40",
+      "R42",
+      "R45"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I06",
+    "group": "I",
+    "title": "根成功但备用执行未收敛",
+    "setup": "OR一支成功，另一支仍有pending动作",
+    "trigger": "请求Mission COMPLETED",
+    "oracle": "核对/安全接管责任，不留孤儿也不重复动作",
+    "requirements": [
+      "R10",
+      "R12",
+      "R38",
+      "R40"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I07",
+    "group": "I",
+    "title": "多库恢复缺件",
+    "setup": "manifest含execution/CAS与业务库",
+    "trigger": "删除某CAS/落后一个库后恢复",
+    "oracle": "标覆盖不全并禁副作用，不靠重跑掩盖",
+    "requirements": [
+      "R37",
+      "R38",
+      "R39",
+      "R60"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I08",
+    "group": "I",
+    "title": "纯Replay",
+    "setup": "有历史Review/Operation/APPLIED事件",
+    "trigger": "删除可重建投影并重放",
+    "oracle": "同业务投影；零模型/工具调用，旧lease不复活",
+    "requirements": [
+      "R37",
+      "R38"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I09",
+    "group": "I",
+    "title": "恶意证据跨Agent",
+    "setup": "工具文本含提升权限指令",
+    "trigger": "经摘要/Claim/Blackboard进入Verifier",
+    "oracle": "仍是数据；不能造Receipt/权限/正式Claim",
+    "requirements": [
+      "R28",
+      "R29",
+      "R34",
+      "R50"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I10",
+    "group": "I",
+    "title": "公开UI状态",
+    "setup": "注入坏schema消息/断网重开",
+    "trigger": "任务处于合法UNKNOWN/评审中",
+    "oracle": "协议失败与业务UNKNOWN分开；显示旧画面stale",
+    "requirements": [
+      "R45",
+      "R57",
+      "R58"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I11",
+    "group": "I",
+    "title": "验证资源保护",
+    "setup": "Worker想耗尽全预算",
+    "trigger": "尚需最终Review和核对",
+    "oracle": "保护尾额/停止新分支，不自动豁免验证",
+    "requirements": [
+      "R25",
+      "R26",
+      "R27",
+      "R28"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  },
+  {
+    "id": "AER-I12",
+    "group": "I",
+    "title": "完整报告发送",
+    "setup": "两份资料→独立Review→来源修订→H2批准→丢回执",
+    "trigger": "真实受控环境端到端执行和重启",
+    "oracle": "引用/要求/操作/费用/Resolution/UI一致，无错误宣布完成",
+    "requirements": [
+      "R12",
+      "R17",
+      "R28",
+      "R30",
+      "R36",
+      "R39",
+      "R40",
+      "R45"
+    ],
+    "required_evidence": [
+      "input/config/semantic versions",
+      "before-after DB or authority receipts",
+      "events and exact artifact/receipt hashes",
+      "fault cutpoint and process evidence when applicable"
+    ],
+    "status": "NOT_EXECUTED_ON_SIMPLEHARNESS",
+    "test_kind": "production/integration specification, not reference unittest"
+  }
+]

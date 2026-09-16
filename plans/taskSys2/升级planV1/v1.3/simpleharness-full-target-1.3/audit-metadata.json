@@ -1,0 +1,18 @@
+{
+  "date": "2026-09-16",
+  "sdk_commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+  "sdk_source_version": "0.11.1",
+  "host": "readable on the delivery machine (d107ba10); 54 py files import agent_orchestrator; UI under tauri-app/src",
+  "tests_run_on_repository": false,
+  "patches_applied": false,
+  "definition": "Complete final target and source-grounded gap closure specification; not a claim of universal planning correctness",
+  "scope_statuses_are_not_percent_complete": true,
+  "revision": "FULL-TARGET-1.3",
+  "v1_2_changes": "C1–C12, see complete-plan.zh-CN.md §0",
+  "v1_3_changes": "C18–C24: TaskGraph annex folded in; see complete-plan.zh-CN.md §0 and §24",
+  "missing_attachments": [
+    "taskgraph-tests.json (TG01–TG32)",
+    "requirement-map.json",
+    "source-index.json"
+  ]
+}

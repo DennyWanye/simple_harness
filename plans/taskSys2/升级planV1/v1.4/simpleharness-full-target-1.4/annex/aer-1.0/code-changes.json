@@ -1,0 +1,92 @@
+[
+  {
+    "path": "src/agent_orchestrator/verification/verifier_router.py",
+    "action": "MODIFY_EXISTING",
+    "specification": "复用分层检查，绑定ReviewPackage及purpose，不以错误当内容否定",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/verification/mission_coverage.py",
+    "action": "MODIFY_EXISTING",
+    "specification": "新模式显式criterion expression/根组合覆盖，旧文档域保持",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/memory/source_dependencies.py",
+    "action": "EXTEND_EXISTING",
+    "specification": "来源适配连接typed reverse-support与current validity",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/orchestrator/action_commits.py",
+    "action": "EXTEND_EXISTING",
+    "specification": "operation occurrence、新冻结envelope、authority与有效性门；legacy ID不改",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/runtime/connectors.py",
+    "action": "EXTEND_EXISTING",
+    "specification": "retention/query scope/条件写/typed reconciliation；旧高风险限制不降低",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/orchestrator/accounting_recovery.py",
+    "action": "REUSE_WITH_EXPLICIT_BINDING",
+    "specification": "原账户/价格/物理调用晚到费用",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/verification/review_coordinator.py",
+    "action": "PROPOSED_NEW",
+    "specification": "审阅准备、独立运行、动态取证与结果接收",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/verification/acceptance_rules.py",
+    "action": "PROPOSED_NEW",
+    "specification": "成功表达式/必需检查/独立性纯规则",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/memory/justifications.py",
+    "action": "PROPOSED_NEW",
+    "specification": "signed support最小不动点与反向理由",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/memory/validity.py",
+    "action": "PROPOSED_NEW",
+    "specification": "按用途求值及ValidityWitness",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/memory/validity_projection.py",
+    "action": "PROPOSED_NEW",
+    "specification": "epoch屏障/dirty work/recompute",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/orchestrator/resolution_commits.py",
+    "action": "ALREADY_PROPOSED_IN_MASTER",
+    "specification": "接纳/根Resolution/carry-forward同库事务",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/orchestrator/evidence_commits.py",
+    "action": "PROPOSED_NEW",
+    "specification": "观察、理由、更正和撤回事务",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/runtime/operation_protocol.py",
+    "action": "PROPOSED_NEW",
+    "specification": "retry/control/outcome规则与既有executor绑定",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  },
+  {
+    "path": "src/agent_orchestrator/orchestrator/recovery_coordinator.py",
+    "action": "PROPOSED_NEW",
+    "specification": "恢复禁副作用/核对/责任移交",
+    "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERABLE"
+  }
+]

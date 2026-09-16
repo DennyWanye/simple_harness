@@ -1,0 +1,63 @@
+{
+  "package_validation": "PASS",
+  "reference_tests": {
+    "count": 30,
+    "result": "PASS",
+    "scope": "pure reference rules only"
+  },
+  "master_requirements_preserved": 60,
+  "production_scenarios_defined": 48,
+  "production_scenarios_executed": 0,
+  "schema_fixture_results": [
+    {
+      "fixture": "review-record.valid.json",
+      "expected_valid": true,
+      "matched": true
+    },
+    {
+      "fixture": "review-record.invalid.json",
+      "expected_valid": false,
+      "matched": true
+    },
+    {
+      "fixture": "validity-witness.valid.json",
+      "expected_valid": true,
+      "matched": true
+    },
+    {
+      "fixture": "validity-witness.invalid.json",
+      "expected_valid": false,
+      "matched": true
+    },
+    {
+      "fixture": "operation-envelope.valid.json",
+      "expected_valid": true,
+      "matched": true
+    },
+    {
+      "fixture": "operation-envelope.invalid.json",
+      "expected_valid": false,
+      "matched": true
+    },
+    {
+      "fixture": "reconciliation-result.valid.json",
+      "expected_valid": true,
+      "matched": true
+    },
+    {
+      "fixture": "reconciliation-result.invalid.json",
+      "expected_valid": false,
+      "matched": true
+    }
+  ],
+  "python": "3.14.7 (main, Aug 25 2026, 13:50:14) [Clang 22.1.3 ]",
+  "jsonschema": "4.26.0",
+  "not_tested": [
+    "SimpleHarness SDK",
+    "actual models",
+    "database concurrency",
+    "external side effects",
+    "Host UI",
+    "platform executors"
+  ]
+}

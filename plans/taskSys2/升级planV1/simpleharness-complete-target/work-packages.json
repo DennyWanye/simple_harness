@@ -1,0 +1,247 @@
+{
+  "version": "FULL-TARGET-2.0",
+  "all_packages_required": true,
+  "packages": [
+    {
+      "id": "W1",
+      "title": "通用HTN完整语义与执行桥接",
+      "depends_on": [],
+      "requirements": [
+        "FULL-01",
+        "FULL-02",
+        "FULL-03",
+        "FULL-04",
+        "FULL-05",
+        "FULL-60"
+      ],
+      "acceptance_ids": [
+        "AT-001",
+        "AT-002",
+        "AT-003",
+        "AT-004",
+        "AT-005",
+        "AT-060",
+        "AT-061",
+        "AT-065",
+        "AT-066",
+        "AT-067",
+        "AT-068"
+      ],
+      "status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "W2",
+      "title": "证据驱动局部修复与在途安全",
+      "depends_on": [
+        "W1"
+      ],
+      "requirements": [
+        "FULL-06",
+        "FULL-07",
+        "FULL-08",
+        "FULL-09",
+        "FULL-10",
+        "FULL-14",
+        "FULL-43",
+        "FULL-47"
+      ],
+      "acceptance_ids": [
+        "AT-006",
+        "AT-007",
+        "AT-008",
+        "AT-009",
+        "AT-010",
+        "AT-014",
+        "AT-043",
+        "AT-047",
+        "AT-062",
+        "AT-063",
+        "AT-064",
+        "AT-069",
+        "AT-070",
+        "AT-071",
+        "AT-077"
+      ],
+      "status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "W3",
+      "title": "条件知识、真值维护和动态Context",
+      "depends_on": [
+        "W1",
+        "W2"
+      ],
+      "requirements": [
+        "FULL-16",
+        "FULL-17",
+        "FULL-18",
+        "FULL-19",
+        "FULL-20",
+        "FULL-22",
+        "FULL-23",
+        "FULL-24",
+        "FULL-25"
+      ],
+      "acceptance_ids": [
+        "AT-016",
+        "AT-017",
+        "AT-018",
+        "AT-019",
+        "AT-020",
+        "AT-022",
+        "AT-023",
+        "AT-024",
+        "AT-025",
+        "AT-072",
+        "AT-073",
+        "AT-074"
+      ],
+      "status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "W4",
+      "title": "Main与多层协作和完整产品接口",
+      "depends_on": [
+        "W1",
+        "W2",
+        "W3"
+      ],
+      "requirements": [
+        "FULL-21",
+        "FULL-26",
+        "FULL-27",
+        "FULL-28",
+        "FULL-29",
+        "FULL-30",
+        "FULL-44",
+        "FULL-56",
+        "FULL-57"
+      ],
+      "acceptance_ids": [
+        "AT-021",
+        "AT-026",
+        "AT-027",
+        "AT-028",
+        "AT-029",
+        "AT-030",
+        "AT-044",
+        "AT-056",
+        "AT-057",
+        "AT-075",
+        "AT-076"
+      ],
+      "status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "W5",
+      "title": "跨域Operator、独立验证与平台执行",
+      "depends_on": [
+        "W1",
+        "W2",
+        "W3",
+        "W4"
+      ],
+      "requirements": [
+        "FULL-31",
+        "FULL-32",
+        "FULL-33",
+        "FULL-34",
+        "FULL-35",
+        "FULL-40",
+        "FULL-46",
+        "FULL-48",
+        "FULL-49"
+      ],
+      "acceptance_ids": [
+        "AT-031",
+        "AT-032",
+        "AT-033",
+        "AT-034",
+        "AT-035",
+        "AT-040",
+        "AT-046",
+        "AT-048",
+        "AT-049"
+      ],
+      "status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "W6",
+      "title": "长期承诺与完整业务恢复",
+      "depends_on": [
+        "W1",
+        "W2",
+        "W3",
+        "W4",
+        "W5"
+      ],
+      "requirements": [
+        "FULL-36",
+        "FULL-37",
+        "FULL-38",
+        "FULL-39",
+        "FULL-41",
+        "FULL-42",
+        "FULL-45",
+        "FULL-58"
+      ],
+      "acceptance_ids": [
+        "AT-036",
+        "AT-037",
+        "AT-038",
+        "AT-039",
+        "AT-041",
+        "AT-042",
+        "AT-045",
+        "AT-058",
+        "AT-079",
+        "AT-080",
+        "AT-081",
+        "AT-082"
+      ],
+      "status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "W7",
+      "title": "学习策略与完整效果证明",
+      "depends_on": [
+        "W1",
+        "W2",
+        "W3",
+        "W4",
+        "W5",
+        "W6"
+      ],
+      "requirements": [
+        "FULL-11",
+        "FULL-12",
+        "FULL-13",
+        "FULL-15",
+        "FULL-50",
+        "FULL-51",
+        "FULL-52",
+        "FULL-53",
+        "FULL-54",
+        "FULL-55",
+        "FULL-59"
+      ],
+      "acceptance_ids": [
+        "AT-011",
+        "AT-012",
+        "AT-013",
+        "AT-015",
+        "AT-050",
+        "AT-051",
+        "AT-052",
+        "AT-053",
+        "AT-054",
+        "AT-055",
+        "AT-059",
+        "AT-078",
+        "AT-083",
+        "AT-084"
+      ],
+      "status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "result": "DELIVERABLE_STRUCTURE_VALID",
+  "scope": "Only artifact references, requirements mapping, dependency graph and proposed JSON schema structures",
+  "sdk_tests_run": false,
+  "real_model_tests_run": false,
+  "ui_tests_run": false,
+  "production_semantic_validator_run": false,
+  "requirements": 60,
+  "mandatory_requirements": 59,
+  "explicit_exclusions": 1,
+  "work_packages": 9,
+  "test_specifications": 90,
+  "original_chapters": 31,
+  "source_entries": 48,
+  "proposed_schemas": 4,
+  "schema_fixtures": 13,
+  "schema_library_version": "4.26.0",
+  "topological_package_order": [
+    "P1",
+    "P2",
+    "P5",
+    "P3",
+    "P6",
+    "P4",
+    "P7",
+    "P8",
+    "P9"
+  ],
+  "schema_fixture_results": [
+    {
+      "name": "method-contract-v1-valid",
+      "structural_validation": true,
+      "expected": true
+    },
+    {
+      "name": "method-contract-v1-unknown-field",
+      "structural_validation": false,
+      "expected": false
+    },
+    {
+      "name": "method-contract-v1-string-version",
+      "structural_validation": false,
+      "expected": false
+    },
+    {
+      "name": "execution-feedback-v1-valid",
+      "structural_validation": true,
+      "expected": true
+    },
+    {
+      "name": "execution-feedback-v1-unknown-field",
+      "structural_validation": false,
+      "expected": false
+    },
+    {
+      "name": "execution-feedback-v1-string-version",
+      "structural_validation": false,
+      "expected": false
+    },
+    {
+      "name": "plan-revision-proposal-v1-valid",
+      "structural_validation": true,
+      "expected": true
+    },
+    {
+      "name": "plan-revision-proposal-v1-unknown-field",
+      "structural_validation": false,
+      "expected": false
+    },
+    {
+      "name": "plan-revision-proposal-v1-string-version",
+      "structural_validation": false,
+      "expected": false
+    },
+    {
+      "name": "goal-resolution-v1-valid",
+      "structural_validation": true,
+      "expected": true
+    },
+    {
+      "name": "goal-resolution-v1-unknown-field",
+      "structural_validation": false,
+      "expected": false
+    },
+    {
+      "name": "goal-resolution-v1-string-version",
+      "structural_validation": false,
+      "expected": false
+    },
+    {
+      "name": "resolution-structural-valid-semantic-invalid",
+      "structural_validation": true,
+      "expected": true
+    }
+  ],
+  "main_document_sha256": "230cbd0e2de67e85c141f995a5f2a104c0c47821f26683d5854a6634dd6a3ec1",
+  "note": "Schema validity does not establish HTN semantics, authorization, budget correctness or runnable project integration."
+}

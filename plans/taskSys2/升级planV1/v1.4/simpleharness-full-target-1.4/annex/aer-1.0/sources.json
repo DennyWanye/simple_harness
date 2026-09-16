@@ -1,0 +1,142 @@
+{
+  "audit_date": "2026-09-16",
+  "sdk_commit": "873fd4a2c3bf7c0a2f8927e2fcdcbccf7e45a11d",
+  "base_commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+  "compare": {
+    "changed_files": [
+      "plans/2026-09-14-gap-phase1/HANDOFF-2026-09-16-grok-a96.md"
+    ],
+    "runtime_code_changed": false,
+    "url": "https://github.com/DennyWanye/simple-harness-sdk/compare/61a85eb7e8c003fa894497090f5de893419ebbd1...873fd4a2c3bf7c0a2f8927e2fcdcbccf7e45a11d",
+    "id": "S0"
+  },
+  "source_reads": [
+    {
+      "id": "S1",
+      "path": "src/agent_orchestrator/verification/verifier_router.py",
+      "range": "1-205",
+      "git_blob_sha": "748f078259f28bb0d7f4932f8697748d3dad8902",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/873fd4a2c3bf7c0a2f8927e2fcdcbccf7e45a11d/src/agent_orchestrator/verification/verifier_router.py"
+    },
+    {
+      "id": "S2",
+      "path": "src/agent_orchestrator/verification/mission_coverage.py",
+      "range": "1-230",
+      "git_blob_sha": "5aa224e3a6e4a01e4358e3c9246e615663c368f0",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/873fd4a2c3bf7c0a2f8927e2fcdcbccf7e45a11d/src/agent_orchestrator/verification/mission_coverage.py"
+    },
+    {
+      "id": "S3",
+      "path": "src/agent_orchestrator/memory/source_dependencies.py",
+      "range": "1-245",
+      "git_blob_sha": "29e63326a90cad92b3629b87811b8af464cc6708",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/873fd4a2c3bf7c0a2f8927e2fcdcbccf7e45a11d/src/agent_orchestrator/memory/source_dependencies.py"
+    },
+    {
+      "id": "S4",
+      "path": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "range": "1-190",
+      "git_blob_sha": "5d5a680811be465b684f7d1fb99db05d163c3c97",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/873fd4a2c3bf7c0a2f8927e2fcdcbccf7e45a11d/src/agent_orchestrator/orchestrator/commit_service.py"
+    },
+    {
+      "id": "S5",
+      "path": "src/agent_orchestrator/orchestrator/action_commits.py",
+      "range": "1-240",
+      "git_blob_sha": "53cf8032fcc4dc5d1ad41a63a2f94a32318083cb",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/873fd4a2c3bf7c0a2f8927e2fcdcbccf7e45a11d/src/agent_orchestrator/orchestrator/action_commits.py"
+    },
+    {
+      "id": "S6",
+      "path": "src/agent_orchestrator/runtime/connectors.py",
+      "range": "1-215",
+      "git_blob_sha": "6846bf62de8121d393669310a8bdc382ef574f92",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/873fd4a2c3bf7c0a2f8927e2fcdcbccf7e45a11d/src/agent_orchestrator/runtime/connectors.py"
+    },
+    {
+      "id": "S7",
+      "path": "src/agent_orchestrator/orchestrator/accounting_recovery.py",
+      "range": "1-175",
+      "git_blob_sha": "44899d6858532b1af2190fe685ec2d6999b3e7e6",
+      "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/873fd4a2c3bf7c0a2f8927e2fcdcbccf7e45a11d/src/agent_orchestrator/orchestrator/accounting_recovery.py"
+    }
+  ],
+  "host": {
+    "repository": "DennyWanye/simple_harness",
+    "read_result": "404; no current code or UI verified"
+  },
+  "scope": "Targeted source read. No SDK, model, external connector or Host UI execution.",
+  "design_inputs": [
+    {
+      "id": "D1",
+      "file": "agent-orchestration-layer-complete-design.md",
+      "sha256": "4d821e388b6c406792ec5256cfcc67fb195aab8be574f24925d012f95c3dc91b"
+    },
+    {
+      "id": "D2",
+      "file": "simpleharness-complete-target-and-gap-plan-2026-09-16.zh-CN.md",
+      "sha256": "230cbd0e2de67e85c141f995a5f2a104c0c47821f26683d5854a6634dd6a3ec1"
+    },
+    {
+      "id": "D3",
+      "file": "simpleharness-taskgraph-implementation-design.zh-CN.md",
+      "sha256": "61b3b3fa515cf7442f69c1cb3ea12400883122d54cd109f7cdfb6615fe16f5a1"
+    }
+  ],
+  "external_primary_sources": [
+    {
+      "id": "W1",
+      "title": "W3C PROV-DM",
+      "url": "https://www.w3.org/TR/prov-dm/",
+      "role": "mechanism background; project protocol choices are separately stated"
+    },
+    {
+      "id": "W2",
+      "title": "Doyle TMS",
+      "url": "https://dspace.mit.edu/entities/publication/5377b306-4ecc-4687-b1f5-78cbb4a0543a",
+      "role": "mechanism background; project protocol choices are separately stated"
+    },
+    {
+      "id": "W3",
+      "title": "AWS idempotent APIs",
+      "url": "https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/",
+      "role": "mechanism background; project protocol choices are separately stated"
+    },
+    {
+      "id": "W4",
+      "title": "RFC9110",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "role": "mechanism background; project protocol choices are separately stated"
+    },
+    {
+      "id": "W5",
+      "title": "AWS transactional outbox",
+      "url": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html",
+      "role": "mechanism background; project protocol choices are separately stated"
+    },
+    {
+      "id": "W6",
+      "title": "SQLite isolation",
+      "url": "https://www.sqlite.org/isolation.html",
+      "role": "mechanism background; project protocol choices are separately stated"
+    },
+    {
+      "id": "W7",
+      "title": "Microsoft compensating transaction",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/compensating-transaction",
+      "role": "mechanism background; project protocol choices are separately stated"
+    },
+    {
+      "id": "W8",
+      "title": "Hypothesis stateful",
+      "url": "https://hypothesis.readthedocs.io/en/latest/stateful.html",
+      "role": "mechanism background; project protocol choices are separately stated"
+    },
+    {
+      "id": "W9",
+      "title": "Lean validating proofs",
+      "url": "https://lean-lang.org/doc/reference/latest/ValidatingProofs/",
+      "role": "mechanism background; project protocol choices are separately stated"
+    }
+  ]
+}

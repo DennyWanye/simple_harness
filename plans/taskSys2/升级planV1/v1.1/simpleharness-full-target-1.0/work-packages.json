@@ -1,0 +1,408 @@
+[
+  {
+    "id": "P1",
+    "title": "语义契约、义务与证据有效性",
+    "depends_on": [],
+    "complete_feature": "同一责任被替代仍保留费用/失败历史；独立评审身份与当前条件决定可用性。",
+    "code_targets": [
+      "contracts/obligations.py [NEW]",
+      "contracts/evidence_state.py [NEW]",
+      "contracts/htn.py [NEW foundation types]",
+      "contracts/resolution.py [NEW]",
+      "storage/obligation_store.py [NEW]",
+      "orchestrator/commit_service.py [MODIFY]",
+      "orchestrator/mission_tail_commits.py [MODIFY]"
+    ],
+    "implementation_steps": [
+      "将旧模式在内存边界解析为明确类型，保留序列化与请求hash。",
+      "实现Obligation和typed依赖，不由Task重命名产生新预算。",
+      "实装Fact/Justification/Validity，并接入至少一个真实接受和预算路径。"
+    ],
+    "done_gate": "合法旧行为不变；混用角色/ID及跨Mission账户被拒；条件不足不会变成已知真。",
+    "requirement_ids": [
+      "R01",
+      "R03",
+      "R06",
+      "R15",
+      "R25",
+      "R29",
+      "R36",
+      "R57"
+    ],
+    "status": "PLANNED_NOT_IMPLEMENTED_BY_THIS_DELIVERABLE",
+    "test_ids": [
+      "T001",
+      "T003",
+      "T006",
+      "T015",
+      "T025",
+      "T029",
+      "T036",
+      "T057",
+      "T069"
+    ]
+  },
+  {
+    "id": "P2",
+    "title": "通用HTN到执行与根目标验收",
+    "depends_on": [
+      "P1"
+    ],
+    "complete_feature": "参数化方法、未知前提、AND/OR和共享子目标编译成可执行DAG，并形成根Resolution。",
+    "code_targets": [
+      "planning/htn/* [NEW]",
+      "graph/task_graph.py [MODIFY/versioned]",
+      "planning/planner.py [MODIFY]",
+      "orchestrator/plan_commits.py [NEW]",
+      "orchestrator/resolution_commits.py [NEW]",
+      "storage/htn_store.py [NEW]"
+    ],
+    "implementation_steps": [
+      "实现Method schema、registry、predicate AST和grounder。",
+      "实现部分序/数据流编译，保存decomposition witness与要求覆盖。",
+      "接入PANDA已建模域适配以及受控LLM方法建议；用现有BaseAgent执行。"
+    ],
+    "done_gate": "不能用固定类型模板冒充通用分解；OR未选分支不阻塞根；编译计划能被独立验证。",
+    "requirement_ids": [
+      "R04",
+      "R05",
+      "R07",
+      "R08",
+      "R10",
+      "R11",
+      "R12"
+    ],
+    "status": "PLANNED_NOT_IMPLEMENTED_BY_THIS_DELIVERABLE",
+    "test_ids": [
+      "T004",
+      "T005",
+      "T007",
+      "T008",
+      "T010",
+      "T011",
+      "T012",
+      "T061",
+      "T062",
+      "T063"
+    ]
+  },
+  {
+    "id": "P3",
+    "title": "局部修复、失效传播与要求变更",
+    "depends_on": [
+      "P1",
+      "P2"
+    ],
+    "complete_feature": "Worker反馈推翻前提后，只替换相关方法/工作；未受影响共享成果继续有效。",
+    "code_targets": [
+      "contracts/feedback.py [NEW]",
+      "planning/repair/* [NEW]",
+      "knowledge/validity.py [NEW]",
+      "orchestrator/requirement_commits.py [NEW]",
+      "graph/changes.py [MODIFY/versioned]",
+      "orchestrator/event_handler.py [MODIFY]"
+    ],
+    "implementation_steps": [
+      "实现观察/诊断/建议的typed反馈。",
+      "由系统计算read-set与真实影响闭包，提案不直接决定受影响对象。",
+      "实现原子PlanRevision切换、迟到结果隔离、当前Acceptance失效与授权需求修订。"
+    ],
+    "done_gate": "历史完成不回退；相关旧产物不批准新要求；无关图变化不全量重做。",
+    "requirement_ids": [
+      "R09",
+      "R13",
+      "R14",
+      "R16",
+      "R17",
+      "R30",
+      "R44"
+    ],
+    "status": "PLANNED_NOT_IMPLEMENTED_BY_THIS_DELIVERABLE",
+    "test_ids": [
+      "T009",
+      "T013",
+      "T014",
+      "T016",
+      "T017",
+      "T030",
+      "T044",
+      "T064",
+      "T065",
+      "T066",
+      "T067",
+      "T068",
+      "T079",
+      "T080"
+    ]
+  },
+  {
+    "id": "P4",
+    "title": "计划空间搜索、分层管理与资源闭环",
+    "depends_on": [
+      "P2",
+      "P3"
+    ],
+    "complete_feature": "多个候选方法和规划/执行/取证行动共享受控预算；Manager层次与物理资源一致。",
+    "code_targets": [
+      "planning/search/* [NEW]",
+      "planning/candidate_selection.py [MODIFY/versioned]",
+      "scheduling/allocator.py [MODIFY]",
+      "runtime/model_router.py [MODIFY]",
+      "orchestrator/event_handler.py [MODIFY]",
+      "context/context_builder.py [MODIFY]"
+    ],
+    "implementation_steps": [
+      "实现持久frontier、best-first/beam和具备Simulator时的有界UCT。",
+      "实现scoped Manager与typed交接，在一个Commit协议中协同。",
+      "拓展候选和综合策略，同时保护验证/交付/核对尾额与真实物理槽位。"
+    ],
+    "done_gate": "同一资源不双计；scope不越权；无模拟器禁实操rollout；失败片段综合需重新验收。",
+    "requirement_ids": [
+      "R02",
+      "R18",
+      "R19",
+      "R20",
+      "R21",
+      "R22",
+      "R24",
+      "R26",
+      "R27",
+      "R35",
+      "R59"
+    ],
+    "status": "PLANNED_NOT_IMPLEMENTED_BY_THIS_DELIVERABLE",
+    "test_ids": [
+      "T002",
+      "T018",
+      "T019",
+      "T020",
+      "T021",
+      "T022",
+      "T024",
+      "T026",
+      "T027",
+      "T035",
+      "T059",
+      "T070",
+      "T071",
+      "T072",
+      "T073",
+      "T074"
+    ]
+  },
+  {
+    "id": "P5",
+    "title": "全保留历史检索与分层Context",
+    "depends_on": [
+      "P1"
+    ],
+    "complete_feature": "超长Session仍能查回早期事实，Blackboard摘要保留条件和证据，冻结请求可恢复。",
+    "code_targets": [
+      "simple_harness/agents/memory/retrieval.py [MODIFY]",
+      "context/semantic_retrieval.py [NEW]",
+      "context/scoped_summary.py [NEW]",
+      "context/selection_manifest.py [NEW]",
+      "context/retrieval.py [MODIFY]",
+      "context/compression.py [MODIFY]"
+    ],
+    "implementation_steps": [
+      "从索引取得完整scope的有界候选ID，而非先截最新2000记录。",
+      "实装Blackboard混合候选与来源核验，构建带条件的组/全局摘要。",
+      "完整请求计数、选择manifest和缓存失效；已冻结请求不重组。"
+    ],
+    "done_gate": "旧记录可用三类query找回；缺索引覆盖明确披露；压缩不丢必要约束、不清预算。",
+    "requirement_ids": [
+      "R31",
+      "R32",
+      "R33",
+      "R34"
+    ],
+    "status": "PLANNED_NOT_IMPLEMENTED_BY_THIS_DELIVERABLE",
+    "test_ids": [
+      "T031",
+      "T032",
+      "T033",
+      "T034",
+      "T075",
+      "T076",
+      "T077",
+      "T078"
+    ]
+  },
+  {
+    "id": "P6",
+    "title": "跨域独立验收与现实执行",
+    "depends_on": [
+      "P1",
+      "P2"
+    ],
+    "complete_feature": "同一Mission跨资料、代码、SQL、网页/接口和形式化任务组合，动作与验证有真实证据。",
+    "code_targets": [
+      "governance/domains.py [MODIFY]",
+      "verification/domain_handlers.py [MODIFY]",
+      "verification/verifier_router.py [MODIFY]",
+      "verification/adapters/* [NEW/EXTEND]",
+      "runtime/tool_gateway.py [MODIFY]",
+      "runtime/actions.py [MODIFY]",
+      "runtime/executors/* [NEW/EXTEND]"
+    ],
+    "implementation_steps": [
+      "将Task域绑定限制在Mission授权内，沿handler registry扩展。",
+      "实现ReviewPackage/GoalResolution与代表性实际检查器；formal不得占位。",
+      "跨Task稳定Operation身份、UNKNOWN核对和补偿，固定平台能力/回收策略。"
+    ],
+    "done_gate": "独立Reviewer不自审；确定性失败不可被语言PASS覆盖；未知动作不重复；缺能力拒绝。",
+    "requirement_ids": [
+      "R28",
+      "R40",
+      "R41",
+      "R46",
+      "R47",
+      "R48",
+      "R49",
+      "R50",
+      "R56"
+    ],
+    "status": "PLANNED_NOT_IMPLEMENTED_BY_THIS_DELIVERABLE",
+    "test_ids": [
+      "T028",
+      "T040",
+      "T041",
+      "T046",
+      "T047",
+      "T048",
+      "T049",
+      "T050",
+      "T056",
+      "T081",
+      "T082"
+    ]
+  },
+  {
+    "id": "P7",
+    "title": "长期承诺、完整业务回放与多库恢复",
+    "depends_on": [
+      "P1",
+      "P3",
+      "P6"
+    ],
+    "complete_feature": "长期承诺跨有限周期推进；重启/缺失投影/时区事件后仍能恢复未完成责任。",
+    "code_targets": [
+      "contracts/commitments.py [NEW]",
+      "commitments/* [NEW]",
+      "storage/commitment_store.py [NEW]",
+      "observability/business_replay.py [NEW]",
+      "observability/reconstruction_manifest.py [NEW]",
+      "storage/schema.py [MODIFY/new migration]",
+      "orchestrator/accounting_recovery.py [MODIFY]"
+    ],
+    "implementation_steps": [
+      "建立Commitment/Cycle/wake和消息送达义务。",
+      "实装event+projection+outbox同库提交和全业务pure reducer。",
+      "legacy Genesis快照、双库/CAS一致恢复与删除tombstone；恢复先关闭副作用。"
+    ],
+    "done_gate": "没有活进程也不丢周期；重建图/预算/义务完整；旧租约与权限不复活；不能从备份复活删除数据。",
+    "requirement_ids": [
+      "R37",
+      "R38",
+      "R39",
+      "R42",
+      "R43",
+      "R60"
+    ],
+    "status": "PLANNED_NOT_IMPLEMENTED_BY_THIS_DELIVERABLE",
+    "test_ids": [
+      "T037",
+      "T038",
+      "T039",
+      "T042",
+      "T043",
+      "T060",
+      "T083",
+      "T084",
+      "T085",
+      "T086"
+    ]
+  },
+  {
+    "id": "P8",
+    "title": "可训练策略、方法泛化与可解释评估",
+    "depends_on": [
+      "P4",
+      "P5",
+      "P6"
+    ],
+    "complete_feature": "真实历史产生可复现学习产物；评测/校准后只晋级合格策略。",
+    "code_targets": [
+      "learning/* [NEW]",
+      "governance/learning.py [MODIFY/fallback retained]",
+      "governance/promotion.py [MODIFY]",
+      "observability/evaluation.py [MODIFY]",
+      "observability/traces.py [MODIFY]"
+    ],
+    "implementation_steps": [
+      "建立全角色真实成本/外部成果反馈，区分fixture/实测/无法判断。",
+      "实现priority/router/method-ranking训练、参数化方法泛化与校准。",
+      "在保留任务族对照，通过门槛才审批晋级；无收益保持旧策略。"
+    ],
+    "done_gate": "训练是真实可运行能力，不是文件名；不借评测数据泄漏制造提升；online不能改安全边界。",
+    "requirement_ids": [
+      "R23",
+      "R51",
+      "R53",
+      "R54"
+    ],
+    "status": "PLANNED_NOT_IMPLEMENTED_BY_THIS_DELIVERABLE",
+    "test_ids": [
+      "T023",
+      "T051",
+      "T053",
+      "T054",
+      "T087",
+      "T088"
+    ]
+  },
+  {
+    "id": "P9",
+    "title": "完整Host与全目标验收",
+    "depends_on": [
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5",
+      "P6",
+      "P7",
+      "P8"
+    ],
+    "complete_feature": "用户能从实际UI管理目标/方法/共享成果/长期承诺，并有独立可复现能力报告。",
+    "code_targets": [
+      "api/facade.py [MODIFY/versioned]",
+      "Host actual mapping from H0 [BLOCKING]",
+      "Host contracts/orchestration/vNext [NEW exact path after H0]",
+      "evals/adapters [VERIFY existing + EXTEND]",
+      "tests/orchestrator/full_target [NEW]"
+    ],
+    "implementation_steps": [
+      "取得Host真实函数映射再接UI，服务端是状态权威。",
+      "执行全部必须能力测试和完整端到端场景。",
+      "分别发布形式规划、故障可靠性、实际任务和成本增益结果，不混同认证。"
+    ],
+    "done_gate": "59项必需要求闭合，R55排除规则生效，所有未测/未部署不算完成。",
+    "requirement_ids": [
+      "R45",
+      "R52",
+      "R55",
+      "R58"
+    ],
+    "status": "PLANNED_NOT_IMPLEMENTED_BY_THIS_DELIVERABLE",
+    "test_ids": [
+      "T045",
+      "T052",
+      "T055",
+      "T058",
+      "T089",
+      "T090"
+    ]
+  }
+]

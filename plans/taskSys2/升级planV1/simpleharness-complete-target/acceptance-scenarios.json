@@ -1,0 +1,2081 @@
+{
+  "version": "FULL-TARGET-2.0",
+  "status": "SPECIFICATIONS_ONLY_NOT_RUN",
+  "scenario_count": 84,
+  "scenarios": [
+    {
+      "id": "AT-001",
+      "requirement_ids": [
+        "FULL-01"
+      ],
+      "title": "参数化方法与可执行操作模型",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "两个未写入调度主循环的任务域，各有带类型参数的方法及原子操作。",
+      "when": "注册两域方法并绑定实例；另提交缺参、错类型和悬空Operator。",
+      "then": [
+        "合法实例经同一refiner进入执行；非法实例在物化前拒绝且无预算/Task增量。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_01.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-002",
+      "requirement_ids": [
+        "FULL-02"
+      ],
+      "title": "方法分解、AND–OR与任务执行关系分离",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "根目标可由方法A或B完成，A要求A1和A2，B要求B1。",
+      "when": "只接受B1及B的组合审阅；A分支保持未完成。",
+      "then": [
+        "根目标可满足；A的失败不使根自动失败；AND不得被解释成任选一个。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_02.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-003",
+      "requirement_ids": [
+        "FULL-03"
+      ],
+      "title": "有来源和有效期的规划世界状态",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "方法需要某接口可用；分别准备真实、过期、缺失及相反观察。",
+      "when": "评估适用性并尝试派发依赖该接口的动作。",
+      "then": [
+        "得到有证据的TRUE/FALSE/UNKNOWN/DISPUTED；过期或未决依据不准许受限动作。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_03.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-004",
+      "requirement_ids": [
+        "FULL-04"
+      ],
+      "title": "未知方法生成与受控准入",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "方法库没有能分解新目标的方法；LLM候选接口使用受控fixture。",
+      "when": "提交一份合法参数化方法及一份含eval/额外权限的候选。",
+      "then": [
+        "合法候选经计划审阅后实例化；不安全候选拒绝，不能自动修改正式方法库。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_04.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-005",
+      "requirement_ids": [
+        "FULL-05"
+      ],
+      "title": "复合目标的组合满足与形式见证",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "全部子任务各自通过，但接口不兼容；另有万能LLM Operator自报goal_satisfied。",
+      "when": "申请父GoalAcceptance并用分解见证验证器检查。",
+      "then": [
+        "组合不兼容拒绝；万能Operator不能获取形式正确性结论；最终原始要求仍未满足。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_05.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-006",
+      "requirement_ids": [
+        "FULL-06"
+      ],
+      "title": "持久化的细化前沿与替代方法候选",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "搜索保存三个未展开方法、一个反证拒绝和一个已选方法。",
+      "when": "保存前沿后杀死控制进程，在新owner上恢复。",
+      "then": [
+        "候选/拒绝理由/预算不丢；恢复不重新执行已有动作或把搜索限额耗尽写成不可解。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_06.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-007",
+      "requirement_ids": [
+        "FULL-07"
+      ],
+      "title": "证据变化驱动最小影响修复",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "A和B依赖不同观察，C为共享已接受成果。",
+      "when": "反证仅推翻B的一项前提，生成修复提案并提交。",
+      "then": [
+        "影响集只包括语义相关消费者；A和C不重做，B替换有read-set和回执。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_07.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-008",
+      "requirement_ids": [
+        "FULL-08"
+      ],
+      "title": "共享子目标的语义去重",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "两个方法需要相同只读成果；另两项发送操作文字相同但收件人不同。",
+      "when": "请求语义去重，再取消一个方法。",
+      "then": [
+        "只读成果在合同/版本/权限相同后可复用；发送不合并；剩余使用者仍可读取共享成果。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_08.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-009",
+      "requirement_ids": [
+        "FULL-09"
+      ],
+      "title": "方法回退与现实后果区分",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一个原方法的真实操作已handoff且结果未知，新方法要修改同一资源。",
+      "when": "请求方法回退和重新派发。",
+      "then": [
+        "旧操作先核对/围栏，新写动作被阻止；补偿需要独立授权，不能删除旧费用与后果。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_09.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-010",
+      "requirement_ids": [
+        "FULL-10"
+      ],
+      "title": "结构化执行反馈闭环",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "准备实现错误、缺前提、权限不足、槽位等待、真实UNKNOWN五份反馈。",
+      "when": "逐项经过同一Feedback解码及Manager决策链。",
+      "then": [
+        "分别进入返工/取证/授权/等待/核对；观察与推测分别保存，不能全部走内容重试。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_10.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-011",
+      "requirement_ids": [
+        "FULL-11"
+      ],
+      "title": "逐任务角色与模型组合分配",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "两个任务需要不同角色模型组合，资源池只有两个共享槽位。",
+      "when": "提交每任务不同的AllocationBundle，再提交越权角色和超额bundle。",
+      "then": [
+        "合法组合可执行并有逐项预算；越权/超额不能被高预测分数抵消。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_11.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-012",
+      "requirement_ids": [
+        "FULL-12"
+      ],
+      "title": "可校准的进展与不确定性估计",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "相同尝试次数的两个任务，只有一个产生有效反例并减少未决条件。",
+      "when": "运行进展估计与策略选择。",
+      "then": [
+        "证据驱动特征不同；规则fallback明确标记；不把相同tries强制映射为同一真实概率。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_12.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-013",
+      "requirement_ids": [
+        "FULL-13"
+      ],
+      "title": "开放多路线搜索与安全模拟",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一个Goal有多个候选方法，只有部分域提供无副作用模拟器。",
+      "when": "分别运行best-first、beam、候选比较和模拟搜索，触发各自限额。",
+      "then": [
+        "都保存搜索状态和拒绝理由；无模拟能力时不调用生产工具做rollout；有界停止不伪称穷尽不可解。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_13.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-014",
+      "requirement_ids": [
+        "FULL-14"
+      ],
+      "title": "责任累计和分层额度守恒",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "同一obligation已耗用两次内容尝试和一份预算。",
+      "when": "替代Task、再次细分并请求新的尝试。",
+      "then": [
+        "累计责任和根额度延续；新ID不能重置上限；共享子任务只记一份真实支出。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_14.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-015",
+      "requirement_ids": [
+        "FULL-15"
+      ],
+      "title": "物理资源、公平与真实背压",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "多个profile指向同一个物理模型池，验证队列被人为放慢。",
+      "when": "并发派发Worker/Manager/Verifier并观察背压及恢复。",
+      "then": [
+        "总真实并发不超容量；上游实际减速；低水位后恢复且长期低优先任务不永久饿死。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_15.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-016",
+      "requirement_ids": [
+        "FULL-16"
+      ],
+      "title": "有验证范围的条件知识",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "模型Claim声称所有输入正确，只提供一个具体测试通过回执。",
+      "when": "按当前scoped策略分级，再加入明确范围的独立语义审阅。",
+      "then": [
+        "测试只形成对应观察；超范围Claim不直接VERIFIED；后续接受保存具体条件和依据。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_16.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-017",
+      "requirement_ids": [
+        "FULL-17"
+      ],
+      "title": "证据和Acceptance真值维护",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一个Acceptance依赖两条来源和一份上游接受结果。",
+      "when": "撤回其中一条支持，重算当前适用性并请求下游交接。",
+      "then": [
+        "反向依赖正确传播NEEDS_REVIEW；历史COMPLETED和原Review不改写；无关知识不受影响。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_17.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-018",
+      "requirement_ids": [
+        "FULL-18"
+      ],
+      "title": "通用片段与多产物综合",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "两个失败候选分别含合法数据解析和检索片段，接口可能不一致。",
+      "when": "提取带类型/假设/版本的片段，综合为新产物。",
+      "then": [
+        "部分有效不使原候选整体通过；新产物与组合接口均需独立检查后接受。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_18.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-019",
+      "requirement_ids": [
+        "FULL-19"
+      ],
+      "title": "组内/全局条件摘要",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "长结论末尾包含“仅固定版本单线程有效”的限定。",
+      "when": "生成组内和全局摘要，之后召回同一结论。",
+      "then": [
+        "限定、未决项及来源仍可见；缺少限定的摘要被拒绝或回退结构摘要。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_19.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-020",
+      "requirement_ids": [
+        "FULL-20"
+      ],
+      "title": "冲突与反证优先处理",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "两条同条件同主体相反Claim，另有条件不同的表面矛盾。",
+      "when": "运行冲突检测、证据核查与仲裁。",
+      "then": [
+        "前者进入DISPUTED并限制消费；后者保留适用范围，不用多数投票抹平差异。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_20.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-021",
+      "requirement_ids": [
+        "FULL-21"
+      ],
+      "title": "稳定BaseAgent与可恢复多轮",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "同一BaseAgent连续处理两条输入并提交结果。",
+      "when": "在第二条处理期间重启，再发送第三条输入。",
+      "then": [
+        "逻辑身份和原结果延续；等待超时不自动取消；不能每条消息伪造一个新Agent。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_21.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-022",
+      "requirement_ids": [
+        "FULL-22"
+      ],
+      "title": "独立短期历史与有界窗口",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "工具调用/结果成对，历史超过窗口，向量索引可暂时丢失。",
+      "when": "轮换窗口并精确回读旧记录，再重建索引。",
+      "then": [
+        "协议组不截断；原文可用；索引缺失不被解释为没有历史，任务权威状态仍可读取。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_22.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-023",
+      "requirement_ids": [
+        "FULL-23"
+      ],
+      "title": "HTN角色相关的Context组装",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "同一任务分别交给Worker、GroupManager和独立Verifier。",
+      "when": "组装各角色Context并核查选择清单。",
+      "then": [
+        "必需目标/前提/权限不丢；Verifier不只看作者解释；私人父历史与兄弟历史不自动泄露。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_23.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-024",
+      "requirement_ids": [
+        "FULL-24"
+      ],
+      "title": "模型请求的选材、版本与恢复一致",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一个模型请求已冻结，之后索引和摘要更新。",
+      "when": "恢复该invocation，再创建下一次新请求。",
+      "then": [
+        "旧请求使用原消息和fingerprint；新请求可使用新材料且记录版本；不复用同ID配不同正文。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_24.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-025",
+      "requirement_ids": [
+        "FULL-25"
+      ],
+      "title": "Context容量评测与语义压缩",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "实际模型窗口、输出上界、工具schema及计数器均已固定。",
+      "when": "测试不同工作窗口和必需内容超限案例。",
+      "then": [
+        "完整渲染请求守限；超限明确拒绝；没有通用最佳窗口虚假声明，质量与成本分开报告。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_25.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-026",
+      "requirement_ids": [
+        "FULL-26"
+      ],
+      "title": "单用户Main与多Mission责任",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一个用户有两个同时运行Mission和一个持久Main身份。",
+      "when": "关闭App后完成其中一个，再重开并提出新要求。",
+      "then": [
+        "Main仍能发现全部责任和结果；不依赖唯一永生协程，不串另一用户资料。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_26.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-027",
+      "requirement_ids": [
+        "FULL-27"
+      ],
+      "title": "每Mission MainWork和GroupManager",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "两个GroupManager拥有不重叠分支，主MainWork控制Mission。",
+      "when": "各自提交合法局部计划，随后试图越界修改兄弟分支。",
+      "then": [
+        "局部工作可并行提案；越界拒绝；所有正式写入仍经同一Commit权威。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_27.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-028",
+      "requirement_ids": [
+        "FULL-28"
+      ],
+      "title": "类型化Agent消息与回执",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一个Worker提问，MainWork回复，并人为重复/乱序发送消息。",
+      "when": "在消息持久化与消费之间中断并恢复。",
+      "then": [
+        "收件/处理/业务完成状态分离；消息不丢不重复执行；来源与scope可核对。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_28.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-029",
+      "requirement_ids": [
+        "FULL-29"
+      ],
+      "title": "用户补充指令、暂停与接管",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "用户修改要求时旧Manager与Verifier均仍在工作。",
+      "when": "提交要求新修订并接管Manager epoch，再接收旧结果。",
+      "then": [
+        "旧结果留史但不能批准新要求；旧Manager不能新提交；安全撤权立即约束后续交接。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_29.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-030",
+      "requirement_ids": [
+        "FULL-30"
+      ],
+      "title": "批量Agent创建与资源隔离",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "批量创建键对应十个Agent，物理并发限制为二。",
+      "when": "重复批量创建并同时提交输入。",
+      "then": [
+        "重试返回原实例；逻辑Agent互相隔离；模型加载/真实并发不因实例数量失控。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_30.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-031",
+      "requirement_ids": [
+        "FULL-31"
+      ],
+      "title": "领域注册和不同验证handler",
+      "work_package": "W5",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "当前五个域注册项均有显式handler，部分能力未部署。",
+      "when": "分别发送合法域任务、未知域和缺必需能力任务。",
+      "then": [
+        "按正确handler处理；未知/缺能力明确拒绝或阻塞，不回退文档路径冒充支持。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_31.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-032",
+      "requirement_ids": [
+        "FULL-32"
+      ],
+      "title": "同Mission混合领域组合",
+      "work_package": "W5",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一项Mission需文本取证、SQL实测、代码整合和浏览器检查。",
+      "when": "给不同Task绑定不同域并传递产物。",
+      "then": [
+        "域策略/单位/schema保持可追溯；跨域组合有独立义务，不将单域PASS推广为根PASS。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_32.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-033",
+      "requirement_ids": [
+        "FULL-33"
+      ],
+      "title": "通用Operator和动态能力发现",
+      "work_package": "W5",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "同一Operator处于registered/configured/reachable/healthy/authorized不同组合。",
+      "when": "规划和handoff分别检查能力，再撤销其中授权。",
+      "then": [
+        "注册不等于可执行；交接用当前权限；撤权不会改写已记录的历史调用。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_33.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-034",
+      "requirement_ids": [
+        "FULL-34"
+      ],
+      "title": "数学SQL网页科学等参考执行",
+      "work_package": "W5",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "数学、SQL、浏览器、科学统计参考adapter各有已知正确与错误输入。",
+      "when": "由真实工具执行参考案例并向Verifier回传证据。",
+      "then": [
+        "正确案例按范围接受，错误案例被发现；未部署工具不能用模拟PASS替代。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_34.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-035",
+      "requirement_ids": [
+        "FULL-35"
+      ],
+      "title": "形式证明与非形式结论分级",
+      "work_package": "W5",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "同一报告含Lean核验命题与未形式化的自然语言结论。",
+      "when": "整合验证并生成最终报告。",
+      "then": [
+        "分别标记形式覆盖与证据性结论；证明内核通过不掩盖报告中的未验证判断。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_35.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-036",
+      "requirement_ids": [
+        "FULL-36"
+      ],
+      "title": "完整业务事件重建",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "新版本完整业务事件与独立执行账本已保存。",
+      "when": "删除派生业务投影，从事件和声明的基线锚重建。",
+      "then": [
+        "受支持业务字段一致，外部调用次数为零；缺关键事件停止，不从旧当前值倒填。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_36.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-037",
+      "requirement_ids": [
+        "FULL-37"
+      ],
+      "title": "预算/意图/任务图的可恢复投影",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "包含预算预留/释放、派发意图、图改动和过期租约的事件序列。",
+      "when": "从空投影重放，再请求恢复执行。",
+      "then": [
+        "历史财务与图状态重建；旧租约不被复活；新owner在受限恢复模式重新取得控制权。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_37.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-038",
+      "requirement_ids": [
+        "FULL-38"
+      ],
+      "title": "冻结历史和schema迁移",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "旧Mission只有部分字段事件，原始模型请求/hash已冻结。",
+      "when": "升级读取并建立受信任迁移锚。",
+      "then": [
+        "旧原文和hash不变；未记录的过去标注不可重建；未知关键版本拒绝自动推进。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_38.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-039",
+      "requirement_ids": [
+        "FULL-39"
+      ],
+      "title": "外部操作幂等及恢复核对",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "外部动作已成功但回执丢失，数据库回到动作前快照。",
+      "when": "执行恢复核对。",
+      "then": [
+        "先凭操作身份查询外部结果，不再次发送；不可核对保持UNKNOWN且不释放未决费用。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_39.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-040",
+      "requirement_ids": [
+        "FULL-40"
+      ],
+      "title": "跨平台可运行执行语义",
+      "work_package": "W5",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "Windows/Linux/macOS能力矩阵声明了不同执行支持。",
+      "when": "分别执行同语义任务及取消/路径越界/遗留进程案例。",
+      "then": [
+        "等价领域状态；不支持隔离的平台拒绝危险执行；PID复用不误杀无关进程。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_40.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-041",
+      "requirement_ids": [
+        "FULL-41"
+      ],
+      "title": "跨年承诺与有限履约周期",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一个跨年承诺有有限月度cycle，某周期已完成。",
+      "when": "关闭完成周期后跨时间生成下一周期。",
+      "then": [
+        "承诺仍存在；周期有独立幂等身份；不无限延长单Mission或重复以前动作。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_41.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-042",
+      "requirement_ids": [
+        "FULL-42"
+      ],
+      "title": "持久定时器和停机补做",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "持久timer含时区规则，模拟停机错过多个周期。",
+      "when": "分别用四类catch-up政策恢复，并重复唤醒事件。",
+      "then": [
+        "补做/跳过/询问/有界补做符合政策；DST歧义有明确规则；重复唤醒不重复执行。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_42.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-043",
+      "requirement_ids": [
+        "FULL-43"
+      ],
+      "title": "要求变化与局部有效性",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "只有一个要求变化，而其他分支合同和源数据未变。",
+      "when": "提交RequirementsRevision并计算read-set影响。",
+      "then": [
+        "只撤销相关Acceptance当前适用性；未变工作不重做；旧根验收不能批准新版本。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_43.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-044",
+      "requirement_ids": [
+        "FULL-44"
+      ],
+      "title": "完成通知与用户读取分离",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "最终结果已提交但主Agent尚未收到完成通知。",
+      "when": "中断通知、重复投递并刷新UI。",
+      "then": [
+        "通知可重发去重，结果不重做；系统交付与用户已读分别表示。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_44.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-045",
+      "requirement_ids": [
+        "FULL-45"
+      ],
+      "title": "长期保留/删除/备份权限",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "旧备份含后来删除或撤权资料，CAS中有待提交产物。",
+      "when": "恢复备份并并发运行清理。",
+      "then": [
+        "先应用删除/撤权政策后开放读取；待提交或有效引用产物不误删；事件只保留合法脱敏信息。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_45.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-046",
+      "requirement_ids": [
+        "FULL-46"
+      ],
+      "title": "唯一提交与最小权限",
+      "work_package": "W5",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "Planner/学习器/Verifier各持有不同能力。",
+      "when": "让其绕过提案直接改图、预算、正式知识或权限。",
+      "then": [
+        "所有越界写入拒绝且可审计；正常提案仍经单逻辑Commit完成。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_46.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-047",
+      "requirement_ids": [
+        "FULL-47"
+      ],
+      "title": "授权与输入在handoff重查",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "计划检查通过后，输入或授权在handoff前变化。",
+      "when": "尝试执行旧绑定的动作。",
+      "then": [
+        "交接复查拒绝过期授权/输入；不能仅凭早先计划验证令牌放行。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_47.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-048",
+      "requirement_ids": [
+        "FULL-48"
+      ],
+      "title": "独立Verifier/人工仲裁",
+      "work_package": "W5",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "Worker产物错误但自报完成，Verifier产生REWORK/INCONCLUSIVE或与另审阅冲突。",
+      "when": "执行独立审阅及必要人工仲裁。",
+      "then": [
+        "Worker自述不作为最终真值；不确定保留；人工批准不改写未运行的必需工具证据。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_48.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-049",
+      "requirement_ids": [
+        "FULL-49"
+      ],
+      "title": "提示注入与跨Agent污染防护",
+      "work_package": "W5",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "恶意文档内容要求忽略权限，经过Claim/摘要/Method候选/消息传播。",
+      "when": "让多个Agent逐层读取并提出动作。",
+      "then": [
+        "恶意内容始终是数据；不能获得authority；正常任务效用与攻击成功分别评分。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_49.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-050",
+      "requirement_ids": [
+        "FULL-50"
+      ],
+      "title": "规划与收尾预算完整计量",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "任务需规划、Worker、Critic、Synthesizer和最终Judge，剩余额度有限。",
+      "when": "并发请求首次预留、补额和结算。",
+      "then": [
+        "全角色费用可对账，收尾预算不双计；未决用量不假设为零；未知输出策略按冻结合同处理。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_50.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-051",
+      "requirement_ids": [
+        "FULL-51"
+      ],
+      "title": "参数化方法学习与反例修订",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "数条成功与失败轨迹涉及相同方法族。",
+      "when": "归纳参数/前提/反例候选，在未见实例检查再申请晋级。",
+      "then": [
+        "生成实际MethodCandidate与证据；错误泛化被反例拒绝；线上不可自行修改已冻结方法。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_51.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-052",
+      "requirement_ids": [
+        "FULL-52"
+      ],
+      "title": "训练型优先级与ModelRouter",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "训练/校准/保留集按任务族分离且有真实标签。",
+      "when": "训练并保存成功率/费用模型，比较规则baseline；另用数据不足样本。",
+      "then": [
+        "存在可加载模型artifact与校准报告；不足时明确回退，不把启发式重命名为训练模型。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_52.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-053",
+      "requirement_ids": [
+        "FULL-53"
+      ],
+      "title": "角色Prompt信誉与群体稳定性",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "不同角色面对难度不同的任务，某受保护验证角色短期失败率升高。",
+      "when": "更新信誉及群体资源策略。",
+      "then": [
+        "不直接按绝对成功率错误惩罚难任务；信誉不能免除验证或扩大权限；保留探索和下界。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_53.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-054",
+      "requirement_ids": [
+        "FULL-54"
+      ],
+      "title": "外部效果评测与对照",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "单Agent、单Agent同预算重试、静态DAG和完整HTN使用同模型/工具/任务。",
+      "when": "在固定保留集重复运行并用独立评分器评分。",
+      "then": [
+        "全角色成本纳入；失败不隐藏；报告配对效果与不确定性，不从架构存在推断收益。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_54.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-055",
+      "requirement_ids": [
+        "FULL-55"
+      ],
+      "title": "知识贡献和因果结论区分",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一条知识被很多失败尝试使用，另一条只被成功链使用。",
+      "when": "生成lineage和策略评估。",
+      "then": [
+        "使用次数与成功因果贡献分开；只报告观测血缘，因果收益需受控对照。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_55.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-056",
+      "requirement_ids": [
+        "FULL-56"
+      ],
+      "title": "跨端公开契约与类型边界",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "同份公开Schema生成Python/TS类型与validator。",
+      "when": "输入缺失/null/错整数/未知枚举/额外字段，新增状态不更新文案。",
+      "then": [
+        "两端边界一致拒绝；编译能发现遗漏；协议错误不映射成业务UNKNOWN。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_56.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-057",
+      "requirement_ids": [
+        "FULL-57"
+      ],
+      "title": "UI展示方法/前提/修复解释",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "一个Goal含两种替代Method、共享子成果和一次局部修复。",
+      "when": "打开各UI视图并点击为什么选择/为什么失效。",
+      "then": [
+        "分解/依赖/证据图不混淆；解释绑定真实Commit；未读Host路径由H0确定后验收。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_57.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-058",
+      "requirement_ids": [
+        "FULL-58"
+      ],
+      "title": "端到端故障和反例测试",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "HTN细化、结果提交、source撤回、审批和派发各有持久切点。",
+      "when": "在切点强制退出真实进程并重开。",
+      "then": [
+        "唯一身份、预算守恒、当前Acceptance和外部动作数符合协议；故障不能靠完整重跑掩盖。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_58.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-059",
+      "requirement_ids": [
+        "FULL-59"
+      ],
+      "title": "独立HTN规划验证与国际基准",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "声明支持的HDDL片段和IPC任务及带错误分解的负控。",
+      "when": "内部求解器输出计划/分解见证，由独立validator核验。",
+      "then": [
+        "不只检测图无环；不支持片段拒绝；超时不标UNSOLVABLE；开放式内容不借形式分数冒名。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_59.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-060",
+      "requirement_ids": [
+        "FULL-60"
+      ],
+      "title": "需求不漂移与完整定义",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "acceptance_specification",
+      "given": "原31章、后续已接受设定和60项目标均有追踪ID。",
+      "when": "完成一个阶段并尝试删除尚未完成的HTN/长期/学习要求。",
+      "then": [
+        "阶段通过不自动关闭目标；删除须显式变更决定；所有未证实能力仍显示缺口和对应工作包。",
+        "保存输入版本、正式事件/回执及独立断言；本场景只有真实执行后才可改为PASS。"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_full_60.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fixture_or_task_identity",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ],
+      "note": "每项可能展开多个测试用例；需要实现后运行。"
+    },
+    {
+      "id": "AT-061",
+      "requirement_ids": [
+        "FULL-03",
+        "FULL-04"
+      ],
+      "title": "未知前提先观察",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "embedding可达性UNKNOWN",
+      "when": "Planner想直接派发实现",
+      "then": [
+        "先产生取证任务；未得到有效观察之前不允许依赖该前提的handoff"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_061.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-062",
+      "requirement_ids": [
+        "FULL-02",
+        "FULL-07"
+      ],
+      "title": "方法A失败切B",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "A/B两方法且共享只读C已被接受",
+      "when": "新证据否定A的前提",
+      "then": [
+        "B可选；根目标不自动失败；C只执行一次"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_062.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-063",
+      "requirement_ids": [
+        "FULL-08"
+      ],
+      "title": "共享取消引用计数",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "A/B都消费C",
+      "when": "取消A",
+      "then": [
+        "B仍可消费C；不会取消仍被需要的工作"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_063.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-064",
+      "requirement_ids": [
+        "FULL-08",
+        "FULL-09"
+      ],
+      "title": "副作用同名不同意图",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "两个不同用户授权的同文邮件动作",
+      "when": "去重候选比较",
+      "then": [
+        "不按描述合并；同一operation重试则复用身份"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_064.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-065",
+      "requirement_ids": [
+        "FULL-05",
+        "FULL-18"
+      ],
+      "title": "组合错误否决",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "子产物分别通过，接口或单位不一致",
+      "when": "请求父Goal验收",
+      "then": [
+        "拒绝父Goal；生成明确组合修复义务"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_065.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-066",
+      "requirement_ids": [
+        "FULL-02",
+        "FULL-03"
+      ],
+      "title": "部分序因果威胁",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "步骤B写资源会破坏步骤A需保持的条件",
+      "when": "编译并行计划",
+      "then": [
+        "加合法排序/互斥或拒绝；不能仅因无环放行"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_066.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-067",
+      "requirement_ids": [
+        "FULL-01",
+        "FULL-06"
+      ],
+      "title": "方法递归无进展",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "递归Method相同参数和观察无变化",
+      "when": "反复细化",
+      "then": [
+        "明确bounded stop，不创建无限节点或消耗新根预算"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_067.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-068",
+      "requirement_ids": [
+        "FULL-04",
+        "FULL-46"
+      ],
+      "title": "模型候选伪造权限",
+      "work_package": "W1",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "LLM产生含高权限operator的Method",
+      "when": "解析/准入",
+      "then": [
+        "拒绝authority扩大；不执行其代码或回调"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_068.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-069",
+      "requirement_ids": [
+        "FULL-06",
+        "FULL-37",
+        "FULL-58"
+      ],
+      "title": "PlanCommit进程崩溃",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "计划已Commit但派发前",
+      "when": "真实杀进程并重启",
+      "then": [
+        "同一子Task和reservation恢复；无重复创建"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_069.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-070",
+      "requirement_ids": [
+        "FULL-07",
+        "FULL-43"
+      ],
+      "title": "局部并行变更不全盘失效",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "互不依赖的两分支同时提案",
+      "when": "先提交另一分支",
+      "then": [
+        "按read-set重检，适用提案可合并；无关结果不重做"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_070.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-071",
+      "requirement_ids": [
+        "FULL-17",
+        "FULL-43"
+      ],
+      "title": "旧Review迟到",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "新RequirementsRevision已提交",
+      "when": "旧Verifier PASS抵达",
+      "then": [
+        "保存历史和费用，不批准新版本"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_071.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-072",
+      "requirement_ids": [
+        "FULL-16",
+        "FULL-17"
+      ],
+      "title": "源撤回传播",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "报告和方法前提依赖同一来源",
+      "when": "来源撤回",
+      "then": [
+        "所有相关Acceptance当前失效；无关CONTROL分支不误失效"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_072.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-073",
+      "requirement_ids": [
+        "FULL-19",
+        "FULL-25"
+      ],
+      "title": "压缩保留末尾限制",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "长结论末尾才说明仅单线程",
+      "when": "多次压缩后查询",
+      "then": [
+        "限定进入有效Context或回读；不得转成全场景正确"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_073.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-074",
+      "requirement_ids": [
+        "FULL-24"
+      ],
+      "title": "冻结请求恢复不重检索",
+      "work_package": "W3",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "请求已冻结而索引后来更新",
+      "when": "重启并恢复该invocation",
+      "then": [
+        "使用原manifest和请求；新请求才采用新索引"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_074.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-075",
+      "requirement_ids": [
+        "FULL-27",
+        "FULL-29"
+      ],
+      "title": "Manager旧epoch拒绝",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "MainWork被新执行者接管",
+      "when": "旧执行者提交修复",
+      "then": [
+        "旧提交被拒，结果仍可历史留存"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_075.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-076",
+      "requirement_ids": [
+        "FULL-56",
+        "FULL-57"
+      ],
+      "title": "坏UI消息与UNKNOWN分离",
+      "work_package": "W4",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "显示已有合法任务状态",
+      "when": "接收非法新schema消息",
+      "then": [
+        "界面标stale/协议错误；后端任务不被标UNKNOWN"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_076.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-077",
+      "requirement_ids": [
+        "FULL-14",
+        "FULL-50"
+      ],
+      "title": "额度跨替代不清零",
+      "work_package": "W2",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "同obligation已消耗多次尝试",
+      "when": "换方法/TaskID",
+      "then": [
+        "累计次数费用不清零，超额准入拒绝"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_077.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-078",
+      "requirement_ids": [
+        "FULL-15"
+      ],
+      "title": "多profile单物理槽位",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "两个profile共用一个模型实例",
+      "when": "同时派发Worker与Verifier",
+      "then": [
+        "实际并发不超物理上限；排队不标LOST"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_078.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-079",
+      "requirement_ids": [
+        "FULL-41",
+        "FULL-42"
+      ],
+      "title": "多年离线补做有界",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "承诺错过多个周期且有deadline",
+      "when": "调整测试时钟并恢复",
+      "then": [
+        "按catch_up policy有限补做/跳过/询问，不批量重复真实动作"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_079.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-080",
+      "requirement_ids": [
+        "FULL-36",
+        "FULL-37"
+      ],
+      "title": "完整业务状态删投影重建",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "新事件覆盖完整且原始账本/CAS可用",
+      "when": "删除指定可重建表重新fold",
+      "then": [
+        "预算/图/意图/等待等一致；外部调用为零"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_080.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-081",
+      "requirement_ids": [
+        "FULL-38"
+      ],
+      "title": "旧历史无证据不可伪造",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "旧事件缺少预算明细",
+      "when": "导入到新模式",
+      "then": [
+        "baseline anchor记录未知覆盖；不拿当前数据假装完整历史"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_081.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-082",
+      "requirement_ids": [
+        "FULL-39"
+      ],
+      "title": "副作用成功回执丢失",
+      "work_package": "W6",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "官方测试环境动作已成功",
+      "when": "杀主控并丢弃响应",
+      "then": [
+        "核对原operation_id，不重复动作；未知则停止并说明"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_082.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-083",
+      "requirement_ids": [
+        "FULL-51",
+        "FULL-52",
+        "FULL-55"
+      ],
+      "title": "学习标签不采用API成功",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "模型HTTP200但任务失败",
+      "when": "训练候选策略",
+      "then": [
+        "标签来源正确；未知不当成功；候选须独立held-out评测"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_083.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    },
+    {
+      "id": "AT-084",
+      "requirement_ids": [
+        "FULL-01",
+        "FULL-33",
+        "FULL-59"
+      ],
+      "title": "新领域只通过数据注册",
+      "work_package": "W7",
+      "status": "NOT_RUN",
+      "kind": "cross_boundary_acceptance_specification",
+      "given": "冻结Planner控制代码",
+      "when": "注册新已授权HDDL域和operator数据",
+      "then": [
+        "规划/执行/验证成功且无业务分支代码改动；不支持语法明确拒绝"
+      ],
+      "proposed_test_path": "tests/orchestrator/full_target/test_cross_084.py",
+      "evidence_required": [
+        "baseline_manifest",
+        "fault_or_observation_trace",
+        "events_and_receipts",
+        "external_assertions",
+        "cost_and_effect_counts"
+      ]
+    }
+  ]
+}

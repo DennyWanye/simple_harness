@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-16",
+  "sdk_commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+  "sdk_source_version": "0.11.1",
+  "host": "404 / not inspected",
+  "tests_run_on_repository": false,
+  "patches_applied": false,
+  "definition": "Complete final target and source-grounded gap closure specification; not a claim of universal planning correctness",
+  "scope_statuses_are_not_percent_complete": true
+}

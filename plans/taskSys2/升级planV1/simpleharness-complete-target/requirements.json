@@ -1,0 +1,1267 @@
+{
+  "version": "FULL-TARGET-2.0",
+  "baseline_commit": "61a85eb7e8c003fa894497090f5de893419ebbd1",
+  "legend": {
+    "SOURCE_PRESENT_BOUNDED": "源码存在于限定链路，不代表本轮测试通过",
+    "PARTIAL": "部分基础存在，完整语义未闭合",
+    "NOT_REPRESENTED_IN_AUDITED_CONTRACT": "已审计合同没有目标语义，不靠搜索无结果推断",
+    "UNVERIFIED_PRODUCT_WIRING": "Host不可访问，不能作存在/不存在断言",
+    "UNVERIFIED_PLATFORM_COVERAGE": "未复验平台执行",
+    "EXPLICITLY_OUTSIDE_CURRENT_REPLAY": "源码明确排除当前Replay范围"
+  },
+  "requirements": [
+    {
+      "id": "FULL-01",
+      "title": "参数化方法与可执行操作模型",
+      "origin": [
+        "D1§7",
+        "D3:HTN"
+      ],
+      "current_evidence": [
+        "S01",
+        "S02"
+      ],
+      "source_status": "NOT_REPRESENTED_IN_AUDITED_CONTRACT",
+      "target": "MethodDefinition/OperatorDefinition/Binding/Predicate AST 成为一等合同，不依赖业务类型 if/else",
+      "work_package": "W1",
+      "acceptance_ids": [
+        "AT-001"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-02",
+      "title": "方法分解、AND–OR与任务执行关系分离",
+      "origin": [
+        "D1§6",
+        "D2:ADR05",
+        "D3:AND-OR"
+      ],
+      "current_evidence": [
+        "S02",
+        "S03",
+        "S05"
+      ],
+      "source_status": "NOT_REPRESENTED_IN_AUDITED_CONTRACT",
+      "target": "Goal→Method→Goal 与执行 DATA/CONTROL 边独立；OR失败不意味着根失败",
+      "work_package": "W1",
+      "acceptance_ids": [
+        "AT-002"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-03",
+      "title": "有来源和有效期的规划世界状态",
+      "origin": [
+        "D1§10–11",
+        "D3:HTN applicability"
+      ],
+      "current_evidence": [
+        "S07",
+        "S09"
+      ],
+      "source_status": "PARTIAL",
+      "target": "Observation/Assumption 四态、来源、范围、时效，不以模型预期效果充当观察",
+      "work_package": "W1",
+      "acceptance_ids": [
+        "AT-003"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-04",
+      "title": "未知方法生成与受控准入",
+      "origin": [
+        "D1§7",
+        "D3:MethodContract"
+      ],
+      "current_evidence": [
+        "S01",
+        "S17"
+      ],
+      "source_status": "PARTIAL",
+      "target": "LLM产生MethodProposal，结构/范围/前提/组合审查后才能实例化",
+      "work_package": "W1",
+      "acceptance_ids": [
+        "AT-004"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-05",
+      "title": "复合目标的组合满足与形式见证",
+      "origin": [
+        "D1§6/14/24",
+        "D2:ADR09"
+      ],
+      "current_evidence": [
+        "S04",
+        "S14"
+      ],
+      "source_status": "PARTIAL",
+      "target": "父目标显式覆盖和组合验收；有分解见证，不使用最后叶子替代",
+      "work_package": "W1",
+      "acceptance_ids": [
+        "AT-005"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-06",
+      "title": "持久化的细化前沿与替代方法候选",
+      "origin": [
+        "D1§7.3/8",
+        "D3:ADaPT"
+      ],
+      "current_evidence": [
+        "S05",
+        "S06"
+      ],
+      "source_status": "PARTIAL",
+      "target": "PlanSearchState中保存候选、拒绝原因、有限搜索预算，崩溃后可继续",
+      "work_package": "W2",
+      "acceptance_ids": [
+        "AT-006"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-07",
+      "title": "证据变化驱动最小影响修复",
+      "origin": [
+        "D1§6.2/7.2",
+        "D2:ADR06"
+      ],
+      "current_evidence": [
+        "S03",
+        "S17"
+      ],
+      "source_status": "PARTIAL",
+      "target": "按相关read-set和支持索引修复最近方法范围，保留无关成果",
+      "work_package": "W2",
+      "acceptance_ids": [
+        "AT-007"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-08",
+      "title": "共享子目标的语义去重",
+      "origin": [
+        "D1§6.1/11",
+        "D3:Method共享"
+      ],
+      "current_evidence": [
+        "S02",
+        "S03"
+      ],
+      "source_status": "PARTIAL",
+      "target": "只读成果按全合同/输入/作用域复用，副作用不按文本去重",
+      "work_package": "W2",
+      "acceptance_ids": [
+        "AT-008"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-09",
+      "title": "方法回退与现实后果区分",
+      "origin": [
+        "D1§17/21",
+        "D2:ADR10/13"
+      ],
+      "current_evidence": [
+        "S13",
+        "S17"
+      ],
+      "source_status": "PARTIAL",
+      "target": "换方法先fence和核对；补偿是新授权操作，不回滚世界",
+      "work_package": "W2",
+      "acceptance_ids": [
+        "AT-009"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-10",
+      "title": "结构化执行反馈闭环",
+      "origin": [
+        "D1§13",
+        "D3:ExecutionFeedback"
+      ],
+      "current_evidence": [
+        "S17"
+      ],
+      "source_status": "PARTIAL",
+      "target": "观察/诊断/建议分离，阻塞、失败、缺前提和需求变化不同处理",
+      "work_package": "W2",
+      "acceptance_ids": [
+        "AT-010"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-11",
+      "title": "逐任务角色与模型组合分配",
+      "origin": [
+        "D1§8.2/9/29.2"
+      ],
+      "current_evidence": [
+        "S06"
+      ],
+      "source_status": "PARTIAL",
+      "target": "AllocationBundle包含角色组合、模型、额度、物理资源与依据",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-011"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-12",
+      "title": "可校准的进展与不确定性估计",
+      "origin": [
+        "D1§18.6/19"
+      ],
+      "current_evidence": [
+        "S06"
+      ],
+      "source_status": "PARTIAL",
+      "target": "从真实证据/成功义务/成本估计，不将0.5**tries当概率",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-012"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-13",
+      "title": "开放多路线搜索与安全模拟",
+      "origin": [
+        "D1§7.3",
+        "D3:AND-OR search"
+      ],
+      "current_evidence": [
+        "S05",
+        "S06"
+      ],
+      "source_status": "PARTIAL",
+      "target": "best-first/beam/Best-of-N/综合策略；MCTS仅可信无副作用模拟",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-013"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-14",
+      "title": "责任累计和分层额度守恒",
+      "origin": [
+        "D1§18.2–18.4",
+        "D2:ADR08"
+      ],
+      "current_evidence": [
+        "S06",
+        "S13",
+        "S17"
+      ],
+      "source_status": "PARTIAL",
+      "target": "LogicalObligation跨替代沿用，支出树与DAG分开，共享工作不重复计费",
+      "work_package": "W2",
+      "acceptance_ids": [
+        "AT-014"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-15",
+      "title": "物理资源、公平与真实背压",
+      "origin": [
+        "D1§8.3/18.5"
+      ],
+      "current_evidence": [
+        "S06",
+        "S17"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "现有约束保留；新HTN/Manager/验证全部纳入共享容量与队列",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-015"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-16",
+      "title": "有验证范围的条件知识",
+      "origin": [
+        "D1§11.1/14.3"
+      ],
+      "current_evidence": [
+        "S09",
+        "S10"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "保留scoped observations，扩展条件/有效期/领域语义Review",
+      "work_package": "W3",
+      "acceptance_ids": [
+        "AT-016"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-17",
+      "title": "证据和Acceptance真值维护",
+      "origin": [
+        "D1§11.2/14.4",
+        "D2:ADR07"
+      ],
+      "current_evidence": [
+        "S07",
+        "S09",
+        "S13"
+      ],
+      "source_status": "PARTIAL",
+      "target": "支持关系反向索引、当前适用性撤回、已完成历史保持",
+      "work_package": "W3",
+      "acceptance_ids": [
+        "AT-017"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-18",
+      "title": "通用片段与多产物综合",
+      "origin": [
+        "D1§11.3/20.3"
+      ],
+      "current_evidence": [
+        "S04",
+        "S05",
+        "S17"
+      ],
+      "source_status": "PARTIAL",
+      "target": "片段有类型、假设和证据；组合新产物独立验收",
+      "work_package": "W3",
+      "acceptance_ids": [
+        "AT-018"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-19",
+      "title": "组内/全局条件摘要",
+      "origin": [
+        "D1§11/24.12"
+      ],
+      "current_evidence": [
+        "S08",
+        "S16"
+      ],
+      "source_status": "PARTIAL",
+      "target": "结构摘要+带来源语义摘要；关键限制不被字符截断丢失",
+      "work_package": "W3",
+      "acceptance_ids": [
+        "AT-019"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-20",
+      "title": "冲突与反证优先处理",
+      "origin": [
+        "D1§14.4"
+      ],
+      "current_evidence": [
+        "S04",
+        "S14"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "同条件同主体冲突才仲裁；各方法与下游均消费正确冲突状态",
+      "work_package": "W3",
+      "acceptance_ids": [
+        "AT-020"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-21",
+      "title": "稳定BaseAgent与可恢复多轮",
+      "origin": [
+        "D2:logical owner",
+        "D3:BaseAgent"
+      ],
+      "current_evidence": [
+        "S15",
+        "S19"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "保留稳定身份/turn结果/等待；不在新HTN层重造Run",
+      "work_package": "W4",
+      "acceptance_ids": [
+        "AT-021"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-22",
+      "title": "独立短期历史与有界窗口",
+      "origin": [
+        "D3:AgentSessionMemory"
+      ],
+      "current_evidence": [
+        "S16",
+        "S20"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "原文Journal、完整组、检索与回读；不把向量库当权威",
+      "work_package": "W3",
+      "acceptance_ids": [
+        "AT-022"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-23",
+      "title": "HTN角色相关的Context组装",
+      "origin": [
+        "D1§10",
+        "D3:subagent context"
+      ],
+      "current_evidence": [
+        "S07",
+        "S16",
+        "S17"
+      ],
+      "source_status": "PARTIAL",
+      "target": "方法/前提/组合/失败/依赖和合法工具作为受控选材",
+      "work_package": "W3",
+      "acceptance_ids": [
+        "AT-023"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-24",
+      "title": "模型请求的选材、版本与恢复一致",
+      "origin": [
+        "D1§16/17",
+        "D3:ContextManifest"
+      ],
+      "current_evidence": [
+        "S15",
+        "S16",
+        "S17"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "扩展manifest到方法/条件/索引版本，冻结请求不重选历史",
+      "work_package": "W3",
+      "acceptance_ids": [
+        "AT-024"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-25",
+      "title": "Context容量评测与语义压缩",
+      "origin": [
+        "D1§10/11",
+        "D3:256K configurable"
+      ],
+      "current_evidence": [
+        "S08",
+        "S16"
+      ],
+      "source_status": "PARTIAL",
+      "target": "窗口为上限，校准模板计数和质量；语义摘要保留来源与限制",
+      "work_package": "W3",
+      "acceptance_ids": [
+        "AT-025"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-26",
+      "title": "单用户Main与多Mission责任",
+      "origin": [
+        "D2:ADR01",
+        "D3:personal assistant"
+      ],
+      "current_evidence": [
+        "S15",
+        "S17",
+        "H0"
+      ],
+      "source_status": "UNVERIFIED_PRODUCT_WIRING",
+      "target": "Main身份/任务总览/持久义务，非一个永久活着的协程",
+      "work_package": "W4",
+      "acceptance_ids": [
+        "AT-026"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-27",
+      "title": "每Mission MainWork和GroupManager",
+      "origin": [
+        "D1§7.4",
+        "D2:ADR01"
+      ],
+      "current_evidence": [
+        "S04",
+        "S17",
+        "H0"
+      ],
+      "source_status": "PARTIAL",
+      "target": "Scope/epoch/冲突合并，分层摘要；只有统一Commit写入",
+      "work_package": "W4",
+      "acceptance_ids": [
+        "AT-027"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-28",
+      "title": "类型化Agent消息与回执",
+      "origin": [
+        "D2:communication",
+        "D3:BaseAgent messaging"
+      ],
+      "current_evidence": [
+        "S15",
+        "S19"
+      ],
+      "source_status": "PARTIAL",
+      "target": "Inbox/Outbox、因果/权限/版本/去重；收到与执行完成分开",
+      "work_package": "W4",
+      "acceptance_ids": [
+        "AT-028"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-29",
+      "title": "用户补充指令、暂停与接管",
+      "origin": [
+        "D1§22",
+        "D2:ADR06"
+      ],
+      "current_evidence": [
+        "S15",
+        "S17",
+        "H0"
+      ],
+      "source_status": "PARTIAL",
+      "target": "RequirementsRevision和在途工作收敛，旧manager不能继续提交",
+      "work_package": "W4",
+      "acceptance_ids": [
+        "AT-029"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-30",
+      "title": "批量Agent创建与资源隔离",
+      "origin": [
+        "D1§12/17",
+        "D3:batch BaseAgent"
+      ],
+      "current_evidence": [
+        "S15",
+        "S19"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "复用现有创建与限流；子代理数量可扩展但不突破授权",
+      "work_package": "W4",
+      "acceptance_ids": [
+        "AT-030"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-31",
+      "title": "领域注册和不同验证handler",
+      "origin": [
+        "D1§14.2"
+      ],
+      "current_evidence": [
+        "S10",
+        "S14"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "保留五个域入口；逐项确认真实适配，缺能力不得假通过",
+      "work_package": "W5",
+      "acceptance_ids": [
+        "AT-031"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-32",
+      "title": "同Mission混合领域组合",
+      "origin": [
+        "D1§14.2/20/21",
+        "D3:generic tasks"
+      ],
+      "current_evidence": [
+        "S10",
+        "S13"
+      ],
+      "source_status": "PARTIAL",
+      "target": "CompositeDomainBinding/TaskDomainBinding和跨域数据语义适配",
+      "work_package": "W5",
+      "acceptance_ids": [
+        "AT-032"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-33",
+      "title": "通用Operator和动态能力发现",
+      "origin": [
+        "D1§9/21",
+        "D3:HTN operators"
+      ],
+      "current_evidence": [
+        "S10",
+        "S17"
+      ],
+      "source_status": "PARTIAL",
+      "target": "I/O/前置/读写/核对合同；registered不等于authorized",
+      "work_package": "W5",
+      "acceptance_ids": [
+        "AT-033"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-34",
+      "title": "数学SQL网页科学等参考执行",
+      "origin": [
+        "D1§14.2/21"
+      ],
+      "current_evidence": [
+        "S10",
+        "S14"
+      ],
+      "source_status": "NOT_VERIFIED_IN_AUDITED_PATH",
+      "target": "实际参考适配及正负案例，非registry占位；Workflow保持工具层",
+      "work_package": "W5",
+      "acceptance_ids": [
+        "AT-034"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-35",
+      "title": "形式证明与非形式结论分级",
+      "origin": [
+        "D1§14.1–14.2",
+        "D2:ADR02"
+      ],
+      "current_evidence": [
+        "S14"
+      ],
+      "source_status": "PARTIAL",
+      "target": "Verifier用证明内核/实验作证据，报告具体范围；不统称已证明",
+      "work_package": "W5",
+      "acceptance_ids": [
+        "AT-035"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-36",
+      "title": "完整业务事件重建",
+      "origin": [
+        "D1§16",
+        "D2:ADR04"
+      ],
+      "current_evidence": [
+        "S12",
+        "S18"
+      ],
+      "source_status": "PARTIAL",
+      "target": "新业务对象完整事件语义；原始执行ledger独立回读",
+      "work_package": "W6",
+      "acceptance_ids": [
+        "AT-036"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-37",
+      "title": "预算/意图/任务图的可恢复投影",
+      "origin": [
+        "D2:full state replay"
+      ],
+      "current_evidence": [
+        "S12",
+        "S18"
+      ],
+      "source_status": "EXPLICITLY_OUTSIDE_CURRENT_REPLAY",
+      "target": "旧Replay排除字段补入新coverage，未知过去不填假记录",
+      "work_package": "W6",
+      "acceptance_ids": [
+        "AT-037"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-38",
+      "title": "冻结历史和schema迁移",
+      "origin": [
+        "D1§17/23",
+        "D2:old events"
+      ],
+      "current_evidence": [
+        "S10",
+        "S12",
+        "S18"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "新planning binding/codec，legacy baseline anchor，原始字节不改",
+      "work_package": "W6",
+      "acceptance_ids": [
+        "AT-038"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-39",
+      "title": "外部操作幂等及恢复核对",
+      "origin": [
+        "D1§17/21",
+        "D2:ADR10/13"
+      ],
+      "current_evidence": [
+        "S13",
+        "S17"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "新HTN方法切换/长期cycle不绕过旧operation identity",
+      "work_package": "W6",
+      "acceptance_ids": [
+        "AT-039"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-40",
+      "title": "跨平台可运行执行语义",
+      "origin": [
+        "D3:Linux/Windows",
+        "D1§20/21"
+      ],
+      "current_evidence": [
+        "S17",
+        "H0"
+      ],
+      "source_status": "UNVERIFIED_PLATFORM_COVERAGE",
+      "target": "Host平台探测/沙箱/进程树/文件/凭证的实际完整切片",
+      "work_package": "W5",
+      "acceptance_ids": [
+        "AT-040"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-41",
+      "title": "跨年承诺与有限履约周期",
+      "origin": [
+        "D2:ADR12"
+      ],
+      "current_evidence": [
+        "S13",
+        "S17",
+        "H0"
+      ],
+      "source_status": "NOT_CONFIRMED_IN_AUDITED_PATH",
+      "target": "Commitment/Cycle显式责任，不无限延长单Mission",
+      "work_package": "W6",
+      "acceptance_ids": [
+        "AT-041"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-42",
+      "title": "持久定时器和停机补做",
+      "origin": [
+        "D2:§20"
+      ],
+      "current_evidence": [
+        "S17",
+        "H0"
+      ],
+      "source_status": "NOT_CONFIRMED_IN_AUDITED_PATH",
+      "target": "到期队列、时区DST、catch_up_policy、去重和最大补做",
+      "work_package": "W6",
+      "acceptance_ids": [
+        "AT-042"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-43",
+      "title": "要求变化与局部有效性",
+      "origin": [
+        "D1§6/17",
+        "D2:ADR06/07"
+      ],
+      "current_evidence": [
+        "S03",
+        "S13"
+      ],
+      "source_status": "PARTIAL",
+      "target": "根要求修订、read-set影响域、旧验收与新要求不混用",
+      "work_package": "W2",
+      "acceptance_ids": [
+        "AT-043"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-44",
+      "title": "完成通知与用户读取分离",
+      "origin": [
+        "D1§23/24",
+        "D2:delivery"
+      ],
+      "current_evidence": [
+        "S15",
+        "S17",
+        "H0"
+      ],
+      "source_status": "PARTIAL",
+      "target": "durable delivery receipt和界面新鲜度，重通知不重执行",
+      "work_package": "W4",
+      "acceptance_ids": [
+        "AT-044"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-45",
+      "title": "长期保留/删除/备份权限",
+      "origin": [
+        "D2:§backup/deletion",
+        "D1§16/21"
+      ],
+      "current_evidence": [
+        "S12",
+        "S18",
+        "H0"
+      ],
+      "source_status": "UNVERIFIED_FULL_COVERAGE",
+      "target": "恢复旧备份先应用删除撤权；CAS引用/敏感内容生命周期明确",
+      "work_package": "W6",
+      "acceptance_ids": [
+        "AT-045"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-46",
+      "title": "唯一提交与最小权限",
+      "origin": [
+        "D1§15/17.5/21"
+      ],
+      "current_evidence": [
+        "S13",
+        "S17"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "新planner/solver/学习器均只提案，Runtime独立硬门",
+      "work_package": "W5",
+      "acceptance_ids": [
+        "AT-046"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-47",
+      "title": "授权与输入在handoff重查",
+      "origin": [
+        "D1§21",
+        "D2:ADR07/10"
+      ],
+      "current_evidence": [
+        "S13",
+        "S17"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "计划前提验证不替代当前权限；新旧执行者fence与read-set",
+      "work_package": "W2",
+      "acceptance_ids": [
+        "AT-047"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-48",
+      "title": "独立Verifier/人工仲裁",
+      "origin": [
+        "D1§14/22",
+        "D2:ADR02"
+      ],
+      "current_evidence": [
+        "S14",
+        "S17"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "关键内容必需独立Review；检查工具不替代开放内容验收，冲突不投票",
+      "work_package": "W5",
+      "acceptance_ids": [
+        "AT-048"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-49",
+      "title": "提示注入与跨Agent污染防护",
+      "origin": [
+        "D1§10.2/21.3"
+      ],
+      "current_evidence": [
+        "S07",
+        "S10",
+        "S14"
+      ],
+      "source_status": "PARTIAL",
+      "target": "摘要/知识/方法/消息全部带来源，外部内容不能改变authority",
+      "work_package": "W5",
+      "acceptance_ids": [
+        "AT-049"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-50",
+      "title": "规划与收尾预算完整计量",
+      "origin": [
+        "D1§18",
+        "D3:Critic/Judge budget"
+      ],
+      "current_evidence": [
+        "S06",
+        "S13",
+        "S17"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "HTN生成/审查/求解/综合/最终Judge预算同账本，不重复保留",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-050"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-51",
+      "title": "参数化方法学习与反例修订",
+      "origin": [
+        "D3:Method learning",
+        "D1§28.4"
+      ],
+      "current_evidence": [
+        "S11"
+      ],
+      "source_status": "NOT_IMPLEMENTED_BY_RULES_V1",
+      "target": "实际候选归纳/测试/批准/退役，原版本保持",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-051"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-52",
+      "title": "训练型优先级与ModelRouter",
+      "origin": [
+        "D1§28.4"
+      ],
+      "current_evidence": [
+        "S06",
+        "S11"
+      ],
+      "source_status": "PARTIAL",
+      "target": "实际训练/校准产物、行为范围和模型注册，不仅硬权重更新",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-052"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-53",
+      "title": "角色Prompt信誉与群体稳定性",
+      "origin": [
+        "D1§9/28.4"
+      ],
+      "current_evidence": [
+        "S11"
+      ],
+      "source_status": "PARTIAL",
+      "target": "分任务难度/模型版本，受保护角色与安全门不随信誉取消",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-053"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-54",
+      "title": "外部效果评测与对照",
+      "origin": [
+        "D1§23.4",
+        "D3:recognized benchmarks"
+      ],
+      "current_evidence": [
+        "S10",
+        "S11",
+        "S22"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "检查现有adapter正式规则；新增HTN强基线、消融、独立grader和真实成本",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-054"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-55",
+      "title": "知识贡献和因果结论区分",
+      "origin": [
+        "D1§23.3/18.6"
+      ],
+      "current_evidence": [
+        "S11"
+      ],
+      "source_status": "PARTIAL",
+      "target": "lineage表明使用关系，增益以配对/受控实验验证，不编造因果",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-055"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-56",
+      "title": "跨端公开契约与类型边界",
+      "origin": [
+        "D1§26",
+        "D3:critical contract hardening"
+      ],
+      "current_evidence": [
+        "S02",
+        "S03",
+        "S13",
+        "H0"
+      ],
+      "source_status": "PARTIAL",
+      "target": "SDK内部typed领域与Host公开schema分开，当前Store收不到坏消息",
+      "work_package": "W4",
+      "acceptance_ids": [
+        "AT-056"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-57",
+      "title": "UI展示方法/前提/修复解释",
+      "origin": [
+        "D1§23/31",
+        "D3:task tree UI"
+      ],
+      "current_evidence": [
+        "H0"
+      ],
+      "source_status": "UNVERIFIED_PRODUCT_WIRING",
+      "target": "四图不同视图，显示选择和依据，不把树组件当HTN",
+      "work_package": "W4",
+      "acceptance_ids": [
+        "AT-057"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-58",
+      "title": "端到端故障和反例测试",
+      "origin": [
+        "D1§30",
+        "D2:failure matrix"
+      ],
+      "current_evidence": [
+        "S17",
+        "S22"
+      ],
+      "source_status": "SOURCE_PRESENT_BOUNDED",
+      "target": "扩展到HTN/共享/方法学习/长期义务；所有验收本轮未执行",
+      "work_package": "W6",
+      "acceptance_ids": [
+        "AT-058"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-59",
+      "title": "独立HTN规划验证与国际基准",
+      "origin": [
+        "D3:generic HTN proof",
+        "D1§23"
+      ],
+      "current_evidence": [
+        "R5",
+        "R8"
+      ],
+      "source_status": "NEW_REQUIRED_VALIDATION",
+      "target": "HDDL支持范围、分解见证、外部validator与未见域，不能只测图无环",
+      "work_package": "W7",
+      "acceptance_ids": [
+        "AT-059"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    },
+    {
+      "id": "FULL-60",
+      "title": "需求不漂移与完整定义",
+      "origin": [
+        "D1§1–31",
+        "D2:ADRs",
+        "D3:current request"
+      ],
+      "current_evidence": [
+        "D4"
+      ],
+      "source_status": "SCOPE_DRIFT_IDENTIFIED",
+      "target": "每项保留需求→代码→验收；取消延期须明确批准，不以阶段清单替代目标",
+      "work_package": "W1",
+      "acceptance_ids": [
+        "AT-060"
+      ],
+      "acceptance_status": "NOT_RUN",
+      "scope": "required target unless explicitly deferred by user",
+      "implementation_status": "NOT_IMPLEMENTED_BY_THIS_DELIVERY"
+    }
+  ]
+}
