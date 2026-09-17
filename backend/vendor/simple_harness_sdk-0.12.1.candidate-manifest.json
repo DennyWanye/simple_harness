@@ -1,0 +1,15 @@
+{
+  "artifacts": {
+    "simple_harness_sdk-0.12.1-py3-none-any.whl": "18fbd91cdac24f53419b6d8bdcc0049bd51fcb5bf9be180ab15f3e81c07d34a7",
+    "simple_harness_sdk-0.12.1.tar.gz": "369b8cadc2ef54e2d88a29c0369ed87fa97316e0111078a6053f0acf0fe0bd5c"
+  },
+  "build_info_sha256": "dc621a097b2ebf4abd26ae56a6d91f7e6befe2aff7a28ce4bc861819cff4c99a",
+  "commit": "05cfbb83a38d8342bf525992d56dab2491bba576",
+  "license_owner_receipt": "source-request-ledger:owner-approval-2026-08-13",
+  "notice_sha256": "af26470258903608cb9e620cb4361d749531e7349f27616f980453b61fe0da48",
+  "planned_tag": "v0.12.1",
+  "sbom_sha256": "1e4f4cddbe2479ac556a00af4843f7b916716d7f85bbd8f44e020c2eb4fb5daf",
+  "schema": "simple-harness-candidate-manifest-v1",
+  "sha256sums_sha256": "3d87bc20f6c1ac82b61bab6395553b1262d22651a8eaff3482d1acc1bf13ebd5",
+  "version": "0.12.1"
+}
