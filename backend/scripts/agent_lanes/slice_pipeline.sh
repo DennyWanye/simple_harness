@@ -41,7 +41,9 @@ grep_verdict() {
 
 write_continue_book() {
   # write_continue_book <n> -> path of a "finish your verification" task book
-  local n="${1:-0}" book="$PIPE_DIR/verify-continue-$n.md"
+  # bash 3.2: a variable declared by `local` cannot be referenced later on the same line.
+  local n="${1:-0}"
+  local book="$PIPE_DIR/verify-continue-$n.md"
   {
     echo "# 继续核验（同一会话续做）"
     echo
@@ -138,6 +140,7 @@ run_lane() {
   local lane="$1" tname="$2" cwd="$3" prompt="$4" resume="${5:-}"
   local script summary
   script="$(lane_script "$lane")"
+  if [ -z "$prompt" ] || [ ! -f "$prompt" ]; then echo "run_lane: task book missing: [$prompt]" >&2; logline "run-lane" "FAIL task-book-missing $tname"; echo "PIPELINE RED internal (task book missing for $tname)"; exit 4; fi
   if [ -z "$script" ]; then echo "run_lane: unknown lane $lane" >&2; return 9; fi
   summary="$PIPE_DIR/$tname.summary.txt"
   if [ "$lane" = "grok" ]; then
