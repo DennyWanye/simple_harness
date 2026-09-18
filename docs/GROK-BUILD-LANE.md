@@ -64,7 +64,7 @@ Host 侧改动（2026-09-16）：
 
 ## 3. 坑与边界
 
-- **token 寿命**：auth.json 的 `expires_at` 显示 6 小时，但过期后实测仍可用，实际寿命不明（README 另说 7 天）。代理返回 401 就跑 `grok login`，再 `write`。`status` 会显示 grok 配置里的 token 是否与 auth.json 一致。
+- **token 寿命**：auth.json 的 `expires_at` 就是实际寿命（6 小时；2026-09-18 两次在 expires_at 后 3 分钟内收到 401）。grok CLI 只在过期后才用 refresh_token 换新。要提前续期用 `python backend/scripts/grok_build_runtime.py refresh`（OIDC refresh_token grant，会轮换 refresh_token，原文件留 0600 备份 `auth.json.bak-refresh`），再 `write` + `apply`；长任务前建议先 `status` 看剩余寿命。代理返回 401 且 refresh 失败才需要 `grok login`。`status` 会显示 grok 配置里的 token 是否与 auth.json 一致。
 - **不要把 token 打印、复制进对话或提交进仓库**。`llm_runtime.grok.json` 在用户数据目录，不在 repo；证据目录里的文件已做脱敏检查。
 - **计费账本**：`pricing` 表没有 grok 条目，BillingLedger 按未知模型 20 元/百万 token 悲观计费，只影响 `daily_budget_cny` 上限，不影响功能。官方 API 牌价 $2 / $6 每百万 token 仅供参考，订阅走的是周额度不是账单。
 - **周额度**：SuperGrok Heavy 是每周统一算力池，Chat / Build / API / Imagine / Voice 共用；长上下文批次消耗快，用完当周暂停。跑大批次前看一眼 Usage 页。
