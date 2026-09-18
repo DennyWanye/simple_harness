@@ -1,0 +1,118 @@
+{
+  "admission_denials": [],
+  "arm": "F",
+  "budget": {
+    "calls": 80,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L3",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": true,
+    "seconds": 1800,
+    "total_tokens": 4000000,
+    "workers": 2
+  },
+  "budget_conserved": true,
+  "declared_complete": true,
+  "delivery": {
+    "files": [
+      "README-task.md",
+      "REPORT.md",
+      "stats/__init__.py",
+      "stats/window.py",
+      "tests/test_public_window.py"
+    ],
+    "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/f-arm/episodes/F-L3-C3-r0/delivery"
+  },
+  "elapsed_seconds": 111.11,
+  "event_counts": {
+    "AgentCreated": 3,
+    "AllocationDecided": 1,
+    "AttemptClaimed": 1,
+    "AttemptCreated": 1,
+    "AttemptStarted": 1,
+    "BudgetReleased": 3,
+    "BudgetReserved": 3,
+    "HeartbeatReceived": 8,
+    "InputSubmitted": 2,
+    "IntentSettled": 3,
+    "KnowledgeCommitted": 1,
+    "MissionActivated": 1,
+    "MissionCompleted": 1,
+    "MissionCreated": 1,
+    "MissionPlanning": 1,
+    "MissionSuccessJudged": 1,
+    "ModelRouted": 1,
+    "ResultSubmitted": 1,
+    "TaskCommitted": 1,
+    "TaskCompleted": 1,
+    "TaskGraphCommitted": 1,
+    "VerificationLayerRecorded": 6,
+    "VerificationPassed": 1,
+    "VerificationStarted": 1
+  },
+  "false_completion": false,
+  "grading": {
+    "candidate": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/f-arm/episodes/F-L3-C3-r0/delivery",
+    "graded_at": "2026-09-17T06:31:28+0800",
+    "hidden": {
+      "returncode": 0,
+      "seconds": 0.21,
+      "status": "PASS",
+      "tail": "...                                                                      [100%]\n3 passed in 0.02s",
+      "target": "hidden"
+    },
+    "hidden_files": [
+      "test_hidden_window_and_feature.py"
+    ],
+    "overlay": null,
+    "overlay_files": [],
+    "public": {
+      "returncode": 0,
+      "seconds": 0.22,
+      "status": "PASS",
+      "tail": "..                                                                       [100%]\n2 passed in 0.02s",
+      "target": "tests"
+    },
+    "python": "3.11.16",
+    "task": "C3",
+    "verdict": "PASS"
+  },
+  "host_commit": "8e260f7f8c3cd64b368592a00ad899c55517045e",
+  "known_usage_lower_bound": {
+    "calls": 10,
+    "input_tokens": 36422,
+    "model": "grok-4.6",
+    "output_tokens": 5946,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 42368
+  },
+  "layer": "L3",
+  "mission_id": "mission-b6c6a263ae84a5c9",
+  "mission_status": "COMPLETED",
+  "model": "grok-4.6",
+  "official_utility": true,
+  "public_suite": "PASS",
+  "reasoning_effort": "medium",
+  "repetition": 0,
+  "run_id": "F-L3-C3-r0",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "a8e902a6ad18ade512fe38830de551819adb323c",
+  "semantics": "legacy-dynamic-dag",
+  "source": "run",
+  "started_at": "2026-09-17T06:29:37+0800",
+  "status": "scored",
+  "stop_reason": "verification_passed",
+  "task_id": "C3",
+  "tasks": [
+    {
+      "id": "mission-b6c6a263ae84a5c9:task-1",
+      "status": "COMPLETED"
+    }
+  ],
+  "unknown_usage_calls": 0,
+  "valid_success": true,
+  "worker_pid": 74350
+}

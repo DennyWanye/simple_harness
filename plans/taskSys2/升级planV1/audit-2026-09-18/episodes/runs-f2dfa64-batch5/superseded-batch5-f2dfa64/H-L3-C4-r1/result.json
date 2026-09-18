@@ -1,0 +1,226 @@
+{
+  "accepted_outputs": {
+    "acceptances": 1,
+    "accepted_output_rows": 1,
+    "empty_finalizer_suspected": false,
+    "ports": {
+      "facts": 1
+    }
+  },
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "UnknownProviderUsage",
+      "request_id": "agent-f0b36c05c458a1e2423b8ca6a2c6d96d:provider-turn:1",
+      "seconds": 0.0273662909748964,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "H",
+  "budget": {
+    "calls": 320,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L3",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": true,
+    "seconds": 7200,
+    "total_tokens": 16000000,
+    "workers": 2
+  },
+  "budget_conserved": true,
+  "declared_complete": false,
+  "delivery": {
+    "files": [
+      "facts.json"
+    ],
+    "note": "官方分数读的是 H1 合并后的交付（accepted_outputs / criterion_links 叶优先，只读快照不覆盖补丁叶）；编排认可了什么见 result['accepted_outputs']（S1）",
+    "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C4-r1/delivery",
+    "provenance": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C4-r1/delivery/PROVENANCE.json",
+    "source": "accepted_outputs_then_last_changed_accepted_leaf"
+  },
+  "elapsed_seconds": 573.67,
+  "event_counts": {
+    "AcceptanceCommitted": 1,
+    "AgentCreated": 5,
+    "AllocationDecided": 3,
+    "AttemptClaimed": 3,
+    "AttemptCreated": 3,
+    "AttemptLost": 2,
+    "AttemptStarted": 3,
+    "BudgetReleased": 5,
+    "BudgetReserved": 5,
+    "CompoundPhaseChanged": 1,
+    "HeartbeatReceived": 29,
+    "HierarchicalDispatchWithheld": 6,
+    "InputSubmitted": 2,
+    "IntentSettled": 5,
+    "MethodApplicabilityAssessed": 1,
+    "MethodSynthesisRoundRecorded": 1,
+    "MissionCreated": 1,
+    "MissionFailed": 1,
+    "MissionPlanning": 1,
+    "ModelRouted": 3,
+    "ObligationDemandAdmitted": 1,
+    "PlanOccurrencesMaterialised": 1,
+    "PlanRevisionCommitted": 1,
+    "PlannerRoundSkippedForSynthesis": 2,
+    "ResultSubmitted": 1,
+    "TaskCancelled": 5,
+    "TaskCommitted": 7,
+    "TaskCompleted": 1,
+    "VerificationLayerRecorded": 6,
+    "VerificationPassed": 1,
+    "VerificationStarted": 1
+  },
+  "evidence_round": {
+    "asked": [],
+    "recorded": [],
+    "unavailable": []
+  },
+  "false_completion": false,
+  "grading": {
+    "candidate": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C4-r1/delivery",
+    "graded_at": "2026-09-18T11:35:31+0800",
+    "hidden": {
+      "returncode": 1,
+      "seconds": 0.25,
+      "status": "FAIL",
+      "tail": "=========================== short test summary info ============================\nFAILED hidden/test_hidden_pagination.py::test_last_page_is_complete - Asserti...\nFAILED hidden/test_hidden_pagination.py::test_a_single_short_page_is_complete\nFAILED hidden/test_hidden_pagination.py::test_total_count_is_the_number_of_items\nFAILED hidden/test_hidden_pagination.py::test_page_size_has_a_single_source_of_truth\n4 failed, 1 passed in 0.04s",
+      "target": "hidden"
+    },
+    "hidden_files": [
+      "test_hidden_pagination.py"
+    ],
+    "overlay": null,
+    "overlay_files": [],
+    "public": {
+      "returncode": 0,
+      "seconds": 0.25,
+      "status": "PASS",
+      "tail": "...                                                                      [100%]\n3 passed in 0.02s",
+      "target": "tests"
+    },
+    "python": "3.11.16",
+    "task": "C4",
+    "verdict": "FAIL"
+  },
+  "host_commit": "88b036a7fe420a375ee7112b147770c900457c81",
+  "known_usage_lower_bound": {
+    "calls": 13,
+    "input_tokens": 53269,
+    "model": "grok-4.6",
+    "output_tokens": 12202,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 65471
+  },
+  "layer": "L3",
+  "mechanism_receipt": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C4-r1/mechanism-receipt.json",
+  "mechanism_summary": {
+    "decomposition_witness_validated": true,
+    "event_counts": {
+      "branch_exit": 5
+    },
+    "expanded_under_unknown_without_assumptions": false,
+    "gaps": [
+      "shared_reuse did not fire: no method with a shared read-only sub-goal was adopted on this episode (the only one in the code seed library is code.fix-by-assessed-revert, which needs code.regression-commit-known TRUE)"
+    ],
+    "root_resolution_count": 0
+  },
+  "mission_account": {
+    "account_id": "budget:mission-63c6d9bc50bc37d2",
+    "attempts_created": 3,
+    "limits": {
+      "max_attempts": 48,
+      "max_concurrency": null,
+      "max_cost_micros": null,
+      "max_runtime_seconds": 7200,
+      "max_tokens": 16000000,
+      "max_tool_calls": null
+    },
+    "parent_id": null,
+    "remaining_attempts": 45,
+    "remaining_cost_micros": null,
+    "remaining_tokens": 15934529,
+    "remaining_tool_calls": null,
+    "reserved_attempts": 0,
+    "reserved_cost_micros": 0,
+    "reserved_tokens": 0,
+    "reserved_tool_calls": 0,
+    "scope": "mission",
+    "settled_cost_micros": 0,
+    "settled_tokens": 65471,
+    "settled_tool_calls": 18,
+    "unpriced_settlements": 4,
+    "version": 11
+  },
+  "mission_id": "mission-63c6d9bc50bc37d2",
+  "mission_status": "FAILED",
+  "model": "grok-4.6",
+  "observer_config": {
+    "changeset_line_limit": null,
+    "suite_gate": {}
+  },
+  "official_utility": false,
+  "plan_revisions": 1,
+  "public_suite": "PASS",
+  "reasoning_effort": "medium",
+  "refusal_source": "event",
+  "rejections": [
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted; predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted; predecessor outcome RUNNING does not satisfy release condition accepted; predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "a compound task is refined by a MethodInstance, never dispatched to a Worker; the legacy status 'BLOCKED' is only a rebuildable display index (§18.5 hard constraint 4)",
+      "reason": "NEEDS_REFINEMENT",
+      "type": "HierarchicalDispatchWithheld"
+    }
+  ],
+  "repetition": 1,
+  "root_goal": {
+    "parameters": {
+      "repository": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C4-r1/worktree"
+    },
+    "task_type": "code.implement-contract"
+  },
+  "run_id": "H-L3-C4-r1",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "f2dfa6426ff55f944887fa938dea6fa8d0bfab82",
+  "semantics": "hierarchical",
+  "stalled": [],
+  "started_at": "2026-09-18T11:25:58+0800",
+  "status": "scored",
+  "stop_reason": "runtime_unavailable",
+  "task_id": "C4",
+  "unknown_usage_calls": 1,
+  "usage_fully_known": false,
+  "valid_success": false,
+  "worker_pid": 12836
+}

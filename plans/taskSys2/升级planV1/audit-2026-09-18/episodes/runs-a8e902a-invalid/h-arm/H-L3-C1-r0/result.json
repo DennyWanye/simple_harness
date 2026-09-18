@@ -1,0 +1,195 @@
+{
+  "admission_denials": [],
+  "arm": "H",
+  "budget": {
+    "calls": 80,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L3",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": true,
+    "seconds": 1800,
+    "total_tokens": 4000000,
+    "workers": 2
+  },
+  "budget_conserved": true,
+  "declared_complete": false,
+  "delivery": {
+    "files": [],
+    "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C1-r0/delivery"
+  },
+  "elapsed_seconds": 104.9,
+  "event_counts": {
+    "AgentCreated": 2,
+    "BudgetReleased": 2,
+    "BudgetReserved": 2,
+    "InputSubmitted": 2,
+    "IntentSettled": 2,
+    "MethodApplicabilityAssessed": 1,
+    "MissionCreated": 1,
+    "MissionFailed": 1,
+    "MissionPlanning": 1,
+    "ObligationDemandAdmitted": 1,
+    "PlanningRejected": 2
+  },
+  "evidence_round": {
+    "asked": [
+      "code.repo-checked-out",
+      "code.regression-commit-known",
+      "code.test-is-failing",
+      "code.test-is-failing",
+      "code.regression-commit-known"
+    ],
+    "recorded": [
+      {
+        "observer": "code.repo-observer",
+        "polarity": true,
+        "predicate": "code.repo-checked-out"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      },
+      {
+        "observer": "code.test-observer",
+        "polarity": false,
+        "predicate": "code.test-is-failing"
+      },
+      {
+        "observer": "code.test-observer",
+        "polarity": false,
+        "predicate": "code.test-is-failing"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      }
+    ],
+    "unavailable": []
+  },
+  "false_completion": false,
+  "grading": {
+    "candidate": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C1-r0/delivery",
+    "graded_at": "2026-09-17T04:34:15+0800",
+    "hidden": {
+      "returncode": 1,
+      "seconds": 0.39,
+      "status": "FAIL",
+      "tail": "=========================== short test summary info ============================\nFAILED hidden/test_hidden_concurrency.py::test_no_sample_is_lost_or_double_counted_under_threads\nFAILED hidden/test_hidden_concurrency.py::test_window_is_half_open_on_the_upper_bound\nFAILED hidden/test_hidden_concurrency.py::test_empty_window_and_empty_metric_are_not_errors\nFAILED hidden/test_hidden_concurrency.py::test_clock_that_steps_backwards_never_yields_a_bogus_rate\n4 failed in 0.19s",
+      "target": "hidden"
+    },
+    "hidden_files": [
+      "test_hidden_concurrency.py"
+    ],
+    "overlay": null,
+    "overlay_files": [],
+    "public": {
+      "returncode": 0,
+      "seconds": 0.23,
+      "status": "PASS",
+      "tail": "....                                                                     [100%]\n4 passed in 0.02s",
+      "target": "tests"
+    },
+    "python": "3.11.16",
+    "task": "C1",
+    "verdict": "FAIL"
+  },
+  "host_commit": "9bebafeccc25352cb86ba29f729e7060c6b960ec",
+  "known_usage_lower_bound": {
+    "calls": 2,
+    "input_tokens": 8241,
+    "model": "grok-4.6",
+    "output_tokens": 7371,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 15612
+  },
+  "layer": "L3",
+  "mechanism_receipt": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C1-r0/mechanism-receipt.json",
+  "mechanism_summary": {
+    "decomposition_witness_validated": true,
+    "event_counts": {
+      "evidence_unsettled": 4,
+      "unknown_evidence": 1
+    },
+    "expanded_under_unknown_without_assumptions": false,
+    "gaps": [
+      "shared_reuse did not fire: no method with a shared read-only sub-goal was adopted on this episode (the only one in the code seed library is code.fix-by-assessed-revert, which needs code.regression-commit-known TRUE)"
+    ],
+    "root_resolution_count": 0
+  },
+  "mission_account": {
+    "account_id": "budget:mission-0c4c41e823938374",
+    "attempts_created": 0,
+    "limits": {
+      "max_attempts": 12,
+      "max_concurrency": null,
+      "max_cost_micros": null,
+      "max_runtime_seconds": 1800,
+      "max_tokens": 4000000,
+      "max_tool_calls": null
+    },
+    "parent_id": null,
+    "remaining_attempts": 12,
+    "remaining_cost_micros": null,
+    "remaining_tokens": 3984388,
+    "remaining_tool_calls": null,
+    "reserved_attempts": 0,
+    "reserved_cost_micros": 0,
+    "reserved_tokens": 0,
+    "reserved_tool_calls": 0,
+    "scope": "mission",
+    "settled_cost_micros": 0,
+    "settled_tokens": 15612,
+    "settled_tool_calls": 0,
+    "unpriced_settlements": 2,
+    "version": 5
+  },
+  "mission_id": "mission-0c4c41e823938374",
+  "mission_status": "FAILED",
+  "model": "grok-4.6",
+  "observer_config": {
+    "changeset_line_limit": null,
+    "suite_gate": {}
+  },
+  "official_utility": false,
+  "plan_revisions": 0,
+  "public_suite": "PASS",
+  "reasoning_effort": "medium",
+  "refusal_source": "event",
+  "rejections": [
+    {
+      "detail": "{'error': \"method 'code.fix-by-patch' is NEEDS_EVIDENCE for task task-root; a method is grounded only where it applies (§7.2)\"}",
+      "reason": "proposal_unreadable",
+      "type": "PlanningRejected"
+    },
+    {
+      "detail": "{'block_defect': 'block_missing', 'error': 'plan revision proposal unreadable: block_missing: no <plan_revision_proposal> block in the output', 'repair_hint': '没有找到 <plan_revision_proposal> 块。只输出一个 <plan_revision_proposal>…</plan_revision_proposal> 块，块内是 JSON 对象。'}",
+      "reason": "proposal_unreadable",
+      "type": "PlanningRejected"
+    }
+  ],
+  "repetition": 0,
+  "root_goal": {
+    "parameters": {
+      "failing_test": "tests",
+      "repository": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C1-r0/worktree"
+    },
+    "task_type": "code.fix-failing-test"
+  },
+  "run_id": "H-L3-C1-r0",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "a8e902a6ad18ade512fe38830de551819adb323c",
+  "semantics": "hierarchical",
+  "stalled": [],
+  "started_at": "2026-09-17T04:32:31+0800",
+  "status": "scored",
+  "stop_reason": "planning_failed",
+  "task_id": "C1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 23114
+}

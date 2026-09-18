@@ -1,0 +1,215 @@
+{
+  "admission_denials": [],
+  "arm": "H",
+  "budget": {
+    "calls": 80,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L1",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": false,
+    "seconds": 1800,
+    "total_tokens": 4000000,
+    "workers": 2
+  },
+  "budget_conserved": true,
+  "declared_complete": false,
+  "elapsed_seconds": 602.7,
+  "event_counts": {
+    "AgentCreated": 8,
+    "AllocationDecided": 3,
+    "AttemptClaimed": 3,
+    "AttemptCreated": 3,
+    "AttemptStarted": 3,
+    "BudgetReleased": 8,
+    "BudgetReserved": 8,
+    "CompoundPhaseChanged": 1,
+    "HeartbeatReceived": 21,
+    "HierarchicalDispatchWithheld": 4,
+    "HierarchicalGraphChangeRefused": 4,
+    "InputSubmitted": 5,
+    "IntentSettled": 8,
+    "ManagementDecided": 4,
+    "ManagementRequested": 4,
+    "MissionCreated": 1,
+    "MissionFailed": 1,
+    "MissionPlanning": 1,
+    "ModelRouted": 3,
+    "ObligationDemandAdmitted": 1,
+    "OutcomeRecorded": 3,
+    "PlanOccurrencesMaterialised": 1,
+    "PlanRevisionCommitted": 1,
+    "PolicySuggestionRefused": 2,
+    "ResultSubmitted": 3,
+    "TaskCancelled": 3,
+    "TaskCommitted": 5,
+    "TaskFailed": 1
+  },
+  "evidence_round": {
+    "asked": [
+      "appworld.app-reachable",
+      "appworld.credentials-valid",
+      "appworld.api-supports-request"
+    ],
+    "recorded": [
+      {
+        "observer": "appworld.availability-observer",
+        "polarity": true,
+        "predicate": "appworld.app-reachable"
+      },
+      {
+        "observer": "appworld.credential-observer",
+        "polarity": true,
+        "predicate": "appworld.credentials-valid"
+      },
+      {
+        "observer": "appworld.api-observer",
+        "polarity": true,
+        "predicate": "appworld.api-supports-request"
+      }
+    ],
+    "unavailable": []
+  },
+  "false_completion": false,
+  "host_commit": "8e260f7f8c3cd64b368592a00ad899c55517045e",
+  "known_usage_lower_bound": {
+    "calls": 21,
+    "input_tokens": 84880,
+    "model": "grok-4.6",
+    "output_tokens": 32012,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 116892
+  },
+  "layer": "L1",
+  "mechanism_receipt": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L1-37a8675_1-r1/mechanism-receipt.json",
+  "mechanism_summary": {
+    "decomposition_witness_validated": true,
+    "event_counts": {
+      "branch_exit": 4,
+      "unknown_evidence": 3
+    },
+    "expanded_under_unknown_without_assumptions": false,
+    "gaps": [
+      "shared_reuse did not fire: no method with a shared read-only sub-goal was adopted on this episode (the only one in the code seed library is code.fix-by-assessed-revert, which needs code.regression-commit-known TRUE)"
+    ],
+    "root_resolution_count": 0
+  },
+  "mission_account": {
+    "account_id": "budget:mission-33d269e3e4a274ab",
+    "attempts_created": 3,
+    "limits": {
+      "max_attempts": 12,
+      "max_concurrency": null,
+      "max_cost_micros": null,
+      "max_runtime_seconds": 1800,
+      "max_tokens": 4000000,
+      "max_tool_calls": null
+    },
+    "parent_id": null,
+    "remaining_attempts": 9,
+    "remaining_cost_micros": null,
+    "remaining_tokens": 3883108,
+    "remaining_tool_calls": null,
+    "reserved_attempts": 0,
+    "reserved_cost_micros": 0,
+    "reserved_tokens": 0,
+    "reserved_tool_calls": 0,
+    "scope": "mission",
+    "settled_cost_micros": 0,
+    "settled_tokens": 116892,
+    "settled_tool_calls": 20,
+    "unpriced_settlements": 8,
+    "version": 27
+  },
+  "mission_id": "mission-33d269e3e4a274ab",
+  "mission_status": "FAILED",
+  "model": "grok-4.6",
+  "observer_config": {},
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    test.answer(predicted_answer, ground_truth_answer)\n```\n----------\nAssertionError:  '<<not_given>>' == 'null'"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert model changes match venmo.Notification, venmo.Transaction ignoring venmo.User.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert model changes match venmo.Notification, venmo.Transaction ignoring venmo.User.\n    \"\"\"\n):\n    changed_model_names = models.changed_model_names(ignore=[\"venmo.User\"])\n    test.case(changed_model_names, \"==\", {\"venmo.Notification\", \"venmo.Transaction\"})\n```\n----------\nAssertionError:  set() == {'venmo.Notification', 'venmo.Transaction'}\n\nIn right but not left:\n['venmo.Notification', 'venmo.Transaction']"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "obtain added, updated, removed venmo.Transaction records using models.changed_records,\nand assert 1 is added, 0 is updated, and 0 is deleted.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    obtain added, updated, removed venmo.Transaction records using models.changed_records,\n    and assert 1 is added, 0 is updated, and 0 is deleted.\n    \"\"\"\n):\n    added_transactions, updated_transactions, removed_transactions = models.changed_records(\n        \"venmo.Transaction\"\n```\n----------\nAssertionError:  0 == 1"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction's receiver_id is private_data.person_venmo_user_id.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added transaction's receiver_id is private_data.person_venmo_user_id.\n    \"\"\"\n):\n    added_transaction = added_transactions[0]\n    test.case(added_transaction.receiver_id, \"==\", private_data.person_venmo_user_id)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction has amount public_data.payment_amount.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added transaction has amount public_data.payment_amount.\n    \"\"\"\n):\n    test.case(added_transaction.amount, \"==\", public_data.payment_amount)\n```\n----------"
+      },
+      {
+        "label": "no_op_fail",
+        "requirement": "assert the added transaction is private/public as per public_data.privacy.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert the added transaction is private/public as per public_data.privacy.\n    \"\"\"\n):\n```\n----------"
+      }
+    ],
+    "num_tests": 6,
+    "passes": [],
+    "success": false
+  },
+  "official_utility": false,
+  "plan_revisions": 1,
+  "reasoning_effort": "medium",
+  "refusal_source": "event",
+  "rejections": [
+    {
+      "detail": "occ-6416ce757a8d6bca8a8de361669823d1 has not finished; requirement 'data-5cead11a059b8c0017899db877057cbe' stays symbolic and the manifest cannot be frozen; 1 input(s) are still symbolic, so the dispatch has no identity to hash (implementation annex §4.3); a required input port has only a provisional binding; a provisional input may run but never claims DATA is met (TG §4.3)",
+      "reason": "WAITING_DATA",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "occ-05b46360d22b64df42ea3a522352d9ce has not finished; requirement 'data-ca918bd5e5af59c1537b731ee81990a3' stays symbolic and the manifest cannot be frozen; 1 input(s) are still symbolic, so the dispatch has no identity to hash (implementation annex §4.3); a required input port has only a provisional binding; a provisional input may run but never claims DATA is met (TG §4.3)",
+      "reason": "WAITING_DATA",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "a compound task is refined by a MethodInstance, never dispatched to a Worker; the legacy status 'BLOCKED' is only a rebuildable display index (§18.5 hard constraint 4)",
+      "reason": "NEEDS_REFINEMENT",
+      "type": "HierarchicalDispatchWithheld"
+    }
+  ],
+  "repetition": 1,
+  "root_goal": {
+    "parameters": {
+      "app": "supervisor",
+      "request": "Send $91 privately on Venmo to the person with this phone number 2192158297."
+    },
+    "task_type": "appworld.fulfil-request"
+  },
+  "run_id": "H-L1-37a8675_1-r1",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "a8e902a6ad18ade512fe38830de551819adb323c",
+  "semantics": "hierarchical",
+  "stalled": [],
+  "started_at": "2026-09-17T07:11:25+0800",
+  "status": "scored",
+  "stop_reason": "management_exhausted",
+  "task_id": "37a8675_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 88350
+}

@@ -1,0 +1,96 @@
+{
+  "admission_denials": [],
+  "arm": "F",
+  "budget": {
+    "calls": 80,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L3",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": true,
+    "seconds": 1800,
+    "total_tokens": 4000000,
+    "workers": 2
+  },
+  "budget_conserved": true,
+  "declared_complete": false,
+  "delivery": {
+    "files": [
+      "README-task.md",
+      "REPORT.md",
+      "metrics/__init__.py",
+      "metrics/collector.py",
+      "metrics/reporter.py",
+      "tests/test_concurrent_collector.py",
+      "tests/test_public_collector.py"
+    ],
+    "path": "../runs/f-arm/episodes/F-L3-C1-r0/delivery"
+  },
+  "elapsed_seconds": 332.18,
+  "event_counts": {
+    "AgentCreated": 3,
+    "AllocationDecided": 1,
+    "ApprovalRequested": 1,
+    "AttemptClaimed": 1,
+    "AttemptCreated": 1,
+    "AttemptStarted": 1,
+    "BudgetReleased": 3,
+    "BudgetReserved": 3,
+    "HeartbeatReceived": 15,
+    "InputSubmitted": 2,
+    "IntentSettled": 3,
+    "MissionActivated": 1,
+    "MissionCreated": 1,
+    "MissionPlanning": 1,
+    "ModelRouted": 1,
+    "ResultSubmitted": 1,
+    "TaskCommitted": 1,
+    "TaskGraphCommitted": 1,
+    "VerificationLayerRecorded": 6,
+    "VerificationStarted": 1,
+    "VerificationSuspended": 1
+  },
+  "false_completion": false,
+  "grading": {
+    "returncode": 1,
+    "stderr": "candidate not found: /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/code-tasks/runs/f-arm/episodes/F-L3-C1-r0/delivery\n",
+    "verdict": "GRADER_ERROR"
+  },
+  "host_commit": "9bebafeccc25352cb86ba29f729e7060c6b960ec",
+  "known_usage_lower_bound": {
+    "calls": 10,
+    "input_tokens": 45369,
+    "model": "grok-4.6",
+    "output_tokens": 18187,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 63556
+  },
+  "layer": "L3",
+  "mission_id": "mission-238563e23abbcfa4",
+  "mission_status": "ACTIVE",
+  "model": "grok-4.6",
+  "official_utility": false,
+  "public_suite": null,
+  "reasoning_effort": "medium",
+  "repetition": 0,
+  "run_id": "F-L3-C1-r0",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "a8e902a6ad18ade512fe38830de551819adb323c",
+  "semantics": "legacy-dynamic-dag",
+  "source": "run",
+  "started_at": "2026-09-17T04:11:55+0800",
+  "status": "scored",
+  "stop_reason": null,
+  "task_id": "C1",
+  "tasks": [
+    {
+      "id": "mission-238563e23abbcfa4:task-1",
+      "status": "VERIFYING"
+    }
+  ],
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 15684
+}

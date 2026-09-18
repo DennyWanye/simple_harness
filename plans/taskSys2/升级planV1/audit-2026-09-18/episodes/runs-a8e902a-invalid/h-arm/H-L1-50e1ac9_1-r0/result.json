@@ -1,0 +1,195 @@
+{
+  "admission_denials": [],
+  "arm": "H",
+  "budget": {
+    "calls": 80,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L1",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": false,
+    "seconds": 1800,
+    "total_tokens": 4000000,
+    "workers": 2
+  },
+  "budget_conserved": true,
+  "declared_complete": false,
+  "elapsed_seconds": 427.94,
+  "event_counts": {
+    "AgentCreated": 8,
+    "AllocationDecided": 3,
+    "AttemptClaimed": 3,
+    "AttemptCreated": 3,
+    "AttemptStarted": 3,
+    "BudgetReleased": 8,
+    "BudgetReserved": 8,
+    "CompoundPhaseChanged": 1,
+    "HeartbeatReceived": 18,
+    "HierarchicalDispatchWithheld": 4,
+    "HierarchicalGraphChangeRefused": 4,
+    "InputSubmitted": 5,
+    "IntentSettled": 8,
+    "ManagementDecided": 4,
+    "ManagementRequested": 4,
+    "MissionCreated": 1,
+    "MissionFailed": 1,
+    "MissionPlanning": 1,
+    "ModelRouted": 3,
+    "ObligationDemandAdmitted": 1,
+    "OutcomeRecorded": 3,
+    "PlanOccurrencesMaterialised": 1,
+    "PlanRevisionCommitted": 1,
+    "PolicySuggestionRefused": 3,
+    "ResultSubmitted": 3,
+    "TaskCancelled": 3,
+    "TaskCommitted": 5,
+    "TaskFailed": 1
+  },
+  "evidence_round": {
+    "asked": [
+      "appworld.app-reachable",
+      "appworld.credentials-valid",
+      "appworld.api-supports-request"
+    ],
+    "recorded": [
+      {
+        "observer": "appworld.availability-observer",
+        "polarity": true,
+        "predicate": "appworld.app-reachable"
+      },
+      {
+        "observer": "appworld.credential-observer",
+        "polarity": true,
+        "predicate": "appworld.credentials-valid"
+      },
+      {
+        "observer": "appworld.api-observer",
+        "polarity": true,
+        "predicate": "appworld.api-supports-request"
+      }
+    ],
+    "unavailable": []
+  },
+  "false_completion": false,
+  "host_commit": "8e260f7f8c3cd64b368592a00ad899c55517045e",
+  "known_usage_lower_bound": {
+    "calls": 20,
+    "input_tokens": 75532,
+    "model": "grok-4.6",
+    "output_tokens": 23924,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 99456
+  },
+  "layer": "L1",
+  "mechanism_receipt": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L1-50e1ac9_1-r0/mechanism-receipt.json",
+  "mechanism_summary": {
+    "decomposition_witness_validated": true,
+    "event_counts": {
+      "branch_exit": 4,
+      "unknown_evidence": 3
+    },
+    "expanded_under_unknown_without_assumptions": false,
+    "gaps": [
+      "shared_reuse did not fire: no method with a shared read-only sub-goal was adopted on this episode (the only one in the code seed library is code.fix-by-assessed-revert, which needs code.regression-commit-known TRUE)"
+    ],
+    "root_resolution_count": 0
+  },
+  "mission_account": {
+    "account_id": "budget:mission-541c842e0ec0852c",
+    "attempts_created": 3,
+    "limits": {
+      "max_attempts": 12,
+      "max_concurrency": null,
+      "max_cost_micros": null,
+      "max_runtime_seconds": 1800,
+      "max_tokens": 4000000,
+      "max_tool_calls": null
+    },
+    "parent_id": null,
+    "remaining_attempts": 9,
+    "remaining_cost_micros": null,
+    "remaining_tokens": 3900544,
+    "remaining_tool_calls": null,
+    "reserved_attempts": 0,
+    "reserved_cost_micros": 0,
+    "reserved_tokens": 0,
+    "reserved_tool_calls": 0,
+    "scope": "mission",
+    "settled_cost_micros": 0,
+    "settled_tokens": 99456,
+    "settled_tool_calls": 16,
+    "unpriced_settlements": 8,
+    "version": 27
+  },
+  "mission_id": "mission-541c842e0ec0852c",
+  "mission_status": "FAILED",
+  "model": "grok-4.6",
+  "observer_config": {},
+  "official": {
+    "declared_task_status": "pending",
+    "difficulty": 2,
+    "failures": [
+      {
+        "label": "no_op_fail",
+        "requirement": "assert answers match.",
+        "trace": "```python\nwith test(\n    \"\"\"\n    assert answers match.\n    \"\"\"\n):\n    ground_truth_song_titles = ground_truth_answer.split(\",\")\n    predicted_song_titles = predicted_answer.split(\",\")\n    test.case(\n```\n----------\nAssertionError:\n['crimson veil', 'fire and ice', 'haunted memories', 'mysteries of the silent sea']\n==\n['<<not_given>>']\n\nIn left but not right:\n['crimson veil', 'fire and ice', 'haunted memories', 'mysteries of the silent sea']\n\nIn right but not left:\n['<<not_given>>']\n\nOriginal values:\n['Mysteries of the Silent Sea', 'Crimson Veil', 'Haunted Memories', 'Fire and Ice']\n==\n['<<NOT_GIVEN>>']"
+      }
+    ],
+    "num_tests": 2,
+    "passes": [
+      {
+        "label": "no_op_pass",
+        "requirement": "Assert no model changes"
+      }
+    ],
+    "success": false
+  },
+  "official_utility": false,
+  "plan_revisions": 1,
+  "reasoning_effort": "medium",
+  "refusal_source": "event",
+  "rejections": [
+    {
+      "detail": "occ-65e70b1c1ab3875ddd459346562caa4a has not finished; requirement 'data-8563e299f12b265d77a4d3d6ce9548e2' stays symbolic and the manifest cannot be frozen; 1 input(s) are still symbolic, so the dispatch has no identity to hash (implementation annex §4.3); a required input port has only a provisional binding; a provisional input may run but never claims DATA is met (TG §4.3)",
+      "reason": "WAITING_DATA",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "occ-98715382d0286382ed4299b95e0fce01 has not finished; requirement 'data-e497832c7853aae00e70cf6da8950a41' stays symbolic and the manifest cannot be frozen; 1 input(s) are still symbolic, so the dispatch has no identity to hash (implementation annex §4.3); a required input port has only a provisional binding; a provisional input may run but never claims DATA is met (TG §4.3)",
+      "reason": "WAITING_DATA",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "a compound task is refined by a MethodInstance, never dispatched to a Worker; the legacy status 'BLOCKED' is only a rebuildable display index (§18.5 hard constraint 4)",
+      "reason": "NEEDS_REFINEMENT",
+      "type": "HierarchicalDispatchWithheld"
+    }
+  ],
+  "repetition": 0,
+  "root_goal": {
+    "parameters": {
+      "app": "supervisor",
+      "request": "Give me a comma-separated list of top 4 most played r&b song titles from across my Spotify song, album and playlist libraries."
+    },
+    "task_type": "appworld.fulfil-request"
+  },
+  "run_id": "H-L1-50e1ac9_1-r0",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "a8e902a6ad18ade512fe38830de551819adb323c",
+  "semantics": "hierarchical",
+  "stalled": [],
+  "started_at": "2026-09-17T06:36:29+0800",
+  "status": "scored",
+  "stop_reason": "management_exhausted",
+  "task_id": "50e1ac9_1",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 85181
+}

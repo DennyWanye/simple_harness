@@ -1,0 +1,291 @@
+{
+  "accepted_outputs": {
+    "acceptances": 4,
+    "accepted_output_rows": 4,
+    "empty_finalizer_suspected": false,
+    "ports": {
+      "diagnosis": 1,
+      "facts": 1,
+      "patch": 1,
+      "report": 1
+    }
+  },
+  "admission_denials": [],
+  "arm": "H",
+  "budget": {
+    "calls": 80,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L3",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": true,
+    "seconds": 1800,
+    "total_tokens": 4000000,
+    "workers": 2
+  },
+  "budget_conserved": true,
+  "declared_complete": false,
+  "delivery": {
+    "files": [
+      "README-task.md",
+      "REPORT.md",
+      "diagnosis.md",
+      "facts.json",
+      "patch",
+      "stats/__init__.py",
+      "stats/window.py",
+      "tests/test_public_window.py"
+    ],
+    "note": "官方分数读的是模型改过的文件，不经过 Acceptance；编排认可了什么见 result['accepted_outputs']（S1）",
+    "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs-p23f-probe/h-arm/episodes/H-L3-C3-r0/delivery",
+    "source": "model_changed_files"
+  },
+  "elapsed_seconds": 694.29,
+  "event_counts": {
+    "AcceptanceCommitted": 4,
+    "AgentCreated": 10,
+    "AllocationDecided": 6,
+    "AttemptClaimed": 6,
+    "AttemptCreated": 6,
+    "AttemptStarted": 6,
+    "BudgetReleased": 10,
+    "BudgetReserved": 10,
+    "CompoundPhaseChanged": 2,
+    "HeartbeatReceived": 48,
+    "HierarchicalDispatchWithheld": 4,
+    "HierarchicalMissionStalled": 1,
+    "HierarchicalRootReviewCut": 1,
+    "HierarchicalRootReviewRejected": 1,
+    "InputSubmitted": 4,
+    "IntentSettled": 10,
+    "MethodApplicabilityAssessed": 1,
+    "MissionCreated": 1,
+    "MissionFailed": 1,
+    "MissionPlanning": 1,
+    "ModelRouted": 6,
+    "ObligationDemandAdmitted": 1,
+    "PlanOccurrencesMaterialised": 1,
+    "PlanRevisionCommitted": 1,
+    "PlanningRejected": 3,
+    "ResultSubmitted": 6,
+    "RootGoalResolutionRefused": 1,
+    "TaskCommitted": 5,
+    "TaskCompleted": 4,
+    "VerificationFailed": 2,
+    "VerificationLayerRecorded": 36,
+    "VerificationPassed": 4,
+    "VerificationStarted": 6
+  },
+  "evidence_round": {
+    "asked": [
+      "code.repo-checked-out",
+      "code.regression-commit-known",
+      "code.test-is-failing",
+      "code.regression-commit-known"
+    ],
+    "recorded": [
+      {
+        "observer": "code.repo-observer",
+        "polarity": true,
+        "predicate": "code.repo-checked-out"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      },
+      {
+        "observer": "code.test-observer",
+        "polarity": true,
+        "predicate": "code.test-is-failing"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      }
+    ],
+    "unavailable": []
+  },
+  "false_completion": false,
+  "grading": {
+    "candidate": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs-p23f-probe/h-arm/episodes/H-L3-C3-r0/delivery",
+    "graded_at": "2026-09-17T12:50:23+0800",
+    "hidden": {
+      "returncode": 0,
+      "seconds": 0.25,
+      "status": "PASS",
+      "tail": "...                                                                      [100%]\n3 passed in 0.02s",
+      "target": "hidden"
+    },
+    "hidden_files": [
+      "test_hidden_window_and_feature.py"
+    ],
+    "overlay": null,
+    "overlay_files": [],
+    "public": {
+      "returncode": 0,
+      "seconds": 0.26,
+      "status": "PASS",
+      "tail": "..                                                                       [100%]\n2 passed in 0.02s",
+      "target": "tests"
+    },
+    "python": "3.11.16",
+    "task": "C3",
+    "verdict": "PASS"
+  },
+  "host_commit": "23a3d6ebf2a9ae10bc3d49c85b03ff6ad446de87",
+  "known_usage_lower_bound": {
+    "calls": 36,
+    "input_tokens": 197701,
+    "model": "grok-4.6",
+    "output_tokens": 35813,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 233514
+  },
+  "layer": "L3",
+  "mechanism_receipt": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs-p23f-probe/h-arm/episodes/H-L3-C3-r0/mechanism-receipt.json",
+  "mechanism_summary": {
+    "decomposition_witness_validated": true,
+    "event_counts": {
+      "evidence_unsettled": 2,
+      "method_switch": 2,
+      "unknown_evidence": 2
+    },
+    "expanded_under_unknown_without_assumptions": false,
+    "gaps": [
+      "shared_reuse did not fire: no method with a shared read-only sub-goal was adopted on this episode (the only one in the code seed library is code.fix-by-assessed-revert, which needs code.regression-commit-known TRUE)"
+    ],
+    "root_resolution_count": 0
+  },
+  "mission_account": {
+    "account_id": "budget:mission-01a511b9a5d78b1f",
+    "attempts_created": 6,
+    "limits": {
+      "max_attempts": 12,
+      "max_concurrency": null,
+      "max_cost_micros": null,
+      "max_runtime_seconds": 1800,
+      "max_tokens": 4000000,
+      "max_tool_calls": null
+    },
+    "parent_id": null,
+    "remaining_attempts": 6,
+    "remaining_cost_micros": null,
+    "remaining_tokens": 3766486,
+    "remaining_tool_calls": null,
+    "reserved_attempts": 0,
+    "reserved_cost_micros": 0,
+    "reserved_tokens": 0,
+    "reserved_tool_calls": 0,
+    "scope": "mission",
+    "settled_cost_micros": 0,
+    "settled_tokens": 233514,
+    "settled_tool_calls": 54,
+    "unpriced_settlements": 10,
+    "version": 21
+  },
+  "mission_id": "mission-01a511b9a5d78b1f",
+  "mission_status": "FAILED",
+  "model": "grok-4.6",
+  "observer_config": {
+    "changeset_line_limit": null,
+    "suite_gate": {}
+  },
+  "official_utility": true,
+  "plan_revisions": 1,
+  "public_suite": "PASS",
+  "reasoning_effort": "medium",
+  "refusal_source": "event",
+  "rejections": [
+    {
+      "detail": "occ-94e61184ab50da78785148e044473cef has not finished; requirement 'data-d8976e8de8365b3b121af026bc7897ef' stays symbolic and the manifest cannot be frozen; 1 input(s) are still symbolic, so the dispatch has no identity to hash (implementation annex §4.3); a required input port has only a provisional binding; a provisional input may run but never claims DATA is met (TG §4.3)",
+      "reason": "WAITING_DATA",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "occ-a1507fe0e2e3de82ee4b0c08a442bb89 has not finished; requirement 'data-951fc27768cdf5371381addad1bde888' stays symbolic and the manifest cannot be frozen; 1 input(s) are still symbolic, so the dispatch has no identity to hash (implementation annex §4.3); a required input port has only a provisional binding; a provisional input may run but never claims DATA is met (TG §4.3)",
+      "reason": "WAITING_DATA",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "a compound task is refined by a MethodInstance, never dispatched to a Worker; the legacy status 'BLOCKED' is only a rebuildable display index (§18.5 hard constraint 4)",
+      "reason": "NEEDS_REFINEMENT",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "{'findings': [{'detail': 'c-test-passes has no readable evidence that the named failing test now passes. The only related delivery is port report (artifact-6321a9bcb3508c7e) whose accepted goal was merely to run the suite and record a report, not that the named test passed; this package contains no report content (artifacts arrays are empty). Sub-acceptances marked c-test-passes PASS even on unrel",
+      "reason": "root_review_rejected",
+      "type": "PlanningRejected"
+    },
+    {
+      "detail": "the AER §6.2 formula refused: SUCCESS_EXPRESSION_NOT_PASS, REVIEW_VERDICT_NOT_ACCEPT, COMPOSITION_OBLIGATION_FAILED",
+      "reason": "NOT_ACCEPTABLE",
+      "type": "RootGoalResolutionRefused"
+    },
+    {
+      "detail": "{'block_defect': 'block_missing', 'error': 'plan revision proposal unreadable: block_missing: no <plan_revision_proposal> block in the output', 'repair_hint': '没有找到 <plan_revision_proposal> 块。只输出一个 <plan_revision_proposal>…</plan_revision_proposal> 块，块内是 JSON 对象。'}",
+      "reason": "proposal_unreadable",
+      "type": "PlanningRejected"
+    },
+    {
+      "detail": "{'block_defect': 'block_missing', 'error': 'plan revision proposal unreadable: block_missing: no <plan_revision_proposal> block in the output', 'repair_hint': '没有找到 <plan_revision_proposal> 块。只输出一个 <plan_revision_proposal>…</plan_revision_proposal> 块，块内是 JSON 对象。'}",
+      "reason": "proposal_unreadable",
+      "type": "PlanningRejected"
+    }
+  ],
+  "repetition": 0,
+  "root_goal": {
+    "parameters": {
+      "failing_test": "tests/test_public_window.py::test_window_sum_covers_the_whole_requested_range",
+      "repository": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs-p23f-probe/h-arm/episodes/H-L3-C3-r0/worktree"
+    },
+    "task_type": "code.fix-failing-test"
+  },
+  "run_id": "H-L3-C3-r0",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "05cfbb83a38d8342bf525992d56dab2491bba576",
+  "semantics": "hierarchical",
+  "stalled": [
+    {
+      "admitted_not_dispatched": [
+        "task-32ee2c5e43a321a156b8889ba356fbe0",
+        "task-49239160874172e860cb68a92bef6f92",
+        "task-7335d7207ea396454bf701f4c38d6b38",
+        "task-84cb9e7b38b4c8221fdd92048c37632e"
+      ],
+      "code": "hierarchical_no_dispatchable_work",
+      "fingerprint": "aeda24833b3a4b92e0b5e538f635878f29202e8ebc7301ccb5d505f955870120",
+      "plan_revision": 1,
+      "unfinished": [
+        "task-root"
+      ],
+      "withheld": [
+        {
+          "detail": "a compound task is refined by a MethodInstance, never dispatched to a Worker; the legacy status 'BLOCKED' is only a rebuildable display index (§18.5 hard constraint 4)",
+          "detail_codes": [
+            "form_compound"
+          ],
+          "occurrence_id": "task-root",
+          "reason": "NEEDS_REFINEMENT",
+          "task_id": "task-root"
+        }
+      ],
+      "withheld_count": 1
+    }
+  ],
+  "started_at": "2026-09-17T12:38:50+0800",
+  "status": "scored",
+  "stop_reason": "no_dispatchable_work",
+  "task_id": "C3",
+  "unknown_usage_calls": 0,
+  "valid_success": true,
+  "worker_pid": 869
+}

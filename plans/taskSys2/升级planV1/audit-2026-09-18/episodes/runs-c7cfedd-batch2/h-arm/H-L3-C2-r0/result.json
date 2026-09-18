@@ -1,0 +1,321 @@
+{
+  "accepted_outputs": {
+    "acceptances": 6,
+    "accepted_output_rows": 6,
+    "empty_finalizer_suspected": false,
+    "ports": {
+      "diagnosis": 1,
+      "facts": 1,
+      "findings": 1,
+      "patch": 1,
+      "report": 1,
+      "summary": 1
+    }
+  },
+  "admission_denials": [],
+  "arm": "H",
+  "budget": {
+    "calls": 80,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L3",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": true,
+    "seconds": 1800,
+    "total_tokens": 4000000,
+    "workers": 2
+  },
+  "budget_conserved": true,
+  "declared_complete": false,
+  "delivery": {
+    "files": [
+      "README-task.md",
+      "REPORT.md",
+      "diagnosis.md",
+      "facts.json",
+      "findings.md",
+      "ingest/__init__.py",
+      "ingest/parser.py",
+      "ingest/pipeline.py",
+      "ingest/store.py",
+      "patches/pipeline.patch",
+      "tests/test_pipeline_repro.py",
+      "tests/test_pipeline_run.py",
+      "tests/test_public_pipeline.py"
+    ],
+    "note": "官方分数读的是模型改过的文件，不经过 Acceptance；编排认可了什么见 result['accepted_outputs']（S1）",
+    "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C2-r0/delivery",
+    "source": "model_changed_files"
+  },
+  "elapsed_seconds": 887.22,
+  "event_counts": {
+    "AcceptanceCommitted": 6,
+    "AgentCreated": 12,
+    "AllocationDecided": 6,
+    "AttemptClaimed": 6,
+    "AttemptCreated": 6,
+    "AttemptStarted": 6,
+    "BudgetReleased": 12,
+    "BudgetReserved": 12,
+    "CompoundPhaseChanged": 2,
+    "HeartbeatReceived": 66,
+    "HierarchicalDispatchWithheld": 6,
+    "HierarchicalMissionStalled": 1,
+    "HierarchicalRootReviewCut": 1,
+    "HierarchicalRootReviewRejected": 1,
+    "InputSubmitted": 6,
+    "IntentSettled": 12,
+    "MethodApplicabilityAssessed": 1,
+    "MethodSynthesisRoundRecorded": 1,
+    "MissionCreated": 1,
+    "MissionFailed": 1,
+    "MissionPlanning": 1,
+    "ModelRouted": 6,
+    "ObligationDemandAdmitted": 1,
+    "PlanOccurrencesMaterialised": 1,
+    "PlanRevisionCommitted": 1,
+    "PlanningRejected": 4,
+    "ResultSubmitted": 6,
+    "RootGoalResolutionRefused": 1,
+    "TaskCommitted": 7,
+    "TaskCompleted": 6,
+    "VerificationLayerRecorded": 36,
+    "VerificationPassed": 6,
+    "VerificationStarted": 6
+  },
+  "evidence_round": {
+    "asked": [
+      "code.repo-checked-out",
+      "code.regression-commit-known",
+      "code.test-is-failing",
+      "code.test-is-failing",
+      "code.regression-commit-known"
+    ],
+    "recorded": [
+      {
+        "observer": "code.repo-observer",
+        "polarity": true,
+        "predicate": "code.repo-checked-out"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      },
+      {
+        "observer": "code.test-observer",
+        "polarity": false,
+        "predicate": "code.test-is-failing"
+      },
+      {
+        "observer": "code.test-observer",
+        "polarity": false,
+        "predicate": "code.test-is-failing"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      }
+    ],
+    "unavailable": []
+  },
+  "false_completion": false,
+  "grading": {
+    "candidate": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C2-r0/delivery",
+    "graded_at": "2026-09-17T14:39:42+0800",
+    "hidden": {
+      "returncode": 1,
+      "seconds": 0.25,
+      "status": "FAIL",
+      "tail": "FAILED hidden/test_hidden_pipeline.py::test_good_rows_reach_the_store_end_to_end\nFAILED hidden/test_hidden_pipeline.py::test_bad_rows_are_quarantined_and_the_run_fails_loudly\nFAILED hidden/test_hidden_pipeline.py::test_quarantine_entries_carry_line_number_raw_text_and_reason\nFAILED hidden/test_hidden_pipeline.py::test_no_line_is_silently_dropped - Att...\nFAILED hidden/test_hidden_pipeline.py::test_trailing_newlines_do_not_change_the_outcome\n5 failed in 0.04s",
+      "target": "hidden"
+    },
+    "hidden_files": [
+      "test_hidden_pipeline.py"
+    ],
+    "overlay": null,
+    "overlay_files": [],
+    "public": {
+      "returncode": 1,
+      "seconds": 0.27,
+      "status": "FAIL",
+      "tail": "ingest/store.py:19: AttributeError\n=========================== short test summary info ============================\nFAILED tests/test_pipeline_run.py::test_all_good_rows_return_zero_and_land_in_store\nFAILED tests/test_pipeline_run.py::test_bad_row_goes_to_quarantine_and_returns_nonzero\nFAILED tests/test_pipeline_run.py::test_mixed_batch_keeps_later_rows_and_never_drops\n3 failed, 9 passed in 0.05s",
+      "target": "tests"
+    },
+    "python": "3.11.16",
+    "task": "C2",
+    "verdict": "FAIL"
+  },
+  "host_commit": "23a3d6ebf2a9ae10bc3d49c85b03ff6ad446de87",
+  "known_usage_lower_bound": {
+    "calls": 43,
+    "input_tokens": 244092,
+    "model": "grok-4.6",
+    "output_tokens": 47670,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 291762
+  },
+  "layer": "L3",
+  "mechanism_receipt": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C2-r0/mechanism-receipt.json",
+  "mechanism_summary": {
+    "decomposition_witness_validated": true,
+    "event_counts": {
+      "evidence_unsettled": 4,
+      "method_switch": 3,
+      "unknown_evidence": 1
+    },
+    "expanded_under_unknown_without_assumptions": false,
+    "gaps": [
+      "shared_reuse did not fire: no method with a shared read-only sub-goal was adopted on this episode (the only one in the code seed library is code.fix-by-assessed-revert, which needs code.regression-commit-known TRUE)"
+    ],
+    "root_resolution_count": 0
+  },
+  "mission_account": {
+    "account_id": "budget:mission-3e9d9aec6dd186f0",
+    "attempts_created": 6,
+    "limits": {
+      "max_attempts": 12,
+      "max_concurrency": null,
+      "max_cost_micros": null,
+      "max_runtime_seconds": 1800,
+      "max_tokens": 4000000,
+      "max_tool_calls": null
+    },
+    "parent_id": null,
+    "remaining_attempts": 6,
+    "remaining_cost_micros": null,
+    "remaining_tokens": 3708238,
+    "remaining_tool_calls": null,
+    "reserved_attempts": 0,
+    "reserved_cost_micros": 0,
+    "reserved_tokens": 0,
+    "reserved_tool_calls": 0,
+    "scope": "mission",
+    "settled_cost_micros": 0,
+    "settled_tokens": 291762,
+    "settled_tool_calls": 71,
+    "unpriced_settlements": 12,
+    "version": 25
+  },
+  "mission_id": "mission-3e9d9aec6dd186f0",
+  "mission_status": "FAILED",
+  "model": "grok-4.6",
+  "observer_config": {
+    "changeset_line_limit": null,
+    "suite_gate": {}
+  },
+  "official_utility": false,
+  "plan_revisions": 1,
+  "public_suite": "FAIL",
+  "reasoning_effort": "medium",
+  "refusal_source": "event",
+  "rejections": [
+    {
+      "detail": "{'error': \"method 'code.fix-by-patch' is NEEDS_EVIDENCE for task task-root; a method is grounded only where it applies (§7.2)\"}",
+      "reason": "proposal_not_grounded",
+      "type": "PlanningRejected"
+    },
+    {
+      "detail": "{'proposal_id': 'p-2-no-applicable', 'rationale': 'no_applicable_method: all three registered methods for task-root are NEEDS_EVIDENCE (not grounded): fix-by-patch still lacks a TRUE code.test-is-failing observation (fact polarity is false), fix-by-revert and fix-by-assessed-revert lack a known regression commit (fact polarity is false), and authori'}",
+      "reason": "no_applicable_method",
+      "type": "PlanningRejected"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted; predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "a compound task is refined by a MethodInstance, never dispatched to a Worker; the legacy status 'BLOCKED' is only a rebuildable display index (§18.5 hard constraint 4)",
+      "reason": "NEEDS_REFINEMENT",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "{'findings': [{'detail': 'Root criterion c-test-passes is not met by the designated verify-tests report (acc-9d8568a80654ae2eb763277d5621496e, port report). evidence_requirement requires that report to show the named failing test now passes after the applied patch. REPORT.md states that tests/test_public_pipeline.py still has 6 passed (those cases never called pipeline.run and were already green) ",
+      "reason": "root_review_rejected",
+      "type": "PlanningRejected"
+    },
+    {
+      "detail": "the AER §6.2 formula refused: SUCCESS_EXPRESSION_NOT_PASS, REVIEW_VERDICT_NOT_ACCEPT, COMPOSITION_OBLIGATION_FAILED",
+      "reason": "NOT_ACCEPTABLE",
+      "type": "RootGoalResolutionRefused"
+    },
+    {
+      "detail": "{'proposal_id': 'p-4-no-applicable', 'rationale': 'no_applicable_method: method_library is empty and applicability is empty, so no registered method can be adopted for obl-root; observed facts still show code.test-is-failing polarity false and code.regression-commit-known polarity false, which previously left fix-by-patch and revert methods NEEDS_EV'}",
+      "reason": "no_applicable_method",
+      "type": "PlanningRejected"
+    }
+  ],
+  "repetition": 0,
+  "root_goal": {
+    "parameters": {
+      "failing_test": "tests/test_public_pipeline.py",
+      "repository": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C2-r0/worktree"
+    },
+    "task_type": "code.fix-failing-test"
+  },
+  "run_id": "H-L3-C2-r0",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "c7cfedda455f85705cdda144bf1e3a06255ca0b5",
+  "semantics": "hierarchical",
+  "stalled": [
+    {
+      "admitted_not_dispatched": [
+        "task-41f2545962dab89c9cbb42492c98621f",
+        "task-64de1b6b70a4588ed6dd2a92c8610a48",
+        "task-a444e80cd15c87958eff92bf4ac03cdf",
+        "task-dd9c0a042afce4827892bb3c55b6be97",
+        "task-e007d1f22275058b06e1e1894b67a431",
+        "task-ed4434f49257407dd0d64f827af356b1"
+      ],
+      "code": "hierarchical_no_dispatchable_work",
+      "fingerprint": "3a2cc892da7a08fa69d7ac1535b3872640a3bc4f349b3b7387eb44a886095585",
+      "plan_revision": 1,
+      "unfinished": [
+        "task-root"
+      ],
+      "withheld": [
+        {
+          "detail": "a compound task is refined by a MethodInstance, never dispatched to a Worker; the legacy status 'BLOCKED' is only a rebuildable display index (§18.5 hard constraint 4)",
+          "detail_codes": [
+            "form_compound"
+          ],
+          "occurrence_id": "task-root",
+          "reason": "NEEDS_REFINEMENT",
+          "task_id": "task-root"
+        }
+      ],
+      "withheld_count": 1
+    }
+  ],
+  "started_at": "2026-09-17T14:24:56+0800",
+  "status": "scored",
+  "stop_reason": "no_dispatchable_work",
+  "task_id": "C2",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 43974
+}

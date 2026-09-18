@@ -1,0 +1,302 @@
+{
+  "admission_denials": [],
+  "arm": "H",
+  "budget": {
+    "calls": 80,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L4",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": true,
+    "seconds": 1800,
+    "total_tokens": 4000000,
+    "workers": 2
+  },
+  "budget_conserved": true,
+  "declared_complete": false,
+  "delivery": {
+    "files": [
+      "README-task.md",
+      "REPORT.md",
+      "diagnosis.json",
+      "facts.json",
+      "net/__init__.py",
+      "net/errors.py",
+      "net/retry.py",
+      "retry.patch",
+      "tests/test_public_retry.py"
+    ],
+    "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L4-M2-r1/delivery"
+  },
+  "elapsed_seconds": 377.43,
+  "event_counts": {
+    "AcceptanceCommitted": 4,
+    "AgentCreated": 6,
+    "AllocationDecided": 4,
+    "AttemptClaimed": 4,
+    "AttemptCreated": 4,
+    "AttemptStarted": 4,
+    "BudgetReleased": 6,
+    "BudgetReserved": 6,
+    "CompoundPhaseChanged": 2,
+    "HeartbeatReceived": 32,
+    "HierarchicalDispatchWithheld": 4,
+    "HierarchicalMissionStalled": 1,
+    "HierarchicalRootReviewCut": 1,
+    "HierarchicalRootReviewRejected": 1,
+    "InputSubmitted": 2,
+    "IntentSettled": 6,
+    "MethodApplicabilityAssessed": 1,
+    "MissionCreated": 1,
+    "MissionFailed": 1,
+    "MissionPlanning": 1,
+    "ModelRouted": 4,
+    "ObligationDemandAdmitted": 1,
+    "PlanOccurrencesMaterialised": 1,
+    "PlanRevisionCommitted": 1,
+    "ResultSubmitted": 4,
+    "RootGoalResolutionRefused": 1,
+    "TaskCommitted": 5,
+    "TaskCompleted": 4,
+    "VerificationLayerRecorded": 24,
+    "VerificationPassed": 4,
+    "VerificationStarted": 4
+  },
+  "evidence_round": {
+    "asked": [
+      "code.repo-checked-out",
+      "code.regression-commit-known",
+      "code.test-is-failing",
+      "code.regression-commit-known"
+    ],
+    "recorded": [
+      {
+        "observer": "code.repo-observer",
+        "polarity": true,
+        "predicate": "code.repo-checked-out"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      },
+      {
+        "observer": "code.test-observer",
+        "polarity": true,
+        "predicate": "code.test-is-failing"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      }
+    ],
+    "unavailable": []
+  },
+  "false_completion": false,
+  "grading": {
+    "candidate": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L4-M2-r1/delivery",
+    "graded_at": "2026-09-17T05:09:44+0800",
+    "hidden": {
+      "returncode": 1,
+      "seconds": 0.24,
+      "status": "FAIL",
+      "tail": "net/retry.py:19: TypeError\n=========================== short test summary info ============================\nFAILED hidden/test_hidden_retry.py::test_every_attempt_is_actually_used - net...\nFAILED hidden/test_hidden_retry.py::test_exhaustion_raises_the_last_transient_error\nFAILED hidden/test_hidden_retry.py::test_a_single_attempt_that_fails_raises_rather_than_crashing\n3 failed, 2 passed in 0.04s",
+      "target": "hidden"
+    },
+    "hidden_files": [
+      "test_hidden_retry.py"
+    ],
+    "mechanisms": {
+      "blocked": [
+        {
+          "blocked_by": "construction",
+          "fired": 0,
+          "measured_by": "M3",
+          "min": 1,
+          "sdk_action": "无需 SDK 动作；本条在本题上是构造决定的不适用，不是缺口",
+          "state": "BLOCKED",
+          "type": "shared_reuse",
+          "why": "SDK 第三部分 a 的 G2 已经补上了共享只读子目标的方法对（code.fix-by-assessed-revert → compound code.assess-regression → code.assess-by-reading），所以这条机制在本 SDK 提交上不再是「表达不出来」。但本题的构造走不到那条链：code.fix-by-assessed-revert 要求 code.regression-commit-known 为 TRUE，而本题**故意**让它保持 UNKNOWN —— 方法切换靠的正是这一点。共享只读子目标改由 M3 测（M3 的 refs/bisect/bad 会解析）。"
+        }
+      ],
+      "conditional": [],
+      "event_counts": {
+        "evidence_unsettled": 2,
+        "method_switch": 2,
+        "shared_reuse": 0,
+        "unknown_evidence": 2
+      },
+      "expectation": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/mechanism-tasks/M2/expected-mechanisms.json",
+      "problems": [
+        "root_resolution_count=0, required 1 (根要求齐备；取证后被选中的方法成功即形成一次根 Resolution)"
+      ],
+      "receipt": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L4-M2-r1/mechanism-receipt.json",
+      "status": "FAIL"
+    },
+    "overlay": null,
+    "overlay_files": [],
+    "public": {
+      "returncode": 0,
+      "seconds": 0.2,
+      "status": "VACUOUS",
+      "tail": "ss                                                                       [100%]\n2 skipped in 0.00s",
+      "target": "tests"
+    },
+    "public_with_gate_open": {
+      "env": {
+        "SETTLEMENT_SUITE": "full"
+      },
+      "returncode": 1,
+      "seconds": 0.23,
+      "status": "FAIL",
+      "tail": "E           net.errors.TransientError: settlement endpoint busy\n\ntests/test_public_retry.py:29: TransientError\n=========================== short test summary info ============================\nFAILED tests/test_public_retry.py::test_retry_uses_every_attempt_it_was_given\n1 failed, 1 passed in 0.03s",
+      "target": "tests"
+    },
+    "python": "3.11.16",
+    "task": "M2",
+    "verdict": "FAIL"
+  },
+  "host_commit": "9bebafeccc25352cb86ba29f729e7060c6b960ec",
+  "known_usage_lower_bound": {
+    "calls": 23,
+    "input_tokens": 103573,
+    "model": "grok-4.6",
+    "output_tokens": 19238,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 122811
+  },
+  "layer": "L4",
+  "mechanism_receipt": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L4-M2-r1/mechanism-receipt.json",
+  "mechanism_summary": {
+    "decomposition_witness_validated": true,
+    "event_counts": {
+      "evidence_unsettled": 2,
+      "method_switch": 2,
+      "unknown_evidence": 2
+    },
+    "expanded_under_unknown_without_assumptions": false,
+    "gaps": [
+      "shared_reuse did not fire: no method with a shared read-only sub-goal was adopted on this episode (the only one in the code seed library is code.fix-by-assessed-revert, which needs code.regression-commit-known TRUE)"
+    ],
+    "root_resolution_count": 0
+  },
+  "mechanism_verdict": "FAIL",
+  "mission_account": {
+    "account_id": "budget:mission-2703941ecca5c9fa",
+    "attempts_created": 4,
+    "limits": {
+      "max_attempts": 12,
+      "max_concurrency": null,
+      "max_cost_micros": null,
+      "max_runtime_seconds": 1800,
+      "max_tokens": 4000000,
+      "max_tool_calls": null
+    },
+    "parent_id": null,
+    "remaining_attempts": 8,
+    "remaining_cost_micros": null,
+    "remaining_tokens": 3877189,
+    "remaining_tool_calls": null,
+    "reserved_attempts": 0,
+    "reserved_cost_micros": 0,
+    "reserved_tokens": 0,
+    "reserved_tool_calls": 0,
+    "scope": "mission",
+    "settled_cost_micros": 0,
+    "settled_tokens": 122811,
+    "settled_tool_calls": 39,
+    "unpriced_settlements": 6,
+    "version": 13
+  },
+  "mission_id": "mission-2703941ecca5c9fa",
+  "mission_status": "FAILED",
+  "model": "grok-4.6",
+  "observer_config": {
+    "changeset_line_limit": null,
+    "suite_gate": {
+      "SETTLEMENT_SUITE": "full"
+    }
+  },
+  "official_utility": false,
+  "plan_revisions": 1,
+  "public_suite": "VACUOUS",
+  "reasoning_effort": "medium",
+  "refusal_source": "event",
+  "rejections": [
+    {
+      "detail": "occ-55163f820cd30b34649ca2977485d1a6 has not finished; requirement 'data-faf3e43490e4ee2987b1f4b3f44b81d5' stays symbolic and the manifest cannot be frozen; 1 input(s) are still symbolic, so the dispatch has no identity to hash (implementation annex §4.3); a required input port has only a provisional binding; a provisional input may run but never claims DATA is met (TG §4.3)",
+      "reason": "WAITING_DATA",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "predecessor outcome RUNNING does not satisfy release condition accepted",
+      "reason": "WAITING_ORDER",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "occ-1f2f895ff767f46d357456d722aef638 has not finished; requirement 'data-b3f87ca5c26115de026fff7037b76520' stays symbolic and the manifest cannot be frozen; 1 input(s) are still symbolic, so the dispatch has no identity to hash (implementation annex §4.3); a required input port has only a provisional binding; a provisional input may run but never claims DATA is met (TG §4.3)",
+      "reason": "WAITING_DATA",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "a compound task is refined by a MethodInstance, never dispatched to a Worker; the legacy status 'BLOCKED' is only a rebuildable display index (§18.5 hard constraint 4)",
+      "reason": "NEEDS_REFINEMENT",
+      "type": "HierarchicalDispatchWithheld"
+    },
+    {
+      "detail": "the AER §6.2 formula refused: SUCCESS_EXPRESSION_NOT_PASS, REVIEW_VERDICT_NOT_ACCEPT, COMPOSITION_OBLIGATION_FAILED",
+      "reason": "NOT_ACCEPTABLE",
+      "type": "RootGoalResolutionRefused"
+    }
+  ],
+  "repetition": 1,
+  "root_goal": {
+    "parameters": {
+      "failing_test": "tests/test_public_retry.py",
+      "repository": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L4-M2-r1/worktree"
+    },
+    "task_type": "code.fix-failing-test"
+  },
+  "run_id": "H-L4-M2-r1",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "a8e902a6ad18ade512fe38830de551819adb323c",
+  "semantics": "hierarchical",
+  "stalled": [
+    {
+      "admitted_not_dispatched": [
+        "task-1509d3f85c6e66fcea5744c05091d141",
+        "task-64434650db1a4c13515339fe351f0566",
+        "task-94b2aad48712223a19bd9396b30e6cbf",
+        "task-e5581cb7877fbc95c831027d33e20e12"
+      ],
+      "code": "hierarchical_no_dispatchable_work",
+      "fingerprint": "50237b8affa242d429ca8fbb94cdd1bc6e1cb093c2f6b9e5793da8e1c3cda666",
+      "plan_revision": 1,
+      "unfinished": [
+        "task-root"
+      ],
+      "withheld": [
+        {
+          "detail": "a compound task is refined by a MethodInstance, never dispatched to a Worker; the legacy status 'BLOCKED' is only a rebuildable display index (§18.5 hard constraint 4)",
+          "detail_codes": [
+            "form_compound"
+          ],
+          "occurrence_id": "task-root",
+          "reason": "NEEDS_REFINEMENT",
+          "task_id": "task-root"
+        }
+      ],
+      "withheld_count": 1
+    }
+  ],
+  "started_at": "2026-09-17T05:03:28+0800",
+  "status": "scored",
+  "stop_reason": "no_dispatchable_work",
+  "task_id": "M2",
+  "unknown_usage_calls": 0,
+  "valid_success": false,
+  "worker_pid": 36655
+}

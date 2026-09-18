@@ -1,0 +1,262 @@
+{
+  "accepted_outputs": {
+    "acceptances": 0,
+    "accepted_output_rows": 0,
+    "empty_finalizer_suspected": false,
+    "ports": {}
+  },
+  "admission_denials": [
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "UnknownProviderUsage",
+      "request_id": "agent-945133dd8bf2a1281f238e997fcd5fc7:provider-turn:1",
+      "seconds": 0.0050855420413427055,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    },
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "UnknownProviderUsage",
+      "request_id": "agent-26dc7164a820915ef07a50a4760c7e13:provider-turn:1",
+      "seconds": 0.005058624956291169,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    },
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "UnknownProviderUsage",
+      "request_id": "agent-34a1f4bd6dd958f549ae0985e22131c4:provider-turn:1",
+      "seconds": 0.005883582984097302,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    },
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "UnknownProviderUsage",
+      "request_id": "agent-510e82f25a63c9978a4dbe38e855dfb2:provider-turn:1",
+      "seconds": 0.007919083000160754,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    },
+    {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "physical_calls": 0,
+      "reason": "UnknownProviderUsage",
+      "request_id": "agent-3840151a0cf9ac7432d9ed0c55249428:provider-turn:1",
+      "seconds": 0.00704708305420354,
+      "status": "denied_before_handoff",
+      "total_tokens": 0
+    }
+  ],
+  "arm": "H",
+  "budget": {
+    "calls": 80,
+    "context_window": 262144,
+    "default_output_tokens": 16384,
+    "layer": "L3",
+    "maximum_output_tokens": 32768,
+    "physical_slots": 1,
+    "provisional": true,
+    "seconds": 1800,
+    "total_tokens": 4000000,
+    "workers": 2
+  },
+  "budget_conserved": false,
+  "declared_complete": false,
+  "delivery": {
+    "files": [],
+    "note": "官方分数读的是 H1 合并后的交付（accepted_outputs / criterion_links 叶优先，只读快照不覆盖补丁叶）；编排认可了什么见 result['accepted_outputs']（S1）",
+    "path": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C2-r0/delivery",
+    "provenance": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C2-r0/delivery/PROVENANCE.json",
+    "source": "model_changed_files_skip_seed_snapshots"
+  },
+  "elapsed_seconds": 1801.68,
+  "event_counts": {
+    "AgentCreated": 8,
+    "BudgetReleased": 4,
+    "BudgetReserved": 5,
+    "InputSubmitted": 8,
+    "IntentSettled": 4,
+    "MethodApplicabilityAssessed": 1,
+    "MethodSynthesisRoundRecorded": 1,
+    "MissionCreated": 1,
+    "MissionPlanning": 1,
+    "ObligationDemandAdmitted": 1,
+    "PlanningRejected": 3,
+    "ServiceIntentRehandedOff": 3
+  },
+  "evidence_round": {
+    "asked": [
+      "code.repo-checked-out",
+      "code.regression-commit-known",
+      "code.test-is-failing",
+      "code.test-is-failing",
+      "code.regression-commit-known"
+    ],
+    "recorded": [
+      {
+        "observer": "code.repo-observer",
+        "polarity": true,
+        "predicate": "code.repo-checked-out"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      },
+      {
+        "observer": "code.test-observer",
+        "polarity": false,
+        "predicate": "code.test-is-failing"
+      },
+      {
+        "observer": "code.test-observer",
+        "polarity": false,
+        "predicate": "code.test-is-failing"
+      },
+      {
+        "observer": "code.history-observer",
+        "polarity": false,
+        "predicate": "code.regression-commit-known"
+      }
+    ],
+    "unavailable": []
+  },
+  "false_completion": false,
+  "grading": {
+    "candidate": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C2-r0/delivery",
+    "graded_at": "2026-09-18T01:51:49+0800",
+    "hidden": {
+      "returncode": 1,
+      "seconds": 0.23,
+      "status": "FAIL",
+      "tail": "FAILED hidden/test_hidden_pipeline.py::test_good_rows_reach_the_store_end_to_end\nFAILED hidden/test_hidden_pipeline.py::test_bad_rows_are_quarantined_and_the_run_fails_loudly\nFAILED hidden/test_hidden_pipeline.py::test_quarantine_entries_carry_line_number_raw_text_and_reason\nFAILED hidden/test_hidden_pipeline.py::test_no_line_is_silently_dropped - Att...\nFAILED hidden/test_hidden_pipeline.py::test_trailing_newlines_do_not_change_the_outcome\n5 failed in 0.04s",
+      "target": "hidden"
+    },
+    "hidden_files": [
+      "test_hidden_pipeline.py"
+    ],
+    "overlay": null,
+    "overlay_files": [],
+    "public": {
+      "returncode": 0,
+      "seconds": 0.22,
+      "status": "PASS",
+      "tail": "......                                                                   [100%]\n6 passed in 0.02s",
+      "target": "tests"
+    },
+    "python": "3.11.16",
+    "task": "C2",
+    "verdict": "FAIL"
+  },
+  "host_commit": "2717a7caf4536db2c439d1541785943ccba59232",
+  "known_usage_lower_bound": {
+    "calls": 3,
+    "input_tokens": 10599,
+    "model": "grok-4.6",
+    "output_tokens": 8445,
+    "peak_physical_slots": 1,
+    "provider": "cli-chat-proxy.grok.com",
+    "total_tokens": 19044
+  },
+  "layer": "L3",
+  "mechanism_receipt": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C2-r0/mechanism-receipt.json",
+  "mechanism_summary": {
+    "decomposition_witness_validated": true,
+    "event_counts": {
+      "evidence_unsettled": 4,
+      "unknown_evidence": 1
+    },
+    "expanded_under_unknown_without_assumptions": false,
+    "gaps": [
+      "shared_reuse did not fire: no method with a shared read-only sub-goal was adopted on this episode (the only one in the code seed library is code.fix-by-assessed-revert, which needs code.regression-commit-known TRUE)"
+    ],
+    "root_resolution_count": 0
+  },
+  "mission_account": {
+    "account_id": "budget:mission-3e9d9aec6dd186f0",
+    "attempts_created": 0,
+    "limits": {
+      "max_attempts": 12,
+      "max_concurrency": null,
+      "max_cost_micros": null,
+      "max_runtime_seconds": 1800,
+      "max_tokens": 4000000,
+      "max_tool_calls": null
+    },
+    "parent_id": null,
+    "remaining_attempts": 12,
+    "remaining_cost_micros": null,
+    "remaining_tokens": 3930956,
+    "remaining_tool_calls": null,
+    "reserved_attempts": 0,
+    "reserved_cost_micros": 0,
+    "reserved_tokens": 50000,
+    "reserved_tool_calls": 0,
+    "scope": "mission",
+    "settled_cost_micros": 0,
+    "settled_tokens": 19044,
+    "settled_tool_calls": 0,
+    "unpriced_settlements": 2,
+    "version": 10
+  },
+  "mission_id": "mission-3e9d9aec6dd186f0",
+  "mission_status": "PLANNING",
+  "model": "grok-4.6",
+  "observer_config": {
+    "changeset_line_limit": null,
+    "suite_gate": {}
+  },
+  "official_utility": false,
+  "plan_revisions": 0,
+  "public_suite": "PASS",
+  "reasoning_effort": "medium",
+  "refusal_source": "event",
+  "rejections": [
+    {
+      "detail": "{'proposal_id': 'p-no-applicable-1', 'rationale': 'no_applicable_method: none of the registered methods can be adopted for task-root; observed facts make code.test-is-failing and code.regression-commit-known false so patch and both revert methods fail their preconditions, and every method also has UNKNOWN authorisation rather than TRUE.'}",
+      "reason": "no_applicable_method",
+      "type": "PlanningRejected"
+    },
+    {
+      "detail": "{'blocker': {'blocker_id': '4caf80bc9dd1f1b921477b1d6749e7eb874e28a03bbb0c1f332eca8d7f988a2f', 'handoff_attempt': 1, 'kind': 'provider', 'ledger_identity': 'da3eb2fc19000f74cba62d5c972cfaf3721c09aa089e8ddf88abe94b949a3560'}, 'limit_seconds': 300.0, 'rehandoffs': 1, 'waited_seconds': 300.048}",
+      "reason": "provider_outcome_unknown",
+      "type": "PlanningRejected"
+    },
+    {
+      "detail": "{'blocker': {'blocker_id': '0351bfcb912f717b008f6c1a418e2dae0500a19e5594b0e097f52f27db25812f', 'handoff_attempt': 1, 'kind': 'provider', 'ledger_identity': '24729115d3dfa506b10f1e1faafda926693a44ffb0f8588869ec4181740c2c1b'}, 'limit_seconds': 300.0, 'rehandoffs': 1, 'waited_seconds': 300.035}",
+      "reason": "provider_outcome_unknown",
+      "type": "PlanningRejected"
+    }
+  ],
+  "repetition": 0,
+  "root_goal": {
+    "parameters": {
+      "failing_test": "tests/test_public_pipeline.py",
+      "repository": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-16/htn-acceptance/runs/h-arm/episodes/H-L3-C2-r0/worktree"
+    },
+    "task_type": "code.fix-failing-test"
+  },
+  "run_id": "H-L3-C2-r0",
+  "schema": "htn-run-receipt-v1",
+  "sdk_commit": "2845b7e3162797e401d851e4b76a28438b042c30",
+  "semantics": "hierarchical",
+  "stalled": [],
+  "started_at": "2026-09-18T01:21:48+0800",
+  "status": "scored",
+  "stop_reason": null,
+  "task_id": "C2",
+  "timed_out": true,
+  "unknown_usage_calls": 1,
+  "valid_success": false,
+  "worker_pid": 59786
+}
