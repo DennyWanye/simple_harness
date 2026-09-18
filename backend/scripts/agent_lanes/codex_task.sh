@@ -17,6 +17,12 @@ ROOTS=""
 [ -d "$HOME/.cache/uv" ] && ROOTS="${ROOTS:+$ROOTS, }\"$HOME/.cache/uv\""
 ARGS=(--skip-git-repo-check --json -o "$OUT/last.txt" -c "model_reasoning_effort=\"$EFFORT\"" -c "sandbox_mode=\"$SANDBOX\"")
 [ -n "$ROOTS" ] && ARGS+=(-c "sandbox_workspace_write.writable_roots=[$ROOTS]")
+# The day-card endpoint allows only 2 requests in flight; when the local queueing gate (daycard_gate.py)
+# is listening, send codex through it so agents queue for a slot instead of dying on HTTP 429.
+GATE_PORT="${DAYCARD_GATE_DEV_PORT:-28182}"
+if [ "${CODEX_USE_GATE:-auto}" != "0" ] && nc -z 127.0.0.1 "$GATE_PORT" 2>/dev/null; then
+  ARGS+=(-c "model_providers.custom.base_url=\"http://127.0.0.1:$GATE_PORT/v1\"")
+fi
 cd "$CWD" || { echo "CODEX_TASK rc=97 cwd-not-found=$CWD"; exit 97; }
 PROMPT="$RULES
 
