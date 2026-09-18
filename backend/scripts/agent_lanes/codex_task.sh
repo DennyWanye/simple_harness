@@ -9,11 +9,15 @@ CODEX="${CODEX_BIN:-/Applications/ChatGPT.app/Contents/Resources/codex}"
 OUT="${AGENT_TASK_OUT:-$HOME/.cache/simpleharness-agent-tasks/codex}/$NAME"
 mkdir -p "$OUT"; cp "$PROMPT_FILE" "$OUT/prompt.md"
 RULES='Rules (binding): 1) Never run git stash, git checkout, git reset --hard, git rebase, or git push. 2) Never print, cat, or copy API keys, tokens, .env files, llm_runtime*.json, ~/.grok/auth.json, or ~/.codex/auth.json / config.toml. 3) Work only inside the given working directory. 4) Write all project record documents (journal, notes, reports) in Chinese; code and code comments in English. 5) Tests first: write the failing test before the fix. 6) Do not delete files unless the task says so. 7) End your final reply with a section "## 结果" listing files changed, tests run with pass/fail counts, and anything left undone.'
-ARGS=(-s "$SANDBOX" --skip-git-repo-check --json -o "$OUT/last.txt" -C "$CWD" -c "model_reasoning_effort=\"$EFFORT\"")
-# git worktrees commit into the main repo's .git — make that writable too
+# `codex exec resume` accepts neither -s, -C nor --add-dir, so sandbox and writable roots go through -c
+# overrides (valid for both forms) and the working directory through `cd`.
 COMMON=$(git -C "$CWD" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
-[ -n "$COMMON" ] && [ -d "$COMMON" ] && ARGS+=(--add-dir "$COMMON")
-[ -d "$HOME/.cache/uv" ] && ARGS+=(--add-dir "$HOME/.cache/uv")
+ROOTS=""
+[ -n "$COMMON" ] && [ -d "$COMMON" ] && ROOTS="\"$COMMON\""
+[ -d "$HOME/.cache/uv" ] && ROOTS="${ROOTS:+$ROOTS, }\"$HOME/.cache/uv\""
+ARGS=(--skip-git-repo-check --json -o "$OUT/last.txt" -c "model_reasoning_effort=\"$EFFORT\"" -c "sandbox_mode=\"$SANDBOX\"")
+[ -n "$ROOTS" ] && ARGS+=(-c "sandbox_workspace_write.writable_roots=[$ROOTS]")
+cd "$CWD" || { echo "CODEX_TASK rc=97 cwd-not-found=$CWD"; exit 97; }
 PROMPT="$RULES
 
 $(cat "$PROMPT_FILE")"

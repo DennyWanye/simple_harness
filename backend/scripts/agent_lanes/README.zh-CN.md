@@ -62,3 +62,10 @@ slice_pipeline.sh <片名> <sdk工作树> <基准提交> <实施任务书.md> <�
 ### `selftest_gate.sh` —— 离线自测（不调用任何模型）
 
 用 `mktemp -d` 建一次性 git 仓库伪装成 SDK（含 `src/agent_orchestrator/contracts/a.py` 与假的 `plans/llm-native-htn/H0/test-results.json`），用 `GATE_SKIP_PYTHON=1` 让 `sdk_gate.sh` 跳过 5–8 项，验证：①干净 + 白名单内改动 → 绿；②改了既有 contracts 文件 → `contracts_frozen` 红；③白名单外文件 → `allowlist` 红；④新增行含 `sk-abcdefghij1234` → `no_secrets` 红，而 `task-abcdefghij1234` 不红；⑤工作树不干净 → `clean` 红。再单测 `parse_pytest_tail` 的三种尾行。全过打印 `SELFTEST OK n/n`。
+
+## 2026-09-18 指挥者修正与使用纪律
+
+- `codex exec resume` 不接受 `-s / -C / --add-dir`：`codex_task.sh` 改为用 `-c sandbox_mode=…`、`-c sandbox_workspace_write.writable_roots=[…]` 传沙箱与可写目录，并先 `cd` 到工作目录；续接已实测。
+- `slice_pipeline.sh` 在删除核验副本前先把其中未跟踪的 `.md/.json/.txt`（即核验报告）存到 `<产物目录>/pipeline/<片名>/verify-artifacts/`，由指挥者随切片归档。
+- **不要相信代理最终回复里的数字与路径。** 实测中 Codex（deepseek-v4.1-flash）把命令输出的目录名抄错了一个词。验收一律以 `sdk_gate.sh` 的 JSON 报告、pytest 日志、`git` 输出为准；代理回复只当线索。
+- `sentinel` 项是 `grep _new_mode` 的行数（0.12.2 为 29），与测试里的哨兵口径（19）不同；上限按行数给（H1 建议 `--max-sentinel 32`）。

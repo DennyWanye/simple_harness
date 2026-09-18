@@ -114,6 +114,16 @@ failed_items() {
 # =========================================================================
 # a. implement (lane, default codex) - capture session
 # =========================================================================
+# Verification reports are written (uncommitted) inside the detached verify worktree; save them before the
+# worktree is removed so they can be archived with the slice.
+save_verify_artifacts() {
+  local dest="$PIPE_DIR/verify-artifacts" f
+  mkdir -p "$dest"
+  git -C "$VERIFY_DIR" ls-files --others --exclude-standard 2>/dev/null | while IFS= read -r f; do
+    case "$f" in *.md|*.json|*.txt) mkdir -p "$dest/$(dirname "$f")"; cp "$VERIFY_DIR/$f" "$dest/$f" ;; esac
+  done
+  logline "verify-artifacts" "saved to $dest"
+}
 logline "a-implement" "start lane=$LANE"
 IMPL_SUM=$(run_lane "$LANE" "${NAME}-impl-1" "$SDK" "$IMPL_TASK" "")
 SESSION=$(extract_session "$IMPL_SUM")
@@ -203,6 +213,7 @@ if [ "$VKIND" = "修后可合" ]; then
     echo
     echo "核验报告：$VERIFY_SUM"
     echo "核验结论：$VLINE"
+    echo "核验副本目录（未跟踪的 .md 即完整核验报告，先读它）：$VERIFY_DIR"
     echo
     echo "请按核验报告修复问题，使 sdk_gate.sh 全绿后提交（工作树须保持 clean）。"
     echo "不要 merge、不要 push；只在工作目录内改动。"
@@ -224,6 +235,7 @@ if [ "$VKIND" = "修后可合" ]; then
 
   # move the detached copy onto the new commit (remove + re-add, avoids checkout/reset)
   NEW_HEAD=$(git -C "$SDK" rev-parse HEAD)
+  save_verify_artifacts
   git -C "$SDK" worktree remove --force "$VERIFY_DIR" >> "$LOGFILE" 2>&1 || true
   if ! git -C "$SDK" worktree add --detach "$VERIFY_DIR" "$NEW_HEAD" >> "$LOGFILE" 2>&1; then
     logline "d-reverify" "FAIL worktree-add $VERIFY_DIR"
@@ -262,6 +274,7 @@ if ! gate "$GATE_FULL" "--full"; then
 fi
 logline "e-gate-full" "GREEN $GATE_FULL"
 
+save_verify_artifacts
 git -C "$SDK" worktree remove --force "$VERIFY_DIR" >> "$LOGFILE" 2>&1 || true
 HEAD_SHORT=$(git -C "$SDK" rev-parse --short HEAD)
 logline "result" "PIPELINE GREEN $NAME head=$HEAD_SHORT"
