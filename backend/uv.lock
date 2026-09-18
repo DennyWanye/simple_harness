@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [manifest]
-overrides = [{ name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.12.1-py3-none-any.whl" }]
+overrides = [{ name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.12.2-py3-none-any.whl" }]
 
 [[package]]
 name = "accelerate"
@@ -7723,7 +7723,7 @@ requires-dist = [
     { name = "selectolax", specifier = ">=0.3" },
     { name = "sentence-transformers", specifier = ">=5.7" },
     { name = "silero-vad", specifier = ">=5.1.2,<6" },
-    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.12.1-py3-none-any.whl" },
+    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.12.2-py3-none-any.whl" },
     { name = "simple-harness-service-sdk", extras = ["realtime"], path = "vendor/simple_harness_service_sdk-0.3.13-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
@@ -7743,13 +7743,13 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "simple-harness-sdk"
-version = "0.12.1"
-source = { path = "vendor/simple_harness_sdk-0.12.1-py3-none-any.whl" }
+version = "0.12.2"
+source = { path = "vendor/simple_harness_sdk-0.12.2-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
 ]
 wheels = [
-    { filename = "simple_harness_sdk-0.12.1-py3-none-any.whl", hash = "sha256:18fbd91cdac24f53419b6d8bdcc0049bd51fcb5bf9be180ab15f3e81c07d34a7" },
+    { filename = "simple_harness_sdk-0.12.2-py3-none-any.whl", hash = "sha256:303aaf32b96a56edbe399fb3503be7c573d76951e73aba94fbcd8e5b1834b58d" },
 ]
 
 [package.metadata]
