@@ -182,7 +182,7 @@ save_verify_artifacts() {
   # The relative-path list lets a later round copy the saved reports back into
   # the moved verify copy, so the verifier keeps appending to the same file.
   : > "$list"
-  git -C "$VERIFY_DIR" ls-files --others --exclude-standard 2>/dev/null | while IFS= read -r f; do
+  git -C "$VERIFY_DIR" -c core.quotepath=false ls-files --others --exclude-standard 2>/dev/null | while IFS= read -r f; do
     case "$f" in
       *.md|*.json|*.txt)
         mkdir -p "$dest/$(dirname "$f")"
