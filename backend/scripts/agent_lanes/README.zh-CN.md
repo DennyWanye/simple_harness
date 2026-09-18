@@ -13,3 +13,52 @@ codex_task.sh <任务名> <工作目录> <任务书.md> [推理强度=high] [沙
 - Codex：`/Applications/ChatGPT.app/Contents/Resources/codex`（随 ChatGPT 桌面应用自带，可用 `CODEX_BIN` 覆盖）。模型与服务端点由 `~/.codex/config.toml` 决定（cc-switch 管理）；2026-09-18 时为自定义端点上的 deepseek-v4.1-flash。必须关闭标准输入（脚本已做），否则会挂住等输入。沙箱缺省 `workspace-write`：只能写工作目录、git 公共目录与 uv 缓存，命令无网络；纯只读任务传 `read-only`。
 - 分工建议：核心代码实施与独立核验用 Grok（实施与核验分属不同会话）；Codex 用于并行的低风险任务——文档与台账编纂、数据表、只读排查、测试清单、对 Grok 结论的第二意见。需要升级时才用 Claude 子代理。
 - 首次冒烟（2026-09-18）：Codex 在 SDK 主树跑 `test_repeated_failure_early_stop.py` 12 通过，17 秒，主树保持干净。
+
+## 确定性闸门与切片流水线
+
+`grok_task.sh` / `codex_task.sh` 负责跑单个代理任务；下面两个脚本把「多个代理任务」串成
+可监视、可复现的切片流水线，并用确定性闸门把关。全部产物落在
+`${AGENT_TASK_OUT:-$HOME/.cache/simpleharness-agent-tasks}/pipeline/<片名>/`。
+
+### `sdk_gate.sh` —— SDK 切片的确定性闸门
+
+```
+sdk_gate.sh <sdk工作树> <基准提交> [--tests "<pytest 路径 …>"] [--allow <白名单文件>]
+            [--full] [--max-sentinel N] [--out <报告.json>]
+```
+
+逐项检查，每项以 `{name, ok, detail}` 写进 JSON 报告（顶层 `ok` 为各项与）；任一失败退出码 1：
+
+1. `clean`：工作树 `git status --short` 为空。
+2. `allowlist`：`git diff --name-only <基准>..HEAD` 的每个文件都匹配白名单文件里的某一行 glob（bash `case` 模式；用 `#` 注释、空行忽略）；未给 `--allow` 则记 skipped。
+3. `contracts_frozen`：`git diff --name-status <基准>..HEAD -- src/agent_orchestrator/contracts` 只允许状态 `A`（新增），出现 M/D/R 即红。
+4. `no_secrets`：`git diff <基准>..HEAD` 新增行不得匹配 `sk-` / `xai-` / `Bearer …` / `eyJ…` 密钥样式。
+5. `ruff`：对改动的 `.py` 跑 `uv run ruff check`（在 SDK 工作树内；无 `.py` 改动则 skipped）。
+6. `import_origin`：`PYTHONPATH=src uv run python -c "import agent_orchestrator,os;print(os.path.realpath(agent_orchestrator.__file__))"` 输出必须位于该工作树内（防止测到别的工作树的源码）。
+7. `targeted`：`PYTHONPATH=src uv run pytest <--tests 路径> -q -p no:cacheprovider`，解析尾行 passed/failed/errors，failed+errors 必须为 0（未给 `--tests` 则 skipped）。
+8. 仅 `--full`：`full_target`（`tests/orchestrator/full_target`，failed+errors=0 且 passed ≥ 基线）与 `legacy`（step02 step05 step06 step07 p34 p35，同样只允许增不许减）。基线从 `<sdk工作树>/plans/llm-native-htn/H0/test-results.json` 的 `full_target.passed` / `legacy.passed` 读取。
+9. `sentinel`：`grep -rn "_new_mode" src/agent_orchestrator | wc -l` 记录数值；给了 `--max-sentinel` 且超过则红（否则只记录）。
+
+所有 pytest 输出与 ruff 日志存到报告同目录的 `*.log`。pytest 尾行解析用可 `source` 的函数 `parse_pytest_tail`（稳健处理 `12 passed, 2 skipped in 7.9s` / `1 failed, 11 passed` / `no tests ran`）。设 `GATE_SKIP_PYTHON=1` 可让第 5–8 项全部记 skipped（供离线自测）。
+
+### `slice_pipeline.sh` —— 一个切片的实施 → 闸门 → 独立核验 → 处置 → 全量闸门
+
+```
+slice_pipeline.sh <片名> <sdk工作树> <基准提交> <实施任务书.md> <核验任务书.md>
+                  [--lane codex|grok] [--verify-lane codex|grok] [--tests "…"] [--allow 文件]
+                  [--max-sentinel N] [--log 文件]
+```
+
+每步往日志写一行 `=== [时间] <片名> <步骤> <结果>`，便于外部监视。流程：
+
+- a. 用 `--lane`（缺省 `codex`）在 SDK 工作树跑实施任务书，从摘要行取 `session`。
+- b. 跑 `sdk_gate.sh`（不带 `--full`）；红 → 把闸门报告 JSON 路径与失败项写进一个「修复任务书」，用同一 session 续接实施者再做一次 → 再跑闸门；仍红 → 写 `PIPELINE RED gate` 退出 2。
+- c. 在 `<sdk工作树>-verify-<片名>` 建分离副本（`git worktree add --detach`，HEAD = 工作树当前提交），用 `--verify-lane`（缺省 `codex`，**新会话**）跑核验任务书。核验任务书要求核验员在最终回复里写一行 `VERDICT: 可合` / `VERDICT: 修后可合` / `VERDICT: 不可合`；脚本从核验摘要里 grep 这一行。
+- d. `修后可合` → 生成处置任务书（指向核验报告），续接实施者 session 修复 → 闸门 → 把分离副本移到新提交（remove + re-add，不 checkout）→ 续接核验员 session 复核；仍非 `可合` → `PIPELINE RED verify` 退出 3。`不可合` 直接退出 3。取不到 VERDICT 按红处理。
+- e. `可合` → 跑 `sdk_gate.sh --full`；绿 → 删除分离副本（`git worktree remove --force`），写 `PIPELINE GREEN <片名> head=<短哈希>` 退出 0；红 → 退出 2。
+
+脚本自己 **不 merge、不 push**。
+
+### `selftest_gate.sh` —— 离线自测（不调用任何模型）
+
+用 `mktemp -d` 建一次性 git 仓库伪装成 SDK（含 `src/agent_orchestrator/contracts/a.py` 与假的 `plans/llm-native-htn/H0/test-results.json`），用 `GATE_SKIP_PYTHON=1` 让 `sdk_gate.sh` 跳过 5–8 项，验证：①干净 + 白名单内改动 → 绿；②改了既有 contracts 文件 → `contracts_frozen` 红；③白名单外文件 → `allowlist` 红；④新增行含 `sk-abcdefghij1234` → `no_secrets` 红，而 `task-abcdefghij1234` 不红；⑤工作树不干净 → `clean` 红。再单测 `parse_pytest_tail` 的三种尾行。全过打印 `SELFTEST OK n/n`。
