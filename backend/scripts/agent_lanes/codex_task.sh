@@ -21,10 +21,28 @@ cd "$CWD" || { echo "CODEX_TASK rc=97 cwd-not-found=$CWD"; exit 97; }
 PROMPT="$RULES
 
 $(cat "$PROMPT_FILE")"
-START=$(date +%s); rm -f "$OUT/last.txt"
-if [ -n "$RESUME" ]; then "$CODEX" exec resume "${ARGS[@]}" "$RESUME" "$PROMPT" < /dev/null > "$OUT/events.jsonl" 2> "$OUT/err.log"
-else "$CODEX" exec "${ARGS[@]}" "$PROMPT" < /dev/null > "$OUT/events.jsonl" 2> "$OUT/err.log"; fi
-RC=$?; END=$(date +%s)
+START=$(date +%s); rm -f "$OUT/last.txt"; : > "$OUT/events.jsonl"; : > "$OUT/err.log"
+# The endpoint rate-limits bursts (HTTP 429) and codex gives up after its own short retries; a slice
+# that dies this way loses hours.  Retry here with backoff, resuming the same session when one exists.
+MAX_TRIES="${CODEX_TASK_MAX_TRIES:-8}"; TRY=1; SID="$RESUME"; MSG="$PROMPT"
+while :; do
+  : > "$OUT/attempt.jsonl"
+  if [ -n "$SID" ]; then "$CODEX" exec resume "${ARGS[@]}" "$SID" "$MSG" < /dev/null > "$OUT/attempt.jsonl" 2>> "$OUT/err.log"
+  else "$CODEX" exec "${ARGS[@]}" "$MSG" < /dev/null > "$OUT/attempt.jsonl" 2>> "$OUT/err.log"; fi
+  RC=$?; cat "$OUT/attempt.jsonl" >> "$OUT/events.jsonl"
+  [ "$RC" -eq 0 ] && break
+  grep -qE '429|Too Many Requests|stream disconnected|502 Bad Gateway|503 Service' "$OUT/attempt.jsonl" || break
+  [ "$TRY" -ge "$MAX_TRIES" ] && break
+  NEW_SID=$(grep -oE '"thread_id":"[^"]+"' "$OUT/attempt.jsonl" | head -1 | cut -d'"' -f4)
+  if grep -q '"turn.completed"\|"item.completed"' "$OUT/attempt.jsonl" && [ -n "${NEW_SID:-$SID}" ]; then
+    SID="${NEW_SID:-$SID}"; MSG="$RULES
+
+The previous request was interrupted by server-side rate limiting (HTTP 429). Continue the same task from where you stopped; all earlier instructions still apply. Re-check git status first so you do not redo finished work."
+  fi
+  WAIT=$(( 45 * TRY + RANDOM % 40 )); echo "codex_task: transient failure (try $TRY/$MAX_TRIES), retry in ${WAIT}s" >> "$OUT/err.log"
+  sleep "$WAIT"; TRY=$((TRY+1))
+done
+rm -f "$OUT/attempt.jsonl"; END=$(date +%s)
 python3 - "$OUT" "$RC" "$((END-START))" <<'PY'
 import json, sys, pathlib
 out, rc, secs = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
