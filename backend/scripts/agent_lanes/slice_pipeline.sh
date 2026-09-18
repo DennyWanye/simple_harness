@@ -22,7 +22,8 @@ set -u
 # verdict is never mis-read as the 可合 substring.
 grep_verdict() {
   local summary="${1:-}" tout="${2:-}" line=""
-  local re='VERDICT:[[:space:]]*(不可合|修后可合|可合)'
+  # The verdict must stand alone on its line; quoted instructions such as "… `VERDICT: 可合` / `VERDICT: 不可合`" must not match.
+  local re='^[[:space:]`*]*VERDICT:[[:space:]]*(不可合|修后可合|可合)[[:space:]`*]*$'
   if [ -n "$tout" ] && [ -f "$tout/last.txt" ]; then
     line=$(grep -aE "$re" "$tout/last.txt" 2>/dev/null | tail -1)
     [ -n "$line" ] && { printf '%s\n' "$line"; return 0; }
@@ -32,10 +33,23 @@ grep_verdict() {
     [ -n "$line" ] && { printf '%s\n' "$line"; return 0; }
   fi
   if [ -n "$tout" ] && [ -f "$tout/out.json" ]; then
-    line=$(grep -aoE "$re" "$tout/out.json" 2>/dev/null | tail -1)
+    line=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("text") or "")' "$tout/out.json" 2>/dev/null | grep -aE "$re" | tail -1)
     [ -n "$line" ] && { printf '%s\n' "$line"; return 0; }
   fi
   return 1
+}
+
+write_continue_book() {
+  # write_continue_book <n> -> path of a "finish your verification" task book
+  local n="${1:-0}" book="$PIPE_DIR/verify-continue-$n.md"
+  {
+    echo "# 继续核验（同一会话续做）"
+    echo
+    echo "你上一次回合在给出结论之前就结束了（没有独占一行的 VERDICT）。请接着原任务书把剩余工作做完："
+    echo "未做完的核对项、全部变异（每个都要从 /tmp 副本恢复并用 git status 确认干净）、把中文核验报告写到原任务书指定的路径（不 commit）。"
+    echo "不要重做已经完成并记录过的检查。最终回复用「## 结果」开头，**最后单独一行**只写 VERDICT: 可合 / VERDICT: 修后可合 / VERDICT: 不可合 三者之一。"
+  } > "$book"
+  echo "$book"
 }
 
 verdict_kind() {
@@ -65,7 +79,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NAME="${1:-}"; SDK="${2:-}"; BASE="${3:-}"; IMPL_TASK="${4:-}"; VERIFY_TASK="${5:-}"
 shift 5 2>/dev/null || true
-LANE="codex"; VERIFY_LANE="codex"; TESTS=""; ALLOW=""; MAX_SENTINEL=""; MAX_ROUNDS="2"; LOGFILE=""; RESUME_IMPL=""
+LANE="codex"; VERIFY_LANE="codex"; TESTS=""; ALLOW=""; MAX_SENTINEL=""; MAX_ROUNDS="2"; LOGFILE=""; RESUME_IMPL=""; RESUME_VERIFY=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --lane) LANE="${2:-}"; shift 2 ;;
@@ -75,6 +89,7 @@ while [ "$#" -gt 0 ]; do
     --max-sentinel) MAX_SENTINEL="${2:-}"; shift 2 ;;
     --max-rounds) MAX_ROUNDS="${2:-}"; shift 2 ;;
     --resume-impl) RESUME_IMPL="${2:-}"; shift 2 ;;
+    --resume-verify) RESUME_VERIFY="${2:-}"; shift 2 ;;
     --log) LOGFILE="${2:-}"; shift 2 ;;
     *) echo "slice_pipeline.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -300,7 +315,11 @@ ROUND=1
 REVIEWED_HEAD="$HEAD_NOW"
 VERIFIED=0
 while [ "$ROUND" -le "$MAX_ROUNDS" ]; do
-  if [ "$ROUND" -eq 1 ]; then
+  if [ "$ROUND" -eq 1 ] && [ -n "$RESUME_VERIFY" ]; then
+    # An earlier run's verifier stopped before giving a verdict: continue that session instead of starting over.
+    VBOOK=$(write_continue_book 0)
+    RESUME_ARG="$RESUME_VERIFY"
+  elif [ "$ROUND" -eq 1 ]; then
     VBOOK="$VERIFY_TASK"
     RESUME_ARG=""
   else
@@ -311,6 +330,16 @@ while [ "$ROUND" -le "$MAX_ROUNDS" ]; do
   VERIFY_SUM=$(run_lane "$VERIFY_LANE" "${NAME}-verify-$ROUND" "$VERIFY_DIR" "$VBOOK" "$RESUME_ARG")
   VSESSION=$(extract_session "$VERIFY_SUM")
   VLINE=$(grep_verdict "$VERIFY_SUM" "$TASKS_DIR/${NAME}-verify-$ROUND" || true)
+  NUDGE=1
+  while [ -z "$VLINE" ] && [ "$NUDGE" -le 2 ] && [ -n "$VSESSION" ]; do
+    # The agent's turn can end early (e.g. after a context compaction) with no verdict: ask the same session to finish.
+    logline "c-verify-$ROUND" "no-verdict -> continue same session (nudge $NUDGE)"
+    CBOOK=$(write_continue_book "$NUDGE")
+    VERIFY_SUM=$(run_lane "$VERIFY_LANE" "${NAME}-verify-$ROUND-cont-$NUDGE" "$VERIFY_DIR" "$CBOOK" "$VSESSION")
+    NS=$(extract_session "$VERIFY_SUM"); [ -n "$NS" ] && VSESSION="$NS"
+    VLINE=$(grep_verdict "$VERIFY_SUM" "$TASKS_DIR/${NAME}-verify-$ROUND-cont-$NUDGE" || true)
+    NUDGE=$((NUDGE+1))
+  done
   if [ -z "$VLINE" ]; then
     logline "c-verify-$ROUND" "RED no-verdict summary=$VERIFY_SUM"
     logline "result" "PIPELINE RED verify"
