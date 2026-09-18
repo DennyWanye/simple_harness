@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -217,6 +218,71 @@ def cmd_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_refresh(args: argparse.Namespace) -> int:
+    """Renew the Grok Build subscription key via the OIDC refresh_token grant.
+
+    The key in ``~/.grok/auth.json`` lives about six hours and the grok CLI only
+    renews it once it has already expired -- long acceptance episodes that span
+    the expiry die on 401.  This asks the issuer for a fresh access token with the
+    stored refresh token (public client, no secret) and rewrites the auth entry the
+    way the CLI keeps it.  The previous file is kept next to it as a 0600 backup.
+    Nothing secret is printed.
+    """
+    import urllib.parse  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    data = json.loads(AUTH_JSON.read_text(encoding="utf-8"))
+    name = next(iter(data))
+    entry = data[name]
+    issuer = str(entry.get("oidc_issuer") or "").rstrip("/")
+    refresh = str(entry.get("refresh_token") or "")
+    client_id = str(entry.get("oidc_client_id") or "")
+    if not (issuer and refresh and client_id):
+        sys.exit("auth.json entry lacks oidc_issuer / refresh_token / oidc_client_id: run `grok login`")
+    try:
+        disc = json.load(urllib.request.urlopen(issuer + "/.well-known/openid-configuration", timeout=20))
+        endpoint = disc.get("token_endpoint") or issuer + "/oauth2/token"
+    except Exception:  # noqa: BLE001
+        endpoint = issuer + "/oauth2/token"
+    body = urllib.parse.urlencode(
+        {"grant_type": "refresh_token", "refresh_token": refresh, "client_id": client_id}
+    ).encode()
+    req = urllib.request.Request(
+        endpoint, data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            tok = json.load(resp)
+    except urllib.error.HTTPError as exc:  # type: ignore[attr-defined]
+        detail = exc.read()[:200].decode("utf-8", "replace")
+        detail = detail.replace(refresh, "<refresh>")
+        print(f"REFRESH FAILED http={exc.code} {detail}")
+        return 2
+    access = str(tok.get("access_token") or "")
+    if not access:
+        print("REFRESH FAILED: no access_token in response")
+        return 2
+    backup = AUTH_JSON.with_name("auth.json.bak-refresh")
+    shutil.copy2(AUTH_JSON, backup)
+    os.chmod(backup, 0o600)
+    now = datetime.now(timezone.utc)
+    ttl = int(tok.get("expires_in") or 6 * 3600)
+    entry["key"] = access
+    if tok.get("refresh_token"):
+        entry["refresh_token"] = str(tok["refresh_token"])
+    entry["create_time"] = now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    entry["expires_at"] = datetime.fromtimestamp(now.timestamp() + ttl, tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ"
+    )
+    tmp = AUTH_JSON.with_name("auth.json.tmp-refresh")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, AUTH_JSON)
+    print(f"REFRESH OK expires_at={entry['expires_at']} ttl={ttl}s rotated_refresh_token={bool(tok.get('refresh_token'))}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -226,6 +292,7 @@ def main(argv: list[str] | None = None) -> int:
     w.set_defaults(fn=cmd_write)
     sub.add_parser("status", help="show token/lane state without secrets").set_defaults(fn=cmd_status)
     sub.add_parser("probe", help="stream + tool call via the Host provider").set_defaults(fn=cmd_probe)
+    sub.add_parser("refresh", help="renew the subscription key via OIDC refresh_token (no secrets printed)").set_defaults(fn=cmd_refresh)
     sub.add_parser("apply", help="swap the grok lane into llm_runtime.json (with backup)").set_defaults(fn=cmd_apply)
     r = sub.add_parser("restore", help="restore llm_runtime.json from the latest grok backup")
     r.add_argument("--keep-backup", action="store_true")
