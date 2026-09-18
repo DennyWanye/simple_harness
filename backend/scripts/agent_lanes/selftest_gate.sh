@@ -16,6 +16,25 @@ GATE="$SCRIPT_DIR/sdk_gate.sh"
 # shellcheck disable=SC1090
 source "$GATE"
 
+# slice_pipeline.sh must be source-safe too: with SLICE_PIPELINE_SOURCE_ONLY=1 it only defines functions.
+PIPE="$SCRIPT_DIR/slice_pipeline.sh"
+[ -f "$PIPE" ] || { echo "selftest_gate.sh: slice_pipeline.sh not found next to this script" >&2; exit 1; }
+# probe in a subshell first, so an unsafe (non-source-safe) script cannot kill the self-test run
+PIPE_PROBE=$(SLICE_PIPELINE_SOURCE_ONLY=1 bash -c 'source "$1" >/dev/null 2>&1 && declare -f grep_verdict >/dev/null && declare -f verdict_kind >/dev/null && declare -f round_action >/dev/null && echo SOURCE_OK' selftest "$PIPE" 2>&1 || true)
+PIPE_SOURCED=0
+case "$PIPE_PROBE" in
+  *SOURCE_OK*) PIPE_SOURCED=1 ;;
+esac
+if [ "$PIPE_SOURCED" -eq 1 ]; then
+  # shellcheck disable=SC1090
+  SLICE_PIPELINE_SOURCE_ONLY=1 source "$PIPE"
+else
+  # stubs so the verdict/round tests below fail loudly instead of aborting the whole self-test
+  grep_verdict() { return 1; }
+  verdict_kind() { echo ""; }
+  round_action() { echo "not-source-safe"; }
+fi
+
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/selftest_gate.XXXXXX")"
 if [ -z "$TMP" ] || [ ! -d "$TMP" ]; then
   echo "selftest_gate.sh: could not create a temp dir; aborting" >&2
@@ -164,6 +183,67 @@ p=$(parse_pytest_tail "1 failed, 11 passed")
 
 p=$(parse_pytest_tail "no tests ran in 0.01s")
 [ "$p" = "passed=0 failed=0 errors=0" ] && ok "parse '[no tests ran]' -> $p" || bad "parse no-tests: $p"
+
+# ---- Case 7: sentinel counts only .py source files -------------------------
+R8=$(make_repo case8)
+B8=$(git -C "$R8" rev-parse HEAD)
+# a real source file with the marker, and a binary-looking .pyc that must be ignored
+printf 'x = "_new_mode"\n' > "$R8/src/agent_orchestrator/sentinel_source.py"
+printf 'binary:_new_mode:payload\n' > "$R8/src/agent_orchestrator/sentinel_fake.pyc"
+git -C "$R8" add -A && git -C "$R8" commit -q -m "sentinel files"
+GATE_SKIP_PYTHON=1 "$GATE" "$R8" "$B8" --out "$TMP/c8.json" > "$TMP/c8.out" 2>&1
+rc=$?
+sent=`python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(next((i['detail'] for i in d['items'] if i['name']=='sentinel'),''))" "$TMP/c8.json"`
+case "$sent" in
+  *count=1*) ok "case7 sentinel counts .py only ($sent)" ;;
+  *) bad "case7 sentinel counted non-source files: $sent; rc=$rc" ;;
+esac
+
+# ---- verdict extraction unit tests (source-only helpers from slice_pipeline.sh) ----
+if [ "$PIPE_SOURCED" -eq 1 ]; then
+  ok "slice_pipeline.sh is source-safe (SLICE_PIPELINE_SOURCE_ONLY=1)"
+else
+  bad "slice_pipeline.sh is not source-safe: $PIPE_PROBE"
+fi
+VTD="$TMP/verdict-out"
+mkdir -p "$VTD"
+# three verdict kinds; last.txt is the primary source, the summary is a decoy with a different verdict
+vk_case() { # vk_case <name> <last.txt verdict> <summary verdict> <expected>
+  local name="$1" last="$2" summary="$3" want="$4" got line
+  printf '%s\n' "VERDICT: $last" > "$VTD/last.txt"
+  printf 'some text\nVERDICT: %s\n' "$summary" > "$VTD/summary.txt"
+  line=$(grep_verdict "$VTD/summary.txt" "$VTD" || true)
+  got=$(verdict_kind "$line")
+  if [ "$got" = "$want" ]; then ok "verdict $name -> $got (line: ${line:-<none>})"
+  else bad "verdict $name -> '$got' (line: '${line:-<none>}'; want: $want)"; fi
+}
+vk_case "可合"      "可合"      "不可合"    "可合"
+vk_case "修后可合"  "修后可合"  "可合"      "修后可合"
+vk_case "不可合"    "不可合"    "修后可合"  "不可合"
+# summary is the fallback when last.txt is missing
+printf 'text\nVERDICT: 修后可合\n' > "$VTD/summary.txt"
+line=$(grep_verdict "$VTD/summary.txt" "$TMP/verdict-no-last" || true)
+[ "$(verdict_kind "$line")" = "修后可合" ] && ok "verdict falls back to the summary" || bad "verdict fallback broken: '$line'"
+# the last VERDICT line in the file wins (guards the tail -1 lookup)
+printf 'VERDICT: 可合\ntext\nVERDICT: 修后可合\n' > "$VTD/summary.txt"
+line=$(grep_verdict "$VTD/summary.txt" "$TMP/verdict-none" || true)
+[ "$(verdict_kind "$line")" = "修后可合" ] && ok "verdict takes the last line" || bad "verdict last-line broken: '$line'"
+# no verdict anywhere -> no line
+printf 'no verdict here\n' > "$VTD/summary.txt"
+if line=$(grep_verdict "$VTD/summary.txt" "$TMP/verdict-none"); then bad "verdict found when none exists: $line"; else ok "no verdict -> red (empty)"; fi
+
+# ---- round decision unit tests --------------------------------------------
+rcase() { # rcase <kind> <round> <max> <want>
+  local got
+  got=$(round_action "$1" "$2" "$3")
+  if [ "$got" = "$4" ]; then ok "round $1 round=$2/$3 -> $got"
+  else bad "round $1 round=$2/$3 -> '$got' (want $4)"; fi
+}
+rcase "可合"     1 2 "green"
+rcase "修后可合" 1 2 "disposition"
+rcase "修后可合" 2 2 "red-rounds"
+rcase "不可合"   1 2 "red-unmergeable"
+rcase ""         1 2 "red-no-verdict"
 
 echo
 if [ "$PASS" -eq "$TOTAL" ]; then

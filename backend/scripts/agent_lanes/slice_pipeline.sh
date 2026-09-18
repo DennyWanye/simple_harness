@@ -1,17 +1,71 @@
 #!/bin/bash
-# slice_pipeline.sh - one slice: implement -> gate -> independent verify -> disposition -> full gate.
+# slice_pipeline.sh - one SDK slice: implement -> gate -> (verify -> disposition -> re-review) x rounds -> full gate.
 # Usage: slice_pipeline.sh <slice-name> <sdk-worktree> <base-commit> <impl-task.md> <verify-task.md>
 #        [--lane codex|grok] [--verify-lane codex|grok] [--tests "..."] [--allow <file>]
-#        [--max-sentinel N] [--log <file>]
+#        [--max-sentinel N] [--max-rounds N] [--log <file>]
 # The pipeline never merges and never pushes. All artifacts live under
 #   ${AGENT_TASK_OUT:-$HOME/.cache/simpleharness-agent-tasks}/pipeline/<slice-name>/
+# Rounds: round 1 is the first verify (the given verify task book, NEW session).
+# A 修后可合 verdict on round k feeds a disposition book to the implementer session;
+# the next round re-reviews with the same verifier session against a generated
+# re-review book whose report is appended to the previous round's report. Any round
+# that yields 可合 leaves the loop for the full gate; rounds exhausted is red.
 set -u
+
+# =========================================================================
+# Source-safe pure helpers (unit-tested by selftest_gate.sh via
+# SLICE_PIPELINE_SOURCE_ONLY=1). They must stay free of side effects.
+# =========================================================================
+# grep_verdict <summary-file> <task-output-dir>; echoes the verdict line.
+# Priority: <task-output-dir>/last.txt (the runner's final message) -> the summary
+# -> out.json. The alternation lists 不可合 / 修后可合 before 可合 so a longer
+# verdict is never mis-read as the 可合 substring.
+grep_verdict() {
+  local summary="${1:-}" tout="${2:-}" line=""
+  local re='VERDICT:[[:space:]]*(不可合|修后可合|可合)'
+  if [ -n "$tout" ] && [ -f "$tout/last.txt" ]; then
+    line=$(grep -aE "$re" "$tout/last.txt" 2>/dev/null | tail -1)
+    [ -n "$line" ] && { printf '%s\n' "$line"; return 0; }
+  fi
+  if [ -n "$summary" ] && [ -f "$summary" ]; then
+    line=$(grep -aE "$re" "$summary" 2>/dev/null | tail -1)
+    [ -n "$line" ] && { printf '%s\n' "$line"; return 0; }
+  fi
+  if [ -n "$tout" ] && [ -f "$tout/out.json" ]; then
+    line=$(grep -aoE "$re" "$tout/out.json" 2>/dev/null | tail -1)
+    [ -n "$line" ] && { printf '%s\n' "$line"; return 0; }
+  fi
+  return 1
+}
+
+verdict_kind() {
+  # verdict_kind "VERDICT: 修后可合" -> 修后可合  ("" when there is no verdict)
+  printf '%s\n' "${1:-}" | grep -aoE '(不可合|修后可合|可合)' | tail -1
+}
+
+round_action() {
+  # round_action <verdict-kind> <round> <max-rounds>
+  # -> green | disposition | red-rounds | red-unmergeable | red-no-verdict
+  local kind="${1:-}" round="${2:-1}" maxr="${3:-2}"
+  case "$kind" in
+    可合) printf 'green\n' ;;
+    修后可合)
+      if [ "$round" -ge "$maxr" ]; then printf 'red-rounds\n'; else printf 'disposition\n'; fi ;;
+    不可合) printf 'red-unmergeable\n' ;;
+    *) printf 'red-no-verdict\n' ;;
+  esac
+}
+
+# Sourced only for the unit tests above: stop before the pipeline body runs.
+if [ "${SLICE_PIPELINE_SOURCE_ONLY:-0}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NAME="${1:-}"; SDK="${2:-}"; BASE="${3:-}"; IMPL_TASK="${4:-}"; VERIFY_TASK="${5:-}"
 shift 5 2>/dev/null || true
-LANE="codex"; VERIFY_LANE="codex"; TESTS=""; ALLOW=""; MAX_SENTINEL=""; LOGFILE=""
+LANE="codex"; VERIFY_LANE="codex"; TESTS=""; ALLOW=""; MAX_SENTINEL=""; MAX_ROUNDS="2"; LOGFILE=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --lane) LANE="${2:-}"; shift 2 ;;
@@ -19,13 +73,21 @@ while [ "$#" -gt 0 ]; do
     --tests) TESTS="${2:-}"; shift 2 ;;
     --allow) ALLOW="${2:-}"; shift 2 ;;
     --max-sentinel) MAX_SENTINEL="${2:-}"; shift 2 ;;
+    --max-rounds) MAX_ROUNDS="${2:-}"; shift 2 ;;
     --log) LOGFILE="${2:-}"; shift 2 ;;
     *) echo "slice_pipeline.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
 
 if [ -z "$NAME" ] || [ -z "$SDK" ] || [ -z "$BASE" ] || [ -z "$IMPL_TASK" ] || [ -z "$VERIFY_TASK" ]; then
-  echo "usage: slice_pipeline.sh <slice-name> <sdk-worktree> <base-commit> <impl-task.md> <verify-task.md> [--lane codex|grok] [--verify-lane codex|grok] [--tests \"...\"] [--allow <file>] [--max-sentinel N] [--log <file>]" >&2
+  echo "usage: slice_pipeline.sh <slice-name> <sdk-worktree> <base-commit> <impl-task.md> <verify-task.md> [--lane codex|grok] [--verify-lane codex|grok] [--tests \"...\"] [--allow <file>] [--max-sentinel N] [--max-rounds N] [--log <file>]" >&2
+  exit 1
+fi
+case "$MAX_ROUNDS" in
+  ''|*[!0-9]*) echo "slice_pipeline.sh: --max-rounds must be a positive integer: $MAX_ROUNDS" >&2; exit 1 ;;
+esac
+if [ "$MAX_ROUNDS" -lt 1 ]; then
+  echo "slice_pipeline.sh: --max-rounds must be >= 1: $MAX_ROUNDS" >&2
   exit 1
 fi
 [ -d "$SDK" ] || { echo "slice_pipeline.sh: sdk worktree not found: $SDK" >&2; exit 1; }
@@ -75,27 +137,6 @@ extract_session() {
   grep -oE 'session=[^ ]+' "$1" 2>/dev/null | tail -1 | cut -d= -f2
 }
 
-# grep_verdict <summary-file> <task-output-dir>; echoes the verdict line (first match).
-grep_verdict() {
-  local summary="$1" tout="$2" line=""
-  line=$(grep -aE 'VERDICT:[[:space:]]*(可合|修后可合|不可合)' "$summary" 2>/dev/null | tail -1)
-  [ -n "$line" ] && { echo "$line"; return 0; }
-  if [ -n "$tout" ] && [ -f "$tout/last.txt" ]; then
-    line=$(grep -aE 'VERDICT:[[:space:]]*(可合|修后可合|不可合)' "$tout/last.txt" 2>/dev/null | tail -1)
-    [ -n "$line" ] && { echo "$line"; return 0; }
-  fi
-  if [ -n "$tout" ] && [ -f "$tout/out.json" ]; then
-    line=$(grep -aoE 'VERDICT:[[:space:]]*(可合|修后可合|不可合)' "$tout/out.json" 2>/dev/null | tail -1)
-    [ -n "$line" ] && { echo "$line"; return 0; }
-  fi
-  return 1
-}
-
-verdict_kind() {
-  # verdict_kind "VERDICT: 修后可合" -> 修后可合
-  printf '%s\n' "$1" | grep -aoE '(可合|修后可合|不可合)' | tail -1
-}
-
 gate() {
   # gate <out-json> [full]
   local out="$1" extra="${2:-}"
@@ -117,12 +158,70 @@ failed_items() {
 # Verification reports are written (uncommitted) inside the detached verify worktree; save them before the
 # worktree is removed so they can be archived with the slice.
 save_verify_artifacts() {
-  local dest="$PIPE_DIR/verify-artifacts" f
+  local dest="$PIPE_DIR/verify-artifacts" list="$PIPE_DIR/verify-report-paths.txt" f
   mkdir -p "$dest"
+  # The relative-path list lets a later round copy the saved reports back into
+  # the moved verify copy, so the verifier keeps appending to the same file.
+  : > "$list"
   git -C "$VERIFY_DIR" ls-files --others --exclude-standard 2>/dev/null | while IFS= read -r f; do
-    case "$f" in *.md|*.json|*.txt) mkdir -p "$dest/$(dirname "$f")"; cp "$VERIFY_DIR/$f" "$dest/$f" ;; esac
+    case "$f" in
+      *.md|*.json|*.txt)
+        mkdir -p "$dest/$(dirname "$f")"
+        cp "$VERIFY_DIR/$f" "$dest/$f"
+        printf '%s\n' "$f" >> "$list"
+        ;;
+    esac
   done
   logline "verify-artifacts" "saved to $dest"
+}
+
+# restore_verify_reports <round>: copy the reports saved by the previous round back
+# into the (re-added) verify copy at the very same relative paths.
+restore_verify_reports() {
+  local round="${1:-?}" list="$PIPE_DIR/verify-report-paths.txt" src="$PIPE_DIR/verify-artifacts" f n=0
+  if [ -f "$list" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      [ -f "$src/$f" ] || continue
+      mkdir -p "$VERIFY_DIR/$(dirname "$f")"
+      cp "$src/$f" "$VERIFY_DIR/$f"
+      n=$((n + 1))
+    done < "$list"
+  fi
+  logline "d-restore-$round" "restored=$n report(s) from $src"
+}
+
+# write_review_book <round> <prev-head> <new-head> <report-paths-file>; echoes the book path.
+write_review_book() {
+  local round="$1" prev="$2" new="$3" paths="$4" book="$PIPE_DIR/review-$1.md"
+  {
+    echo "# 复核任务书（第 ${round} 轮复核）"
+    echo
+    echo "同一核验会话续做（不要另开新会话）。"
+    echo
+    echo "上一轮核验副本 HEAD：$prev"
+    echo "当前核验副本 HEAD：$new"
+    echo "核验副本目录：$VERIFY_DIR"
+    echo
+    echo "要求："
+    echo "1. 只需看上一轮 HEAD（${prev}）到当前 HEAD（${new}）之间的改动。"
+    echo "2. 逐个重做上一轮报告里记录的存活变异，确认都已被杀死。"
+    echo "3. 再补做若干新变异。"
+    echo "4. 结果追加到原报告的「## 复核 ${round}」小节（原报告已拷回副本的同一路径，不要新建报告）。"
+    echo "5. 判定规则与 VERDICT 行格式不变：最终回复里写一行 VERDICT: 可合 / VERDICT: 修后可合 / VERDICT: 不可合。"
+    echo
+    echo "请只在核验副本目录内工作，不要 merge、不要 push。"
+  } > "$book"
+  if [ -f "$paths" ]; then
+    {
+      echo
+      echo "上一轮保存的核验报告相对路径（已拷回副本内同一路径）："
+      while IFS= read -r f; do
+        [ -n "$f" ] && printf -- '- %s\n' "$f"
+      done < "$paths"
+    } >> "$book"
+  fi
+  echo "$book"
 }
 logline "a-implement" "start lane=$LANE"
 IMPL_SUM=$(run_lane "$LANE" "${NAME}-impl-1" "$SDK" "$IMPL_TASK" "")
@@ -164,7 +263,8 @@ else
 fi
 
 # =========================================================================
-# c. independent verify in a detached worktree copy (new session)
+# =========================================================================
+# c. independent verify in a detached copy; rounds of verify -> disposition -> re-review
 # =========================================================================
 VERIFY_DIR="${SDK}-verify-${NAME}"
 HEAD_NOW=$(git -C "$SDK" rev-parse HEAD)
@@ -175,41 +275,77 @@ if git -C "$SDK" worktree list --porcelain 2>/dev/null | grep -qx "worktree $VER
 fi
 if [ -e "$VERIFY_DIR" ]; then
   echo "slice_pipeline.sh: verify path already exists and is not a registered worktree: $VERIFY_DIR" >&2
-  logline "c-verify" "FAIL path-exists $VERIFY_DIR"
+  logline "c-verify-1" "FAIL path-exists $VERIFY_DIR"
   exit 1
 fi
 if ! git -C "$SDK" worktree add --detach "$VERIFY_DIR" "$HEAD_NOW" >> "$LOGFILE" 2>&1; then
-  logline "c-verify" "FAIL worktree-add $VERIFY_DIR"
+  logline "c-verify-1" "FAIL worktree-add $VERIFY_DIR"
   echo "PIPELINE RED verify $NAME (could not create verify worktree)"
   exit 3
 fi
-logline "c-verify" "start worktree=$VERIFY_DIR head=$HEAD_NOW"
-VERIFY_SUM=$(run_lane "$VERIFY_LANE" "${NAME}-verify-1" "$VERIFY_DIR" "$VERIFY_TASK" "")
-VSESSION=$(extract_session "$VERIFY_SUM")
-VLINE=$(grep_verdict "$VERIFY_SUM" "$TASKS_DIR/${NAME}-verify-1" || true)
-if [ -z "$VLINE" ]; then
-  logline "c-verify" "RED no-verdict summary=$VERIFY_SUM"
-  logline "result" "PIPELINE RED verify"
-  echo "PIPELINE RED verify $NAME (no VERDICT line; report: $VERIFY_SUM)"
-  exit 3
-fi
-VKIND=$(verdict_kind "$VLINE")
-logline "c-verify" "done verdict=$VKIND session=${VSESSION:-?} summary=$VERIFY_SUM"
+logline "c-verify-1" "start worktree=$VERIFY_DIR head=$HEAD_NOW"
 
-# =========================================================================
-# d. disposition
-# =========================================================================
-if [ "$VKIND" = "不可合" ]; then
-  logline "d-disposition" "RED 不可合 $VLINE"
-  logline "result" "PIPELINE RED verify"
-  echo "PIPELINE RED verify $NAME ($VLINE; report: $VERIFY_SUM)"
-  exit 3
-fi
+# Round 1 verifies with the given task book in a NEW session. A 修后可合 verdict feeds a
+# disposition book to the implementer session; the next round re-reviews in the SAME
+# verifier session with a generated re-review book. Step names carry the round number.
+VSESSION=""
+ROUND=1
+REVIEWED_HEAD="$HEAD_NOW"
+VERIFIED=0
+while [ "$ROUND" -le "$MAX_ROUNDS" ]; do
+  if [ "$ROUND" -eq 1 ]; then
+    VBOOK="$VERIFY_TASK"
+    RESUME_ARG=""
+  else
+    VBOOK=$(write_review_book "$ROUND" "$REVIEWED_HEAD" "$HEAD_NOW" "$PIPE_DIR/verify-report-paths.txt")
+    RESUME_ARG="$VSESSION"
+  fi
+  logline "c-verify-$ROUND" "start book=$VBOOK resume=${RESUME_ARG:-none}"
+  VERIFY_SUM=$(run_lane "$VERIFY_LANE" "${NAME}-verify-$ROUND" "$VERIFY_DIR" "$VBOOK" "$RESUME_ARG")
+  VSESSION=$(extract_session "$VERIFY_SUM")
+  VLINE=$(grep_verdict "$VERIFY_SUM" "$TASKS_DIR/${NAME}-verify-$ROUND" || true)
+  if [ -z "$VLINE" ]; then
+    logline "c-verify-$ROUND" "RED no-verdict summary=$VERIFY_SUM"
+    logline "result" "PIPELINE RED verify"
+    echo "PIPELINE RED verify $NAME (no VERDICT line in round $ROUND; report: $VERIFY_SUM)"
+    exit 3
+  fi
+  VKIND=$(verdict_kind "$VLINE")
+  logline "c-verify-$ROUND" "done verdict=$VKIND session=${VSESSION:-?} summary=$VERIFY_SUM"
 
-if [ "$VKIND" = "修后可合" ]; then
-  DISPBOOK="$PIPE_DIR/disposition-1.md"
+  VACTION=$(round_action "$VKIND" "$ROUND" "$MAX_ROUNDS")
+  case "$VACTION" in
+    green)
+      VERIFIED=1
+      logline "c-verify-$ROUND" "可合 -> full gate"
+      break
+      ;;
+    red-rounds)
+      logline "d-result" "RED rounds-exhausted round=$ROUND/$MAX_ROUNDS verdict=$VKIND"
+      logline "result" "PIPELINE RED verify"
+      echo "PIPELINE RED verify $NAME (rounds exhausted $ROUND/$MAX_ROUNDS; last: $VLINE; report: $VERIFY_SUM)"
+      exit 3
+      ;;
+    red-unmergeable)
+      logline "d-disposition-$ROUND" "RED 不可合 $VLINE"
+      logline "result" "PIPELINE RED verify"
+      echo "PIPELINE RED verify $NAME ($VLINE; report: $VERIFY_SUM)"
+      exit 3
+      ;;
+    red-no-verdict)
+      logline "c-verify-$ROUND" "RED no-verdict summary=$VERIFY_SUM"
+      logline "result" "PIPELINE RED verify"
+      echo "PIPELINE RED verify $NAME (no VERDICT line in round $ROUND; report: $VERIFY_SUM)"
+      exit 3
+      ;;
+  esac
+
+  # ---- disposition of round $ROUND (修后可合) -------------------------------------
+  DISPBOOK="$PIPE_DIR/disposition-$ROUND.md"
   {
     echo "# 处置任务书（核验：修后可合）"
+    echo
+    echo "这是第 $ROUND 轮处置。"
     echo
     echo "核验报告：$VERIFY_SUM"
     echo "核验结论：$VLINE"
@@ -218,49 +354,43 @@ if [ "$VKIND" = "修后可合" ]; then
     echo "请按核验报告修复问题，使 sdk_gate.sh 全绿后提交（工作树须保持 clean）。"
     echo "不要 merge、不要 push；只在工作目录内改动。"
   } > "$DISPBOOK"
-  logline "d-disposition" "start resume=${SESSION:-none}"
-  DISP_SUM=$(run_lane "$LANE" "${NAME}-impl-disposition-1" "$SDK" "$DISPBOOK" "$SESSION")
+  logline "d-disposition-$ROUND" "start resume=${SESSION:-none}"
+  DISP_SUM=$(run_lane "$LANE" "${NAME}-impl-disposition-$ROUND" "$SDK" "$DISPBOOK" "$SESSION")
   SESSION=$(extract_session "$DISP_SUM")
-  logline "d-disposition" "done session=${SESSION:-?} summary=$DISP_SUM"
+  logline "d-disposition-$ROUND" "done session=${SESSION:-?} summary=$DISP_SUM"
 
-  GATE3="$PIPE_DIR/gate-3.json"
-  if ! gate "$GATE3"; then
-    BAD3=$(failed_items "$GATE3")
-    logline "d-gate-3" "RED $GATE3 failed=$BAD3"
+  GATEN="$PIPE_DIR/gate-$((ROUND + 2)).json"
+  if ! gate "$GATEN"; then
+    BADN=$(failed_items "$GATEN")
+    logline "d-gate-$ROUND" "RED $GATEN failed=$BADN"
     logline "result" "PIPELINE RED gate"
-    echo "PIPELINE RED gate $NAME (report: $GATE3 failed: $BAD3)"
+    echo "PIPELINE RED gate $NAME (round $ROUND; report: $GATEN failed: $BADN)"
     exit 2
   fi
-  logline "d-gate-3" "GREEN $GATE3"
+  logline "d-gate-$ROUND" "GREEN $GATEN"
 
   # move the detached copy onto the new commit (remove + re-add, avoids checkout/reset)
+  REVIEWED_HEAD="$HEAD_NOW"
   NEW_HEAD=$(git -C "$SDK" rev-parse HEAD)
   save_verify_artifacts
   git -C "$SDK" worktree remove --force "$VERIFY_DIR" >> "$LOGFILE" 2>&1 || true
   if ! git -C "$SDK" worktree add --detach "$VERIFY_DIR" "$NEW_HEAD" >> "$LOGFILE" 2>&1; then
-    logline "d-reverify" "FAIL worktree-add $VERIFY_DIR"
+    logline "d-move-$ROUND" "FAIL worktree-add $VERIFY_DIR"
     echo "PIPELINE RED verify $NAME (could not move verify worktree)"
     exit 3
   fi
-  logline "d-reverify" "start worktree=$VERIFY_DIR head=$NEW_HEAD resume=${VSESSION:-none}"
-  REVERIFY_SUM=$(run_lane "$VERIFY_LANE" "${NAME}-verify-2" "$VERIFY_DIR" "$VERIFY_TASK" "$VSESSION")
-  RVLINE=$(grep_verdict "$REVERIFY_SUM" "$TASKS_DIR/${NAME}-verify-2" || true)
-  if [ -z "$RVLINE" ]; then
-    logline "d-reverify" "RED no-verdict summary=$REVERIFY_SUM"
-    logline "result" "PIPELINE RED verify"
-    echo "PIPELINE RED verify $NAME (no VERDICT line on re-review; report: $REVERIFY_SUM)"
-    exit 3
-  fi
-  RVKIND=$(verdict_kind "$RVLINE")
-  logline "d-reverify" "done verdict=$RVKIND summary=$REVERIFY_SUM"
-  if [ "$RVKIND" != "可合" ]; then
-    logline "d-result" "RED re-verify=$RVKIND"
-    logline "result" "PIPELINE RED verify"
-    echo "PIPELINE RED verify $NAME (re-review: $RVLINE; report: $REVERIFY_SUM)"
-    exit 3
-  fi
-fi
+  logline "d-move-$ROUND" "moved worktree=$VERIFY_DIR head=$NEW_HEAD"
+  # put the saved report(s) back at the very same path so the verifier appends in place
+  restore_verify_reports "$ROUND"
+  HEAD_NOW="$NEW_HEAD"
+  ROUND=$((ROUND + 1))
+done
 
+if [ "$VERIFIED" -ne 1 ]; then
+  logline "result" "PIPELINE RED verify"
+  echo "PIPELINE RED verify $NAME (no 可合 verdict within $MAX_ROUNDS round(s))"
+  exit 3
+fi
 # =========================================================================
 # e. full gate -> GREEN
 # =========================================================================

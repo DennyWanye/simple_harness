@@ -272,7 +272,7 @@ $secret_hits"
 
   # ---- 9. sentinel --------------------------------------------------------
   local sentinel_n
-  sentinel_n=$( grep -rn "_new_mode" "$SDK"/src/agent_orchestrator 2>/dev/null | wc -l | tr -d ' ' )
+  sentinel_n=$( grep -rn --include='*.py' "_new_mode" "$SDK"/src/agent_orchestrator 2>/dev/null | wc -l | tr -d ' ' )
   if [ -n "$MAX_SENTINEL" ] && [ "$sentinel_n" -gt "$MAX_SENTINEL" ]; then
     record "sentinel" "false" "sentinel count $sentinel_n exceeds --max-sentinel $MAX_SENTINEL"
   else
