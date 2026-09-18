@@ -1,4 +1,4 @@
-# 交接：Grok 验收第 6 批收尾 → 0.12.2 → LLM-native HTN 升级（2026-09-18 16:25 写）
+# 交接：Grok 验收第 6 批收尾 → 0.12.2 → LLM-native HTN 升级（2026-09-18 16:25 写；收官勾选 同日晚）
 
 写这份的原因：本会话额度（Fable 周额度）只剩约 9%，周二 22:00 重置。任何人接手都按本文继续，不需要读会话记录。
 
@@ -10,8 +10,9 @@
   - `FREEZE.json` = c0e13a4；`runs/h-arm/` = 第 6 批（9 局：并发采样器 C1×2、结算流水线 C2×2、分页 C4×2、先取证再选方法 M2-r1、父子共读 M3×2）；`runs-f2dfa64-batch5/episodes/` = 第 5 批 5 局 COMPLETED（C3×2、M1×2、M2-r0，未重跑）；其余批次归档 `runs-*`。
   - 流水线：`logs/pipeline-batch6.sh`（回归+重冻结，已跑完）→ `logs/pipeline-batch6b.sh`（只做题，日志 `logs/pipeline-batch6b.log`，结束戳「BATCH6 RERUN COMPLETE」）。runner 有身份保护：换 SDK 提交必须新 `--out` 目录（JOURNAL §31）。
   - 密钥看门狗 `logs/token-watchdog.sh` v4（pid 见 `pgrep -fl token-watchdog`），日志 `logs/token-watchdog.log`。**收尾最后必须** `uv run --project backend python backend/scripts/grok_build_runtime.py restore` 并 kill 看门狗（按 PID）。
-  - runner 日志册 `runner/JOURNAL.zh-CN.md` §25–§31。
-- 第 6 批已落 6 局（第三层）：C2×2、C4×2 真完成（官方 PASS + COMPLETED）；C1×2 官方 FAIL 但 COMPLETED（raw false_completion=2），专项诊断 `impl/Grok验收-第6批C1r1假完成诊断-2026-09-18.zh-CN.md` 判定：模型漏做题面未明示的边界 + 题目 hidden 与 construction 不对齐，非编排缺陷；验收报告口径拆两档「编排假完成（阻塞）/ 隐藏测试未覆盖（不阻塞）」。第四层 3 局跑着。
+  - runner 日志册 `runner/JOURNAL.zh-CN.md` §25–§32。
+- 第 6 批已跑完 9 局（2026-09-18 15:16–16:43，「BATCH6 RERUN COMPLETE」）。第三层 6 局：结算流水线×2、分页×2 真完成（官方 PASS + COMPLETED）；并发采样器×2 官方 FAIL 但 COMPLETED（raw false_completion=2），专项诊断 `impl/Grok验收-第6批C1r1假完成诊断-2026-09-18.zh-CN.md` 判定：模型漏做题面未明示的边界 + 题目 hidden 与 construction 不对齐，非编排缺陷；整批诊断核实 C1-r0 同一情形。验收报告口径拆两档「编排假完成（阻塞）/ 隐藏测试未覆盖（不阻塞）」。
+- 第四层 3 局：先取证再选方法第 2 遍真完成（官方 PASS + COMPLETED；第 5 批同局 42 次相同校验失败已闭合）。父子共读两遍 FAILED `planning_failed`（尝试 4、约 12 分钟、约 24 万 token；第 5 批是预算耗尽 / 无事可派、50 多分钟、360–400 万 token）——三次相同失败早停具名，按构造不计入完成率分母；`shared_reuse` 题级 2/2 触发。配对闸 `report-batch6-gate` 总判定 FAIL（缺归档 5 局收据、raw 假完成×2、COMPLETED 7/9）；整批诊断拆开后不构成编排阻塞。
 
 ## 2. 用户 2026-09-18 指令
 
@@ -44,10 +45,12 @@
 
 ## 6. 已完成（接手者更新）
 
-- [ ] 第 6 批跑完
-- [ ] 整批诊断
-- [ ] 修复（如有）
-- [ ] 记录与验收报告
-- [ ] 提交推送
-- [ ] 0.12.2 发布
-- [ ] restore + 看门狗关闭 + worktree 清理
+- [x] 第 6 批跑完（16:43「BATCH6 RERUN COMPLETE」；9 局 c0e13a4 + 归档 5 局 f2dfa64）
+- [x] 整批诊断（`impl/Grok验收-第6批诊断-2026-09-18.zh-CN.md`；C1-r1 专项维持）
+- [x] 修复（如有）：无 P0/P1，N18 记为已知问题留待下一片
+- [x] 记录与验收报告（`impl/Grok验收报告-P2.3c-2026-09-18.zh-CN.md`；审计总册第 6 批 9 局终态；JOURNAL §32）
+- [x] 提交推送
+- [x] 0.12.2 发布
+- [x] restore + 看门狗关闭 + worktree 清理
+
+> 2026-09-18 17:30 收尾完成：SDK 发布提交 7f839f0（tag v0.12.2，代码 = 候选第 6 版 c0e13a4，发布提交只含文档）已推送；Host 钉版 cd2f47ae 已推送；密钥配置已 restore，两个看门狗已停，已合入的临时 worktree（p23s/t/u/v）已移除（保留 p23d 与第三阶段预研 worktree）。下一步只剩 LLM-native HTN 的 H0/H1（见 §5 与 `v1.4/H1-PlanningDecision协议-实施拆解-2026-09-18.zh-CN.md`），等周二额度重置后开工。
