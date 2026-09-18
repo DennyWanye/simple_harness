@@ -65,7 +65,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NAME="${1:-}"; SDK="${2:-}"; BASE="${3:-}"; IMPL_TASK="${4:-}"; VERIFY_TASK="${5:-}"
 shift 5 2>/dev/null || true
-LANE="codex"; VERIFY_LANE="codex"; TESTS=""; ALLOW=""; MAX_SENTINEL=""; MAX_ROUNDS="2"; LOGFILE=""
+LANE="codex"; VERIFY_LANE="codex"; TESTS=""; ALLOW=""; MAX_SENTINEL=""; MAX_ROUNDS="2"; LOGFILE=""; RESUME_IMPL=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --lane) LANE="${2:-}"; shift 2 ;;
@@ -74,6 +74,7 @@ while [ "$#" -gt 0 ]; do
     --allow) ALLOW="${2:-}"; shift 2 ;;
     --max-sentinel) MAX_SENTINEL="${2:-}"; shift 2 ;;
     --max-rounds) MAX_ROUNDS="${2:-}"; shift 2 ;;
+    --resume-impl) RESUME_IMPL="${2:-}"; shift 2 ;;
     --log) LOGFILE="${2:-}"; shift 2 ;;
     *) echo "slice_pipeline.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -223,10 +224,16 @@ write_review_book() {
   fi
   echo "$book"
 }
-logline "a-implement" "start lane=$LANE"
-IMPL_SUM=$(run_lane "$LANE" "${NAME}-impl-1" "$SDK" "$IMPL_TASK" "")
-SESSION=$(extract_session "$IMPL_SUM")
-logline "a-implement" "done session=${SESSION:-?} summary=$IMPL_SUM"
+if [ -n "$RESUME_IMPL" ]; then
+  # Implementation already committed by an earlier run: skip step a and continue from the gate.
+  SESSION="$RESUME_IMPL"
+  logline "a-implement" "skipped (resume-impl session=$SESSION)"
+else
+  logline "a-implement" "start lane=$LANE"
+  IMPL_SUM=$(run_lane "$LANE" "${NAME}-impl-1" "$SDK" "$IMPL_TASK" "")
+  SESSION=$(extract_session "$IMPL_SUM")
+  logline "a-implement" "done session=${SESSION:-?} summary=$IMPL_SUM"
+fi
 
 # =========================================================================
 # b. gate (no --full); red -> fix book, resume impl, gate again; still red -> exit 2

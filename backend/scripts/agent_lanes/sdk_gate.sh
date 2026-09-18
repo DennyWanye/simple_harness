@@ -27,7 +27,7 @@ parse_pytest_tail() {
 
 main() {
   local SDK="" BASE=""
-  local TESTS="" ALLOW="" OUT="" MAX_SENTINEL=""
+  local TESTS="" ALLOW="" OUT="" FROZEN_REF=""; MAX_SENTINEL=""
   local FULL=0
 
   if [ "$#" -lt 2 ]; then
@@ -42,6 +42,7 @@ main() {
       --allow) ALLOW="${2:-}"; shift 2 ;;
       --full) FULL=1; shift ;;
       --max-sentinel) MAX_SENTINEL="${2:-}"; shift 2 ;;
+      --frozen-ref) FROZEN_REF="${2:-}"; shift 2 ;;
       --out) OUT="${2:-}"; shift 2 ;;
       *) echo "sdk_gate.sh: unknown argument: $1" >&2; return 1 ;;
     esac
@@ -121,27 +122,33 @@ $offenders"
   fi
 
   # ---- 3. contracts_frozen -----------------------------------------------
-  local ct_out ct_bad
+  # Files that already existed at the frozen release (default: tag v0.12.2, else BASE) must not change;
+  # files created by this upgrade (absent at the frozen ref) may be modified by later slices.
+  local ct_out ct_bad frozen st p1
+  frozen="${FROZEN_REF:-}"
+  if [ -z "$frozen" ]; then
+    if git -C "$SDK" rev-parse -q --verify "v0.12.2^{commit}" >/dev/null 2>&1; then frozen="v0.12.2"; else frozen="$BASE"; fi
+  fi
   ct_out=$(git -C "$SDK" diff --name-status "$BASE"..HEAD -- src/agent_orchestrator/contracts 2>/dev/null)
   ct_bad=""
   if [ -n "$ct_out" ]; then
     while IFS= read -r line; do
       [ -n "$line" ] || continue
-      local st="${line%%$'\t'*}"
-      st="${line%%[[:space:]]*}"
+      st=$(printf '%s' "$line" | cut -f1)
+      p1=$(printf '%s' "$line" | cut -f2)
       case "$st" in
         A*) : ;;
-        *) ct_bad="$ct_bad$line
-" ;;
+        *) if git -C "$SDK" cat-file -e "$frozen:$p1" 2>/dev/null; then ct_bad="$ct_bad$line
+"; fi ;;
       esac
     done <<EOF
 $ct_out
 EOF
   fi
   if [ -z "$ct_bad" ]; then
-    record "contracts_frozen" "true" "only additions (or no change) under src/agent_orchestrator/contracts"
+    record "contracts_frozen" "true" "no change to contracts files that existed at $frozen"
   else
-    record "contracts_frozen" "false" "non-additive changes under contracts:
+    record "contracts_frozen" "false" "changed contracts files that existed at $frozen:
 $ct_bad"
   fi
 
