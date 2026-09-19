@@ -19,6 +19,13 @@ ARGS=(--skip-git-repo-check --json -o "$OUT/last.txt" -c "model_reasoning_effort
 [ -n "$ROOTS" ] && ARGS+=(-c "sandbox_workspace_write.writable_roots=[$ROOTS]")
 # The day-card endpoint allows only 2 requests in flight; when the local queueing gate (daycard_gate.py)
 # is listening, send codex through it so agents queue for a slot instead of dying on HTTP 429.
+# The official lane's configured model is whatever cc-switch last wrote; pin the one we actually
+# want for agent work (2026-09-19 user decision: gpt-5.6-luna).  Skipped when CODEX_EXTRA_CONFIG
+# already carries a model= override (the deepseek wrapper does).
+case "${CODEX_EXTRA_CONFIG:-}" in
+  *model=*) : ;;
+  *) ARGS+=(-c "model=\"${CODEX_TASK_MODEL:-gpt-5.6-luna}\"") ;;
+esac
 # CODEX_EXTRA_CONFIG: newline-separated `key=value` overrides appended as -c flags (used by
 # deepseek_task.sh to point this same wrapper at another provider without touching ~/.codex/config.toml).
 if [ -n "${CODEX_EXTRA_CONFIG:-}" ]; then
