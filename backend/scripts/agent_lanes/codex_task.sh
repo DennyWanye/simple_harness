@@ -19,6 +19,11 @@ ARGS=(--skip-git-repo-check --json -o "$OUT/last.txt" -c "model_reasoning_effort
 [ -n "$ROOTS" ] && ARGS+=(-c "sandbox_workspace_write.writable_roots=[$ROOTS]")
 # The day-card endpoint allows only 2 requests in flight; when the local queueing gate (daycard_gate.py)
 # is listening, send codex through it so agents queue for a slot instead of dying on HTTP 429.
+# CODEX_EXTRA_CONFIG: newline-separated `key=value` overrides appended as -c flags (used by
+# deepseek_task.sh to point this same wrapper at another provider without touching ~/.codex/config.toml).
+if [ -n "${CODEX_EXTRA_CONFIG:-}" ]; then
+  while IFS= read -r line; do [ -n "$line" ] && ARGS+=(-c "$line"); done <<< "$CODEX_EXTRA_CONFIG"
+fi
 GATE_PORT="${DAYCARD_GATE_DEV_PORT:-28182}"
 if [ "${CODEX_USE_GATE:-auto}" != "0" ] && nc -z 127.0.0.1 "$GATE_PORT" 2>/dev/null; then
   ARGS+=(-c "model_providers.custom.base_url=\"http://127.0.0.1:$GATE_PORT/v1\"")

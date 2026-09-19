@@ -1,7 +1,7 @@
 #!/bin/bash
 # slice_pipeline.sh - one SDK slice: implement -> gate -> (verify -> disposition -> re-review) x rounds -> full gate.
 # Usage: slice_pipeline.sh <slice-name> <sdk-worktree> <base-commit> <impl-task.md> <verify-task.md>
-#        [--lane codex|grok] [--verify-lane codex|grok] [--tests "..."] [--allow <file>]
+#        [--lane codex|grok|deepseek] [--verify-lane codex|grok|deepseek] [--tests "..."] [--allow <file>]
 #        [--max-sentinel N] [--max-rounds N] [--log <file>]
 # The pipeline never merges and never pushes. All artifacts live under
 #   ${AGENT_TASK_OUT:-$HOME/.cache/simpleharness-agent-tasks}/pipeline/<slice-name>/
@@ -98,7 +98,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -z "$NAME" ] || [ -z "$SDK" ] || [ -z "$BASE" ] || [ -z "$IMPL_TASK" ] || [ -z "$VERIFY_TASK" ]; then
-  echo "usage: slice_pipeline.sh <slice-name> <sdk-worktree> <base-commit> <impl-task.md> <verify-task.md> [--lane codex|grok] [--verify-lane codex|grok] [--tests \"...\"] [--allow <file>] [--max-sentinel N] [--max-rounds N] [--log <file>]" >&2
+  echo "usage: slice_pipeline.sh <slice-name> <sdk-worktree> <base-commit> <impl-task.md> <verify-task.md> [--lane codex|grok|deepseek] [--verify-lane codex|grok|deepseek] [--tests \"...\"] [--allow <file>] [--max-sentinel N] [--max-rounds N] [--log <file>]" >&2
   exit 1
 fi
 case "$MAX_ROUNDS" in
@@ -130,6 +130,7 @@ lane_script() {
   case "$1" in
     codex) echo "$SCRIPT_DIR/codex_task.sh" ;;
     grok) echo "$SCRIPT_DIR/grok_task.sh" ;;
+    deepseek) echo "$SCRIPT_DIR/deepseek_task.sh" ;;
     *) echo "" ;;
   esac
 }

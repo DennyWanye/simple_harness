@@ -3,6 +3,7 @@
 # Usage: grok_task.sh <name> <cwd> <prompt-file> [effort=high] [max-turns=80] [resume-session-id]
 # Output: $OUT/<name>/{out.json,err.log,prompt.md}; last line of stdout = summary line.
 set -u
+export PATH="$HOME/.grok/bin:$PATH"  # the grok CLI installs here and is not on the default PATH
 NAME="$1"; CWD="$2"; PROMPT_FILE="$3"; EFFORT="${4:-high}"; MAXT="${5:-80}"; RESUME="${6:-}"
 OUT="${AGENT_TASK_OUT:-$HOME/.cache/simpleharness-agent-tasks/grok}/$NAME"
 mkdir -p "$OUT"
