@@ -32,7 +32,10 @@ if [ -n "${CODEX_EXTRA_CONFIG:-}" ]; then
   while IFS= read -r line; do [ -n "$line" ] && ARGS+=(-c "$line"); done <<< "$CODEX_EXTRA_CONFIG"
 fi
 GATE_PORT="${DAYCARD_GATE_DEV_PORT:-28182}"
-if [ "${CODEX_USE_GATE:-auto}" != "0" ] && nc -z 127.0.0.1 "$GATE_PORT" 2>/dev/null; then
+# Opt-in only: cc-switch now owns ~/.codex/config.toml for the OFFICIAL lane, where no `custom`
+# provider exists -- injecting a base_url for it makes codex refuse the whole config.  The
+# deepseek wrapper points itself at the gate through CODEX_EXTRA_CONFIG instead.
+if [ "${CODEX_USE_GATE:-0}" = "1" ] && nc -z 127.0.0.1 "$GATE_PORT" 2>/dev/null; then
   ARGS+=(-c "model_providers.custom.base_url=\"http://127.0.0.1:$GATE_PORT/v1\"")
 fi
 cd "$CWD" || { echo "CODEX_TASK rc=97 cwd-not-found=$CWD"; exit 97; }
