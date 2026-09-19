@@ -99,3 +99,10 @@ Shadow 样本按 DecisionType 分开统计 agreement、high-confidence agreement
 - NanoJev-1 已提交 `79e5bde`；NanoJev-2 在独立 worktree `codex/nanojev-existing` 基于该提交加入 `ExistingDecisionProvider`，提交 `def698d`。两片合计 45 个定向 pytest 通过，ruff 通过；未接入生产调度器。
 - H1-H 行为测试提交在 `codex/h1h-tests`：`0073371` 钉住 HTTP 协议字段行为，`af56b90` 修复 `api/missions.py` 的真实请求映射；协议切换文件 19 个测试通过。一次独立热文件接线任务在 20 轮内没有产生 diff，故 `event_handler.py` / `hierarchical_dispatch.py` 仍未修改，也没有宣称 H1-H 完成。
 - 当前状态：NanoJev-1/2 是可审阅提交候选；H1-H 仅完成 HTTP 入口子片，接线主链、双事件、格式重试、WAIT/NO_CHANGE 与完整门禁仍未完成。下一步应先补一份 H1-H 字段映射任务书，再由单一实现会话继续，或由用户决定是否先审阅这两个 NanoJev 提交。
+
+## 执行记录（2026-09-20）
+
+- 专项测试计划已评审：T01–T09 作为局部 HTN + Jev 验收保留；R01/R02 在没有明确 NanoJev checkpoint 时记 `BLOCKED_ENV`，不以 DeepSeek 或 Claude 替代；H1-H 原有完整门禁仍独立保留。
+- NanoJev 在 `codex/nanojev-existing` 增加了非阻塞 Shadow service 与定向边界测试，提交 `4c608ad`、`b4018b6`；覆盖正式结果先返回、异常/超时隔离、请求上下文快照、单候选不调用 Shadow、候选集合与概率归一校验。定向 pytest 51 PASS，ruff PASS；尚未合入 SDK main，尚未接入 HTN。
+- H1-H 重新按任务书核对后确认：当前生产入口没有 `PlanningRequestBinding` 的创建/持久化调用，也没有逐字段构造 `AdmissionContext` 的权威 builder。已记录 `H1-H-blocker-AdmissionContext-2026-09-20.md`；在解除前不得用默认空值或直接复用旧 `apply_planner_reply` 绕过新协议。
+- 两轮 Claude CLI 实现任务均在阅读阶段达到最大轮次，没有产生可接受 diff；后续只派发有明确字段映射和文件范围的短任务，避免继续消耗日卡。
