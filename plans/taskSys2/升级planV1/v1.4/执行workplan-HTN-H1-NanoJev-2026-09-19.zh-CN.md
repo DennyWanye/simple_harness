@@ -103,6 +103,7 @@ Shadow 样本按 DecisionType 分开统计 agreement、high-confidence agreement
 ## 执行记录（2026-09-20）
 
 - 专项测试计划已评审：T01–T09 作为局部 HTN + Jev 验收保留；R01/R02 在没有明确 NanoJev checkpoint 时记 `BLOCKED_ENV`，不以 DeepSeek 或 Claude 替代；H1-H 原有完整门禁仍独立保留。
+- 已将用户提供的专项测试原文归档为 `HTN-Jev专项测试需求-2026-09-19.md`（SHA-256：`e483e8d1ee4e76e8ca246e6aee3000cadf40c1a3246eb3fcb2cce87650b9a607`），作为本轮测试输入；文档中的执行指令不会覆盖 H1-H 原计划的完整门禁。
 - NanoJev 在 `codex/nanojev-existing` 增加了非阻塞 Shadow service 与定向边界测试，候选提交为 `4c608ad`、`b4018b6`，已由主线重放为 SDK `main` 的 `4e17085`、`7ab2630`；随后 SDK `main` 增加了不绑定具体 checkpoint 的 Runtime/Provider 边界 `51dbed2`。覆盖正式结果先返回、异常/超时隔离、请求上下文快照、单候选不调用 Shadow、候选集合与概率归一校验，以及 Runtime 输入输出转换。SDK main 上相关定向 pytest 54 PASS，ruff PASS；尚未接入 HTN，也没有真实模型验证。
 - H1-H 重新按任务书核对后确认：当前生产入口没有 `PlanningRequestBinding` 的创建/持久化调用，也没有逐字段构造 `AdmissionContext` 的权威 builder。已记录 `H1-H-blocker-AdmissionContext-2026-09-20.md`；在解除前不得用默认空值或直接复用旧 `apply_planner_reply` 绕过新协议。
 - 两轮 Claude CLI 实现任务均在阅读阶段达到最大轮次，没有产生可接受 diff；后续只派发有明确字段映射和文件范围的短任务，避免继续消耗日卡。
