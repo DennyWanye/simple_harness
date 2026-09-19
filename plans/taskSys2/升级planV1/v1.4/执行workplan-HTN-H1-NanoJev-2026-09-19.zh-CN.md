@@ -107,3 +107,12 @@ Shadow 样本按 DecisionType 分开统计 agreement、high-confidence agreement
 - NanoJev 在 `codex/nanojev-existing` 增加了非阻塞 Shadow service 与定向边界测试，候选提交为 `4c608ad`、`b4018b6`，已由主线重放为 SDK `main` 的 `4e17085`、`7ab2630`；随后 SDK `main` 增加了不绑定具体 checkpoint 的 Runtime/Provider 边界 `51dbed2`。覆盖正式结果先返回、异常/超时隔离、请求上下文快照、单候选不调用 Shadow、候选集合与概率归一校验，以及 Runtime 输入输出转换。SDK main 上相关定向 pytest 54 PASS，ruff PASS；尚未接入 HTN，也没有真实模型验证。
 - H1-H 重新按任务书核对后确认：当前生产入口没有 `PlanningRequestBinding` 的创建/持久化调用，也没有逐字段构造 `AdmissionContext` 的权威 builder。调查记录见 `H1-H-blocker-AdmissionContext-2026-09-20.md`；这不是总 blocker，接线继续逐字段绑定。只有某个字段确认没有权威来源时，才单独记录该字段 blocker；不得用默认空值或直接复用旧 `apply_planner_reply` 绕过新协议。
 - 两轮 Claude CLI 实现任务均在阅读阶段达到最大轮次，没有产生可接受 diff；后续只派发有明确字段映射和文件范围的短任务，避免继续消耗日卡。
+
+## 执行记录（2026-09-20，H1-H 接线推进）
+
+- SDK H1-H worktree 已完成并提交 `a80526c`：新协议入口不再直接调用旧 `apply_planner_reply`，而是接入 codec → `PlanningDecisionStore` → admission → adapter → `apply_plan_proposal`；旧协议继续走原路径。
+- `hierarchical_dispatch.py` 增加 `apply_plan_proposal()`，只复用既有 compile/commit 安全链，不改变旧编译器语义。
+- 新协议格式不可读的行为测试已钉住：同时发 `PlanningDecisionEvaluated` 与旧 `PlanningRejected`，新事件载荷包含 `decision_id/request_id/attempt_ordinal/decision_type/status/rejection_codes/canonical_hash`；测试文件新增 1 条，H1-H 请求绑定专项共 3 PASS。
+- 相关定向测试：H1-H 请求绑定、协议切换、decision package/store、hierarchical event flow、inflight planning 合计 **248 PASS**；ruff、compileall、`git diff --check` 通过。
+- DeepSeeker 只读复核确认三个独立 blocker：planning authorization 没有权威 producer；HtnStore operation 只有 identity/binding，没有 UNKNOWN/reconciled 状态映射；没有 candidate proposal → `PlanShapeView` 的准入前预检。SDK 接线对此 fail-closed，提交 `H1-H-blocker-AdmissionContext-2026-09-20.md` 的补充记录，Host commit `91e40caa`。
+- 因上述 blocker，新协议的 admitted/compiled/committed 主链和格式重试的同 request ordinal 仍未宣称完成；完整 H1-H 门禁（full_target、旧模式 560、mutation、独立核验）必须等字段来源补齐后执行。
