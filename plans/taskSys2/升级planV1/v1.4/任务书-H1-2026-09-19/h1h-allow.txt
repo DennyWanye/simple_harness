@@ -1,0 +1,7 @@
+src/agent_orchestrator/api/missions.py
+src/agent_orchestrator/orchestrator/event_handler.py
+src/agent_orchestrator/orchestrator/hierarchical_dispatch.py
+tests/orchestrator/full_target/test_planning_protocol_switch.py
+tests/orchestrator/full_target/test_h1h_wiring.py
+plans/taskSys2/升级planV1/v1.4/任务书-H1-2026-09-19/h1h-impl.md
+plans/taskSys2/升级planV1/v1.4/任务书-H1-2026-09-19/h1h-verify.md
