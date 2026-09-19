@@ -10,3 +10,5 @@ tests/orchestrator/full_target/fixtures/planning_decision_v1/*
 plans/llm-native-htn/H1/journal-T.md
 plans/llm-native-htn/H1/prompt-v8.md
 plans/llm-native-htn/H1/BLOCKER-*.md
+tests/orchestrator/full_target/test_output_port_claims.py
+tests/orchestrator/full_target/test_planning_decision_codec.py
