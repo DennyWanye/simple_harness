@@ -1,0 +1,2 @@
+继续切片 H1-A2b（同一会话，原任务书与规则全部有效；注意分支已被编排者变基到最新 main，先 `git log --oneline -5` 与 `git status` 确认）。核验第 3 轮意见 P1-F：9 个非载荷子形状的 `$defs`（planningRef / versionedTypeRef / assumption / uncertainty / alternative / replanTrigger / blockedItem / evidenceQuestion / humanOption）其 `required` 被清空或 `properties` 被加未知字段时没有测试失败。测试先行：把「required / properties 与 Python 类型逐项对表」提升到**全部**对象型 `$defs`（用脚本遍历，不要手抄名单），并为每个子形状补「缺必填字段被拒」「未知字段被拒」的严格性用例（经 Python 解码路径）。只改白名单内文件。做完全部 commit，工作树干净。
+完成后原样粘贴：本片测试文件尾行、`tests/orchestrator/full_target -q` 尾行、ruff 输出、`git status --short`。最终回复用「## 结果」开头。

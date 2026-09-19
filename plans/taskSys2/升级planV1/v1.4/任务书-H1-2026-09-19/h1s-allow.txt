@@ -1,0 +1,5 @@
+src/agent_orchestrator/orchestrator/commit_service.py
+src/agent_orchestrator/orchestrator/planning_protocol_binding.py
+tests/orchestrator/full_target/test_planning_protocol_switch.py
+plans/llm-native-htn/H1/journal-S.md
+plans/llm-native-htn/H1/BLOCKER-*.md

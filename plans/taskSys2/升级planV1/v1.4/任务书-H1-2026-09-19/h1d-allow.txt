@@ -1,0 +1,4 @@
+src/agent_orchestrator/planning/htn/planner_package.py
+tests/orchestrator/full_target/test_planning_decision_package_v4.py
+plans/llm-native-htn/H1/journal-D.md
+plans/llm-native-htn/H1/BLOCKER-*.md
