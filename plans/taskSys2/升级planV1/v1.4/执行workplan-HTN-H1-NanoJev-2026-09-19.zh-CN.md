@@ -110,7 +110,7 @@ Shadow 样本按 DecisionType 分开统计 agreement、high-confidence agreement
 
 ## 执行记录（2026-09-20，H1-H 接线推进）
 
-- SDK H1-H worktree 已完成并提交 `a80526c`：新协议入口不再直接调用旧 `apply_planner_reply`，而是接入 codec → `PlanningDecisionStore` → admission → adapter → `apply_plan_proposal`；旧协议继续走原路径。
+- SDK H1-H worktree 已完成并提交 `a80526c`、`102ad3d`：新协议入口不再直接调用旧 `apply_planner_reply`，而是接入 codec → `PlanningDecisionStore` → admission → adapter → `apply_plan_proposal`；旧协议继续走原路径；第二个提交钉住新事件的固定载荷和 ordinal=0。
 - `hierarchical_dispatch.py` 增加 `apply_plan_proposal()`，只复用既有 compile/commit 安全链，不改变旧编译器语义。
 - 新协议格式不可读的行为测试已钉住：同时发 `PlanningDecisionEvaluated` 与旧 `PlanningRejected`，新事件载荷包含 `decision_id/request_id/attempt_ordinal/decision_type/status/rejection_codes/canonical_hash`；测试文件新增 1 条，H1-H 请求绑定专项共 3 PASS。
 - 相关定向测试：H1-H 请求绑定、协议切换、decision package/store、hierarchical event flow、inflight planning 合计 **248 PASS**；ruff、compileall、`git diff --check` 通过。
