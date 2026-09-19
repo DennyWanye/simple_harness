@@ -1,4 +1,4 @@
-# H1-H 接线 blocker：AdmissionContext 无损组装
+# H1-H 接线调查：AdmissionContext 字段映射待实现
 
 日期：2026-09-20
 
@@ -6,7 +6,7 @@
 
 当前 SDK 主线 `5ac3f05890a4c5160e2f103a01f863753ea5d498` 已有
 `PlanningDecisionStore`、codec、admission 和 adapter 合同，但生产 Planner 链尚未把它们接起来。
-在不填充默认空值、不重算请求可见引用的前提下，当前状态还不能无损构造 `AdmissionContext`，因此 H1-H 主链暂记 `BLOCKED_INTERFACE`。
+现状说明 builder 尚未实现，不能把“当前没有 builder”当作项目 blocker。H1-H 应继续实现逐字段绑定；只有某一字段确认没有权威来源时，才把该字段单独记为 blocker。
 
 ## 证据
 
@@ -30,9 +30,9 @@
 - 不把当前 package 临时重算成 request binding 的替代品。
 - 不让新协议直接调用旧 `apply_planner_reply`，否则会绕过 admission 和 durable decision identity。
 
-## 解 blocker 所需的最小下一步
+## 下一步实现
 
-先在允许的 H1-H 文件内增加一个 request-binding/context builder：从同一次 Planner package、当前
+在允许的 H1-H 文件内增加一个 request-binding/context builder：从同一次 Planner package、当前
 hierarchical world/network、scope epochs、method applicability、预算和 operation ledger 取得值，
 以同一 request snapshot 持久化 `PlanningRequestBinding`，再让新协议入口读取该 binding 构造
 `AdmissionContext`。builder 必须逐字段失败关闭；缺任何权威来源继续记录 blocker，不用默认值。
