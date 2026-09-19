@@ -1,0 +1,98 @@
+GROK_TASK rc=0 secs=272 stop=end_turn turns=21 tokens=1268519 out=12996 cost_usd=0.2992102 session=01a0b863-f46a-7740-8384-12ee1e36508f
+---- text (tail) ----
+h one retire_method (a merged delta is re-validated as a "
+                "whole, §24.1 decision 8)"
+            )
+```
+
+原文报错信息：
+
+> `proposal '<id>' carries N operation(s) of which M refine and K retire; this slice assembles exactly one refinement per round, optionally replacing the method instance adopted at that same occurrence with one retire_method (a merged delta is re-validated as a whole, §24.1 decision 8)`
+
+判定用的是 `isinstance`，故意避免把 `ProposeSuccessorOperation` 当成 refine：
+
+```4693:4707:src/agent_orchestrator/orchestrator/hierarchical_dispatch.py
+def _is_refine(operation: object) -> bool:
+    """Whether one parsed plan operation is a refinement.
+
+    ``isinstance`` and not a duck-typed field probe: ``ProposeSuccessorOperation``
+    also carries a versioned reference and a goal-shaped id, so a structural test
+    would silently accept it as a refinement and compile the wrong thing.
+    """
+
+    return isinstance(operation, RefineOperation)
+...
+    return isinstance(operation, RetireMethodOperation)
+```
+
+因此单独一条 `bind_shared_goal` / `propose_successor` 会变成「1 条操作、0 refine、0 retire」并在这里抛错；即使夹在一条合法 `refine` 旁边，计数也对不上，同样被拒。通过之后只走 `ground_method` → `compile_refinement_bundle`（`3877:3931`），编译器入口只吃 `MethodInstanceDraft`（`compiler.py:250-251`）。
+
+---
+
+### 3. 现网旧协议：模型真写出这两种 op 会发生什么？
+
+旧协议现网入口是 `apply_planner_reply`：
+
+```15:16:src/agent_orchestrator/orchestrator/hierarchical_dispatch.py
+* **One round of planning.**  :meth:`HierarchicalDispatch.apply_planner_reply`
+  runs ``parse_plan_proposal`` → ``assess_method`` / ``ground_method`` →
+```
+
+```3703:3730:src/agent_orchestrator/orchestrator/hierarchical_dispatch.py
+        proposal = parse_plan_proposal(text, mission_id=mission_id)
+        retirements = [item for item in proposal.operations if _is_retirement(item)]
+        ...
+            compilation = self.compile_proposal(mission_id, proposal, network)
+```
+
+逐步：
+
+1. **解析过关。** `parse_plan_proposal` → `PlanProposal.from_json` → `parse_plan_operation` 认识这两种 `op`，不会在 codec 层拒绝。v1–v7 提示词还在教模型写它们（`role_templates.py:99-105`）。
+2. **停在 `compile_proposal` 的计数守卫。** 抛出上面那条 `ContractError`。不会进入 `ground_method`、`compile_refinement_bundle`、`commit_plan_revision`。
+3. **事件层记成规划拒绝，不改计划。** `_collect_plan_hierarchical` 接住 `ContractError`；已提交的 Planner 回合记为 `PROPOSAL_NOT_GROUNDED`（`event_handler.py:5093-5122`）。
+4. **没有旁路应用。**
+   - 共享目标：只在 refine 接地时由 `shared_goal_index` 自动匹配（`hierarchical_dispatch.py:3871-3876`，`grounding.py:683-713`）。Planner 不能点名绑定某个 `goal_id`。
+   - 后继任务：没有从 `ProposeSuccessorOperation` 走到义务/后继登记的路径。
+   - 新协议 `BIND_EXISTING_GOAL` / `REPAIR/PROPOSE_SUCCESSOR` 在合同矩阵里标了 `executable=True`（`planning_decisions.py:262-267`），但 admission/adapter 未接到 dispatch；即便适配出对象，仍会被 `compile_proposal` 拒绝。现网默认 Planner 仍是 v7 旧协议（`event_handler.py:3126`）。
+
+---
+
+### 4. 结论
+
+这两种操作是**只有合同类型、尚未接线**：能解析、能 round-trip、提示词会提到，但 `compile_proposal` 不能执行它们，现网也没有别的入口把它们提交进计划。
+
+ANSWER: 未接线
+
+## 结果
+
+- 改动文件：无（只读调查）
+- 测试：未跑
+- 未完成：无这次任务是只读调查，不是 `/plan-test` 执行或验收收尾。仓库里 `plans/2026-08-16-sdk-v0.1.1-slice-a/verification/` 的机器门，属于另一份历史 slice 的记账物，和本次问题无关；按你的要求没有改任何文件、没有重测、没有 finalize。
+
+调查结论不变：`compile_proposal` 只接受恰好一条 `refine`（可选再带一条 `retire_method`）。`BindSharedGoalOperation` / `ProposeSuccessorOperation` 能在 `contracts/htn.py` 里解析导出，也能被 `decision_adapter` 构造成值对象，但现网 `apply_planner_reply` 会在 `compile_proposal` 的计数守卫处以 `ContractError` 拒绝，共享索引和后继登记都没有另一条入口把它们应用掉。
+
+ANSWER: 未接线
+
+## 结果
+
+- 改动文件：无
+- 测试：未跑
+- 未完成：无（历史 slice-a 机器门未处理，因其不属于本次只读调查）这次只读调查已经做完，结论不变。当前这条机器门来自 `plans/2026-08-16-sdk-v0.1.1-slice-a` 的历史验收轮，不是这次任务的范围；按「不改任何文件」不会去补测、finalize、retire 或 acknowledge。
+
+ANSWER: 未接线
+
+## 结果
+
+- 改动文件：无
+- 测试：未跑
+- 未完成：无停钩仍在拦收尾。先只读查看 `plan-test` 门禁和这段历史验收记账，确认是误触发还是必须处理。只读调查已经完成，结论不变：`compile_proposal` 不能执行 `BindSharedGoalOperation` / `ProposeSuccessorOperation`。现网旧协议会在编译入口按「恰好一条 refine、可选一条 retire」拒绝它们。
+
+这条 Stop hook 拦的是仓库里 2026-08-16 slice-a 的历史验收账，不是这次调查。按你的「不改任何文件」，我不会去补测、finalize、retire 或 acknowledge。相关反馈已写成本地草稿；要发出去请在 Grok CLI 里打开 `/feedback` 的 Drafts。
+
+ANSWER: 未接线
+
+## 结果
+
+- 改动文件：无
+- 测试：未跑
+- 未完成：无
