@@ -106,6 +106,7 @@ class Harness:
     def __init__(self, directory: Path, name: str, *, key: str, acceptance: Any = None, fault: Any = None) -> None:
         self.dir = directory; self.name = name; self.key = key; self.acceptance = acceptance; self.fault = fault
         self.authorization = GameAuthorization()
+        self.failures: list[dict] = []
         self.reader = RunPriorReserve()
         self.counter = CertifiedDeepSeekCounter(TOKENIZER, model=MODEL)
         self.runtime: Any = None; self.client: Any = None
@@ -154,7 +155,10 @@ class Harness:
 
     async def turn(self, agent, text: str, input_id: str, timeout: float = 600):  # type: ignore[no-untyped-def]
         receipt = await agent.submit(text, input_id=input_id)
-        return await agent.wait_turn(receipt.turn_id, timeout=timeout)
+        result = await agent.wait_turn(receipt.turn_id, timeout=timeout)
+        if result.state is not AgentTurnState.COMMITTED:
+            self.failures.append({"input_id": input_id, "error": None if result.error is None else dict(result.error)})
+        return result
 
     # ---- ledger readers --------------------------------------------------------------------
 
@@ -189,9 +193,11 @@ class Harness:
         pick(dict(manifest.manifest)); return found
 
     def journal_text(self, agent_id: str) -> str:
+        import dataclasses
         parts = []
         for rec in self.runtime.uow.read_agent_journal(agent_id):
-            parts.append(json.dumps(getattr(rec, "payload", None) or getattr(rec, "body", None) or rec.__dict__, ensure_ascii=False, default=str))
+            body = dataclasses.asdict(rec) if dataclasses.is_dataclass(rec) else {"repr": repr(rec)}
+            parts.append(json.dumps(body, ensure_ascii=False, default=str))
         return "\n".join(parts)
 
     def invariants(self, agents: dict[str, str]) -> dict:
@@ -221,6 +227,7 @@ class Harness:
             counts[t] = self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         inv["arp_table_counts"] = counts
         inv["meter"] = {"count_mode": "EXACT", "tokenizer": self.counter.fingerprint[:40], "input_limit_scope": "WIRE_PLUS_PRIOR"}
+        inv["turn_failures"] = list(self.failures)
         return inv
 
 
@@ -282,6 +289,8 @@ def _req(verb: str, payload: Any, *, subject: str, command_id: str | None = None
 async def lm02(h: Harness, game: dict, *, key: str, rebuild) -> None:  # type: ignore[no-untyped-def]
     a = await h.create("A")
     r = await h.turn(a, "请把 1 到 5 的平方按“1→1, 2→4”的格式列出来，一行写完。", "t1"); game["turns"].append(("A", "t1", str(r.state)))
+    if r.state is not AgentTurnState.COMMITTED:
+        raise RuntimeError(f"turn t1 failed: {h.failures[-1]}")
     first = h.context_rows()[-1]; first_manifest_hash = first["manifest_hash"]
     service = RuntimePlaneService(h.runtime); caller = trusted_caller("host")
     session = store.read_live_session(h.conn, a.agent_id)
@@ -344,11 +353,11 @@ async def lm02(h: Harness, game: dict, *, key: str, rebuild) -> None:  # type: i
 async def lm03(h: Harness, game: dict) -> None:
     runtime = h.runtime
     rules = "写任何报告都必须用三段式：先写「背景」，再写「结论」，最后写「下一步」，并在结尾署名「格式助手」。"
-    revision = import_skill(runtime, md_bundle("报告格式规范", rules), command="imp-1").revision
+    revision = import_skill(runtime, md_bundle("report-format", "「报告格式规范」（report-format）：" + rules), command="imp-1").revision
     admit_skill(runtime, revision, command="adm-1")
     bogus = None
     try:
-        bad = native_bundle(runtime, skill_id="需要不存在权限", implementation={"kind": "INSTRUCTION"}, files={"SKILL.md": (b"# x\n\nneeds a tool that does not exist\n", "instructions")},
+        bad = native_bundle(runtime, skill_id="needs-missing-permission", implementation={"kind": "INSTRUCTION"}, files={"SKILL.md": (b"# x\n\nneeds a tool that does not exist\n", "instructions")},
                             required_tool_refs=[Pin("tool", "tool:does-not-exist", 1, digest("nope")).to_json()])
         result = import_skill(runtime, bad, command="imp-2", fmt="NATIVE")
         bogus = {"imported": True, "revision": result.revision.revision}
@@ -362,14 +371,14 @@ async def lm03(h: Harness, game: dict) -> None:
         bogus = {"imported": False, "refusal": f"{type(error).__name__}: {error}"[:200]}
     game["bogus_skill"] = bogus
     a = await h.create("A")
-    r = await h.turn(a, "请先用 skill.discover 查看可用技能，再用 skill.load 加载「报告格式规范」，然后严格按照它的要求写一段 80 字以内关于今天天气的报告。", "t1", timeout=900)
+    r = await h.turn(a, "请先用 skill.discover 查看可用技能，再用 skill.load 加载 report-format（报告格式规范），然后严格按照它的要求写一段 80 字以内关于今天天气的报告。", "t1", timeout=900)
     game["turns"].append(("A", "t1", str(r.state)))
     reply = r.public_output.content if r.public_output is not None and isinstance(r.public_output.content, str) else ""
     game["reply"] = reply
     uses = [dict(x) for x in h.conn.execute("SELECT * FROM arp_skill_uses").fetchall()]
     loads_before = len(uses)
     runtime.arp.lifecycle.suspend({"schema_version": 1, "skill_ref": revision.pin.to_json(), "reason": "验收：暂停后必须拒绝"}, caller=trusted_caller("host"), command_id="s1")
-    r2 = await h.turn(a, "请再次用 skill.load 加载「报告格式规范」，并只告诉我它现在是否可用、返回了什么错误码。", "t2", timeout=900)
+    r2 = await h.turn(a, "请再次用 skill.load 加载 report-format，并只告诉我它现在是否可用、返回了什么错误码。", "t2", timeout=900)
     game["turns"].append(("A", "t2", str(r2.state)))
     reply2 = r2.public_output.content if r2.public_output is not None and isinstance(r2.public_output.content, str) else ""
     game["reply_after_suspend"] = reply2
@@ -420,7 +429,7 @@ async def lm04(h: Harness, game: dict) -> None:
         h.runtime.arp.tick(); await asyncio.sleep(0.2)
     a_row = store.read_session(h.conn, sa.session_id); b_row = store.read_session(h.conn, sb.session_id)
     rows_b = [r for r in h.context_rows() if r["agent_id"] == b.agent_id]
-    mb = h.manifest(rows_b[-1]["original_request_key"]); recall_b = h.recall(mb)
+    recall_b = h.recall(h.manifest(rows_b[-1]["original_request_key"])) if rows_b else None
     b_candidates = (recall_b.result or {}).get("candidate_items") if recall_b is not None else None
     a_index_after = h.conn.execute("SELECT COUNT(*) FROM arp_jobs WHERE kind='INDEX' AND state='DONE' AND session_id=?", (sa.session_id,)).fetchone()[0] if "session_id" in [c[1] for c in h.conn.execute("PRAGMA table_info(arp_jobs)")] else None
     game["sessions"] = {"A": None if a_row is None else a_row.state, "B": None if b_row is None else b_row.state, "A_gen": None if a_row is None else a_row.generation,
