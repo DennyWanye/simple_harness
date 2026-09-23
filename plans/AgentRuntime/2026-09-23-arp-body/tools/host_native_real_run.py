@@ -77,8 +77,13 @@ async def main():
         summary["status_at_start"] = {k: st.get(k) for k in ("state", "reason", "assurance_available", "assurance_profile", "sdk_version", "native_plane", "default_context_profile_id", "context_profiles")}
         if st["state"] != "available":
             stop_reason = "service_unavailable"; return
-        receipt = service.create_mission({"goal": GOAL, "success_criteria": CRITERIA, "idempotency_key": f"native-{RUN.name}",
-                                          "budget": {"max_tokens": 300_000, "max_attempts": 4}})
+        # Budget: the Host default for the selected profile (4M tokens for the 256K pools) unless
+        # REAL_BUDGET_TOKENS is set.  A certified counter reserves the worst case per attempt
+        # (input limit + output ceiling = 294,912 for 256K/32K), so run-21's 300K would fail.
+        request = {"goal": GOAL, "success_criteria": CRITERIA, "idempotency_key": f"native-{RUN.name}"}
+        if os.environ.get("REAL_BUDGET_TOKENS"):
+            request["budget"] = {"max_tokens": int(os.environ["REAL_BUDGET_TOKENS"]), "max_attempts": 4}
+        receipt = service.create_mission(request)
         mid = receipt["mission_id"]; summary["mission_id"] = mid; log("created", mid)
         summary["mission_profile"] = (service._orchestrator.store.get_mission(mid).final_report or {}).get("runtime_profile_id")
         log("mission runtime profile", summary["mission_profile"])
