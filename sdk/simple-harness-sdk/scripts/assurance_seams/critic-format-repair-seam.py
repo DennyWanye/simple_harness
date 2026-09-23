@@ -1,5 +1,5 @@
 """One admitted scope + actual format algorithm -> immutable CheckBinding; fixture Mission."""
-from seam_paths import SDK, EVIDENCE
+from seam_paths import SDK, EVIDENCE, seam_tool_ports
 import dataclasses
 import hashlib
 import json
@@ -129,6 +129,7 @@ with TemporaryDirectory(prefix='assurance-check-binding-') as temp:
             ReadItem('POLICY','fixture-current-policy','f'*64),deadline)
     from agent_orchestrator.orchestrator.assurance_review_runtime import AssuranceReviewRuntime
     from agent_orchestrator.orchestrator.assurance_review_consumer import AssuranceReviewConsumer
+    from agent_orchestrator.orchestrator.assurance_validity import AssuranceValidity
     from agent_orchestrator.storage.assurance_work import AssuranceWorkStore
     from agent_orchestrator.orchestrator.assurance_tick import PreparedAssuranceWork
     from agent_orchestrator.runtime.first_request_budget import FirstRequestBudgetUnknown
@@ -154,10 +155,11 @@ with TemporaryDirectory(prefix='assurance-check-binding-') as temp:
         response={'schema_version':2,'verdict':'ACCEPT','assessments':[{'criterion_id':'criterion-report','verdict':'PASS',
             'evidence_ids':[],'reason':'fixture response','limitations':[]}],'findings':[]}
         provider=KnownUsageProvider(['{malformed',canonical(response)])
-        async with build_agent_runtime(AgentRuntimePorts(provider=provider,authorization=AllowAllAuthorization(),database_path=str(root/'runtime.db'),model=MODEL,owner_id='runner-seam')) as runtime:
+        gateway,tool_ports=seam_tool_ports(root,cas)
+        async with build_agent_runtime(AgentRuntimePorts(provider=provider,authorization=AllowAllAuthorization(),database_path=str(root/'runtime.db'),model=MODEL,owner_id='runner-seam',**tool_ports)) as runtime:
             bridge=AgentBridge(runtime,unpriced=True)
             orch=SimpleNamespace(store=store,commit=commit,bridge_for=lambda _:bridge,
-                assembled=SimpleNamespace(workspaces=SimpleNamespace(artifact_store=cas),pool=lambda _:SimpleNamespace(bridge=bridge),gateway=SimpleNamespace(unbind=lambda _:None)),
+                assembled=SimpleNamespace(workspaces=SimpleNamespace(artifact_store=cas),pool=lambda _:SimpleNamespace(bridge=bridge),gateway=gateway),
                 _expected_model=lambda _:MODEL,_note=lambda _:None,_assurance_reviews=None,
                 _owner='runner-fixture',_poll=0.001,_critic_wait=10,
                 _config=SimpleNamespace(lease_seconds=60,turn_deadline_seconds=10,critic_reserve_tokens=100),
@@ -173,6 +175,7 @@ with TemporaryDirectory(prefix='assurance-check-binding-') as temp:
                 '_critic_subject_stopped','_bind_critic','_require_assurance_execution_root',
                 '_settle_intent','_import_usage','_service_agent_ids','_settle_service_if_known','profile_of'):
                 setattr(orch,name,MethodType(getattr(Orchestrator,name),orch))
+            orch._assured_review_intent = Orchestrator._assured_review_intent
             async def normal_wait(intent,liveness):
                 assert not Orchestrator._provider_blocked(liveness),'fixture unexpectedly blocked'
                 return None
@@ -180,6 +183,8 @@ with TemporaryDirectory(prefix='assurance-check-binding-') as temp:
             consumer=AssuranceReviewConsumer(commit,tenant_id=world.mission.tenant_id,principal_id='fixture-current-consumer',authority=builder_authority,cas=cas,check_adapter=None)
             runner=AssuranceReviewRuntime(orch,consumer)
             runner.install()
+            # A PASS verdict in an assured Mission prepares a current ACCEPT use; the runtime refuses to run unbound.
+            AssuranceValidity(commit,tenant_id=world.mission.tenant_id,principal_id='fixture-current-consumer',cas=cas,check_adapter=None,authority=builder_authority)
             orch._assurance_tick=ReviewPump(consumer)
             verdict=await orch._run_critic(world.mission,task,view_id=stored.envelope.attempt_id,
                 subject_prefix=stored.envelope.attempt_id+':critic',account_id='budget:'+task.id,

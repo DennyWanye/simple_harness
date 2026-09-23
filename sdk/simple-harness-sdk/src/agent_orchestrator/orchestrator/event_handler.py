@@ -249,7 +249,7 @@ from .occurrence_tasks import (
     verification_failure_fingerprint,
 )
 from .plan_commits import PlanCommitRejected, PlanPrincipal
-from .resolution_commits import eligible_root_receipts
+from .resolution_commits import ResolutionCommitRejected, eligible_root_receipts
 
 logger = logging.getLogger("agent_orchestrator")
 
@@ -394,6 +394,15 @@ class _CriticAdmissionFailure(ContractError):
         self.error = jsonable(error)
 
 
+class _AssuranceReviewUnavailable(ContractError):
+    """An admitted planning subject could not open its independent Assurance review."""
+
+    def __init__(self, purpose: str, error: Any) -> None:
+        self.purpose = purpose
+        self.code = str(getattr(error, "code", error))
+        super().__init__(f"Assurance {purpose} review unavailable: {error}")
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -436,6 +445,7 @@ class Orchestrator:
         self._assurance_root_setup = assurance_root_setup
         self._assurance_management_only = False
         self._taskgraph_read_apis: list[Any] = []
+        self._assurance_read_apis: list[Any] = []
         self._taskgraph_operator: Any = None
         self._taskgraph_policy: Any = None
         self._provider = provider
@@ -1390,6 +1400,22 @@ class Orchestrator:
         from ..api.taskgraph import _fail
         _fail("SOURCE_UNAVAILABLE", "TaskGraph source assembly is not installed", retry="OPERATOR_REPAIR")
 
+    def install_assurance_read_api(self, api: Any, *, tenant_id: str, principal: Any) -> None:
+        """Fixed-caller Assurance read verbs (S25); bound by the deployment assembly only."""
+        from ..api.assurance import AssuranceApi
+        if not isinstance(api, AssuranceApi) or not api.matches_binding(self.commit, tenant_id, principal):
+            raise ValueError("Assurance read API must bind this Store and authenticated caller")
+        if any(item.matches_binding(self.commit, tenant_id, principal) for item in self._assurance_read_apis):
+            raise ValueError("Assurance read API is already installed for this caller")
+        self._assurance_read_apis.append(api)
+
+    def assurance_read_api(self, *, tenant_id: str, principal: Any) -> Any:
+        for api in self._assurance_read_apis:
+            if api.matches_binding(self.commit, tenant_id, principal):
+                return api
+        from ..api.assurance import AssuranceReadError
+        raise AssuranceReadError("PROFILE_UNBOUND", "Assurance read assembly is not installed for this caller")
+
     def taskgraph_operator_api(self, *, tenant_id: str, principal: Any) -> Any:
         """Authenticated internal operator access, never part of model tools."""
         operator = self._taskgraph_operator
@@ -1790,6 +1816,12 @@ class Orchestrator:
         return self._after_handoff_zero_streak.get(mission_id, 0)
 
     @staticmethod
+    def _assured_review_intent(intent: DispatchIntent) -> bool:
+        """Assured reviews of every purpose (kind ``critic`` or ``plan``) bind the
+        read-only evidence tools through ``_bind_critic``; nothing else does."""
+        return intent.config.get("assurance_protocol") == "assurance-exec-v1.1"
+
+    @staticmethod
     def _is_planner_service(intent: DispatchIntent) -> bool:
         if intent.config.get("assurance_protocol") == "assurance-exec-v1.1":
             return False
@@ -2164,7 +2196,9 @@ class Orchestrator:
                 if attempt is not None and attempt.status not in TERMINAL_ATTEMPT:
                     self._bind_workspace(attempt)
                     self._bind_agent(intent.agent_id, intent.config)
-            elif intent.kind == "critic" and not self._critic_subject_stopped(intent):
+            elif (
+                intent.kind == "critic" or self._assured_review_intent(intent)
+            ) and not self._critic_subject_stopped(intent):
                 if intent.state == "AGENT_CREATED":
                     # A created Agent is not necessarily a submitted SDK turn.
                     # With no durable turn there is nothing startup can resume;
@@ -2214,7 +2248,7 @@ class Orchestrator:
                 if attempt is not None:
                     self._bind_workspace(attempt)
                     self._bind_agent(intent.agent_id, intent.config)
-            elif intent.kind == "critic":
+            elif intent.kind == "critic" or self._assured_review_intent(intent):
                 if self._critic_subject_stopped(intent):
                     self.assembled.gateway.unbind(intent.agent_id)
                     await self._cancel_turn(intent)
@@ -2561,6 +2595,12 @@ class Orchestrator:
         carry_on = False
         for mission in self._active_missions():
             if mission.status is not MissionStatus.ACTIVE:
+                continue
+            if self.commit.assured_closeout_pending(mission.id):
+                # Handoff item 7: a judged assured Mission waiting for its closeout
+                # to converge is not stalled work; NO_DISPATCHABLE_WORK would be the
+                # no-progress pseudo failure the spec forbids.
+                self._stalled_at.pop(mission.id, None)
                 continue
             if self._has_pending_planning_waits(mission.id) or (
                 self._taskgraph_notifications is not None
@@ -5452,7 +5492,7 @@ class Orchestrator:
             claimed = self.commit.record_agent_created(
                 claimed.intent_id, agent_id=agent_id, expected_turn_id=expected
             )
-            if claimed.kind == "critic":
+            if claimed.kind == "critic" or self._assured_review_intent(claimed):
                 self._bind_critic(agent_id, config)
             elif claimed.kind == "attempt":
                 self._bind_agent(agent_id, config)
@@ -5463,7 +5503,7 @@ class Orchestrator:
             except AssuranceError as error:
                 self._note(f"intent {claimed.intent_id}: Assurance submit waits ({error.code})")
                 return False
-            if claimed.kind == "critic":
+            if claimed.kind == "critic" or self._assured_review_intent(claimed):
                 if self._critic_subject_stopped(claimed):
                     return await self._collect_stopped_critic(claimed)
                 self._bind_critic(claimed.agent_id, config)
@@ -5996,9 +6036,13 @@ class Orchestrator:
     def _bind_critic(self, agent_id: str, config: Mapping[str, Any]) -> None:
         if config.get("assurance_protocol") == "assurance-exec-v1.1":
             # Frozen initial materials use the Assurance disclosure gate. Never
-            # inherit the legacy verify-workspace tool authority implicitly.
-            if config.get("agent_config", {}).get("tool_names"):
+            # inherit the legacy verify-workspace tool authority implicitly; the
+            # assured runtime binds exactly its read-only evidence tools (§4).
+            if not config.get("agent_config", {}).get("tool_names"):
+                return
+            if self._assurance_reviews is None:
                 raise ContractError("Assurance evidence tool binding is not installed")
+            self._assurance_reviews.evidence_tools.bind(agent_id, config)
             return
         context_profile = self._context_profile_for(config)
         self.assembled.gateway.bind(
@@ -6150,6 +6194,7 @@ class Orchestrator:
         if intent.config.get("assurance_protocol") == "assurance-exec-v1.1":
             from .assurance_review_collect import collect_assurance_review
             await collect_assurance_review(self, intent)
+            self.assembled.gateway.unbind(intent.agent_id)
         elif intent.kind == "plan":
             await self._collect_plan(intent, result)
         elif intent.kind == "attempt":
@@ -6524,7 +6569,18 @@ class Orchestrator:
         try:
             self.commit.settle_subject(attempt.id, attempt.mission_id, task_id=attempt.task_id)
         except BudgetError:
+            from ..storage.assurance_store import AssuranceStore
             from .taskgraph_dispatch import taskgraph_enabled
+            # Assurance 1.1 (Host real-model run 4, 2026-09-23): an assured Attempt whose
+            # physical/accounting responsibility is still open (a provider turn that
+            # failed before any usage fact, an UNKNOWN charge) keeps its reservation,
+            # visible and traceable, exactly like the service path above — it must
+            # not crash the loop, which would re-raise on every later round.
+            if AssuranceStore(self.store).lane(attempt.mission_id) == "ASSURANCE_1_1":
+                self.commit.record_reservation_held(attempt.id, attempt.mission_id,
+                    task_id=attempt.task_id, reason="assurance_settlement_pending")
+                self._note(f"attempt {attempt.id}: Assurance settlement pending, reservation held")
+                return
             if not taskgraph_enabled(self.store, attempt.mission_id):
                 raise
             self.commit.record_reservation_held(attempt.id, attempt.mission_id,
@@ -6673,6 +6729,7 @@ class Orchestrator:
             from .assurance_review_collect import collect_assurance_review
 
             await collect_assurance_review(self, intent)
+            self.assembled.gateway.unbind(intent.agent_id)
             return
         if result.state is AgentTurnState.COMMITTED:
             self._reset_after_handoff_unknown_streak(mission.id)
@@ -7846,6 +7903,26 @@ class Orchestrator:
                         prepared_method = prepare_method(new_mode, mission.id, decision.payload, checked.subject)
                         service_detail = persist_method(new_mode, *prepared_method)
                         event_type = "PlanningMethodProposed"
+                        from ..storage.assurance_store import AssuranceStore
+                        if AssuranceStore(self.store).lane(mission.id) == "ASSURANCE_1_1":
+                            # BW03: the admitted draft gets its independent METHOD_PLAN
+                            # review on the round transport, authored by this intent.
+                            from ..assurance.codec import AssuranceError
+                            from ..assurance.refs import Pin as AssurancePin
+                            if self._assurance_reviews is None:
+                                raise ContractError("Assurance review builder is not installed for METHOD_PLAN")
+                            method_reference = prepared_method[1].method_ref()
+                            try:
+                                review = self._assurance_reviews.ensure_method_plan(
+                                    mission, task_id=str(checked.subject["task_id"]),
+                                    method_ref=AssurancePin(method_reference.method_id,
+                                                            int(method_reference.version),
+                                                            method_reference.content_hash),
+                                    producer_agent_ids=(str(intent.agent_id or ""),))
+                            except AssuranceError as error:
+                                raise _AssuranceReviewUnavailable("METHOD_PLAN", error) from error
+                            service_detail = {**service_detail,
+                                              "assurance_review_key": review.to_json()["review_key"]}
                     record_decision(request_id=request_id, attempt_ordinal=attempt_ordinal,
                         raw_output_hash=raw_hash, raw_artifact_ref=raw_artifact_ref,
                         decision_id=decision_id, status=PlanningDecisionStatus.NO_STATE_CHANGE,
@@ -7858,18 +7935,27 @@ class Orchestrator:
                     self._settle_intent(intent, "SETTLED")
                     self._settle_service_if_known(intent.subject_id, mission.id)
             except (ContractError, StoreError) as error:
+                # An admitted proposal whose independent METHOD_PLAN review cannot be
+                # opened (no approved check policy, review runtime unavailable) is not
+                # a malformed proposal: it waits for authorization, and the record
+                # says so instead of blaming the Planner.
+                code, reason, error_detail = "PARAMETER_INVALID", "proposal_not_grounded", {"error": str(error)}
+                if isinstance(error, _AssuranceReviewUnavailable):
+                    code, reason = "AUTHORIZATION_REQUIRED", "assurance_review_unavailable"
+                    error_detail = {"error": str(error), "assurance_purpose": error.purpose,
+                                    "assurance_error": error.code}
                 with self.store.transaction():
                     record_decision(request_id=request_id, attempt_ordinal=attempt_ordinal,
                         raw_output_hash=raw_hash, raw_artifact_ref=raw_artifact_ref,
                         decision_id=decision_id, status=PlanningDecisionStatus.REJECTED,
-                        rejection_codes=("PARAMETER_INVALID",), detail={"error": str(error)},
+                        rejection_codes=(code,), detail=error_detail,
                         canonical_json=canonical_json, canonical_hash=canonical_hash,
                         decision_type=str(decision.decision_type))
                     evaluated(PlanningDecisionStatus.REJECTED, decision_type=str(decision.decision_type),
-                        rejection_codes=["PARAMETER_INVALID"], detail={"error": str(error)})
+                        rejection_codes=[code], detail=error_detail)
                     self._settle_intent(intent, "FAILED")
                     self._settle_service_if_known(intent.subject_id, mission.id)
-                await reject_planning(intent, reason="proposal_not_grounded", detail={"error": str(error)})
+                await reject_planning(intent, reason=reason, detail=error_detail)
                 return
             if prepared_method is not None:
                 _, contract, registration = prepared_method
@@ -9355,9 +9441,10 @@ class Orchestrator:
                 )
             else:
                 self.commit.fail_result(result_id, failures=verdict.failures, owner=self._owner)
-        except (CommitRejected, IllegalTransition) as error:
+        except (CommitRejected, IllegalTransition, ResolutionCommitRejected) as error:
             # the Attempt was closed / taken over while we verified (P1-4): the verdict is
-            # dropped; the library's state is whatever the other Commit made it
+            # dropped; the library's state is whatever the other Commit made it. An
+            # assured acceptance refused by its current use certificate lands here too.
             self._note(f"result {result_id}: verdict dropped ({error})")
             return True
         if self.commit.selection_policy_for(task.id) is not None:
@@ -11632,6 +11719,12 @@ class Orchestrator:
                 # idle instead of re-offering a resolution that is refused for the same
                 # reason forever.
                 return False
+            if new_mode is not None and self.commit.assured_closeout_pending(current.id):
+                # Handoff item 7: the assured Mission's success is judged and its
+                # closeout is the CLOSEOUT consumer's to converge (DRAINING /
+                # BLOCKED_UNKNOWN keep it ACTIVE); the unique final writer completes
+                # it.  Nothing to re-judge and nothing to dispatch: idle, not stalled.
+                return False
             try:
                 if any(c.startswith(ACTION_PREFIX) for c in current.success_criteria):
                     return await self._decide_actions(current, live)  # D7-7' two-stage judgment
@@ -12561,6 +12654,27 @@ class Orchestrator:
         subject = f"{mission.id}:root-review:{package.package_id}:{ordinal}"
         if self.store.get_intent_for_subject(subject) is not None:
             return False
+        from ..storage.assurance_store import AssuranceStore
+        if AssuranceStore(self.store).lane(mission.id) == "ASSURANCE_1_1":
+            # BW03: the cut package is reviewed on the Assurance round transport;
+            # the legacy root reviewer intent and its raw-verdict collector are
+            # not used for an assured Mission.
+            from ..assurance.codec import AssuranceError
+            if self._assurance_reviews is None:
+                raise ContractError("Assurance review builder is not installed for MISSION_FINAL")
+            from .assurance_purpose_reviews import purpose_review_key
+            review_key = purpose_review_key("MISSION_FINAL", mission.id, str(package.package_id))
+            already = self.store.connection.execute(
+                "SELECT 1 FROM assurance_review_invocations WHERE mission_id=? AND review_key=?",
+                (mission.id, review_key)).fetchone() is not None
+            try:
+                self._assurance_reviews.ensure_mission_final(
+                    mission, package=package, dispatch=coordinator.dispatch)
+            except AssuranceError as error:
+                self._note(f"mission {mission.id}: Assurance MISSION_FINAL review unavailable ({error})")
+                return False
+            # As on the legacy path: a package already out for review is not progress.
+            return not already
         request = coordinator.request(
             mission.id,
             package,
@@ -13842,7 +13956,14 @@ class Orchestrator:
             except Exception as error:  # noqa: BLE001
                 test_runs[criterion] = {"passed": False, "error": str(error), "stdout": ""}
         judge_ablated = "critic" in self._config.ablations  # step 8 (D8-7'): no judge Critic
-        needs_critic = not judge_ablated and any(
+        # Assured lane: the free-text criteria were judged by the official
+        # MISSION_FINAL review and restated, certified, on the adopted root
+        # resolution. A second, uncertified judge Critic is not run (the assured
+        # _run_critic refuses it); the judgment restates the certified grades
+        # (Host real model run 20, 2026-09-23: judge unavailable → criteria unmet).
+        assured_grades = self._assured_root_grades(mission, new_mode)
+        assured = assured_grades is not None or self._is_assured(mission.id)
+        needs_critic = not assured and not judge_ablated and any(
             not c.startswith(("pytest:", "file:", ACTION_PREFIX))
             and (document_coverage is None or c.startswith("arbitration:"))
             for c in mission.success_criteria
@@ -13919,6 +14040,20 @@ class Orchestrator:
                         ),
                     }
                 )
+            elif assured:
+                grade = None if assured_grades is None else assured_grades.get(criterion)
+                judgments.append(
+                    {
+                        "criterion": criterion,
+                        "met": grade == "PASS",
+                        "judge": "assurance_review",
+                        "source": "certified_root_resolution" if grade is not None else "unavailable",
+                        "reason": "official MISSION_FINAL review, current root-resolution certificate: "
+                        + str(grade)
+                        if grade is not None
+                        else "no certified root resolution judged this criterion",
+                    }
+                )
             else:
                 found: Mapping[str, Any] | None = None
                 if critic is not None:
@@ -13944,6 +14079,38 @@ class Orchestrator:
                     }
                 )
         return judgments, summary
+
+    def _is_assured(self, mission_id: str) -> bool:
+        from ..storage.assurance_store import AssuranceStore
+
+        return AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1"
+
+    def _assured_root_grades(self, mission: Mission, new_mode: Any) -> dict[str, str] | None:
+        """Criterion statement → certified grade from the adopted root resolutions
+        of an assured hierarchical Mission; None when not assured or not formed."""
+        if new_mode is None or not self._is_assured(mission.id):
+            return None
+        from ..storage.htn_store import HtnStore
+
+        htn = HtnStore(self.store)
+        network = new_mode.network(mission.id)
+        duties = tuple(dict.fromkeys(str(d) for d in network.required_obligations))
+        resolutions = [htn.adopted_goal_resolution(mission.id, duty) for duty in duties]
+        if not resolutions or any(item is None for item in resolutions):
+            return None
+        grades: dict[str, str] = {}
+        for resolution in resolutions:
+            if str(resolution.validity) != "CURRENT" or str(resolution.verdict) != "ACCEPT":
+                return None
+            requirements = htn.get_requirements_revision(
+                mission.id, int(resolution.requirements_version)
+            )
+            statements = {c.criterion_id: c.statement for c in requirements.criteria}
+            for item in resolution.criteria:
+                statement = statements.get(item.criterion_id)
+                if statement is not None:
+                    grades[statement] = str(item.verdict)
+        return grades
 
     async def _decide_actions(self, mission: Mission, tasks: Sequence[Task]) -> bool:
         """D7-7' / D7-5': judgment in two stages.  ① The non-action criteria are judged once

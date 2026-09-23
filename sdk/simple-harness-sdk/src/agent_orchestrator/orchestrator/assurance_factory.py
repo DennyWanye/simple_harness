@@ -26,12 +26,13 @@ if TYPE_CHECKING:
 
 
 def default_assurance_profile_for_new_mission() -> AssurancePolicy | None:
-    """Single default selection point; body/acceptance gates are still open.
+    """Single default selection point: the registered policy, i.e. default ON.
 
-    The final verified delivery changes this to the registered policy. Until
-    then only an explicitly assembled isolated candidate may select it.
+    Flipped in the verified 2026-09-23 delivery (Assurance 1.1 item 10). A
+    deployment that wants the original lane passes its own ``select_profile``
+    returning ``None``; this function is consulted only when it passes none.
     """
-    return None
+    return AssurancePolicy()
 
 
 class AssuranceMissionFactory:
@@ -44,10 +45,13 @@ class AssuranceMissionFactory:
         require_creation_root: Callable[[], None],
         requirements: Callable[[Mission, MissionSpec], RequirementsRevision],
         reconcile: Callable[[str], Mapping[str, Sequence[WorkTarget]]],
+        selector: Callable[[MissionSpec], bool] | None = None,
     ) -> None:
         if not isinstance(policy, AssurancePolicy) or not all(
             callable(value) for value in (require_creation_root, requirements, reconcile)
         ):
+            raise AssuranceError("ASSURANCE_FACTORY_UNBOUND")
+        if selector is not None and not callable(selector):
             raise AssuranceError("ASSURANCE_FACTORY_UNBOUND")
         self.commit = commit
         self.tenant_id = text(tenant_id)
@@ -55,6 +59,18 @@ class AssuranceMissionFactory:
         self.require_creation_root = require_creation_root
         self.requirements = requirements
         self.reconcile = reconcile
+        self.selector = selector
+
+    def selects(self, spec: MissionSpec) -> bool:
+        """Whether this new Mission takes the assured lane (spec §11).
+
+        Only the planning-decision protocol can be assured. Without a selector
+        (isolated candidates, seams) every such Mission is; the production
+        installer passes the single default selection point.
+        """
+        if spec.planning_protocol_version != PLANNING_DECISION_V1:
+            return False
+        return self.selector is None or bool(self.selector(spec))
 
     def create(self, mission: Mission, spec: MissionSpec, event: Event) -> None:
         store = self.commit.store
@@ -159,7 +175,13 @@ def record_mission_creation(
     """Called only for a new row, after the actual original MissionCreated event."""
     if not commit.store.connection.in_transaction or event.mission_id != mission.id:
         raise AssuranceError("FACTORY_TRANSACTION_REQUIRED")
-    if commit._assurance_factory is not None:
+    if not commit.store.has_table("assurance_creation_contracts"):
+        # A store whose schema predates Assurance (the schema 8/9 read-only audit
+        # snapshots): no deployment, no lane to classify, nothing is recorded.
+        if commit._assurance_factory is not None:
+            raise AssuranceError("ASSURANCE_SCHEMA_REQUIRED")
+        return
+    if commit._assurance_factory is not None and commit._assurance_factory.selects(spec):
         commit._assurance_factory.create(mission, spec, event)
         return
     lane = "COMPLETION_V1" if spec.planning_protocol_version == PLANNING_DECISION_V1 else "LEGACY"

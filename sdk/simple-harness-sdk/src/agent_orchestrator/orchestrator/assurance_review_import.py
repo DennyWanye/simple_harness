@@ -34,6 +34,7 @@ from ..assurance.reviews import (
     ReviewRecordBinding,
 )
 from ..assurance.root_gate import CurrentReadPermission
+from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK
 from ..contracts.resolution import (
     CheckExecution,
     CriterionOutcome,
@@ -41,7 +42,7 @@ from ..contracts.resolution import (
     ReviewRecord,
     ReviewVerdict,
 )
-from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK
+from ..contracts.state_machines import TaskStatus
 from ..storage.assurance_blobs import PreparedBlob, read_pinned_blob
 from ..storage.assurance_reads import (
     AssuranceReader,
@@ -55,7 +56,13 @@ from ..storage.assurance_reads import (
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 from ..storage.htn_store import HtnStore
-from .assurance_check_use import CurrentAuthority, PreparedCheckUse, _merge_reads, _permission
+from .assurance_check_use import (
+    CurrentAuthority,
+    PreparedCheckUse,
+    _merge_reads,
+    _permission,
+    _require_same_permission,
+)
 from .assurance_review_transport import read_review_invocation_locked
 
 
@@ -72,7 +79,35 @@ class ImportedReview:
     exposed: frozenset[str]
 
 
+PRE_SCOPE_ID = "mission"
+
+
+def review_scope_id(body: Mapping[str, Any]) -> str:
+    """The use-identity scope of a review binding.
+
+    Only METHOD_PLAN may be bound before a completion Scope exists (subject
+    shape rule); its use scope is the Mission itself, exactly as the purpose
+    builder froze it (``PurposeSubject.scope_id == "mission"``). Every other
+    purpose without a Scope is refused rather than given a guessed scope.
+    """
+    subject = body["subject"]
+    scope = subject["completion_scope_ref"]
+    if scope is not None:
+        return str(scope["id"])
+    if subject["purpose"] != "METHOD_PLAN":
+        raise AssuranceError("REVIEW_SCOPE_UNAVAILABLE")
+    return PRE_SCOPE_ID
+
+
 def review_subject_stopped(store: Any, binding: AssuranceReviewBinding) -> bool:
+    """Whether the reviewed subject can no longer use an answer; purpose-aware.
+
+    A stopped Mission stops every review. A TASK_CONTENT review dies with its
+    Attempt or Task. A MISSION_FINAL review is asked *after* the root Task's own
+    work is accepted, so the root being DONE is its normal state; it stops when
+    the root duty is already resolved or the cut package was superseded. The
+    other purposes are bound to a live owner Task.
+    """
     body = binding.to_json()
     mission = store.get_mission(body["mission_id"])
     task = store.get_task(body["subject"]["owner_task_ref"]["id"])
@@ -81,10 +116,31 @@ def review_subject_stopped(store: Any, binding: AssuranceReviewBinding) -> bool:
         or mission.status in TERMINAL_MISSION
         or task is None
         or task.mission_id != mission.id
-        or task.status in TERMINAL_TASK
     ):
         return True
-    if body["subject"]["purpose"] == "TASK_CONTENT":
+    purpose = body["subject"]["purpose"]
+    if purpose == "MISSION_FINAL":
+        if task.status in {TaskStatus.FAILED, TaskStatus.CANCELLED}:
+            return True
+        from ..storage.htn_store import HtnStore
+        from ..storage.store import StoreError
+        from .hierarchical_dispatch import ROOT_REVIEW_SUPERSEDED
+
+        package_id = body["package_ref"]["id"]
+        try:
+            package = HtnStore(store).get_review_package(package_id)
+        except StoreError:
+            return True
+        if HtnStore(store).adopted_goal_resolution(mission.id, str(package.binding.obligation_id)):
+            return True
+        return any(
+            event.type == ROOT_REVIEW_SUPERSEDED
+            and str((event.payload or {}).get("package_id", "")) == str(package_id)
+            for event in store.list_events(mission.id)
+        )
+    if task.status in TERMINAL_TASK:
+        return True
+    if purpose == "TASK_CONTENT":
         result = store.get_result(body["subject"]["target"]["pin"]["id"])
         attempt = None if result is None else store.get_attempt(result.envelope.attempt_id)
         return attempt is None or attempt.status in TERMINAL_ATTEMPT
@@ -404,8 +460,7 @@ class PreparedOfficialReview:
             if reader.read_exact_metadata(item.ref) != item:
                 raise AssuranceError("RECHECK_REQUIRED")
         for ref, permission in self.permissions:
-            if _permission(self.authority, self.identity, ref, now_ms) != permission:
-                raise AssuranceError("RECHECK_REQUIRED")
+            _require_same_permission(self.authority, self.identity, ref, permission, now_ms)
         for blob in self.blobs:
             blob.require_current_locked(
                 reader,
@@ -576,8 +631,7 @@ def prepare_official_review(
             identity.consumer_kind != "REVIEW"
             or identity.consumer_id != body["review_key"]
             or identity.purpose != "ACCEPT"
-            or scope is None
-            or identity.scope_id != scope["id"]
+            or identity.scope_id != review_scope_id(body)
         ):
             raise AssuranceError("REVIEW_IMPORT_IDENTITY")
         if AssuranceStore(store).lane(identity.mission_id) != "ASSURANCE_1_1":
@@ -590,11 +644,12 @@ def prepare_official_review(
             _raw_ref(imported),
             AssuranceRef("review_package", Pin.from_json(body["package_ref"])),
             AssuranceRef("requirements", Pin.from_json(body["requirements_ref"])),
-            AssuranceRef("completion_scope", Pin.from_json(scope)),
             AssuranceRef.from_json(body["criterion_policy_ref"]),
             AssuranceRef.from_json(body["subject"]["target"]),
             AssuranceRef("task", Pin.from_json(body["subject"]["owner_task_ref"])),
         }
+        if scope is not None:
+            refs.add(AssuranceRef("completion_scope", Pin.from_json(scope)))
         refs.update(item.ref for item in imported.catalogue)
         refs.update(item.ref for item in imported.disclosure_metadata)
         metadata = tuple(

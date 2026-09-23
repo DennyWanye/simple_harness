@@ -65,6 +65,7 @@ export interface OrchestrationStatus {
   default_context_profile_id?: string | null;
   context_unavailable_reason?: string | null;
   diagnostics_available?: boolean;
+  assurance_available?: boolean;
   deployment_manifest?: Record<string, unknown> | null;
 }
 

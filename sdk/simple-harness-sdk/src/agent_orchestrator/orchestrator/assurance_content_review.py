@@ -23,7 +23,8 @@ from ..storage.assurance_reads import (
 )
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
-from .assurance_check_use import CurrentAuthority, _merge_reads, _permission
+from .assurance_check_use import CurrentAuthority, _merge_reads, _permission, _require_same_permission
+from .assurance_purpose_reviews import output_manifest_hash
 from .assurance_review_pins import ensure_review_blob_pins
 from .assurance_review_transport import assurance_formula, read_review_invocation_locked
 from .completion_inputs import load_completion_result_inputs
@@ -198,7 +199,21 @@ def ensure_task_content_review(
                     "completion_scope_ref": scope_ref.pin.to_json(),
                     "method_instance_ref": None,
                     "input_manifest_hash": frozen.frozen.manifest_hash,
-                    "output_manifest_hash": None,
+                    "output_manifest_hash": output_manifest_hash(
+                        "TASK_CONTENT",
+                        {
+                            "result_id": result_id,
+                            "port_claims": [
+                                {"port_key": str(claim.port_key), "path": str(claim.path)}
+                                for claim in frozen.port_claims
+                            ],
+                            "artifacts": [
+                                {"id": item.id, "revision": item.revision,
+                                 "content_hash": item.content_hash}
+                                for item in projection.artifacts
+                            ],
+                        },
+                    ),
                 },
                 "requirements_ref": requirements_ref.pin.to_json(),
                 "criterion_ids": sorted(package.criterion_catalogue()),
@@ -267,8 +282,7 @@ def ensure_task_content_review(
                 if reader.read_exact_metadata(item.ref) != item:
                     raise AssuranceError("RECHECK_REQUIRED")
             for ref, previous in permissions:
-                if _permission(authority, identity, ref, current_ms) != previous:
-                    raise AssuranceError("RECHECK_REQUIRED")
+                _require_same_permission(authority, identity, ref, previous, current_ms)
             for blob in blobs:
                 blob.require_current_locked(
                     reader,

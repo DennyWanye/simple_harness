@@ -148,7 +148,10 @@ class MissionControlV1:
 
         try:
             body = fields(dict(command), {"mission_id", "command_id", "requirements_ref",
-                "completion_scope", "candidate_mapping"}, {"result_ref"})
+                "completion_scope", "candidate_mapping"}, {"result_ref", "purpose"})
+            purpose = body.get("purpose", "CONTENT")
+            if purpose not in ("CONTENT", "MISSION_FINAL"):
+                raise AssuranceError("CHECK_POLICY_APPROVAL_INVALID", str(purpose))
             self._mission(body["mission_id"])
             ref = self._orchestrator.commit.approve_assurance_check_policy(
                 tenant_id=self._tenant, principal=self._principal,
@@ -159,6 +162,7 @@ class MissionControlV1:
                     for row in array(body["candidate_mapping"], minimum=1)),
                 result_ref=None if body.get("result_ref") is None else
                     AssuranceRef.from_json(body["result_ref"], kinds={"result"}),
+                purpose=purpose,
             )
             return {"check_policy_ref": ref.to_json()}
         except AssuranceError as error:
@@ -196,6 +200,30 @@ class MissionControlV1:
                     "receipt_ref": ref.to_json()}
         except AssuranceError as error:
             raise FacadeError(error.code, "restored read authorization refused") from error
+
+    # ------------------------------------------------------ assurance reads
+    def _assurance_read(self, verb: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        """S25 read verbs: caller fixed at construction; the body never names it."""
+        from .assurance import AssuranceReadError
+
+        try:
+            api = self._orchestrator.assurance_read_api(tenant_id=self._tenant, principal=self._principal)
+            return getattr(api, verb)(dict(body))
+        except AssuranceReadError as error:
+            request_id = body.get("request_id") if isinstance(body, Mapping) else None
+            wire = error.to_json(request_id if isinstance(request_id, str) and request_id else "unknown")
+            raised = FacadeError(error.code, str(error))
+            raised.wire = wire  # type: ignore[attr-defined]
+            raise raised from error
+
+    def assurance_snapshot(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        return self._assurance_read("snapshot", body)
+
+    def assurance_review(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        return self._assurance_read("review", body)
+
+    def assurance_use_check(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        return self._assurance_read("use_check", body)
 
     def _mission(self, mission_id: object) -> Any:
         self._require_native_root()

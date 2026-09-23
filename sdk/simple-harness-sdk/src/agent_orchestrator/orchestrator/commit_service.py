@@ -388,6 +388,7 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         self._assurance_check_importer: Any = None
         self._assurance_review_handoff: Any = None
         self._assurance_settlement: Any = None
+        self._assurance_validity: Any = None
         self._taskgraph_dispatch: TaskGraphDispatchBinding | None = None
         self._taskgraph_participant_factory: Any = None
         self._system_tail_factory = system_tail_factory
@@ -2973,7 +2974,7 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 final_report=report,
             )
             self._store.update_mission(updated, expected_version=mission.version)
-            self._emit(
+            final = self._emit(
                 "MissionFailed",
                 mission_id,
                 key=mission_id,
@@ -2983,6 +2984,7 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     "detail": dict(detail),
                 },
             )
+            self._assured_terminal_notice(mission_id, final, updated.version)
             return updated
 
     def cancel_mission(self, mission_id: str) -> Mission:
@@ -3003,7 +3005,8 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             )
             self._store.update_mission(updated, expected_version=mission.version)
             self._cascade_stop(mission_id, skip_task=None)
-            self._emit("MissionCancelled", mission_id, key=mission_id, payload={})
+            final = self._emit("MissionCancelled", mission_id, key=mission_id, payload={})
+            self._assured_terminal_notice(mission_id, final, updated.version)
             return updated
 
     def fail_mission(
@@ -3031,12 +3034,13 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             )
             self._store.update_mission(failed, expected_version=mission.version)
             self._cascade_stop(mission_id, skip_task=None)
-            self._emit(
+            final = self._emit(
                 "MissionFailed",
                 mission_id,
                 key=mission_id,
                 payload={"stop_reason": str(stop_reason), "final_report": report},
             )
+            self._assured_terminal_notice(mission_id, final, failed.version)
             return failed
 
     def _cascade_stop(self, mission_id: str, *, skip_task: str | None) -> list[str]:
@@ -5057,14 +5061,31 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         owner: str | None = None, connectors: Mapping[str, Any] | None = None,
         deployment: DeploymentPolicy | None = None,
     ) -> Task:
-        with self._store.transaction():
-            stored = self._require_result(result_id)
-            if self.selection_policy_for(stored.envelope.task_id) is not None:
-                raise CommitRejected("COMPARE requires the selected-result acceptance gate")
-            already_accepted = stored.verification_state == "DONE" and stored.verdict == "PASS"
-            completed = self._accept_result(result_id, verifier_results=verifier_results,
-                                            owner=owner, connectors=connectors,
-                                            deployment=deployment)
+        from .resolution_commits import ResolutionCommitRejected
+
+        prepared = self._prepare_assured_acceptance(result_id)
+        for retry in (False, True):
+            try:
+                with self._store.transaction():
+                    stored = self._require_result(result_id)
+                    if self.selection_policy_for(stored.envelope.task_id) is not None:
+                        raise CommitRejected("COMPARE requires the selected-result acceptance gate")
+                    already_accepted = (stored.verification_state == "DONE"
+                                        and stored.verdict == "PASS")
+                    completed = self._accept_result(result_id, verifier_results=verifier_results,
+                                                    owner=owner, connectors=connectors,
+                                                    deployment=deployment)
+            except ResolutionCommitRejected as error:
+                # A source moved between the fresh preparation and BEGIN IMMEDIATE.
+                # Exactly one bounded re-preparation; never a licence by retry.
+                if error.reason != "RECHECK_REQUIRED" or retry or prepared is None:
+                    raise
+                prepared = self._prepare_assured_acceptance(result_id)
+                continue
+            break
+        if prepared is not None:
+            self._assurance_validity.forget(prepared.identity.mission_id,
+                                            str(prepared.record.record_id))
         if not already_accepted and completed.status is TaskStatus.COMPLETED:
             for observer in tuple(self._accepted_task_observers):
                 try:
@@ -5076,6 +5097,68 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                                task_id=completed.id,
                                payload={"reason": type(error).__name__})
         return completed
+
+    def _prepare_assured_acceptance(self, result_id: str) -> Any:
+        """Assurance 1.1: compute the current ACCEPT use right before the acceptance UoW.
+
+        Every layer the router recorded (an inventoried source) has already moved
+        the mission epoch by now, so a candidate prepared earlier would be stale.
+        Outside the write transaction, read only; the UoW then locks it first."""
+        from ..assurance.codec import AssuranceError
+        from ..storage.assurance_store import AssuranceStore
+        from .resolution_commits import ResolutionCommitRejected
+        from .scoped_content_review import uses_completion_protocol
+
+        with self._store.read_view():
+            stored = self._store.get_result(result_id)
+            if stored is None:
+                return None
+            mission_id = stored.envelope.mission_id
+            if AssuranceStore(self._store).lane(mission_id) != "ASSURANCE_1_1":
+                return None
+            if not uses_completion_protocol(self._store, mission_id):
+                return None
+            if stored.verification_state == "DONE" and stored.verdict == "PASS":
+                return None  # replay; the committed certificate licenses it
+        validity = getattr(self, "_assurance_validity", None)
+        if validity is None:
+            return None  # accept_review refuses USE_CERTIFICATE_REQUIRED; never a fallback
+        try:
+            return validity.prepare_accept_use_for_result(mission_id, result_id)
+        except AssuranceError as error:
+            raise ResolutionCommitRejected(
+                error.code, "the current use certificate could not be prepared"
+            ) from error
+
+    def _lock_assured_acceptance(self, mission_id: str, task_id: str, result_id: str) -> None:
+        """Assurance 1.1: the prepared ACCEPT use is locked before this UoW's own writes.
+
+        The freshness/authority/root gates must see the world as it was when the
+        transaction began; the result, artifact and acceptance rows this UoW then
+        moves are its intended effect, not foreign changes. The certificate itself
+        is committed later by ``accept_review`` in this same generation. A missing
+        candidate is not licensed here; ``accept_review`` refuses it."""
+        from ..assurance.codec import AssuranceError
+        from ..storage.assurance_store import AssuranceStore
+        from .assurance_validity import ACCEPTANCE_CONSUMER, acceptance_id_for
+        from .resolution_commits import ResolutionCommitRejected
+
+        if AssuranceStore(self._store).lane(mission_id) != "ASSURANCE_1_1":
+            return
+        validity = getattr(self, "_assurance_validity", None)
+        if validity is None:
+            return
+        candidate = validity.candidate_for_consumer(
+            mission_id, ACCEPTANCE_CONSUMER, acceptance_id_for(task_id, result_id)
+        )
+        if candidate is None:
+            return
+        try:
+            validity.lock_use_locked(candidate, now_ms=int(self._store.now * 1000))
+        except AssuranceError as error:
+            raise ResolutionCommitRejected(
+                error.code, "the current use certificate refused this acceptance"
+            ) from error
 
     def _accept_result(
         self,
@@ -5107,6 +5190,9 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     ) is None:
                         raise CommitRejected("verified result has no atomic scoped Acceptance")
                 return self._require_task(stored.envelope.task_id)
+            if completion_protocol:
+                self._lock_assured_acceptance(stored.envelope.mission_id,
+                                              stored.envelope.task_id, result_id)
             attempt = self._require_attempt(stored.envelope.attempt_id)
             self._require_lease(attempt, owner)
             task = self._require_task(stored.envelope.task_id)
@@ -5313,12 +5399,13 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         )
         self._store.update_mission(failed, expected_version=mission.version)
         self._cascade_stop(mission.id, skip_task=None)
-        self._emit(
+        final = self._emit(
             "MissionFailed",
             mission.id,
             key=mission.id,
             payload={"stop_reason": failed.stop_reason, "final_report": report},
         )
+        self._assured_terminal_notice(mission.id, final, failed.version)
         return failed
 
     def judge_mission(
@@ -5459,17 +5546,23 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 ],
                 "lineage": lineage(self._store, mission_id),  # D4-14 / 30-27
             }
-            self._emit(
+            judged = self._emit(
                 "MissionSuccessJudged",
                 mission_id,
                 key=f"{mission_id}:{mission.version}",
                 payload={"met": met, "judgments": [dict(item) for item in judgments]},
             )
             if met:
+                from .assurance_final_writer import is_assured, request_assured_closeout
                 from .hierarchical_dispatch import is_hierarchical
 
                 if is_hierarchical(mission):
                     report.update(self._ledger.usage_flags(mission_id))
+                if is_assured(self._store, mission_id):
+                    # Handoff item 7: an assured Mission is completed only by the
+                    # unique final writer out of a READY closeout (spec §7.1); the
+                    # judge records that the criteria are met and requests it.
+                    return request_assured_closeout(self, mission, report=report, judged=judged)
                 done = next_mission(
                     mission,
                     MissionStatus.COMPLETED,
@@ -5494,12 +5587,13 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             self._store.update_mission(failed, expected_version=mission.version)
             self._cancel_open_actions(mission_id, reason="mission_criteria_unmet")
             self._release_terminal_mission_pools(mission_id)
-            self._emit(
+            final = self._emit(
                 "MissionFailed",
                 mission_id,
                 key=mission_id,
                 payload={"stop_reason": failed.stop_reason, "final_report": report},
             )
+            self._assured_terminal_notice(mission_id, final, failed.version)
             return failed
 
     def _judgment_network(self, mission: Mission) -> Any:
@@ -5601,6 +5695,32 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 f"{contradicted} carry a current Acceptance on a FAILED row (§21.5 'wrongly "
                 "declared complete = 0': the disagreement is repaired, not judged)"
             )
+
+    # ------------------------------------------------ Assurance 1.1 final writer (item 7)
+    def _assured_terminal_notice(self, mission_id: str, final: Event, state_version: int) -> None:
+        """Every terminal write on the assured lane requests the NOTIFY transport."""
+
+        from .assurance_final_writer import request_assured_notification
+
+        request_assured_notification(self, mission_id, final, state_version=state_version)
+
+    def assured_closeout_pending(self, mission_id: str) -> bool:
+        """An ACTIVE assured Mission judged successful and waiting for its closeout."""
+
+        from .assurance_final_writer import assured_closeout_pending
+
+        return assured_closeout_pending(self._store, self._store.get_mission(mission_id))
+
+    def finalize_assured_mission(self, mission_id: str, evaluation: Mapping[str, Any]) -> Any:
+        """The unique final writer: READY closeout → COMPLETED (spec §7.1, item 7).
+
+        Called by the CLOSEOUT consumer inside its own commit transaction; see
+        :func:`assurance_final_writer.finalize_assured_mission`.
+        """
+
+        from .assurance_final_writer import finalize_assured_mission
+
+        return finalize_assured_mission(self, mission_id, evaluation)
 
     def _require_root_resolution(self, mission_id: str) -> None:
         """A hierarchical Mission is completed out of its root resolution (review F6).
@@ -5893,12 +6013,13 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 task_id=task_id,
                 payload={"stop_reason": str(stop_reason), "detail": dict(detail)},
             )
-            self._emit(
+            final = self._emit(
                 "MissionFailed",
                 mission.id,
                 key=mission.id,
                 payload={"stop_reason": str(stop_reason), "final_report": report},
             )
+            self._assured_terminal_notice(mission.id, final, done.version)
             return failed
 
     def _task_reports(self, mission_id: str) -> list[dict[str, Any]]:

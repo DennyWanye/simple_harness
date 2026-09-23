@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from typing import Any
+from typing import Callable, Any
 
 from simple_harness.agents import AgentConfig, AgentLimits
 from simple_harness.agents.context.budget import policy_hash
@@ -20,7 +20,8 @@ from ..assurance.codec import AssuranceError, decode, fingerprint
 from ..assurance.refs import AssuranceRef, Pin
 from ..assurance.review_input import REVIEW_INSTRUCTIONS
 from ..assurance.reviews import REVIEW_CODEC_VERSION
-from ..contracts import ContractError, TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK
+from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK, ContractError
+from ..runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.htn_store import HtnStore
 from ..verification.critics import CriticVerdict
@@ -29,14 +30,37 @@ from .assurance_review_collect import collect_assurance_review
 from .assurance_review_consumer import AssuranceReviewConsumer
 from .assurance_review_import import read_official_review_binding_locked
 
+# One review turn: the initial request plus a bounded number of tool rounds.
+# The per-call cap on the gateway binding is MAX_EVIDENCE_TOOL_CALLS; the turn's
+# own tool cap matches it. Host real model run 13 (2026-09-23): a real reviewer
+# listed the catalogue and read the candidate plus five evidence items (3+2+5 = 10
+# tool calls) before concluding, and the old cap of 8 ended every such turn with
+# react_max_tool_calls_exceeded → TURN_FAILED.
+from ..verification.reviewer_evidence_tools import MAX_EVIDENCE_TOOL_CALLS
+
+REVIEW_MODEL_CALLS = 10
+REVIEW_TOOL_CALLS = MAX_EVIDENCE_TOOL_CALLS
+
 
 class AssuranceReviewRuntime:
-    def __init__(self, orchestrator: Any, consumer: AssuranceReviewConsumer) -> None:
+    def __init__(
+        self,
+        orchestrator: Any,
+        consumer: AssuranceReviewConsumer,
+        *,
+        check_policy_projector: Callable[[str], None] | None = None,
+    ) -> None:
         if consumer.commit is not orchestrator.commit or consumer.store is not orchestrator.store:
             raise AssuranceError("ASSURANCE_STORE_MISMATCH")
         self.orchestrator = orchestrator
         self.consumer = consumer
         self.store = consumer.store
+        # Deployment port: projects the frozen Scope's check policy under the
+        # Host's caller right before the first review preparation needs it.
+        self._check_policy_projector = check_policy_projector
+        from ..verification.reviewer_evidence_tools import ReviewerEvidenceTools
+
+        self.evidence_tools = ReviewerEvidenceTools(self)
 
     def context_pin(self, profile_id: str) -> Pin:
         ports = self.orchestrator.assembled.pool(profile_id).bridge.runtime.ports
@@ -71,6 +95,9 @@ class AssuranceReviewRuntime:
             orch.commit._assurance_review_handoff = AssuranceReviewHandoff(self)
         if orch.commit._assurance_settlement is None:
             orch.commit._assurance_settlement = AssuranceSettlement(orch)
+        gateway = getattr(getattr(orch, "assembled", None), "gateway", None)
+        if gateway is not None and hasattr(gateway, "assurance_evidence_reader"):
+            self.evidence_tools.install(gateway)
         return self.consumer
 
     def task_record(self, mission_id: str, attempt_id: str):
@@ -163,6 +190,179 @@ class AssuranceReviewRuntime:
             },
         )
 
+    def _licensed(self, record: Any) -> CriticVerdict:
+        """Historical verdict; the licence is prepared later by the acceptance path.
+
+        The verdict itself is not a licence. The router still records layers
+        (inventoried sources) after this returns, so the current ACCEPT use is
+        computed by ``CommitService.accept_result`` immediately before its UoW.
+        A deployment without a validity evaluator is refused here rather than
+        producing an unlicensed PASS.
+        """
+        with self.store.read_view():
+            verdict = self._verdict(record)
+        if not verdict.passed:
+            return verdict
+        if getattr(self.orchestrator.commit, "_assurance_validity", None) is None:
+            raise AssuranceError("ASSURANCE_VALIDITY_UNBOUND")
+        return verdict
+
+    # ------------------------------------------------ the other five purposes
+    def _purpose_config(self, mission: Any, name: str) -> tuple[Any, dict[str, Any], Any]:
+        orch = self.orchestrator
+        if mission.tenant_id != self.consumer.tenant_id:
+            raise AssuranceError("ASSURANCE_TENANT_MISMATCH")
+        decision = orch._route_service("critic", mission.id)
+        config = {
+            **orch._service_config(decision),
+            "prompt_version": REVIEW_CODEC_VERSION,
+            "agent_config": AgentConfig(
+                name=name,
+                instructions=REVIEW_INSTRUCTIONS,
+                model_profile_ref=decision.profile_id,
+                # §4: this profile's template explicitly carries the two read-only
+                # evidence tools; the legacy root reviewer keeps tool_names=().
+                tool_names=ASSURANCE_EVIDENCE_TOOLS,
+                limits=AgentLimits(
+                    max_model_calls_per_turn=REVIEW_MODEL_CALLS,
+                    max_tool_calls_per_turn=REVIEW_TOOL_CALLS,
+                    turn_deadline_seconds=orch._config.turn_deadline_seconds,
+                ),
+            ).to_json(),
+        }
+        reservation = orch._reservation(orch._config.critic_reserve_tokens, decision.profile_id)
+        return decision, config, reservation
+
+    def _ensure_purpose(
+        self,
+        mission: Any,
+        *,
+        name: str,
+        package: Any,
+        subject: Any,
+        requirements: Any,
+        request_command_id: str,
+        allow_in_transaction: bool = False,
+    ) -> Any:
+        from .assurance_purpose_reviews import prepare_purpose_review
+
+        decision, config, reservation = self._purpose_config(mission, name)
+        return prepare_purpose_review(
+            self.orchestrator.commit,
+            tenant_id=mission.tenant_id,
+            mission_id=mission.id,
+            package=package,
+            subject=subject,
+            requirements=requirements,
+            principal_id=self.consumer.principal_id,
+            authority=self.consumer.authority,
+            cas=self.consumer.cas,
+            config=config,
+            context_policy_ref=self.context_pin(decision.profile_id),
+            reservation=reservation,
+            request_command_id=request_command_id,
+            allow_in_transaction=allow_in_transaction,
+        )
+
+    def ensure_method_plan(
+        self, mission: Any, *, task_id: str, method_ref: Pin, producer_agent_ids: tuple[str, ...]
+    ) -> Any:
+        """METHOD_PLAN from the original method admission (planning subject + registry)."""
+        from .assurance_purpose_reviews import method_plan_package
+
+        package, subject, requirements = method_plan_package(
+            self.store,
+            mission_id=mission.id,
+            task_id=task_id,
+            method_ref=method_ref,
+            producer_agent_ids=producer_agent_ids,
+        )
+        return self._ensure_purpose(
+            mission,
+            name="assurance-method-plan-review",
+            package=package,
+            subject=subject,
+            requirements=requirements,
+            request_command_id="method-plan-review:" + str(package.package_id),
+            allow_in_transaction=True,
+        )
+
+    def ensure_composition(
+        self, mission: Any, *, package: Any, occurrence_id: str, accepted: Mapping[str, Any]
+    ) -> Any:
+        """COMPOSITION from the original composition assembly's package."""
+        from .assurance_purpose_reviews import composition_subject
+
+        subject, requirements = composition_subject(
+            self.store,
+            mission_id=mission.id,
+            package=package,
+            occurrence_id=occurrence_id,
+            accepted=accepted,
+        )
+        return self._ensure_purpose(
+            mission,
+            name="assurance-composition-review",
+            package=package,
+            subject=subject,
+            requirements=requirements,
+            request_command_id="composition-review:" + str(package.package_id),
+        )
+
+    def ensure_action_proposal(self, mission: Any, *, draft: Any, sources: Any, payloads: Any) -> Any:
+        """ACTION_PROPOSAL from T0's frozen draft, inside T0's own UoW."""
+        from .assurance_purpose_reviews import action_proposal_subject
+
+        subject, requirements = action_proposal_subject(
+            self.store, mission_id=mission.id, package=draft.package, sources=sources, payloads=payloads
+        )
+        return self._ensure_purpose(
+            mission,
+            name="assurance-action-proposal-review",
+            package=draft.package,
+            subject=subject,
+            requirements=requirements,
+            request_command_id="action-proposal-review:" + str(draft.package.package_id),
+            allow_in_transaction=True,
+        )
+
+    def ensure_operation_outcome(self, mission: Any, *, prepared: Any) -> Any:
+        """OPERATION_OUTCOME from the original outcome readback, inside its persistence UoW."""
+        from .assurance_purpose_reviews import operation_outcome_subject
+
+        subject, requirements = operation_outcome_subject(
+            self.store, mission_id=mission.id, prepared=prepared
+        )
+        return self._ensure_purpose(
+            mission,
+            name="assurance-operation-outcome-review",
+            package=prepared.package,
+            subject=subject,
+            requirements=requirements,
+            request_command_id="operation-outcome-review:" + str(prepared.package.package_id),
+            allow_in_transaction=True,
+        )
+
+    def ensure_mission_final(self, mission: Any, *, package: Any, dispatch: Any) -> Any:
+        """MISSION_FINAL from the root coordinator's cut package."""
+        from .assurance_purpose_reviews import mission_final_subject
+
+        if self._check_policy_projector is not None and not self.store.connection.in_transaction:
+            # Same deployment port as TASK_CONTENT: the root Scope's MISSION_FINAL
+            # policy is projected right before the root review needs it.
+            self._check_policy_projector(mission.id)
+        subject, requirements = mission_final_subject(
+            self.store, mission_id=mission.id, package=package, dispatch=dispatch
+        )
+        return self._ensure_purpose(
+            mission,
+            name="assurance-mission-final-review",
+            package=package,
+            subject=subject,
+            requirements=requirements,
+            request_command_id="mission-final-review:" + str(package.package_id),
+        )
+
     async def run_task(self, mission: Any, task: Any, *, attempt_id: str) -> CriticVerdict:
         orch = self.orchestrator
         tick = orch._assurance_tick
@@ -172,9 +372,11 @@ class AssuranceReviewRuntime:
             raise AssuranceError("ASSURANCE_TENANT_MISMATCH")
         with self.store.read_view():
             record = self.task_record(mission.id, attempt_id)
-            if record is not None:
-                return self._verdict(record)
-            result = self.store.find_result_for_attempt(attempt_id)
+            if record is None:
+                result = self.store.find_result_for_attempt(attempt_id)
+        if record is not None:
+            return self._licensed(record)
+        with self.store.read_view():
             if result is None or result.envelope.task_id != task.id:
                 raise AssuranceError("REVIEW_RESULT_SOURCE_MISMATCH")
             prior = self.store.connection.execute(
@@ -211,16 +413,21 @@ class AssuranceReviewRuntime:
                     name="assurance-content-review",
                     instructions=REVIEW_INSTRUCTIONS,
                     model_profile_ref=decision.profile_id,
-                    tool_names=(),
+                    tool_names=ASSURANCE_EVIDENCE_TOOLS,
                     limits=AgentLimits(
-                        max_model_calls_per_turn=1,
-                        max_tool_calls_per_turn=1,
+                        max_model_calls_per_turn=REVIEW_MODEL_CALLS,
+                        max_tool_calls_per_turn=REVIEW_TOOL_CALLS,
                         turn_deadline_seconds=min(
                             orch._config.turn_deadline_seconds, deadline - self.store.now
                         ),
                     ),
                 ).to_json(),
             }
+            if self._check_policy_projector is not None and not self.store.connection.in_transaction:
+                # The projector approves through the ordinary verb (receipted,
+                # replay-safe); a projection failure surfaces below as the same
+                # CHECK_POLICY_UNRESOLVED the review would raise without it.
+                self._check_policy_projector(mission.id)
             invocation = ensure_task_content_review(
                 orch.commit,
                 tenant_id=mission.tenant_id,
@@ -237,8 +444,9 @@ class AssuranceReviewRuntime:
             self._require_live(mission.id, task.id, attempt_id)
             with self.store.read_view():
                 record = self.task_record(mission.id, attempt_id)
-                if record is not None:
-                    return self._verdict(record)
+            if record is not None:
+                return self._licensed(record)
+            with self.store.read_view():
                 row = self.store.connection.execute(
                     "SELECT dispatch_intent_id FROM assurance_review_invocations "
                     "WHERE mission_id=? AND review_key=? ORDER BY ordinal DESC LIMIT 1",

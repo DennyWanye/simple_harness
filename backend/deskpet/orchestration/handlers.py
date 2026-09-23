@@ -33,6 +33,13 @@ MESSAGE_TYPES = (
     "mission_citation_read",
     "mission_list",
     "mission_get",
+    "taskgraph.snapshot",
+    "taskgraph.why_not_ready",
+    "taskgraph.diff",
+    "taskgraph.convergence",
+    "mission_assurance_snapshot",
+    "mission_assurance_review",
+    "mission_assurance_use_check",
     "mission_events",
     "mission_cancel",
     "mission_approval_list",
@@ -74,7 +81,11 @@ async def handle(
     body = dict(payload or {})
     # Planning authorization has its own durable request_id. It is not the
     # transport correlation ID and must reach the SDK issuer unchanged.
-    if msg_type != "mission_planning_authorization":
+    if msg_type.startswith("mission_assurance_"):
+        # The Assurance DTOs carry ``request_id`` inside the contract body (host-*-request-v1);
+        # it doubles as the transport correlation and must reach the SDK unchanged.
+        request_id = body.get("request_id", request_id)
+    elif msg_type != "mission_planning_authorization":
         request_id = body.pop("request_id", request_id)
     if msg_type == "orchestration_status":
         if service is None:
@@ -95,6 +106,16 @@ async def handle(
             data = await data  # type: ignore[misc]
         return _ok(msg_type, request_id, data)
     except Exception as error:  # the socket loop must never see an exception
+        from .taskgraph import TaskGraphRequestError
+        if isinstance(error, TaskGraphRequestError):
+            response = _error(msg_type, request_id, error.code, str(error))
+            response["payload"]["taskgraph_error"] = error.wire
+            return response
+        from .assurance import AssuranceRequestError
+        if isinstance(error, AssuranceRequestError):
+            response = _error(msg_type, request_id, error.code, str(error))
+            response["payload"]["assurance_error"] = error.wire
+            return response
         code = getattr(error, "code", None)
         if isinstance(code, str) and code:
             return _error(msg_type, request_id, code, str(error))
@@ -212,6 +233,13 @@ def _support_export(service: Any, body: Mapping[str, Any]) -> Any:
 
 
 _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = {
+    "taskgraph.snapshot": lambda service, body: service.taskgraph_read("snapshot", body),
+    "taskgraph.why_not_ready": lambda service, body: service.taskgraph_read("why_not_ready", body),
+    "taskgraph.diff": lambda service, body: service.taskgraph_read("diff", body),
+    "taskgraph.convergence": lambda service, body: service.taskgraph_read("convergence", body),
+    "mission_assurance_snapshot": lambda service, body: service.assurance_read("snapshot", body),
+    "mission_assurance_review": lambda service, body: service.assurance_read("review", body),
+    "mission_assurance_use_check": lambda service, body: service.assurance_read("use_check", body),
     "mission_create": _create,
     "mission_create_with_sources": _create_with_sources,
     "mission_operation_completion_approve": _completion_approve,

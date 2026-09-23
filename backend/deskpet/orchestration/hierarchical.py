@@ -30,20 +30,32 @@ def planning_world(loop: Any, mission: Any) -> Any:
                              if not statement.startswith("action:"))
     preparation = GoalSignature("desktop.prepare-delivery", 1, params, outputs,
         mission.goal, content_criteria)
+    continuation = GoalSignature("desktop.continue-delivery", 1, params, outputs,
+        "Continue from an accepted upstream delivery: " + mission.goal, content_criteria)
     ports = (PortSpec("delivery", outputs),)
     preparation_ports = ports + ((PortSpec("action_candidate", outputs),)
         if any(c.startswith("action:") for c in mission.success_criteria) else ())
     # These are actual workspace operations available to this deployment. External
     # effects still require an OperationIntent, review and the original connector.
     for name, form in (("desktop.user-goal", TaskForm.COMPOUND),
-                       ("desktop.prepare-delivery", TaskForm.PRIMITIVE)):
+                       ("desktop.prepare-delivery", TaskForm.PRIMITIVE),
+                       ("desktop.continue-delivery", TaskForm.PRIMITIVE)):
         goal_signature = preparation if form is TaskForm.PRIMITIVE else signature
+        # Add a separately identified consumer type. Previously admitted methods
+        # keep the exact prepare-delivery v1 declaration and need no new input.
+        input_ports = ()
+        if name == "desktop.continue-delivery":
+            goal_signature = continuation
+            input_ports = (PortSpec("delivery", outputs),)
         declared_ports = preparation_ports if form is TaskForm.PRIMITIVE else ports
         body = {"name": name, "form": str(form), "signature": goal_signature.to_json(),
                 "ports": [p.to_json() for p in declared_ports]}
+        if input_ports:
+            body["input_ports"] = [p.to_json() for p in input_ports]
         ref = VersionedRef(name, 1, content_hash_of(body))
         world.catalog.register(TaskTypeSpec(
-            task_type_ref=ref, form=form, goal_signature=goal_signature, output_ports=declared_ports,
+            task_type_ref=ref, form=form, goal_signature=goal_signature,
+            input_ports=input_ports, output_ports=declared_ports,
             parameter_schema_ref=params, output_schema_ref=outputs,
             operator_ref=(VersionedRef("desktop.workspace-worker", 1,
                 content_hash_of({"tools": list(mission.allowed_tools)}))
@@ -59,14 +71,37 @@ def planning_world(loop: Any, mission: Any) -> Any:
     return world
 
 
-def initialize_root(loop: Any, mission: Any, principal: Any) -> None:
-    """Join the caller's create transaction; replay never inserts another root."""
-    from agent_orchestrator.contracts.htn import ContractRevision, ObligationId, TaskRef, TaskSemanticBindingV1
-    from agent_orchestrator.contracts.obligations import Obligation
+def root_requirements(mission: Any, principal: Any) -> Any:
+    """Revision 1 of the user's explicit criteria: ``req-<mission>-1`` / ``c-user-<n>``.
+
+    The same document is the approved Requirements builder of the Assurance
+    factory (plan S02), so the assured lane and this root initialization agree
+    byte for byte and neither writes a second body.
+    """
     from agent_orchestrator.contracts.resolution import (
         AllExpr, Criterion, CriterionExpr, CriterionOrigin, EvaluationKind,
         RequirementClass, RequirementsRevision,
     )
+
+    refs = tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
+    criteria = tuple(Criterion(identifier, 1, CriterionOrigin.USER_EXPLICIT, statement,
+        RequirementClass.REQUIRED_OUTCOME, EvaluationKind.SEMANTIC)
+        for identifier, statement in zip(refs, mission.success_criteria, strict=True))
+    return RequirementsRevision(
+        revision_id=f"req-{mission.id}-1", mission_id=mission.id, revision=1, criteria=criteria,
+        success_expression=AllExpr(tuple(CriterionExpr(c.criterion_id) for c in criteria)),
+        authority_subject=principal.principal_id,
+    )
+
+
+def initialize_root(loop: Any, mission: Any, principal: Any) -> None:
+    """Join the caller's create transaction; replay never inserts another root.
+
+    An assured Mission's factory already wrote revision 1 inside the same create
+    transaction; that body must be byte-identical and is never inserted twice.
+    """
+    from agent_orchestrator.contracts.htn import ContractRevision, ObligationId, TaskRef, TaskSemanticBindingV1
+    from agent_orchestrator.contracts.obligations import Obligation
     from agent_orchestrator.contracts.semantic_base import content_hash_of
     from agent_orchestrator.orchestrator.hierarchical_dispatch import is_hierarchical
     from agent_orchestrator.storage.htn_store import HtnStore
@@ -91,14 +126,12 @@ def initialize_root(loop: Any, mission: Any, principal: Any) -> None:
     # Root requirements are reviewed over accepted contributions. Concrete
     # file/pytest statements are projected to leaf checks by the materializer;
     # naming those checks as root executions would require invented receipts.
-    criteria = tuple(Criterion(identifier, 1, CriterionOrigin.USER_EXPLICIT, statement,
-        RequirementClass.REQUIRED_OUTCOME, EvaluationKind.SEMANTIC)
-        for identifier, statement in zip(binding.requirement_refs, mission.success_criteria, strict=True))
-    requirements = RequirementsRevision(
-        revision_id=f"req-{mission.id}-1", mission_id=mission.id, revision=1, criteria=criteria,
-        success_expression=AllExpr(tuple(CriterionExpr(c.criterion_id) for c in criteria)),
-        authority_subject=principal.principal_id,
-    )
+    requirements = root_requirements(mission, principal)
+    assert tuple(c.criterion_id for c in requirements.criteria) == tuple(binding.requirement_refs)
+    existing = htn.latest_requirements_revision(mission.id)
+    if existing is not None and (existing.revision != 1
+                                 or existing.content_hash() != requirements.content_hash()):
+        raise RuntimeError("root requirements already exist with a different body")
     with loop.store.transaction():
         ObligationStore(loop.store).register(Obligation(
             obligation_id=ObligationId(duty_id), mission_id=mission.id,
@@ -108,7 +141,8 @@ def initialize_root(loop: Any, mission: Any, principal: Any) -> None:
             principal=principal.principal_id, requester={"kind": "mission_root"},
             evidence={"mission_id": mission.id, "requirement_refs": list(binding.requirement_refs)})
         htn.put_task_semantics(mission.id, binding)
-        htn.insert_requirements_revision(requirements)
+        if existing is None:
+            htn.insert_requirements_revision(requirements)
 
 
 def install(loop: Any) -> None:

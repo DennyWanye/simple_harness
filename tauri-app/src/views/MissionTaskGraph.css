@@ -1,0 +1,17 @@
+.taskgraph { --tg-node: var(--sh-surface, #15181C); border: 1px solid #94a3b855; border-radius: 10px; padding: 16px; margin: 16px 0; font-size: 13px; }
+.tg-heading, .tg-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.tg-heading { justify-content: space-between; }
+.tg-heading h3 { margin: 0 0 12px; font-size: 15px; }
+.tg-toolbar { margin: 10px 0; }
+.taskgraph input { max-width: 160px; padding: 6px 8px; border: 1px solid #94a3b8; border-radius: 5px; color: inherit; background: transparent; }
+.taskgraph button { padding: 6px 10px; border: 1px solid #94a3b8; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
+.taskgraph button:disabled { opacity: .5; cursor: default; }
+.taskgraph button[aria-pressed="true"] { background: #0d948822; border-color: #0d9488; }
+.taskgraph [role="alert"], .taskgraph [role="status"] { color: var(--sh-warning, #D9A441); }
+.tg-canvas { max-height: 480px; overflow: auto; border: 1px solid #94a3b844; border-radius: 7px; background: #94a3b809; }
+.tg-canvas g[role="button"]:focus rect { stroke: #0d9488; stroke-width: 3; }
+.taskgraph table { width: 100%; border-collapse: collapse; text-align: left; }
+.taskgraph td, .taskgraph th { padding: 8px; border-bottom: 1px solid #94a3b833; overflow-wrap: anywhere; }
+.taskgraph details { margin-top: 12px; overflow: auto; }
+.taskgraph summary { cursor: pointer; }
+.tg-explanation { padding: 12px; border-left: 3px solid #0284c7; margin-top: 12px; overflow-wrap: anywhere; }

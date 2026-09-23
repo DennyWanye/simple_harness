@@ -70,6 +70,19 @@ class OrchestrationSettings:
     # A shadow observation that exceeds this is recorded as a timeout and dropped;
     # the production plan is unaffected.  None means no Host-side bound.
     decision_shadow_timeout_seconds: float | None = None
+    # Assurance 1.1 (plan §13/§16): which new planning-decision Missions take the
+    # assured lane. "on" (the default since the 2026-09-23 verified delivery)
+    # assures every one; "off" is the explicit opt-out that keeps the original
+    # lane. The Host always passes its own selection point, so the SDK's default
+    # selection never decides for a Host Mission.
+    assurance_profile: str = "on"
+
+
+def _assurance_profile(value: Any) -> str:
+    if not isinstance(value, str):
+        return "on"
+    normalised = value.strip().lower()
+    return normalised if normalised in ("on", "off") else "on"
 
 
 def _bounded_int(value: Any, default: int, low: int, high: int) -> int:
@@ -127,6 +140,7 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         publish_dir=str(publish_dir).strip() if isinstance(publish_dir, str) else "",
         decision_mode=_decision_mode(raw.get("decision_mode")),
         decision_shadow_timeout_seconds=_shadow_timeout(raw.get("decision_shadow_timeout_seconds")),
+        assurance_profile=_assurance_profile(raw.get("assurance_profile")),
     )
 
 
