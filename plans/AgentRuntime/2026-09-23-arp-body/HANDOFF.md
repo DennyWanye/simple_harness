@@ -9,7 +9,7 @@
 | 盘点 | 完成 | `0c6e853f` | `00-父源盘点.md` |
 | RP-A 合同 / 规则 / v11 迁移 / Store / 创建链 / 工厂 | 完成 | `7211546d` | `00-父源盘点.md` §5 |
 | RP-B Context 装填 / 计量 / 分区索引 / 检索 / 召回 | 完成 | `35a4b67a` | `01-RP-B-上下文计量索引召回实施记录.md` |
-| RP-B 收尾：模型侧检索工具 / tick / 委派走创建服务 | 完成 | 见 git log | `02-RP-B收尾-检索工具-tick-委派实施记录.md` |
+| RP-B 收尾：模型侧检索工具 / tick / 委派走创建服务 | 完成 | `325d2606` | `02-RP-B收尾-检索工具-tick-委派实施记录.md` |
 | RP-C 统一目录 / Skill / Tool | 未开始 | | |
 | RP-D 生命周期 / Host verbs / GC / retention | 未开始 | | |
 | RP-E 统一验收 + Assurance 接入（BW09） | 未开始，等 Assurance 线完成 | | |
