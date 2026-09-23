@@ -114,6 +114,9 @@ def install_assurance(service: Any, orchestrator: Any) -> Any:
         select_profile=select_profile if profile in ("on", "off") else None,
         notify_transport=notify,
         host_fingerprint=host_fingerprint(),
+        # Projects each frozen Scope's check policy right before its first review
+        # (the after-run projection in ``service._drive`` is the catch-up path).
+        check_policy_projector=lambda mission_id: project_check_policies(service, mission_id=mission_id),
     )
     return sdk_install(orchestrator, ports)
 
