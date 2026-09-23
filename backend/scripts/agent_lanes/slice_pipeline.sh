@@ -66,7 +66,8 @@ round_action() {
   case "$kind" in
     可合) printf 'green\n' ;;
     修后可合)
-      if [ "$round" -ge "$maxr" ]; then printf 'red-rounds\n'; else printf 'disposition\n'; fi ;;
+      # rounds exhausted with only test gaps left (no P0): stop looping, full-gate it and carry the gaps
+      if [ "$round" -ge "$maxr" ]; then printf 'green-with-gaps\n'; else printf 'disposition\n'; fi ;;
     不可合) printf 'red-unmergeable\n' ;;
     *) printf 'red-no-verdict\n' ;;
   esac
@@ -81,7 +82,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NAME="${1:-}"; SDK="${2:-}"; BASE="${3:-}"; IMPL_TASK="${4:-}"; VERIFY_TASK="${5:-}"
 shift 5 2>/dev/null || true
-LANE="codex"; VERIFY_LANE="codex"; TESTS=""; ALLOW=""; MAX_SENTINEL=""; MAX_ROUNDS="2"; LOGFILE=""; RESUME_IMPL=""; RESUME_VERIFY=""
+LANE="codex"; VERIFY_LANE="codex"; TESTS=""; ALLOW=""; MAX_SENTINEL=""; MAX_ROUNDS="2"  # 2026-09-22: verification capped at 2 rounds by default (see 任务书通用规则); LOGFILE=""; RESUME_IMPL=""; RESUME_VERIFY=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --lane) LANE="${2:-}"; shift 2 ;;
@@ -144,6 +145,12 @@ run_lane() {
   if [ -z "$prompt" ] || [ ! -f "$prompt" ]; then echo "run_lane: task book missing: [$prompt]" >&2; logline "run-lane" "FAIL task-book-missing $tname"; echo "PIPELINE RED internal (task book missing for $tname)"; exit 4; fi
   if [ -z "$script" ]; then echo "run_lane: unknown lane $lane" >&2; return 9; fi
   summary="$PIPE_DIR/$tname.summary.txt"
+  # append the standing brief rules (任务书通用规则.zh-CN.md) so no slice brief can forget them
+  if [ -f "$SCRIPT_DIR/任务书通用规则.zh-CN.md" ]; then
+    local merged="$PIPE_DIR/$tname.book.md"
+    { cat "$prompt"; printf '\n\n---\n\n'; cat "$SCRIPT_DIR/任务书通用规则.zh-CN.md"; } > "$merged"
+    prompt="$merged"
+  fi
   if [ "$lane" = "grok" ]; then
     AGENT_TASK_OUT="$TASKS_DIR" "$script" "$tname" "$cwd" "$prompt" "high" "80" "$resume" > "$summary" 2>&1
   else
@@ -360,6 +367,12 @@ while [ "$ROUND" -le "$MAX_ROUNDS" ]; do
       logline "c-verify-$ROUND" "可合 -> full gate"
       break
       ;;
+    green-with-gaps)
+      VERIFIED=1; WITH_GAPS=1
+      { echo "# 遗留测试缺口（$NAME，核验第 $ROUND 轮仍为修后可合，按收口规则不再循环）"; echo; echo "核验报告：$VERIFY_SUM"; echo; sed -n '/## 结果/,$p' "$VERIFY_SUM" 2>/dev/null; } > "$PIPE_DIR/gaps.md"
+      logline "c-verify-$ROUND" "修后可合 at round cap -> full gate, gaps carried to $PIPE_DIR/gaps.md"
+      break
+      ;;
     red-rounds)
       logline "d-result" "RED rounds-exhausted round=$ROUND/$MAX_ROUNDS verdict=$VKIND"
       logline "result" "PIPELINE RED verify"
@@ -447,6 +460,11 @@ logline "e-gate-full" "GREEN $GATE_FULL"
 save_verify_artifacts
 git -C "$SDK" worktree remove --force "$VERIFY_DIR" >> "$LOGFILE" 2>&1 || true
 HEAD_SHORT=$(git -C "$SDK" rev-parse --short HEAD)
-logline "result" "PIPELINE GREEN $NAME head=$HEAD_SHORT"
-echo "PIPELINE GREEN $NAME head=$HEAD_SHORT"
+if [ "${WITH_GAPS:-0}" = "1" ]; then
+  logline "result" "PIPELINE GREEN-WITH-GAPS $NAME head=$HEAD_SHORT gaps=$PIPE_DIR/gaps.md"
+  echo "PIPELINE GREEN-WITH-GAPS $NAME head=$HEAD_SHORT (test gaps carried to $PIPE_DIR/gaps.md)"
+else
+  logline "result" "PIPELINE GREEN $NAME head=$HEAD_SHORT"
+  echo "PIPELINE GREEN $NAME head=$HEAD_SHORT"
+fi
 exit 0

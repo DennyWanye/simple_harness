@@ -241,7 +241,7 @@ rcase() { # rcase <kind> <round> <max> <want>
 }
 rcase "可合"     1 2 "green"
 rcase "修后可合" 1 2 "disposition"
-rcase "修后可合" 2 2 "red-rounds"
+rcase "修后可合" 2 2 "green-with-gaps"
 rcase "不可合"   1 2 "red-unmergeable"
 rcase ""         1 2 "red-no-verdict"
 
