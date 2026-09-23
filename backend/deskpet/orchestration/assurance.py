@@ -91,7 +91,8 @@ def install_assurance(service: Any, orchestrator: Any) -> Any:
 
     def select_profile(spec: Any) -> Any:
         # The single Host selection point: "on" assures every planning-decision
-        # Mission of this tenant; "off" leaves the SDK's own default selection.
+        # Mission of this tenant (the default); "off" is the explicit opt-out that
+        # keeps the original lane. Both are passed, so the SDK default never decides.
         if profile == "on":
             return AssurancePolicy()
         return None

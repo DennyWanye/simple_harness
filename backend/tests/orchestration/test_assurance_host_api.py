@@ -104,7 +104,8 @@ async def test_assured_lane_reads_through_fixed_caller_and_survives_rebuild(orch
 async def test_profile_off_keeps_the_original_lane_and_refuses_assured_reads(orchestration_root, principal):
     from agent_orchestrator.storage.assurance_store import AssuranceStore
 
-    service = await _service(orchestration_root, principal)
+    # Explicit opt-out (the default is "on" since the verified 2026-09-23 delivery).
+    service = await _service(orchestration_root, principal, assurance_profile="off")
     try:
         assert service.status()["assurance_profile"] == "off"
         assert service.status()["assurance_available"] is True
@@ -122,7 +123,9 @@ async def test_profile_off_keeps_the_original_lane_and_refuses_assured_reads(orc
 def test_settings_parse_assurance_profile():
     from deskpet.orchestration.settings import load_settings
 
-    assert load_settings({}).assurance_profile == "off"
+    # Default ON since the verified 2026-09-23 delivery; only an explicit "off" opts out.
+    assert load_settings({}).assurance_profile == "on"
     assert load_settings({"assurance_profile": "ON"}).assurance_profile == "on"
-    assert load_settings({"assurance_profile": "shadow"}).assurance_profile == "off"
-    assert load_settings({"assurance_profile": 1}).assurance_profile == "off"
+    assert load_settings({"assurance_profile": "off"}).assurance_profile == "off"
+    assert load_settings({"assurance_profile": "shadow"}).assurance_profile == "on"
+    assert load_settings({"assurance_profile": 1}).assurance_profile == "on"
