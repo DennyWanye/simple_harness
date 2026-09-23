@@ -1,6 +1,6 @@
 # ARP-EXEC-1.1.1 主体施工交接（arp-1.1.1 分支）
 
-最后更新：2026-09-23（RP-D1 完成时）。
+最后更新：2026-09-23（RP-D2 完成时）。
 
 ## 当前状态
 
@@ -14,14 +14,14 @@
 | RP-C2 Skill 包导入 / 依赖锁 | 完成 | `77f2f1f0` | `04-RP-C2-Skill包导入-依赖锁实施记录.md` |
 | RP-C3 试用 / 准入 / load / execute | 完成 | `b91d3bda` | `05-RP-C3-试用准入-load-execute实施记录.md` |
 | RP-D1 会话销毁 / 处置证明 / 清理 / 同身份恢复 / 重建门 / 保留许可 | 完成 | `0dcb7bd5` | `06-RP-D1-会话销毁-清理-恢复实施记录.md` |
-| RP-D2 Host verbs typed 服务（`api/runtime_plane.py`） | 未开始 | | |
+| RP-D2 Host verbs typed 服务（`api/runtime_plane.py`，23 个动词 + 信封 + 命令回执） | 完成 | `20cfdccc` | `07-RP-D2-Host动词typed服务实施记录.md` |
 | RP-E 统一验收 + Assurance 接入（BW09） | 未开始，等 Assurance 线完成 | | |
 
 ## 怎么继续
 
-1. 进 worktree：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-arp`，SDK 在 `sdk/simple-harness-sdk`，跑测试用 `uv run --frozen python -m pytest tests/agents/arp -q`（应 328 passed）；SDK venv 需 `uv sync --extra skill-import --extra testing`。
+1. 进 worktree：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-arp`，SDK 在 `sdk/simple-harness-sdk`，跑测试用 `uv run --frozen python -m pytest tests/agents/arp -q`（应 333 passed（RP-D2 后；RP-D1 时 328））；SDK venv 需 `uv sync --extra skill-import --extra testing`。
 2. 主仓库 `simple_harness` 上有他人未提交的 Assurance 文件，不要碰；本分支不向公开仓库推送。
-3. 下一片 RP-D2：`api/runtime_plane.py` 的 23 个 Host verbs typed 服务（settings / summary / policy / receipt / history / catalogue / skills / destroy / destroy_resume / rebuild）与 HostRequest/HostResponse 编解码；会话生命周期入口已在 `runtime.arp.sessions`（`SessionLifecycleService`），把 02–06 记录 §5 的剩余项一并排入。准入的 Assurance 验收接口已冻结为端口 `SkillAcceptancePort`（默认 `PendingAssuranceAcceptance`，拒绝时 detail.successor = `ASSURANCE_SUCCESSOR_PENDING`）；SCRIPT 执行器为端口 `ScriptRunnerPort`（Host 实现）。
+3. 下一片 RP-E：统一验收（对照规格 `implementation/sdk-cases.json` / TEST-PLAN 的用例清单，把 01–07 记录 §5 的遗留项排入）+ Assurance 接入（BW09：`SkillAcceptancePort` 由 Assurance 后继实现替换 `PendingAssuranceAcceptance`）。Host 侧接线入口：`RuntimePlaneService(runtime).handle(HostRequest, caller)`（`simple_harness.api`），Host 需提供 `ArpPorts.artifacts`（认证 artifact 读口）与 `ArpPorts.script_runner`。
 4. 每片：测试先行 → 定向测试 → legacy `tests/agents` 与 `tests/execution` 各跑一次对比基线 → 独立核验（子代理用 opus 5.5，禁 fable；≤2 轮，只报阻断级）→ 中文记录 → 提交 → 更新本文件。
 5. 交付时更新 `ARCHITECTURE/`（AGENT_HARNESS / PROJECT_STATUS）并重生成 `scripts/verify_development_handoff.py` 的 SDK 清单。
 
