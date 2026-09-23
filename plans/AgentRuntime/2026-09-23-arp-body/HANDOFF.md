@@ -9,15 +9,16 @@
 | 盘点 | 完成 | `0c6e853f` | `00-父源盘点.md` |
 | RP-A 合同 / 规则 / v11 迁移 / Store / 创建链 / 工厂 | 完成 | `7211546d` | `00-父源盘点.md` §5 |
 | RP-B Context 装填 / 计量 / 分区索引 / 检索 / 召回 | 完成 | `35a4b67a` | `01-RP-B-上下文计量索引召回实施记录.md` |
+| RP-B 收尾：模型侧检索工具 / tick / 委派走创建服务 | 完成 | 见 git log | `02-RP-B收尾-检索工具-tick-委派实施记录.md` |
 | RP-C 统一目录 / Skill / Tool | 未开始 | | |
 | RP-D 生命周期 / Host verbs / GC / retention | 未开始 | | |
 | RP-E 统一验收 + Assurance 接入（BW09） | 未开始，等 Assurance 线完成 | | |
 
 ## 怎么继续
 
-1. 进 worktree：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-arp`，SDK 在 `sdk/simple-harness-sdk`，跑测试用 `uv run --frozen python -m pytest tests/agents/arp -q`（应 256 passed）。
+1. 进 worktree：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-arp`，SDK 在 `sdk/simple-harness-sdk`，跑测试用 `uv run --frozen python -m pytest tests/agents/arp -q`（应 261 passed）。
 2. 主仓库 `simple_harness` 上有他人未提交的 Assurance 文件，不要碰；本分支不向公开仓库推送。
-3. 下一片先做 `01-…实施记录.md` §5 的前三项（模型侧检索工具接线、tick 卸载 embedding、delegate 走创建服务），再开 RP-C。
+3. 下一片开 RP-C（统一目录 / Skill / Tool）；RP-B §5 剩余项与 02 记录 §5 一起排在 RP-D。
 4. 每片：测试先行 → 定向测试 → legacy `tests/agents` 与 `tests/execution` 各跑一次对比基线 → 独立核验（子代理用 opus 5.5，禁 fable；≤2 轮，只报阻断级）→ 中文记录 → 提交 → 更新本文件。
 5. 交付时更新 `ARCHITECTURE/`（AGENT_HARNESS / PROJECT_STATUS）并重生成 `scripts/verify_development_handoff.py` 的 SDK 清单。
 
