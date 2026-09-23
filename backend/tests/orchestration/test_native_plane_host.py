@@ -70,6 +70,26 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         pool = service._orchestrator.assembled.pool("deepseek-native-256k-v1")
         assert pool.runtime.arp.protocol == "ARP_V1_1_1" and pool.bridge.native_plane is True
         assert service._orchestrator.assembled.pool("default").bridge.native_plane is False
+        # Each pool has its own Assurance acceptance reader, bound to that pool's own Skill
+        # lifecycle and to the orchestrator store (review finding: a shared reader answered
+        # for the last pool built).
+        readers = service._native.acceptances
+        assert set(readers) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1"}
+        for profile_id, reader in readers.items():
+            assert reader.store is service._orchestrator.store
+            assert reader.dispatches.__self__ is service._orchestrator.assembled.pool(profile_id).runtime.arp.lifecycle
+        # The deployment authorization port allows the deployment's tools and the Assurance
+        # reviewers' read-only evidence tools, and denies everything else by policy name.
+        from types import SimpleNamespace
+
+        from simple_harness.runtime.ports import AuthorizationRequest
+        port = service._native.authorization
+
+        async def decision(name: str) -> str:
+            return (await port.request_authorization(AuthorizationRequest(SimpleNamespace(name=name, arguments={}), run_id="r"))).decision
+        assert await decision("workspace_read_file") == "allow"
+        assert await decision("assurance_find_evidence") == "allow" and await decision("assurance_read_evidence") == "allow"
+        assert await decision("shell_exec") == "deny"
         namespace = pool.runtime.arp.catalogue.namespace_id
         assert {p["profile_id"]: p["catalogue_namespace_id"] for p in native["profiles"]}["deepseek-native-256k-v1"] == namespace
 

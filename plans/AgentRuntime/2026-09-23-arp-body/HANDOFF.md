@@ -1,6 +1,6 @@
 # ARP-EXEC-1.1.1 主体施工交接（arp-1.1.1 分支）
 
-最后更新：2026-09-24（RP-E2 完成时；已合并 origin/main bd0f6d59 = Assurance 1.1 完成）。
+最后更新：2026-09-24（RP-E3 完成时；已合并 origin/main bd0f6d59 = Assurance 1.1 完成）。
 
 ## 当前状态
 
@@ -17,12 +17,13 @@
 | RP-D2 Host verbs typed 服务（`api/runtime_plane.py`，23 个动词 + 信封 + 命令回执） | 完成 | `20cfdccc` | `07-RP-D2-Host动词typed服务实施记录.md` |
 | RP-E1 Assurance 接入（BW09：真实 `SkillAcceptancePort`）+ 87 条验收场景对账 + 5 条补缺测试 | 完成 | `717dbeec` | `08-RP-E1-Assurance接入与验收对账实施记录.md` |
 | RP-E2 状态机随机测试小号版（6 动作 / 5 种子 × 400 步）+ 同键创建复活缺陷修复 | 完成 | `adeca07f` | `09-RP-E2-状态机随机测试实施记录.md` |
-| RP-E3 接线：编排装配层走 `build_arp_runtime`（现为 AllowAll + 旧运行时，见 `agent_orchestrator/runtime/assembly.py:585-625`）、`AgentBridge.create` 传认证调用方、DeepSeek 计数器出具 EXACT 计数认证（`MeterBinding`）、Host 提供 root/embedding/acceptance/artifacts/script_runner 五端口与评估 Mission 派发（`evaluation_mission_key`）、Host 处理器接 `RuntimePlaneService` | 未开始 | | 勘察结论见本行 |
-| RP-E4 安装后导入核对 + 真机路径 + 真实模型 12 局 | 未开始，依赖 RP-E3 | | |
+| RP-E3 接线：编排装配层 native 分支（`build_arp_runtime` + 真实授权 + 意图派生调用方）、DeepSeek EXACT 计量认证 + 先前输出储备读取器、Host 五端口（根/计量/验收读口/产物/嵌入；脚本执行器暂无）+ 原生池并列默认 ON + 控制通道 `agent_runtime_request` / 评估 Mission 两动词 + SDK 钉版 `0.13.0.dev20260924+arp.1` | 完成 | SDK `37c3a3ac`、`7308e50b`；Host `b510a60d` | `10-RP-E3-原生平面接线实施记录.md`（§5 六条遗留） |
+| RP-E4 安装后导入核对 + 真机路径 + 真实模型 12 局（4 类各 3 局，先金丝雀；日卡经本机转发需设 `deepseek_compatible_hosts`） | 未开始 | | |
 
 ## 怎么继续
 
-1. 进 worktree：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-arp`，SDK 在 `sdk/simple-harness-sdk`，跑测试用 `uv run --frozen python -m pytest tests/agents/arp -q`（应 346 passed（RP-E2 后；RP-E1 时 340））；SDK venv 需 `uv sync --extra skill-import --extra testing`。
+0. Host 侧：本 worktree 的 `backend/.venv` 已用 `uv sync --frozen --extra dev --python 3.12` 建好（钉 `0.13.0.dev20260924+arp.1`）；Host 定向测试 `cd backend && .venv/bin/python -m pytest tests/orchestration/test_native_plane_host.py -q`。改 SDK 后按 HANDOFF-2026-09-23.md §6 重钉（升两处 version.py → 提交 → `scripts/build/development_candidate.py --output ../../backend/vendor` → sdk_candidate/pyproject/uv lock → `uv sync --frozen --extra dev`）。
+1. 进 worktree：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-arp`，SDK 在 `sdk/simple-harness-sdk`，跑测试用 `uv run --frozen python -m pytest tests/agents/arp -q`（应 352 passed（RP-E3 后；RP-E2 时 346））；SDK venv 需 `uv sync --extra skill-import --extra testing`。
 2. 主仓库 `simple_harness` 上有他人未提交的 Assurance 文件，不要碰；本分支不向公开仓库推送。
 3. 下一片 RP-E：统一验收（对照规格 `implementation/sdk-cases.json` / TEST-PLAN 的用例清单，把 01–07 记录 §5 的遗留项排入）+ Assurance 接入（BW09：`SkillAcceptancePort` 由 Assurance 后继实现替换 `PendingAssuranceAcceptance`）。Host 侧接线入口：`RuntimePlaneService(runtime).handle(HostRequest, caller)`（`simple_harness.api`），Host 需提供 `ArpPorts.artifacts`（认证 artifact 读口）与 `ArpPorts.script_runner`。
 4. 每片：测试先行 → 定向测试 → legacy `tests/agents` 与 `tests/execution` 各跑一次对比基线 → 独立核验（子代理用 opus 5.5，禁 fable；≤2 轮，只报阻断级）→ 中文记录 → 提交 → 更新本文件。

@@ -22,6 +22,7 @@ from typing import Any
 
 from agent_orchestrator.runtime.assembly import OWNER_SCOPE
 from agent_orchestrator.runtime.native_plane import NativePlaneAssembly, RunPriorReserve, intent_caller
+from agent_orchestrator.runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS
 from simple_harness.agents.arp.assurance_acceptance import AssuranceSkillAcceptance
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
@@ -51,11 +52,14 @@ class DeploymentToolAuthorization:
     """The pool's real authorization port: the deployment policy decides by tool name.
 
     It is not ``AllowAll``: a tool outside ``DeploymentPolicy.allowed_tools`` is denied
-    with the policy named, and the policy identity is part of the port.
+    with the policy named, and the policy identity is part of the port.  The Assurance
+    reviewers' two read-only evidence tools are part of the policy: every role of a
+    Mission runs on the Mission's pool, and a reviewer that cannot read evidence can only
+    answer INCONCLUSIVE (the tool gateway still confines them to the reviewer role).
     """
 
     def __init__(self, allowed_tools: Sequence[str]) -> None:
-        self._allowed = frozenset(str(name) for name in allowed_tools)
+        self._allowed = frozenset(str(name) for name in allowed_tools) | frozenset(ASSURANCE_EVIDENCE_TOOLS)
         self.policy_id = "host-deployment-policy:" + digest(sorted(self._allowed))[:16]
 
     async def request_authorization(self, request: Any) -> AuthorizationResult:
@@ -159,7 +163,9 @@ class HostNativePlane:
             "policy", f"host-owner:{tenant_id}", 1,
             digest({"tenant_id": tenant_id, "authorization": self.authorization.policy_id}),
         )
-        self.acceptance = AssuranceSkillAcceptance(store=None, clock_ms=clock_ms, root_incarnation=self._root_incarnation)
+        # One acceptance reader per pool: the SDK binds a reader to the pool's own Skill
+        # lifecycle (``bind_lifecycle``), so a shared reader would answer for the last pool.
+        self.acceptances: dict[str, AssuranceSkillAcceptance] = {}
         self.embedding, self.embedding_reason = embedding_port(models_dir)
         self.embedding_ref = Pin(
             "deployment", "bge-m3-int8-local", 1,
@@ -174,7 +180,8 @@ class HostNativePlane:
 
     def bind_orchestrator(self, orchestrator: Any) -> None:
         self._orchestrator = orchestrator
-        self.acceptance.store = orchestrator.store
+        for acceptance in self.acceptances.values():
+            acceptance.store = orchestrator.store
 
     def _root_incarnation(self) -> Any:
         gate = getattr(self._orchestrator, "_assurance_root_gate", None)
@@ -220,6 +227,10 @@ class HostNativePlane:
     def assembly(self, profile_id: str, *, tokens: int, counter: Any, output_tokens: int = NATIVE_OUTPUT_TOKENS) -> NativePlaneAssembly:
         reader = RunPriorReserve()
         self.readers[profile_id] = reader
+        acceptance = AssuranceSkillAcceptance(store=None, clock_ms=self.clock_ms, root_incarnation=self._root_incarnation)
+        if self._orchestrator is not None:
+            acceptance.store = self._orchestrator.store
+        self.acceptances[profile_id] = acceptance
         meter = self._meter_factory(counter, input_limit_tokens=tokens, max_output_tokens=output_tokens, prior_reserve=reader)
         root_id = f"host:{self.tenant_id}:{profile_id}"
         # The SDK derives the catalogue namespace from the session root and the pool's
@@ -263,7 +274,7 @@ class HostNativePlane:
                 root_dir=root.directory, profile=profile, activation_receipt=activation, clock_ms=self.clock_ms,
                 meter=meter, embedding=self.embedding,
                 embedding_resource_ref=None if self.embedding is None else self.embedding_ref,
-                acceptance=self.acceptance, artifacts=self.artifacts,
+                acceptance=acceptance, artifacts=self.artifacts,
                 # No approved script executor is bound in this slice: SCRIPT skills are
                 # refused by name (RUNNER_UNAVAILABLE); the sandbox executor is async and
                 # a sync adapter is RP-E follow-up work.
