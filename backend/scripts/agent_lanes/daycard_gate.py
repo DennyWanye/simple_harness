@@ -22,6 +22,7 @@ client sends and is only passed through.
 from __future__ import annotations
 
 import http.client
+import json
 import os
 import random
 import sys
@@ -35,10 +36,16 @@ TOTAL_SLOTS = int(os.environ.get("DAYCARD_TOTAL_SLOTS", "1"))
 BATCH_SLOTS = int(os.environ.get("DAYCARD_BATCH_SLOTS", "1"))
 UPSTREAM_RETRIES = 120
 BATCH_MAX_WAIT = float(os.environ.get("DAYCARD_BATCH_MAX_WAIT", "40"))
-PORTS = {"dev": 28182, "batch": 28181}
+PORTS = {"dev": int(os.environ.get("DAYCARD_DEV_PORT", "28182")), "batch": int(os.environ.get("DAYCARD_BATCH_PORT", "28181"))}
 HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "host",
        "proxy-authorization", "proxy-authenticate", "content-length", "accept-encoding"}
-HOST_ENV = Path(__file__).resolve().parents[3] / ".env"
+HOST_ENV = Path(os.environ.get("DAYCARD_HOST_ENV") or (Path(__file__).resolve().parents[3] / ".env"))
+# 2026-09-24: the upstream sometimes answers a chat completion with an *empty* stream —
+# two chunks (role, finish_reason=stop), no content, no tool call, no usage — in streaks.
+# The SDK rightly treats that as a definite failure, which then blocks the Agent's whole
+# run (its prior output stays unresolved).  It is an upstream failure mode like 429, so
+# the gate retries it the same way, invisibly, before relaying the first byte.
+EMPTY_RETRIES = int(os.environ.get("DAYCARD_EMPTY_RETRIES", "1"))
 
 
 def upstream_origin() -> tuple[str, str, int]:
@@ -94,6 +101,47 @@ def log(text: str) -> None:
     sys.stderr.flush()
 
 
+def _sse_payload(buffer: bytes) -> tuple[bool, bool]:
+    """(has_payload, ended) for a buffered event-stream prefix: payload = any delta content /
+    reasoning_content / tool_calls or a usage object; ended = ``data: [DONE]`` seen."""
+    has, ended = False, False
+    for raw in buffer.split(b"\n"):
+        line = raw.strip()
+        if not line.startswith(b"data:"):
+            continue
+        data = line[5:].strip()
+        if data == b"[DONE]":
+            ended = True
+            continue
+        try:
+            value = json.loads(data)
+        except ValueError:
+            continue
+        if not isinstance(value, dict):
+            continue
+        if value.get("usage"):
+            has = True
+        for choice in value.get("choices") or []:
+            delta = (choice.get("delta") or {}) if isinstance(choice, dict) else {}
+            if delta.get("content") or delta.get("reasoning_content") or delta.get("tool_calls"):
+                has = True
+    return has, ended
+
+
+def _json_empty(body: bytes) -> bool:
+    try:
+        value = json.loads(body)
+    except ValueError:
+        return False
+    if not isinstance(value, dict) or value.get("usage"):
+        return False
+    choices = value.get("choices") or []
+    if not choices or not isinstance(choices[0], dict):
+        return False
+    message = choices[0].get("message") or {}
+    return not (message.get("content") or message.get("tool_calls") or message.get("reasoning_content"))
+
+
 def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
     scheme, host, port = origin
     factory = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
@@ -108,17 +156,49 @@ def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
             headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
             slots.acquire(klass)
             started = time.time()
-            status, conn = 0, None
+            status, conn, empty_retries = 0, None, 0
             try:
                 for attempt in range(1, UPSTREAM_RETRIES + 1):
                     conn = factory(host, port, timeout=1800)
                     conn.request(self.command, self.path, body=body, headers=headers)
                     resp = conn.getresponse()
-                    if resp.status not in (429, 502, 503) or attempt == UPSTREAM_RETRIES:
-                        break
-                    resp.read()
-                    conn.close()
-                    time.sleep(5 + random.random() * 3)  # someone outside the gate holds a slot
+                    if resp.status in (429, 502, 503) and attempt < UPSTREAM_RETRIES:
+                        resp.read()
+                        conn.close()
+                        time.sleep(5 + random.random() * 3)  # someone outside the gate holds a slot
+                        continue
+                    # Hold back the first bytes of a 200 until they prove a real completion.
+                    prefix, streaming, exhausted = b"", False, False
+                    if resp.status == 200 and self.command == "POST":
+                        ctype = (resp.getheader("Content-Type") or "").split(";", 1)[0].strip()
+                        streaming = ctype == "text/event-stream"
+                        while True:
+                            chunk = resp.read1(65536)
+                            if not chunk:
+                                exhausted = True
+                                break
+                            prefix += chunk
+                            if streaming:
+                                has, ended = _sse_payload(prefix)
+                                if has or ended or len(prefix) > 262144:
+                                    break
+                            elif len(prefix) > 4194304:
+                                break
+                        if streaming:
+                            has, _ended = _sse_payload(prefix)
+                            empty = not has
+                        else:
+                            if not exhausted:
+                                prefix += resp.read()
+                                exhausted = True
+                            empty = _json_empty(prefix)
+                        if empty and empty_retries < EMPTY_RETRIES:
+                            empty_retries += 1
+                            conn.close()
+                            log(f"{klass} empty completion from upstream; retry {empty_retries}/{EMPTY_RETRIES}")
+                            time.sleep(2 + random.random() * 3)
+                            continue
+                    break
                 status = resp.status
                 self.send_response(status)
                 for k, v in resp.getheaders():
@@ -126,7 +206,10 @@ def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
                         self.send_header(k, v)
                 self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
-                while True:
+                if prefix:
+                    self.wfile.write(f"{len(prefix):x}\r\n".encode() + prefix + b"\r\n")
+                    self.wfile.flush()
+                while not exhausted:
                     chunk = resp.read1(65536)
                     if not chunk:
                         break
@@ -151,7 +234,7 @@ def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
                 if conn is not None:
                     conn.close()
                 slots.release(klass)
-            log(f"{klass} {self.command} {self.path} {status} queued={started - arrived:.0f}s took={time.time() - started:.0f}s")
+            log(f"{klass} {self.command} {self.path} {status} queued={started - arrived:.0f}s took={time.time() - started:.0f}s empty_retries={empty_retries}")
 
         do_POST = _relay
         do_GET = _relay

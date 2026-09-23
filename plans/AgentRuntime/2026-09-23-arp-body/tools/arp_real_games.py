@@ -32,7 +32,9 @@ from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import ArpPorts, bootstrap_root
 from simple_harness.agents.arp.profile import ProfileRefs, RuntimeProfile, default_policy
 from simple_harness.agents.arp.runtime import build_arp_runtime
+from simple_harness.agents.arp.skill_tools import SKILL_DISCOVER_TOOL_NAME, SKILL_EXECUTE_TOOL_NAME, SKILL_LOAD_TOOL_NAME, TOOL_DISCOVER_TOOL_NAME
 from simple_harness.agents.arp.strict import digest
+from simple_harness.agents.arp.tools import READ_TOOL_NAME, SEARCH_TOOL_NAME
 from simple_harness.agents.contracts import AgentTurnState
 from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.api.runtime_plane import RuntimePlaneService
@@ -51,7 +53,12 @@ ENV_FILE = Path(os.environ.get("REAL_ENV_FILE", "/Users/taiwan/PROJECTS/SimplaHa
 TOKENIZER = Path(os.environ.get("SH_TOKENIZER_PATH") or (Path.home() / "Library/Application Support/deskpet/models/deepseek-v41/tokenizer.json"))
 LIMIT, OUT = 6144, 1024            # a deliberately small window: early facts must come back through recall
 MAX_CALLS, WALL_S = 24, 1800
-CONFIG = AgentConfig(name="w", instructions="你是助手。回答尽量简短。", model_profile_ref="p")
+# Round 1 (2026-09-24): without ``tool_names`` no tool reaches the wire at all (LM03: "当前未提供
+# skill.discover / skill.load 工具").  Exposure is per Agent config, by registered tool name.
+HISTORY_TOOLS = (SEARCH_TOOL_NAME, READ_TOOL_NAME)
+SKILL_TOOLS = (SKILL_DISCOVER_TOOL_NAME, SKILL_LOAD_TOOL_NAME, SKILL_EXECUTE_TOOL_NAME, TOOL_DISCOVER_TOOL_NAME)
+CONFIG = AgentConfig(name="w", instructions="你是助手。回答尽量简短。", model_profile_ref="p", tool_names=HISTORY_TOOLS)
+SKILL_CONFIG = AgentConfig(name="w", instructions="你是助手。回答尽量简短。", model_profile_ref="p", tool_names=HISTORY_TOOLS + SKILL_TOOLS)
 
 
 def read_key() -> str:
@@ -67,7 +74,8 @@ class GameAuthorization:
     the runtime's model tools, denies everything else by name."""
 
     policy_id = "arp-real-games-policy"
-    ALLOWED = {"session_history.search", "session_history.read", "skill.discover", "skill.load", "skill.execute", "tool.discover", "tool.execute"}
+    # The runtime's builtin model tools, by their registered (underscore) names.
+    ALLOWED = {SEARCH_TOOL_NAME, READ_TOOL_NAME, SKILL_DISCOVER_TOOL_NAME, SKILL_LOAD_TOOL_NAME, SKILL_EXECUTE_TOOL_NAME, TOOL_DISCOVER_TOOL_NAME}
 
     def __init__(self) -> None:
         self.requests: list[str] = []
@@ -204,8 +212,8 @@ class Harness:
     def conn(self):  # type: ignore[no-untyped-def]
         return self.runtime.uow.database.connection
 
-    async def create(self, key: str):  # type: ignore[no-untyped-def]
-        return await self.runtime.create(CONFIG, creation_key=key, caller=trusted_caller(f"create-{key}"))
+    async def create(self, key: str, config: AgentConfig = CONFIG):  # type: ignore[no-untyped-def]
+        return await self.runtime.create(config, creation_key=key, caller=trusted_caller(f"create-{key}"))
 
     async def turn(self, agent, text: str, input_id: str, timeout: float = 600):  # type: ignore[no-untyped-def]
         receipt = await agent.submit(text, input_id=input_id)
@@ -291,7 +299,11 @@ class Harness:
 def fillers(n: int, topic_seed: str) -> list[str]:
     topics = ["今天的天气有些闷热，午后可能下雨", "咖啡店新出了燕麦拿铁，口味偏甜", "地铁二号线周末检修，改乘公交", "隔壁团队在讨论年度预算的表格格式",
               "健身房换了新的跑步机，坡度更细", "书店在做绘本展，孩子们很喜欢", "小区门口的花坛种了新的月季", "办公室的打印机又卡纸了三次"]
-    return [f"{topic_seed}闲聊第 {i} 条：{topics[i % len(topics)]}。这一条和工程约定无关，只是记录一下当天的琐事，内容较长以占用上下文窗口，" * 2 + f"编号 {i}。" for i in range(n)]
+    # Round 1 (2026-09-24) showed ~100-token fillers never push the early fact out of a
+    # 6144 window (ask turn: 1643 wire tokens of a 3439 budget, recall found nothing to do).
+    # Each filler is now ~450 tokens so the sixteen of them exceed the budget and the early
+    # groups must come back through recall.
+    return [f"{topic_seed}闲聊第 {i} 条：{topics[i % len(topics)]}。这一条和工程约定无关，只是记录一下当天的琐事，内容较长以占用上下文窗口，" * 9 + f"编号 {i}。" for i in range(n)]
 
 
 # ------------------------------------------------------------------------------------------------
@@ -307,7 +319,7 @@ async def lm01(h: Harness, game: dict) -> None:
         r = await h.turn(a, text + " 只需回复“好的”。", f"a{i}"); game["turns"].append(("A", f"a{i}", str(r.state)))
     r = await h.turn(b, fillers(1, "B")[0] + " 只需回复“好的”。", "b1"); game["turns"].append(("B", "b1", str(r.state)))
     before = h.context_rows()
-    ask = await h.turn(a, "我们最早约定的工程暗号是什么？那条关于审阅的约束是什么？请说明你是从哪条历史记录查到的（可用 session_history.search）。", "ask")
+    ask = await h.turn(a, "我们最早约定的工程暗号是什么？那条关于审阅的约束是什么？请说明你是从哪条历史记录查到的（可用 session_history_search 工具）。", "ask")
     game["turns"].append(("A", "ask", str(ask.state)))
     reply = ask.public_output.content if ask.public_output is not None and isinstance(ask.public_output.content, str) else ""
     game["reply"] = reply
@@ -448,15 +460,15 @@ async def lm03(h: Harness, game: dict) -> None:
     except Exception as error:  # noqa: BLE001
         bogus = {"imported": False, "refusal": f"{type(error).__name__}: {error}"[:200]}
     game["bogus_skill"] = bogus
-    a = await h.create("A")
-    r = await h.turn(a, "请先用 skill.discover 查看可用技能，再用 skill.load 加载 report-format（报告格式规范），然后严格按照它的要求写一段 80 字以内关于今天天气的报告。", "t1", timeout=900)
+    a = await h.create("A", SKILL_CONFIG)
+    r = await h.turn(a, "请先用 skill_discover 查看可用技能，再用 skill_load 加载 report-format（报告格式规范），然后严格按照它的要求写一段 80 字以内关于今天天气的报告。", "t1", timeout=900)
     game["turns"].append(("A", "t1", str(r.state)))
     reply = r.public_output.content if r.public_output is not None and isinstance(r.public_output.content, str) else ""
     game["reply"] = reply
     uses = [dict(x) for x in h.conn.execute("SELECT * FROM arp_skill_uses").fetchall()]
     loads_before = len(uses)
     runtime.arp.lifecycle.suspend({"schema_version": 1, "skill_ref": revision.pin.to_json(), "reason": "验收：暂停后必须拒绝"}, caller=trusted_caller("host"), command_id="s1")
-    r2 = await h.turn(a, "请再次用 skill.load 加载 report-format，并只告诉我它现在是否可用、返回了什么错误码。", "t2", timeout=900)
+    r2 = await h.turn(a, "请再次用 skill_load 加载 report-format，并只告诉我它现在是否可用、返回了什么错误码。", "t2", timeout=900)
     game["turns"].append(("A", "t2", str(r2.state)))
     reply2 = r2.public_output.content if r2.public_output is not None and isinstance(r2.public_output.content, str) else ""
     game["reply_after_suspend"] = reply2
@@ -542,9 +554,15 @@ async def run_game(name: str, round_: int, out: Path, key: str) -> dict:
         else:
             await asyncio.wait_for(GAMES[name](h, game), timeout=WALL_S)
         game["invariants"] = h.invariants(game.get("agents", {}))
-        game["mechanism_failure"] = None
+        game["mechanism_failure"] = None; game["provider_failure"] = None
     except Exception as error:  # noqa: BLE001 - a failed game is kept, never dropped
-        game["mechanism_failure"] = f"{type(error).__name__}: {error}"[:500]; game["traceback"] = traceback.format_exc()[-3000:]; game["pass"] = False
+        text = f"{type(error).__name__}: {error}"[:500]; game["traceback"] = traceback.format_exc()[-3000:]; game["pass"] = False
+        if h.failures and isinstance(error, RuntimeError) and str(error).startswith("turn "):
+            # The model/gateway failed a turn (e.g. provider_empty_response): a provider
+            # failure of the game, kept as such — not a runner mechanism failure.
+            game["provider_failure"] = text; game["mechanism_failure"] = None
+        else:
+            game["mechanism_failure"] = text
         try:
             if h.runtime is not None:
                 game["invariants"] = h.invariants(game.get("agents", {}))
@@ -574,7 +592,7 @@ async def main() -> None:
             game = await run_game(name.strip(), round_, out, key)
             slim = {k: v for k, v in game.items() if k not in ("traceback",)}
             report["games"].append(slim)
-            print(f"{name} r{round_}: pass={game.get('pass')} hard={game.get('hard_invariants_ok')} calls={(game.get('invariants') or {}).get('provider_calls')} mech={game.get('mechanism_failure')} {game.get('elapsed_s')}s", flush=True)
+            print(f"{name} r{round_}: pass={game.get('pass')} hard={game.get('hard_invariants_ok')} calls={(game.get('invariants') or {}).get('provider_calls')} mech={game.get('mechanism_failure')} provider_fail={game.get('provider_failure')} {game.get('elapsed_s')}s", flush=True)
             (out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1, default=str))
     tally = {"total": len(report["games"]), "pass": sum(1 for g in report["games"] if g.get("pass")), "hard_ok": sum(1 for g in report["games"] if g.get("hard_invariants_ok")),
              "mechanism_failures": sum(1 for g in report["games"] if g.get("mechanism_failure"))}
