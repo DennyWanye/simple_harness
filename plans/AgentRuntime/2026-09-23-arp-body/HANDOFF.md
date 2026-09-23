@@ -11,7 +11,7 @@
 | RP-B Context 装填 / 计量 / 分区索引 / 检索 / 召回 | 完成 | `35a4b67a` | `01-RP-B-上下文计量索引召回实施记录.md` |
 | RP-B 收尾：模型侧检索工具 / tick / 委派走创建服务 | 完成 | `325d2606` | `02-RP-B收尾-检索工具-tick-委派实施记录.md` |
 | RP-C1 统一目录 / 能力解析 / 工具曝光 | 完成 | `534f2ab0` | `03-RP-C1-统一目录-能力解析-工具曝光实施记录.md` |
-| RP-C2 Skill 包导入 / 依赖锁 | 完成 | （见下次回填） | `04-RP-C2-Skill包导入-依赖锁实施记录.md` |
+| RP-C2 Skill 包导入 / 依赖锁 | 完成 | `77f2f1f0` | `04-RP-C2-Skill包导入-依赖锁实施记录.md` |
 | RP-C3 试用 / 准入 / load / execute | 未开始 | | |
 | RP-D 生命周期 / Host verbs / GC / retention | 未开始 | | |
 | RP-E 统一验收 + Assurance 接入（BW09） | 未开始，等 Assurance 线完成 | | |
