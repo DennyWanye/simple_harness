@@ -1,0 +1,513 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+
+"""Deployment policy and the permission intersection (§21.1–21.3, theory 13-14,
+ORCH-BUILD §8.2 ``runtime/tool_gateway.py, governance/*`` row, plan D6-7).
+
+The tools an Agent may call are the intersection of four sources — the Mission charter,
+the Task Contract, the Role template and the deployment policy.  Every source can only
+narrow the set; none of them, and no text a model produces, can widen it ("外部内容不能
+改变系统权限", §21.3).  The intersection is computed when the Attempt is dispatched and
+frozen into the dispatch intent; the Tool Gateway enforces it again on every call.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any
+
+from ..contracts.models import STEP2_IMPLEMENTED_LAYERS
+from ..runtime.tool_gateway import TOOL_NAMES
+
+POLICY_VERSION = "deployment-policy-v1"
+CODE_EXECUTION_MODES = ("off", "sandboxed", "process_only")  # P3.2 plan v3 D2
+
+
+@dataclass(frozen=True, slots=True)
+class DeploymentPolicy:
+    """What this deployment allows at all (the fourth side of the intersection)."""
+
+    allowed_tools: tuple[str, ...] = TOOL_NAMES
+    agentdojo_tools: tuple[str, ...] = field(default=(), kw_only=True)
+    are_tools: tuple[str, ...] = field(default=(), kw_only=True)
+    domain_tools: tuple[str, ...] = field(default=(), kw_only=True)
+    domain_read_only_tools: tuple[str, ...] = field(default=(), kw_only=True)
+    operator_tool_allowlists: tuple[tuple[str, tuple[str, ...]], ...] = field(default=(), kw_only=True)
+    require_operator_tool_policy: bool = field(default=False, kw_only=True)
+    denied_path_prefixes: tuple[str, ...] = ()  # workspace paths no Agent may read or write
+    # step 7 (D7-3): real actions — which connectors this deployment enables, the highest
+    # level it will run at all, per-operation level overrides (only ever *raise* a level),
+    # whether an L3 double approval needs two different people (this build's deployment
+    # convention, not an original rule), and how long an approval stays valid
+    enabled_connectors: tuple[str, ...] = ()  # D7-3': off unless a deployment enables one
+    # New Operation deployments may explicitly enable journalled event writes.
+    # Historical deployments keep their original state-only permission and bytes.
+    enabled_event_operations: tuple[str, ...] = field(default=(), kw_only=True)
+    max_action_level: str = "L3"
+    level_overrides: tuple[tuple[str, str], ...] = ()  # (("connector.operation", "L3"), ...)
+    l3_distinct_principals: bool = True
+    approval_ttl_seconds: float = 24 * 3600.0
+    max_action_handoffs_per_mission: int = 8  # D7-5': the hard cap under the Mission budget
+    connector_timeout_seconds: float = 30.0
+    # step 9 (plan D9-9): the least time between two policy promotions / rollbacks'
+    # successors — frequent changes are bounded; a rollback itself is never held
+    policy_cooldown_seconds: float = 600.0
+    # host support 0.9.8 (Host plan 2026-09-11 §3.1, plan review P0-1): False = no
+    # model-written code runs on this machine — ``code_test`` is not a deployed layer,
+    # ``pytest:`` criteria are refused, conflicts wait (DEFERRED) and ``run_tests`` is
+    # refused.  True keeps every earlier deployment exactly as it was.
+    local_code_execution: bool = True
+    # P3.2 (plan v3 D2): how model-written code runs here — "off" (never), "sandboxed" (the
+    # seatbelt executor, only after its probe passed) or "process_only" (a child process,
+    # not isolated; the SDK default so every earlier deployment keeps running as it did).
+    # None = derived from ``local_code_execution`` (True → process_only, False → off).
+    code_execution: str | None = None
+
+    def __post_init__(self) -> None:
+        if type(self.require_operator_tool_policy) is not bool:
+            raise ValueError("operator tool policy requirement must be boolean")
+        operator_ids = [name for name, _ in self.operator_tool_allowlists]
+        if (len(operator_ids) != len(set(operator_ids))
+                or any(not name or not set(names) <= set(self.allowed_tools)
+                       for name, names in self.operator_tool_allowlists)):
+            raise ValueError("operator tool policy must uniquely narrow deployment tools")
+        if (len(set(self.enabled_event_operations)) != len(self.enabled_event_operations)
+                or any(not isinstance(name, str) or len(name.split(".")) != 2
+                       or not all(name.split(".")) or name.split(".")[0] not in self.enabled_connectors
+                       for name in self.enabled_event_operations)):
+            raise ValueError("event operations must explicitly name enabled connector.operation pairs")
+        if set(self.agentdojo_tools) & set(TOOL_NAMES):
+            raise ValueError("AgentDojo tools cannot replace SDK tools")
+        if set(self.are_tools) & (set(TOOL_NAMES) | set(self.agentdojo_tools)):
+            raise ValueError("ARE tools cannot replace SDK or AgentDojo tools")
+        if set(self.domain_tools) & (set(TOOL_NAMES) | set(self.agentdojo_tools) | set(self.are_tools)):
+            raise ValueError("domain tools cannot replace existing tools")
+        if not set(self.domain_read_only_tools) <= set(self.domain_tools):
+            raise ValueError("read-only domain tools must be deployed")
+        unknown = (
+            set(self.allowed_tools) - set(TOOL_NAMES)
+            - set(self.agentdojo_tools) - set(self.are_tools) - set(self.domain_tools)
+        )
+        if unknown:
+            raise ValueError(f"deployment policy names unknown tools: {sorted(unknown)}")
+        mode = self.code_execution
+        if mode is None:
+            object.__setattr__(
+                self, "code_execution", "process_only" if self.local_code_execution else "off"
+            )
+        elif mode not in CODE_EXECUTION_MODES:
+            raise ValueError(f"code_execution must be one of {list(CODE_EXECUTION_MODES)}")
+        elif mode == "off":
+            object.__setattr__(self, "local_code_execution", False)
+        elif not self.local_code_execution:
+            raise ValueError(f"local_code_execution=False contradicts code_execution={mode!r}")
+        if not self.local_code_execution and "run_tests" in self.allowed_tools:
+            raise ValueError(
+                "local_code_execution=False contradicts allowed_tools containing run_tests"
+            )
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "allowed_tools": list(self.allowed_tools),
+            **({"operator_tool_allowlists": {name: list(names) for name, names in self.operator_tool_allowlists}}
+               if self.operator_tool_allowlists else {}),
+            **({"require_operator_tool_policy": True} if self.require_operator_tool_policy else {}),
+            **({"agentdojo_tools": list(self.agentdojo_tools)} if self.agentdojo_tools else {}),
+            **({"are_tools": list(self.are_tools)} if self.are_tools else {}),
+            **({"domain_tools": list(self.domain_tools), "domain_read_only_tools": list(self.domain_read_only_tools)} if self.domain_tools else {}),
+            "denied_path_prefixes": list(self.denied_path_prefixes),
+            "enabled_connectors": list(self.enabled_connectors),
+            **({"enabled_event_operations": list(self.enabled_event_operations)} if self.enabled_event_operations else {}),
+            "max_action_level": self.max_action_level,
+            "level_overrides": [list(item) for item in self.level_overrides],
+            "l3_distinct_principals": self.l3_distinct_principals,
+            "approval_ttl_seconds": self.approval_ttl_seconds,
+            "max_action_handoffs_per_mission": self.max_action_handoffs_per_mission,
+            "connector_timeout_seconds": self.connector_timeout_seconds,
+            "policy_cooldown_seconds": self.policy_cooldown_seconds,
+            "local_code_execution": self.local_code_execution,
+            "code_execution": self.code_execution,
+            "version": POLICY_VERSION,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ActionDecision:
+    """What the policy says about one candidate action (plan D7-3)."""
+
+    level: str
+    required_approvals: int
+    refused: str | None = None  # a reason when the deployment will not run it at all
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "level": self.level,
+            "required_approvals": self.required_approvals,
+            "refused": self.refused,
+        }
+
+
+def action_decision(deployment: DeploymentPolicy, connector: Any, operation: str) -> ActionDecision:
+    """Original §22 levels: the connector's declaration or the deployment override,
+    whichever is *higher*; an unknown operation counts as L3.  A connector that is not
+    enabled, lacks idempotency / reconciliation for L2+, or sits above the deployment's
+    ceiling is refused (ORCH §12.3)."""
+
+    from ..runtime.connectors import level_rank
+    from .permissions import required_approvals
+
+    spec = (getattr(connector, "operations", {}) or {}).get(operation)
+    level = spec.level if spec is not None else "L3"
+    override = dict(deployment.level_overrides).get(
+        f"{getattr(connector, 'name', '?')}.{operation}"
+    )
+    if override is not None and level_rank(override) > level_rank(level):
+        level = override
+    refused = None
+    if connector is None or getattr(connector, "name", None) not in deployment.enabled_connectors:
+        refused = "connector_not_enabled"
+    elif spec is None:
+        refused = "unknown_operation"
+    elif level_rank(level) >= level_rank("L2") and not (
+        getattr(connector, "supports_idempotency", False)
+        and getattr(connector, "supports_reconciliation", False)
+    ):
+        refused = "connector_without_idempotency_or_reconciliation"
+    elif (
+        level_rank(level) >= level_rank("L2")
+        and getattr(connector, "lookup_authority", "best_effort") != "authoritative"
+    ):
+        # P3.2 D7: without an authoritative lookup, a lost receipt can never be resolved
+        # except by a person — such a connector may not carry an L2 action at all
+        refused = "connector_lookup_not_authoritative"
+    elif spec.mutates and spec.kind != "state" and not (
+        spec.kind == "event"
+        and f"{connector.name}.{operation}" in deployment.enabled_event_operations
+        and getattr(connector, "supports_idempotency", False)
+        and getattr(connector, "supports_reconciliation", False)
+        and getattr(connector, "lookup_authority", "best_effort") == "authoritative"
+    ):
+        refused = "event_operation_not_supported"
+    elif level_rank(level) > level_rank(deployment.max_action_level):
+        refused = f"above_deployment_ceiling:{deployment.max_action_level}"
+    return ActionDecision(
+        level=level, required_approvals=required_approvals(level), refused=refused
+    )
+
+
+#: Tools a read-only leaf must not see.  They only rewrite existing files.
+#: ``workspace_write_file`` stays: the leaf writes its report / port output with
+#: it, and the gateway refuses writes onto files that already existed at bind.
+READ_ONLY_LEAF_HIDDEN_TOOLS = frozenset({"apply_patch", "workspace_apply_patch"})
+
+
+def effective_tools(
+    *,
+    mission_tools: Sequence[str],
+    task_tools: Sequence[str],
+    role_tools: Sequence[str],
+    deployment: DeploymentPolicy,
+    read_only_leaf: bool = False,
+) -> tuple[str, ...]:
+    """Mission ∩ Task ∩ Role ∩ Deployment, in the Role template's order (plan §6.1).
+
+    P2.3u: a ``read_only_leaf`` drops patch/apply-class tools from the frozen
+    exposure list.  ``workspace_write_file`` is kept so the leaf can still write
+    a new report; the gateway refuses rewriting files that already existed.
+    """
+
+    allowed = set(mission_tools) & set(task_tools) & set(deployment.allowed_tools)
+    names = tuple(name for name in role_tools if name in allowed)
+    if read_only_leaf:
+        names = tuple(name for name in names if name not in READ_ONLY_LEAF_HIDDEN_TOOLS
+                      and (name not in deployment.domain_tools or name in deployment.domain_read_only_tools))
+    return names
+
+
+def deployed_layers(deployment: DeploymentPolicy) -> frozenset[str]:
+    """The verification layers this deployment can run (host support 0.9.8).  Without
+    local code execution ``code_test`` is not deployed: a Task that asks for it is refused
+    as ``verification_policy_undeployed`` — never silently weakened."""
+
+    if deployment.local_code_execution:
+        return STEP2_IMPLEMENTED_LAYERS
+    return STEP2_IMPLEMENTED_LAYERS - {"code_test"}
+
+
+__all__ = (
+    "POLICY_VERSION",
+    "READ_ONLY_LEAF_HIDDEN_TOOLS",
+    "deployed_layers",
+    "SNAPSHOT_FIELDS",
+    "SNAPSHOT_VERSION",
+    "VERSION_SOURCES",
+    "policy_snapshot",
+    "snapshot_diff",
+    "ActionDecision",
+    "DeploymentPolicy",
+    "action_decision",
+    "effective_tools",
+)
+
+
+# ------------------------------------------------------------------ step 8: policy snapshot
+SNAPSHOT_VERSION = "policy-snapshot-v1"
+# plan D8-5': every OrchestratorConfig field is classified here — "include" enters the
+# snapshot, anything else is the reason it is left out.  A new field that is not listed
+# fails the snapshot test until someone decides.
+SNAPSHOT_FIELDS: dict[str, str] = {
+    "evidence_root": "excluded: a different directory for every run",
+    "owner_id": "excluded: the orchestrator replaces it by an instance name with the pid",
+    # P3.2 (plan D4): when finished Missions' directories are removed — housekeeping,
+    # never how a Mission is planned, run or verified
+    "workspace_retention_seconds": "excluded: workspace housekeeping, not a behaviour parameter",
+    # P3.2 (plan D2): a runtime object; its environment_digest enters every receipt
+    "sandbox_executor": "excluded: a runtime object (its digest is in every execution receipt)",
+    "appworld_execute": (
+        "capability: callback presence only; environment frozen in experiment manifest"
+    ),
+    "are_invoke": "capability: callback presence; no environment serialization",
+    "are_tool_schemas": "capability: public schemas frozen only when deployed",
+    "agentdojo_invoke": "capability: callback presence; no environment serialization",
+    "agentdojo_tool_schemas": "capability: public schemas frozen only when deployed",
+    "domain_tools": "capability: public schemas and read-only flags; no callback serialization",
+    "planning_backend": "capability: backend identity; no runtime object serialization",
+    **{
+        name: "include"
+        for name in (
+            "hierarchical_repair_enabled",
+            "method_selection_policy",
+            "planning_backend_limits",
+            "model",
+            "max_concurrency",
+            "max_concurrent_model_calls",
+            "candidates_per_task",
+            "max_planning_attempts",
+            "lease_seconds",
+            "sdk_lease_ttl_seconds",
+            "stall_seconds",
+            "test_timeout_seconds",
+            "default_max_output_tokens",
+            "max_output_tokens_ceiling",
+            "empty_response_retries",
+            "price_table",
+            "hard_cap_micros",
+            "planner_reserve_tokens",
+            "critic_reserve_tokens",
+            "attempt_reserve_tokens",
+            "min_task_tokens",  # P3.1 fix F-ORCH-1: shapes which graphs are accepted
+            "turn_deadline_seconds",
+            "max_model_calls_per_turn",
+            "max_tool_calls_per_turn",
+            "knowledge_sharing",
+            "on_retrieval_failure",
+            "max_retrieval_failures",
+            "max_knowledge_items",
+            "dynamic_graph",
+            "max_graph_depth",
+            "max_proposals_per_agent",
+            "max_supersede_chain",
+            "manager_after_failures",
+            "no_progress_limit",
+            "max_manager_rounds",
+            # P2.3c part 3a: how many times one requirements revision's root
+            # MISSION_FINAL review may be re-cut.  It shapes when a hierarchical
+            # Mission stops asking and takes the idle-stall path, so it is a
+            # behaviour parameter and belongs in the snapshot.
+            "max_root_review_cuts",
+            # P2.3d / defect D5-A: how many times one plan revision may answer a
+            # blocking root-review rejection by asking the Planner again.  Same reason
+            # as the line above — it decides whether a Mission repairs or stalls.
+            "max_root_review_repairs",
+            "manager_reserve_tokens",
+            "aging_window_seconds",
+            "global_budget",
+            "max_running_attempts",
+            "max_pending_dispatch",
+            "max_pending_verifications",
+            "low_watermark_ratio",
+            "reduced_concurrency_ratio",
+            "reduced_reserve_ratio",
+            "exploration_slots",
+            "verifier_workers",
+            "deployment_policy",
+            "profile_failure_threshold",
+            "profile_cooldown_seconds",
+            "profile_wait_seconds",
+            "ablations",
+            "extra",
+        )
+    },
+}
+# (snapshot key, module, attribute): the version constants of original §23.1 and theory
+# 12 §13, with where each one lives — the "source" a diff reports (S8-07)
+VERSION_SOURCES: tuple[tuple[str, str, str], ...] = (
+    ("retrieval", "agent_orchestrator.context.retrieval", "RETRIEVAL_VERSION"),
+    ("context_builder", "agent_orchestrator.context.context_builder", "CONTEXT_BUILDER_VERSION"),
+    ("summary", "agent_orchestrator.context.compression", "SUMMARY_VERSION"),
+    ("allocator", "agent_orchestrator.scheduling.allocator", "ALLOCATOR_VERSION"),
+    ("backpressure", "agent_orchestrator.scheduling.backpressure", "BACKPRESSURE_VERSION"),
+    ("model_router", "agent_orchestrator.runtime.model_router", "ROUTER_VERSION"),
+    ("verifier", "agent_orchestrator.verification.verifier_router", "VERIFIER_VERSION"),
+    ("deployment_policy", "agent_orchestrator.governance.policies", "POLICY_VERSION"),
+    ("contract_schema", "agent_orchestrator.contracts.models", "CONTRACT_SCHEMA_VERSION"),
+    ("orchestrator_schema", "agent_orchestrator.storage.schema", "SCHEMA_VERSION"),
+    ("trace", "agent_orchestrator.observability.trace", "TRACE_VERSION"),
+    ("metrics", "agent_orchestrator.observability.metrics", "METRICS_VERSION"),
+    ("agent_orchestrator", "agent_orchestrator.version", "__version__"),
+    ("simple_harness", "simple_harness.version", "__version__"),
+)
+
+
+def _plain(value: Any) -> Any:
+    import dataclasses
+    from pathlib import Path
+
+    if isinstance(value, Path):
+        return str(value)
+    if hasattr(value, "to_json") and callable(value.to_json):
+        return value.to_json()
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
+    if isinstance(value, Mapping):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_plain(v) for v in value]
+    return value
+
+
+def _provider_identity(provider: Any) -> dict[str, Any] | None:
+    """What provider ran — never its credentials (plan D8-5')."""
+
+    if provider is None:
+        return None
+    identity: dict[str, Any] = {"class": type(provider).__name__}
+    for name in ("model", "base_url"):
+        value = getattr(provider, name, None) or getattr(provider, f"_{name}", None)
+        if isinstance(value, str):
+            identity[name] = value.split("?")[0]
+    return identity
+
+
+def policy_snapshot(
+    config: Any,
+    *,
+    profiles: Mapping[str, Any] | None = None,
+    routing: Any = None,
+    connectors: Mapping[str, Any] | None = None,
+    provider: Any = None,
+) -> dict[str, Any]:
+    """Freeze where a run's behaviour comes from (plan D8-5'; original §23.1; theory 12
+    §13): every classified configuration field, every version constant with its source,
+    the role templates, profiles, routing, connectors and the provider's identity."""
+
+    import dataclasses
+    import hashlib
+    import importlib
+
+    from simple_harness.contracts import canonical_json
+
+    from ..runtime.role_templates import ROLES
+
+    fields = {f.name for f in dataclasses.fields(config)}
+    unclassified = sorted(fields - set(SNAPSHOT_FIELDS))
+    if unclassified:
+        raise ValueError(
+            f"configuration fields not classified for the policy snapshot: {unclassified}"
+        )
+    sources: dict[str, str] = {}
+    versions: dict[str, Any] = {}
+    for key, module, attribute in VERSION_SOURCES:
+        versions[key] = getattr(importlib.import_module(module), attribute)
+        sources[f"versions.{key}"] = f"{module}.{attribute}"
+    roles = {name: template.prompt_version for name, template in sorted(ROLES.items())}
+    for name in roles:
+        sources[f"role_templates.{name}"] = (
+            f"agent_orchestrator.runtime.role_templates.ROLES[{name!r}].prompt_version"
+        )
+    configuration = {
+        name: _plain(getattr(config, name))
+        for name in sorted(fields)
+        if SNAPSHOT_FIELDS.get(name) == "include"
+    }
+    # Never serialize a callback's repr (object addresses are unstable and bound
+    # objects can carry credentials). Availability still changes admission.
+    if "appworld_execute" in fields:
+        configuration["appworld_execute"] = getattr(config, "appworld_execute") is not None
+    if getattr(config, "domain_tools", None):
+        configuration["domain_tools"] = {
+            name: {"schema": tool.schema, "read_only": tool.read_only}
+            for name, tool in sorted(config.domain_tools.items())
+        }
+    if getattr(config, "planning_backend", None) is not None:
+        configuration["planning_backend"] = {"backend_id": config.planning_backend.backend_id}
+    if (getattr(config, "agentdojo_invoke", None) is not None
+            or getattr(config, "agentdojo_tool_schemas", None)):
+        configuration["agentdojo_invoke"] = getattr(config, "agentdojo_invoke", None) is not None
+        configuration["agentdojo_tool_schemas"] = getattr(config, "agentdojo_tool_schemas")
+    if (getattr(config, "are_invoke", None) is not None
+            or getattr(config, "are_tool_schemas", None)):
+        configuration["are_invoke"] = getattr(config, "are_invoke", None) is not None
+        configuration["are_tool_schemas"] = getattr(config, "are_tool_schemas")
+    for name in configuration:
+        sources[f"config.{name}"] = f"OrchestratorConfig.{name}"
+    body: dict[str, Any] = {
+        "version": SNAPSHOT_VERSION,
+        "config": configuration,
+        "excluded": {
+            n: r for n, r in sorted(SNAPSHOT_FIELDS.items())
+            if r != "include" and (
+                n not in {
+                    "agentdojo_invoke", "agentdojo_tool_schemas", "are_invoke", "are_tool_schemas"
+                } or n in configuration
+            )
+        },
+        "versions": versions,
+        "role_templates": roles,
+        "profiles": {k: _plain(v) for k, v in sorted((profiles or {}).items())},
+        "routing": None if routing is None else _plain(routing),
+        "connectors": {
+            name: {
+                "class": type(connector).__name__,
+                "operations": {
+                    k: _plain(v) for k, v in getattr(connector, "operations", {}).items()
+                },
+            }
+            for name, connector in sorted((connectors or {}).items())
+        },
+        "provider": _provider_identity(provider),
+        "sources": sources,
+    }
+    body["hash"] = hashlib.sha256(canonical_json(_plain(body)).encode("utf-8")).hexdigest()
+    return body
+
+
+def _flatten(value: Any, prefix: str = "") -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        flat: dict[str, Any] = {}
+        for key, item in value.items():
+            flat.update(_flatten(item, f"{prefix}.{key}" if prefix else str(key)))
+        return flat
+    return {prefix: value}
+
+
+def snapshot_diff(a: Mapping[str, Any], b: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Every difference between two snapshots with where it comes from (S8-07)."""
+
+    left = _flatten({k: v for k, v in a.items() if k not in {"hash", "sources"}})
+    right = _flatten({k: v for k, v in b.items() if k not in {"hash", "sources"}})
+    sources = {**dict(b.get("sources", {})), **dict(a.get("sources", {}))}
+    differences = []
+    for key in sorted(set(left) | set(right)):
+        if left.get(key) != right.get(key):
+            head = ".".join(key.split(".")[:2])
+            differences.append(
+                {
+                    "key": key,
+                    "a": left.get(key),
+                    "b": right.get(key),
+                    "source": sources.get(head) or sources.get(key) or key.split(".")[0],
+                }
+            )
+    return differences

@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "original_zip": "simpleharness-agent-runtime-plane-1.0-2026-09-22.zip",
+  "original_zip_sha256": "3343a14874676e4b7b320cf8ee1f41c422e68f856249cf88e28b9d0ab7e9f8aa",
+  "export_scope": "plan_documents_contracts_reference_sources_no_raw_test_evidence",
+  "original_manifest": "UPSTREAM-DELIVERY-MANIFEST.json",
+  "omitted": [
+    {
+      "path": "reports/REFERENCE-RESULTS.json",
+      "bytes": 1376,
+      "sha256": "6b3e9a7d07c0b9e3c71f44586f4419114b023cf89d49e6eeb8116ac0984d601a",
+      "reason": "raw_machine_report_local_only"
+    },
+    {
+      "path": "reports/reference-mutations.json",
+      "bytes": 3638,
+      "sha256": "ae796f91863a41aa9832940e7cce1a306fa69a89eb10bef42e12ab5e998ec37c",
+      "reason": "raw_machine_report_local_only"
+    }
+  ]
+}

@@ -22,6 +22,11 @@ MESSAGE_TYPES = (
     "orchestration_status",
     "mission_create",
     "mission_create_with_sources",
+    "mission_operation_completion_approve",
+    "mission_planning_answer",
+    "mission_planning_authorization",
+    "mission_operation_intent_submit",
+    "mission_operation_intent_status",
     "mission_source_register",
     "mission_source_supersede",
     "mission_source_revoke",
@@ -67,7 +72,10 @@ async def handle(
         # review P2-6: answered, never raised into the shared control socket loop
         return _error(msg_type, request_id, "invalid_request", "payload must be an object")
     body = dict(payload or {})
-    request_id = body.pop("request_id", request_id)
+    # Planning authorization has its own durable request_id. It is not the
+    # transport correlation ID and must reach the SDK issuer unchanged.
+    if msg_type != "mission_planning_authorization":
+        request_id = body.pop("request_id", request_id)
     if msg_type == "orchestration_status":
         if service is None:
             return _ok(msg_type, request_id, {"available": False, "state": "absent", "reason": "编排服务未启动"})
@@ -100,6 +108,21 @@ def _create(service: Any, body: Mapping[str, Any]) -> Any:
 
 def _create_with_sources(service: Any, body: Mapping[str, Any]) -> Any:
     return service.create_mission_with_sources(dict(body))
+
+
+def _completion_approve(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.approve_operation_completion_spec(dict(body))
+
+
+def _operation_submit(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.submit_operation_intent(dict(body))
+
+
+def _operation_status(service: Any, body: Mapping[str, Any]) -> Any:
+    if set(body) != {"intent_id"} or not _text(body, "intent_id"):
+        from .service import OrchestrationRequestError
+        raise OrchestrationRequestError("invalid_request", "需要 intent_id")
+    return service.operation_intent_status(_text(body, "intent_id"))
 
 
 def _source_register(service: Any, body: Mapping[str, Any]) -> Any:
@@ -191,6 +214,11 @@ def _support_export(service: Any, body: Mapping[str, Any]) -> Any:
 _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = {
     "mission_create": _create,
     "mission_create_with_sources": _create_with_sources,
+    "mission_operation_completion_approve": _completion_approve,
+    "mission_planning_authorization": lambda service, body: service.planning_authorization(dict(body)),
+    "mission_planning_answer": lambda service, body: service.answer_planning_question(dict(body)),
+    "mission_operation_intent_submit": _operation_submit,
+    "mission_operation_intent_status": _operation_status,
     "mission_source_register": _source_register,
     "mission_source_supersede": _source_supersede,
     "mission_source_revoke": _source_revoke,

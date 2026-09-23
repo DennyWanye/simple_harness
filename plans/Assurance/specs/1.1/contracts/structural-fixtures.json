@@ -1,0 +1,1281 @@
+[
+  {
+    "schema": "contracts/blob-pin-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "pin_id": "x",
+      "mission_id": "x",
+      "review_key": "x",
+      "object_ref": {
+        "kind": "requirements",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "blob_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "PREPARING",
+      "row_version": 1,
+      "created_at_ms": 0,
+      "released_at_ms": null,
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "last_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "pin_id": "x",
+      "mission_id": "x",
+      "review_key": "x",
+      "object_ref": {
+        "kind": "requirements",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "blob_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "PREPARING",
+      "row_version": 1,
+      "created_at_ms": 0,
+      "released_at_ms": null,
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "last_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/check-binding-v2.schema.json",
+    "valid_structural_example": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "check_spec_ref": {
+        "kind": "check_spec",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "subject_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "output_manifest_hash": null,
+      "assertion_key": "x",
+      "execution_ref": {
+        "kind": "execution_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "adapter_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "environment_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scope_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "execution_state": "SUCCEEDED",
+      "verdict": "PASS",
+      "evidence_refs": [],
+      "observed_at_ms": 0,
+      "not_after_ms": null
+    },
+    "invalid_unknown_field": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "check_spec_ref": {
+        "kind": "check_spec",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "subject_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "output_manifest_hash": null,
+      "assertion_key": "x",
+      "execution_ref": {
+        "kind": "execution_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "adapter_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "environment_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scope_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "execution_state": "SUCCEEDED",
+      "verdict": "PASS",
+      "evidence_refs": [],
+      "observed_at_ms": 0,
+      "not_after_ms": null,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/check-spec-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "checker_id": "x",
+      "checker_version": "x",
+      "implementation_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "assertion_key": "x",
+      "execution_kind": "LOCAL_RECORDED",
+      "input_schema_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "result_schema_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "scope_rule_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "environment_requirements": [],
+      "max_runtime_ms": 1
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "checker_id": "x",
+      "checker_version": "x",
+      "implementation_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "assertion_key": "x",
+      "execution_kind": "LOCAL_RECORDED",
+      "input_schema_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "result_schema_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "scope_rule_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "environment_requirements": [],
+      "max_runtime_ms": 1,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/closeout-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "root_resolution_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "completion_spec_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "NOT_READY",
+      "pending_effect_keys": [],
+      "unsettled_operation_refs": [],
+      "accounting_pending_refs": [],
+      "dangerous_work_refs": [],
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "report_ref": null,
+      "as_of_ms": 0,
+      "reasons": []
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "root_resolution_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "completion_spec_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "NOT_READY",
+      "pending_effect_keys": [],
+      "unsettled_operation_refs": [],
+      "accounting_pending_refs": [],
+      "dangerous_work_refs": [],
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "report_ref": null,
+      "as_of_ms": 0,
+      "reasons": [],
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/criterion-policy-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "scope_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "criteria": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "approval_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "adapter_version": "x"
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "scope_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "criteria": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "approval_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "adapter_version": "x",
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/disclosure-batch-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "x",
+      "batch_no": 0,
+      "previous_batch_hash": null,
+      "entries": [
+        {
+          "label": "ev-0b777803f2c8445222ca5bd0b2c306fde20b6fdcf5e959b41a1a21ba751a7dd5",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "a",
+              "revision": 1,
+              "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        }
+      ],
+      "reviewer_agent_id": "x",
+      "turn_receipt_ref": {
+        "kind": "agent_turn_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "provider_input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "visible_message_ids": [
+        "x"
+      ],
+      "delivery_receipt_ref": {
+        "kind": "disclosure_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "x",
+      "batch_no": 0,
+      "previous_batch_hash": null,
+      "entries": [
+        {
+          "label": "ev-0b777803f2c8445222ca5bd0b2c306fde20b6fdcf5e959b41a1a21ba751a7dd5",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "a",
+              "revision": 1,
+              "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        }
+      ],
+      "reviewer_agent_id": "x",
+      "turn_receipt_ref": {
+        "kind": "agent_turn_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "provider_input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "visible_message_ids": [
+        "x"
+      ],
+      "delivery_receipt_ref": {
+        "kind": "disclosure_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/host-error-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "request_id": "x",
+      "code": "NOT_FOUND",
+      "message": "x",
+      "retryable": false
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "request_id": "x",
+      "code": "NOT_FOUND",
+      "message": "x",
+      "retryable": false,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/host-response-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "view": "CURRENT",
+      "snapshot_seq": 0,
+      "root_incarnation_id": "x",
+      "sdk_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "host_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "items": [],
+      "next_cursor": null,
+      "truncated": false
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "view": "CURRENT",
+      "snapshot_seq": 0,
+      "root_incarnation_id": "x",
+      "sdk_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "host_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "items": [],
+      "next_cursor": null,
+      "truncated": false,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/host-review-request-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "review_key": "x",
+      "cursor": null,
+      "limit": 1
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "review_key": "x",
+      "cursor": null,
+      "limit": 1,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/host-review-response-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "view": "CURRENT",
+      "snapshot_seq": 0,
+      "root_incarnation_id": "x",
+      "sdk_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "host_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "review_key": "x",
+      "purpose": "TASK_CONTENT",
+      "package_ref": {
+        "kind": "review_package",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "record_ref": null,
+      "official_status": "PENDING",
+      "verdict": null,
+      "assessments": [],
+      "next_cursor": null,
+      "truncated": false,
+      "current_use": "USABLE"
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "view": "CURRENT",
+      "snapshot_seq": 0,
+      "root_incarnation_id": "x",
+      "sdk_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "host_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "review_key": "x",
+      "purpose": "TASK_CONTENT",
+      "package_ref": {
+        "kind": "review_package",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "record_ref": null,
+      "official_status": "PENDING",
+      "verdict": null,
+      "assessments": [],
+      "next_cursor": null,
+      "truncated": false,
+      "current_use": "USABLE",
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/host-snapshot-request-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "view": "CURRENT",
+      "at_event_seq": null,
+      "cursor": null,
+      "limit": 1
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "view": "CURRENT",
+      "at_event_seq": null,
+      "cursor": null,
+      "limit": 1,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/host-use-request-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "subject_ref": {
+        "kind": "requirements",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "view": "CURRENT",
+      "at_event_seq": null
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "subject_ref": {
+        "kind": "requirements",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "view": "CURRENT",
+      "at_event_seq": null,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/host-use-response-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "view": "CURRENT",
+      "snapshot_seq": 0,
+      "root_incarnation_id": "x",
+      "sdk_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "host_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "subject_ref": {
+        "kind": "requirements",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "purpose": "PLAN",
+      "decision": "USABLE",
+      "diagnostic_only": true,
+      "coverage": "COMPLETE",
+      "reason_codes": [],
+      "checked_at_ms": 0,
+      "expires_at_ms": null,
+      "certificate_ref": null
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "request_id": "x",
+      "mission_id": "x",
+      "view": "CURRENT",
+      "snapshot_seq": 0,
+      "root_incarnation_id": "x",
+      "sdk_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "host_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "subject_ref": {
+        "kind": "requirements",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "purpose": "PLAN",
+      "decision": "USABLE",
+      "diagnostic_only": true,
+      "coverage": "COMPLETE",
+      "reason_codes": [],
+      "checked_at_ms": 0,
+      "expires_at_ms": null,
+      "certificate_ref": null,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/local-check-receipt-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "check_spec_ref": {
+        "kind": "check_spec",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "subject_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "environment_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "run_nonce": "x",
+      "started_at_ms": 0,
+      "finished_at_ms": 0,
+      "execution_state": "SUCCEEDED",
+      "assertions": [],
+      "recorder_implementation_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "check_spec_ref": {
+        "kind": "check_spec",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "subject_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "environment_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "run_nonce": "x",
+      "started_at_ms": 0,
+      "finished_at_ms": 0,
+      "execution_state": "SUCCEEDED",
+      "assertions": [],
+      "recorder_implementation_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/pending-work-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "consumer": "REVIEW",
+      "work_key": "x",
+      "trigger_event_id": "x",
+      "target_epoch": 0,
+      "target_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "PENDING",
+      "row_version": 1,
+      "tries": 0,
+      "not_before_ms": 0,
+      "wait_reason": null,
+      "owner": null,
+      "lease_until_ms": null
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "consumer": "REVIEW",
+      "work_key": "x",
+      "trigger_event_id": "x",
+      "target_epoch": 0,
+      "target_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "PENDING",
+      "row_version": 1,
+      "tries": 0,
+      "not_before_ms": 0,
+      "wait_reason": null,
+      "owner": null,
+      "lease_until_ms": null,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/policy-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "mode": "assurance-exec-v1.1",
+      "max_json_bytes": 262144,
+      "max_json_depth": 64,
+      "max_formula_nodes": 512,
+      "max_criteria": 256,
+      "max_ground_literals": 10000,
+      "max_rules": 20000,
+      "format_retries": 0,
+      "statement_time_unit": "UTC_MS",
+      "require_independent_verifier": true,
+      "unknown_effect_closeout": "BLOCK",
+      "cross_mission_evidence": "EXPLICIT_EXPORT_ONLY"
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "mode": "assurance-exec-v1.1",
+      "max_json_bytes": 262144,
+      "max_json_depth": 64,
+      "max_formula_nodes": 512,
+      "max_criteria": 256,
+      "max_ground_literals": 10000,
+      "max_rules": 20000,
+      "format_retries": 0,
+      "statement_time_unit": "UTC_MS",
+      "require_independent_verifier": true,
+      "unknown_effect_closeout": "BLOCK",
+      "cross_mission_evidence": "EXPLICIT_EXPORT_ONLY",
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/restore-authorization-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "root_incarnation_id": "x",
+      "restore_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "principal_id": "x",
+      "tenant_id": "x",
+      "authorized_exact_refs": [],
+      "authority_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "not_before_ms": 0,
+      "expires_at_ms": 0,
+      "mode": "READ_ONLY_REAUTHORIZED",
+      "current_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "root_incarnation_id": "x",
+      "restore_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "principal_id": "x",
+      "tenant_id": "x",
+      "authorized_exact_refs": [],
+      "authority_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "not_before_ms": 0,
+      "expires_at_ms": 0,
+      "mode": "READ_ONLY_REAUTHORIZED",
+      "current_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/review-binding-v2.schema.json",
+    "valid_structural_example": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "x",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "round_no": 1,
+      "subject": {
+        "purpose": "METHOD_PLAN",
+        "target": {
+          "kind": "method",
+          "pin": {
+            "id": "method-1",
+            "revision": 1,
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "owner_task_ref": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "occurrence_id": null,
+        "completion_scope_ref": null,
+        "method_instance_ref": null,
+        "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output_manifest_hash": null
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_ids": [
+        "x"
+      ],
+      "mandatory_ids": [],
+      "formula": {
+        "criterion": "x"
+      },
+      "check_requirements": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "evidence_catalogue": [],
+      "producer_agent_ids": [
+        "x"
+      ],
+      "reviewer_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "context_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_policy_ref": {
+        "kind": "check_policy",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "catalogue_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "invalid_unknown_field": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "x",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "round_no": 1,
+      "subject": {
+        "purpose": "METHOD_PLAN",
+        "target": {
+          "kind": "method",
+          "pin": {
+            "id": "method-1",
+            "revision": 1,
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "owner_task_ref": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "occurrence_id": null,
+        "completion_scope_ref": null,
+        "method_instance_ref": null,
+        "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output_manifest_hash": null
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_ids": [
+        "x"
+      ],
+      "mandatory_ids": [],
+      "formula": {
+        "criterion": "x"
+      },
+      "check_requirements": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "evidence_catalogue": [],
+      "producer_agent_ids": [
+        "x"
+      ],
+      "reviewer_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "context_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_policy_ref": {
+        "kind": "check_policy",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "catalogue_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/review-invocation-v1.schema.json",
+    "valid_structural_example": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "x",
+      "ordinal": 1,
+      "reason": "INITIAL",
+      "prior_failure_receipt_ref": null,
+      "dispatch_intent_id": "x",
+      "subject_id": "x",
+      "creation_key": "x",
+      "input_id": "x",
+      "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "catalogue_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reservation_fact_ref": {
+        "kind": "reservation_fact",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "invalid_unknown_field": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "x",
+      "ordinal": 1,
+      "reason": "INITIAL",
+      "prior_failure_receipt_ref": null,
+      "dispatch_intent_id": "x",
+      "subject_id": "x",
+      "creation_key": "x",
+      "input_id": "x",
+      "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "catalogue_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reservation_fact_ref": {
+        "kind": "reservation_fact",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/review-record-binding-v2.schema.json",
+    "valid_structural_example": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "x",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "record_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "reviewer_agent_id": "x",
+      "reviewer_turn_ref": {
+        "kind": "agent_turn_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "raw_output_ref": {
+        "kind": "requirements",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "raw_output_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "codec_version": "x",
+      "consumed_check_refs": [],
+      "exposed_evidence_refs": [],
+      "evidence_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding_read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "disclosure_refs": [],
+      "invocation_ordinal": 1
+    },
+    "invalid_unknown_field": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "x",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "record_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "reviewer_agent_id": "x",
+      "reviewer_turn_ref": {
+        "kind": "agent_turn_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "raw_output_ref": {
+        "kind": "requirements",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "raw_output_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "codec_version": "x",
+      "consumed_check_refs": [],
+      "exposed_evidence_refs": [],
+      "evidence_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "binding_read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "disclosure_refs": [],
+      "invocation_ordinal": 1,
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/review-reply-v2.schema.json",
+    "valid_structural_example": {
+      "schema_version": 2,
+      "verdict": "ACCEPT",
+      "assessments": [
+        {
+          "criterion_id": "x",
+          "verdict": "PASS",
+          "evidence_ids": [],
+          "reason": "x",
+          "limitations": []
+        }
+      ],
+      "findings": []
+    },
+    "invalid_unknown_field": {
+      "schema_version": 2,
+      "verdict": "ACCEPT",
+      "assessments": [
+        {
+          "criterion_id": "x",
+          "verdict": "PASS",
+          "evidence_ids": [],
+          "reason": "x",
+          "limitations": []
+        }
+      ],
+      "findings": [],
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/success-formula-v1.schema.json",
+    "valid_structural_example": {
+      "criterion": "x"
+    },
+    "invalid_unknown_field": {
+      "criterion": "x",
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  },
+  {
+    "schema": "contracts/use-certificate-v2.schema.json",
+    "valid_structural_example": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "consumer_kind": "x",
+      "consumer_id": "x",
+      "scope_id": "x",
+      "principal_id": "x",
+      "purpose": "PLAN",
+      "truth": "TRUE",
+      "freshness": "CURRENT",
+      "availability": "READABLE",
+      "decision": "USABLE",
+      "coverage": "COMPLETE",
+      "policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "clean_support_refs": [],
+      "issued_at_ms": 0,
+      "not_after_ms": null,
+      "reasons": [],
+      "mission_epoch": 0,
+      "environment_epoch": 0,
+      "clock_generation": 0,
+      "root_incarnation_id": "x"
+    },
+    "invalid_unknown_field": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "consumer_kind": "x",
+      "consumer_id": "x",
+      "scope_id": "x",
+      "principal_id": "x",
+      "purpose": "PLAN",
+      "truth": "TRUE",
+      "freshness": "CURRENT",
+      "availability": "READABLE",
+      "decision": "USABLE",
+      "coverage": "COMPLETE",
+      "policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "clean_support_refs": [],
+      "issued_at_ms": 0,
+      "not_after_ms": null,
+      "reasons": [],
+      "mission_epoch": 0,
+      "environment_epoch": 0,
+      "clock_generation": 0,
+      "root_incarnation_id": "x",
+      "__unknown__": true
+    },
+    "purpose": "REFERENCE_SHAPE_NOT_REAL_AUTHORITY"
+  }
+]

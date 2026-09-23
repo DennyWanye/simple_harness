@@ -1,0 +1,108 @@
+# F01–F15 逐项处置
+
+**所有状态为 RESOLVED_IN_SPEC；不是 SDK_VERIFIED。**普通本地映射/现有函数命名/真实迁移编号属于实施选择。没有以缺少未来测试作为开工阻塞。
+
+## F01 — RESOLVED_IN_SPEC
+**确定方案：**复用现有scoped/root/composition/OCC，热文件单owner；S01–S26按当前18文件excerpt重新分区。
+**已修改资产：**§§1–2；implementation/integration-map.json、seams.json、source-map.seed.json
+**具名反例：**已有cut和ensure同时派两次Review；只有AST不证明接线。
+**规格关闭判据：**每purpose唯一生产/消费owner，实际source核对在AS-0，不要求SDK先PASS。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F02 — RESOLVED_IN_SPEC
+**确定方案：**新增内部专用Ref kind和原事件桥，不改公共TypedRef；真实reserve与turn在各自发生后引用。
+**已修改资产：**§3；common.schema.json、ref-resolution-map.json、six-purpose-fixtures.json
+**具名反例：**错kind/body/collector；已结算reserve被用于新调用。
+**规格关闭判据：**六purpose结构可编码，每字段有resolver/body/revision/归属；实际来源测试在实现后。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F03 — RESOLVED_IN_SPEC
+**确定方案：**review_key+完整exact ref生成稳定标签，持久曝光批次绑定实际Provider输入。
+**已修改资产：**§4；disclosure-batch-v1、protocol_v11.py、CatalogueTests
+**具名反例：**同id双版本、未披露标签、冲突追加、旧raw冷重放。
+**规格关闭判据：**标签可逆定位精确引用，追加不重写旧输入，不以目录当披露。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F04 — RESOLVED_IN_SPEC
+**确定方案：**批准的SEMANTIC/CHECKED政策；真实CheckResult三值与OR-of-AND，局部真实recorder。
+**已修改资产：**§5；criterion-policy、local-check-receipt、TypedCheckTests
+**具名反例：**纯语义无check误拒；真实FAIL被混成UNKNOWN；布尔假PASS。
+**规格关闭判据：**正文真值表与纯oracle一致，旧required checks不丢、unknown不降级。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F05 — RESOLVED_IN_SPEC
+**确定方案：**一个round一个Package多个有序invocation，沿实际service intent/预算/collector。
+**已修改资产：**§6；review-invocation、SQL、six-purpose-fixtures
+**具名反例：**重复通知重预留、第二轮撞unique subject、UNKNOWN当格式重试。
+**规格关闭判据：**实际新profile旧入口均guard，同库原子/跨库导入分开。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F06 — RESOLVED_IN_SPEC
+**确定方案：**原judge成功写段提取唯一final writer；root fulfilled与operational closeout分开，选定pending通知。
+**已修改资产：**§7；integration-map terminal、closeout SQL、Sdk F06
+**具名反例：**直调旧judge释放UNKNOWN hold；root保存后进程退出。
+**规格关闭判据：**任一终态入口不绕closeout，原事件/receipt/通知意图同事务。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F07 — RESOLVED_IN_SPEC
+**确定方案：**明确选择恢复隔离＋当前精确重新授权，不假装旧备份带最新撤权。
+**已修改资产：**§10；restore-authorization-v1、ReadsetRestoreTests、V13修订
+**具名反例：**t0备份→t1撤权→t2恢复；原库丢失/部分库。
+**规格关闭判据：**无当前权威只有非披露诊断，新read grant不复活旧执行。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F08 — RESOLVED_IN_SPEC
+**确定方案：**源writer完整列表、本Mission聚合/global epoch、精确读集及原tick时间唤醒。
+**已修改资产：**§8；integration-map、queries、canonical_read_set
+**具名反例：**新增反证未动旧正证；无业务事件时过期；clock回退。
+**规格关闭判据：**写时barrier、使用时证书复核，有界重算且无假连续监测。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F09 — RESOLVED_IN_SPEC
+**确定方案：**cursor表示已持久入pending；prepare事务外；效果/receipt/ACK另一个短事务。
+**已修改资产：**§9；pending SQL、CursorPendingTests
+**具名反例：**预算堵塞阻后续撤回；先ACK后崩溃；已有receipt却不ACK。
+**规格关闭判据：**相关事件不丢、不重复实质效果，自己状态事件不循环。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F10 — RESOLVED_IN_SPEC
+**确定方案：**独立持久creation discriminator；完整验收后新factory同交付默认ON。
+**已修改资产：**§11；creation SQL、determine_lane、BODY-WIRED
+**具名反例：**新lane丢binding误当legacy；完整做完仍等额外操作人批准。
+**规格关闭判据：**旧活动Mission不静默换；默认ON不解除TaskGraph未完门。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F11 — RESOLVED_IN_SPEC
+**确定方案：**DDL加initial/delete/replace/同Mission Review约束，并明确Store承担语义源真实性。
+**已修改资产：**§12；assurance_additive.sql、SqlBypassTests
+**具名反例：**初始FINALIZED、DELETE/REPLACE后倒退、无review BOUND。
+**规格关闭判据：**三个原反例及REPLACE/跨Mission变体被实际SQLite拒绝。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F12 — RESOLVED_IN_SPEC
+**确定方案：**共享schema唯一源；字段映射用pointer+resolved hash；校验器查结构内容而不只数数量。
+**已修改资产：**§12.1；schema_support/check_plan、field/sql maps、AssetConsistencyTests
+**具名反例：**nested kind增删；重复channel/key异hash；空authors。
+**规格关闭判据：**变更必被一致性/语义测试检测，限制先到明确失败，不截断COMPLETE。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F13 — RESOLVED_IN_SPEC
+**确定方案：**采用当前underscore Host verbs和真实文件，隔离wheel/venv/userdata/端口原生验证。
+**已修改资产：**§13；host schemas、prepare_native_manifest、C07
+**具名反例：**SDK候选未加载；同version不同bytes；脚本代替实际点击。
+**规格关闭判据：**全request/response/error与各页面状态清楚；runtime证据和点击必须另验。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F14 — RESOLVED_IN_SPEC
+**确定方案：**先主体与真实跨层接线，期间只阻塞microchecks；之后集中验收和architecture回写。
+**已修改资产：**§14；BODY-WIRED、TEST-MAP
+**具名反例：**先mock validity为True宣告接受链完成；每片循环批量测试。
+**规格关闭判据：**BODY_WIRED按实际边，DoD更新ARCHITECTURE/PROJECT_STATUS与相对证据索引。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。
+
+## F15 — RESOLVED_IN_SPEC
+**确定方案：**66/OCC12每条MUST具体owner/断言；C08离线；四场景三次单列固定oracle/budget。
+**已修改资产：**§15；inherited/occ coverage、model-scenarios
+**具名反例：**只写OPS负责；stub provider当真模型；挑成功12局。
+**规格关闭判据：**全部继承可追踪，12预登记trial按oracle判定，独立代码审查另列NOT_RUN。
+**生产验证：** PENDING_SDK_EXECUTION；实际当前dirty字节、Host/native/model和独立代码核验未运行。

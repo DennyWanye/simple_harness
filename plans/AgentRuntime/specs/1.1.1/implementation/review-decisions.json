@@ -1,0 +1,82 @@
+[
+  {
+    "id": "R1",
+    "status": "RESOLVED_SPEC",
+    "decision": "DRAINING/PURGING+typed PurgeProgress.blocking；destroy identity粘滞，普通rebuild永不可复活；真实观察后原identity恢复",
+    "assets": [
+      "implementation/JOBS-LIFECYCLE.md",
+      "contracts/runtime-plane.schema.json",
+      "sql/execution_additive.sql",
+      "reference/purge_rules.py",
+      "tests/test_review_r1_r5.py"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "reference_tests": "tests.test_review_r1_r5",
+    "independent_review": "NOT_RUN",
+    "source": "inputs/REVIEW-ARP-1.1-R1-R5.zh-CN.md"
+  },
+  {
+    "id": "R2",
+    "status": "RESOLVED_SPEC",
+    "decision": "一张优先级真值表：扫描/缺coverage→PARTIAL；最终complete词法→LEXICAL_ONLY；完整hybrid/exact真零→COMPLETE_EMPTY；全query与page分开",
+    "assets": [
+      "implementation/CONTEXT-SEARCH.md",
+      "implementation/FIELD-CONTRACTS.md",
+      "reference/retrieval_status.py",
+      "reference/schema_codec.py",
+      "contracts/runtime-plane.schema.json",
+      "tests/test_review_r1_r5.py"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "reference_tests": "tests.test_review_r1_r5",
+    "independent_review": "NOT_RUN",
+    "source": "inputs/REVIEW-ARP-1.1-R1-R5.zh-CN.md"
+  },
+  {
+    "id": "R3",
+    "status": "RESOLVED_SPEC",
+    "decision": "系统内部ContextRecallRequest/Progress/Checkpoint/Result；冻结highwater/exclusions/prepare key；同query全扫描、页聚合、原embeddingcall恢复；manifest引用aggregate",
+    "assets": [
+      "implementation/CONTEXT-RECALL.md",
+      "implementation/INTERFACES.md",
+      "reference/context_recall.py",
+      "sql/execution_additive.sql",
+      "sql/session_partition.sql",
+      "contracts/runtime-plane.schema.json",
+      "tests/test_review_r1_r5.py"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "reference_tests": "tests.test_review_r1_r5",
+    "independent_review": "NOT_RUN",
+    "source": "inputs/REVIEW-ARP-1.1-R1-R5.zh-CN.md"
+  },
+  {
+    "id": "R4",
+    "status": "RESOLVED_SPEC",
+    "decision": "每路topK与最终RRF使用同五元组stable key",
+    "assets": [
+      "implementation/CONTEXT-SEARCH.md",
+      "reference/search_scan.py",
+      "reference/runtime_rules.py",
+      "tests/test_review_r1_r5.py"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "reference_tests": "tests.test_review_r1_r5",
+    "independent_review": "NOT_RUN",
+    "source": "inputs/REVIEW-ARP-1.1-R1-R5.zh-CN.md"
+  },
+  {
+    "id": "R5",
+    "status": "RESOLVED_SPEC",
+    "decision": "新配置超过256行/16逻辑游标/500ms页/30s查询直接拒绝；K每路/M融合/F装填分开",
+    "assets": [
+      "implementation/CONTEXT-SEARCH.md",
+      "contracts/runtime-plane.schema.json",
+      "tests/test_review_r1_r5.py"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "reference_tests": "tests.test_review_r1_r5",
+    "independent_review": "NOT_RUN",
+    "source": "inputs/REVIEW-ARP-1.1-R1-R5.zh-CN.md"
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "provider_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "model_ref": "example",
+  "input_limit_tokens": 1,
+  "combined_limit_tokens": 1,
+  "max_output_tokens": 1,
+  "supports_tools": false,
+  "supports_images": false,
+  "counter_id": "example",
+  "counter_revision": 1,
+  "count_mode": "EXACT",
+  "renderer_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "capability_receipt_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  }
+}

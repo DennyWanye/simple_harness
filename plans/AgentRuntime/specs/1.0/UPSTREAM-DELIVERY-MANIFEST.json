@@ -1,0 +1,352 @@
+{
+  "schema_version": 1,
+  "package": "ARP-EXEC-1.0",
+  "self_excluded": "DELIVERY-MANIFEST.json",
+  "files": [
+    {
+      "path": "ARP-EXEC-1.0.zh-CN.md",
+      "size_bytes": 64261,
+      "sha256": "ee016b103ff2213da7dc44d6170be0b8008b18838faf3146b6b58d712c6ad65e"
+    },
+    {
+      "path": "README.md",
+      "size_bytes": 2049,
+      "sha256": "601f85950f78d15d1fe6e0d8282a91332403bb7a8497a74b9609b4e576cf010f"
+    },
+    {
+      "path": "VALIDATION.md",
+      "size_bytes": 1697,
+      "sha256": "9ac0d564c895d3a68a8561bc2488af622bfb799f275dcc07eccc57e54c603687"
+    },
+    {
+      "path": "contracts/runtime-plane.schema.json",
+      "size_bytes": 55545,
+      "sha256": "bf9e102df688147ddb88f68e72f2acfb889600805b0aa140e17cde11bb936688"
+    },
+    {
+      "path": "examples/AuthorizationReceipt.json",
+      "size_bytes": 1227,
+      "sha256": "c31fdcac721ea97377678da7a8ce18daca17774c9090fe6ebcdd8b7a37fbb7c8"
+    },
+    {
+      "path": "examples/Capability.json",
+      "size_bytes": 690,
+      "sha256": "4448f886ed7abad99998214832d098506cc1ab526490759df9e2b1f37b84c98f"
+    },
+    {
+      "path": "examples/CapabilityBinding.json",
+      "size_bytes": 1254,
+      "sha256": "1a48ad52ae4d9b7d97f8ac2e7ecf3afb46373739bcdb9acb56f8e2225e20d88f"
+    },
+    {
+      "path": "examples/CapabilityCatalogueItem.json",
+      "size_bytes": 926,
+      "sha256": "3b83ceceadb39ca39de49f6fb0ad084dea20ec0cbc43415b64c304bf0b9a0848"
+    },
+    {
+      "path": "examples/ContextManifest.json",
+      "size_bytes": 2548,
+      "sha256": "b2f07e08c9cd27a5c430c478f77f277db53bc087588e4ac7f1f5c3e10c73abea"
+    },
+    {
+      "path": "examples/ContextSettingsCommand.json",
+      "size_bytes": 424,
+      "sha256": "20122ce3c895de9fece60b5287b243347f2954cb0d70b4a445b4a20db3202f35"
+    },
+    {
+      "path": "examples/ContextSummaryView.json",
+      "size_bytes": 510,
+      "sha256": "9e51fa9061158c318fc31ea2e2cdd04f55b4dd89730a8845a3f8568ccd9b3ed9"
+    },
+    {
+      "path": "examples/Deployment.json",
+      "size_bytes": 765,
+      "sha256": "05207afa7f8fdf91caefdb16d1a0f6568161bca5a872cac94d58736840aa169c"
+    },
+    {
+      "path": "examples/Error.json",
+      "size_bytes": 160,
+      "sha256": "1716f0746bf3036643089015f5afdbadfbeb819fa04e80f18a67629b86c4eec1"
+    },
+    {
+      "path": "examples/HostRequest.json",
+      "size_bytes": 350,
+      "sha256": "5a959af73f55eeefc5255ab55e65ea32ce68df0a2605407c9b3ca89f12c8cd96"
+    },
+    {
+      "path": "examples/HostResponse.json",
+      "size_bytes": 368,
+      "sha256": "40c3655cdba8398e8e5db61b4e6d27725279d5183f3b41a6518c91f0ba6411ac"
+    },
+    {
+      "path": "examples/JournalGroup.json",
+      "size_bytes": 464,
+      "sha256": "e9ada6318dbd224ce9af8ad5183c8720c77ce2af44bdaa7309cfa7e48e45b884"
+    },
+    {
+      "path": "examples/ModelLimits.json",
+      "size_bytes": 710,
+      "sha256": "b1454574cd8064f68ae7ffb2d2916e0eca329d28a33293bd5b7eaa66a740224d"
+    },
+    {
+      "path": "examples/Pin.json",
+      "size_bytes": 144,
+      "sha256": "1fc503922b65bfd6f42e097ccc964c239949706c2198aedc21557cff7726f8d9"
+    },
+    {
+      "path": "examples/Policy.json",
+      "size_bytes": 758,
+      "sha256": "c179bebe580f1288b917d865cecd74731fde551efc1818e07ae21bd73d3186b3"
+    },
+    {
+      "path": "examples/RecallItem.json",
+      "size_bytes": 345,
+      "sha256": "53fea98678a990d59cd27756171b506b9bd0c6df40ec5ae6f7051aba8362082f"
+    },
+    {
+      "path": "examples/RetrievalReceipt.json",
+      "size_bytes": 739,
+      "sha256": "7e3e6b70627a8f58adbd4cb72f6e4e15dba2f3d92d8472c821adc2d2d684c354"
+    },
+    {
+      "path": "examples/RuntimeProfile.json",
+      "size_bytes": 1651,
+      "sha256": "6c1ed39e27dcb199cb916a0b1f66816f4b175759e552c2eaaf48da88c84b38ef"
+    },
+    {
+      "path": "examples/Section.json",
+      "size_bytes": 482,
+      "sha256": "ae3d2b4788ae62ff72c7369540be678f15438466a4a6eb63f4d5e8d55bfc1e0c"
+    },
+    {
+      "path": "examples/SessionDelete.json",
+      "size_bytes": 317,
+      "sha256": "9dd3536be0331ac13b0c8ce43a187fff84debfdd1f7d13cb235e45c710c9d72e"
+    },
+    {
+      "path": "examples/SessionView.json",
+      "size_bytes": 300,
+      "sha256": "7754437ed4ffa491afdcff1999e2e590de17585d3816e0e36331e77a8c2d0143"
+    },
+    {
+      "path": "examples/Skill.json",
+      "size_bytes": 1203,
+      "sha256": "1131e43ed7ebe9509ab3fa464ada748687bddeb7d7b1527ec3a0944d44010dd4"
+    },
+    {
+      "path": "examples/SkillAdmitCommand.json",
+      "size_bytes": 734,
+      "sha256": "aa9eaf8777a1aca6f799e73eb4ef617f8fd9ac4bf1df468c661fcc91f4a590d6"
+    },
+    {
+      "path": "examples/SkillCatalogueItem.json",
+      "size_bytes": 1498,
+      "sha256": "f705bc9c9473a3fe4959ac4f25cdaa46296e0af5b37816868af24e337986ce82"
+    },
+    {
+      "path": "examples/SkillFile.json",
+      "size_bytes": 158,
+      "sha256": "280bf64dc43406e7eb0aa63f260ee8914fc7bff067a03edce502cbfc6a329916"
+    },
+    {
+      "path": "examples/SkillSuspendCommand.json",
+      "size_bytes": 219,
+      "sha256": "1e3390d9320660bdd37bf685a1a8b73aced47b05059201ce1bb355cb3524c968"
+    },
+    {
+      "path": "examples/SkillUse.json",
+      "size_bytes": 1329,
+      "sha256": "578a8297d91b67d4719a02c0e94c4f72d4a7d9e5862543742e95eff3f61977f1"
+    },
+    {
+      "path": "examples/Tool.json",
+      "size_bytes": 1368,
+      "sha256": "818998c9f9ac4f296f7314b0be0d7a50151af4cd0aecdb8ed3a6e1e8787adb4e"
+    },
+    {
+      "path": "examples/ToolCatalogueItem.json",
+      "size_bytes": 1673,
+      "sha256": "dc1345e2a888d907bea37c985bb1cfb3933d30f991355bdbc7183c8be8917d7d"
+    },
+    {
+      "path": "examples/ToolResultView.json",
+      "size_bytes": 920,
+      "sha256": "7eb290e61e82aea1d932ad1ce511455289237d925f9c189ce6ca6923070d7270"
+    },
+    {
+      "path": "examples/ToolSnapshot.json",
+      "size_bytes": 226,
+      "sha256": "ea53f6ce311d4cfef8e93be5e57037da8dff498d4ed95e58fcb5cce1d0e20be2"
+    },
+    {
+      "path": "implementation/BODY-WIRED.md",
+      "size_bytes": 3322,
+      "sha256": "b4b2eb6ba503794be5d9f5423497213999b3088f02ffca04bd0766a17ccd7d4a"
+    },
+    {
+      "path": "implementation/FIELD-CONTRACTS.md",
+      "size_bytes": 14596,
+      "sha256": "4465cc4195c8c32dcbafe3dc63263d38fdcad57de3291ddc170c9a559ebb6380"
+    },
+    {
+      "path": "implementation/HOST-DTOS.md",
+      "size_bytes": 8291,
+      "sha256": "e8216f1536662af964b6c1fdc71efbf0f1c7b4caa73c3f4bc329a5124b05443c"
+    },
+    {
+      "path": "implementation/INTERFACES.md",
+      "size_bytes": 7250,
+      "sha256": "b0fc0e205598b4aa2c2294e2f16dcb881a70ffc14f03ac9967545609eeb34232"
+    },
+    {
+      "path": "implementation/TEST-PLAN.md",
+      "size_bytes": 8797,
+      "sha256": "89faa999529456edb04f1418176dc609afbe0588071bba96e8578ed74e3f03dd"
+    },
+    {
+      "path": "implementation/field-producers.json",
+      "size_bytes": 119873,
+      "sha256": "be8b7afd5c205cd13fccad67bdf3a772ba67bf7acd636e3ff37094fb8aa174a3"
+    },
+    {
+      "path": "implementation/integration-map.json",
+      "size_bytes": 21306,
+      "sha256": "ebb0c6f67edd43ffd8c48fb46a89831b9b8320852b419f22318a05ab1d869fa0"
+    },
+    {
+      "path": "implementation/mutations.json",
+      "size_bytes": 2281,
+      "sha256": "c458d53fe099f75ceb72ff2de2c7fa3262d68d6c15c114eea02cdb8fe14b359e"
+    },
+    {
+      "path": "implementation/sdk-cases.json",
+      "size_bytes": 44201,
+      "sha256": "0bafd9fc4ab9d71e3e4049a5f5704d1330de81eb6fec7d5a7218c35cad7bff31"
+    },
+    {
+      "path": "implementation/seams.json",
+      "size_bytes": 19991,
+      "sha256": "39b090d615af6452d5f8c42bcba51c3da8a0ebf85ab109721ede61efa23b07e1"
+    },
+    {
+      "path": "implementation/source-map.json",
+      "size_bytes": 23099,
+      "sha256": "0da0e1f0020debaa2cd752585c5444b5d884397bb2637658a068f3e73a0cf513"
+    },
+    {
+      "path": "inputs/ASSURANCE-EXEC-1.1.zh-CN.md",
+      "size_bytes": 60877,
+      "sha256": "5af3ae76a4c07b7926ad720a2dc48c52e41e76bc91e3a80e5559799de8d8f08e"
+    },
+    {
+      "path": "inputs/MANIFEST.json",
+      "size_bytes": 1235,
+      "sha256": "bb63a2a0d884b77c4c850a1997d475f752033dfcc8a408f431d45583918d11d2"
+    },
+    {
+      "path": "inputs/V1.4-D1-D2-D3-Operation补遗-2026-09-21.md",
+      "size_bytes": 54873,
+      "sha256": "a2657120e1c44479a268ca19e0ab0b3da1eb65d7b3db6512df7ef2e3d1520725"
+    },
+    {
+      "path": "inputs/V1.4-Operation完成合同补遗-2026-09-21.md",
+      "size_bytes": 42425,
+      "sha256": "8bf6a1c8ee40c2ada9ab88f51806e401ba8a690ea4ac1a481154f7e9ccfcb74f"
+    },
+    {
+      "path": "inputs/base-agent-phase1-plan.zh-CN.md",
+      "size_bytes": 41981,
+      "sha256": "c56d57c42f8adc3590f12d57c0fdeb431980d81f99c12bac0051188d4c21f946"
+    },
+    {
+      "path": "inputs/simpleharness-llm-native-htn-execution-plan-v2.zh-CN.md",
+      "size_bytes": 36996,
+      "sha256": "c5aff562be01be2a5edbcb8d3f05ce8ff546b87242ed0272c9f7d90048479d7c"
+    },
+    {
+      "path": "inputs/simpleharness-taskgraph-code-execution-plan.zh-CN.md",
+      "size_bytes": 135741,
+      "sha256": "f36eaa1cf106a1f84d6efd2a4cdcbbe25e55fc5ed4df7510e13df3b728f615d1"
+    },
+    {
+      "path": "reference/__init__.py",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "reference/runtime_rules.py",
+      "size_bytes": 9124,
+      "sha256": "10c90818b6cc75df26970c90624e6c921f19f4ea2f991335ce777443df2f86cd"
+    },
+    {
+      "path": "reference/schema_codec.py",
+      "size_bytes": 2885,
+      "sha256": "c7da2df02fe8188e1c58658bcb79a26aa85f7ca40956daf9386137a61fa7c513"
+    },
+    {
+      "path": "reports/REFERENCE-RESULTS.json",
+      "size_bytes": 1376,
+      "sha256": "6b3e9a7d07c0b9e3c71f44586f4419114b023cf89d49e6eeb8116ac0984d601a"
+    },
+    {
+      "path": "reports/reference-mutations.json",
+      "size_bytes": 3638,
+      "sha256": "ae796f91863a41aa9832940e7cce1a306fa69a89eb10bef42e12ab5e998ec37c"
+    },
+    {
+      "path": "review/CHALLENGE-REPORT.md",
+      "size_bytes": 4840,
+      "sha256": "325aff0b6aff71456c05b5b2ba5cab71283a13ae33e5c6a16009dec648e4a7fc"
+    },
+    {
+      "path": "review/INDEPENDENT-REVIEW.md",
+      "size_bytes": 1711,
+      "sha256": "bf632b0cb95e511ee31f423013100b8291ee8bf7b7717399e35e11ff6dab113d"
+    },
+    {
+      "path": "sql/execution_additive.sql",
+      "size_bytes": 18070,
+      "sha256": "3309301b836271d2a6e128072122f2defc73a48ea5b1a100ff13b44d6f83d988"
+    },
+    {
+      "path": "sql/queries.json",
+      "size_bytes": 2678,
+      "sha256": "6d9fd40f79a19a060cfb61f7e75503189269b98ee81d3b88b387e9fe7095c579"
+    },
+    {
+      "path": "sql/session_partition.sql",
+      "size_bytes": 3473,
+      "sha256": "69660da423a467014dcd22b8a10792a61d8d8833f722f9cb5ffbcd1f1f2e5cca"
+    },
+    {
+      "path": "tests/__init__.py",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "tests/test_additional.py",
+      "size_bytes": 4672,
+      "sha256": "04c29d0f03fef76aaef31cacb942188ce43d4dbe66b831a617a8ca5f765a7409"
+    },
+    {
+      "path": "tests/test_rules.py",
+      "size_bytes": 12129,
+      "sha256": "23fc57aff03e3d71c4b9527e3aa10aa20c5da9b6bd2025581f90e5fcb02ba115"
+    },
+    {
+      "path": "tools/check_plan.py",
+      "size_bytes": 3012,
+      "sha256": "86f25db958cb8496132d6dc6c337bf1707f524ae028973b2debd8acde8cba2e4"
+    },
+    {
+      "path": "tools/run_reference_mutations.py",
+      "size_bytes": 3149,
+      "sha256": "bfeadad23830311c8523b45148695428c0dfc66ddcef50e62cd2098645e630fb"
+    },
+    {
+      "path": "tools/verify_delivery.py",
+      "size_bytes": 1687,
+      "sha256": "0a1fc1e550980ea1c821d4422f6fcd7e9e45552c1355fda39072b2e2a2ec6336"
+    }
+  ]
+}

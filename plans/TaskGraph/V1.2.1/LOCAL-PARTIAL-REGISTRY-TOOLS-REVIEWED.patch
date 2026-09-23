@@ -1,0 +1,356 @@
+--- /dev/null
++++ b/tools/h1h_partial_registry.py
+@@ -0,0 +1,200 @@
++#!/usr/bin/env python3
++"""Static partial-registry diagnostic. Never imports the runner or grants readiness.
++
++This adapter reads declarations, not arbitrary Python runtime semantics. Unsupported
++expressions require review. The existing strict readiness binder remains separate.
++"""
++from __future__ import annotations
++import argparse
++import ast
++import json
++from pathlib import Path, PurePosixPath
++from capture_sources import digest
++from collection_identity import expand_selector, executed_fingerprint, relative_test_path
++from h1h_manifest import literal, verified_snapshot, write_new
++
++SYMBOLS = {'IMPLEMENTED_NODEIDS', 'MATCHED', 'PARTIAL', 'SUPPORTING_NODEIDS'}
++
++
++def selector_path(value: str) -> str:
++    if not isinstance(value, str) or not value or '\\' in value or '\x00' in value:
++        raise ValueError('invalid selector')
++    rel = value.split('::', 1)[0]
++    path = PurePosixPath(rel)
++    if path.is_absolute() or '..' in path.parts or ':' in rel or not rel.endswith('.py') or str(path) != rel:
++        raise ValueError('selector must have canonical relative Python path')
++    if '::' in value and any(not part for part in value.split('::')[1:]):
++        raise ValueError('empty selector component')
++    return rel
++
++
++def read_declarations(raw: str, expected: set[str]) -> list[dict]:
++    tree = ast.parse(raw)
++    definitions = {}
++    allowed_targets = set()
++    for statement in tree.body:
++        if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
++            target, value = statement.targets[0], statement.value
++        elif isinstance(statement, ast.AnnAssign):
++            target, value = statement.target, statement.value
++        else:
++            continue
++        if isinstance(target, ast.Name) and target.id in SYMBOLS:
++            if target.id in definitions or value is None:
++                raise ValueError('missing value or reassigned registry')
++            definitions[target.id] = value
++            allowed_targets.add(id(target))
++    if set(definitions) != SYMBOLS:
++        raise ValueError('required declarations missing')
++    parents = {id(child): parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
++    for node in ast.walk(tree):
++        if isinstance(node, ast.Name) and node.id in SYMBOLS and isinstance(node.ctx, ast.Load):
++            parent = parents.get(id(node))
++            # Only direct read methods and membership classification are supported.
++            # Aliasing/call-argument/container escape needs an explicit reviewed adapter.
++            direct_read = (isinstance(parent, ast.Attribute) and parent.value is node
++                           and parent.attr in {'get', 'items', 'keys', 'values'}
++                           and isinstance(parents.get(id(parent)), ast.Call)
++                           and parents[id(parent)].func is parent)
++            membership = (isinstance(parent, ast.Compare) and len(parent.ops) == 1
++                          and isinstance(parent.ops[0], (ast.In, ast.NotIn))
++                          and parent.comparators == [node])
++            if not (direct_read or membership):
++                raise ValueError('registry reference escapes supported static read context')
++        if isinstance(node, ast.Name) and node.id in SYMBOLS and isinstance(node.ctx, (ast.Store, ast.Del)) and id(node) not in allowed_targets:
++            raise ValueError('reassigned registry')
++        if isinstance(node, (ast.Subscript, ast.Attribute)) and isinstance(node.ctx, (ast.Store, ast.Del)):
++            if any(isinstance(n, ast.Name) and n.id in SYMBOLS for n in ast.walk(node.value)):
++                raise ValueError('registry mutation')
++        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
++            if isinstance(node.func.value, ast.Name) and node.func.value.id in SYMBOLS and node.func.attr not in {'get', 'items', 'keys', 'values'}:
++                raise ValueError('unsupported registry method')
++    values = {}
++    for name, expression in definitions.items():
++        if name in {'MATCHED', 'PARTIAL'}:
++            if not (isinstance(expression, ast.Call) and isinstance(expression.func, ast.Name)
++                    and expression.func.id == 'frozenset' and len(expression.args) == 1 and not expression.keywords):
++                raise ValueError('expected literal frozenset declaration')
++            expression = expression.args[0]
++        # No name aliases, imports, eval, comprehensions or function calls.
++        values[name] = literal(expression, {})
++    primary, support = values['IMPLEMENTED_NODEIDS'], values['SUPPORTING_NODEIDS']
++    if not isinstance(primary, dict) or set(primary) != expected:
++        raise ValueError('case set differs from specification')
++    if not isinstance(support, dict) or not set(support) <= expected:
++        raise ValueError('unknown supporting case')
++    groups = []
++    for name in ('MATCHED', 'PARTIAL'):
++        group = values[name]
++        if not isinstance(group, list) or any(not isinstance(x, str) for x in group) or len(group) != len(set(group)) or not set(group) <= expected:
++            raise ValueError('invalid coverage group')
++        groups.append(set(group))
++    matched, partial = groups
++    if matched & partial:
++        raise ValueError('overlapping coverage groups')
++    rows = []
++    for case_id, target in sorted(primary.items()):
++        if target is not None:
++            selector_path(target)
++        additions = support.get(case_id, [])
++        if not isinstance(additions, list) or any(not isinstance(s, str) for s in additions) or len(additions) != len(set(additions)):
++            raise ValueError('invalid supporting selectors')
++        for value in additions:
++            selector_path(value)
++        rows.append({'id': case_id, 'selector': target, 'supporting_selectors': additions,
++                     'declared_coverage': 'MATCH' if case_id in matched else 'PARTIAL' if case_id in partial else 'MISMATCH'})
++    return rows
++
++
++def bind(rows: list[dict], collection: dict, source: dict, root: Path) -> dict:
++    fp = source['repositories']['candidate']['fingerprint']
++    variant = executed_fingerprint(source)
++    if collection.get('candidate_fingerprint') != fp or collection.get('executed_source_fingerprint') != variant:
++        raise ValueError('source fingerprint mismatch')
++    if (collection.get('schema_version') != 2 or collection.get('kind') != 'PYTEST_COLLECTION_ONLY'
++            or collection.get('collection_exitstatus') != 0 or collection.get('collection_errors') != []
++            or collection.get('deselected') != [] or collection.get('sdk_tests_executed') is not False):
++        raise ValueError('receipt is not complete successful collection only')
++    if collection.get('rootdir_physical') != str(root.resolve()):
++        raise ValueError('collection physical root mismatch')
++    nodeids, items = collection.get('nodeids'), collection.get('items')
++    if not isinstance(nodeids, list) or any(not isinstance(n, str) for n in nodeids) or len(nodeids) != len(set(nodeids)):
++        raise ValueError('invalid or duplicate nodeids')
++    if not isinstance(items, list) or any(not isinstance(i, dict) for i in items):
++        raise ValueError('invalid metadata')
++    ids = [i.get('nodeid') for i in items]
++    if any(not isinstance(n, str) for n in ids) or len(ids) != len(set(ids)) or set(ids) != set(nodeids):
++        raise ValueError('metadata does not cover collection exactly')
++    captured = {f['path']: f['sha256'] for f in source['snapshot']['files']}
++    for item in items:
++        rel = selector_path(item['nodeid'])
++        if rel != item.get('source_path') or rel not in captured or item.get('source_sha256') != captured[rel]:
++            raise ValueError('collected source mismatch')
++        base = item.get('base_nodeid')
++        if not isinstance(base, str) or relative_test_path(base) != rel or type(item.get('parametrized')) is not bool:
++            raise ValueError('invalid Function metadata')
++        if item['parametrized']:
++            if item.get('identity_source') != 'PYTEST_FUNCTION_ORIGINALNAME' or not isinstance(item.get('parameter_id'), str):
++                raise ValueError('unproven parameter identity')
++            if item['nodeid'] != base + '[' + item['parameter_id'] + ']':
++                raise ValueError('parameter identity mismatch')
++        elif base != item['nodeid'] or item.get('parameter_id') is not None:
++            raise ValueError('nonparameter identity mismatch')
++    results = []
++    for row in rows:
++        expansions, missing, actual = [], [], []
++        targets = ([('primary', row['selector'])] if row['selector'] is not None else [])
++        targets += [('supporting', value) for value in row['supporting_selectors']]
++        for role, selector in targets:
++            rel = selector_path(selector)
++            if rel not in captured:
++                raise ValueError('selector source was not captured')
++            if '::' in selector:
++                nodes, mode = expand_selector(selector, collection)
++            else:
++                nodes = sorted(i['nodeid'] for i in items if i['source_path'] == selector)
++                mode = 'EXACT_COLLECTED_FILE'
++            if not nodes:
++                missing.append(selector)
++            expansions.append({'role': role, 'selector': selector, 'mode': mode, 'nodeids': nodes})
++            actual.extend(nodes)
++        if len(actual) != len(set(actual)):
++            raise ValueError('overlapping primary/supporting selectors require review')
++        results.append({**row, 'selector_expansions': expansions, 'actual_nodeids': sorted(set(actual)),
++                        'missing_selectors': missing, 'execution_status': 'NOT_RUN', 'assertion_coverage_review': 'PENDING',
++                        'collection_status': 'BLOCKED_MISSING_SELECTOR' if missing else 'NOT_COVERED_NO_TARGET' if row['selector'] is None else 'COLLECTED_NOT_RUN'})
++    return {'kind': 'DIAGNOSTIC_PARTIAL_H1H_COLLECTION_NOT_GATE', 'candidate_fingerprint': fp,
++            'executed_source_fingerprint': variant, 'cases': results, 'case_count': len(results),
++            'collected_item_count': len(nodeids), 'execution_status': 'NOT_RUN', 'sdk_pass_cases': 0,
++            'h1_h_ready': False, 'production_enablement_allowed': False}
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description=__doc__)
++    for key in ('source-map', 'spec', 'collection', 'out'):
++        parser.add_argument('--' + key, type=Path, required=True)
++    parser.add_argument('--runner-relative', default='tests/orchestrator/full_target/h1h_stage_runner.py')
++    args = parser.parse_args()
++    source, root = verified_snapshot(args.source_map)
++    spec = json.loads(args.spec.read_text())
++    expected = {c['id'] for c in spec['cases']}
++    if len(expected) != 36 or len(spec['cases']) != 36:
++        raise ValueError('exact 36 case specification required')
++    rel = selector_path(args.runner_relative)
++    if '::' in args.runner_relative:
++        raise ValueError('runner must be a file')
++    path = (root / rel).resolve(strict=True)
++    captured = {f['path']: f['sha256'] for f in source['snapshot']['files']}
++    raw = path.read_bytes()
++    if not path.is_relative_to(root) or captured.get(rel) != digest(raw):
++        raise ValueError('runner is not the captured source')
++    rows = read_declarations(raw.decode(), expected)
++    result = bind(rows, json.loads(args.collection.read_text()), source, root)
++    result.update({'runner_relative_path': rel, 'registry_sha256': digest(raw)})
++    verified_snapshot(args.source_map)
++    write_new(args.out, result, args.source_map.parent)
++    print(json.dumps({key: result[key] for key in ('kind', 'case_count', 'collected_item_count', 'sdk_pass_cases', 'h1_h_ready')}))
++
++
++if __name__ == '__main__':
++    main()
+--- /dev/null
++++ b/tests/test_partial_registry.py
+@@ -0,0 +1,150 @@
++import copy
++import json
++from pathlib import Path
++import sys
++import tempfile
++import unittest
++sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
++from h1h_partial_registry import read_declarations, bind, selector_path
++
++EXPECTED = {'A01', 'A02', 'A03'}
++RAW = '''
++IMPLEMENTED_NODEIDS = {'A01': 'tests/a.py', 'A02': None, 'A03': 'tests/b.py::test_b'}
++MATCHED = frozenset({'A01'})
++PARTIAL = frozenset({'A03'})
++SUPPORTING_NODEIDS = {'A02': ('tests/a.py',), 'A03': ('tests/a.py::test_a',)}
++'''
++ROOT = Path('/frozen')
++SOURCE = {'repositories': {'candidate': {'fingerprint': 'fp'}}, 'snapshot': {'files': [
++    {'path': 'tests/a.py', 'sha256': 'ha'}, {'path': 'tests/b.py', 'sha256': 'hb'},
++    {'path': 'tests/a.py_extra.py', 'sha256': 'hx'}]}}
++
++
++def receipt():
++    items = []
++    for path, name, parameter, digest in [('tests/a.py', 'test_a', None, 'ha'),
++                                         ('tests/b.py', 'test_b', 'x[y]', 'hb'),
++                                         ('tests/b.py', 'test_b', 'z', 'hb'),
++                                         ('tests/a.py_extra.py', 'test_x', None, 'hx')]:
++        base = path + '::' + name
++        items.append({'nodeid': base + '[' + parameter + ']' if parameter is not None else base,
++                      'base_nodeid': base, 'source_path': path, 'source_sha256': digest,
++                      'parametrized': parameter is not None, 'parameter_id': parameter,
++                      'identity_source': 'PYTEST_FUNCTION_ORIGINALNAME'})
++    return {'schema_version': 2, 'kind': 'PYTEST_COLLECTION_ONLY', 'candidate_fingerprint': 'fp',
++            'executed_source_fingerprint': 'fp', 'rootdir_physical': str(ROOT.resolve()),
++            'nodeids': [i['nodeid'] for i in items], 'items': items, 'deselected': [],
++            'collection_errors': [], 'collection_exitstatus': 0, 'sdk_tests_executed': False}
++
++
++class PartialRegistryTests(unittest.TestCase):
++    def test_nullable_supporting_and_coverage_remain_separate(self):
++        result = bind(read_declarations(RAW, EXPECTED), receipt(), SOURCE, ROOT)
++        a, null, partial = result['cases']
++        self.assertEqual(a['actual_nodeids'], ['tests/a.py::test_a'])
++        self.assertEqual(null['collection_status'], 'NOT_COVERED_NO_TARGET')
++        self.assertTrue(null['actual_nodeids'])
++        self.assertEqual(partial['declared_coverage'], 'PARTIAL')
++        self.assertEqual(partial['selector_expansions'][0]['nodeids'], ['tests/b.py::test_b[x[y]]', 'tests/b.py::test_b[z]'])
++        self.assertEqual(partial['selector_expansions'][1]['role'], 'supporting')
++        self.assertEqual(result['sdk_pass_cases'], 0)
++        self.assertFalse(result['h1_h_ready'])
++        self.assertTrue(all(r['execution_status'] == 'NOT_RUN' for r in result['cases']))
++
++    def test_missing_supporting_blocks_even_without_primary(self):
++        rows = read_declarations(RAW.replace("'A02': ('tests/a.py',)", "'A02': ('tests/a.py::missing',)"), EXPECTED)
++        self.assertEqual(bind(rows, receipt(), SOURCE, ROOT)['cases'][1]['collection_status'], 'BLOCKED_MISSING_SELECTOR')
++
++    def test_overlapping_selectors_rejected(self):
++        for extra in ('tests/b.py::test_b', 'tests/b.py', 'tests/b.py::test_b[z]'):
++            raw = RAW.replace("'A03': ('tests/a.py::test_a',)", f"'A03': ({extra!r},)")
++            with self.subTest(extra=extra), self.assertRaises(ValueError):
++                bind(read_declarations(raw, EXPECTED), receipt(), SOURCE, ROOT)
++
++    def test_registry_escape_rejected(self):
++        for suffix in ('alias = IMPLEMENTED_NODEIDS\nalias.clear()',
++                       'mutate(IMPLEMENTED_NODEIDS)', 'container = [IMPLEMENTED_NODEIDS]'):
++            with self.subTest(suffix=suffix), self.assertRaises(ValueError):
++                read_declarations(RAW + '\n' + suffix, EXPECTED)
++
++    def test_exact_parameter_selection(self):
++        rows = read_declarations(RAW.replace('tests/b.py::test_b', 'tests/b.py::test_b[x[y]]'), EXPECTED)
++        result = bind(rows, receipt(), SOURCE, ROOT)
++        self.assertEqual(result['cases'][2]['selector_expansions'][0]['nodeids'], ['tests/b.py::test_b[x[y]]'])
++
++    def test_missing_selector_blocks(self):
++        rows = read_declarations(RAW.replace('tests/b.py::test_b', 'tests/b.py::test_missing'), EXPECTED)
++        self.assertEqual(bind(rows, receipt(), SOURCE, ROOT)['cases'][2]['collection_status'], 'BLOCKED_MISSING_SELECTOR')
++
++    def test_bad_declarations(self):
++        bad = [RAW.replace("'A02': None, ", ''), RAW.replace("'A02': None", "'A99': None"),
++               RAW.replace("'A02': None", "'A02': None, 'A02': None"),
++               RAW.replace("frozenset({'A03'})", "frozenset({'A01'})"),
++               RAW.replace("frozenset({'A03'})", "frozenset({'ZZZ'})"),
++               RAW.replace("'A02': ('tests/a.py',)", "'ZZZ': ('tests/a.py',)"),
++               RAW + '\nIMPLEMENTED_NODEIDS = {}', RAW + '\nIMPLEMENTED_NODEIDS.update({})',
++               RAW + "\nIMPLEMENTED_NODEIDS['A01'] = None",
++               RAW + '\nif True:\n    PARTIAL = frozenset({})',
++               RAW.replace("'A02': None", "'A02': factory()"),
++               RAW.replace("frozenset({'A03'})", "other({'A03'})"),
++               RAW.replace("'A02': None", "'A02': ['tests/a.py']")]
++        for raw in bad:
++            with self.subTest(raw=raw), self.assertRaises(ValueError):
++                read_declarations(raw, EXPECTED)
++
++    def test_dynamic_expression_never_runs(self):
++        with tempfile.TemporaryDirectory() as d:
++            marker = Path(d) / 'executed'
++            payload = f"__import__('pathlib').Path({str(marker)!r}).touch()"
++            with self.assertRaises(ValueError):
++                read_declarations(RAW.replace("'A02': None", "'A02': " + payload), EXPECTED)
++            self.assertFalse(marker.exists())
++
++    def test_invalid_paths(self):
++        for value in ('/tests/a.py', '../a.py', 'tests/../a.py', 'C:/a.py', 'tests\\a.py', './tests/a.py', 'tests//a.py', 'tests/a.py::', '', None):
++            with self.subTest(value=value), self.assertRaises(ValueError):
++                selector_path(value)
++
++    def test_collection_state_and_fingerprints_fail_closed(self):
++        updates = [('candidate_fingerprint', 'other'), ('executed_source_fingerprint', 'other'),
++                   ('rootdir_physical', '/other'), ('collection_exitstatus', 1),
++                   ('collection_errors', ['error']), ('deselected', ['test']), ('sdk_tests_executed', True),
++                   ('schema_version', 1), ('kind', 'TEST_RESULT')]
++        for key, value in updates:
++            for remove in (False, True):
++                c = receipt()
++                if remove:
++                    c.pop(key)
++                else:
++                    c[key] = value
++                with self.subTest(key=key, remove=remove), self.assertRaises(ValueError):
++                    bind(read_declarations(RAW, EXPECTED), c, SOURCE, ROOT)
++
++    def test_metadata_failures(self):
++        for mutation in ('missing', 'duplicate', 'duplicate_node', 'hash', 'path', 'base', 'parameter', 'proof', 'unknown_file'):
++            c = receipt()
++            if mutation == 'missing': c['items'].pop()
++            elif mutation == 'duplicate': c['items'].append(c['items'][0])
++            elif mutation == 'duplicate_node': c['nodeids'].append(c['nodeids'][0])
++            elif mutation == 'hash': c['items'][0]['source_sha256'] = 'wrong'
++            elif mutation == 'path': c['items'][0]['source_path'] = 'tests/b.py'
++            elif mutation == 'base': c['items'][0]['base_nodeid'] = 'tests/a.py::other'
++            elif mutation == 'parameter': c['items'][1]['parameter_id'] = 'wrong'
++            elif mutation == 'proof': c['items'][1]['identity_source'] = 'GUESSED'
++            elif mutation == 'unknown_file':
++                c['nodeids'][0] = c['items'][0]['nodeid'] = 'tests/unknown.py::test_a'
++                c['items'][0]['source_path'] = 'tests/unknown.py'
++            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
++                bind(read_declarations(RAW, EXPECTED), c, SOURCE, ROOT)
++
++    def test_derived_source_cannot_impersonate_base(self):
++        source = copy.deepcopy(SOURCE)
++        source['snapshot']['source_variant_fingerprint'] = 'derived'
++        with self.assertRaises(ValueError):
++            bind(read_declarations(RAW, EXPECTED), receipt(), source, ROOT)
++        c = receipt(); c['executed_source_fingerprint'] = 'derived'
++        self.assertEqual(bind(read_declarations(RAW, EXPECTED), c, source, ROOT)['executed_source_fingerprint'], 'derived')
++
++
++if __name__ == '__main__':
++    unittest.main()

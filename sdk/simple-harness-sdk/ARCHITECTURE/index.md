@@ -1,0 +1,433 @@
+最后更新：2026-09-23。此目录是私有仓库的 HTN + TaskGraph23 + Assurance 开发源码快照，版本 `0.13.0.dev20260923+assurance.1`。Assurance 尚未 BODY_WIRED/整体验收，Host 仍消费旧 HTN wheel。交接与全部未完成项见 [仓库 HANDOFF](../../../HANDOFF-2026-09-23.md)。下文仅为相应历史阶段事实。
+
+<!-- v14-final-integration-current -->
+最后更新：2026-09-22 CST。V1.4（去除NanoJev）本阶段核心最终集成与原生完整效果闭环 PASS，TaskGraph接线资料 READY。Host已安装 `0.13.0.dev20260922+htn.1`（wheel SHA-256 `af9e273061ceeeb3204ccbb4e4d32965fb3bba568e6c7e63f1af1b18244b9800`），528包内文件逐字节一致。新Mission默认hierarchical/独立world；Mission与根合同同事务，CompletionSpec确认后才规划。真实Tauri案例 `mission-5bb7c1fef5597956` 完成内容→操作审查→界面审批→ActionExecutor发布→效果验收→根Resolution→Mission COMPLETED：12次DeepSeek调用、98229tokens、0未知、1次发布。冷恢复/只读回放前后1Attempt/8intents/102events/12calls/1action不变。旧回放语义投影仍PARTIAL（23未知事件类型/1未覆盖字段/UI账本未对齐；覆盖字段差异0），不得将此记为全部回放通过。真实模型新请求默认输出16384，上限32768；历史失败保留。SDK候选dirty源码未整体合并main、未release，Host工作树改动保留。H6大批量晋级、H8 576局对比依用户要求移出阶段并停止，原完整门禁历史保持OPEN。后文旧状态仅为历史。 [Delivery and evidence](/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/最终集成与端到端交付-2026-09-22.md).
+<!-- /v14-final-integration-current -->
+
+最后更新：2026-09-22 18:33 CST。本阶段按用户新范围仅做最终集成与必要端到端验收；H6大批量候选晋级评测、H8四方案576局对比评测移出本阶段，功能与历史证据保留，不记为通过。H6 cohort-5在模型调用均已结算的边界停止，PID82450已退出：7个baseline已有成功回执，当前未完成案例不计PASS，停止前0未知用量；新版H8未启动，自动继续已取消。原H8为40 PASS/1 FAIL/1 INTERRUPTED。V1.4仍IN_PROGRESS，最终Host集成与完整实际操作闭环待验收；未合并、替换Host wheel或通知TaskGraph ready。
+
+最后更新：2026-09-22 18:07 CST。V1.4（去除NanoJev）IN_PROGRESS。主体H1–H8接线已实现，正在处理真实验收故障；未合并、替换Host wheel或通知TaskGraph ready。非流式manifest-18 H8停于40 PASS/1 FAIL/1 INTERRUPTED（HTTP524，125.96秒，1未知），534局未启动。H6 source-10真实COMPLETED/oracle=true，48calls/218041tokens/0unknown；cohort-4首baseline第25调用HTTP502（1.32秒）后停止，110908已知tokens/1未知，未晋级。已实现单次SSE传输、完整工具参数组装、断流拒绝与已知用量保留；真实文本/工具两探针通过，30项适配定点、3项计量/身份、22项旧Provider兼容通过。当前stream=true已冻结manifest-19；source-11真实COMPLETED/oracle=true，44calls/199597tokens/0unknown，唯一候选已产生，cohort-5的50局配对验证已自动开始；未宣称解决上游502或验证全部长请求稳定。UI07在manifest-18源码快照真实确认CONTENT_HASH_VERIFIED效果要求，唯一审批事件、0模型调用/0发布文件；不是完整效果执行。完整H6/H8、原14局、独立核验、最终Host集成仍开放。
+
+最后更新：2026-09-22 CST。V1.4（去除 NanoJev）仍 IN_PROGRESS。真实 H6 source-6 COMPLETED、独立 code oracle=true，48次 DeepSeek v4.1 Flash 调用/228605 tokens/0 unknown，正式生成1个候选。Selection合成已分离 DATA 与候选材料来源，精确联合校验实际挂载；两个真实 T0 intent/review/materialization 同target精确隔离，2项定点PASS/0.43s；overlay跨Mission/Task错链拒绝3 PASS/1.69s；O04/I08按权威合同3 PASS/1.05s（专用caller-tenant reader与wheel安装并非这两项必要条件）。I07冷恢复+两项旧package字节golden 3 PASS/0.55s。H1-H静态35 MATCH/1 PARTIAL（I07完整legacy收尾），不是整门35 PASS。H6 cohort-1首个baseline FAILED（26898tokens），公共测试缩进错误已修且新增冻结前AST/隔离校验；原评测集合与失败证据保留，新source-7在独立runtime继续。H6晋级/H8矩阵/最终质量门及Host整体验收仍未完成，未通知TaskGraph ready。
+
+最后更新：2026-09-22 CST。V1.4（去除 NanoJev）仍 IN_PROGRESS。修复真实 H6 source-5 在 4 个 Task 完成后的派发中断：派发器与 completion freeze 共用 DATA-bound producer 的 accepted workspace overlay，保持精确 artifact/hash 校验及 ORDER-only/只读新增测试隔离；定点 3 PASS/1.46s。P06 参数 schema 错误以 typed ParameterBindingsError 归类 STRUCTURE_INVALID，真实在途兄弟/外来 lease 保留及合法替换冷恢复 1 PASS/1.04s。H1-H 静态映射现 32 MATCH/4 PARTIAL，非执行 32 PASS。source-5 27 次调用/119574 tokens/0 unknown，未完成，无 ready receipt；source-6 使用新冻结 manifest-12 继续真实闭环。H6 cohort、H8完整矩阵、剩余 H1 门禁和当前 Host 全链仍开放。未合并/重装 Host wheel，未通知 TaskGraph ready。
+
+Last updated: 2026-09-22 CST. V1.4 excluding NanoJev remains IN_PROGRESS. Real DeepSeek v4.1 Flash code Mission COMPLETED with independent domain success: 27 physical calls, 105645 tokens, 102.551s, zero unknown usage (manifest-6; h8-code-scoped-content-1/probe-receipt.json). This validates scoped TASK_CONTENT Worker/Critic wiring for this scenario, not the full H8 matrix. Prior-source full_target: 4106 PASS / 1 FAIL / 5 SKIP; the outdated drone template fixture subsequently passed its targeted recheck. H1-H extraction from that JUnit: 30 PASS / 6 PARTIAL. Current follow-up fixes cover effect preparation scope and registry eligibility; H6 real cohort, complete H8 matrix, remaining H1 gates and current Host effect UI remain open. Candidate not merged, Host wheel unchanged, TaskGraph readiness notification not sent. See the Host V1.4 acceptance repair checkpoint.
+
+最后更新：2026-09-22 CST。V1.4（去除 NanoJev）整体 IN_PROGRESS。D2原始回执/完整handoff负证明producer、D3延期冷恢复、H8真实进程强杀与AppWorld同episode重接已实现并完成具名局部验证；Host原生内容确认与冷恢复已实点通过（非完整效果Mission）。当前DeepSeek第5次最小聊天恢复200/可见输出/usage，正式Worker复验中；H6 cohort/H8完整矩阵及完整H1门禁仍未关闭。H1-H静态映射30 MATCH/6 PARTIAL不是执行PASS。候选未合并、Host wheel未重装、未通知TaskGraph ready。 [当前证据与边界](/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/验收修复检查点-2026-09-22.md)。下文保留历史时点。
+
+最后更新：2026-09-22 CST。V1.4（去除 NanoJev）主体接线已写入，进入验收，整体 IN_PROGRESS。Operation T0/T1/T3、D3、H2–H8 runtime 和 Host 完成确认/操作提交/规划授权/人工回答入口已接；H6 同库真实 cohort 入口及 H8 四臂冻结配置已补。当前专项 `test_v14_runtime_closure.py` **15 PASS / 0.72s**（首次 14 PASS/1 FAIL 为旧 v8 fixture 断言，与新 v9 默认不符，已修正）；仅覆盖具名15案例，不是 H1–H8 完整门禁。证据位于 SDK 候选 `.local-test-evidence/2026-09-22/v14-closure/{pytest-fixed.log,junit-fixed.xml}`。AppWorld 16条服务规则注册已核对，未计作业务场景PASS。真实单Mission/矩阵与Host原生UI验收继续中；候选未合并、Host wheel未重装，未通知TaskGraph ready。下文为历史检查点，当前状态以本段及Host V1.4主体编码检查点为准。
+
+最后更新：2026-09-22 CST。Operation 补遗继续实施，V1.4（去除 NanoJev）整体未完成。OC-1 Spec 批准与 OC-2 Scope/原子准备事务已接入；MIXED 保持 VERIFYING、禁止自动动作/重开 Worker。上一固定源码 full_target 为 4016 PASS / 8 FAIL / 5 SKIP（146.72s，589 文件 hash 不变）；8 项失败已修并经 231 项定向复验，后继组合相关 235 PASS（3.58s），不能合称全门通过。新增 Selection 准备/回放/回滚 2 PASS，真实非空 DATA 冻结及伪造 mount 拒绝 1 PASS，等待态不误停与内容完整性 10 PASS。完整 nested compound 与中间 local criterion 链正在实测；OC-3 payload/source reader 开始实现，T0/T1/T3 producer、D3、H1-I/完整 H1、H2–H8 收尾及当前 Host 原生 UI 仍待。无新 PlanAgent 待决；保留所有 dirty worktree，未合并/重装 Host/调用真实 Provider。
+
+最后更新：2026-09-21 CST。V1.4（去除 NanoJev）仍未完成。后继修复 operation/action link 同身份重放假冲突（原反例 1 FAIL / 4 PASS，修复相关 28 PASS；旧 action 相邻回归 74 PASS / 1 原有条件 SKIP），并保持重复重放零写与 alias 原子拒绝。新增取消 Task 的真实在途/lease 检查，与原 repair 套件共 8 PASS；两个真实 SQLite 写事务交错与真实方法退役后的 UNKNOWN 读取均已通过（后续组合首轮另有 cycle 夹具失败，已修正）。compiler 拒绝保留 typed report，collector 不再将非四类缺陷归为 COVERAGE_GAP；未知 producer code 强制 INTERNAL_CONTRACT_ERROR。最新相关 181 PASS / 3 既有 codec SKIP（2.00 秒），3 个 preview/collector 源文件 mypy 与定向 Ruff 通过。此前 full_target 3891/5 与 H1-H 20/8/8 是前一源码检查点，尚未重新全量/矩阵汇总。Operation 上游 producer、延期恢复合同、H1-I/完整 H1、H2–H8 与 Host UI 仍待，候选未合并。架构裁定问题见 Host plan 的 PLAN-AGENT-架构裁定请求-2026-09-21.md。
+
+最后更新：2026-09-21 CST。**V1.4（去除 NanoJev）整体未完成。** 候选 `codex/h1h-impl` / HEAD `102ad3dfa2db38d575ea929d39ec5ed1561a71da` 加保留的未提交改动，最新固定源码 full_target **3891 PASS / 5 SKIP / 137.29 秒**，1045 个 Python 源码/测试 hash 前后不变；5 个变更源码文件 mypy 通过。当前实际 H1-H matrix 为 **20 PASS / 8 PARTIAL / 8 NOT_COVERED / 0 FAIL**，exit 2，整门仍 OPEN。已完成本地修复：提交/最终decision原子恢复、UNKNOWN action保留预算、授权issuer/tenant/Mission隔离、原始reply CAS留存、两种固定decode-only先解码后拒绝；补齐A01/A03/I01/I04/P05/P08/P10等真实断言。历史8个旧fixture失败保留，补真实ArtifactStore后25定向及本次全量通过。真实 DeepSeek v4.1 Flash WAIT场景已完成（早于后继raw/授权修复）：190.609秒、40次物理串行调用全succeeded、4次WAIT注册/唤醒、4件accepted artifacts、所有reserved字段0；带测试调度/签发器，不代表Host UI或完整H1-I。Operation上游冻结身份/参数引用/物化链、其余门禁及H2–H8仍待；候选未合并、Host wheel未重装、原生UI未验。当前事实与原始证据索引见Host `plans/taskSys2/升级planV1/v1.4/WAIT复验-2026-09-21.md`，后文旧数字仅为历史。
+
+最后更新：2026-09-21 CST。**当前 V1.4（去除 NanoJev）状态纠正：整体未完成。** SDK 候选 WAIT 固定源码回归 3812 passed / 5 skipped（138.38 秒，545 个源码/测试 hash 不变）；后续 authority/operation 定向 41 passed（0.72 秒）属于更新后的局部源码。H1-H 原“36/36”仅为测试执行数，修正规格映射后为 **5 PASS / 10 PARTIAL / 21 NOT_COVERED**，不能关闭门禁。真实 DeepSeek WAIT 注册→Worker 完成→唤醒 PASS（49.503 秒、9 次物理调用）；同 Mission 恢复完成 4 件 accepted artifacts，但在 240.089 秒/20 次新增调用边界下仍 ACTIVE，最终评审标签拼错被严格拒绝，不能报 H1-I 完成。旧模式回归 559 PASS / 1 timeout FAIL / 13 SKIP；失败文件原样复跑 6 PASS，原因未定，原失败保留。候选未合并、Host wheel 未重装、原生 UI 未验。后文旧检查点保留历史时点，不覆盖本条。详见 Host `plans/taskSys2/升级planV1/v1.4/WAIT复验-2026-09-21.md`。
+
+最后更新：2026-09-21 CST。V1.4（去除 NanoJev）当前证据：H3-H8 focused 109 PASS，H1-H 36/36 PASS，旧模式 560/13、sentinel 19，H1-I 生产入口 4/4 PASS，最新 full_target 3784/5 skip。新 Provider `api.qlsjs.xin/v1` / `deepseek-v4.1-flash` 探针和适配回归可用；`root-reviewer-v4` 修复标签拼写后最新真实 hierarchical receipt 为 `COMPLETED`/`verification_passed`/`accepted_outputs=4`；完整 H1 gate 的 mutation、recovery、四类决定和最终独立审计仍 OPEN。
+
+最后更新：2026-09-21 CST。V1.4 H3 method-selection seam：新增 `planning/htn/method_selection.py`，提供版本化三策略、0/1/2+ 分流、selection identity ledger 与 H3 evidence-request producer gate；`H3_DECISION_ENABLEMENT` 只开启正式 `REQUEST_EVIDENCE`，H1 矩阵保持不变。当前为纯选择/准入层，真实 hierarchical_dispatch 接线与 V1.4 H3 gate 仍开放。
+
+最后更新：2026-09-21 CST。V1.4 H2 formal package slice：新增 `planning/htn/planner_package_v1.py`，提供九个只读 Views、canonical codec、deterministic assembler、96 KiB/逐类上限及 `truncated`/`omitted_counts`。旧 `planner_package` collector 未改写，生产接线与完整 H2 gate 仍开放；focused contract/replay/negative tests 已通过。
+
+最后更新：2026-09-16 CST。FULL-TARGET-1.4 第三批 d 提交（P2.3c 第二部分、b、c）：HTN 端到端接线——occurrence→Task 物化与预算份额（orchestrator/occurrence_tasks）、allocate_v2 派发闸门与 readiness/admission 复检、未装配部署 fail-closed（HierarchicalAssemblyMissing）、CommitService 接 ResolutionCommitsMixin 与 judge_mission 模式门、迁移 17（acceptance_commit_receipts / delivery_receipts / acceptance_outputs）、叶子验收链路（orchestrator/leaf_acceptance、accepted_outputs）、PlanningWorld 部署装配（planning/htn/world）、取证轮与观察器管线（evidence_round、observation_pipeline）、hierarchical Planner 包 v3 含事实段（planner_package、planner-hierarchical-v3 模板）。full_target 2376 条全绿；编排范围回归 4342 通过、唯一失败为已知 p33；旧模式事件字节与源码 hash 钉子不变。真实 deepseek-flash 冒烟已跑到叶子真派发与 AcceptanceCommitted，卡在产物↔端口配对（待裁决）。[交接](../plans/2026-09-16-full-target/HANDOFF.md)。
+
+最后更新：2026-09-16 CST。FULL-TARGET-1.4 第二批提交：HTN 核心（planning/htn registry/grounding/refinement/compiler/validation + 种子方法库）、readiness 门（graph/eligibility）、InputManifest 解析（artifacts/input_bindings）、存储层与迁移 16（storage/htn_schema、htn_store、obligation_store，31 张 STRICT 表）、替代任务义务继承（orchestrator/obligation_commits，commit_service 仅在 superseded 分支加一处调用）、契约第四～六轮。full_target 1493 条测试全绿；编排范围回归无新失败；旧模式事件字节级不变。接线片 P2.3a/b/c 未开始，生产路径仍未使用 HTN。[交接](../plans/2026-09-16-full-target/HANDOFF.md)。
+
+最后更新：2026-09-16 CST。FULL-TARGET-1.4 实施第一批提交：HTN 契约（contracts/htn、obligations、evidence_state、resolution、semantic_base）、四值谓词求值器（planning/htn/applicability）、验收纯规则（verification/acceptance_rules）、理由最小不动点（knowledge/justifications）、TaskNetwork 快照与投影验证（graph/task_network、projection_validation）、PANDA 后端适配（planning/htn/backends/panda）。全部纯内存/纯函数，未接线；旧模式零改动；新增 630 条测试，编排范围回归无新失败。计划来源与状态见 [交接](../plans/2026-09-16-full-target/HANDOFF.md)。
+
+最后更新：2026-09-15 23:27 CST。AppWorld R 选择计量：`f7432dc` 预估计入 tool schema；空候选跳过选择轮。完整叙事在 Host `plans/taskSys2/HANDOFF-2026-09-15-r-envelope.md`。[本仓指针](../plans/2026-09-14-gap-phase1/HANDOFF-2026-09-15-r-envelope.md)。
+
+最后更新：2026-09-15。Host374aa70a/SDKf122b8c：共享容量、长响应及最终Mission评审后继完成限定实机验收。v60独立评审正式交付60实跑PASS；v61亲自捕获列表/详情待验证→交付和冷恢复。累计335本地归属调用7157983已知tokens下限，1早先未知另列，Flash0。最新广回归2304PASS/32SKIP/6环境FAIL，关联兼容环境49PASS。N1–N8/正式A96B96仍OPEN，未打包。
+
+最后更新：2026-09-15 06:27 CST。N1固定物理响应截止与response_wait接入：27定向PASS，旧桥反例FAIL。原生v57前台成功/物理重叠2路但后台180秒误判停滞，旧测试已取消，保留在途账；新完整与原生待验，N1–N8仍OPEN。 [证据](../plans/2026-09-14-gap-phase1/SHARED-CAPACITY.md)。
+
+最后更新：2026-09-15 06:01 CST。N1真实三进程v1为FAIL：两次物理调用321104tokens、0新增抢占，第三路前置排队被错误释放（已知0出站）。系统校时影响psutil.create_time造成身份误判，旧源3反例FAIL；改为psutil稳定process hash（>=7.2.2），新25PASS/1.85秒，完整及实机后继待验。N1–N8仍OPEN，Flash0。
+
+最后更新：2026-09-15 05:40 CST。N1同机共享2槽/393216容量接纳实现，SDK40定向PASS、Host15PASS；重复绑定与PID复用问题已修复，未知出站保留。完整回归/真实多进程/当前源码UI仍待；N1–N8/正式A96B96仍OPEN、Flash0，无打包。 [当前范围](../plans/2026-09-14-gap-phase1/SHARED-CAPACITY.md)。
+
+最后更新：2026-09-15 02:44 CST。code profile v4生产3e2792f：原分页/时间例外两个失败题自然复验均VERIFIED（16调用139927tokens/290.623秒），旧失败保留。完整v9为2275PASS32SKIP1旧版本断言FAIL，后继28PASS及官方ARE50PASS，无生产再改；当前源码UI v54冷恢复实点通过，0新调用。累计261本地调用5430502已知tokens下限/1早先未知，Flash0。N1–N8/A96B96仍OPEN，无打包。 [最新证据与边界](../plans/2026-09-14-gap-phase1/RESULT-CONTRACT-FOLLOWUP.md)。
+
+最后更新：2026-09-15 02:25 CST。N2 v4仍FAIL（28调用/912645tokens/1557.359秒）；N3四专项2交付PASS/2非法封套FAIL，候选答案正确不计交付。新code profile v4实际ID的合法JSON输出示例定向90PASS，旧v1–v3不变；全量/新真实模型/UI待。旧源受控恢复运行中。N1–N8、A96/B96仍OPEN，Flash0、无打包。 [后继事实](../plans/2026-09-14-gap-phase1/RESULT-CONTRACT-FOLLOWUP.md)。
+
+最后更新：2026-09-15 01:50 CST。a30639e最新完整编排2265PASS/32条件SKIP/0FAIL，673.00秒、612hash不变，源码UI v53冷恢复实点通过。N3后继运行器真实core离线3负控、分页3正10负控通过，真实未跑；N2 v4仍运行。N1–N8和正式A96/B96仍OPEN，Flash0、无打包。 [证据](../plans/2026-09-14-gap-phase1/BUDGET-ANALYSIS-FOLLOWUP.md)。
+
+最后更新：2026-09-15 01:41 CST。当前a30639e源码原生v53冷恢复/产物/回放/支持报告实点通过，5旧调用保持、0新调用；约两分钟启动等待仍保留。新完整v8和本地N2 v4待终态；N1–N8/正式A96B96未关闭、Flash0、无打包。 [证据与范围](../plans/2026-09-14-gap-phase1/BUDGET-ANALYSIS-FOLLOWUP.md)。
+
+最后更新：2026-09-15 01:36 CST。N2 v3真实失败保留：40调用874997tokens/1752.676秒、陈旧知识被拒绝、0有效复用。新AppWorld默认v3只读知识刷新和出站前额度终止适配定向69PASS/8.49秒，旧源决定性2FAIL；完整v8、新本地v4及新原生验收仍待。N1–N8/正式A96B96仍OPEN，Flash0、无打包。 [证据与边界](../plans/2026-09-14-gap-phase1/BUDGET-ANALYSIS-FOLLOWUP.md)。
+
+最后更新：2026-09-15 01:07 CST。最新生产源码已完成全量v7：2259PASS/32条件SKIP/1历史hash断言FAIL（657.44秒）；仅测试断言按有意新增预算语义更新并保留旧内容hash，后继52PASS/0.71秒，无生产再改、未再全量重跑。原生v52冷恢复实点通过；N2 v3第一Task验证中，N1–N8和正式A/B96仍OPEN，Flash0、无打包。 [明细](../plans/2026-09-14-gap-phase1/BUDGET-ANALYSIS-FOLLOWUP.md)。
+
+最后更新：2026-09-15 00:55 CST。最新N2/N7源码UI v52实点冷恢复/产物/回放/支持报告通过，5调用/4工具效果/42事件不变，0新模型调用；新完整回归v7与N2 v3仍运行。提示接线和离线分析相邻87PASS；N1–N8/正式矩阵仍OPEN、Flash0、无打包。 [本轮证据](../plans/2026-09-14-gap-phase1/BUDGET-ANALYSIS-FOLLOWUP.md)。
+
+最后更新：2026-09-15 00:50 CST。非文档Planner新增原有累计预算语义，N7任务块统计区间已接入；旧源码决定性2FAIL，父级相邻87PASS/5.49秒、ruff/mypy通过。预算规则不改；真实N2 v3和源码UI v52仍在验收，N1–N8/正式96次未关闭、Flash0。全量2240PASS属于前一d495382源码，不能代替本次范围。 [证据及边界](../plans/2026-09-14-gap-phase1/BUDGET-ANALYSIS-FOLLOWUP.md)。
+
+最后更新：2026-09-15 00:37 CST。最新完整编排2240PASS/32条件SKIP/0FAIL，668.77秒，645源码/测试hash不变。N2本地第二次校准429.665秒因Task预算失败，17调用236536tokens/0未知，未碰1800秒时限；真实知识复用仍OPEN。最新源码UI v51冷恢复/回放/产物/支持报告实点通过并保持运行。N1–N8与正式A/B96仍OPEN，本轮Flash0、无打包。历史偶发停滞根因不因回归通过而宣称修复。
+
+最后更新：2026-09-15 00:09 CST。当前SDK源码UI v51冷恢复实点通过，旧Mission/Task/事件/5调用保持，3产物只重定位storage_uri且hash/VERIFIED不变，回放41事件差异0、支持报告9169bytes哈希核对，0新调用。首冷启动约102秒有未连接等待；并非全N8关闭。ARE真实动态硬判通过11调用58017tokens/275.301秒；N2官方复杂任务15分钟超时、1未知，30分钟同配置独立校准运行中。最新完整回归v5为2237PASS32SKIP1FAIL；冷恢复诊断父6PASS后v6运行中，原偶发停滞根因仍OPEN。N1–N8整体未关闭，Flash0，无打包。 [记录](../plans/2026-09-14-gap-phase1/TWO-WAVE-EXECUTION.md)。
+
+最后更新：2026-09-14 23:26 CST。源码UI v50 Mission已COMPLETED，实际code_test 10PASS，5次Qwen调用20708tokens/212.420616秒，3产物VERIFIED；Critic为NOT_REQUIRED。Host模型卡修复62c8ce10已push。此UI只覆盖固定N3 SDK，不覆盖后继N2/N6。最新SDK完整回归2236PASS/32SKIP/2FAIL659.01秒，失败正在定位；ARE硬判接线官方50PASS但真实动态校准尚未判分，完整Gaia2/judge仍OPEN。N1–N8仍未整体完成，0Flash、无打包。 [执行证据](../plans/2026-09-14-gap-phase1/TWO-WAVE-EXECUTION.md)。
+
+**最后更新：2026-09-14 22:55 CST。** 首组Qwen AgentDojo正常/注入对照官方utility均通过、攻击未成功；攻击20调用117984tokens/1046.198秒，真实Critic失败后第二attempt通过保留。新增known-zero拒绝审计/统计身份48PASS、结构化工具审计35PASS、ARE实际core32PASS；N2下游外部状态同步父审发现缺口返工。UI卡片固定GPT默认修复，13PASS＋实际源码页面正确显示本地Qwen/262144窗口，真实UI Mission仍待。N1–N8未整体关闭，0Flash，无打包。[范围与证据](../plans/2026-09-14-gap-phase1/TWO-WAVE-EXECUTION.md)。
+
+**最后更新：2026-09-14 22:31 CST — 两轮评测增量。** code profile默认v3修复有效知识引用提示并冻结旧v2；定向80PASS，真实本地知识分页/原文hash/VERIFIED产物通过18调用186793tokens/280.849秒。AgentDojo实际core正常校准官方utility和Mission通过7调用33945tokens/209.98秒；攻击配对运行中。独立AppWorld API观察父测17PASS/3.49秒，消费链仍在接线。先前完整编排2180PASS/21SKIP/900.33秒不覆盖所有后继代码。ARE桥接12PASS，动态core/judge仍待；原生v49只完成导航/256K表单检查。N1–N8均未整体关闭，0Flash，不打包。[四表、失败与范围](../plans/2026-09-14-gap-phase1/TWO-WAVE-EXECUTION.md)。
+
+**最后更新：2026-09-14 21:25 CST — 两轮后续开始执行。** Qwen256K单路/双路约21万实际输入规则与引用通过，但双路复核抢占+1，容量稳定性仍OPEN；在途token接纳正在实现。通用96次入口/困难语料/时段纯策略/执行来源回执完成局部验证，gap193PASS及回执后继53PASS、真实AppWorld来源检查通过；不将任意输出晋级可信API事实。AgentDojo官方接口5PASS，真实Orchestrator驱动仍待；Gaia2仅源码可行性核查。N1–N8均未整体关闭，0Flash调用、无本轮新UI验收或打包。[当前四表、时间与证据](../plans/2026-09-14-gap-phase1/TWO-WAVE-EXECUTION.md)。
+
+> 2026-09-14 21:42 两轮评测增量：在途加权接纳实测大输入串行226.644秒、小输入双路130.255秒，均0新增抢占；256K窗口未变。matrix源码身份绑定、未知用量/未评分和缓存计数父审通过；完整N1–N8、正式96次、跨客户端加权、Flash与本轮源码UI仍未验收。
+
+**最后更新：2026-09-14 20:10 CST — testPhase1后续修复与独立Flash16次回收完成。** 当前SDK功能5406fb5，完整编排2105PASS/20SKIP；256K四题S/R各3/4、D/F各4/4，有效14/16，648调用8760086tokens，runner2234.319秒。0未知用量/网关终态缺失/工具重下发，8个D/F终态预留0；知识复用和动态图收益未得到证明。旧本地9终态/7未执行/1未知保留。用户发现白屏已通过完整源码重启与实际点击恢复，原0残留仅指受管组；当前UI有意保持运行，独立评测服务已结束。 [完整结果、耗时和后续问题](../plans/2026-09-14-gap-phase1/FLASH-FINAL.md)。以下检查点保留原时点范围。
+
+**最后更新：2026-09-14 19:32 CST — 当前AppWorld契约v2源码验收通过，完整Flash对照进行中。** SDK5406fb5；最新完整编排2105PASS/20SKIP/0FAIL670.45秒（runner673.922秒），原生v48冷读12表/5产物/15调用核对、0新调用278.158秒，进程均清理。独立Flash400万/120调用校准四Task＋官方评分通过，实际44调用455861tokens/226.874秒；不对参数变更作单变量归因。新四题16次Flash块采用256K/400万/120调用，仍在运行；原本地9终态/7未执行/1未知完整保留，未混入后继得分。[最新证据与限制](../plans/2026-09-14-gap-phase1/FOLLOWUP.md)。
+
+**最后更新：2026-09-14 19:11 CST — AppWorld结果契约v2修复进入验收。** 本地后继矩阵9终态/7未执行，1未知调用触发停止；进程清理完成，未知Attempt预留保留。独立Flash探针暴露Worker模板非法schema_version；新AppWorld profile默认v2修复八角色示例，旧v1原样保留。反例8FAIL→新整组143PASS/8.92秒；完整回归与新源码真实复测仍待。不扩大调用预算，不打包，上下文仍本地默认256K，512K只限Flash。[当前结果和边界](../plans/2026-09-14-gap-phase1/FOLLOWUP.md)。
+
+**最后更新：2026-09-14 18:33 CST — 上下文测试范围调整。** 用户指定后续仅测试128K/256K/512K，本地默认256K，512K仅使用DeepSeek Flash。正在运行的四题16次复测为本地256K，冻结参数未变；新增档位不提前宣称通过。单次输出和累计Mission预算独立记录。其余功能与验收状态见下一检查点。[当前范围与证据](../plans/2026-09-14-gap-phase1/FOLLOWUP.md)。
+
+**最后更新：2026-09-14 17:55 CST — testPhase1三项修复进入真实复测。** AppWorld Mission显式256K池绑定接通现有522240任务预算下限；R改为有界版本化选择且独立valid_success；网关异常/取消补终态审计。定向155PASS/11.88秒；完整编排2096PASS/20SKIP/0FAIL，686.51秒，runner687.033秒，退出无残留；当前源码原生v47冷读通过，12表/15调用精确一致、0新调用，228.444秒；原四题16次本地模型复测进行中，首题S/R有效成功，D后续多轮仍受Task硬上限停止，预算规划效果不宣称全面完成。旧16次失败保持原样；默认256K/物理1，DeepSeek0调用，不打包。 [修复边界、耗时与证据](../plans/2026-09-14-gap-phase1/FOLLOWUP.md)。
+
+**最后更新：2026-09-14 16:47 CST — testPhase1测试执行完成，3项后续修复明确保留。** 功能源码全编排2079PASS/20SKIP/0FAIL，879.28秒；原生v45可信知识两Task/真实pytest/独立Critic/人工复核与冷恢复通过，v46复制数据重开通过，0重调。正式四臂16/16完成，282调用3076186tokens，5758.78秒；S有效3/4，R有效2/4（官方终态4/4，另2次自选JSON解析失败），D/F各0/4且均任务级预算停止。D/F无已观察知识复用/动态图收益；全部终态预留0、SDK工具重下发0，保留1工具失败/1拒绝及1网关outcome缺失。剩余Planner预算可行性、R选择协议、异常网关终态3项尚未修复。默认本地256K/物理1，DeepSeek0调用；不打包、不扩大96次。 [完整结果与证据](../plans/2026-09-14-gap-phase1/RESULTS.md)。
+
+**最后更新：2026-09-14 13:15 CST — testPhase1仍在执行。** 新code profile v2默认范围化pytest观察，17项新正负控通过；知识原文分页/精确引用/撤回投影通过离线检查，真实本地中英消费5调用24405tokens/113.63秒通过。AppWorld第三领域及真实保存恢复/独立评分接通；首技术探针预算失败保留，5题校准进行中。S/R实际BaseAgent身份/自选控制及计量离线通过；D/F整体、16episodes、T6、最新原生UI仍待。不覆盖历史Phase3验收，不打包。 [边界与证据](../plans/2026-09-14-gap-phase1/README.md)。
+
+**Last updated: 2026-09-14 CST. Current Phase3 source acceptance:46 SOURCE PASS /0 OPEN /2 user-deferred packaging criteria.** P3.4-A04 now passes one fixed real deepseek-flash strict-profile FIRST/COMPARE pair on SDK ae8d37b, snapshot-v41:188calls1918557tokens,1029.73seconds; both strictPASS/COMPLETED, zero physical errors/unknown usage/reserve/rehandoff and zero residual test processes. Committed affected158PASS6.76seconds. [Current evidence and boundaries](../plans/2026-09-12-phase3/p34/v15-real-pair-review.md). Host production18ff5d24 and prior native-v39/earlier evidence retain their own source scope; strict mode is explicit SDK configuration, not an automatic Host redirect or new native UI acceptance. One pair does not prove model-quality superiority. No packaging/installer/release/push; historical failed pairs retained.
+
+**Historical checkpoints below retain their original dates and evidence boundaries; their open lists do not override the current status above.**
+
+**Last updated: 2026-09-14 CST.** New explicit DeepSeek strict-mode source path uses lossless bounded schema projection, identical counting/HTTP serializer and distinct frozen profile/target. Initial157PASS7.66s; canonical cold-body regression found/fixed,156PASS plus13endpoint controls complete precommit checks. Legacy payload/fingerprint unchanged. v14 FIRST strictFAIL (length plus non-length arguments_json), COMPARE strictPASS; overall45SOURCE PASS/1OPEN/2packaging DEFERRED. Committed recheck/new fixed pair pending. [Scope/evidence](../plans/2026-09-12-phase3/p34/strict-provider-mode.md). No new native or whole-Phase3 claim.
+
+**Last updated: 2026-09-14 CST.** P34 targeted production-wire probe3success/56521tokens did not reproduce historical tool parse failure. Full-pair observer finite error categories19PASS0.65s; production unchanged from a0ed26c, no historical root-cause fix claim. One fixed successor pair planned with unchanged strict oracle; original status45SOURCE PASS/1OPEN/2packaging DEFERRED. [Diagnostic scope](../plans/2026-09-12-phase3/p34/v14-diagnostic-followup.md).
+
+**Last updated: 2026-09-14 CST. Current status:45 SOURCE PASS/1 strict P34 OPEN/2 packaging criteria DEFERRED.** Frozen-v39 real pair v13 finished: COMPARE strictPASS101calls998962tokens556.739s; FIRST delivered but strictFAIL56calls544122tokens322.582s due one tool_parse/tool_calls error. Both final reserve0/rehandoff0, runner880.20s. Diagnostics-only successor67PASS1.90s now retains safe parse reason and cold persistence; no new native claim or output/context change. Earlier checkpoints below are historical. [Pair](../plans/2026-09-12-phase3/p34/v13-real-pair-review.md), [diagnostics](../plans/2026-09-12-phase3/p34/tool-parse-diagnostics-v40.md). No whole-Phase3 completion or packaging/release.
+
+**Last updated: 2026-09-14 CST. Original48AC source audit:45 SOURCE PASS/1 strict P34 OPEN/2 artifact criteria DEFERRED.** Host307PASS248.67s; SDK22original failures closed by86PASS with identical production. Native-v39 code/Critic/pending-human cold recovery and prior publication/context evidence accepted within their source scopes. Strict realv13 running; originalv12FAIL retained. [Original acceptance matrix](../plans/2026-09-12-phase3/p36/current-source-audit.md). No packaging/release.
+
+**Last updated: 2026-09-14 CST. SDK source cumulative failures closed.** Full frozen run2129PASS/22FAIL/13SKIP653.78s;21 missing-tiktoken failures and one obsolete Critic-cost assertion closed by affected86PASS30.80s in complete test environment, production identical to native-v39. Initial context_journal module skip also tested;12 real opt-ins remain separate. Host cumulative/strict pair still OPEN. [Evidence](../plans/2026-09-12-phase3/p36/source-cumulative-v39.md).
+
+**Last updated: 2026-09-14 CST. Native v39 code/isolated pytest, explicit Critic evidence and pending-human cold recovery PASS within scope.** Two one-Attempt Missions; real10calls26932tokens/cache16384/0reserve. Actual four files read; pending cold selected-table hashes identical, UI approval completes both with zero new model calls. Native176.367s/cold106.073s exit clean. Current cumulative and strict P34 remain OPEN; no packaging. [Evidence and boundaries](../plans/2026-09-12-phase3/p32/native-v39-review.md).
+
+**Last updated: 2026-09-14 CST.** Required code_test now executes on the verification copy before Critic, after format/rule gates. Deterministic failure skips the model; actual test evidence survives later Critic rejection. Focused56PASS/18.51s plus updated accounting1PASS/2.06s, ruff/mypy pass; latest native and cumulative checks remain pending. Normal old PLANNING recovery and artifact wrapping/cold-read passed in v37; its code failure remains. [Repair](../plans/2026-09-12-phase3/p32/critic-test-evidence-order.md), [native scope](../plans/2026-09-12-phase3/p32/native-v37-review.md).
+
+**最后更新：2026-09-14 CST — 明确length的工具解析失败支持有界输出增长。** 仅有效usage、tool_parse、finish_reason=length复用原8K→16K→32K/次数上限；每次新请求新identity/准入，旧失败/费用保留，不执行残缺参数。缺原因/未知usage/其他协议错误不重试。原码4FAIL7PASS后，Agent相关205PASS（3真实opt-in未跑、2tokenizer后继补齐），最终28PASS7.72秒含期限/次数/取消/冷库和真实priced guard；ruff/mypy通过。修复前编排1970PASS9SKIP643.26秒单列，不冒称后继默认全绿。正常旧PLANNING原生点、最新源码UI及P34严格对照仍待。[证据与边界](../plans/2026-09-12-phase3/p34/tool-length-recovery.md)。
+
+**最后更新：2026-09-14 CST — LC2真旧库原生接入、新256K/512K共存及冷读通过限定验收。** 旧6360c205库由新Host2eee204e/SDKc19bbd0接入；原四Provider完整记录及旧冻结input/config不变，旧任务沿default继续；新任务各用256K/512K。21真实调用65595tokens，含父任务512K预算不足失败2879，后继默认预算交付。5Mission/25记录冷读hash保持，零新调用；不冒称原生并发压力。原生353.520/冷94.208秒正常退出。P34严格对照/最终累计仍OPEN，无打包发布。[证据与边界](../plans/2026-09-12-phase3/p34/legacy-native-v36.md)。
+
+**最后更新：2026-09-14 CST — 原生v36发布/复核理由与冷读切片通过。** Host2eee204e/SDKc19bbd0，真实DeepSeek14调用40392tokens，审批后本地发布正确绑定内容；复核理由直接进入重试，实际文件修订后接受。同源码冷启动两任务/选定持久表/发布文件hash一致，零新调用/重复发布。生命周期662.777+49.152秒，退出无残留。P32其余AC、LC2共存原生、P34严格对照及最终累计仍OPEN；无打包发布。 [证据与边界](../plans/2026-09-12-phase3/p32/native-v36-review.md)。
+
+**2026-09-14 CST: Planner/executor action contract v2 and atomic human-review reason are ready for a fixed-source native successor.** OriginalordinaryPlanner bytes match9f70 baseline; approvalcount usesactualdeploymentdecision; focused12PASS0.57s, earlier35PASS6.80s and UI117/typecheckPASS. Source-native behavior is still pending; v35FAIL retained. [Evidence](../plans/2026-09-12-phase3/p32/native-v35-review.md). No packaging/release.
+
+**2026-09-14 CST checkpoint: P32 nativev35 FAIL/no_progress,11calls47465tokens, no publication.** Planner source/destination clarification35PASS6.80s; Host atomic human-review note117UIchecksPASS1.47s and typecheckPASS. These successor changes are uncommitted and not yet source-native verified. Originalv35failure remains, overallPhase3 OPEN. [Evidence and limits](../plans/2026-09-12-phase3/p32/native-v35-review.md).
+
+**2026-09-14 CST source checkpoint: legacy/local and new256K/512K pools share durable physical slots without rewriting old admission/request identities.** Frozen default dispatch facts keep old Mission routing; no historical default evidence remains an explicit limit. Action candidate contract now reaches executable Task input while original approval/binding gates remain. Protocol failures preserve only valid usage and allowlisted finish/stage metadata. Repaired focused72PASS13.07s, adjacent56PASS13.64s, Host45PASS0.52s, mypy120PASS; source-native and final cumulative still pending. P34v12 strictFAIL:167calls1622330tokens998.48s, both deliveries but C synth failed and fell back. WholePhase3 OPEN, no packaging/release/push. Details: [LC2 oracle](../plans/2026-09-12-phase3/p34/legacy-context-coexistence.md), [action contract](../plans/2026-09-12-phase3/p32/action-schema-context.md), [v12 review](../plans/2026-09-12-phase3/p34/v12-real-pair-review.md).
+
+**最后更新：2026-09-14 CST — P34引用/分页有界修复通过聚焦测试，严格真实pair仍待。** 同Task COMPARE明确仅引用实际知识目录（空目录用[]），提示版本compare-v2；真实读取观察器按同Attempt/路径/SHA完整分页重组并核对UTF-8哈希，未知知识及缺页/混Attempt/错SHA仍拒绝。44PASS8.86秒（runner9.32秒），ruff通过，独立Sol复审无具体问题；提交态复测及新真实pair待执行。原v11两臂虽交付但严格FAIL保留，详见[p34结果](../plans/2026-09-12-phase3/p34/v11-real-pair-review.md)。真实512K多轮及零调用冷回放通过（2调用1045085tokens/42.987秒），详见long-context-results。LC2兼容/最终累计/总体Phase3仍OPEN，无打包发布推送。
+
+**2026-09-14 CST补充：真实256K多轮历史条件筛选与冷重开通过。** 两调用519027tokens，20.091秒；后轮历史已折叠仍正确按新条件筛选，冷重开零调用。新P34 context256-8m-out32k-v7已单独冻结8M/24等预算与256K/32K输出合同，真实执行前纯检查21PASS0.37秒、含原导出hash及实际公开策略绑定/容量floor；旧2M实验不变。子代理初版output_reserve/selected profile/floor遗漏已由主审补齐，首测试19PASS1schema形状FAIL修正；真实pair尚NOT_RUN。P34/P35-A04/旧pre-context升级与总体Phase3仍OPEN，无打包发布推送。详情见各long-context-results与SDKcontext256-pair-contract。
+
+**最后更新：2026-09-14 CST — 256K/512K当前源码原生真调用、产物与冷读通过。** SDKdab3d44/Hoste183e400，两项真实Mission共8调用/24020tokens/0预留；各自实际容量保持，原生打开两份54B文件，独立进程冷读后任务/意图/产物/73事件/20journal/8selection/8Provider记录逐项不变，零重调。生命周期224.909+70.252秒；实际Mission9.871/11.156秒。新pinned256/512长历史旋转/原文/完整工具组/冷重放/超限零调用2PASS6.16秒，提交态相邻25PASS13.31秒。真正pre-context旧库自动共存升级及真实多轮长内容仍待；P34配对价值/最终累计和整体Phase3仍OPEN。无打包发布推送；详见long-context-results.md。
+
+**最后更新：2026-09-14 CST — 256K默认/512K可选源码接线与真实容量探测通过，整片仍在验收。** 实际DeepSeek输入258149/520283tokens，两次各1调用正确回答首中尾记录与跨位置求和，9.296/22.855秒；输出默认8192/上限32768独立。新Mission默认总预算4M/8M（未用容量不计消耗），按任务冻结profile与预算。旧32K实际请求身份冷升级保持、全角色256/512受控完成/零调用重开4PASS2.97秒，SDK相邻26PASS10.01秒、Host相邻65PASS105秒、UI78PASS0.803秒。真正pre-context旧库自动升级仍OPEN，当前显式保留legacy；长历史及当前原生UI待验，不能宣称整片完成。旧v29原生动态预算/冷读通过，真实v10两臂仍失败（842844tokens/93调用），P34/P35-A04和整体Phase3未关闭。新探测观察器序列化返工及未知用量原FAIL完整保留。无打包/发布/推送。详情：plans/2026-09-12-phase3/p34/long-context-results.md。
+
+**Last updated: 2026-09-13 17:49 CST — dynamic system budget double deduction fixed.** Dynamic admission counts materialized synthesis/conflict allocations once, protects only unmaterialized S and conflict remaining reserve, and preserves initial Planner reserves plus cancelled settled/inflight commitments. New decisive old-source5FAIL/6PASS0.41s; corrected adjacent214PASS/3 opt-in realSKIP71.88s (runner72.28), including public S and conflict creation/dynamic commit/cold replay, overbudget and invalid-balance controls; ruff/mypy117PASS. Independent Sol/high review findings covered. New test-local A400/F400 profile totals1920K within unchanged2M; old A480/F4802080K is refused before credentials/Provider and historical exports stay unchanged. Clean committed recheck and real/native gates pending. v9 both actualFAIL/no_progress,747326tokens/95calls/564.99s, not value success. P34/P35-A04 and whole Phase3 remain OPEN; P36 functional inventory follows, packaging/release deferred. Details: plans/2026-09-12-phase3/p34/dynamic-system-budget-fix.md.
+
+**Last updated: 2026-09-13 17:08 CST — v8 FIRST delivered; strict pair remains OPEN.** Clean043349f paidFIRST completed568.606s/729979tokens/79calls; originalFAIL traced to inner oracle240K conflicting with declared320K, corrected without changing other criteria. New/legacy budget controls8PASS0.09s; full79-request offline reanalysisPASS on clean55b766e; source8budget controlsPASS0.08s. NewA480profile preserves original2M total and allcriteria;26profile/observer/ledger controlsPASS0.39s. COMPARE289.288s/364237reported tokens/44calls actuallyfailedA2 budget; actual391829 includes27592 billed failedB reply omitted by observer; independent review confirms ledger correct. Observer now retains known failed usage without hiding errors. Latest source-nativeFIRST/COMPARE and newprocesscold bothPASS on043349f/Host5e186141, artifacts and requests stable, one expected deployment-onlyPolicyConfigDrift. Details: plans/2026-09-12-phase3/p34/v8-real-pair-review.md. P34/P35-A04 and overallPhase3 stayOPEN, no packaging/P36/push.
+
+**Last updated: 2026-09-13 16:48 CST — P34 Manager/selection integration corrected, actual gate still OPEN.** Real v7 on6c17d4d failed both arms with no_progress (FIRST327.513s/441139tokens/52calls; COMPARE337.840s/422739tokens/49calls), exposing ambiguous graph wire examples and missing empty-COMPARE fragment recovery. New default manager-v4 preserves all historical prompt hashes; a bounded empty round now gets one funded independent F review, never resets A/budget/deadline, and only verified F plus a normal graph commit can retarget C. Completed compare predecessors remain allocator facts; C candidates and new synthesis retain exact original-round fragment inputs. Round/deadline validation is atomic with F creation; legacy receipts cannot gain a new selection binding. New8 runtime controls include two library cold gaps and a commit-time expiry. Adjacent1292PASS/4 old-version assertion FAIL/5 optional SKIP142.78s; corrected affected52PASS/noSKIP10.12s, including pinned tokenizer and legacy red-to-green control; ruff/mypy117PASS. Sol/high independent findings fixed, runtime/usage/rework recorded. Source-native Critic document/cold v27 also PASS on6c17d4d (7calls/1050tokens/0reserve/0rehandoff, artifact/hash and durable counts unchanged); this predates new selection code. Clean committed recheck, new fixed real v8 and cumulative/latest-native gates pending; P34/P35-A04 and whole Phase3 remain OPEN. Details: plans/2026-09-12-phase3/p34/manager-selection-fragment-fix.md. No packaging/P36/push.
+
+**Last updated: 2026-09-13 16:01 CST - same-Task Critic growth and typed admission fix.** Critic can transfer only its request deficit from the original protected Task hold, keeping frozen identity/price, sibling first-Critic floors and UNKNOWN usage intact. Nonretryable SDK admission now atomically rejects/stops the Task without schema retry or Worker redo. New decisive old-source7FAIL/7PASS; corrected patch63PASS6.72s, adjacent1074PASS60.52s, tokenizer11PASS0.39s and cold-library2PASS1.58s; mypy117/ruffPASS. Independent Sol/high review no concrete P0/P1/P2. Cold tests preserve actual request identities and200000 Critic usage through both failed-intent/error-layer gaps, no new handoff. Fixture and parent integration rework retained in plans/2026-09-12-phase3/p35/critic-hold-admission-fix.md. Clean committed real v7 pair and current cumulative/source-native gates remain pending; P34/P35-A04 not yet reclosed. No packaging/P36/push.
+
+**最后更新：2026-09-13 15:36 CST — 真实对照暴露后继缺陷，P35-A04重新打开。** 新profile docs480-s240-v3在干净3164954真实deepseek-flash/API准入双臂执行：FIRST276.552秒/563256tokens/63调用，COMPARE174.378秒/281851tokens/34调用；均budget_exhausted，runner451.71秒。所有97实际响应model=deepseek-flash，用量已知，97准入，未见物理Provider错误；不声称交付/收益。证据SDK .local-test-evidence/2026-09-13/p34-real-search-value-7c36782f54774c54983a571549c85148/pair-summary.json SHA25694626876cfc1f679fec87bf290b208f375b0506ec36c068bad82e8a17708613b。FIRST的S原hold尚有122683，Critic1已用24614、原预留40960、下一请求22999需增长6653，却因system增长路径排除Critic而回退普通账户余额0拒绝；public_output=null，无已观察schema错误。不可重试admission被包装为ContractError，又运行Critic2及新Worker，后者额外65399tokens仍失败。Astra独立诊断确认hold增长与错误分类两处缺口，待先红后绿修复。COMPARE则B完成、A原240K扣120K综合/40960首Critic后，Worker58811+下一请求23710超可用79040，仅差3481；为合法原额度拒绝。另登记audit320-docs480-s240-v4，每Mission总2M不变；A320K/B480K/S240K/C400K，旧两合同及全部oracle/material不变，12纯配置PASS0.21秒/runner0.76，新真实组未运行。P34继续OPEN，P35-A04因新缺陷重新打开，不用上一全量绿覆盖新发现。
+
+**Last updated: 2026-09-13 - separate approved P34 budget experiment prepared.** User continuation authorizes docs480-s240-v3: same original2M/24 per-Mission total, B480K/3 and finalS240K/2. Legacy original-v2 contract hash stays b482cc0452e1855e62854025d92dc99bf9b5228072735ea956654dd7d48738e3; complete export comparison permits only declared budget/identity changes. Strict oracle retained and now also checks actual finalS budget.11 pure/profile tests PASS0.24s, runner0.74s; ruff/diffcheckPASS. Independent Terra/medium read-only review found noP0/P1/P2; no changes requested. Production source/defaults unchanged. Real pair pending; P34/overall Phase3 remain OPEN. Plan: plans/2026-09-12-phase3/p34/budget-comparison-v3.md. No packaging/P36/push.
+
+**最后更新：2026-09-13 14:22 CST — P3.3/P3.5 功能范围累计验收完成。** 干净SDK f25a4de完整编排1826PASS/0FAIL/9真实Provider默认SKIP，pytest626.58秒、runner627.15秒，g-current-orchestrator-full-v10；父唯一pytest进程组已退出无残留。P33原46行/47断言/100selector已关联，本轮均非跳过；current-ac-association-v4.json SHA256 bbf8088f0f5eb279a14e86b4f6f98f12460db9e4d001feb4305ebb8a830d90f4。原始回放1265DB/1400数据库Mission身份/7670观察仍raw OPEN：116finding全归因（50负向、66直接状态/历史夹具），944诊断逐项保留（917canonical target在完成的扫描根、14原快照与搬移副本双hash一致、9负向、4非Mission SQLite夹具）；没有整测试豁免或宣称raw unknown为空。检查点间未观察删除文件及完整execution回放仍属范围限制。后继原生34DB/46Mission/80观察独立PASS零差异/错误/额外调用，0.847秒，Host replay-all-native-v5.json SHA256133846607875ee93355545f949cd461a378b25070bf5174f4cc71230f5050997。snapshot-v26含最新ed42919生产代码，COMPARE原生新建交付及冷读通过，18调用/0rehandoff/40journal/18selection/94Mission事件不变，生命周期178.704/90.287秒；部署层仅预期PolicyConfigDrift，ACTIVE未变。P35原8项均已有决定性软件/原生证据并关联此全量，8/8完成；P33按已批准源码载体范围完成，未声称安装包验收。P34固定真实pair v5两臂仍budget_exhausted，完整交付/收益门OPEN；默认FIRST不变，B240K→480K/S120K→240K且总2M不变的新对照提议待用户选择，不改旧失败实验。整体Phase3未完成，不打包/P36/推送。
+
+**Last updated: 2026-09-13 14:07 CST - current policy snapshot tests.** Full v9 on clean ed42919: 1824 passed, 2 failed, 9 real-provider skips in 633.16s (runner633.73s). Both failures were stale Worker version expectations after worker-v3 became default. Drift testing now mutates relative to the captured version and checks both before/after provenance; demo evidence checks the actual current template. All original assertions remain. Targeted g-policy-current-version-v1: 10 passed in 5.63s (runner5.93s); ruff and diff check passed. Production code is unchanged. Latest full regression and source-native v26 remain pending; aggregate P33/P34/P35 gates remain OPEN. No packaging, P36 or push.
+
+**最后更新：2026-09-13 13:46 CST — 合法败选验证器收尾。** 新屏障用真实SDK双候选和实际code_test固定胜选先正式接受、败选后返回：旧代码3FAIL2.84秒，分别暴露终态续租拒绝及错误清理丢失胜选完成进展。现仅在recorder续租被拒且持久记录证明合法同Task胜选已接受、败选因sibling_accepted被SUPERSEDED、原Result为superseded时，结束该过期验证器；其他验证异常不吞掉。完成任务表成为唯一消费点，移除重复错误callback，仅移除正在抛出的错误，保留成功兄弟进展。新3项与原隔离2项共5PASS4.50秒；恢复/多调度/多Mission/Critic邻接31PASS42.91秒（runner43.24），g-late-verifier-recovery-integration-v3；mypy117/ruff PASS。正常屏障最终Mission完成、胜选产物独立判定通过、9次SDK请求/1350结算/0预留，再次run不增加调用、事件或预算；RuntimeError和无关CommitRejected仍可见。原full-v8具体交错未被记录，不把新屏障证据追认为原日志事实。下一全套回归待执行；P33/P34/P35累计仍OPEN，不打包/P36/推送。
+
+**最后更新：2026-09-13 13:40 CST — 崩溃取证副本恢复。** full-v8 SIGKILL现场为rollback journal模式，存在有效hot journal；读取需要SQLite先恢复，原mode=ro会失败，普通WAL只读查询也会改写原SHM。取证helper现仅在所属子进程已退出后复制主DB与journal/WAL，在临时副本正常恢复查询，原件完整保留给实际cold owner。新DELETE/WAL实际进程SIGKILL双反例旧helper2FAIL0.35秒；修复后连同原两种SDK结果/UNKNOWN冷恢复4PASS9.79秒（runner10.03），g-recovery-observation-green-v2。新测试逐文件hash证明取证不改原DB/sidecar、临时副本清理，并让真正冷owner最后恢复原件。这是测试取证修复，未声称原生产冷恢复失败，也未预先恢复原件削弱边界。
+
+4ffad9e真实固定pairv5：FIRST293.774秒/547472 tokens，F/B/C完成，S已消费61673但下一请求30986超过保留Critic后的可用额度；COMPARE125.624秒/174535 tokens，B后续候选Critic下限40960而仅余28333，两臂均budget_exhausted，runner420.05秒。SDK `.local-test-evidence/2026-09-13/p34-real-search-value-9d74269f9f484f87b9fd75c08bd287b5/`，不声明节省、成功或优势。原实验预算未改，下一轮预算策略待用户偏好；并发收尾屏障复现与全量审计归因继续，P33/P34/P35累计仍OPEN。不打包/P36/推送。
+
+**最后更新：2026-09-13 13:27 CST — 角色按合同执行与及时提交。** 新code默认worker-v3/synthesizer-v3按当前Task合同和实际暴露工具执行，复用仍完整可见且未改变的文件，相关代码/数据/配置/环境不变才复用本Attempt已通过测试，完成outputs及必要验证后提交envelope。旧v2、五个variant-v1及doc派生保持字节；66个历史模板/9个domain canonical核对通过，既有doc6聚合显式选择旧worker/synth版本，原hash不变。新实际SDK请求/部署工具交集/综合错误产物仍被独立code_test拒绝4PASS3.84秒；兼容及policy回归83PASS1可选tokenizer未配置SKIP/12.91秒，g-prompt-efficiency-compat-v2；mypy117/ruff PASS。本次不改预算、工具权限、独立Critic或验收oracle，未做receipt精简。真实pairv4已证B无权限run_tests及4次同字节重读，S代码未改时重复测试；两者已写文件却未提交候选，按原预算正确拒绝。新指令是否改善真实行为尚待原固定FIRST/COMPARE下一组，不预先声明节省或P34完成。P33/P35全量中两项运行失败根因仍在核对；不打包/P36/推送。
+
+**最后更新：2026-09-13 13:23 CST — Critic冻结版本反馈修复与完整回归实际结果。** SDK33b25b5完整编排回归1814PASS/3FAIL/9真实Provider默认SKIP，pytest623.29秒/runner623.81秒；g-current-orchestrator-full-v8，源码干净。失败：P35 SIGKILL读实时WAL时readonly错误、step06双候选结束仍ACTIVE、step09禁止以当前默认prompt_version决策的结构检查。第三项已修：schema反馈能力绑定显式冻结critic-v3，旧/未知版本无反馈，不随将来默认变动；critic/policy/provenance15PASS8.39秒、ruff PASS，g-critic-frozen-policy-v1。前两项无audit2PASS6.14秒、带audit2PASS6.04秒，保留full失败并继续根因诊断，不凭重跑判定无缺陷。全量O4原始OPEN：1259DB/1394Mission/8090观察，206finding/938store errors，负向fixture及覆盖诊断正在逐项归因，不能称rawPASS。另独立原生全扫33DB/45Mission/78观察PASS零差异/零额外调用，0.781秒，Hostreplay-all-native-v4.json SHA2565d17f7df6d9b4903c4908d0e2b508bb3b9b1ccc6b07c09a8b0a05d9d37ce7b33。P33/P34/P35累计仍OPEN；不打包/P36/推送。
+
+**最后更新：2026-09-13 12:59 CST — 系统Worker原额度增长与Critic结构反馈。** 真实FIRST smoke（4ba53f4）两次Manager/片段F/独立B/修复C均完成，最终S因名义60K Worker预留无法动用原120K系统hold剩余额度而失败（330.401秒/452199tokens）；原失败保留。新逐请求增长仅从同Task原hold按差额原子转入，保留各活跃候选的冻结Critic token/费用最低额；初始分派和背压不变，UNKNOWN不增长/返还，实际已知结算仅一次返还未用额度。初版全量转移Worker room被独审指出并发/背压风险后撤回，不交付。当前预算65PASS/5.49s，含实际SDK请求、费用、兄弟候选、UNKNOWN和返还控制；独立Sol审查无确定P1/P2。Critic默认升v3，v2及文档历史字节保留；mission_criteria仅允许原Mission条件，结构错误仅向下一独立v3 service给出白名单反馈，严格解析/两次费用不变。真实COMPARE此前一次错误混入Task条件导致额外22205tokens复核；新冷热/历史模板81PASS/3.77s，Astra独审无P1/P2。测试初稿空claims触发rule_check而非Critic、超时2FAIL，以及旧canonical聚合误引用新默认模板的1FAIL均保留；修复夹具与显式旧critic-v2映射，原hash未改。Mypy117/ruff通过；新已提交态真实对照与最终全量待，整体未完成，不打包/P36/推送。
+
+**最后更新：2026-09-13 12:48 CST — 完整原生验证背压。** snapshot-v23（SDK4ba53f4/Host5a939d6b）真实UI提交7个短来源Mission，2个实际Verifier有界等待。持久采样观察2RUNNING+2PENDING达到总上限4，BackpressureRaised seq140；首个验证转待人后再派发的Worker预留减为10000，随后总数降至低水位2，BackpressureCleared seq192，恢复20000，间隔20.222秒。UI读取Raised/Cleared历史、逐一打开83字节review.md并复核通过，7Mission全部COMPLETED/各900结算/0预留；42Provider记录/0rehandoff/105journal在人审前后不变。峰值未及时截屏，峰值与减速由同一次真实运行的持久事件/采样/预算证明；不是手动释放，两个Verifier均20秒自动解阻后运行真实Critic。进程组正常退出无残留，生命周期512.800秒。Host `.local-test-evidence/2026-09-13/p33-g/source-ui-pressure-v24/case-summary.json` SHA256 `616bb3deed0ca3c76a9212ec9c4fb67582ca120a4311c459a1d78c5743fdb5bd`。关闭P35-A03原生阈值/减速/排空缺口，保留最终回归与新发现的system Worker尾部增长问题；整体未完成，不打包/P36/推送。
+
+**最后更新：2026-09-13 12:36 CST — 长Context原生交付与冷读通过。** snapshot-v23（SDK4ba53f4/Host5a939d6b）通过原生文件选择器导入原97,200字节来源，Mission `mission-cb2cd1cb76fc88ee` 正式交付，2550结算/0预留。12个8,100字节页面全部保留在真实SDK journal，8个Worker请求出现持久Context轮转，原instructions/user_input及完整工具组保留，实际Provider观察hash与selection逐一相符。UI打开380字节REPORT.md（SHA256 `c4f9c9eb9c57dca52dd45cf720f66092a0f401f335899a6ad69a263184b3c9d9`），首段/原约束/末段引用完整读取；冷启动读同报告和约束引用，51事件/17Provider记录/0rehandoff/37journal/17selections完全不变。原生/冷读生命周期299.810/271.067秒，两进程组正常退出无残留。受控Provider机制证据，不代表真实模型记忆质量。Host `.local-test-evidence/2026-09-13/p33-g/source-ui-context-v23/case-summary.json` SHA256 `7a0b1f773879e3f07b99f5f16d2d85a7f815e7427fd4a8c0df87e09a78fa1e0b`。关闭P35-A07当前原生轮转/冷读缺口，整体仍待完整压力与最新回归，不打包/P36/推送。
+
+**最后更新：2026-09-13 12:25 CST — 已接受片段的 Manager 续接。** Manager 的已完成片段 Task 是证据，调用权限仍由活跃 Mission 与独立 service intent 决定。仅当冻结 validated_fragment 与实际 accepted Result（PASS/DONE）、原 Attempt 和正式 projection receipt 一致时允许 COMPLETED Task；取消、租约、身份与预算检查保留。真实 DeepSeek v3 暴露后，完整跨分支逐请求准入先红，修复后53项通过/21.63s；P34/P35/step05扩大回归278PASS3SKIP/101.28s，mypy117/ruff通过。独立Astra静态审查无P1/P2，直接非法绑定8项测试通过/3.17s（合法出站及7种零出站/零grant/预算不变拒绝），续接切片完成。真实对照仍失败，未重测；P33/P34/P35未关闭。证据与局限见 plans/2026-09-12-phase3/p33/journal.md 12:20 条目；不打包/P36/推送。
+
+**Last updated: 2026-09-13 11:48 CST — Manager admission and late accounting.** Real DeepSeek fixed pairv2 exposed Manager authority rejection: referenced failed Attempt is historical evidence, while its service intent owns current authority. Guard now validates exact evidence Task/Mission identity without requiring that old Attempt live; own authority/lease/pool/fingerprint/budget/cancel checks remain. Initial28PASS1.73s. Related270-case sweep268PASS2FAIL2SKIP89.51s exposed a second defect: real Manager task_id was missing from older late-accounting fixture; with it present, recovery wrongly expected Task-funded account though Manager is Mission-funded. Recovery now preserves evidence Task validation but checks original Mission account for Manager. Actual hot/cold receipt import35PASS3.05s, terminal business and original invocation unchanged, no Task money charged. Parent intermediate fixture NameError and both original failures retained. Mypy117/ruffPASS. Real search test keeps all materials/root2M/A-B240K budgets and aligns output ceiling to Host8K (old32K required65536 while only60000available);8pure configPASS. Corrected paid pair and final current full suite pending. See journal; no packaging/P36/push.
+
+**Last updated: 2026-09-13 11:35 CST.** Current source cumulative non-network1762PASS plus16journal/contextPASS, approvedCOMPARE native andcoldPASS. Corrected UI wording77PASS/nativepending. Real fixedDeepSeekpairv2 found Manager authority_rejected before outbound; botharms retainedbudgetFAIL, guarded27/12calls,210702/65800tokens. Astrahigh child fixingidentity, no additional paid reroll until deterministic verification. NativeContext/fullthresholdpressure waiting usable UI afternoWindowsAvailable; no Missionclaimed. See p33journal11:35 entry for paths/hashes/timing. Phase3 remainsOPEN; no packaging/P36/push.
+
+**当前补充 — 2026-09-13 11:05 CST：** P34原固定FIRST/COMPARE真实deepseek-flash两臂分别283.621s/79.057s、550469/108311 tokens，均budget_exhausted；Mission总额未耗尽，子Task额度不足。账本与Provider用量一致，无重复计费证据。测试原配置没有provider token grants，不能代表Host已接入的逐请求准入。现已保持原任务/材料/2M总预算与A/B限额不变，接入同一固定官方tokenizer的Context与Provider estimator，明确记录ZERO_GRANTS/UNKNOWN/EXERCISED；纯配置7PASS/.22s、ruff通过，未重跑付费组。原两次失败完整保留：SDK .local-test-evidence/2026-09-13/p34-real-search-value-8dc3876aadb546e0baa9148a0095122e/。P34价值门仍OPEN。
+
+**最后更新：2026-09-13 10:51 CST — 源码原生负载、独立恢复与搜索链验收。** snapshot-v17（SDK0a1a050/Hostc61744d6）：三Mission/两物理槽中第三任务真实UI取消，释放前后无实际Provider调用；官方backup/restore到独立userdata后，成功/取消/待人三状态及96事件、14 Provider记录（13succeeded/1claimed）、34journal完全相同，恢复副本真实UI复核后正式交付，调用不增、rehandoff0。B2 summary SHA256 `0d4e3c76fbbf35ddc7ccda3eb5241e71147c92e234f9814ab01db25460591efb`。原生Verifier压力v19：UI显示第三Result PENDING，UI时点持久事件对应2RUNNING+1PENDING，20秒自动释放后3任务均交付；手动marker未观察，不声称pending上限4饱和。summary SHA256 `c67edef26d8360b5feb53f8c068d05904f1a2f54e2545326976a1b911611f6c7`。FIRST原生v20：保留A三次失败，F仅核选中片段，Manager改C依赖为F+B，C实际测试通过，S读取已验证C并实际测试通过；UI打开final.md，冷启动同hash `bc04ba9b12d5ab4e0729599c2cce15ca42d715152ea84e81484f0f78ac1c73c3`、26调用/0rehandoff/62journal/192全局事件不变。summary SHA256 `7ebfacc0d9cc21f1d3989598f13b320fdc97d423fc81095f37a581e7463a3479`。均为受控Provider机制验收，不冒称真实模型质量。Host证据根 `.local-test-evidence/2026-09-13/p33-g/`，对应source-ui-b2-restored-v18b/source-ui-pressure-v19/source-ui-search-v20。只读回放replay-all-native-v2.json：27数据库/35Mission/62观察，PASS零差异/错误，.730s，无调用/效果变化，SHA256 `a2cc5a33ba08f4dfe1c1c6cb3452148d37367b15dc2f003dcf829ef23f57382b`。当前SDK826c0e1五项回归修复56PASS/20.03s，新全量待；P33累计关联/P34/P35仍OPEN。真实FIRST/COMPARE原固定pair两臂预算失败已保留，测试漏接原生精确tokenizer/逐请求准入的配置正在修正，尚未重跑。长Context原生rotation与批准COMPARE UI待。不打包/P36/推送。
+
+**最后更新：2026-09-13 10:33 CST — 全量回归发现的恢复与预算分类修复。** 全量 g-doc9-orchestrator-full-v5 为1746 PASS/5 FAIL/12 SKIP，623.89s，未通过。缺失冻结runtime pool时，恢复跳过绑定并保留原SUBMITTED turn；必需Critic冷却时进入有界等待，Worker可路由不再重置Critic等待起点；保护尾部的Attempt额度耗尽改用BudgetExhausted(attempts)，让冲突任务按原合同转人工，避免误报runtime_unavailable。策略结构断言区分搜索角色读取与Mission绑定的模板选择。五个受影响文件组56 PASS/20.03s（runner20.32s），包含原5失败、健康Critic拒绝对照和预算四表不变检查；mypy117源文件与ruff通过。源码测试已通过，新全量与该修复的原生UI仍待；P33/P34/P35整体OPEN，不打包/P36/推送。证据在SDK .local-test-evidence/2026-09-12/p33-g/g-full-regression-five-fixes-v1.*。
+
+**N1 original-source acceptance — 2026-09-13 10:09 CST: PASS.** Source snapshot v16 (SDK aada164 / Host ba6be341), doc9, same two original files and original 400000/12 goal/budget: Mission mission-0b12722003e0b883 COMPLETED/verification_passed in291.398s, one Worker Attempt,320365 settled/0 reserved. Actual assistant journal submitted ordinal refs; canonical Claims:11 VERIFIED source attributions,3 SUPPORTED analyses,1 UNDER_REVIEW structural statement. REPORT SHA256 `812114f5b9f1252a56d43e4ff6815961a031aeec01e62da3f751103c0c9c3e52`. Parent opened report and both-source citations in native UI, including complete HA-12 row and 99-character conditional unit; full CAS report matched displayed hash. Parent and independent Terra medium review PASS: build/startup failure records acknowledged; historical verification is not current installation evidence. Same-source cold UI reread preserved artifact/citations/status and14 Provider records (11 succeeded/3 failed),0 rehandoff,60 events and SDK journal counts. Native/cold carrier lifecycles651.361/104.222s include manual inspection, both exit0/no residual. Host evidence `.local-test-evidence/2026-09-13/p33-g/source-ui-n1-v16/case-summary.json` SHA256 `195b17df5a66ee13937410abbbe59b4e75c255a49fa6766ee75808afc1972bde`. Historical failed N1 runs retained. This closes current N1 content/native/cold gate, not P33 cumulative audit or overall P34/P35. No packaging/P36/push.
+
+**Updated 2026-09-13 10:02 CST — queued cancellation and resumed stall timing.** Legacy calls now acquire physical slots before durable SDK handoff and recheck Mission/intent under the Orchestrator Store transaction; cancelled queued Planners cannot issue a new request. Existing usage and UNKNOWN semantics remain. Liveness reads effective admission; a persisted blocked-to-unblocked transition starts one new stall window without inventing SDK progress or renewing it on ordinary heartbeats. Actual two-slot/three-Mission cancel, accepted response, UNKNOWN, six-stall-window waiting, completion/cancel and true post-queue stall: 8 PASS/7.71s. Affected budget/lease/replay:44 PASS/32.97s; mypy117 and ruff PASS. Sol and Terra high independent limited reviews ACCEPT. Raw logs under SDK `.local-test-evidence/2026-09-12/p33-g/`: g-local-queue-liveness-v4.log SHA256 `4f05f5ebb5de92615dd68b964f93b9027ad2303e153ed47f1c6c8b30c2519b6b`; g-queue-admission-affected-v5.log SHA256 `22b45b6d736420ebc05d647b5bdd6c2a2bf61bd73523ab18aea166f871e736c0`. Earlier configuration and actual queue-exit failures remain. Native load validation is pending. Doc9 current/legacy profile follow-up37 PASS/.43s. P34 only seven material-mechanics checks/1.99s so far, not real-model value. P33/P34/P35 remain OPEN; no packaging/P36/push.
+
+**最后更新：2026-09-13 09:54 CST — doc9 冻结序号输入。** 新文档任务默认doc9；Result提交允许criterion_refs/mission_criterion_refs按冻结Task/原Mission目录严格展开，正式Claim仍保存完整ID，原始SDK journal不改；互斥、越界、错身份、旧doc8/code、坏完整hash拒绝，alias不增加证据或放宽验证。旧doc8 canonical SHA保持。当前parser/历史profile53 PASS/1.01s（g-doc9-parser-v4，runner1.36s），先前受影响prompt/域/queue组合95 PASS/3.89s，ruff通过，doc9独立静态复审ACCEPT。原始资料N1v15(doc8)仍FAILED：首提交第18条Claim完整hash抄漏字符，重试Task预算不足；284857已结算/0预留，未接受报告仍有过度概括缺口。新增提示词要求核对开头/历史反例，但尚不证明质量修复；doc9同资料/400000/12真实UI待验。当前另行排队取消/队列退出stall修复未随本切片验收。P33/P34/P35整体OPEN，不打包/P36/推送。
+
+**原生边界与恢复检查点 — 2026-09-13 05:40 CST：** 新冻结 SDK c8e2541 / Host b7dc4c64 综合1127 PASS/75.26s。N1v9真模型正式交付及同源冷恢复已核对；新Host显示修复在受控原生来源指令用例验证。N4来源指令归属、错误逐字引用、矛盾证据三例原生UI符合预期，独立原始证据保存在Host `.local-test-evidence/2026-09-13/p33-g/source-ui-n4-*-v10/`。实际OS SIGKILL后两库冷恢复2 PASS/9.59s：成功结果零重复Worker、独立Critic读产物；UNKNOWN保持原token/cost占用。仅覆盖该两边界，不覆盖完整Mission或P32逃逸进程恢复。FIRST新保护虽18PASS/0.91s，独立审查仍有系统hold丢cap和priced分别取整2项P1，修复中。P33剩余N6/active管理/O4、P34综合价值场景及P35其余门槛保持OPEN，不打包/P36/推送。
+
+**源码与原生 UI 检查点 — 2026-09-13 05:25 CST：** N1v9 原始两文档、400000/12 原目标在 SDK c9a1f183 / Host 45c09756 源码环境完成：220.968s，正式 REPORT f6b192a3…f905、6 条 VERIFIED 逐字引用（两来源、完整表格行、完整限定单元），242431 tokens 已结算/预留0，13 次 Provider handoff。真实 UI 读报告、引用并冷启动重读，调用仍13/无重复；文档区“尚未判定”投影缺陷已修复，后端13 PASS/0.06s、前端25 PASS/0.912s及typecheck通过，新 UI 待验。动态新增已完成依赖的 Task 回放修复42 PASS/36.16s，原 v14 #14 历史43事件全覆盖/无差异；Python3.12空AST字段兼容35 PASS/0.29s，保持原生产基线。总体P33/P34/P35仍OPEN；进程kill测试仍在修复，FIRST请求保护仅helper7 PASS未集成；不打包/P36/推送。
+
+**当前源码检查点 — 2026-09-13 04:49 CST：** P35 离线备份 20 PASS/17.29s；租约丢失恢复及取消 10 PASS/23.14s，受影响取消/恢复/租约回归 44 PASS/6.68s。N1v8 真模型仍失败：18 次实际调用、378113 tokens 已结算、当前预留 0；已定位 RUNNING 时终态 ordinal_to 为空造成 180s 错误超时。改读 SDK 持久进度的定向检查 8 PASS/8.98s，保持真正停滞超时控制；Host 六类文档场景及启动器 28 PASS/12.74s。上述为以 SDK e4da042 / Host 985e403 为基线的未提交修复证据；新原生 UI 待验，P33N1/P34/P35 整体 OPEN，不打包、不执行 P36、不推送。
+
+**Source and native checkpoint — 2026-09-13 04:13 CST:** SDK protocol-error response parsing preserves independently valid Provider usage while still rejecting malformed tools (26 PASS/1.36s); missing/invalid usage stays unknown. Late-accounting automatic original-subject import/settle11 PASS/2.90s and receipt boundaries5 PASS/0.47s, independently reviewed. Citation repair retains failing claim/index/source/line identity without source-body reinlining3 PASS/0.46s. Broader integration v14 is still running/stalled in legacy recovery, not PASS. N1v7 was UI-cancelled after malformed-tool response without usage,170532 settled/108083 unknown held,13 physical handoffs, no successful value acceptance; original proof retained. Controlled source UI N2 delivered two28-Claim Missions (750 tokens each/zero reserve), actual long block290080 characters reached END_OF_LONG_TABLE, in-flight citation switching/CAS error and restored retry observed. N3 source supersede/revoke-reject/revoke-approve and historical read observed; cold verification in progress. N4/N6 boundary software27 PASS/10.67s including launcher identity, native cases not yet run. Whole Phase3 gates remain OPEN; no packaging/P3.6/push.
+
+**Latest source checkpoint — 2026-09-13 03:49 CST:** priced system runtime oracle now passes (1 / 0.94s), after repairing its actual synthesis knowledge fixture; no price-gate relaxation. Three Missions/two physical slots control passes (1 / 0.57s): queued cancellation has zero Provider handoffs/charge, slow verifier and human waiting release model slots, surviving tasks complete with zero reserved usage. Independent review identified an OPEN P1: late accounting effective SDK facts for terminal/collected subjects lack automatic orchestration import/settle; prior explicit-import controls do not prove recovery wiring. Native N1v7 is running with SDK6866/Host7b5; boundary fixture software first run6 FAIL1 PASS/159.83s is being repaired. No P33/P34/P35 completion or push.
+
+**Source checkpoint — 2026-09-13 03:35 CST:** broad P33/P34/P35 source integration1082 PASS/1 priced-test setup FAIL/54.91s; after fixture repair priced system protected-tail real synthesis remains FAIL (0.54s), so priced-system gate stays OPEN. Fragment scope/reuse/actual Worker-Critic/replay25 PASS/1.97s; context/criterion repair5 PASS/0.45s; accounting core10 and other system controls passed in prior batches. Native N1 historical replay:6 orchestration DBs,5 Missions, no mismatch/unknown event, sibling6 SDK execution DBs explicitly inventoried separately; this is history integrity, not successful delivery. FIRST6000 protects configured quota only, not a guaranteed complete initial Critic request under an8192 output profile; effective bounded allowance still pending. Next source snapshot is for unpriced N1 and controlled UI. No overall completion or push.
+
+**Latest native/source checkpoint — 2026-09-13 03:26 CST:** N1v6 produced a rejected REPORT and9 proposed Claims; no formal acceptance. Rule failure from generated free-text quality criteria, then11 zero-call context-overflow retries.128156 tokens settled/currentreserved0, UI observed and exited cleanly. Repair5 software controls passed; broad1051 PASS2 regression FAIL3 optional skips. P34 fragment runtime2 failures; P35 priced rounding reserve review P1 open. N1–N6/O4 and overall P34/P35 remain OPEN. Details/current commands/evidence in Phase3 journals; no packaging/P3.6.
+
+**Source checkpoint, 2026-09-13 03:12 CST:** integrated source checks:1037 PASS/2 legacy schema FAIL (48.27s); pre-schema15 reserved-attempt read compatibility fixed, targeted9 PASS/0.36s. Includes15 candidate controls, Mission system pool7, FIRST6, priced cold1 and missing-usage boundary2. COMPARE decisions and full immutable payloads now replay; frozen candidate deadline cannot dispatch new pending candidates. Controlled Host document fixture software2 PASS/6.21s proves28 formal citations and >256KiB paging; frontend search51 PASS/1.04s and typecheck pass. Fragment branch remains5 output-conflict failures (16 other controls passed); Mission-system runtime hooks, SUCCEEDED-missing-usage settlement, N1–N6/O4 and real P34/P35 gates remain OPEN. No release packaging/P3.6. This is an incomplete development checkpoint.
+
+**Runtime checkpoint, 2026-09-13 02:50 CST:** default FIRST Critic tail reserve/consume/release is connected to actual production dispatch and passed6 controls/0.58s. Typed denial collection3/0.36s; true two-SQLite priced cold reopen1/0.40s. Scope excludes OS-kill, future Mission-level system pools and SUCCEEDED-without-usage late accounting. P34 joint run has3 FAIL/4 PASS/5 setupERROR; source inheritance defect identified and being repaired. N1 and remaining native/full audit gates remain open. See current journals; no packaging/P3.6.
+
+**Source budget checkpoint, 2026-09-13 02:35 CST:** public Mission snapshot now carries current ledger usage in the same read transaction (39 SDK controls/5.12s); Host projection uses settled/current reserved values instead of historical Attempt totals (22 controls/8.42s; frontend49/0.941s). Provider tail/price primitives and durable typed denial:19 controls/1.00s. FIRST tail runtime wiring and native verification remain open; no release or completion claim. First-run collection/fixture failures retained in journals.
+
+**Latest native checkpoint, 2026-09-13 02:25 CST:** N1 v5b (Host133aaa62 / SDKdfc9b7c) FAILED: sole Task90000/4 exhausted its attempts despite Mission400000/12. Both original sources were read in4 pages; no REPORT. Eight physical calls all settled, Mission86732 tokens/current reserved0. UI44494 reservation display is a confirmed projection bug; correction and typed denial stopping are in progress. N1–N6/O4 and P3.4/P3.5 remain open; no packaging or P3.6. See current Phase3 journal for immutable evidence.
+
+最后更新：2026-09-13。
+
+**Current source state, 2026-09-13 02:08 CST: P3.3 G / P3.4 / P3.5 remain in progress.** Integration run g-source-integration-v8: 989 passed, 2 outdated profile-fixture assertions failed, 40.34s (wrapper40.80s). Only the fixture was corrected: g-profile-compat-v9 passed all20 controls in0.02s (wrapper0.23s), preserving exact historical v3/v4/v5 and rejecting unknown v7. The integration includes all18 role-context and all18 provider-admission/recovery controls; the earlier cold-owner failure is closed (focused3 PASS/0.44s and integration). Changed Python Ruff and104-source-file mypy pass. Explicit unpriced profiles have shared token/slot admission, exact owner/epoch recovery, held UNKNOWN cost and actual late usage; priced admission is explicitly refused until monetary accounting is implemented. Future Critic/synthesis tail reservation, full P3.4 selection/fragment reuse, P3.5 load/backup and N1 native acceptance remain open. N1 v4b remains a real failed run; original sources, goal, criteria and400k cap are unchanged. Packaging, release and P3.6 remain paused.
+
+[生产链路与边界](ORCHESTRATOR.md)；[精确命令、首跑失败和本机证据](../plans/2026-09-12-phase3/p33/journal.md#planning-role-local-20260913)。
+
+## 历史版本验证记录
+
+### 9月13日前序局部验证（历史）
+
+大页/context组合 `g-doc6-large-pages-v1` 97 passed / 0 skipped，5.88秒（wrapper6.15）；官方本地tokenizer/provider wire组合另26 passed / 0 skipped，2.51秒（wrapper2.73）。前者覆盖新8192字符/32KiB及实际tokenizer双重上限、匹配ContextPolicy和冻结恢复，后者没有真实模型调用；均不证明累计预算guard或N1业务通过。大页core后续已获Ohm限定ACCEPT。[原命令与证据](../plans/2026-09-12-phase3/p33/journal.md#大页与匹配context配置局部验证2026-09-13)。
+
+00:40阶段源码兼容874项通过/35.70秒，94文件mypy与改动Ruff通过；更早 `g-reading-lifecycle-v2` 为39 passed /0 skipped（旧分页34＋lease5），1.15秒（wrapper1.41）。这些是对应工作树和旧2000B分页阶段的历史证据，不覆盖后续改动或N1真实重验。
+
+
+G SDK源码验证里程碑（21:18 CST）：干净提交a5c8fca659be8b491d4d0f3f3f5536a5e711ce48完整编排1302 passed /8 skipped /0 failed，487.75秒（runner488.09秒），PG50040已查无残留。8项真实Provider未启用；G整体未完成。0.11.1可复现候选wheel49137655…、306包文件与709个sdist源码输入逐字匹配；Host安装组合/原生flash继续验收。
+
+G进行中（21:09 CST）：SDK默认文档画像v4、原子创建、历史引用全文分页、Mission判定树恢复和每次发布前来源复查已实现；两个SDK范围独立审查均限定ACCEPT。串行定向744 passed /17.44秒，非完整回归。Host后端/UI已实现但尚未安装新wheel验收；前端86 passed、typecheck通过。0.11.1只是候选版本，完整编排、制品、原生deepseek-flash及46项最终审计仍待做。
+
+F 验证完成（保留既有红集）：干净源码 `5bcca08fe666b8e20524206b76ce2afbba63db4d` 整仓3241 passed /60 failed /18 errors /13 skipped（547.16秒）；与同依赖旧源码a4aae8c的78项红集按kind+nodeid完全相同，新增0。0.11.0安装验证1402 passed /11 skipped /1既有迁移失败（506.99秒）；304包文件逐字匹配，258实际加载模块均来自安装包且哈希一致。F不是整仓全绿或新正式发布；G、Host与真实flash仍未完成。
+
+E 干净源码 `cf40b8ec86a2f307d0f8b8f89cf7f0166e5de121` 完整编排 **1199 passed /8 skipped /0 failed**（481.36秒），watchdog481.63秒，PG25036无残留。8项skip为未启用真实Provider。A–E完成SDK源码验证；F/G、wheel、Host与真实flash仍未完成。
+
+## Agent 编排 Phase3 历史阶段状态
+
+D 干净源码 `d3d3fd8650acc8b837dc4c0e093ab95068d054ff` 完整编排 **1119 passed / 8 skipped / 0 failed**（446.64秒），watchdog446.86秒，PG18131无残留。8项skip为未启用真实Provider。D为SDK源码里程碑，E–G、Host/wheel/真实flash仍未完成。
+DOC_PROFILE v3、契约schema3；旧历史不迁改。当前生产链路新增有限接受、人工恢复、预算前限额与Mission固定分母确定性判定。见P33 journal §2.4。
+
+P3.1/P3.2 已交付；P3.3 切片 A、B、C 已完成 SDK 源码验证；C 干净源码 `963b090` 编排全量 **979 passed / 8 skipped / 0 failed**（475.47 秒）；独立审查闭环；D 已完成源码验证，E–G、P3.4/P3.5 未完成。
+切片 A 源码 `1eaa91f` 的编排全量 **651 passed / 8 skipped / 0 failed**；8 个真实 Provider 用例未启用。
+切片 B 干净源码 `fb58bf1`：编排全量 **867 passed / 8 skipped / 0 failed**（488.39 s），定向 300 passed；独立审查无剩余 P1/P2。8 个真实 Provider 用例未启用。
+本次未换 Host wheel、未做新的原生或真实模型验收；Host `04350956` 仍钉 SDK 0.10.0。
+生产链路与边界见 [ORCHESTRATOR.md](ORCHESTRATOR.md)，接续与证据见
+[Phase3 HANDOFF](../plans/2026-09-12-phase3/HANDOFF.md)。本机未新增 worktree。
+
+## 以下为此前 SDK 能力与验证记录
+
+最后更新：2026-09-07。0.7.10 nullable源031fdc6+Host2d64e6e5/fad81ebb：仅明确原类型/null pair，保留required/enum/const/非null约束与原raw hash；Host两字段无值不请求复用，非适用hash拒绝。新增4唯一控制通过，Host首批夹具缺真实evidence入口红已保留，仅重红1。PG76045 exit0/remaining[]，旧H079不改；主统一一次wheel/installed组合，尚非真实模型或main质量通过。[限定结果](../plans/2026-09-07-nullable-tool-schema/RESULTS.md)。
+
+## Mandatory context repair source — 2026-09-06
+
+Last updated 2026-09-06. Separate successor source from H078: typed pending-action
+refusal is handled after actual response checkpoint, with at most two durable
+same-Run repairs and original budgets. Every repair-bearing terminal (including
+routed) still checks real ACK/current pending; fresh typed grants/physical guard
+remain. Existing context.no_recall/context.apply audits bind repair identity.
+SDK11 + Host3 new controls passed in separate batches; Dirac fixed-source/results
+limited ACCEPT. Main owns H079 packaging/installed/r17 with M618; no source tests
+repeated, no old Run or frozen wheel changes. LastPG21416 exit0/remaining[].
+[Results and exact boundaries](../plans/2026-09-06-mandatory-context-action/RESULTS.md).
+
+## Native Host ordinary Run verified — 2026-09-06
+
+H078/Hostb3680732 real native r13 completed a fresh ordinary turn and the default
+audit consumer enumerated45 public DTO rows. Public SDK metadata reports
+verified_current_intervals, coverage_gaps=[], history_coverage=recorded; no tool
+or effect path was exercised. Old r12 unverified history is not recertified.
+Host Run f4370cbe-1a87-537c-8d3b-8e0abbf8bd16; native PG99878 exited normally,
+remaining[]. [Host evidence and exact scope](/Users/denny/projects/simple_harness-primary-candidate/plans/2026-09-06-typed-use-primary/NATIVE-R13.md).
+
+## Native driver audit successor — 2026-09-06
+
+SDK-owned immutable start-mode selection exposes the actual driver to kernel
+recording. Four new actual SQLite Runtime controls passed; opaque/subclass and
+custom Host-control drivers remain unverified. Source13abfe8, no schema change;
+H078 one offline artifact and installed3 checks plus Host4 checks passed and received scoped independent ACCEPT; native remains pending. [Evidence and scope](../plans/2026-09-06-native-driver-audit/RESULTS.md).
+
+<!-- Updated 2026-09-06 -->
+
+## Authorization expiry terminal proof successor — 2026-09-06
+
+H076 authorization expiry wrote a failed Run without a run.failed event. This
+successor atomically binds root React tool-authorization terminal decisions and
+provides explicit public eligibility/recovery plus exact public terminal metadata.
+21 unique new source controls passed in bounded batches (not24). Actual r6
+SQLite/WAL-consistent COPY passed public eligibility -> recovery -> terminal ->
+reopen exact replay;33 original events retained and original DB/WAL bytes unchanged
+at this gate. Original userdata has NOT been recovered. Fixed077 sourcec29af669/wheel60f7fb16
+has one offline build, small-target public consumer PASS and Dirac scoped artifact
+ACCEPT; Host/native remain separate gates. Unknown/multicycle/child recovery shapes refuse. H075/H076
+artifacts unchanged. [Contract](../plans/2026-09-06-decision-terminal-recovery/CONTRACT.md),
+[results](../plans/2026-09-06-decision-terminal-recovery/RESULTS.md),
+[artifact](../plans/2026-09-06-decision-terminal-recovery/ARTIFACT.md).
+
+<!-- Updated 2026-09-06 -->
+
+## Exact short Context identity successor (source scope)
+
+H074 requires a positive ContextFragmentV2 source_revision even though the public
+short selected item correctly hasNone. Isolated H075 successor now requires only
+None for SHORT_HORIZON, preserves strict positive nonshort and existing hash domain.
+Explicit execution9 descriptor/backup migration isolates old binaries before durable
+business reads. Wire8PASS and separate migration7PASS; actual Host11groups short
+normal physical-guard allow and independent-source deny2PASS in source overlay.
+Old artifacts/user data unchanged. Frozen075 sourceabbb0fd has identical double
+offline wheel7969a2e5; small target installed actualshort two controls plus previous
+Host factory refusal failure3PASS11.40s, no remaining process. Dirac scoped source
+ACCEPT; new-artifact/installed review ACCEPT. Full Host typed-use/native acceptance remains open. [Contract and remaining bounds](../plans/2026-09-06-short-context-revision/CONTRACT.md),
+[source evidence](../plans/2026-09-06-short-context-revision/RESULTS.md).
+
+<!--
+SPDX-FileCopyrightText: 2026 DennyWanye
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# ARCHITECTURE 目录
+
+## Receipt-bound Provider reservation source — 2026-09-06
+
+Isolated successor from frozen H073 `0282fa98`: schema2 typed Context intents,
+original request/time checkpoint, actual Memory authority port and atomic
+receipt/Provider claim association, existing handoff CAS and new-grant retry,
+payload-free public view, explicit execution7→8 WAL-aware migration are implemented
+with Dirac scoped source ACCEPT at69db778. New bounded source batch32PASS,
+separate migration3PASS and adjacent33PASS; retained initial failures are documented.
+Fixed0.7.4 source9229269 has identical double offline wheels (168 source files)
+and6 target-installed public consumer tests passing; Dirac independent artifact read-only review
+is scoped ACCEPT (exact168 package bytes/119 origins/manifest chain). No Host default/native/formal401 PASS. See the
+[artifact handoff](../plans/2026-09-06-recall-use-reservation/ARTIFACT-HANDOFF.md).
+Generic no-Memory behavior is retained;
+missing/legacy typed carrier is not an empty attestation. See
+[contract](../plans/2026-09-06-recall-use-reservation/CONTRACT.md) and
+[results](../plans/2026-09-06-recall-use-reservation/RESULTS.md).
+
+
+记录 Simple Harness SDK 的架构生产事实。本叶后继 source candidate 为 `0.7.4`（冻结0.7.3不变）。Human Memory S1
+已经把自动 pre-Provider recall 改为显式的同 Run route seam：每个新的 Provider turn 只能消费 Host 经
+`RunContextAuthorityPort` 返回并由 SDK 校验、冻结的 Context snapshot；同批 route-required effect 在
+route receipt 尚未可见时会在 ledger/handoff 前拒绝。fresh execution schema v7 持久绑定
+`TaskExecutionEnvelope`。`WorkspaceBindingAuthorityPort` 现定义独立的 Manual challenge/decision 与 Host
+Run-mode snapshot 验证链；只有 Host durable lookup 后返回的 grant 才能进入 append transaction，随后
+`WorkspaceBindingSetReceipt` 携带 sorted unique root identity hashes：genesis 固定 canonical empty-set
+parent，后续只能验证为 exact parent set 加 grant 的一个新 root，并固定 base→new revision。schema v2/v3
+route receipt 和每个 project effect envelope 都交叉绑定该 binding-set receipt id/hash；v1 decoder 只
+兼容无 authority standalone，project v1 fail-closed。generic Tool authorization receipt 或
+`RunContextSnapshot.metadata` 不具备此 authority。0.7.1 的 route receipt v3 区分 context-tool 与 Host-initial
+provenance；ordinary start snapshot v7 将完整 Host initial route/hash 纳入 durable start identity，ReAct
+checkpoint schema v6 只在 checkpoint 不存在时原子初始化，并在恢复时以 version-zero 初始锚拒绝启动 route/TaskScope/binding 冲突，保留合法演进的当前 route。
+它继续跨轮保留 snapshot revision 与 ID→payload hash，
+Provider durable response 只接受 public allowlist，隐藏推理和私有 metadata 不进入 ledger、checkpoint 或
+Context。旧 `AgentMemoryPort.record_committed_turn` terminal outbox 仍保留；生产 kernel 不再自动调用
+`recall_for_turn`/`release_recall`。Memory SDK 的新 evidence/认知状态和 Host TaskScope 产品实现不属于本仓
+当前能力，仍由后续 release unit 完成。
+
+S1 `a2-003` 现已冻结 schema-v2 cognitive wire：EvidenceSpan 由 admitted evidence authority 精确验证 UTF-8
+byte range，typed observation 绑定 exact evidence/admission/item；四类长期记忆使用独立 payload/lifecycle、
+revision target、canonical DAG 与 strict-atomic authority receipt。RecallPlan 必须绑定未过期 RecallContext，
+保留 Host mandatory selector 并只允许缩窄；unknown/external/untrusted disclosure 默认不能产生 RECALL。
+RecallContext 还把 Host 当前 Procedure applicability fingerprint 集合纳入 canonical hash，模型计划没有
+对应可写字段，不能扩大或伪造当前适用性。RecallDecision 已单独升级为 strict schema v4：每个 selected item
+明确区分 cognitive-memory
+和 Short-Horizon source，前者绑定 memory type/exact revision，后者绑定 exact chunk ref 且禁止伪造
+memory type。NEEDS_USER_CONFIRMATION 使用有序、完整的 atomic group/member，不接受部分冲突组。
+typed result/page 与 ContextFragment v2 继续绑定 decision/result/item/use；Context assembly 按 fragment
+`(id, hash)` 组装。公开 parser 只接受 v4，v3 与 naked source ref fail closed。
+分类 enum 的唯一事实源是无依赖 `information_classification_protocol`；EvidenceItemAuthority 使用公开
+`EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION=3`
+由 Host 强制附带 privacy floor、canonical attributes 和 classification authority ref。span verification
+只接受 exact Host authority type，一次 resolve 后返回同一 verified item authority 供后续 join 复用。
+typed observation 仅允许 Tool/Trusted Tool 或 External/External Source 两组 exact provenance 且必须解析
+typed receipt；Mutation DTO 同时冻结 epistemic/evidence matrix，Memory repository 后续仍复验 authority。
+conversation causal metadata 是 raw evidence 入库后的独立 Host registration，非法 metadata 不删除原始证据，
+只失去后续 Short-Horizon 资格。该 registration 现使用独立
+`CONVERSATION_EVIDENCE_SCHEMA_VERSION=3`：可召回 item 必须 all-or-none 绑定 Host 已验证
+`EvidenceItemAuthority` 派生的 RFC 6901 `public_text` pointer、UTF-8 SHA-256、effective privacy、canonical
+information attributes、classification authority ref 与 item-authority id/hash；没有该绑定的 evidence 仍永久保存，
+但不得进入索引。v2 conversation metadata/receipt/registration fail closed。
+
+S1 `a2-006` 已新增 Host-owned `MemoryActionAuthority`：该授权约束最初随 mutation schema v4 引入，
+当前继续由 schema v5 承载；
+REVISE/SUPERSEDE/SUPPRESS 只能引用 `MemoryActionAuthorityRef`，Memory 必须经 Host durable authority port
+单次解析并校验 exact subject/action/existing target revision/evidence/run/turn/plan/operation/expiry/nonce/issuer/hash。
+action schema v2 还绑定 authority-free whole-plan `plan_intent_hash` 与 canonical operation index；其他 operation
+被插入或修改时旧授权必然失效。plan/operation intent hash 都明确排除 authority ref，避免 plan/authority hash
+循环，而最终 `plan_hash` 仍承诺 ref；Memory repository 仍必须在同一
+mutation transaction 唯一消费 `replay_identity`。缺 authority 使用 typed
+`MemoryMutationApplyResult.NEEDS_USER_CONFIRMATION`，不伪装成异常或 Recall outcome；COMMITTED result 与可信
+apply receipt 都会复验全部 protected existing operation 已携带 ref。CREATE 不需要 action authority；CONTEST 不得携带 action ref、必须是
+CONTESTED、禁止 destructive terminal lifecycle，也不因此取得覆盖、删除或任意降级无关记忆的权限。Memory
+consumer 仍必须把 CONTEST payload/lifecycle 与可信 target state 做 exact unchanged 比较，只允许 conflict flag 变化。
+
+S3 Procedure/Prospective 的 Host authority seam 也已补齐，但还不是 Memory repository 实现。
+`ProcedureObservationAuthority` 以 ref-only wire 绑定 exact subject/scope/memory revision、TaskScope、admitted
+evidence span、terminal receipt/outcome、版本化 applicability fingerprint、risk/hazard、预期 lifecycle transition
+及 Run/operation；`ProspectiveSignalAuthority` 绑定 exact typed trigger/hash、scheduler registration revision、
+clock/event/ack receipt、outbox（仅 ack）、occurrence 和 lifecycle transition。两者完整 authority 只能由 Host
+resolver 返回，校验窗口统一为 `issued_at <= now < expires_at`，并携带 nonce/replay identity；Memory 后续仍须
+复验当前 head/scope/receipt，并把 replay fence、decision、CAS 和 outbox 放在同一事务。Procedure applicability
+fingerprint v2 使用 exact fields + version 的 canonical domain hash，避免字段分隔符碰撞；Memory pure kernel
+必须复用同一算法，避免 exact-wheel 漂移。
+
+Main-model analysis 的 provider delivery 由独立的 `MemoryAnalysisResultEnvelope` 承载：其中 Host
+durable `MemoryAnalysisDeliveryReceipt` 必须经 injected authority lookup 验证；Memory 后续产生的
+`MemoryAnalysisReceipt` 仍只负责 validator/apply，两者不可互相替代。
+
+2026-09-01 的 relation 增量把 mutation wire 升级为 strict schema v5：Semantic payload 显式区分
+`claim | relation`，V1 relation 只允许 `applies_to`，same-plan endpoint 必须经显式 dependency 引用 CREATE，
+并限制为 Semantic claim → Procedure/Prospective；普通 mutation target 的同类型规则不变。package-root 公开
+validation diagnostic 只输出稳定 bounded reason，不回显不可信输入。跨仓 Memory v7 candidate 已通过原子关系持久化、
+公开 committed receipt view 与数字孪生图投影的 exact-wheel 验收；Host durable pre-admission audit 仍未完成。
+
+2026-08-25 Tool/Capability：SDK 0.6.2 起已提供三类 capability record、bounded search/describe、
+typed activation receipt、Run-local exposure port 与 ReAct ready-attempt 动态投影；Provider reserved 仍精确
+重放原 request。fresh schema v6 分离 legacy Provider specs fingerprint 与完整 envelope digest，exact v5
+只能显式 backup-first 迁移。目录可见性不拥有授权、确认、scope 或 effect authority。simple_harness Host
+当前工作树将 0.6.2 的 morphology-safe discovery 与 privacy-safe handler diagnostics 固化为本地 candidate
+wheel（source `67f5769ca5501f17e37193477d87a149203b6887`，SHA-256
+`ffb7c0619851f3c936fcc1d0cf527d07f49e87770291b85e57fe87032ac02c2e`）；这只是本地 candidate
+consumption，不是 tag/release 或 production promotion。Host 已修复 SDK authority/legacy
+ToolRegistry 的 split scope Store，并把物理 policy fingerprint 冻结进 RunStart，严格 stale 校验仍保留。
+真实 macOS UI CAP-1～CAP-5 已覆盖 filesystem、browser、Skill、external-origin policy 与完全重启后的独立
+根 Run；重启 Run 从 13 个基线工具重新激活到 16 个，并在 stale nonce 被拒绝后重新 describe/activate 自愈。
+Host 随后从 exact wheel 同步，packaged macOS app 在无 `PYTHONPATH` 条件下再次完成 13→14 与真实 README
+读取。source `67f5769…` 的最终 reproducible wheel 与完整真测 wheel 的 `simple_harness/` 运行时包逐文件
+相同；Host 重锁、重装后又完成一次无 `PYTHONPATH` 冷启动与可操作 UI 冒烟。正式发布稳定线仍保持原版本；
+tag、release 上传、download-back 与 consumer promotion 继续分别验收。
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — Agent Memory/Context contracts、identity binding、context
+  staging、release retry、resource ownership、production builder、installed-wheel Linux ARM64 core gate，以及 Provider/预算、
+  结构化消息、工具 catalog 与 projection outbox 权威边界。
+- [PROJECT_STATUS.md](./PROJECT_STATUS.md) — 当前 SDK candidate 模块完成度、最近里程碑与跨仓开放门禁。
+
+Human Memory Program 当前只完成 Harness SDK 的 S1 source candidate 边界；不得把后续 Memory SDK、Host
+TaskScope、动态 Context、单主对话 UI 或数字孪生体目标误当成已有产品能力。
+
+<!-- last-updated: 2026-09-05 -->
+最后更新：2026-09-21 CST。V1.4 H5–H8 contract slices：新增 `planning/htn/domain_package.py`（DomainPackage/observer/operator 安装校验与无 domain branch 检查）、`method_lifecycle.py`（冻结 EvaluationSet 与多门槛评估/晋级）、`backend_port.py`（后端状态与 witness→SH bridge）、`cross_domain_acceptance.py`（code/appworld/drone-sim × 48 scenarios × 3 trials × 4 arms 矩阵）。当前 focused contract tests 已通过；生产接线、真实入口、H5–H8 完整 gate 仍 OPEN。
+最后更新：2026-09-21 CST。候选 WAIT 原子登记/唤醒、任务终态冻结包（新协议 v6/int5）、普通 Planner 一致事务快照通过 160 项定向和 48 项重叠回归。固定源码 full_target 复验中。H1-H 旧 36/36 runner 映射不能证明原始 36 组覆盖；完整 H1、H2–H8、真实 Worker WAIT、强杀恢复及 mutation 仍 OPEN。候选未合并，Host wheel/UI 未更新。详细记录位于 Host `plans/taskSys2/升级planV1/v1.4/WAIT复验-2026-09-21.md`。
+最后更新：2026-09-21 CST。Operation 补遗实施中，V1.4（去除 NanoJev）整体未完成。新增完成规格批准命令 Host handler → SDK facade → 原 CommitService/Store，Spec/receipt/event 同事务；来源、租户、重放、过期拒绝及迁移定向 27 PASS（0.54 秒，后继 Task contract hash 修正仍在复验）。Host 在独立临时源码副本对齐两包版本后，真实 service/handler 接线 11 PASS（18.28 秒）；仅为派生源码接线证据，不是当前候选字节、wheel 或 UI 验收。移除启动/重建路径上已延期的 PR-7 observer 依赖，保留历史文件。Scope/Plan Commit、准备与效果区分、T0/T3、D3 及完整 H1–H8 仍待；未合并/重装 Host。当前无新增 PlanAgent 架构待决。详见 Host V1.4 的 Operation补遗实施记录-2026-09-21.md。

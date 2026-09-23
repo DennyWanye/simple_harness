@@ -1,0 +1,18 @@
+{
+  "api_mode": ["legacy", "command"],
+  "command_kind": ["start", "continue", "cancel"],
+  "command_state": ["accepted", "context_call_intent", "context_ready", "applied", "rejected", "cancelled"],
+  "retry_state": ["ready", "claimed", "backoff", "settled"],
+  "output_state": ["pending", "present", "absent", "unknown"],
+  "error_code": ["command_not_found", "command_intent_conflict", "run_api_mode_conflict", "command_namespace_key_conflict", "command_cancel_fence", "command_payload_too_large", "command_retry_exhausted", "command_transient_failure", "command_permanent_failure"],
+  "limits": {"message_bytes": 262144, "frame_bytes": 1048576},
+  "methods": {
+    "RunClient.submit_start": "(intent: StartCommandIntent) -> CommandReceipt",
+    "RunClient.submit_continue": "(intent: ContinueCommandIntent) -> CommandReceipt",
+    "RunClient.submit_cancel": "(intent: CancelCommandIntent) -> CommandReceipt",
+    "RunClient.get_command": "(command_id: str) -> CommandSnapshot"
+  },
+  "receipt_fields": ["command_id", "run_id", "kind", "accept_seq", "state", "version", "namespace", "projection_key_id", "intent_hash", "execution_schema_version"],
+  "snapshot_fields": ["receipt", "retry_state", "output_state", "output", "error_code"],
+  "start_intent_fields": ["namespace", "projection_key_id", "command_id", "run_id", "request_id", "turn_id", "conversation", "profile_key", "tool_catalog_generation", "input", "tool_catalog_fingerprint"]
+}

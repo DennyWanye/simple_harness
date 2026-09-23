@@ -1,0 +1,37 @@
+[
+  {
+    "id": "AER",
+    "path": "inputs/simpleharness-acceptance-evidence-recovery-plan.zh-CN.md",
+    "sha256": "e91704262e48c03a456ebd6123cbdae6eded2c14b5b80a7788d443a41ef2dbc9",
+    "basis": "conversation_attachment",
+    "applies": "normative input, superseded only by named ASR amendment"
+  },
+  {
+    "id": "H1H",
+    "path": "inputs/simpleharness-v14-h1h-admission-amendment.zh-CN.md",
+    "sha256": "fcc26712f40ea09c7edb757dc708c000bc31b7799e9180eb4f5b31e98f6bf2f5",
+    "basis": "conversation_attachment",
+    "applies": "normative input, superseded only by named ASR amendment"
+  },
+  {
+    "id": "OPS",
+    "path": "inputs/V1.4-D1-D2-D3-Operation补遗-2026-09-21.md",
+    "sha256": "a2657120e1c44479a268ca19e0ab0b3da1eb65d7b3db6512df7ef2e3d1520725",
+    "basis": "conversation_attachment",
+    "applies": "normative input, superseded only by named ASR amendment"
+  },
+  {
+    "id": "OCC",
+    "path": "inputs/V1.4-Operation完成合同补遗-2026-09-21.md",
+    "sha256": "8bf6a1c8ee40c2ada9ab88f51806e401ba8a690ea4ac1a481154f7e9ccfcb74f",
+    "basis": "conversation_attachment",
+    "applies": "normative input, superseded only by named ASR amendment"
+  },
+  {
+    "id": "TG",
+    "path": "inputs/simpleharness-taskgraph-code-execution-plan.zh-CN.md",
+    "sha256": "f36eaa1cf106a1f84d6efd2a4cdcbbe25e55fc5ed4df7510e13df3b728f615d1",
+    "basis": "conversation_attachment",
+    "applies": "normative input, superseded only by named ASR amendment"
+  }
+]

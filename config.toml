@@ -724,3 +724,16 @@ llm_input_token_budget = 120000
 llm_output_token_budget = 32000
 llm_cost_budget_micros = 20000000
 io_operation_budget = 256
+
+[orchestration]
+# 任务编排（Missions 视图）。缺省值见 backend/deskpet/orchestration/settings.py。
+enabled = true
+# NanoJev 决策滚动模式（NanoJevAdd.md §57 PR-7）。
+#   "existing" —— 默认。既有确定性分配器作答，不观测、不打事件、不调模型。
+#   "shadow"   —— 只观测 READY_TASK_PRIORITY 的 frontier 顺序，结果只写事件不生效；
+#                  分配器的授权集合仍是唯一权威，观测失败不影响生产。
+# 任何其它值（含拼写错误）一律按 "existing" 处理；本键只从本文件读取，环境变量无效。
+# "nanojev"（Primary）刻意不作为本 Host 的合法值：那是后续门，配置写不出来。
+decision_mode = "existing"
+# 影子观测的超时上限（秒）。留空/非正数 = 不设 Host 侧上限（SDK 侧仍可有自己的界）。
+# decision_shadow_timeout_seconds = 2.0

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.simpleharness.invalid/assurance/1.1/disclosure-batch-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "review_key",
+    "batch_no",
+    "previous_batch_hash",
+    "entries",
+    "reviewer_agent_id",
+    "turn_receipt_ref",
+    "provider_input_hash",
+    "visible_message_ids",
+    "delivery_receipt_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "review_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "batch_no": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "previous_batch_hash": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      ]
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": {
+        "$ref": "common.schema.json#/$defs/catalogue_entry"
+      },
+      "uniqueItems": true
+    },
+    "reviewer_agent_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "turn_receipt_ref": {
+      "allOf": [
+        {
+          "$ref": "common.schema.json#/$defs/ref"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "agent_turn_receipt"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "provider_input_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "visible_message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      },
+      "uniqueItems": true
+    },
+    "delivery_receipt_ref": {
+      "allOf": [
+        {
+          "$ref": "common.schema.json#/$defs/ref"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "disclosure_receipt"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

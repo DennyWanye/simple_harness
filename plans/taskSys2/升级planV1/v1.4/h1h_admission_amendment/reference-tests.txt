@@ -1,0 +1,35 @@
+test_decode_only_kept (test_reference.AuthorityTests.test_decode_only_kept) ... ok
+test_expiry_at_commit (test_reference.AuthorityTests.test_expiry_at_commit) ... ok
+test_grantee_is_service_identity_not_model_text (test_reference.AuthorityTests.test_grantee_is_service_identity_not_model_text) ... ok
+test_missing_action (test_reference.AuthorityTests.test_missing_action) ... ok
+test_no_source_not_default_true (test_reference.AuthorityTests.test_no_source_not_default_true) ... ok
+test_positive_real_grant (test_reference.AuthorityTests.test_positive_real_grant) ... ok
+test_revocation_makes_old_request_stale (test_reference.AuthorityTests.test_revocation_makes_old_request_stale) ... ok
+test_wrong_tenant (test_reference.AuthorityTests.test_wrong_tenant) ... ok
+test_cancelled_after_handoff_not_clear (test_reference.OperationTests.test_cancelled_after_handoff_not_clear) ... ok
+test_complete_empty_is_positive_read (test_reference.OperationTests.test_complete_empty_is_positive_read) ... ok
+test_incomplete_empty_is_not_clear (test_reference.OperationTests.test_incomplete_empty_is_not_clear) ... ok
+test_live_handoff_and_success (test_reference.OperationTests.test_live_handoff_and_success) ... ok
+test_missing_link (test_reference.OperationTests.test_missing_link) ... ok
+test_negative_requires_scope_and_finality (test_reference.OperationTests.test_negative_requires_scope_and_finality) ... ok
+test_params_mismatch (test_reference.OperationTests.test_params_mismatch) ... ok
+test_phantom_action_changes_read_digest (test_reference.OperationTests.test_phantom_action_changes_read_digest) ... ok
+test_refusal_with_no_handoff_not_fabricated_operation (test_reference.OperationTests.test_refusal_with_no_handoff_not_fabricated_operation) ... ok
+test_success_needs_receipt (test_reference.OperationTests.test_success_needs_receipt) ... ok
+test_unknown_blocks_plan (test_reference.OperationTests.test_unknown_blocks_plan) ... ok
+test_unknown_label_does_not_reconcile (test_reference.OperationTests.test_unknown_label_does_not_reconcile) ... ok
+test_unlinked_historical_action_not_filtered_out (test_reference.OperationTests.test_unlinked_historical_action_not_filtered_out) ... ok
+test_all_delta_values_explicitly_mapped (test_reference.ShapeTests.test_all_delta_values_explicitly_mapped) ... ok
+test_all_projection_values_explicitly_mapped (test_reference.ShapeTests.test_all_projection_values_explicitly_mapped) ... ok
+test_delta_hash_and_snapshot_binding (test_reference.ShapeTests.test_delta_hash_and_snapshot_binding) ... ok
+test_incomplete_not_valid (test_reference.ShapeTests.test_incomplete_not_valid) ... ok
+test_refinement_cycle_not_dropped (test_reference.ShapeTests.test_refinement_cycle_not_dropped) ... ok
+test_reports_not_fake_empty_shape (test_reference.ShapeTests.test_reports_not_fake_empty_shape) ... ok
+test_unchecked_shape_cannot_construct (test_reference.ShapeTests.test_unchecked_shape_cannot_construct) ... ok
+test_ddl_creates_four_tables_and_fk_check (test_reference.StorageTests.test_ddl_creates_four_tables_and_fk_check) ... ok
+test_request_authority_cannot_reference_missing_grant (test_reference.StorageTests.test_request_authority_cannot_reference_missing_grant) ... ok
+
+----------------------------------------------------------------------
+Ran 30 tests in 0.005s
+
+OK

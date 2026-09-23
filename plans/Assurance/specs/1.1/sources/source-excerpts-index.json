@@ -1,0 +1,274 @@
+[
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/contracts/resolution.py",
+    "sha256": "92dcb60352ba829275bfe4c732691f20d63a97eee875edb98db81672461fad60",
+    "ranges": [
+      [
+        446,
+        565
+      ],
+      [
+        566,
+        602
+      ],
+      [
+        797,
+        859
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/orchestrator/scoped_content_review.py",
+    "sha256": "4fec9f5ec06b3c91964b96270c54c9903df8d239c9095d913de7ffea0a1653a1",
+    "ranges": [
+      [
+        29,
+        157
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/orchestrator/resolution_commits.py",
+    "sha256": "7b95a7d3aa8ff5422e9e6c6b52c3fd996e16e553bc630bb830196cd71ed24ef6",
+    "ranges": [
+      [
+        592,
+        635
+      ],
+      [
+        675,
+        718
+      ],
+      [
+        1087,
+        1133
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/orchestrator/commit_service.py",
+    "sha256": "ad96a63e6b9bd042c23d61df535ed82d29bb96e2d5c87bd3a27175caf8e35edd",
+    "ranges": [
+      [
+        5106,
+        5156
+      ],
+      [
+        5238,
+        5270
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/orchestrator/event_handler.py",
+    "sha256": "40ea93bfdc762e66ff1e195ad3b70b47675da3cc63775edc062cf25b37687273",
+    "ranges": [
+      [
+        6173,
+        6245
+      ],
+      [
+        11678,
+        11784
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/orchestrator/root_review.py",
+    "sha256": "99134dfde726caa5d5bef2ed19917d42444b2d87ff433e756248d95ff29ce76b",
+    "ranges": [
+      [
+        895,
+        960
+      ],
+      [
+        1401,
+        1470
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/storage/schema.py",
+    "sha256": "f63f83c87058b6ffd86b03cf2487ad55e9f23b0d9368c4c8f36375b1b6ddd806",
+    "ranges": [
+      [
+        109,
+        131
+      ],
+      [
+        224,
+        234
+      ],
+      [
+        544,
+        570
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/storage/htn_schema.py",
+    "sha256": "0be9e350e462af2965071c1c7ffbc82fedc43948193f3dfbb0628f8ef938b755",
+    "ranges": [
+      [
+        319,
+        363
+      ],
+      [
+        466,
+        510
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/storage/htn_store.py",
+    "sha256": "b53412a27bd5cb37f2863f6643a1176a784d1429968097c97d757b395242a3d3",
+    "ranges": [
+      [
+        1325,
+        1356
+      ],
+      [
+        1380,
+        1405
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/memory/source_dependencies.py",
+    "sha256": "7e790f6e3fc1deb84b74bcf323edd158f8f438de528459836a6d3a73f61d5825",
+    "ranges": [
+      [
+        4,
+        16
+      ],
+      [
+        96,
+        115
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/verification/verifier_router.py",
+    "sha256": "b8115330ffeec1867c14ee69f4c973d8d653f6fc6304cf561e70702209fc17e2",
+    "ranges": [
+      [
+        4,
+        22
+      ],
+      [
+        73,
+        110
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/artifacts/store.py",
+    "sha256": "fc06e35e04d63b233716d5d27e686b32c1b9ef3aafbb5d79413d7393b8bc2093",
+    "ranges": [
+      [
+        93,
+        130
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/storage/offline_backup.py",
+    "sha256": "cd9428be99397666e9bfbdebf6c545c6d22377d0f25d8d7dd3a955888d905231",
+    "ranges": [
+      [
+        611,
+        679
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "SDK",
+    "path": "src/agent_orchestrator/api/facade.py",
+    "sha256": "f18a824e9a181e5d7c755f6eb97e4db6a23358c46842f364fbfc0ea46e8cfbc7",
+    "ranges": [
+      [
+        88,
+        124
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "HOST",
+    "path": "backend/deskpet/orchestration/handlers.py",
+    "sha256": "b4becbdca85d6d5da4670bcd553441e24177360e1d0378a483519994971362ec",
+    "ranges": [
+      [
+        11,
+        39
+      ],
+      [
+        204,
+        230
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "HOST",
+    "path": "backend/deskpet/orchestration/service.py",
+    "sha256": "2d7f43ac063a5d2c7b5a51b4ea76816d865934addf928be390c8ea602e0d9e8b",
+    "ranges": [
+      [
+        295,
+        313
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "HOST",
+    "path": "backend/pyproject.toml",
+    "sha256": "ee7eaa4b08e0b8f8cd22bbb3ab2b4ba6f5800f0c5bdc729aaa95c09de39b722e",
+    "ranges": [
+      [
+        165,
+        184
+      ]
+    ],
+    "stable_during_read": true
+  },
+  {
+    "root": "HOST",
+    "path": "ARCHITECTURE/TASKGRAPH.md",
+    "sha256": "bea180967787b5e855946bbf96bf9dd61f2f31f751c9610c85c9d25ce65eca57",
+    "ranges": [
+      [
+        1,
+        20
+      ]
+    ],
+    "stable_during_read": true
+  }
+]

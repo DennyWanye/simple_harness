@@ -1,0 +1,951 @@
+--- a/src/agent_orchestrator/storage/schema.py
++++ b/src/agent_orchestrator/storage/schema.py
+@@ -25,6 +25,7 @@
+ from .operation_seams_schema import DDL as DDL_V21
+ from .operation_completion_schema import DDL as DDL_V22
+ from .validity_subject_schema import DDL as DDL_V18
++from .taskgraph_schema import DDL as DDL_V23
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -562,6 +563,7 @@
+     Migration(20, "orchestrator-h1h-admission-seams", DDL_V20),
+     Migration(21, "orchestrator-operation-seams", DDL_V21),
+     Migration(22, "orchestrator-operation-completion", DDL_V22),
++    Migration(23, "orchestrator-taskgraph-execution-v2", DDL_V23),
+ )
+ SCHEMA_VERSION = MIGRATIONS[-1].version
+ SCHEMA_NAME = MIGRATIONS[-1].name
+--- /dev/null
++++ b/src/agent_orchestrator/storage/taskgraph_schema.py
+@@ -0,0 +1,467 @@
++# SPDX-FileCopyrightText: 2026 DennyWanye
++# SPDX-License-Identifier: Apache-2.0
++
++"""TG-EXEC-2.0 immutable pins, input provenance and convergence side records.
++
++SQL bytes are the reviewed 001_taskgraph_extension.sql, without parent fixtures.
++Schema installation does not enable TaskGraph policy or runtime behavior.
++"""
++
++DDL = (
++    "-- TG-EXEC-2.0, additive migration. Never execute on a live datab"
++    "ase by hand.\n"
++    "-- Register next UNUSED migration after H1H-ADM-1.0. Existing tab"
++    "le names/keys are checked in preflight.\n"
++    "-- Requires SQLite STRICT support, foreign_keys=ON. Transaction o"
++    "wned by Store migration runner.\n"
++    "CREATE TABLE taskgraph_policy_bindings (\n"
++    " mission_id TEXT PRIMARY KEY NOT NULL REFERENCES missions(mission"
++    "_id),\n"
++    " kernel_version TEXT NOT NULL CHECK(kernel_version='taskgraph-exe"
++    "c-v2'),\n"
++    " policy_hash TEXT NOT NULL CHECK(length(policy_hash)=64),\n"
++    " policy_json TEXT NOT NULL CHECK(json_valid(policy_json)),\n"
++    " enabling_command_id TEXT NOT NULL UNIQUE,\n"
++    " enabling_receipt_hash TEXT NOT NULL CHECK(length(enabling_receip"
++    "t_hash)=64),\n"
++    " created_at REAL NOT NULL\n"
++    ") STRICT;\n"
++    "\n"
++    "-- Immutable replay source; existing plan_revisions remains the O"
++    "NLY active pointer.\n"
++    "-- network_json is canonical NetworkDocumentV1. Runtime states/pe"
++    "rmissions are NOT copied into it.\n"
++    "CREATE TABLE taskgraph_revision_records (\n"
++    " mission_id TEXT NOT NULL REFERENCES taskgraph_policy_bindings(mi"
++    "ssion_id),\n"
++    " revision INTEGER NOT NULL CHECK(revision>=0),\n"
++    " parent_revision INTEGER,\n"
++    " parent_manifest_hash TEXT,\n"
++    " source_kind TEXT NOT NULL CHECK(source_kind IN ('SEED_COMMIT','C"
++    "OMMIT','CAPTURED_BASELINE')),\n"
++    " requirements_revision INTEGER NOT NULL CHECK(requirements_revisi"
++    "on>=0),\n"
++    " manifest_hash TEXT NOT NULL CHECK(length(manifest_hash)=64),\n"
++    " sdk_snapshot_hash TEXT NOT NULL CHECK(length(sdk_snapshot_hash)="
++    "64),\n"
++    " network_json TEXT NOT NULL CHECK(json_valid(network_json)),\n"
++    " certificate_json TEXT NOT NULL CHECK(json_valid(certificate_json"
++    ")),\n"
++    " admission_check_id TEXT REFERENCES planning_admission_checks(che"
++    "ck_id),\n"
++    " event_id TEXT NOT NULL REFERENCES events(event_id),\n"
++    " command_id TEXT NOT NULL,\n"
++    " created_at REAL NOT NULL,\n"
++    " PRIMARY KEY(mission_id,revision),\n"
++    " UNIQUE(mission_id,revision,manifest_hash),\n"
++    " UNIQUE(mission_id,command_id),\n"
++    " FOREIGN KEY(mission_id,revision) REFERENCES plan_revisions(missi"
++    "on_id,revision),\n"
++    " FOREIGN KEY(mission_id,requirements_revision) REFERENCES require"
++    "ments_revisions(mission_id,revision),\n"
++    " FOREIGN KEY(mission_id,parent_revision,parent_manifest_hash)\n"
++    "   REFERENCES taskgraph_revision_records(mission_id,revision,mani"
++    "fest_hash),\n"
++    " CHECK((source_kind='CAPTURED_BASELINE' AND admission_check_id IS"
++    " NULL) OR\n"
++    "       (source_kind IN ('SEED_COMMIT','COMMIT') AND admission_che"
++    "ck_id IS NOT NULL)),\n"
++    " CHECK((parent_revision IS NULL AND parent_manifest_hash IS NULL "
++    "AND source_kind IN ('SEED_COMMIT','CAPTURED_BASELINE')) OR\n"
++    "       (parent_revision IS NOT NULL AND parent_manifest_hash IS N"
++    "OT NULL AND length(parent_manifest_hash)=64 AND revision=parent_r"
++    "evision+1 AND source_kind='COMMIT'))\n"
++    ") STRICT;\n"
++    "\n"
++    "CREATE TABLE taskgraph_member_pins (\n"
++    " mission_id TEXT NOT NULL,\n"
++    " revision INTEGER NOT NULL,\n"
++    " occurrence_id TEXT NOT NULL,\n"
++    " task_id TEXT NOT NULL,\n"
++    " binding_revision INTEGER NOT NULL CHECK(binding_revision>=0),\n"
++    " binding_hash TEXT NOT NULL CHECK(length(binding_hash)=64),\n"
++    " PRIMARY KEY(mission_id,revision,occurrence_id),\n"
++    " FOREIGN KEY(mission_id,revision) REFERENCES taskgraph_revision_r"
++    "ecords(mission_id,revision),\n"
++    " FOREIGN KEY(mission_id,revision,occurrence_id) REFERENCES plan_m"
++    "emberships(mission_id,revision,occurrence_id),\n"
++    " FOREIGN KEY(task_id,binding_revision) REFERENCES task_semantics("
++    "task_id,binding_revision)\n"
++    ") STRICT;\n"
++    "CREATE INDEX taskgraph_member_pins_task_idx ON taskgraph_member_p"
++    "ins(mission_id,task_id,revision);\n"
++    "\n"
++    "CREATE TABLE taskgraph_method_pins (\n"
++    " mission_id TEXT NOT NULL,\n"
++    " revision INTEGER NOT NULL,\n"
++    " instance_id TEXT NOT NULL,\n"
++    " goal_occurrence_id TEXT NOT NULL,\n"
++    " adopted INTEGER NOT NULL CHECK(adopted IN (0,1)),\n"
++    " draft_hash TEXT NOT NULL CHECK(length(draft_hash)=64),\n"
++    " PRIMARY KEY(mission_id,revision,instance_id),\n"
++    " FOREIGN KEY(mission_id,revision) REFERENCES taskgraph_revision_r"
++    "ecords(mission_id,revision),\n"
++    " FOREIGN KEY(mission_id,instance_id) REFERENCES method_instances("
++    "mission_id,instance_id),\n"
++    " FOREIGN KEY(mission_id,revision,goal_occurrence_id) REFERENCES p"
++    "lan_memberships(mission_id,revision,occurrence_id)\n"
++    ") STRICT;\n"
++    "CREATE UNIQUE INDEX taskgraph_one_adopted_per_goal_idx\n"
++    " ON taskgraph_method_pins(mission_id,revision,goal_occurrence_id)"
++    " WHERE adopted=1;\n"
++    "\n"
++    "-- Derived demand index, not a second financial ledger. One row p"
++    "er adopted slot.\n"
++    "CREATE TABLE taskgraph_demand_refs (\n"
++    " mission_id TEXT NOT NULL,\n"
++    " revision INTEGER NOT NULL,\n"
++    " consumer_instance_id TEXT NOT NULL,\n"
++    " slot_key TEXT NOT NULL,\n"
++    " slot_occurrence_id TEXT NOT NULL,\n"
++    " producer_occurrence_id TEXT NOT NULL,\n"
++    " obligation_id TEXT NOT NULL,\n"
++    " mode TEXT NOT NULL CHECK(mode IN ('new_work','reuse_accepted','s"
++    "hare_active')),\n"
++    " requiredness TEXT NOT NULL CHECK(requiredness IN ('required','op"
++    "tional_authorized','conditional')),\n"
++    " source_slot_hash TEXT NOT NULL CHECK(length(source_slot_hash)=64"
++    "),\n"
++    " PRIMARY KEY(mission_id,revision,consumer_instance_id,slot_key),\n"
++    " FOREIGN KEY(mission_id,revision,consumer_instance_id) REFERENCES"
++    " taskgraph_method_pins(mission_id,revision,instance_id),\n"
++    " FOREIGN KEY(consumer_instance_id,slot_key) REFERENCES method_chi"
++    "ld_occurrences(instance_id,slot_key),\n"
++    " FOREIGN KEY(mission_id,revision,slot_occurrence_id) REFERENCES p"
++    "lan_memberships(mission_id,revision,occurrence_id),\n"
++    " FOREIGN KEY(mission_id,revision,producer_occurrence_id) REFERENC"
++    "ES plan_memberships(mission_id,revision,occurrence_id),\n"
++    " FOREIGN KEY(mission_id,obligation_id) REFERENCES obligations(mis"
++    "sion_id,obligation_id)\n"
++    ") STRICT;\n"
++    "CREATE INDEX taskgraph_demand_producer_idx ON taskgraph_demand_re"
++    "fs(mission_id,revision,producer_occurrence_id);\n"
++    "\n"
++    "-- Existing input_manifest_bindings may collapse repeated attempt"
++    "s with equal bytes;\n"
++    "-- this is the exact per-attempt association, not another manifes"
++    "t content store.\n"
++    "CREATE TABLE taskgraph_attempt_inputs (\n"
++    " attempt_id TEXT PRIMARY KEY NOT NULL REFERENCES attempts(attempt"
++    "_id),\n"
++    " mission_id TEXT NOT NULL,\n"
++    " task_id TEXT NOT NULL,\n"
++    " occurrence_id TEXT NOT NULL,\n"
++    " source_revision INTEGER NOT NULL,\n"
++    " binding_revision INTEGER NOT NULL,\n"
++    " contract_hash TEXT NOT NULL CHECK(length(contract_hash)=64),\n"
++    " input_binding_revision INTEGER NOT NULL CHECK(input_binding_revi"
++    "sion>=0),\n"
++    " dispatch_generation INTEGER NOT NULL CHECK(dispatch_generation>="
++    "0),\n"
++    " manifest_hash TEXT NOT NULL REFERENCES input_manifests(manifest_"
++    "hash),\n"
++    " intent_id TEXT NOT NULL UNIQUE REFERENCES dispatch_intents(inten"
++    "t_id),\n"
++    " creation_key TEXT NOT NULL UNIQUE,\n"
++    " input_id TEXT NOT NULL,\n"
++    " frozen_input_hash TEXT NOT NULL CHECK(length(frozen_input_hash)="
++    "64),\n"
++    " admission_check_id TEXT REFERENCES planning_admission_checks(che"
++    "ck_id),\n"
++    " origin_hash TEXT NOT NULL CHECK(length(origin_hash)=64),\n"
++    " created_at REAL NOT NULL,\n"
++    " FOREIGN KEY(mission_id,source_revision,occurrence_id) REFERENCES"
++    " plan_memberships(mission_id,revision,occurrence_id),\n"
++    " FOREIGN KEY(task_id,binding_revision) REFERENCES task_semantics("
++    "task_id,binding_revision)\n"
++    ") STRICT;\n"
++    "CREATE INDEX taskgraph_attempt_inputs_occ_idx ON taskgraph_attemp"
++    "t_inputs(mission_id,occurrence_id,dispatch_generation);\n"
++    "\n"
++    "-- Durable convergence coordination. It never records the externa"
++    "l effect as resolved.\n"
++    "CREATE TABLE taskgraph_convergence_jobs (\n"
++    " job_id TEXT PRIMARY KEY NOT NULL,\n"
++    " mission_id TEXT NOT NULL REFERENCES taskgraph_policy_bindings(mi"
++    "ssion_id),\n"
++    " decision_id TEXT NOT NULL REFERENCES planning_decisions(decision"
++    "_id),\n"
++    " request_id TEXT NOT NULL REFERENCES planning_requests(request_id"
++    "),\n"
++    " command_id TEXT NOT NULL,\n"
++    " source_revision INTEGER NOT NULL,\n"
++    " candidate_hash TEXT NOT NULL CHECK(length(candidate_hash)=64),\n"
++    " impact_hash TEXT NOT NULL CHECK(length(impact_hash)=64),\n"
++    " state TEXT NOT NULL CHECK(state IN ('FENCED','WAITING','READY','"
++    "APPLIED','ABANDONED')),\n"
++    " row_version INTEGER NOT NULL CHECK(row_version>=1),\n"
++    " created_at REAL NOT NULL,\n"
++    " updated_at REAL NOT NULL,\n"
++    " UNIQUE(mission_id,decision_id),\n"
++    " FOREIGN KEY(mission_id,source_revision) REFERENCES taskgraph_rev"
++    "ision_records(mission_id,revision)\n"
++    ") STRICT;\n"
++    "CREATE TABLE taskgraph_convergence_targets (\n"
++    " job_id TEXT NOT NULL REFERENCES taskgraph_convergence_jobs(job_i"
++    "d),\n"
++    " mission_id TEXT NOT NULL,\n"
++    " source_revision INTEGER NOT NULL,\n"
++    " occurrence_id TEXT NOT NULL,\n"
++    " task_id TEXT NOT NULL,\n"
++    " expected_generation INTEGER NOT NULL CHECK(expected_generation>="
++    "0),\n"
++    " target_kind TEXT NOT NULL CHECK(target_kind IN ('RETIRING','INPU"
++    "T_REPLACED')),\n"
++    " PRIMARY KEY(job_id,occurrence_id),\n"
++    " FOREIGN KEY(mission_id,source_revision,occurrence_id) REFERENCES"
++    " plan_memberships(mission_id,revision,occurrence_id)\n"
++    ") STRICT;\n"
++    "CREATE INDEX taskgraph_fence_lookup_idx ON taskgraph_convergence_"
++    "targets(mission_id,task_id,job_id);\n"
++    "\n"
++    "-- Only graph follow-up notifications. Original dispatch_intents "
++    "remains the work handoff authority.\n"
++    "CREATE TABLE taskgraph_followups (\n"
++    " message_id TEXT PRIMARY KEY NOT NULL,\n"
++    " mission_id TEXT NOT NULL REFERENCES taskgraph_policy_bindings(mi"
++    "ssion_id),\n"
++    " source_event_id TEXT NOT NULL REFERENCES events(event_id),\n"
++    " kind TEXT NOT NULL CHECK(kind IN ('REEVALUATE','CONVERGE','REQUE"
++    "ST_COMPOSITION')),\n"
++    " subject_key TEXT NOT NULL,\n"
++    " dedupe_key TEXT NOT NULL UNIQUE,\n"
++    " payload_hash TEXT NOT NULL CHECK(length(payload_hash)=64),\n"
++    " payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),\n"
++    " delivery_state TEXT NOT NULL CHECK(delivery_state IN ('PENDING',"
++    "'LEASED','ACKED','BLOCKED')),\n"
++    " lease_owner TEXT,\n"
++    " lease_until_ms INTEGER,\n"
++    " attempts INTEGER NOT NULL CHECK(attempts>=0),\n"
++    " row_version INTEGER NOT NULL CHECK(row_version>=1),\n"
++    " next_attempt_ms INTEGER NOT NULL CHECK(next_attempt_ms>=0),\n"
++    " last_error_code TEXT,\n"
++    " consumer_receipt_json TEXT CHECK(consumer_receipt_json IS NULL O"
++    "R json_valid(consumer_receipt_json)),\n"
++    " CHECK((delivery_state='ACKED' AND consumer_receipt_json IS NOT N"
++    "ULL) OR\n"
++    "       (delivery_state<>'ACKED' AND consumer_receipt_json IS NULL"
++    ")),\n"
++    " CHECK((delivery_state='LEASED' AND lease_owner IS NOT NULL AND l"
++    "ease_until_ms IS NOT NULL) OR\n"
++    "       (delivery_state<>'LEASED' AND lease_owner IS NULL AND leas"
++    "e_until_ms IS NULL))\n"
++    ") STRICT;\n"
++    "CREATE INDEX taskgraph_followups_poll_idx ON taskgraph_followups("
++    "delivery_state,next_attempt_ms,mission_id);\n"
++    "\n"
++    "CREATE TRIGGER tg_revision_source_guard BEFORE INSERT ON taskgrap"
++    "h_revision_records BEGIN\n"
++    " SELECT CASE WHEN NOT EXISTS (\n"
++    "  SELECT 1 FROM events e WHERE e.event_id=NEW.event_id AND e.miss"
++    "ion_id=NEW.mission_id\n"
++    " ) THEN RAISE(ABORT,'TG_REVISION_EVENT_MISMATCH') END;\n"
++    " SELECT CASE WHEN NEW.source_kind<>'CAPTURED_BASELINE' AND NOT EX"
++    "ISTS (\n"
++    "  SELECT 1 FROM planning_admission_checks c JOIN planning_request"
++    "s r ON r.request_id=c.request_id\n"
++    "  WHERE c.check_id=NEW.admission_check_id AND c.phase='APPLIED' A"
++    "ND r.mission_id=NEW.mission_id\n"
++    " ) THEN RAISE(ABORT,'TG_REVISION_ADMISSION_MISMATCH') END;\n"
++    "END;\n"
++    "CREATE TRIGGER tg_pin_subject_guard BEFORE INSERT ON taskgraph_me"
++    "mber_pins BEGIN\n"
++    " SELECT CASE WHEN NOT EXISTS (\n"
++    "  SELECT 1 FROM task_semantics s JOIN plan_memberships m\n"
++    "    ON m.mission_id=NEW.mission_id AND m.revision=NEW.revision AN"
++    "D m.occurrence_id=NEW.occurrence_id\n"
++    "  WHERE s.task_id=NEW.task_id AND s.binding_revision=NEW.binding_"
++    "revision\n"
++    "    AND s.mission_id=NEW.mission_id AND m.task_id=s.task_id AND m"
++    ".obligation_id=s.obligation_id\n"
++    "    AND m.form=s.form AND s.content_hash=NEW.binding_hash\n"
++    " ) THEN RAISE(ABORT,'TG_PIN_IDENTITY_MISMATCH') END;\n"
++    "END;\n"
++    "CREATE TRIGGER tg_method_subject_guard BEFORE INSERT ON taskgraph"
++    "_method_pins BEGIN\n"
++    " SELECT CASE WHEN NOT EXISTS (\n"
++    "  SELECT 1 FROM method_instances i WHERE i.mission_id=NEW.mission"
++    "_id AND i.instance_id=NEW.instance_id\n"
++    "   AND i.goal_occurrence_id=NEW.goal_occurrence_id\n"
++    " ) THEN RAISE(ABORT,'TG_METHOD_IDENTITY_MISMATCH') END;\n"
++    "END;\n"
++    "CREATE TRIGGER tg_demand_subject_guard BEFORE INSERT ON taskgraph"
++    "_demand_refs BEGIN\n"
++    " SELECT CASE WHEN NOT EXISTS (\n"
++    "  SELECT 1 FROM taskgraph_method_pins p JOIN method_child_occurre"
++    "nces c\n"
++    "   ON c.instance_id=p.instance_id AND c.mission_id=p.mission_id\n"
++    "  WHERE p.mission_id=NEW.mission_id AND p.revision=NEW.revision\n"
++    "   AND p.instance_id=NEW.consumer_instance_id AND p.adopted=1 AND"
++    " c.slot_key=NEW.slot_key\n"
++    "   AND c.occurrence_id=NEW.slot_occurrence_id AND c.goal_occurren"
++    "ce_id=NEW.producer_occurrence_id\n"
++    "   AND c.obligation_id=NEW.obligation_id AND c.reuse_policy=NEW.m"
++    "ode AND c.requiredness=NEW.requiredness\n"
++    " ) THEN RAISE(ABORT,'TG_DEMAND_IDENTITY_MISMATCH') END;\n"
++    "END;\n"
++    "CREATE TRIGGER tg_attempt_identity_guard BEFORE INSERT ON taskgra"
++    "ph_attempt_inputs BEGIN\n"
++    " SELECT CASE WHEN NOT EXISTS (\n"
++    "  SELECT 1 FROM attempts a JOIN dispatch_intents d ON d.subject_i"
++    "d=a.attempt_id\n"
++    "  JOIN plan_memberships m ON m.mission_id=a.mission_id AND m.task"
++    "_id=a.task_id\n"
++    "  JOIN task_semantics s ON s.task_id=a.task_id AND s.binding_revi"
++    "sion=NEW.binding_revision\n"
++    "  JOIN taskgraph_revision_records rr ON rr.mission_id=NEW.mission"
++    "_id AND rr.revision=NEW.source_revision\n"
++    "  LEFT JOIN planning_admission_checks c ON c.check_id=NEW.admissi"
++    "on_check_id\n"
++    "  LEFT JOIN planning_requests r ON r.request_id=c.request_id\n"
++    "  JOIN input_manifest_bindings b ON b.mission_id=a.mission_id AND"
++    " b.task_id=a.task_id\n"
++    "   AND b.manifest_hash=NEW.manifest_hash AND b.input_binding_revi"
++    "sion=NEW.input_binding_revision\n"
++    "  WHERE a.attempt_id=NEW.attempt_id AND a.mission_id=NEW.mission_"
++    "id AND a.task_id=NEW.task_id\n"
++    "   AND d.intent_id=NEW.intent_id AND d.mission_id=NEW.mission_id\n"
++    "   AND d.creation_key=NEW.creation_key AND d.input_id=NEW.input_i"
++    "d AND d.input_hash=NEW.frozen_input_hash\n"
++    "   AND m.revision=NEW.source_revision AND m.occurrence_id=NEW.occ"
++    "urrence_id AND m.form='primitive'\n"
++    "   AND s.mission_id=NEW.mission_id AND s.form='primitive'\n"
++    "   AND s.input_binding_revision=NEW.input_binding_revision AND s."
++    "dispatch_generation=NEW.dispatch_generation\n"
++    "   AND ((rr.source_kind='CAPTURED_BASELINE' AND rr.admission_chec"
++    "k_id IS NULL AND NEW.admission_check_id IS NULL)\n"
++    "     OR (rr.source_kind<>'CAPTURED_BASELINE' AND rr.admission_che"
++    "ck_id=NEW.admission_check_id\n"
++    "         AND r.mission_id=NEW.mission_id AND c.phase='APPLIED'))\n"
++    " ) THEN RAISE(ABORT,'TG_ATTEMPT_IDENTITY_MISMATCH') END;\n"
++    "END;\n"
++    "CREATE TRIGGER tg_convergence_identity_guard BEFORE INSERT ON tas"
++    "kgraph_convergence_jobs BEGIN\n"
++    " SELECT CASE WHEN NOT EXISTS (\n"
++    "  SELECT 1 FROM planning_requests r JOIN planning_decisions d ON "
++    "d.request_id=r.request_id\n"
++    "  WHERE r.request_id=NEW.request_id AND d.decision_id=NEW.decisio"
++    "n_id AND r.mission_id=NEW.mission_id\n"
++    " ) THEN RAISE(ABORT,'TG_CONVERGENCE_IDENTITY_MISMATCH') END;\n"
++    "END;\n"
++    "CREATE TRIGGER tg_target_identity_guard BEFORE INSERT ON taskgrap"
++    "h_convergence_targets BEGIN\n"
++    " SELECT CASE WHEN NOT EXISTS (\n"
++    "  SELECT 1 FROM taskgraph_convergence_jobs j JOIN plan_membership"
++    "s m\n"
++    "   ON m.mission_id=j.mission_id AND m.revision=j.source_revision\n"
++    "  WHERE j.job_id=NEW.job_id AND j.mission_id=NEW.mission_id AND j"
++    ".source_revision=NEW.source_revision\n"
++    "   AND m.occurrence_id=NEW.occurrence_id AND m.task_id=NEW.task_i"
++    "d\n"
++    " ) THEN RAISE(ABORT,'TG_TARGET_IDENTITY_MISMATCH') END;\n"
++    "END;\n"
++    "CREATE TRIGGER tg_followup_owner_guard BEFORE INSERT ON taskgraph"
++    "_followups BEGIN\n"
++    " SELECT CASE WHEN NOT EXISTS (\n"
++    "  SELECT 1 FROM events e WHERE e.event_id=NEW.source_event_id AND"
++    " e.mission_id=NEW.mission_id\n"
++    " ) THEN RAISE(ABORT,'TG_FOLLOWUP_OWNER_MISMATCH') END;\n"
++    "END;\n"
++    "\n"
++    "CREATE TRIGGER taskgraph_policy_bindings_no_update BEFORE UPDATE "
++    "ON taskgraph_policy_bindings BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "CREATE TRIGGER taskgraph_policy_bindings_no_delete BEFORE DELETE "
++    "ON taskgraph_policy_bindings BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "\n"
++    "CREATE TRIGGER taskgraph_revision_records_no_update BEFORE UPDATE"
++    " ON taskgraph_revision_records BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "CREATE TRIGGER taskgraph_revision_records_no_delete BEFORE DELETE"
++    " ON taskgraph_revision_records BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "\n"
++    "CREATE TRIGGER taskgraph_member_pins_no_update BEFORE UPDATE ON t"
++    "askgraph_member_pins BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "CREATE TRIGGER taskgraph_member_pins_no_delete BEFORE DELETE ON t"
++    "askgraph_member_pins BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "\n"
++    "CREATE TRIGGER taskgraph_method_pins_no_update BEFORE UPDATE ON t"
++    "askgraph_method_pins BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "CREATE TRIGGER taskgraph_method_pins_no_delete BEFORE DELETE ON t"
++    "askgraph_method_pins BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "\n"
++    "CREATE TRIGGER taskgraph_demand_refs_no_update BEFORE UPDATE ON t"
++    "askgraph_demand_refs BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "CREATE TRIGGER taskgraph_demand_refs_no_delete BEFORE DELETE ON t"
++    "askgraph_demand_refs BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "\n"
++    "CREATE TRIGGER taskgraph_attempt_inputs_no_update BEFORE UPDATE O"
++    "N taskgraph_attempt_inputs BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "CREATE TRIGGER taskgraph_attempt_inputs_no_delete BEFORE DELETE O"
++    "N taskgraph_attempt_inputs BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "\n"
++    "CREATE TRIGGER taskgraph_convergence_targets_no_update BEFORE UPD"
++    "ATE ON taskgraph_convergence_targets BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "CREATE TRIGGER taskgraph_convergence_targets_no_delete BEFORE DEL"
++    "ETE ON taskgraph_convergence_targets BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "\n"
++    "-- These constrain permitted database transitions, but DO NOT rep"
++    "lace real convergence/receipt checks.\n"
++    "CREATE TRIGGER tg_convergence_transition BEFORE UPDATE ON taskgra"
++    "ph_convergence_jobs BEGIN\n"
++    " SELECT CASE WHEN NEW.job_id<>OLD.job_id OR NEW.mission_id<>OLD.m"
++    "ission_id\n"
++    "  OR NEW.decision_id<>OLD.decision_id OR NEW.request_id<>OLD.requ"
++    "est_id\n"
++    "  OR NEW.command_id<>OLD.command_id OR NEW.source_revision<>OLD.s"
++    "ource_revision\n"
++    "  OR NEW.candidate_hash<>OLD.candidate_hash OR NEW.impact_hash<>O"
++    "LD.impact_hash\n"
++    "  OR NEW.row_version<>OLD.row_version+1\n"
++    "  THEN RAISE(ABORT,'TG_CONVERGENCE_IDENTITY_OR_VERSION') END;\n"
++    " SELECT CASE WHEN NOT (\n"
++    "   (OLD.state='FENCED' AND NEW.state IN ('WAITING','READY','ABAND"
++    "ONED')) OR\n"
++    "   (OLD.state='WAITING' AND NEW.state IN ('WAITING','READY','ABAN"
++    "DONED')) OR\n"
++    "   (OLD.state='READY' AND NEW.state IN ('WAITING','APPLIED','ABAN"
++    "DONED'))\n"
++    " ) THEN RAISE(ABORT,'TG_CONVERGENCE_TRANSITION') END;\n"
++    "END;\n"
++    "CREATE TRIGGER tg_convergence_no_delete BEFORE DELETE ON taskgrap"
++    "h_convergence_jobs BEGIN\n"
++    " SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;\n"
++    "CREATE TRIGGER tg_followup_transition BEFORE UPDATE ON taskgraph_"
++    "followups BEGIN\n"
++    " SELECT CASE WHEN NEW.message_id<>OLD.message_id OR NEW.mission_i"
++    "d<>OLD.mission_id\n"
++    "  OR NEW.source_event_id<>OLD.source_event_id OR NEW.kind<>OLD.ki"
++    "nd\n"
++    "  OR NEW.subject_key<>OLD.subject_key OR NEW.dedupe_key<>OLD.dedu"
++    "pe_key\n"
++    "  OR NEW.payload_hash<>OLD.payload_hash OR NEW.payload_json<>OLD."
++    "payload_json\n"
++    "  OR NEW.row_version<>OLD.row_version+1\n"
++    "  THEN RAISE(ABORT,'TG_FOLLOWUP_IDENTITY_OR_VERSION') END;\n"
++    " SELECT CASE WHEN NOT (\n"
++    "   (OLD.delivery_state='PENDING' AND NEW.delivery_state='LEASED')"
++    " OR\n"
++    "   (OLD.delivery_state='LEASED' AND NEW.delivery_state IN ('PENDI"
++    "NG','LEASED','ACKED','BLOCKED')) OR\n"
++    "   (OLD.delivery_state='BLOCKED' AND NEW.delivery_state='PENDING'"
++    ")\n"
++    " ) THEN RAISE(ABORT,'TG_FOLLOWUP_TRANSITION') END;\n"
++    "END;\n"
++)
+--- /dev/null
++++ b/tests/orchestrator/full_target/taskgraph_exec/_migration_fixture.py
+@@ -0,0 +1,167 @@
++# SPDX-FileCopyrightText: 2026 DennyWanye
++# SPDX-License-Identifier: Apache-2.0
++
++"""Two real legacy CommitService chains; offline deterministic data, no provider."""
++
++import hashlib
++import sys
++from pathlib import Path
++
++
++def build_fixture(Store, db: Path, artifact_dir: Path) -> dict:
++    from agent_orchestrator.contracts import Artifact, Budget, ResultEnvelope
++    from agent_orchestrator.governance.budgets import BudgetLedger, UsageFact
++    from agent_orchestrator.graph.task_graph import TaskGraphProposal
++    from agent_orchestrator.orchestrator.commit_service import (
++        CommitService,
++        MissionSpec,
++        Reservation,
++    )
++
++    artifact_dir.mkdir()
++    store = Store.open(db, clock=lambda: 1000.0)
++    receipts, files = [], {}
++    try:
++        service = CommitService(store)
++        for index in (1, 2):
++            mission, _ = service.create_mission(
++                MissionSpec(
++                    goal=f"preserve legacy result {index}",
++                    success_criteria=("artifact persists",),
++                    tenant_id=f"legacy-tenant-{index}",
++                    idempotency_key=f"legacy-mission-{index}",
++                    budget=Budget(max_tokens=100000, max_attempts=10),
++                )
++            )
++            planning = service.begin_planning(mission.id)
++            tasks, _ = service.commit_task_graph(
++                mission.id,
++                TaskGraphProposal.from_json(
++                    {
++                        "tasks": [
++                            {
++                                "key": "A",
++                                "goal": "write artifact",
++                                "rationale": "legacy preservation fixture",
++                                "success_criteria": ["artifact persists"],
++                                "verification_policy": ["rule_check"],
++                                "budget": {"max_tokens": 10000, "max_attempts": 3},
++                                "outputs": ["report.txt"],
++                            }
++                        ]
++                    }
++                ),
++                base_version=planning.version,
++                source={},
++            )
++            task = tasks[0]
++            attempt, intent = service.create_attempt(
++                task.id,
++                role="worker",
++                model="offline-fixture-no-call",
++                prompt_version="fixture-v1",
++                context_version="fixture-v1",
++                reservation=Reservation(tokens=1000, cost_micros=0),
++                intent_config={"agent_config": {}, "message": {}},
++                input_hash="fixture-input",
++            )
++            turn = f"fixture-turn-{index}"
++            service.claim_intent(intent.intent_id, owner="fixture-owner", lease_seconds=60)
++            service.record_agent_created(
++                intent.intent_id, agent_id=f"fixture-agent-{index}", expected_turn_id=turn
++            )
++            service.record_submitted(intent.intent_id, receipt={"turn_id": turn})
++            content = f"legacy artifact {index}\n".encode()
++            path = artifact_dir / f"report-{index}.txt"
++            path.write_bytes(content)
++            sha = hashlib.sha256(content).hexdigest()
++            files[str(path)] = sha
++            artifact = Artifact(
++                id=f"fixture-artifact-{index}",
++                mission_id=mission.id,
++                task_id=task.id,
++                attempt_id=attempt.id,
++                type="text",
++                path="report.txt",
++                version=1,
++                content_hash=sha,
++                size_bytes=len(content),
++                produced_by=f"fixture-agent-{index}",
++                storage_uri=str(path),
++                created_at=1000.0,
++            )
++            result = ResultEnvelope.from_json(
++                {
++                    "id": f"fixture-result-{index}",
++                    "task_id": task.id,
++                    "attempt_id": attempt.id,
++                    "mission_id": mission.id,
++                    "outcome": "candidate",
++                    "summary": "offline legacy fixture",
++                    "claims": [],
++                    "evidence": [],
++                    "artifacts": [artifact.id],
++                    "proposed_tasks": [],
++                    "used_knowledge": [],
++                    "risks": [],
++                    "cost": {},
++                }
++            )
++            recorded = service.record_result(
++                attempt.id, envelope=result, turn_id=turn, artifacts=[artifact], usage_refs=()
++            )
++            event_count = store.count_events(mission.id)
++            replay = service.record_result(
++                attempt.id, envelope=result, turn_id=turn, artifacts=[artifact], usage_refs=()
++            )
++            assert (
++                recorded.to_json() == replay.to_json()
++                and store.count_events(mission.id) == event_count
++            )
++            ledger = BudgetLedger(store)
++            with store.transaction():
++                assert (
++                    ledger.import_usage(
++                        subject_id=attempt.id,
++                        mission_id=mission.id,
++                        facts=[UsageFact(f"fixture-usage-{index}", 120, 30, None)],
++                    )
++                    == 1
++                )
++                if index == 1:
++                    settled = ledger.settle(subject_id=attempt.id)
++                    assert settled["settled_tokens"] == 150 and settled["unpriced"] == 1
++            receipts.append(
++                {
++                    "mission_id": mission.id,
++                    "task_id": task.id,
++                    "attempt_id": attempt.id,
++                    "intent_id": intent.intent_id,
++                    "result_id": result.id,
++                    "artifact_id": artifact.id,
++                    "event_count": event_count,
++                    "states": {
++                        "mission": store.get_mission(mission.id).status.value,
++                        "task": store.get_task(task.id).status.value,
++                        "attempt": store.get_attempt(attempt.id).status.value,
++                        "result_verification": recorded.verification_state,
++                    },
++                    "producer": "CommitService lifecycle (offline executor receipt fixture)",
++                }
++            )
++        provenance = {}
++        for cls in (CommitService, TaskGraphProposal):
++            path = Path(sys.modules[cls.__module__].__file__).resolve()
++            provenance[cls.__module__] = {
++                "path": str(path),
++                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
++            }
++        return {
++            "chains": receipts,
++            "artifact_files": files,
++            "model_calls": 0,
++            "real_executor_used": False,
++            "producer_sources": provenance,
++        }
++    finally:
++        store.close()
+--- /dev/null
++++ b/tests/orchestrator/full_target/taskgraph_exec/test_migration.py
+@@ -0,0 +1,290 @@
++# SPDX-FileCopyrightText: 2026 DennyWanye
++# SPDX-License-Identifier: Apache-2.0
++
++"""TG-A registered-source migration checks. No runtime descriptor injection.
++
++TG_BASE_SNAPSHOT selects the exact pre-extension SDK for legacy fixture creation.
++The active SDK must be the isolated registered-source derivative, never the Host.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import os
++import shutil
++import signal
++import sqlite3
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++from agent_orchestrator.storage import schema
++from agent_orchestrator.storage.store import SchemaIncompatible, Store
++
++ROOT = Path(__file__).resolve().parents[4]
++
++
++def canonical(value):
++    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
++
++
++def q(name):
++    return '"' + name.replace('"', '""') + '"'
++
++
++def state(path):
++    with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as c:
++        objects = [
++            list(r)
++            for r in c.execute(
++                "SELECT type,name,tbl_name,sql FROM sqlite_master "
++                "WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name"
++            )
++        ]
++        rows = {}
++        for kind, name, _, _ in objects:
++            if kind == "table":
++                rows[name] = sorted(
++                    canonical([{"blob": v.hex()} if isinstance(v, bytes) else v for v in r])
++                    for r in c.execute("SELECT * FROM " + q(name))
++                )
++        return {"objects": objects, "rows": rows}
++
++
++def health(path):
++    with sqlite3.connect(path) as c:
++        assert not list(c.execute("PRAGMA foreign_key_check"))
++        assert c.execute("PRAGMA integrity_check").fetchone() == ("ok",)
++
++
++def open_close(path):
++    s = Store.open(path)
++    s.close()
++
++
++def descriptors(path):
++    with sqlite3.connect(path) as c:
++        return list(
++            c.execute("SELECT version,name,checksum FROM orch_schema_migrations ORDER BY version")
++        )
++
++
++@pytest.fixture(scope="module")
++def legacy(tmp_path_factory):
++    area = tmp_path_factory.mktemp("registered-tg-legacy")
++    base = Path(os.environ["TG_BASE_SNAPSHOT"]).resolve(strict=True)
++    assert base != ROOT
++    script = """import json,sys
++from pathlib import Path
++from agent_orchestrator.storage.store import Store
++from agent_orchestrator.storage import schema
++from _migration_fixture import build_fixture
++assert Path(sys.modules[Store.__module__].__file__).resolve().is_relative_to(Path(sys.argv[1]))
++out=Path(sys.argv[2])
++receipt=build_fixture(Store,out/'legacy.sqlite3',out/'artifacts')
++receipt['descriptors']=[[m.version,m.name,m.checksum] for m in schema.MIGRATIONS]
++(out/'producer.json').write_text(json.dumps(receipt,indent=2))
++"""
++    env = {
++        **os.environ,
++        "PYTHONDONTWRITEBYTECODE": "1",
++        "PYTHONPATH": os.pathsep.join([str(base / "src"), str(Path(__file__).parent)]),
++    }
++    run = subprocess.run(
++        [sys.executable, "-c", script, str(base), str(area)],
++        env=env,
++        cwd=area,
++        capture_output=True,
++        text=True,
++        timeout=30,
++    )
++    assert run.returncode == 0, run.stderr
++    receipt = json.loads((area / "producer.json").read_text())
++    path = area / "legacy.sqlite3"
++    before = state(path)
++    assert all(
++        len(before["rows"][n]) == 2
++        for n in ("missions", "tasks", "attempts", "results", "artifacts")
++    )
++    health(path)
++    return path, receipt
++
++
++def assert_target_matches(db, expected, before):
++    actual = state(db)
++    assert actual["objects"] == expected["objects"]
++    for name, rows in expected["rows"].items():
++        if name != "orch_schema_migrations":
++            assert actual["rows"][name] == rows
++    assert descriptors(db) == [(m.version, m.name, m.checksum) for m in schema.MIGRATIONS]
++    old = before["rows"]["orch_schema_migrations"]
++    new = actual["rows"]["orch_schema_migrations"]
++    assert len(new) == len(old) + 1 and all(row in new for row in old)
++
++
++def test_registered_descriptor_is_exact_append_only(legacy):
++    db, receipt = legacy
++    assert Path(sys.modules[Store.__module__].__file__).resolve().is_relative_to(ROOT)
++    assert Path(schema.__file__).resolve().is_relative_to(ROOT)
++    actual = [[m.version, m.name, m.checksum] for m in schema.MIGRATIONS]
++    assert actual[:-1] == receipt["descriptors"]
++    assert actual[-1][0] == max(row[0] for row in receipt["descriptors"]) + 1
++    assert actual[-1][1] == "orchestrator-taskgraph-execution-v2"
++    ddl = Path(os.environ["TG_REVIEWED_DDL"]).read_bytes()
++    assert schema.MIGRATIONS[-1].ddl.encode() == ddl
++    assert schema.MIGRATIONS[-1].checksum == hashlib.sha256(ddl).hexdigest()
++    assert descriptors(db) == [tuple(r) for r in receipt["descriptors"]]
++
++
++def test_registered_fresh_upgrade_preserve_every_legacy_row(tmp_path, legacy):
++    original, receipt = legacy
++    before = state(original)
++    db = tmp_path / "upgrade.sqlite3"
++    shutil.copyfile(original, db)
++    fresh = tmp_path / "fresh.sqlite3"
++    open_close(db)
++    open_close(fresh)
++    after = state(db)
++    assert after["objects"] == state(fresh)["objects"]
++    for name, rows in before["rows"].items():
++        if name != "orch_schema_migrations":
++            assert after["rows"][name] == rows
++    assert descriptors(db) == [(m.version, m.name, m.checksum) for m in schema.MIGRATIONS]
++    old_names = {r[1] for r in before["objects"]}
++    added = [r for r in after["objects"] if r[1] not in old_names]
++    assert sum(r[0] == "table" for r in added) == 9
++    assert sum(r[0] == "trigger" for r in added) == 25
++    assert after["rows"]["taskgraph_policy_bindings"] == []
++    open_close(db)
++    assert state(db) == after
++    health(db)
++    health(fresh)
++    for path, sha in receipt["artifact_files"].items():
++        assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == sha
++    assert state(original) == before
++
++
++def test_registered_constraints_and_checksum_refuse_without_mutation(tmp_path, legacy):
++    original, _ = legacy
++    db = tmp_path / "checks.sqlite3"
++    shutil.copyfile(original, db)
++    with sqlite3.connect(db) as c:
++        c.execute("UPDATE orch_schema_migrations SET checksum=? WHERE version=1", ("f" * 64,))
++    before = state(db)
++    with pytest.raises(SchemaIncompatible):
++        open_close(db)
++    assert state(db) == before
++    fresh = tmp_path / "fresh.sqlite3"
++    open_close(fresh)
++    with sqlite3.connect(fresh) as c:
++        c.execute("PRAGMA foreign_keys=ON")
++        with pytest.raises(sqlite3.IntegrityError):
++            c.execute(
++                "INSERT INTO taskgraph_policy_bindings VALUES(?,?,?,?,?,?,?)",
++                ("missing", "taskgraph-exec-v2", "a" * 64, "{}", "probe", "b" * 64, 0.0),
++            )
++        c.rollback()
++    health(fresh)
++
++
++CRASH_SCRIPT = """import json,os,signal,sqlite3,sys
++from pathlib import Path
++from agent_orchestrator.storage.store import Store
++path,mode,marker=Path(sys.argv[1]),sys.argv[2],Path(sys.argv[3])
++original=sqlite3.connect
++
++def kill(facts):
++    with marker.open('x') as f:
++        json.dump(facts,f);f.flush();os.fsync(f.fileno())
++    os.kill(os.getpid(),signal.SIGKILL)
++
++def connect(*args,**kwargs):
++    c=original(*args,**kwargs)
++    if args and Path(str(args[0])).resolve()==path:
++        def trace(sql):
++            if mode=='mid_ddl' and 'CREATE TABLE taskgraph_revision_records' in sql:
++                exists=c.execute(
++                    "SELECT name FROM sqlite_master WHERE name='taskgraph_policy_bindings'"
++                ).fetchone()
++                kill({'in_transaction':c.in_transaction,'prior_table':bool(exists)})
++            if mode=='pre_commit' and sql.strip().upper()=='COMMIT':
++                count=c.execute(
++                    "SELECT count(*) FROM sqlite_master "
++                    "WHERE type='table' AND name LIKE 'taskgraph_%'"
++                ).fetchone()[0]
++                if count==9:kill({'in_transaction':c.in_transaction,'tg_tables':count})
++        c.set_trace_callback(trace)
++    return c
++sqlite3.connect=connect
++s=Store.open(path)
++if mode=='post_commit':kill({'in_transaction':s._connection.in_transaction})
++s.close()
++raise AssertionError('crash point not reached')
++"""
++
++
++@pytest.mark.parametrize("mode", ["mid_ddl", "pre_commit", "post_commit"])
++def test_registered_real_process_crash_and_recovery(tmp_path, legacy, mode):
++    original, receipt = legacy
++    before = state(original)
++    good = tmp_path / "good.sqlite3"
++    shutil.copyfile(original, good)
++    open_close(good)
++    expected = state(good)
++    assert (
++        sum(
++            r[0] == "trigger" and r[1] not in {x[1] for x in before["objects"]}
++            for r in expected["objects"]
++        )
++        == 25
++    )
++    db = tmp_path / "crash.sqlite3"
++    shutil.copyfile(original, db)
++    marker = tmp_path / "cut.json"
++    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(ROOT / "src")}
++    run = subprocess.run(
++        [sys.executable, "-c", CRASH_SCRIPT, str(db), mode, str(marker)],
++        env=env,
++        cwd=tmp_path,
++        capture_output=True,
++        text=True,
++        timeout=30,
++    )
++    assert run.returncode == -signal.SIGKILL, run.stderr
++    observed = json.loads(marker.read_text())
++    if mode == "post_commit":
++        assert observed["in_transaction"] is False
++        assert_target_matches(db, expected, before)  # Before any recovery open.
++    else:
++        assert observed["in_transaction"] is True
++        assert (
++            observed.get("prior_table") is True if mode == "mid_ddl" else observed["tg_tables"] == 9
++        )
++        assert state(db) == before
++    open_close(db)
++    assert_target_matches(db, expected, before)
++    recovered = state(db)
++    open_close(db)
++    assert state(db) == recovered
++    health(db)
++    assert state(original) == before
++
++
++def test_missing_committed_trigger_is_detected(tmp_path, legacy):
++    original, _ = legacy
++    db = tmp_path / "missing.sqlite3"
++    shutil.copyfile(original, db)
++    open_close(db)
++    good = state(db)
++    before = state(original)
++    with sqlite3.connect(db) as c:
++        c.execute("DROP TRIGGER tg_revision_source_guard")
++    with pytest.raises(AssertionError):
++        assert_target_matches(db, good, before)
++    # The runner trusts applied descriptor identity; test oracle must inspect full schema.
++    open_close(db)
++    with pytest.raises(AssertionError):
++        assert_target_matches(db, good, before)

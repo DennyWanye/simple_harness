@@ -33,19 +33,19 @@ def source_runtime_options(
     snapshot: ProviderSnapshot | None,
     *, local_profile_path: str = "",
 ) -> dict[str, Any]:
-    from deskpet.sdk_adapters.sdk_candidate import SDK_RUNTIME_MODE_ENV
-
-    if os.environ.get(SDK_RUNTIME_MODE_ENV, "wheel") != "editable-source":
+    # The candidate wheel now ships the same context ports as source runs.
+    # Resolve the persisted pool identity in both installations; dropping these
+    # options on wheel startup reinterprets every frozen source dispatch.
+    try:
+        from agent_orchestrator.runtime.assembly import resolve_profile_context_policy
+        from agent_orchestrator.runtime.model_router import RuntimeProfile
+    except ImportError:
         if local_profile_path:
-            raise RuntimeError("本地 256K profile 需要源码 SDK 运行环境")
+            raise RuntimeError("当前 SDK 不支持本地上下文 profile") from None
         return {}
     if local_profile_path:
         from .local_profile import local_runtime_options
-
         return local_runtime_options(config, provider, snapshot, local_profile_path)
-
-    from agent_orchestrator.runtime.assembly import resolve_profile_context_policy
-    from agent_orchestrator.runtime.model_router import RuntimeProfile
 
     counter = None
     if (

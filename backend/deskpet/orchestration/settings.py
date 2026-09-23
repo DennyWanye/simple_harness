@@ -26,6 +26,14 @@ TEST_SCENARIO_ENV = "DESKPET_ORCHESTRATION_TEST_SCENARIO"
 KNOWN_SCENARIOS = ("approval-action", "document-ui")
 EVIDENCE_MARKER = ".local-test-evidence"
 
+#: The only Host decision modes.  Order matters: the first entry is the fallback,
+#: and there is deliberately no member that maps to the SDK's Primary mode.
+HOST_DECISION_MODES = ("existing", "shadow")
+
+#: A shadow observation is a background nicety; the Host refuses to let a
+#: misconfigured number turn it into an unbounded wait on the allocation path.
+SHADOW_TIMEOUT_CEILING_SECONDS = 60.0
+
 
 @dataclass(frozen=True)
 class OrchestrationSettings:
@@ -53,12 +61,51 @@ class OrchestrationSettings:
     # Empty means no directory is authorised, and then nothing can be published at all —
     # the connector is not even enabled, so a Mission may not carry a publish criterion.
     publish_dir: str = ""
+    # NanoJev decision rollout (NanoJevAdd.md §57 PR-7).  The Host owns this key and
+    # passes an explicit typed policy to the SDK; the SDK reads no configuration.
+    # Only "existing" and "shadow" are valid, and anything unrecognised — including
+    # the absence of the key — is "existing".  "nanojev" (Primary) is not a Host
+    # value: it is a later gate, and a config typo must not be able to reach it.
+    decision_mode: str = "existing"
+    # A shadow observation that exceeds this is recorded as a timeout and dropped;
+    # the production plan is unaffected.  None means no Host-side bound.
+    decision_shadow_timeout_seconds: float | None = None
 
 
 def _bounded_int(value: Any, default: int, low: int, high: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         return default
     return max(low, min(high, value))
+
+
+def _decision_mode(value: Any) -> str:
+    """The Host's decision mode, or ``existing`` for anything unrecognised.
+
+    This is the one place ``decision.mode`` is read, and it is fail-closed on
+    purpose: an unknown value, a missing key and a non-string all land on the
+    existing production path.  Nothing here consults the environment, so the mode
+    cannot be changed by an ad-hoc variable.
+
+    ``nanojev`` (Primary) is deliberately not in :data:`HOST_DECISION_MODES`: the
+    Host has no value that produces the SDK's ``DecisionMode.NANOJEV``, so Primary
+    is unreachable by configuration in this slice.
+    """
+
+    if not isinstance(value, str):
+        return HOST_DECISION_MODES[0]
+    normalised = value.strip().lower()
+    return normalised if normalised in HOST_DECISION_MODES else HOST_DECISION_MODES[0]
+
+
+def _shadow_timeout(value: Any) -> float | None:
+    """A bounded, positive shadow timeout, or ``None`` for "no Host-side bound"."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    seconds = float(value)
+    if not seconds > 0:
+        return None
+    return min(seconds, SHADOW_TIMEOUT_CEILING_SECONDS)
 
 
 def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
@@ -78,6 +125,8 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         # a path only; whether it exists and can carry a hard link is decided at start-up,
         # and a directory that cannot is never authorised (P3.2 review round 2 P2-5)
         publish_dir=str(publish_dir).strip() if isinstance(publish_dir, str) else "",
+        decision_mode=_decision_mode(raw.get("decision_mode")),
+        decision_shadow_timeout_seconds=_shadow_timeout(raw.get("decision_shadow_timeout_seconds")),
     )
 
 
@@ -96,7 +145,9 @@ def resolve_test_scenario(env: Mapping[str, str], user_data: str | Path) -> str 
 
 __all__ = (
     "EVIDENCE_MARKER",
+    "HOST_DECISION_MODES",
     "KNOWN_SCENARIOS",
+    "SHADOW_TIMEOUT_CEILING_SECONDS",
     "TEST_SCENARIO_ENV",
     "OrchestrationSettings",
     "load_settings",

@@ -1,0 +1,365 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import pytest
+
+from simple_harness.contracts import RunId
+from simple_harness.execution.budget import BudgetSnapshot
+from simple_harness.execution.context_authority import ContextRouteOrigin, ContextRouteReceipt
+from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+from simple_harness.execution.uow import UnitOfWorkConflict
+from simple_harness.runtime.react_checkpoint import DurableReactCheckpoint
+from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
+from simple_harness.runtime.termination import TerminationLimits
+
+
+def _seed(path):
+    database = Database.open(path)
+    uow = SqliteExecutionUnitOfWork(database)
+    uow.create_with_start_snapshot(
+        execution_session_id="session-1",
+        run_id="run-1",
+        request_id="request-1",
+        profile_key="agent.general",
+        driver_kind="react",
+        snapshot={},
+        event_id="run-1:created",
+        now=1.0,
+    )
+    _, lease = uow.claim_runtime_activation(
+        run_id="run-1",
+        owner_id="owner-1",
+        namespace="runtime.kernel",
+        now=2.0,
+        lease_ttl_seconds=100.0,
+    )
+    return database, uow, lease
+
+
+def _initial_route(*, binding_revision: int = 3) -> ContextRouteReceipt:
+    return ContextRouteReceipt(
+        "route-initial-1",
+        "run-1",
+        None,
+        None,
+        TaskScopeRoute.RESUME_EXISTING,
+        "task-1",
+        binding_revision,
+        schema_version=3,
+        binding_set_receipt_id=f"binding-set-{binding_revision}",
+        binding_set_receipt_hash="d" * 64,
+        origin=ContextRouteOrigin.HOST_INITIAL,
+        host_authority_ref="host-execution:claim-1",
+        host_authority_hash="e" * 64,
+    )
+
+
+def test_provider_reservation_survives_reopen_with_same_stable_identity(tmp_path) -> None:
+    path = tmp_path / "checkpoint.db"
+    database, uow, lease = _seed(path)
+    checkpoint = DurableReactCheckpoint(uow, clock=lambda: 3.0)
+    state, version = checkpoint.load_or_create(RunId("run-1"), lease)
+    reserved = state.before_provider(TerminationLimits(), now=3.0, budget=BudgetSnapshot())
+    reserved, version = checkpoint.cas(RunId("run-1"), lease, version, reserved)
+    database.close()
+
+    with Database.open(path) as reopened:
+        loaded, loaded_version = DurableReactCheckpoint(
+            SqliteExecutionUnitOfWork(reopened), clock=lambda: 4.0
+        ).load_or_create(RunId("run-1"), lease)
+        assert loaded == reserved
+        assert loaded_version == version
+        assert loaded.provider_turns_reserved_total == 1
+        assert loaded.provider_request_id == "provider-turn:1"
+
+
+def test_checkpoint_cas_rejects_second_writer_without_partial_total(tmp_path) -> None:
+    database, uow, lease = _seed(tmp_path / "checkpoint-cas.db")
+    checkpoint = DurableReactCheckpoint(uow, clock=lambda: 3.0)
+    state, version = checkpoint.load_or_create(RunId("run-1"), lease)
+    first = state.before_tool_batch(
+        ("calculator:a", "calculator:b"),
+        TerminationLimits(),
+        now=3.0,
+        budget=BudgetSnapshot(),
+    )
+    checkpoint.cas(RunId("run-1"), lease, version, first)
+
+    with pytest.raises(UnitOfWorkConflict, match="version CAS"):
+        checkpoint.cas(RunId("run-1"), lease, version, first)
+
+    stored = uow.read_react_checkpoint("run-1")
+    assert stored is not None
+    assert stored.checkpoint["tool_calls_reserved_total"] == 2
+    database.close()
+
+
+def test_first_checkpoint_atomically_initializes_and_recovers_host_route(tmp_path) -> None:
+    path = tmp_path / "checkpoint-initial-route.db"
+    database, uow, lease = _seed(path)
+    route = _initial_route()
+    state, version = DurableReactCheckpoint(uow, clock=lambda: 3.0).load_or_create(
+        RunId("run-1"),
+        lease,
+        initial_route_receipt=route,
+        initial_route_receipt_hash=route.receipt_hash,
+    )
+    assert state.route_state == "routed_task"
+    assert state.route_receipt == route.to_json()
+    stored = uow.read_react_checkpoint("run-1")
+    assert stored is not None
+    assert stored.checkpoint["schema_version"] == 6
+    database.close()
+
+    with Database.open(path) as reopened:
+        recovered, recovered_version = DurableReactCheckpoint(
+            SqliteExecutionUnitOfWork(reopened), clock=lambda: 4.0
+        ).load_or_create(
+            RunId("run-1"),
+            lease,
+            initial_route_receipt=route,
+            initial_route_receipt_hash=route.receipt_hash,
+        )
+        assert recovered == state
+        assert recovered_version == version
+
+
+def test_existing_unrouted_checkpoint_conflicts_with_routed_start(tmp_path) -> None:
+    database, uow, lease = _seed(tmp_path / "checkpoint-unrouted-conflict.db")
+    checkpoint = DurableReactCheckpoint(uow, clock=lambda: 3.0)
+    checkpoint.load_or_create(RunId("run-1"), lease)
+    route = _initial_route()
+    with pytest.raises(RuntimeError, match="differs from start snapshot"):
+        checkpoint.load_or_create(
+            RunId("run-1"),
+            lease,
+            initial_route_receipt=route,
+            initial_route_receipt_hash=route.receipt_hash,
+        )
+    database.close()
+
+
+def test_existing_routed_checkpoint_rejects_changed_binding(tmp_path) -> None:
+    database, uow, lease = _seed(tmp_path / "checkpoint-binding-conflict.db")
+    checkpoint = DurableReactCheckpoint(uow, clock=lambda: 3.0)
+    route = _initial_route()
+    checkpoint.load_or_create(
+        RunId("run-1"),
+        lease,
+        initial_route_receipt=route,
+        initial_route_receipt_hash=route.receipt_hash,
+    )
+    changed = _initial_route(binding_revision=4)
+    with pytest.raises(RuntimeError, match="differs from start snapshot"):
+        checkpoint.load_or_create(
+            RunId("run-1"),
+            lease,
+            initial_route_receipt=changed,
+            initial_route_receipt_hash=changed.receipt_hash,
+        )
+    database.close()
+
+
+def test_progressed_route_reopens_without_reverting_initial_identity(tmp_path) -> None:
+    from dataclasses import replace
+
+    path = tmp_path / "checkpoint-progressed-route.db"
+    database, uow, lease = _seed(path)
+    checkpoint = DurableReactCheckpoint(uow, clock=lambda: 3.0)
+    initial = _initial_route()
+    state, version = checkpoint.load_or_create(
+        RunId("run-1"),
+        lease,
+        initial_route_receipt=initial,
+        initial_route_receipt_hash=initial.receipt_hash,
+    )
+    current = ContextRouteReceipt(
+        "route-current-1",
+        "run-1",
+        "call-route-1",
+        "effect-route-1",
+        TaskScopeRoute.CONTINUE_ACTIVE,
+        "task-1",
+        3,
+        schema_version=2,
+        binding_set_receipt_id="binding-set-3",
+        binding_set_receipt_hash="d" * 64,
+    )
+    progressed = replace(
+        state,
+        route_state=current.route_state.value,
+        route_receipt=current.to_json(),
+        route_receipt_hash=current.receipt_hash,
+    ).before_provider(TerminationLimits(), now=3.0, budget=BudgetSnapshot())
+    progressed, version = checkpoint.cas(RunId("run-1"), lease, version, progressed)
+    database.close()
+    with Database.open(path) as reopened:
+        recovered, recovered_version = DurableReactCheckpoint(
+            SqliteExecutionUnitOfWork(reopened), clock=lambda: 4.0
+        ).load_or_create(
+            RunId("run-1"),
+            lease,
+            initial_route_receipt=initial,
+            initial_route_receipt_hash=initial.receipt_hash,
+        )
+        assert recovered == progressed
+        assert recovered_version == version
+        assert recovered.route_receipt == current.to_json()
+        assert recovered.provider_request_id == "provider-turn:1"
+        assert recovered.provider_turns_reserved_total == 1
+
+
+@pytest.mark.parametrize(
+    "damage", ["omit_initial", "missing_anchor", "anchor_hash", "current_hash", "cross_run"]
+)
+def test_recovery_rejects_damaged_or_conflicting_route_anchors(tmp_path, damage) -> None:
+    from dataclasses import replace
+
+    database, uow, lease = _seed(tmp_path / f"checkpoint-{damage}.db")
+    route = _initial_route()
+    checkpoint = DurableReactCheckpoint(uow, clock=lambda: 3.0)
+    state, version = checkpoint.load_or_create(
+        RunId("run-1"),
+        lease,
+        initial_route_receipt=route,
+        initial_route_receipt_hash=route.receipt_hash,
+    )
+    if damage == "cross_run":
+        other = replace(route, run_id="other-run")
+        state = replace(state, route_receipt=other.to_json(), route_receipt_hash=other.receipt_hash)
+    checkpoint.cas(RunId("run-1"), lease, version, state)
+    if damage == "missing_anchor":
+        database.connection.execute("DELETE FROM workflow_checkpoints WHERE version=0")
+    elif damage in {"anchor_hash", "current_hash"}:
+        database.connection.execute(
+            "UPDATE workflow_checkpoints SET checkpoint_hash=? WHERE version=?",
+            ("0" * 64, 0 if damage == "anchor_hash" else 1),
+        )
+    expected = {
+        "omit_initial": "differs from start snapshot",
+        "missing_anchor": "anchor is unavailable",
+        "anchor_hash": "payload hash differs",
+        "current_hash": "payload hash differs",
+        "cross_run": "route belongs to another Run",
+    }[damage]
+    with pytest.raises(RuntimeError, match=expected):
+        checkpoint.load_or_create(
+            RunId("run-1"),
+            lease,
+            initial_route_receipt=None if damage == "omit_initial" else route,
+            initial_route_receipt_hash=None if damage == "omit_initial" else route.receipt_hash,
+        )
+    database.close()
+
+
+def test_initialization_cas_loser_recovers_winners_progressed_route(tmp_path) -> None:
+    from dataclasses import replace
+
+    database, uow, lease = _seed(tmp_path / "checkpoint-initialization-race.db")
+    initial = _initial_route()
+    current = ContextRouteReceipt(
+        "route-race",
+        "run-1",
+        "call-race",
+        "effect-race",
+        TaskScopeRoute.CONTINUE_ACTIVE,
+        "task-1",
+        3,
+        schema_version=2,
+        binding_set_receipt_id="binding-set-3",
+        binding_set_receipt_hash="d" * 64,
+    )
+
+    class InterleavedPort:
+        def read_react_checkpoint(self, run_id):
+            return uow.read_react_checkpoint(run_id)
+
+        def read_initial_react_checkpoint(self, run_id):
+            return uow.read_initial_react_checkpoint(run_id)
+
+        def cas_react_checkpoint(self, **kwargs):
+            winner = DurableReactCheckpoint(uow, clock=lambda: 3.0)
+            state, version = winner.load_or_create(
+                RunId("run-1"),
+                lease,
+                initial_route_receipt=initial,
+                initial_route_receipt_hash=initial.receipt_hash,
+            )
+            winner.cas(
+                RunId("run-1"),
+                lease,
+                version,
+                replace(
+                    state,
+                    route_state=current.route_state.value,
+                    route_receipt=current.to_json(),
+                    route_receipt_hash=current.receipt_hash,
+                ),
+            )
+            return uow.cas_react_checkpoint(**kwargs)
+
+    recovered, version = DurableReactCheckpoint(
+        InterleavedPort(), clock=lambda: 3.0
+    ).load_or_create(
+        RunId("run-1"),
+        lease,
+        initial_route_receipt=initial,
+        initial_route_receipt_hash=initial.receipt_hash,
+    )
+    assert recovered.route_receipt == current.to_json()
+    assert version == 1
+    assert (
+        database.connection.execute("SELECT COUNT(*) FROM workflow_checkpoints").fetchone()[0] == 2
+    )
+    database.close()
+
+
+def test_legacy_checkpoint_without_initial_route_preserves_progress_on_reopen(tmp_path) -> None:
+    import hashlib
+    from dataclasses import replace
+
+    from simple_harness.contracts import canonical_json
+
+    path = tmp_path / "checkpoint-legacy-v5.db"
+    database, uow, lease = _seed(path)
+    checkpoint = DurableReactCheckpoint(uow, clock=lambda: 3.0)
+    state, version = checkpoint.load_or_create(RunId("run-1"), lease)
+    legacy = state.to_json()
+    legacy["schema_version"] = 5
+    raw = canonical_json(legacy)
+    database.connection.execute(
+        "UPDATE workflow_checkpoints SET checkpoint_json=?,checkpoint_hash=? WHERE version=0",
+        (raw, hashlib.sha256(raw.encode()).hexdigest()),
+    )
+    current = ContextRouteReceipt(
+        "route-legacy",
+        "run-1",
+        "call-legacy",
+        "effect-legacy",
+        TaskScopeRoute.CONTINUE_ACTIVE,
+        "task-1",
+        3,
+        schema_version=2,
+        binding_set_receipt_id="binding-set-3",
+        binding_set_receipt_hash="d" * 64,
+    )
+    expected, version = checkpoint.cas(
+        RunId("run-1"),
+        lease,
+        version,
+        replace(
+            state,
+            route_state=current.route_state.value,
+            route_receipt=current.to_json(),
+            route_receipt_hash=current.receipt_hash,
+        ),
+    )
+    database.close()
+    with Database.open(path) as reopened:
+        recovered, recovered_version = DurableReactCheckpoint(
+            SqliteExecutionUnitOfWork(reopened), clock=lambda: 4.0
+        ).load_or_create(RunId("run-1"), lease)
+        assert recovered == expected
+        assert recovered_version == version

@@ -1,0 +1,9 @@
+{
+  "kit": "H1H-ADM-1.0",
+  "validation": "PASS",
+  "sdk_case_groups": 36,
+  "sdk_cases_run": 0,
+  "source_entries": 15,
+  "proposed_new_tables": 4,
+  "production_changes": false
+}

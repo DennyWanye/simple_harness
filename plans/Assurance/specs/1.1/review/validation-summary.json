@@ -1,0 +1,15 @@
+{
+  "scope": "AUTHOR_REFERENCE_PACKAGE_ONLY",
+  "tests_run": 168,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "reference_mutations_run": 19,
+  "reference_mutations_killed": 19,
+  "spec_consistency": "PASS",
+  "source_basis": "received handoff/current dirty excerpts, not a remote checkout",
+  "sdk_run": false,
+  "native_run": false,
+  "real_model_run": false,
+  "independent_code_review": "NOT_RUN"
+}

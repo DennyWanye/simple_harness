@@ -1,0 +1,397 @@
+{
+  "status": "SOURCE_INTEGRITY_ONLY",
+  "files": [
+    {
+      "path": "plans/Assurance/specs/1.1/ASSURANCE-EXEC-1.1.zh-CN.md",
+      "sha256": "5af3ae76a4c07b7926ad720a2dc48c52e41e76bc91e3a80e5559799de8d8f08e"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/DELIVERY-MANIFEST.json",
+      "sha256": "4e36c62e255c9b3c75bfc2a8f8356f6c214f1845640c56aa5cb3e100acdc8777"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/README.md",
+      "sha256": "c3d3cc0694958f1195089ab3dd4e60edc7663c5bdb2312ff209a2deb2e9d996f"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/RESPONSE-TO-REVIEW.md",
+      "sha256": "b576529cf338a321f2614e3d340fed87bf499749f7135d252b01aec93c8f1641"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/VALIDATION.md",
+      "sha256": "87664e6e4dde3406f7f45ec15b502f39f38ba6f14dc668674231187775096163"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/CONTRACTS.md",
+      "sha256": "4fbec149406cec2bb5bb247d28c24fc2a017490ef13ff6cfe5d5f0ceafd8dfce"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/blob-pin-v1.schema.json",
+      "sha256": "8e861ad75fd68c73f90504d86ad68c2b576798f5f441ca1255bbe6f1fe5eaf3f"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/check-binding-v2.schema.json",
+      "sha256": "9573c9bd17200fd6d8484eea25a414b600cd6a5088055929c25ab6d0ab10d915"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/check-spec-v1.schema.json",
+      "sha256": "1e58c95313fbb0075ef1b0b9daaaa84f86594dbea758ab75682af8c78f266b40"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/closeout-v1.schema.json",
+      "sha256": "7a8458d987cb22b438aa691a6d115f795dbd187981ffc5f4d8439e121f61d533"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/common.schema.json",
+      "sha256": "aef103042c68c8cde4c499240c62a0c0694290ac8dad5dff1b055c7d0e64399b"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/criterion-policy-v1.schema.json",
+      "sha256": "7bb1e03269eb5222738eb6fd84c61ad0383dea7de75700883a4469b825d83641"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/disclosure-batch-v1.schema.json",
+      "sha256": "c9f0e7339adf3112f86f723debc5c0c39ac79b87e5239510d7340946869cd129"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/host-error-v1.schema.json",
+      "sha256": "81bfb1bc2e536d36f981b0934f35434fc727862387358921fc393292fc83a737"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/host-response-v1.schema.json",
+      "sha256": "63d3e8b725c9953bca911ae6ab96901b845fec522edcd233518946553af1174f"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/host-review-request-v1.schema.json",
+      "sha256": "faa54259970abbaa12e78ea7faafb325d7fc18b93bad947e053bf015c131cd22"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/host-review-response-v1.schema.json",
+      "sha256": "ef03102521bd6f6d817eef7ff70fef068babb4c3e17b56f8e0949e4f5088fe01"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/host-snapshot-request-v1.schema.json",
+      "sha256": "1c9dbf040a6aa7844351747a73e51819a4512fe902d85c2c54667ceeea112356"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/host-use-request-v1.schema.json",
+      "sha256": "d09c8d491f480fd2eeefc3bd808c72e1d79d70251ab2d0312ae4452f80ccc476"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/host-use-response-v1.schema.json",
+      "sha256": "5096ed52d34237bf438316155d990a19c27b7d7b8154fe6dac1ab5e9e169b766"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/local-check-receipt-v1.schema.json",
+      "sha256": "656ad772082b6e90b40f3567fe7e51ea8697c8c25b1c7a4a1b16c651d843d701"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/pending-work-v1.schema.json",
+      "sha256": "bf9170ffc41f7c24fd894bb263225b4810f6d6956845b2f5ddd5e520b3e0d7fa"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/policy-v1.schema.json",
+      "sha256": "2d40351f5459102d9ece997ca279596a3a504c1690038721ea807df75ef4661c"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/restore-authorization-v1.schema.json",
+      "sha256": "aa9c373aa8ec8c572fe97caff991fba4e562cf4c2fd3ce7135500f9c9c9b2217"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/review-binding-v2.schema.json",
+      "sha256": "f1e8ade9d458d6f56c9ebefbfbb3d2dfadaa33bb94053d8e05cb35d09e9f2ec4"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/review-invocation-v1.schema.json",
+      "sha256": "4cd66a31f179fe365cdb9c40bfd6df27b757edb235d7df260ac97c889c4b489f"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/review-record-binding-v2.schema.json",
+      "sha256": "56d21f7320616d36205b8558c28b44cdc6d4bbd7bee96846ea9251e313de7dd2"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/review-reply-v2.schema.json",
+      "sha256": "3dbabf6cb558eb4baa35f39f54b620ec9695fae4eabf20d76140c9034cb1e398"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/six-purpose-fixtures.json",
+      "sha256": "16c11a00bb2b70aea9b9ab0160df3d0ce6796d259e4925dda419fa79e6c73fff"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/structural-fixtures.json",
+      "sha256": "4a3f9575c6604b831f38fb7562211d6d8f896493f0d5d7c7ace908d6aaeb2196"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/success-formula-v1.schema.json",
+      "sha256": "5f3969b5b63e84da62ffab2412d3e901fa8b0a78bdc408f34bacb05b7c687bd6"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/contracts/use-certificate-v2.schema.json",
+      "sha256": "b4a5e7d7738c5ccbceacd94310a1b37216a404a3b7359d01edbcaf6c5620cce7"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/BODY-WIRED.md",
+      "sha256": "ba7285cef40a76f1b5dab7db54476200c8a9085c685b40173fc7b2f2cab3f10d"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/TEST-MAP.md",
+      "sha256": "8d880d54aeb14bfe5f76363a2cbe82875369c55754dc598414649a633ccabf61"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/additional-mutations.json",
+      "sha256": "58c629684cc693fdae65f767047434fb6f3c9bc649bdf6acb1746f19bf754335"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/event-consumer-map.json",
+      "sha256": "7447ef73326c9ae221e4a40e7ce0cca25bb63ebc33cca67f26c1b6293e1eaf85"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/field-producers.json",
+      "sha256": "69853e545d827128a011d8985ae9172920d2afdd2929560ab41c80ff0aa6bd42"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/findings-sdk-tests.json",
+      "sha256": "633a8475836f7c635701636e3e2146c4d7319169310ccf3dad080988847e40f9"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/inherited-coverage.json",
+      "sha256": "f3633ecd655bd33933c87f06fcc5600264ffc23e1b526bde23689ebd7291d299"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/integration-map.json",
+      "sha256": "5b6b148515a798037aadfbc02f84f021d57e5a2340e8393d15dc6e8691a91714"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/model-inputs/bad-candidate.json",
+      "sha256": "38b51c247ec395961dfa917182ea37cee1cea553254bc7f550dc532615218897"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/model-inputs/facts-v1.csv",
+      "sha256": "b0376e76792b99a7da4e61fa8138fad0baa715e1f10cc09ee27ce6ffe5429eed"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/model-inputs/facts-v2.csv",
+      "sha256": "1df2816b58859b5bdb27a997b0351745861a0fb003af39670949c1be9107f64b"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/model-scenarios.json",
+      "sha256": "7f2647625426adadab8ec901ea8805e7b8e4ebc89d9d42d6d564ca5d1746330a"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/mutations.json",
+      "sha256": "7c45bce9598dfec554c89b7d9137ae775678213537885c515724363a154adbd2"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/native-manifest.example.json",
+      "sha256": "31551a25814cf4fcaee103e64f70be654efbf36f10b2f87c44a936d526995b9b"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/occ-coverage.json",
+      "sha256": "8923d8ef5cfb5c863fbe0206417fac6e9d23a6a087de115c9af577be55c84509"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/ref-resolution-map.json",
+      "sha256": "cd44630b5f37aedcba497d5a1f23f4c532d7e25979006035a8ac0f9bede8c657"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/schema-source-rules.json",
+      "sha256": "a615858824e9335430a53e4316efc2e2a954b6230382ab6147d189f63149e6b9"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/sdk-cases.json",
+      "sha256": "08d18dacae3bd03db3e4ff9dbf7198296b48a9d4deb8ad5b4045c71882991044"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/seams.json",
+      "sha256": "a8dc38648d39f9acae7fa0dfd459a7a64e427d9ea18ae89d1d26fbf978b46352"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/source-map.seed.json",
+      "sha256": "ca8b81cf23ee06fee830a0107226f2d5359c69a4a086d3173c5c718cd5fb80a4"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/implementation/sql-column-producers.json",
+      "sha256": "fe0ac76a2bfe8b821d27927a4c0d5901626798e92c802a58b6f0685decec4aef"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/V1.4-D1-D2-D3-Operation\u8865\u9057-2026-09-21.md",
+      "sha256": "a2657120e1c44479a268ca19e0ab0b3da1eb65d7b3db6512df7ef2e3d1520725"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/V1.4-Operation\u5b8c\u6210\u5408\u540c\u8865\u9057-2026-09-21.md",
+      "sha256": "8bf6a1c8ee40c2ada9ab88f51806e401ba8a690ea4ac1a481154f7e9ccfcb74f"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/aer-66-cases.json",
+      "sha256": "3939b4b0a3e8ea20cb7a628fae3431a47f8bbb43033389521ebd1d5e3c5334e7"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/input-manifest.json",
+      "sha256": "40c528fde6b33cff1943bf37d02f05e91bfc04ce6484234d2323671aee3e6f93"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/operation-completion-cases.json",
+      "sha256": "c042acd6893e2568f353681e685fab8f29ccd9a2ccd8358ea1778ebede758a85"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/operation_completion.sql",
+      "sha256": "8cd7891c76aadff55eea1909d5d84fc30cd6b9baad0e066d9332f33c663d843c"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/operation_completion_reference.py",
+      "sha256": "aa7b4f463dbd24d99b0c156f1369daf541ecef114a2d8c60ba936943679c28f9"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/simpleharness-acceptance-evidence-recovery-plan.zh-CN.md",
+      "sha256": "e91704262e48c03a456ebd6123cbdae6eded2c14b5b80a7788d443a41ef2dbc9"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/simpleharness-taskgraph-code-execution-plan.zh-CN.md",
+      "sha256": "f36eaa1cf106a1f84d6efd2a4cdcbbe25e55fc5ed4df7510e13df3b728f615d1"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/inputs/simpleharness-v14-h1h-admission-amendment.zh-CN.md",
+      "sha256": "fcc26712f40ea09c7edb757dc708c000bc31b7799e9180eb4f5b31e98f6bf2f5"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/reference/contract_constants.py",
+      "sha256": "6a28d38419c74e9827c0c1b5e0ed477d7c6c4cde3bdb5fa292adf141632d2059"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/reference/protocol_v11.py",
+      "sha256": "5f8fc637cfb42c1b2213b197003879c3d8e3f4a6bc9c7af4565682b6eaf2a4a7"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/reference/semantics.py",
+      "sha256": "907463b59297e5e03e96c838521cbb458f3df042b2583fe0da6012348aa68b28"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/reference/sql_statements.py",
+      "sha256": "f111efc9b54474156ba9651bb4efb6af9f3b15247c26e915a755658acced37a9"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/review/CHALLENGE-REPORT.md",
+      "sha256": "3c85dec5ff408c1ecbb5f29fe871bcfd64b1eef475c18c2a01b3542f8dfb7463"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/review/REVIEWER-TASKS.md",
+      "sha256": "99b950006b127ab0a8630eeb55cf24631cdfc8312b5e8c4c20ed054ffc1dfff9"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/review/findings-disposition.json",
+      "sha256": "1f40eebd1ce2772bf8786bde3333d9c8d41d115a934b6b36a9fc260cb0a33c4a"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/review/reference-mutations.json",
+      "sha256": "7f5de2890ca972c53cde2c794865f3d3006b6e66c7cb85def320cf4f7b2cf60c"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/review/schema-checks.json",
+      "sha256": "ba9fa0d4798b2a5b5dc071117633144cf465a22cdd9ff6ec737bd877b345e913"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/review/status.json",
+      "sha256": "c0851d359a545d785c698644c34c53385820d34d38ebca5b40d628cfc8521b18"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/review/validation-summary.json",
+      "sha256": "378ff2b3d430b3592897ee8b94adf842c3d670ab822552e41f38a527f923a0cb"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/sources/HANDOFF-PlanAgent-ASSURANCE-EXEC-1.0.md",
+      "sha256": "85601a7ca6d792d999932045c0612c1a859025e9131783b96b911750aeba8844"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/sources/LOCAL-SOURCE-EXCERPTS.md",
+      "sha256": "682341616d40722383057c5a69013e05404d9d60e74664a28783c88864298741"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/sources/REVIEW-EVIDENCE-SUMMARY.md",
+      "sha256": "13579ebf96f7571d6674d68b00e1d38e42b0a7fa4c324745d5f8f92cf03b76d6"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/sources/source-excerpts-index.json",
+      "sha256": "720c5a2c7e89d1746beb53eb762cb82a68a1fe446bbd997b3a0943b7e2547124"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/sql/assurance_additive.sql",
+      "sha256": "1b14f4cc4932b2cf83ece04b7ce8eebbbd62e6359a28f35eaa193a1d839a7ba0"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/sql/queries.sql",
+      "sha256": "2b9017eb185a63ed6367344fdd0db1aa606ab0e787f9be825b9782d75ec825a9"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tests/parent_fixture.sql",
+      "sha256": "8af1f62165770880d6c8b4e204a6c802ab2fa659b1c4a085439379684853a043"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tests/review_test_fixture.py",
+      "sha256": "dd8f34cc7b1c0767ea27e6da29ff180444ae321bd355dd9653fcfcc60e94cf0c"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tests/test_challenges.py",
+      "sha256": "5279c8d48c05eb73dba385c52c41914889cc7ea5c6eda9046695eedc5d031979"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tests/test_review_findings.py",
+      "sha256": "f3457ec16c5b097a6f1f23127768432ef191139dc086315975407b21eb0c9c11"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tests/test_semantics.py",
+      "sha256": "6cbcf91624a50696b88b42eec43e72f5b8e79f99de8e3988431f456eb84ba461"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tests/test_sql.py",
+      "sha256": "b7854ceff9cc68134cfebec867efcf751cbd79a2ef9be5553898ef2f0139a2c2"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tools/capture_identity.py",
+      "sha256": "bb446b33a9185c1716f34305fa75b4adf07eb243a857bc4da7920dee7ad281b6"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tools/check_plan.py",
+      "sha256": "1db946c2240e169fc6eface7ff834f78489a5d5ee498de87efecc03cacc92be2"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tools/prepare_native_manifest.py",
+      "sha256": "32593f362dc12a06187c030b40823c55efdf76716b01000d4d4ca29453e3f304"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tools/run_reference_mutations.py",
+      "sha256": "99815fb88d79f27f9ef4e569d56b89d50c5dd0b9da815b319f5fa527de5d7268"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tools/run_revision_mutations.py",
+      "sha256": "18f200658c307986e48293c2e0b4ca3cc2f093d0c70124cda4c12e5887d2ed79"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tools/schema_support.py",
+      "sha256": "51e68c90434f100bc686ac8e37325b7f7ae1dbe871d646ab1aead3f85b65f266"
+    },
+    {
+      "path": "plans/Assurance/specs/1.1/tools/verify_delivery.py",
+      "sha256": "c56f455664ede24fed97df44e14e7401a3f361e9abf8448703e3e02ca47d37c6"
+    },
+    {
+      "path": "sdk/continuation/README.md",
+      "sha256": "110eee95d999656182c7101d93566a599b7b492f3e4cd628cda9617d52837f9d"
+    },
+    {
+      "path": "sdk/continuation/nanojev-development.patch",
+      "sha256": "c3f49e5da1f9d9fad8de501f07634813e23ab25550f6bc4eabe53f6b03bc8365"
+    },
+    {
+      "path": "sdk/continuation/nanojev-provenance.json",
+      "sha256": "17a49fcafd83a4117032f0bf6a0c1f8152804a42180cd847b0b062dbc2d3b5a2"
+    },
+    {
+      "path": "backend/vendor/simple_harness_sdk-0.13.0.dev20260922+htn.1-py3-none-any.whl",
+      "sha256": "af9e273061ceeeb3204ccbb4e4d32965fb3bba568e6c7e63f1af1b18244b9800"
+    },
+    {
+      "path": "backend/vendor/simple_harness_sdk-0.13.0.dev20260922+htn.1.candidate-manifest.json",
+      "sha256": "f77d817d265053e89711643310483be2687bd8b2f308c454ab980a89d6207809"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "skill_id": "example",
+  "version": 1,
+  "name": "example",
+  "description": "example",
+  "files": [],
+  "instructions_path": "example",
+  "input_schema_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "output_schema_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "capability_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "required_tool_refs": [],
+  "required_skill_refs": [],
+  "implementation": {
+    "kind": "INSTRUCTIONS"
+  },
+  "requested_permission_policy_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "verification_policy_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "origin_refs": []
+}

@@ -1,0 +1,167 @@
+[
+  {
+    "finding": "F01",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_no_parallel_scoped_review",
+    "assertions": "每个原六purpose入口一次通知只创建一个逻辑review/原预算；所有终态writer有owner。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F02",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_internal_ref_resolvers",
+    "assertions": "各purpose可编码；错kind/body/collector/已结算reserve用于新dispatch拒绝，旧费用照入。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F03",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_labels_exact_disclosure",
+    "assertions": "同ID双版本/跨kind区分；未曝光拒绝；追加冲突/冷恢复映射稳定。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F04",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_checked_policy_truth_table",
+    "assertions": "SEMANTIC不造check；CHECKED FAIL/ERROR/缺失/替代组/ANY/mandatory完整真值表。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F05",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_round_invocation_budget",
+    "assertions": "同round通知去重；ordinal2合法格式修复新真实reserve；不同round不撞unique subject；UNKNOWN不新问。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F06",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_direct_judge_waits_closeout",
+    "assertions": "直调judge不提前终态或release；root后UNKNOWN/hold/退出和ack丢失正确。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F07",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_restore_t0_t1_t2",
+    "assertions": "真实t0备份t1撤权t2独立恢复，先隔离；无当前权威不披露，部分库拒绝；新read grant不恢复执行。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F08",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_all_writers_barrier_and_expiry",
+    "assertions": "每类source writer/新增反证同事务挡旧证书；timer expiry/clock rollback；无缓存oracle一致。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F09",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_cursor_pending_nonblocking",
+    "assertions": "预算等待不阻后续反证；prepare退出/receipt已存ACK丢失/self event/并发均不重复或丢工作。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F10",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_creation_discriminator_default_on",
+    "assertions": "新factory在完整交付默认on；缺binding不能legacy；已有Completion-only不静默迁移。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F11",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_sql_bypass_initial_and_delete",
+    "assertions": "直接FINALIZED INSERT、DELETE/REPLACE终态、无review BOUND pin全部拒绝。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F12",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_asset_semantic_drift",
+    "assertions": "nested enum/property mutation使checker失败；strictcodec边界/重复读key/状态组合不漂移。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F13",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_native_host_candidate",
+    "assertions": "精确wheel/import+Host指纹；实际点击重连/历史/隔离/closeout；SDK接口不得替原生。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F14",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_body_wiring_inventory",
+    "assertions": "所有调用边、默认factory、architecture/status回写都有记录；不以文件数判主体完成。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  },
+  {
+    "finding": "F15",
+    "target_nodeid": "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_inherited_and_model_oracles",
+    "assertions": "66+12逐条原断言不丢；C08仅机制；12模型轨迹budget/oracle每局可复核。",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "allowed_stubs": [
+      "model transport for mechanism tests only"
+    ],
+    "not_before": "BODY_WIRED"
+  }
+]

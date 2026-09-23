@@ -1,0 +1,2 @@
+"""Generated internal kind vocabulary; checked against common.schema.json."""
+INTERNAL_REF_KINDS = frozenset(['requirements', 'task', 'method', 'method_instance', 'artifact', 'source', 'observation', 'review', 'acceptance', 'resolution', 'operation', 'tool_receipt', 'policy', 'authority', 'capability', 'input_manifest', 'completion_scope', 'completion_spec', 'result', 'commit_receipt', 'reservation_fact', 'agent_turn_receipt', 'check_binding', 'check_spec', 'check_policy', 'local_check_receipt', 'execution_receipt', 'disclosure_receipt', 'review_package'])

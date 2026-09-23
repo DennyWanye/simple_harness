@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "skill_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "evaluation_acceptance_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "evaluation_policy_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "scope_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  }
+}

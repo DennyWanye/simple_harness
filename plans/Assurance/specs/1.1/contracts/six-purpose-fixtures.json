@@ -1,0 +1,864 @@
+[
+  {
+    "purpose": "TASK_CONTENT",
+    "review_binding": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "review-TASK_CONTENT",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "round_no": 1,
+      "subject": {
+        "purpose": "TASK_CONTENT",
+        "target": {
+          "kind": "result",
+          "pin": {
+            "id": "method-1",
+            "revision": 1,
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "owner_task_ref": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "occurrence_id": "occ-1",
+        "completion_scope_ref": {
+          "id": "scope-1",
+          "revision": 1,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "method_instance_ref": null,
+        "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output_manifest_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_ids": [
+        "x"
+      ],
+      "mandatory_ids": [],
+      "formula": {
+        "criterion": "x"
+      },
+      "check_requirements": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "evidence_catalogue": [
+        {
+          "label": "ev-8de69015ba5455dfc2c76879a4e0729f2523ccc36ce37ebd329aa6ff97d39382",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 1,
+              "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          }
+        },
+        {
+          "label": "ev-d3cfc1f586f1e7c16c1bf6903cadac4bcb13ee8eb5b1d6dcb507d1a0dd5b5048",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 2,
+              "content_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            }
+          }
+        }
+      ],
+      "producer_agent_ids": [
+        "x"
+      ],
+      "reviewer_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "context_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_policy_ref": {
+        "kind": "check_policy",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "catalogue_hash": "23426d4f5871dab664dbaf02d2936a55b130e83ca9f375568dc160ae1f3e017a"
+    },
+    "invocation": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "review-TASK_CONTENT",
+      "ordinal": 1,
+      "reason": "INITIAL",
+      "prior_failure_receipt_ref": null,
+      "dispatch_intent_id": "x",
+      "subject_id": "m:assurance:review-TASK_CONTENT:1",
+      "creation_key": "m:assurance:review-TASK_CONTENT:1",
+      "input_id": "assurance-input:review-TASK_CONTENT:1",
+      "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "catalogue_hash": "23426d4f5871dab664dbaf02d2936a55b130e83ca9f375568dc160ae1f3e017a",
+      "reservation_fact_ref": {
+        "kind": "reservation_fact",
+        "pin": {
+          "id": "event-actual-reserve-fixture",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "not_actual_receipts": true
+  },
+  {
+    "purpose": "METHOD_PLAN",
+    "review_binding": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "review-METHOD_PLAN",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "round_no": 1,
+      "subject": {
+        "purpose": "METHOD_PLAN",
+        "target": {
+          "kind": "method",
+          "pin": {
+            "id": "method-1",
+            "revision": 1,
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "owner_task_ref": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "occurrence_id": null,
+        "completion_scope_ref": null,
+        "method_instance_ref": null,
+        "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output_manifest_hash": null
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_ids": [
+        "x"
+      ],
+      "mandatory_ids": [],
+      "formula": {
+        "criterion": "x"
+      },
+      "check_requirements": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "evidence_catalogue": [
+        {
+          "label": "ev-b378efe67d43bf6dae087d336b6dca7a9695e0c64de93b4bb65ab40d8e5940d0",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 1,
+              "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          }
+        },
+        {
+          "label": "ev-bda44efc8f06cac427f89d9c763850d9988f60cc2efd15cca56ccd5070722e95",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 2,
+              "content_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            }
+          }
+        }
+      ],
+      "producer_agent_ids": [
+        "x"
+      ],
+      "reviewer_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "context_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_policy_ref": {
+        "kind": "check_policy",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "catalogue_hash": "640969585bd50c6de2593d6b0d2918f06bae72dacac6ec646d2d995b3a6f6334"
+    },
+    "invocation": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "review-METHOD_PLAN",
+      "ordinal": 1,
+      "reason": "INITIAL",
+      "prior_failure_receipt_ref": null,
+      "dispatch_intent_id": "x",
+      "subject_id": "m:assurance:review-METHOD_PLAN:1",
+      "creation_key": "m:assurance:review-METHOD_PLAN:1",
+      "input_id": "assurance-input:review-METHOD_PLAN:1",
+      "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "catalogue_hash": "640969585bd50c6de2593d6b0d2918f06bae72dacac6ec646d2d995b3a6f6334",
+      "reservation_fact_ref": {
+        "kind": "reservation_fact",
+        "pin": {
+          "id": "event-actual-reserve-fixture",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "not_actual_receipts": true
+  },
+  {
+    "purpose": "COMPOSITION",
+    "review_binding": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "review-COMPOSITION",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "round_no": 1,
+      "subject": {
+        "purpose": "COMPOSITION",
+        "target": {
+          "kind": "task",
+          "pin": {
+            "id": "method-1",
+            "revision": 1,
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "owner_task_ref": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "occurrence_id": "occ-1",
+        "completion_scope_ref": {
+          "id": "scope-1",
+          "revision": 1,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "method_instance_ref": {
+          "id": "mi-1",
+          "revision": 1,
+          "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output_manifest_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_ids": [
+        "x"
+      ],
+      "mandatory_ids": [],
+      "formula": {
+        "criterion": "x"
+      },
+      "check_requirements": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "evidence_catalogue": [
+        {
+          "label": "ev-7e2efe740759638bd50552da3e9e03f271fd0e5bbc0af5abfed8dcf2c6149031",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 1,
+              "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          }
+        },
+        {
+          "label": "ev-c503801080f39af5ec3c38c497ff4abd36e72c6a4fd92fff390dd8d78ed55e0e",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 2,
+              "content_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            }
+          }
+        }
+      ],
+      "producer_agent_ids": [
+        "x"
+      ],
+      "reviewer_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "context_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_policy_ref": {
+        "kind": "check_policy",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "catalogue_hash": "baec725e4a966873dc7943e2f7ef4fd043936d2d9cd8f3f2a652a0b1f3f9adb0"
+    },
+    "invocation": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "review-COMPOSITION",
+      "ordinal": 1,
+      "reason": "INITIAL",
+      "prior_failure_receipt_ref": null,
+      "dispatch_intent_id": "x",
+      "subject_id": "m:assurance:review-COMPOSITION:1",
+      "creation_key": "m:assurance:review-COMPOSITION:1",
+      "input_id": "assurance-input:review-COMPOSITION:1",
+      "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "catalogue_hash": "baec725e4a966873dc7943e2f7ef4fd043936d2d9cd8f3f2a652a0b1f3f9adb0",
+      "reservation_fact_ref": {
+        "kind": "reservation_fact",
+        "pin": {
+          "id": "event-actual-reserve-fixture",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "not_actual_receipts": true
+  },
+  {
+    "purpose": "ACTION_PROPOSAL",
+    "review_binding": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "review-ACTION_PROPOSAL",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "round_no": 1,
+      "subject": {
+        "purpose": "ACTION_PROPOSAL",
+        "target": {
+          "kind": "artifact",
+          "pin": {
+            "id": "method-1",
+            "revision": 1,
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "owner_task_ref": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "occurrence_id": "occ-1",
+        "completion_scope_ref": {
+          "id": "scope-1",
+          "revision": 1,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "method_instance_ref": null,
+        "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output_manifest_hash": null
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_ids": [
+        "x"
+      ],
+      "mandatory_ids": [],
+      "formula": {
+        "criterion": "x"
+      },
+      "check_requirements": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "evidence_catalogue": [
+        {
+          "label": "ev-6412e7db6d5e89c13f3fc7af03b17d12d6eb5369b4a6e0209da56c6327207895",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 2,
+              "content_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            }
+          }
+        },
+        {
+          "label": "ev-8ce087ed2094025310fa8f4b22be95b71a10b55a09a3364efecd410dfe58baab",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 1,
+              "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          }
+        }
+      ],
+      "producer_agent_ids": [
+        "x"
+      ],
+      "reviewer_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "context_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_policy_ref": {
+        "kind": "check_policy",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "catalogue_hash": "243b80523afc84745b1c545ec51914120d0a65c85704c1c94179561e9ef8be2b"
+    },
+    "invocation": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "review-ACTION_PROPOSAL",
+      "ordinal": 1,
+      "reason": "INITIAL",
+      "prior_failure_receipt_ref": null,
+      "dispatch_intent_id": "x",
+      "subject_id": "m:assurance:review-ACTION_PROPOSAL:1",
+      "creation_key": "m:assurance:review-ACTION_PROPOSAL:1",
+      "input_id": "assurance-input:review-ACTION_PROPOSAL:1",
+      "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "catalogue_hash": "243b80523afc84745b1c545ec51914120d0a65c85704c1c94179561e9ef8be2b",
+      "reservation_fact_ref": {
+        "kind": "reservation_fact",
+        "pin": {
+          "id": "event-actual-reserve-fixture",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "not_actual_receipts": true
+  },
+  {
+    "purpose": "OPERATION_OUTCOME",
+    "review_binding": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "review-OPERATION_OUTCOME",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "round_no": 1,
+      "subject": {
+        "purpose": "OPERATION_OUTCOME",
+        "target": {
+          "kind": "operation",
+          "pin": {
+            "id": "method-1",
+            "revision": 1,
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "owner_task_ref": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "occurrence_id": "occ-1",
+        "completion_scope_ref": {
+          "id": "scope-1",
+          "revision": 1,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "method_instance_ref": null,
+        "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output_manifest_hash": null
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_ids": [
+        "x"
+      ],
+      "mandatory_ids": [],
+      "formula": {
+        "criterion": "x"
+      },
+      "check_requirements": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "evidence_catalogue": [
+        {
+          "label": "ev-31eedbd5a4dfdbb39470bab131a9681c59f14f3af912eedbb3132d7b49792be1",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 2,
+              "content_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            }
+          }
+        },
+        {
+          "label": "ev-8373b82deaf8830af747f47cb0edc5a7fd8b681a0e002ecd780b047079495943",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 1,
+              "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          }
+        }
+      ],
+      "producer_agent_ids": [
+        "x"
+      ],
+      "reviewer_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "context_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_policy_ref": {
+        "kind": "check_policy",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "catalogue_hash": "6f25945d517f7fe5327c8e85a04fb29a80f186606bb082f951b960714636cc3c"
+    },
+    "invocation": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "review-OPERATION_OUTCOME",
+      "ordinal": 1,
+      "reason": "INITIAL",
+      "prior_failure_receipt_ref": null,
+      "dispatch_intent_id": "x",
+      "subject_id": "m:assurance:review-OPERATION_OUTCOME:1",
+      "creation_key": "m:assurance:review-OPERATION_OUTCOME:1",
+      "input_id": "assurance-input:review-OPERATION_OUTCOME:1",
+      "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "catalogue_hash": "6f25945d517f7fe5327c8e85a04fb29a80f186606bb082f951b960714636cc3c",
+      "reservation_fact_ref": {
+        "kind": "reservation_fact",
+        "pin": {
+          "id": "event-actual-reserve-fixture",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "not_actual_receipts": true
+  },
+  {
+    "purpose": "MISSION_FINAL",
+    "review_binding": {
+      "schema_version": 2,
+      "mission_id": "x",
+      "review_key": "review-MISSION_FINAL",
+      "package_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "round_no": 1,
+      "subject": {
+        "purpose": "MISSION_FINAL",
+        "target": {
+          "kind": "task",
+          "pin": {
+            "id": "method-1",
+            "revision": 1,
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "owner_task_ref": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "occurrence_id": "occ-1",
+        "completion_scope_ref": {
+          "id": "scope-1",
+          "revision": 1,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "method_instance_ref": {
+          "id": "mi-1",
+          "revision": 1,
+          "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "input_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output_manifest_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "requirements_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_ids": [
+        "x"
+      ],
+      "mandatory_ids": [],
+      "formula": {
+        "criterion": "x"
+      },
+      "check_requirements": [
+        {
+          "criterion_id": "x",
+          "mode": "SEMANTIC",
+          "any_check_sets": []
+        }
+      ],
+      "evidence_catalogue": [
+        {
+          "label": "ev-349dbdef8988a6c3362f0bc41d7b1035996cd71111d345876ee049035ada3e5f",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 2,
+              "content_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            }
+          }
+        },
+        {
+          "label": "ev-688b6779220da5c9c4337e800862fa717e225ba5b09583a4a7f824eee303e13d",
+          "ref": {
+            "kind": "artifact",
+            "pin": {
+              "id": "same-id",
+              "revision": 1,
+              "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          }
+        }
+      ],
+      "producer_agent_ids": [
+        "x"
+      ],
+      "reviewer_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "read_set": [
+        {
+          "channel": "OBJECT",
+          "key": "x",
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coverage": "COMPLETE"
+        }
+      ],
+      "context_policy_ref": {
+        "id": "x",
+        "revision": 0,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "criterion_policy_ref": {
+        "kind": "check_policy",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "catalogue_hash": "08ee3d5397bf7b43eb773e3a6ac102e9cd07c6c1f359677899edeb3c4845df2c"
+    },
+    "invocation": {
+      "schema_version": 1,
+      "mission_id": "x",
+      "review_key": "review-MISSION_FINAL",
+      "ordinal": 1,
+      "reason": "INITIAL",
+      "prior_failure_receipt_ref": null,
+      "dispatch_intent_id": "x",
+      "subject_id": "m:assurance:review-MISSION_FINAL:1",
+      "creation_key": "m:assurance:review-MISSION_FINAL:1",
+      "input_id": "assurance-input:review-MISSION_FINAL:1",
+      "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "catalogue_hash": "08ee3d5397bf7b43eb773e3a6ac102e9cd07c6c1f359677899edeb3c4845df2c",
+      "reservation_fact_ref": {
+        "kind": "reservation_fact",
+        "pin": {
+          "id": "event-actual-reserve-fixture",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "source_receipt_ref": {
+        "kind": "commit_receipt",
+        "pin": {
+          "id": "x",
+          "revision": 0,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "not_actual_receipts": true
+  }
+]

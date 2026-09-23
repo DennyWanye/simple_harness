@@ -1,0 +1,222 @@
+{
+  "updated": "2026-09-22",
+  "scope": "V1.4 H1-H8 excluding NanoJev",
+  "candidate_root": "/Users/denny/projects/simple-harness-sdk-h1h-impl",
+  "candidate_head": "102ad3dfa2db38d575ea929d39ec5ed1561a71da",
+  "candidate_dirty": true,
+  "provider_model": "deepseek-v4.1-flash",
+  "body_implementation": "INTEGRATED_SCOPED_E2E_PASS",
+  "overall": "ORIGINAL_FULL_GATES_OPEN",
+  "taskgraph_ready_notification_sent": true,
+  "symbols": [
+    {
+      "logical": "planning_authorization_producer",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/governance/planning_authorization.py",
+      "symbol": "build_planning_authorization",
+      "line": 143,
+      "sha256": "bb94a2f775cc414fc36755096324e5da821e3e42f5aefd65f99254ce96cffb99",
+      "claim": "symbol and source identity verified; behavior evidence indexed separately"
+    },
+    {
+      "logical": "planning_authorization_api",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/api/planning_authorization.py",
+      "symbol": "PlanningAuthorizationApi",
+      "line": 61,
+      "sha256": "7d8a0bb883b359fbcdd7bb0f1e7a20f3ec1c0d184bcad17f31d1075485913276",
+      "claim": "symbol and source identity verified; behavior evidence indexed separately"
+    },
+    {
+      "logical": "operation_snapshot",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/runtime/planning_operations.py",
+      "symbol": "build_operation_snapshot",
+      "line": 360,
+      "sha256": "aa68f8c22e768ed967a67997a70a49026234c3c4228872be964afcb0e29febe1",
+      "claim": "symbol and source identity verified; behavior evidence indexed separately"
+    },
+    {
+      "logical": "running_work_snapshot",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/runtime/planning_operations.py",
+      "symbol": "read_running_work",
+      "line": 493,
+      "sha256": "aa68f8c22e768ed967a67997a70a49026234c3c4228872be964afcb0e29febe1",
+      "claim": "symbol and source identity verified; behavior evidence indexed separately"
+    },
+    {
+      "logical": "plan_preview",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/planning/plan_preview.py",
+      "symbol": "preview_candidate",
+      "line": 321,
+      "sha256": "5a7ddb2163b2a57e2441d4545459c28d48b47a970caeef9ef0138a95cf922222",
+      "claim": "symbol and source identity verified; behavior evidence indexed separately"
+    },
+    {
+      "logical": "completion_reader",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/orchestrator/operation_completion.py",
+      "symbol": "OperationCompletionReader",
+      "line": 285,
+      "sha256": "cb2820cfd5008089a5bfafd318dbe8753a921382d78e4b601e54e764d064f5a2",
+      "claim": "symbol and source identity verified; behavior evidence indexed separately"
+    },
+    {
+      "logical": "operation_materialization",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/orchestrator/operation_materialization.py",
+      "symbol": "OperationMaterializationRuntime",
+      "line": 31,
+      "sha256": "c07ea466fd5ef9f0a72fad61f16b3fcd6b16421bc97b76a1a36f03a51f7a6ad0",
+      "claim": "symbol and source identity verified; behavior evidence indexed separately"
+    },
+    {
+      "logical": "provider_stream_adapter",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/providers/openai_compatible.py",
+      "symbol": "OpenAICompatibleProvider",
+      "line": 132,
+      "sha256": "a9c7a3b5b804b1c0cecf5ffe203bad7ef0269e8561138703e3a89410bf76db7b",
+      "claim": "single-request SSE transport; focused and minimal live evidence, long-run gate pending"
+    },
+    {
+      "logical": "provider_stream_parser",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/providers/chat_stream.py",
+      "symbol": "ChatStream",
+      "line": 13,
+      "sha256": "e5fd6871eae291bb954f5880f6f67421de7c7301f3a8be4d8c868c80d7843519",
+      "claim": "single-request SSE transport; focused and minimal live evidence, long-run gate pending"
+    },
+    {
+      "logical": "host_world_factory",
+      "path": "/Users/denny/projects/simple_harness/backend/deskpet/orchestration/hierarchical.py",
+      "symbol": "planning_world",
+      "claim": "source identity; behavior scope recorded separately",
+      "sha256": "c19ec97b1118ac138bd346e246e44f91ee2eee5291cad5fb642445bf575f4ac7",
+      "line": 13
+    },
+    {
+      "logical": "host_root_transaction",
+      "path": "/Users/denny/projects/simple_harness/backend/deskpet/orchestration/hierarchical.py",
+      "symbol": "initialize_root",
+      "claim": "source identity; behavior scope recorded separately",
+      "sha256": "c19ec97b1118ac138bd346e246e44f91ee2eee5291cad5fb642445bf575f4ac7",
+      "line": 62
+    },
+    {
+      "logical": "host_deployment",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/orchestrator/event_handler.py",
+      "symbol": "install_hierarchical_deployment",
+      "claim": "source identity; behavior scope recorded separately",
+      "sha256": "22dfc935b5fc3885e359f36d6f24f4392cd309cd4408b4905a862fad9a6ebcaa",
+      "line": 1272
+    },
+    {
+      "logical": "operation_dispatch",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/orchestrator/operation_runtime.py",
+      "symbol": "dispatch_materialized_operations",
+      "claim": "source identity; behavior scope recorded separately",
+      "sha256": "b67d87e18ea84dd4dfaeb09b7a23d5a84d21b64db1eb0e62c6598ba3c75dd663",
+      "line": 255
+    },
+    {
+      "logical": "completion_current",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/orchestrator/completion_status.py",
+      "symbol": "read_occurrence_completion",
+      "claim": "source identity; behavior scope recorded separately",
+      "sha256": "2d6a483ce9250fc99b9788c3b7f55f7cb32c9962a046e7700dfef055a853ca17",
+      "line": 550
+    }
+  ],
+  "stage_maps": [
+    "/Users/denny/projects/simple-harness-sdk-h1h-impl/plans/llm-native-htn/H1/source-map.json",
+    "/Users/denny/projects/simple-harness-sdk-h1h-impl/plans/llm-native-htn/H2/source-map.json",
+    "/Users/denny/projects/simple-harness-sdk-h1h-impl/plans/llm-native-htn/H3/source-map.json",
+    "/Users/denny/projects/simple-harness-sdk-h1h-impl/plans/llm-native-htn/H4/source-map.json",
+    "/Users/denny/projects/simple-harness-sdk-h1h-impl/plans/llm-native-htn/H5/source-map.json",
+    "/Users/denny/projects/simple-harness-sdk-h1h-impl/plans/llm-native-htn/H6/source-map.json",
+    "/Users/denny/projects/simple-harness-sdk-h1h-impl/plans/llm-native-htn/H7/source-map.json",
+    "/Users/denny/projects/simple-harness-sdk-h1h-impl/plans/llm-native-htn/H8/source-map.json"
+  ],
+  "behavior_evidence": ".local-test-evidence/2026-09-22/v14-retry-final/h1h-mapping-readback.json",
+  "open_gates": [
+    "H6 real evaluation/promotion",
+    "H8 full frozen matrix",
+    "original 14-scenario inputs/runner unavailable locally",
+    "independent review not performed; user forbids subagents",
+    "legacy replay projection: 23 unknown event types, 1 uncovered field, UI ledger alignment unavailable"
+  ],
+  "historical_map": "/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/h1h-admission-source-map.json",
+  "note": "The historical H1-only map is preserved; its GPT-5.6 real-model label and enablement list do not define current H1-H8 execution.",
+  "execution_continuation": {
+    "state_file": "/Users/denny/projects/simple-harness-sdk-h1h-impl/.local-test-evidence/2026-09-22/v14-real-continuation/state.json",
+    "scope": "H8 then fresh H6 source/cohort, one attempt per stage, no automatic reset",
+    "current_h8_checkpoint": {
+      "as_of": "2026-09-22T09:44:01+00:00",
+      "scope": "partial H8 matrix; not final acceptance",
+      "states": {
+        "PASS": 40,
+        "FAIL": 1,
+        "INTERRUPTED": 1
+      },
+      "planned_runs": 576,
+      "settled_physical_calls": 943,
+      "settled_tokens": 3762828,
+      "settled_unknown_calls": 1,
+      "failed_runs": [
+        {
+          "run_id": "6e40388e4a0bd467919f0175602028ac2e3e9f349d935026093c21ac9a95ae04",
+          "solver_statuses": [
+            "TIMEOUT",
+            "TOOL_ERROR"
+          ],
+          "domain_success": false
+        }
+      ]
+    },
+    "state": "STOPPED_H8_MANIFEST_18"
+  },
+  "behavior_evidence_scope": "manifest-18 HTN evidence; manifest-19 adds separately verified SSE transport, full gate pending",
+  "current_execution": {
+    "manifest": "manifest-19-streaming.json",
+    "h6_source": "h6-source-11",
+    "h6_source_state": "CANDIDATES_AVAILABLE",
+    "original_unknown_runs_preserved": true,
+    "continuation_state_file": "/Users/denny/projects/simple-harness-sdk-h1h-impl/.local-test-evidence/2026-09-22/v14-streaming-continuation/state.json",
+    "one_shot_order": [],
+    "no_unknown_replay": true,
+    "h6_source_calls": 44,
+    "h6_source_tokens": 199597,
+    "h6_source_unknown": 0,
+    "h6_cohort": "h6-cohort-5",
+    "h6_cohort_state": "STOPPED_BY_USER_SCOPE",
+    "auto_h8_enabled": false,
+    "continuation_state": "STOPPED_BY_USER_SCOPE",
+    "h6_baselines_completed": 7,
+    "final_native_mission": "mission-5bb7c1fef5597956",
+    "default_real_model_output_tokens": 16384
+  },
+  "current_stage_scope": "Final integration and necessary E2E only; H6 statistical promotion and H8 comparative matrix deferred by user",
+  "historical_source_fingerprint": "e13ea08358e5488ea4d51b4d2960c7843d7020f30f93e55c6747f8fba973c12b",
+  "installed_candidate": {
+    "root": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-22/v14-host/final-wheel-1790077643420008000",
+    "wheel": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-22/v14-host/final-wheel-1790077643420008000/dist/simple_harness_sdk-0.13.0.dev20260922+htn.1-py3-none-any.whl",
+    "manifest": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-22/v14-host/final-wheel-1790077643420008000/dist/simple_harness_sdk-0.13.0.dev20260922+htn.1.candidate-manifest.json",
+    "wheel_sha256": "af9e273061ceeeb3204ccbb4e4d32965fb3bba568e6c7e63f1af1b18244b9800",
+    "manifest_sha256": "f77d817d265053e89711643310483be2687bd8b2f308c454ab980a89d6207809",
+    "source_head": "102ad3dfa2db38d575ea929d39ec5ed1561a71da"
+  },
+  "source_fingerprint_scope": "installed_candidate manifest binds complete source inputs; symbols bind current source files",
+  "current_stage_remaining": [],
+  "current_stage_status": "CORE_INTEGRATION_E2E_PASS_REPLAY_PROJECTION_PARTIAL",
+  "taskgraph_wiring_ready": true,
+  "final_evidence": {
+    "mission_id": "mission-5bb7c1fef5597956",
+    "status": "COMPLETED",
+    "calls": 12,
+    "tokens": 98229,
+    "unknown_usage_calls": 0,
+    "cold_restore_no_repeat": "PASS",
+    "semantic_replay": "PARTIAL",
+    "report": "/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/最终集成与端到端交付-2026-09-22.md"
+  },
+  "taskgraph_notification": {
+    "thread_id": "01a0bf90-5fc9-7fe2-bc95-24eac8335dc9",
+    "sent_at": "2026-09-22T20:22:06.597914+08:00",
+    "tool_result": "success"
+  }
+}

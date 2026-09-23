@@ -92,6 +92,11 @@ def build_provider(snapshot: ProviderSnapshot, *, timeout: float = 180.0,
 
     client = install_httpx_extra_headers_hook(httpx.AsyncClient())
     options = {"allow_private_http": True} if allow_private_http else {}
+    # SDKs that implement complete SSE assembly can keep long model calls alive.
+    # Older pinned wheels retain their existing transport until upgraded.
+    import inspect
+    if "stream" in inspect.signature(OpenAICompatibleProvider).parameters:
+        options["stream"] = True
     provider = OpenAICompatibleProvider(
         client, snapshot.base_url, snapshot.requested_model, Secret(snapshot.api_key), timeout=timeout, **options
     )

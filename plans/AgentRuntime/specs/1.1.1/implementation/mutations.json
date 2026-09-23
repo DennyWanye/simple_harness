@@ -1,0 +1,115 @@
+[
+  {
+    "id": "MU01",
+    "mutation": "去掉最终wire计量guard",
+    "must_fail_case": "C06",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU02",
+    "mutation": "允许recent跳过大组",
+    "must_fail_case": "C02",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU03",
+    "mutation": "不去重F/G重叠",
+    "must_fail_case": "C04",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU04",
+    "mutation": "恢复时重新检索并覆盖旧request",
+    "must_fail_case": "C07",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU05",
+    "mutation": "检索仅最近2000条",
+    "must_fail_case": "M01",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU06",
+    "mutation": "index完成水位直接MAX(seq)",
+    "must_fail_case": "M05",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU07",
+    "mutation": "移除session/generation过滤",
+    "must_fail_case": "M06",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU08",
+    "mutation": "将撤权缓存当可用",
+    "must_fail_case": "M07",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU09",
+    "mutation": "metadata目录存在即exposed",
+    "must_fail_case": "C09",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU10",
+    "mutation": "Skill权限采用并集",
+    "must_fail_case": "N16",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0",
+    "also_assert": "actual effective permission intersection in Skill+Tool runtime guard, not promotion status K07"
+  },
+  {
+    "id": "MU11",
+    "mutation": "从工作区latest脚本执行",
+    "must_fail_case": "K05",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU12",
+    "mutation": "MCP readOnlyHint直接当风险",
+    "must_fail_case": "T01",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU13",
+    "mutation": "external effect调用原connector直达",
+    "must_fail_case": "T05",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU14",
+    "mutation": "close/crash立即删session",
+    "must_fail_case": "R03",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU15",
+    "mutation": "销毁忽略UNKNOWN/pin",
+    "must_fail_case": "R06",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "MU16",
+    "mutation": "共享TaskGraph门被默认ON解除",
+    "must_fail_case": "I07",
+    "status": "PENDING_SDK_EXECUTION",
+    "inherited_from": "ARP-EXEC-1.0"
+  }
+]

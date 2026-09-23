@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.simpleharness.invalid/assurance/1.1/policy-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mode",
+    "max_json_bytes",
+    "max_json_depth",
+    "max_formula_nodes",
+    "max_criteria",
+    "max_ground_literals",
+    "max_rules",
+    "format_retries",
+    "statement_time_unit",
+    "require_independent_verifier",
+    "unknown_effect_closeout",
+    "cross_mission_evidence"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "mode": {
+      "const": "assurance-exec-v1.1"
+    },
+    "max_json_bytes": {
+      "const": 262144
+    },
+    "max_json_depth": {
+      "const": 64
+    },
+    "max_formula_nodes": {
+      "const": 512
+    },
+    "max_criteria": {
+      "const": 256
+    },
+    "max_ground_literals": {
+      "const": 10000
+    },
+    "max_rules": {
+      "const": 20000
+    },
+    "format_retries": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "statement_time_unit": {
+      "const": "UTC_MS"
+    },
+    "require_independent_verifier": {
+      "const": true
+    },
+    "unknown_effect_closeout": {
+      "const": "BLOCK"
+    },
+    "cross_mission_evidence": {
+      "const": "EXPLICIT_EXPORT_ONLY"
+    }
+  },
+  "$defs": {
+    "formula": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "criterion"
+          ],
+          "properties": {
+            "criterion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "all"
+          ],
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 256,
+              "items": {
+                "$ref": "#/$defs/formula"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "any"
+          ],
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 256,
+              "items": {
+                "$ref": "#/$defs/formula"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "session_id": "example",
+  "group_id": "example",
+  "seq_from": 1,
+  "seq_to": 1,
+  "source_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "closed": false,
+  "record_ids": [],
+  "rendered_view_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "budget_charge": 1,
+  "complete_input_turns": 1,
+  "turn_id": "example"
+}

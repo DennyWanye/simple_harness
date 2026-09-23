@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "session_id": "example",
+  "context_id": "example",
+  "historical": false,
+  "manifest_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "input_charge": 1,
+  "input_budget": 1,
+  "output_reserve": 1,
+  "recent_complete_turns": 1,
+  "recall_count": 1,
+  "retrieval_status": "COMPLETE",
+  "session_state": "CREATING",
+  "current_access": "ALLOWED",
+  "degradations": []
+}

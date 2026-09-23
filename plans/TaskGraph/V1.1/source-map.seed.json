@@ -1,0 +1,649 @@
+{
+  "spec": "TG-READY-1.0",
+  "status": "PENDING_LOCAL_CAPTURE",
+  "evidence_kind": "USER_HANDOFF_PLUS_ATTACHED_SPEC",
+  "repositories": [
+    {
+      "role": "candidate",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl",
+      "reported_head": "102ad3dfa2db38d575ea929d39ec5ed1561a71da",
+      "reported_branch": "codex/h1h-impl"
+    },
+    {
+      "role": "sdk_main",
+      "path": "/Users/denny/projects/simple-harness-sdk",
+      "reported_head": "51dbed2eaf81d3225bcb15911c33838a79c1fcd3",
+      "reported_branch": "main"
+    },
+    {
+      "role": "host",
+      "path": "/Users/denny/projects/simple_harness",
+      "reported_head": null,
+      "reported_branch": null
+    }
+  ],
+  "observed_candidate_fingerprint": null,
+  "dirty_files": null,
+  "requirements": [
+    {
+      "id": "P01",
+      "field": "caller",
+      "producer": "api/facade.py::MissionControlV1._mission",
+      "authority": "fixed Principal + mission tenant guard",
+      "join_key": "request/caller ownership",
+      "focused_case": "A01",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Authenticated but foreign Mission: authorization denial with no foreign data disclosure.",
+      "path": "src/agent_orchestrator/api/facade.py",
+      "symbols": [
+        "MissionControlV1._mission"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P02",
+      "field": "request",
+      "producer": "storage/planning_decision_store.py::get_request",
+      "authority": "original persisted request / visible_refs / planning_subjects",
+      "join_key": "request_id; not fresh rendered package",
+      "focused_case": "A02",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Follow the existing typed contract; do not collapse absence, denied, waiting, stale, and reader failure.",
+      "path": "src/agent_orchestrator/storage/planning_decision_store.py",
+      "symbols": [
+        "get_request"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P03",
+      "field": "authorization",
+      "producer": "governance/planning_authorization.py::build_planning_authorization",
+      "authority": "H1H-ADM grants + request authority side binding",
+      "join_key": "grant lineage + exact revision/hash; current TTL",
+      "focused_case": "A03",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Missing/expired/revoked grant: authorization refusal; missing/unreadable grant producer: SOURCE_UNAVAILABLE.",
+      "path": "src/agent_orchestrator/governance/planning_authorization.py",
+      "symbols": [
+        "build_planning_authorization"
+      ],
+      "category": "H1H_PREREQUISITE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P04",
+      "field": "network",
+      "producer": "storage/taskgraph_store.py::read_revision",
+      "authority": "plan_revisions + revision_records + member/method pins",
+      "join_key": "mission_id, revision, occurrence_id",
+      "focused_case": "S01",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Follow the existing typed contract; do not collapse absence, denied, waiting, stale, and reader failure.",
+      "path": "src/agent_orchestrator/storage/taskgraph_store.py",
+      "symbols": [
+        "TaskGraphStore.read_revision"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P05",
+      "field": "methods",
+      "producer": "storage/htn_store.py::get_method",
+      "authority": "MethodRegistry definition and current registration",
+      "join_key": "method_id,version,content_hash",
+      "focused_case": "S02",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Exact registered method absent/stale/suspended: existing method rejection; reader failure: SOURCE_UNAVAILABLE.",
+      "path": "src/agent_orchestrator/storage/htn_store.py",
+      "symbols": [
+        "HtnStore.get_method"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P06",
+      "field": "evidence",
+      "producer": "orchestrator/hierarchical_dispatch.py::witnesses/input_witness_index/start_witness_index",
+      "authority": "actual validity witnesses, observations, support sets and scope epochs",
+      "join_key": "witness consumer,purpose,scope/support revision",
+      "focused_case": "A04",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Known UNKNOWN/CONFLICT/STALE: evidence waiting/recheck; inability to read: SOURCE_UNAVAILABLE.",
+      "path": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "symbols": [
+        "HierarchicalDispatch.witnesses",
+        "HierarchicalDispatch.input_witness_index",
+        "HierarchicalDispatch.start_witness_index"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P07",
+      "field": "capabilities",
+      "producer": "planning/htn/world.py::DeploymentPlanningWorld.capabilities",
+      "authority": "world.records produced by capability_records(catalog,deployed_layers,capability_layers,unhealthy,unauthorized); actual Operator registry and Tool policy are rechecked at handoff",
+      "join_key": "capability_id + actual deployment revision/hash",
+      "focused_case": "A05",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Capability explicitly unavailable: CAPABILITY_MISSING; no authoritative declaration reader: SOURCE_UNAVAILABLE.",
+      "path": "src/agent_orchestrator/planning/htn/world.py",
+      "symbols": [
+        "DeploymentPlanningWorld.capabilities"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P08",
+      "field": "operations",
+      "producer": "runtime/planning_operations.py::build_operation_snapshot",
+      "authority": "H1H-ADM exact bridge + all actions/receipts; includes retired work",
+      "join_key": "operation_id/request_hash <-> action_key/version",
+      "focused_case": "R06",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Known in-flight/UNKNOWN effect: DEFERRED; absent mapping or failed complete scan: SOURCE_UNAVAILABLE.",
+      "path": "src/agent_orchestrator/runtime/planning_operations.py",
+      "symbols": [
+        "build_operation_snapshot"
+      ],
+      "category": "H1H_PREREQUISITE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P09",
+      "field": "running_work",
+      "producer": "runtime/planning_operations.py::read_running_work",
+      "authority": "actual Attempts, dispatch intents, owners/leases, imported execution receipts",
+      "join_key": "method instance->occurrence->Task->Attempt",
+      "focused_case": "R03",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Known live work: DEFERRED; unknown outcome/lease expiry alone is not settlement.",
+      "path": "src/agent_orchestrator/runtime/planning_operations.py",
+      "symbols": [
+        "read_running_work"
+      ],
+      "category": "H1H_PREREQUISITE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P10",
+      "field": "acceptances",
+      "producer": "orchestrator/hierarchical_dispatch.py::accepted_outputs",
+      "authority": "official accepted output records and real CAS artifacts",
+      "join_key": "result/acceptance/artifact/output_port/exact hash",
+      "focused_case": "D01",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Producer not completed: WAITING_DATA; completed with missing required port: DATA_UNBOUND.",
+      "path": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "symbols": [
+        "HierarchicalDispatch.accepted_outputs"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P11",
+      "field": "order_outcomes",
+      "producer": "orchestrator/taskgraph_sources.py::settlement_facts",
+      "authority": "existing occurrence_outcomes plus H1H-ADM running-work and operation receipts; no terminal-string-only release",
+      "join_key": "occurrence contract and source outcome",
+      "focused_case": "D04",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Outcome UNKNOWN or not actually settled: WAITING_ORDER.",
+      "path": "src/agent_orchestrator/orchestrator/taskgraph_sources.py",
+      "symbols": [
+        "settlement_facts"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P12",
+      "field": "schema_compatibility",
+      "producer": "orchestrator/taskgraph_sources.py::read_schema_policy",
+      "authority": "HierarchicalDispatch.resolution_policy.schema_registry; only installed rule declarations; no converter implicitly executed",
+      "join_key": "produced ref,required ref,declaration id",
+      "focused_case": "D03",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "No declared schema conversion: SCHEMA_MISMATCH, not inferred compatible.",
+      "path": "src/agent_orchestrator/orchestrator/taskgraph_sources.py",
+      "symbols": [
+        "read_schema_policy"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P13",
+      "field": "input_resolution",
+      "producer": "artifacts/input_bindings.py::resolve_declared_inputs",
+      "authority": "existing pure resolver + accepted index + purpose-specific witnesses + pinned revisions",
+      "join_key": "requirement_id -> exact immutable output",
+      "focused_case": "D02",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Pending producer vs invalid input vs unreadable source are distinct tagged results.",
+      "path": "src/agent_orchestrator/artifacts/input_bindings.py",
+      "symbols": [
+        "resolve_declared_inputs"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P14",
+      "field": "resource_targets",
+      "producer": "orchestrator/taskgraph_sources.py::read_target_policy",
+      "authority": "HierarchicalDispatch.target_rules injected by real Host; known scope/namespace/path/collation and Operator effect policy",
+      "join_key": "namespace, normalized path,mode,declared expected object version",
+      "focused_case": "D05",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "No explicit target policy when materialization is needed: TARGET_RULES_UNAVAILABLE.",
+      "path": "src/agent_orchestrator/orchestrator/taskgraph_sources.py",
+      "symbols": [
+        "read_target_policy"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P15",
+      "field": "demand",
+      "producer": "storage/taskgraph_store.py::read_active_consumers",
+      "authority": "adopted method pins + child slots; plus Obligation independent demand",
+      "join_key": "mission,revision,instance,slot,producer",
+      "focused_case": "R01",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Complete empty consumers still check independent obligations and operations before cancelling.",
+      "path": "src/agent_orchestrator/storage/taskgraph_store.py",
+      "symbols": [
+        "TaskGraphStore.read_active_consumers"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P16",
+      "field": "budget",
+      "producer": "governance/budgets.py::BudgetLedger.account",
+      "authority": "original account hierarchy + reservations + imported_usage + protected tails",
+      "join_key": "task_account(task_id),subject_id; amounts never guessed",
+      "focused_case": "A06",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Insufficient budget: existing BudgetExhausted; failed account read: SOURCE_UNAVAILABLE, never zero spend.",
+      "path": "src/agent_orchestrator/governance/budgets.py",
+      "symbols": [
+        "BudgetLedger.account"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P17",
+      "field": "preview",
+      "producer": "planning/plan_preview.py::preview_candidate",
+      "authority": "H1H-ADM pure compiler and actual DeltaReport",
+      "join_key": "decision/snapshot/delta/check hashes",
+      "focused_case": "S03",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Invalid shape: typed rejection; explicit pending compound is not incomplete validation.",
+      "path": "src/agent_orchestrator/planning/plan_preview.py",
+      "symbols": [
+        "preview_candidate"
+      ],
+      "category": "H1H_PREREQUISITE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P18",
+      "field": "input_freeze",
+      "producer": "storage/taskgraph_store.py::insert_attempt_inputs",
+      "authority": "existing immutable InputManifest + actual DispatchIntent and Attempt",
+      "join_key": "attempt_id,intent_id,creation_key,input_id,input_hash",
+      "focused_case": "D06",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Follow the existing typed contract; do not collapse absence, denied, waiting, stale, and reader failure.",
+      "path": "src/agent_orchestrator/storage/taskgraph_store.py",
+      "symbols": [
+        "TaskGraphStore.insert_attempt_inputs"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P19",
+      "field": "commit_guard",
+      "producer": "orchestrator/planning_admission_commits.py::commit_admitted_plan",
+      "authority": "H1H-ADM grants,full operations,runtime + _read_set + budget",
+      "join_key": "existing command id + exact intent and candidate",
+      "focused_case": "C01",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Follow the existing typed contract; do not collapse absence, denied, waiting, stale, and reader failure.",
+      "path": "src/agent_orchestrator/orchestrator/planning_admission_commits.py",
+      "symbols": [
+        "commit_admitted_plan"
+      ],
+      "category": "H1H_PREREQUISITE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P20",
+      "field": "convergence",
+      "producer": "orchestrator/taskgraph_convergence.py::advance_convergence",
+      "authority": "existing cancellation/reconciliation; typed target fences",
+      "join_key": "job_id + target original generation; no lease expiry inference",
+      "focused_case": "R04",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Follow the existing typed contract; do not collapse absence, denied, waiting, stale, and reader failure.",
+      "path": "src/agent_orchestrator/orchestrator/taskgraph_convergence.py",
+      "symbols": [
+        "advance_convergence"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P21",
+      "field": "composition",
+      "producer": "orchestrator/resolution_commits.py::commit_goal_resolution",
+      "authority": "actual parent ReviewPackage/ReviewRecord and child Acceptance",
+      "join_key": "package/result/requirements/Method hash",
+      "focused_case": "V01",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Review REWORK/INCONCLUSIVE/REJECTED: no parent acceptance; not a source error.",
+      "path": "src/agent_orchestrator/orchestrator/resolution_commits.py",
+      "symbols": [
+        "commit_goal_resolution"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P22",
+      "field": "public_view",
+      "producer": "api/taskgraph.py::TaskGraphReadApi.snapshot",
+      "authority": "single read transaction via GraphReadContext",
+      "join_key": "revision+events through_seq+validity epochs",
+      "focused_case": "V04",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Follow the existing typed contract; do not collapse absence, denied, waiting, stale, and reader failure.",
+      "path": "src/agent_orchestrator/api/taskgraph.py",
+      "symbols": [
+        "TaskGraphReadApi.snapshot"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P23",
+      "field": "replay",
+      "producer": "observability/taskgraph_replay.py::rebuild_projection",
+      "authority": "immutable revision records + explicit captured baseline + linked events",
+      "join_key": "parent manifest hash chain; no live table repair guessing",
+      "focused_case": "C04",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Follow the existing typed contract; do not collapse absence, denied, waiting, stale, and reader failure.",
+      "path": "src/agent_orchestrator/observability/taskgraph_replay.py",
+      "symbols": [
+        "rebuild_projection"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "P24",
+      "field": "followups",
+      "producer": "orchestrator/taskgraph_followups.py::pump_taskgraph_followups",
+      "authority": "taskgraph_followups -> existing work consumers with durable receipt",
+      "join_key": "message_id/dedupe_key,receiver existing idempotent command",
+      "focused_case": "C05",
+      "missing_behavior": "Authoritative producer cannot be read or its coverage is incomplete: SOURCE_UNAVAILABLE; no default success or automatic model retry.",
+      "business_not_ready_behavior": "Follow the existing typed contract; do not collapse absence, denied, waiting, stale, and reader failure.",
+      "path": "src/agent_orchestrator/orchestrator/taskgraph_followups.py",
+      "symbols": [
+        "pump_taskgraph_followups"
+      ],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "TG-EXEC-2.0 declaration only"
+    },
+    {
+      "id": "MIG01",
+      "path": "src/agent_orchestrator/storage/store.py",
+      "symbols": [
+        "Store.open",
+        "Store._initialize_or_validate",
+        "Store._apply_migration",
+        "Store.transaction"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "Amendment/runner declaration, not local inspection"
+    },
+    {
+      "id": "MIG02",
+      "path": "src/agent_orchestrator/storage/schema.py",
+      "symbols": [
+        "Migration"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "Amendment/runner declaration, not local inspection"
+    },
+    {
+      "id": "H1A",
+      "path": "src/agent_orchestrator/api/planning_authorization.py",
+      "symbols": [
+        "PlanningAuthorizationApi.issue",
+        "PlanningAuthorizationApi.renew",
+        "PlanningAuthorizationApi.revoke"
+      ],
+      "category": "H1H_PREREQUISITE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "Amendment/runner declaration, not local inspection"
+    },
+    {
+      "id": "H1B",
+      "path": "src/agent_orchestrator/storage/planning_admission_store.py",
+      "symbols": [
+        "PlanningAdmissionStore"
+      ],
+      "category": "H1H_PREREQUISITE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "Amendment/runner declaration, not local inspection"
+    },
+    {
+      "id": "H1S",
+      "path": "src/agent_orchestrator/storage/admission_seams_schema.py",
+      "symbols": [],
+      "category": "H1H_PREREQUISITE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "Amendment/runner declaration, not local inspection"
+    },
+    {
+      "id": "H1C",
+      "path": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "symbols": [
+        "CommitService"
+      ],
+      "category": "EXISTING_REUSE",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "Amendment/runner declaration, not local inspection"
+    },
+    {
+      "id": "TGDDL",
+      "path": "src/agent_orchestrator/storage/taskgraph_schema.py",
+      "symbols": [],
+      "category": "TASKGRAPH_NEW_TARGET",
+      "actual_path": null,
+      "actual_symbols": [],
+      "file_sha256": null,
+      "observed_status": "UNVERIFIED_LOCAL",
+      "equivalence_status": "NOT_CHECKED",
+      "evidence_basis": "Amendment/runner declaration, not local inspection"
+    }
+  ],
+  "reported_missing": [
+    {
+      "path": "src/agent_orchestrator/orchestrator/planning_admission_commits.py",
+      "symbol": "commit_admitted_plan",
+      "basis": "USER_HANDOFF_PROBE",
+      "locally_verified_here": false
+    }
+  ],
+  "host_symbols": {
+    "Mission_auth_route": null,
+    "TaskGraph_read_route": null
+  },
+  "source_map_complete": false,
+  "source_symbols_complete": false,
+  "next_action": "Run tools/capture_sources.py locally with project Python; never replace with remote HEAD."
+}

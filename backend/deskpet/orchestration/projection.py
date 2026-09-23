@@ -616,12 +616,20 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
     ledger = budget_usage if isinstance(budget_usage, Mapping) else {}
     approvals = [_snapshot_approval(a, latest_actions) for a in snapshot.get("approvals") or ()]
     waiting_on = [dict(w) for w in snapshot.get("waiting_on") or ()]
+    questions = [{"decision_id": row.get("decision_id"), "version": row.get("version"),
+                  "state": row.get("state"),
+                  "question": (row.get("request") or {}).get("payload", {}).get("question"),
+                  "options": (row.get("request") or {}).get("payload", {}).get("options", []),
+                  "blocking": (row.get("request") or {}).get("payload", {}).get("blocking", False),
+                  "answer": (row.get("answer") or {}).get("answer")}
+                 for row in _rows(snapshot.get("planning_questions"))]
+    planning_authorizations = _rows(snapshot.get("planning_authorization_requests"))
     raw_mission = dict(snapshot.get("mission") or {})
     state = ui_state(
         raw_mission.get("status"),
         attempt_statuses=(a["status"] for a in attempts),
         task_statuses=(t.get("status") for t in snapshot.get("tasks") or ()),
-        waiting=bool(waiting_on) or any(a.get("state") == "PENDING" for a in approvals),
+        waiting=bool(waiting_on) or bool(planning_authorizations) or any(a.get("state") == "PENDING" for a in approvals) or any(q["state"] == "PENDING" and q["blocking"] for q in questions),
         blocked=bool(blocked),
     )
     return {
@@ -633,6 +641,9 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         "artifacts": [_artifact(a) for a in snapshot.get("artifacts") or ()],
         "actions": [_action(a) for a in latest_actions.values()],
         "approvals": approvals,
+        "planning_questions": questions,
+        "planning_authorization_requests": planning_authorizations,
+        "operation_workspace": snapshot.get("operation_workspace"),
         "waiting_on": waiting_on,
         "blocked": [dict(b) for b in blocked],
         "graph_changes": len(snapshot.get("graph_changes") or ()),

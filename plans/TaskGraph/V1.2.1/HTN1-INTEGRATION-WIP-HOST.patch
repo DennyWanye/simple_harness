@@ -1,0 +1,877 @@
+--- a/backend/deskpet/orchestration/handlers.py
++++ b/backend/deskpet/orchestration/handlers.py
+@@ -33,6 +33,10 @@
+     "mission_citation_read",
+     "mission_list",
+     "mission_get",
++    "taskgraph.snapshot",
++    "taskgraph.why_not_ready",
++    "taskgraph.diff",
++    "taskgraph.convergence",
+     "mission_events",
+     "mission_cancel",
+     "mission_approval_list",
+@@ -95,6 +99,11 @@
+             data = await data  # type: ignore[misc]
+         return _ok(msg_type, request_id, data)
+     except Exception as error:  # the socket loop must never see an exception
++        from .taskgraph import TaskGraphRequestError
++        if isinstance(error, TaskGraphRequestError):
++            response = _error(msg_type, request_id, error.code, str(error))
++            response["payload"]["taskgraph_error"] = error.wire
++            return response
+         code = getattr(error, "code", None)
+         if isinstance(code, str) and code:
+             return _error(msg_type, request_id, code, str(error))
+@@ -212,6 +221,10 @@
+ 
+ 
+ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = {
++    "taskgraph.snapshot": lambda service, body: service.taskgraph_read("snapshot", body),
++    "taskgraph.why_not_ready": lambda service, body: service.taskgraph_read("why_not_ready", body),
++    "taskgraph.diff": lambda service, body: service.taskgraph_read("diff", body),
++    "taskgraph.convergence": lambda service, body: service.taskgraph_read("convergence", body),
+     "mission_create": _create,
+     "mission_create_with_sources": _create_with_sources,
+     "mission_operation_completion_approve": _completion_approve,
+--- a/backend/deskpet/orchestration/hierarchical.py
++++ b/backend/deskpet/orchestration/hierarchical.py
+@@ -30,20 +30,32 @@
+                              if not statement.startswith("action:"))
+     preparation = GoalSignature("desktop.prepare-delivery", 1, params, outputs,
+         mission.goal, content_criteria)
++    continuation = GoalSignature("desktop.continue-delivery", 1, params, outputs,
++        "Continue from an accepted upstream delivery: " + mission.goal, content_criteria)
+     ports = (PortSpec("delivery", outputs),)
+     preparation_ports = ports + ((PortSpec("action_candidate", outputs),)
+         if any(c.startswith("action:") for c in mission.success_criteria) else ())
+     # These are actual workspace operations available to this deployment. External
+     # effects still require an OperationIntent, review and the original connector.
+     for name, form in (("desktop.user-goal", TaskForm.COMPOUND),
+-                       ("desktop.prepare-delivery", TaskForm.PRIMITIVE)):
++                       ("desktop.prepare-delivery", TaskForm.PRIMITIVE),
++                       ("desktop.continue-delivery", TaskForm.PRIMITIVE)):
+         goal_signature = preparation if form is TaskForm.PRIMITIVE else signature
++        # Add a separately identified consumer type. Previously admitted methods
++        # keep the exact prepare-delivery v1 declaration and need no new input.
++        input_ports = ()
++        if name == "desktop.continue-delivery":
++            goal_signature = continuation
++            input_ports = (PortSpec("delivery", outputs),)
+         declared_ports = preparation_ports if form is TaskForm.PRIMITIVE else ports
+         body = {"name": name, "form": str(form), "signature": goal_signature.to_json(),
+                 "ports": [p.to_json() for p in declared_ports]}
++        if input_ports:
++            body["input_ports"] = [p.to_json() for p in input_ports]
+         ref = VersionedRef(name, 1, content_hash_of(body))
+         world.catalog.register(TaskTypeSpec(
+-            task_type_ref=ref, form=form, goal_signature=goal_signature, output_ports=declared_ports,
++            task_type_ref=ref, form=form, goal_signature=goal_signature,
++            input_ports=input_ports, output_ports=declared_ports,
+             parameter_schema_ref=params, output_schema_ref=outputs,
+             operator_ref=(VersionedRef("desktop.workspace-worker", 1,
+                 content_hash_of({"tools": list(mission.allowed_tools)}))
+--- a/backend/deskpet/orchestration/service.py
++++ b/backend/deskpet/orchestration/service.py
+@@ -104,6 +104,7 @@
+         test_scenario: str | None = None,
+         drive: bool = True,
+         decision_shadow_provider: Any = None,
++        taskgraph_deployment: Any = None,
+     ) -> None:
+         self.root = Path(root)
+         self.settings = settings
+@@ -115,6 +116,10 @@
+         self._http_client = http_client
+         self._test_scenario = test_scenario
+         self._drive_enabled = drive
++        # Trusted deployment composition only: never populated from IPC/model
++        # input. None selects the package-owned production deployment reader.
++        self._taskgraph_deployment = taskgraph_deployment
++        self._taskgraph: Any = None
+         # PR-7: test/local runtime may inject a typed shadow provider.  Production
+         # remains provider-free until a real NanoJev checkpoint is authorized.
+         self._decision_shadow_provider = decision_shadow_provider
+@@ -303,6 +308,7 @@
+         await self._orchestrator.__aenter__()
+         self._install_hierarchical(self._orchestrator)
+         self._install_native_verifier_pressure(self._orchestrator)
++        self._taskgraph = self._install_taskgraph(self._orchestrator)
+         self._control = MissionControlV1(
+             self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
+         )
+@@ -449,6 +455,7 @@
+         orchestrator, self._orchestrator = self._orchestrator, None
+         self._control = None
+         self._policy = None
++        self._taskgraph = None
+         if orchestrator is not None:
+             try:
+                 await orchestrator.__aexit__(None, None, None)
+@@ -555,6 +562,24 @@
+             control_root=self._effective_provider.control_root,
+         )
+ 
++    def _install_taskgraph(self, orchestrator: Any) -> Any:
++        if self._test_scenario is not None and self._taskgraph_deployment is None:
++            return None
++        from agent_orchestrator.orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
++        from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
++        from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
++
++        ports = self._taskgraph_deployment
++        if ports is None:
++            ports = TaskGraphDeploymentPorts(tenant_id=self.tenant_id, principal=self._principal,
++                graph_budget=DEFAULT_PROJECTION_BUDGET, deployment_acceptance=InstalledHtnWiringAcceptance())
++        if (not isinstance(ports, TaskGraphDeploymentPorts)
++                or ports.tenant_id != self.tenant_id or ports.principal != self._principal):
++            raise RuntimeError("执行图部署必须绑定当前认证身份和租户")
++        # The SDK creates readers/history against this candidate's original
++        # Store. Rebuild must not retain any collaborator from the closed Store.
++        return orchestrator.install_taskgraph(ports)
++
+     async def _rebuild(self) -> None:
+         from agent_orchestrator.api.facade import MissionControlV1
+         from agent_orchestrator.api.policies import PolicyApi
+@@ -563,6 +588,7 @@
+         old, self._orchestrator = self._orchestrator, None
+         self._control = None
+         self._policy = None
++        self._taskgraph = None
+         if old is not None:
+             try:
+                 await old.__aexit__(None, None, None)
+@@ -581,6 +607,7 @@
+             await candidate.__aenter__()
+             self._install_hierarchical(candidate)
+             self._install_native_verifier_pressure(candidate)
++            taskgraph = self._install_taskgraph(candidate)
+             control = MissionControlV1(
+                 candidate, tenant_id=self.tenant_id, principal=self._principal
+             )
+@@ -597,6 +624,7 @@
+         self._control = control
+         self._diagnostics_available = self._detect_diagnostics()
+         self._policy = policy
++        self._taskgraph = taskgraph
+ 
+     async def drain(self, timeout: float = 60.0) -> bool:
+         """Tests (``drive=False``): run the loop until idle or ``timeout``.  False when it
+@@ -882,6 +910,9 @@
+     def planning_authorization(self, request: Mapping[str, Any]) -> dict[str, Any]:
+         self._require()
+         self._refuse_secrets(request)
++        # Planning delegation is a separate authority from the TaskGraph kernel.
++        # Enabling the kernel remains an explicit authenticated internal command;
++        # do not turn every active planning grant into a durable policy binding.
+         receipt = self._call("planning_authorization", dict(request))
+         self.wake()
+         return dict(receipt)
+@@ -1017,6 +1048,26 @@
+                     "fingerprint": profile.context_snapshot()["fingerprint"],
+                 }
+             return detail
++
++    def taskgraph_read(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
++        from .taskgraph import read_taskgraph
++        return read_taskgraph(self, operation, request)
++
++    def enable_taskgraph_contract(self, mission_id: str, command_id: str) -> dict[str, Any]:
++        """Authenticated deployment composition; deliberately absent from IPC verbs.
++
++        The original policy command checks delegation, final deployment evidence,
++        protocol and quiescence in one transaction. A failed check leaves the old
++        Mission unchanged; this Host never creates a grant or baseline proof.
++        """
++        self._require()._mission(mission_id)
++        if self._taskgraph is None:
++            raise OrchestrationRequestError("taskgraph_unavailable", "当前部署尚未安装执行图")
++        receipt = dict(self._taskgraph.policy.enable_taskgraph_contract(mission_id, command_id))
++        self._wake.set()
++        if self.on_write is not None:
++            self.on_write()
++        return receipt
+ 
+     def events(self, mission_id: str, *, after_seq: Any = 0, limit: Any = 50) -> dict[str, Any]:
+         # whitelisted rows: the raw payloads stay inside (review P2-3)
+--- /dev/null
++++ b/backend/deskpet/orchestration/taskgraph.py
+@@ -0,0 +1,70 @@
++# SPDX-License-Identifier: BUSL-1.1
++"""Read-only TaskGraph verbs on the existing authenticated control transport."""
++from __future__ import annotations
++
++from collections.abc import Mapping
++from typing import Any
++
++from .service import OrchestrationRequestError
++
++
++class TaskGraphRequestError(OrchestrationRequestError):
++    def __init__(self, wire: Mapping[str, Any]) -> None:
++        self.wire = dict(wire)
++        super().__init__(str(wire["code"]), str(wire["detail"]))
++
++
++def _invalid() -> None:
++    raise OrchestrationRequestError("invalid_request", "执行图请求的字段或版本无效")
++
++
++def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
++    required = {"snapshot": {"mission_id"}, "why_not_ready": {"mission_id", "occurrence_id"},
++                "diff": {"mission_id", "from_revision", "to_revision"}, "convergence": {"mission_id"}}
++    if operation not in required:
++        _invalid()
++    allowed = required[operation] | ({"revision"} if operation == "snapshot" else set())
++    if not required[operation] <= set(request) or set(request) - allowed:
++        _invalid()
++    for key, value in request.items():
++        if key in ("revision", "from_revision", "to_revision"):
++            if key == "revision" and value is None:
++                continue
++            if type(value) is not int or not 0 <= value <= 2**53 - 1:
++                _invalid()
++        elif not isinstance(value, str) or not value.strip() or len(value) > 512:
++            _invalid()
++    mission_id = request["mission_id"]
++    # Ownership is checked before optional SDK capability detection. Tenant and
++    # principal are never accepted from an IPC body.
++    service._require()._mission(mission_id)
++    try:
++        from agent_orchestrator.api.taskgraph import TaskGraphReadError
++        from agent_orchestrator.graph.notification_contracts import TaskGraphErrorV1
++        from agent_orchestrator.runtime.planning_operations import SourceUnavailable
++        from agent_orchestrator.storage.taskgraph_store import GraphIntegrityError
++        from agent_orchestrator.contracts.models import ContractError
++        from agent_orchestrator.storage.store import StoreError
++    except ImportError as error:
++        raise OrchestrationRequestError("taskgraph_unavailable", "当前 SDK 尚未安装执行图读取接口") from error
++    try:
++        read_api = getattr(service._orchestrator, "taskgraph_read_api", None)
++        if not callable(read_api):
++            raise SourceUnavailable("taskgraph_read_assembly_missing")
++        api = read_api(tenant_id=service.tenant_id, principal=service._principal)
++        if operation == "snapshot":
++            return api.snapshot(mission_id, revision=request.get("revision"))
++        if operation == "why_not_ready":
++            return api.why_not_ready(mission_id, request["occurrence_id"])
++        if operation == "diff":
++            return api.diff(mission_id, request["from_revision"], request["to_revision"])
++        return api.convergence(mission_id)
++    except TaskGraphReadError as error:
++        raise TaskGraphRequestError(error.error.to_json()) from error
++    except (GraphIntegrityError, ContractError, SourceUnavailable, StoreError) as error:
++        code = "GRAPH_INTEGRITY" if isinstance(error, (GraphIntegrityError, ContractError)) else "SOURCE_UNAVAILABLE"
++        wire = TaskGraphErrorV1(origin="SYSTEM", stage="READ", code=code,
++            detail="执行图来源不可读，请保留当前画面并重新读取。",
++            retry_kind="OPERATOR_REPAIR" if code == "GRAPH_INTEGRITY" else "REQUERY",
++            source_identity=None)
++        raise TaskGraphRequestError(wire.to_json()) from error
+--- a/backend/deskpet/sdk_adapters/sdk_candidate.py
++++ b/backend/deskpet/sdk_adapters/sdk_candidate.py
+@@ -26,11 +26,11 @@
+     verify_runtime_identity,
+ )
+ 
+-SDK_VERSION = "0.13.0.dev20260922+htn.1"
+-SDK_WHEEL_FILENAME = "simple_harness_sdk-0.13.0.dev20260922+htn.1-py3-none-any.whl"
+-SDK_WHEEL_SHA256 = "af9e273061ceeeb3204ccbb4e4d32965fb3bba568e6c7e63f1af1b18244b9800"
+-SDK_CANDIDATE_MANIFEST_FILENAME = "simple_harness_sdk-0.13.0.dev20260922+htn.1.candidate-manifest.json"
+-SDK_CANDIDATE_MANIFEST_SHA256 = "f77d817d265053e89711643310483be2687bd8b2f308c454ab980a89d6207809"
++SDK_VERSION = "0.13.0.dev20260922+taskgraph.14"
++SDK_WHEEL_FILENAME = "simple_harness_sdk-0.13.0.dev20260922+taskgraph.14-py3-none-any.whl"
++SDK_WHEEL_SHA256 = "d63744850fd5a0a08f347f86fea061cadf6b5369804b6cad1824839cf2a30bc1"
++SDK_CANDIDATE_MANIFEST_FILENAME = "simple_harness_sdk-0.13.0.dev20260922+taskgraph.14.candidate-manifest.json"
++SDK_CANDIDATE_MANIFEST_SHA256 = "fddb04b082bc0e9b03831eda1ce1c50317c1aa5023bdf0b3746a0b614e15cee2"
+ SDK_SOURCE_COMMIT = "102ad3dfa2db38d575ea929d39ec5ed1561a71da"
+ SDK_CI_RUN_ID = None
+ SDK_CI_ARTIFACT_ID = None
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -14705,7 +14705,9 @@
+                     "payload": snapshot,
+                 })
+ 
+-            elif msg_type.startswith(("mission_", "orchestration_")):
++            elif msg_type.startswith(("mission_", "orchestration_")) or msg_type in {
++                "taskgraph.snapshot", "taskgraph.why_not_ready", "taskgraph.diff", "taskgraph.convergence",
++            }:
+                 # Agent 编排视图的控制通道协议（plan §3.4）：纯分发，不会把异常抛进 socket 循环
+                 from deskpet.orchestration.handlers import handle as _orchestration_handle
+ 
+--- a/backend/pyproject.toml
++++ b/backend/pyproject.toml
+@@ -166,7 +166,7 @@
+     # 2026-08-29: vendored exact Agent Runtime candidate bytes.
+     # Wheel identity single source of truth:
+     # deskpet/sdk_adapters/sdk_candidate.py
+-    "simple-harness-sdk==0.13.0.dev20260922+htn.1",
++    "simple-harness-sdk==0.13.0.dev20260922+taskgraph.14",
+     "simple-harness-service-sdk[realtime]==0.3.13",
+ ]
+ 
+@@ -181,7 +181,7 @@
+ # simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
+ #
+ # Production (vendored immutable candidate):
+-simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260922+htn.1-py3-none-any.whl" }
++simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260922+taskgraph.14-py3-none-any.whl" }
+ simple-harness-service-sdk = { path = "vendor/simple_harness_service_sdk-0.3.13-py3-none-any.whl" }
+ 
+ [tool.uv]
+@@ -190,7 +190,7 @@
+ # protocol candidate, so normalize the transitive dependency to that exact
+ # locally vendored runtime candidate.
+ override-dependencies = [
+-    "simple-harness-sdk==0.13.0.dev20260922+htn.1",
++    "simple-harness-sdk==0.13.0.dev20260922+taskgraph.14",
+ ]
+ 
+ [project.optional-dependencies]
+--- a/backend/uv.lock
++++ b/backend/uv.lock
+@@ -14,7 +14,7 @@
+ ]
+ 
+ [manifest]
+-overrides = [{ name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260922+htn.1-py3-none-any.whl" }]
++overrides = [{ name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260922+taskgraph.14-py3-none-any.whl" }]
+ 
+ [[package]]
+ name = "accelerate"
+@@ -7723,7 +7723,7 @@
+     { name = "selectolax", specifier = ">=0.3" },
+     { name = "sentence-transformers", specifier = ">=5.7" },
+     { name = "silero-vad", specifier = ">=5.1.2,<6" },
+-    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260922+htn.1-py3-none-any.whl" },
++    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260922+taskgraph.14-py3-none-any.whl" },
+     { name = "simple-harness-service-sdk", extras = ["realtime"], path = "vendor/simple_harness_service_sdk-0.3.13-py3-none-any.whl" },
+     { name = "sqlite-vec", specifier = ">=0.1" },
+     { name = "structlog", specifier = ">=24.0" },
+@@ -7743,13 +7743,13 @@
+ 
+ [[package]]
+ name = "simple-harness-sdk"
+-version = "0.13.0.dev20260922+htn.1"
+-source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260922+htn.1-py3-none-any.whl" }
++version = "0.13.0.dev20260922+taskgraph.14"
++source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260922+taskgraph.14-py3-none-any.whl" }
+ dependencies = [
+     { name = "httpx" },
+ ]
+ wheels = [
+-    { filename = "simple_harness_sdk-0.13.0.dev20260922+htn.1-py3-none-any.whl", hash = "sha256:af9e273061ceeeb3204ccbb4e4d32965fb3bba568e6c7e63f1af1b18244b9800" },
++    { filename = "simple_harness_sdk-0.13.0.dev20260922+taskgraph.14-py3-none-any.whl", hash = "sha256:d63744850fd5a0a08f347f86fea061cadf6b5369804b6cad1824839cf2a30bc1" },
+ ]
+ 
+ [package.metadata]
+--- /dev/null
++++ b/tauri-app/src/stores/taskgraphStore.ts
+@@ -0,0 +1,235 @@
++// SPDX-License-Identifier: BUSL-1.1
++/** Strict, session-local TaskGraph read models. No graph editing or execution authority. */
++export type ReadToken = {
++  plan_revision: number; through_seq: number; snapshot_hash: string; manifest_hash: string;
++  validity_epochs: { scope_id: string; epoch: number }[];
++};
++export type GraphNode = {
++  occurrence_id: string; task_id: string; obligation_id: string; form: "primitive" | "compound";
++  contract_revision: number; dispatch_generation: number; phase: string; readiness: string; reason_codes: string[];
++};
++export type GraphEdge = { kind: "refinement" | "order" | "data"; source: string; target: string; identity: string };
++export type SourceRef = { kind: string; id: string; revision: number; content_hash: string };
++export type GraphSnapshot = {
++  schema_version: 1; mission_id: string; read_token: ReadToken; nodes: GraphNode[]; edges: GraphEdge[];
++  planning_frontier: string[]; execution_frontier: string[]; root_resolution_refs: SourceRef[];
++  complete: true; next_cursor: null; view_mode: "CURRENT" | "HISTORICAL_STRUCTURE";
++};
++export type GraphExplanation = {
++  schema_version: 1; mission_id: string; occurrence_id: string; read_token: ReadToken;
++  readiness: string; reason_codes: string[]; source_refs: SourceRef[]; details: string[];
++};
++export type GraphDiff = {
++  schema_version: 1; mission_id: string; from_revision: number; to_revision: number;
++  from_manifest_hash: string; to_manifest_hash: string; complete: true;
++  changes: { kind: string; identity: string; change: string; before_hash: string | null; after_hash: string | null }[];
++};
++export type ConvergenceView = {
++  schema_version: 1; mission_id: string; through_seq: number; complete: true;
++  jobs: { job_id: string; decision_id: string; source_revision: number; candidate_hash: string; impact_hash: string;
++    state: string; row_version: number; diagnostic_refs: SourceRef[];
++    targets: { occurrence_id: string; task_id: string; expected_generation: number; target_kind: string }[];
++  }[];
++};
++
++const readiness = new Set(["NOT_SELECTED", "NEEDS_REFINEMENT", "WAITING_ORDER", "WAITING_DATA",
++  "WAITING_EVIDENCE", "WAITING_APPROVAL", "STALE_BINDING", "READY_CANDIDATE",
++  "WAITING_OPERATION_UNKNOWN", "OBSERVER_UNAVAILABLE", "GRAPH_INTEGRITY", "VALIDITY_RECHECK_PENDING"]);
++type Obj = Record<string, unknown>;
++function invalid(): never { throw new Error("执行图返回的数据不完整或格式不符"); }
++function obj(value: unknown, keys: string[]): Obj {
++  if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
++  const raw = value as Obj;
++  if (Object.keys(raw).length !== keys.length || keys.some(key => !(key in raw))) return invalid();
++  return raw;
++}
++function text(value: unknown, limit = 512): string {
++  if (typeof value !== "string" || !value.length || value.length > limit) return invalid();
++  return value;
++}
++function integer(value: unknown): number {
++  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return invalid();
++  return value;
++}
++function hash(value: unknown): string {
++  const s = text(value);
++  if (!/^[a-f0-9]{64}$/.test(s)) return invalid();
++  return s;
++}
++function array<T>(value: unknown, bound: number, parse: (item: unknown) => T): T[] {
++  if (!Array.isArray(value) || value.length > bound) return invalid();
++  return value.map(parse);
++}
++function strings(value: unknown, bound: number): string[] { return array(value, bound, item => text(item)); }
++function oneOf(value: unknown, allowed: readonly string[]): string {
++  const s = text(value); if (!allowed.includes(s)) return invalid(); return s;
++}
++function unique(values: string[]): void { if (new Set(values).size !== values.length) invalid(); }
++function source(value: unknown): SourceRef {
++  const r = obj(value, ["kind", "id", "revision", "content_hash"]);
++  return { kind: text(r.kind), id: text(r.id), revision: integer(r.revision), content_hash: hash(r.content_hash) };
++}
++export function graphErrorMessage(value: unknown): string {
++  const r = obj(value, ["schema_version", "origin", "stage", "code", "detail", "retry_kind", "source_identity"]);
++  if (r.schema_version !== 1) invalid();
++  oneOf(r.origin, ["MODEL", "SYSTEM", "RUNTIME"]);
++  oneOf(r.stage, ["SOURCE", "PREVIEW", "ADMISSION", "CONVERGENCE", "COMMIT", "DISPATCH", "REPLAY", "READ"]);
++  if (r.source_identity !== null) text(r.source_identity);
++  if (typeof r.detail !== "string" || r.detail.length > 2000) invalid();
++  const retry = oneOf(r.retry_kind, ["NONE", "REQUERY", "RECONCILE", "NEW_PLANNER_REQUEST", "OPERATOR_REPAIR"]);
++  const guidance: Record<string, string> = { NONE: "", REQUERY: "请重新读取。", RECONCILE: "等待外部结果核对。",
++    NEW_PLANNER_REQUEST: "需要重新规划。", OPERATOR_REPAIR: "需要修复来源后再读取。" };
++  return (r.detail || text(r.code)) + " " + guidance[retry] + "（" + text(r.code) + "）";
++}
++function token(value: unknown): ReadToken {
++  const r = obj(value, ["plan_revision", "through_seq", "snapshot_hash", "manifest_hash", "validity_epochs"]);
++  const epochs = array(r.validity_epochs, 256, item => {
++    const e = obj(item, ["scope_id", "epoch"]); return { scope_id: text(e.scope_id), epoch: integer(e.epoch) };
++  });
++  unique(epochs.map(e => e.scope_id));
++  return { plan_revision: integer(r.plan_revision), through_seq: integer(r.through_seq),
++    snapshot_hash: hash(r.snapshot_hash), manifest_hash: hash(r.manifest_hash), validity_epochs: epochs };
++}
++export function sameToken(a: ReadToken, b: ReadToken): boolean {
++  return a.plan_revision === b.plan_revision && a.through_seq === b.through_seq
++    && a.snapshot_hash === b.snapshot_hash && a.manifest_hash === b.manifest_hash
++    && JSON.stringify(a.validity_epochs) === JSON.stringify(b.validity_epochs);
++}
++function identity(r: Obj, mission: string): void {
++  if (r.schema_version !== 1 || r.mission_id !== mission) invalid();
++}
++export function parseSnapshot(value: unknown, mission: string, revision: number | null): GraphSnapshot {
++  const r = obj(value, ["schema_version", "mission_id", "read_token", "nodes", "edges", "planning_frontier",
++    "execution_frontier", "root_resolution_refs", "complete", "next_cursor", "view_mode"]);
++  identity(r, mission);
++  if (r.complete !== true || r.next_cursor !== null) invalid();
++  const readToken = token(r.read_token);
++  const mode = oneOf(r.view_mode, ["CURRENT", "HISTORICAL_STRUCTURE"]) as GraphSnapshot["view_mode"];
++  if ((revision === null) !== (mode === "CURRENT") || (revision !== null && readToken.plan_revision !== revision)) invalid();
++  const nodes = array(r.nodes, 4096, value => {
++    const n = obj(value, ["occurrence_id", "task_id", "obligation_id", "form", "contract_revision",
++      "dispatch_generation", "phase", "readiness", "reason_codes"]);
++    const reason = text(n.readiness); if (!readiness.has(reason)) invalid();
++    return { occurrence_id: text(n.occurrence_id), task_id: text(n.task_id), obligation_id: text(n.obligation_id),
++      form: oneOf(n.form, ["primitive", "compound"]) as GraphNode["form"], contract_revision: integer(n.contract_revision),
++      dispatch_generation: integer(n.dispatch_generation), phase: text(n.phase), readiness: reason,
++      reason_codes: strings(n.reason_codes, 32) };
++  });
++  const ids = new Set(nodes.map(n => n.occurrence_id)); unique(nodes.map(n => n.occurrence_id));
++  const edges = array(r.edges, 8192, value => {
++    const e = obj(value, ["kind", "source", "target", "identity"]);
++    const edge = { kind: oneOf(e.kind, ["refinement", "order", "data"]) as GraphEdge["kind"],
++      source: text(e.source), target: text(e.target), identity: text(e.identity) };
++    if (!ids.has(edge.source) || !ids.has(edge.target)) invalid(); return edge;
++  });
++  unique(edges.map(e => JSON.stringify([e.kind, e.identity])));
++  const planning = strings(r.planning_frontier, 4096), execution = strings(r.execution_frontier, 4096);
++  unique(planning); unique(execution);
++  if ([...planning, ...execution].some(id => !ids.has(id))) invalid();
++  const byId = new Map(nodes.map(node => [node.occurrence_id, node]));
++  if (execution.some(id => byId.get(id)?.form !== "primitive" || byId.get(id)?.readiness !== "READY_CANDIDATE")) invalid();
++  if (mode === "HISTORICAL_STRUCTURE" && (planning.length || execution.length ||
++    nodes.some(n => n.phase !== "HISTORY_ONLY" || n.readiness !== "NOT_SELECTED" ||
++      !n.reason_codes.includes("HISTORICAL_VIEW_NON_EXECUTABLE")))) invalid();
++  const roots = array(r.root_resolution_refs, 256, source);
++  if (roots.some(ref => ref.kind !== "resolution")) invalid();
++  return { schema_version: 1, mission_id: mission, read_token: readToken, nodes, edges,
++    planning_frontier: planning, execution_frontier: execution, root_resolution_refs: roots,
++    complete: true, next_cursor: null, view_mode: mode };
++}
++export function parseExplanation(value: unknown, mission: string): GraphExplanation {
++  const r = obj(value, ["schema_version", "mission_id", "occurrence_id", "read_token", "readiness",
++    "reason_codes", "source_refs", "details"]); identity(r, mission);
++  const reason = text(r.readiness); if (!readiness.has(reason)) invalid();
++  return { schema_version: 1, mission_id: mission, occurrence_id: text(r.occurrence_id), read_token: token(r.read_token),
++    readiness: reason, reason_codes: strings(r.reason_codes, 32), source_refs: array(r.source_refs, 64, source),
++    details: array(r.details, 32, value => {
++      if (typeof value !== "string" || value.length > 2000) invalid(); return value as string;
++    }) };
++}
++export function parseDiff(value: unknown, mission: string): GraphDiff {
++  const r = obj(value, ["schema_version", "mission_id", "from_revision", "to_revision",
++    "from_manifest_hash", "to_manifest_hash", "changes", "complete"]); identity(r, mission);
++  if (r.complete !== true) invalid();
++  return { schema_version: 1, mission_id: mission, from_revision: integer(r.from_revision),
++    to_revision: integer(r.to_revision), from_manifest_hash: hash(r.from_manifest_hash),
++    to_manifest_hash: hash(r.to_manifest_hash), complete: true,
++    changes: array(r.changes, 16384, value => {
++      const c = obj(value, ["kind", "identity", "before_hash", "after_hash"]);
++      if (c.before_hash === c.after_hash) invalid();
++      return { kind: text(c.kind), identity: text(c.identity),
++        change: c.before_hash === null ? "ADDED" : c.after_hash === null ? "REMOVED" : "CHANGED",
++        before_hash: c.before_hash === null ? null : hash(c.before_hash),
++        after_hash: c.after_hash === null ? null : hash(c.after_hash) };
++    }) };
++}
++export function parseConvergence(value: unknown, mission: string): ConvergenceView {
++  const r = obj(value, ["schema_version", "mission_id", "through_seq", "jobs", "complete"]); identity(r, mission);
++  if (r.complete !== true) invalid();
++  return { schema_version: 1, mission_id: mission, through_seq: integer(r.through_seq), complete: true,
++    jobs: array(r.jobs, 4096, value => {
++      const j = obj(value, ["job_id", "decision_id", "source_revision", "candidate_hash", "impact_hash",
++        "state", "row_version", "targets", "diagnostic_refs"]);
++      if (integer(j.row_version) < 1) invalid();
++      return { job_id: text(j.job_id), decision_id: text(j.decision_id), source_revision: integer(j.source_revision),
++        candidate_hash: hash(j.candidate_hash), impact_hash: hash(j.impact_hash), row_version: integer(j.row_version),
++        state: oneOf(j.state, ["FENCED", "WAITING", "READY", "APPLIED", "ABANDONED"]),
++        diagnostic_refs: array(j.diagnostic_refs, 64, source),
++        targets: array(j.targets, 4096, value => {
++          const t = obj(value, ["occurrence_id", "task_id", "expected_generation", "target_kind"]);
++          return { occurrence_id: text(t.occurrence_id), task_id: text(t.task_id),
++            expected_generation: integer(t.expected_generation), target_kind: oneOf(t.target_kind, ["RETIRING", "INPUT_REPLACED"]) };
++        }) };
++    }) };
++}
++
++export type GraphReadState = { snapshot: GraphSnapshot | null; explanation: GraphExplanation | null;
++  diff: GraphDiff | null; convergence: ConvergenceView | null; stale: boolean; convergenceStale: boolean;
++  currentThroughSeq: number; error: string };
++export const emptyGraphState: GraphReadState = {
++  snapshot: null, explanation: null, diff: null, convergence: null, stale: false, convergenceStale: false,
++  currentThroughSeq: 0, error: "",
++};
++export type GraphAction = { type: "reset" } | { type: "stale" } | { type: "error"; error: string }
++  | { type: "snapshot"; value: GraphSnapshot } | { type: "explanation"; value: GraphExplanation }
++  | { type: "diff"; value: GraphDiff } | { type: "convergence"; value: ConvergenceView };
++export function graphReducer(state: GraphReadState, action: GraphAction): GraphReadState {
++  switch (action.type) {
++    case "reset": return { ...emptyGraphState };
++    case "stale": return { ...state, stale: state.snapshot?.view_mode === "CURRENT",
++      convergenceStale: !!state.convergence, explanation: null };
++    case "error": return { ...state, stale: !!state.snapshot, convergenceStale: !!state.convergence,
++      error: action.error, explanation: null };
++    case "snapshot": {
++      const current = action.value.view_mode === "CURRENT";
++      const sequence = action.value.read_token.through_seq;
++      // Keep the latest live watermark across switches to historical structure.
++      // A reconnect/identity change resets the entire reducer, including this mark.
++      if (current && sequence < state.currentThroughSeq) {
++        return { ...state, stale: state.snapshot?.view_mode === "CURRENT", explanation: null,
++          error: "收到较旧的执行图，请重新读取" };
++      }
++      return { ...state, snapshot: action.value, explanation: null, stale: false, error: "",
++        currentThroughSeq: current ? sequence : state.currentThroughSeq,
++        convergenceStale: state.convergenceStale || !!(current && state.convergence
++          && state.convergence.through_seq < sequence) };
++    }
++    case "explanation":
++      if (!state.snapshot || state.stale || state.snapshot.view_mode !== "CURRENT"
++          || !sameToken(state.snapshot.read_token, action.value.read_token)) {
++        return { ...state, stale: true, explanation: null, error: "状态已变化，请刷新后查看原因" };
++      }
++      return { ...state, explanation: action.value, error: "" };
++    case "diff": return { ...state, diff: action.value, error: "" };
++    case "convergence":
++      if (action.value.through_seq < state.currentThroughSeq) {
++        return { ...state, convergenceStale: true, error: "收到较旧的收敛状态，请重新读取" };
++      }
++      return { ...state, convergence: action.value, convergenceStale: false, error: "",
++        currentThroughSeq: action.value.through_seq,
++        stale: state.stale || !!(state.snapshot?.view_mode === "CURRENT"
++          && state.snapshot.read_token.through_seq < action.value.through_seq),
++        explanation: state.snapshot?.view_mode === "CURRENT"
++          && state.snapshot.read_token.through_seq < action.value.through_seq ? null : state.explanation };
++  }
++}
+--- /dev/null
++++ b/tauri-app/src/views/MissionTaskGraph.css
+@@ -0,0 +1,17 @@
++.taskgraph { --tg-node: var(--color-surface, #fff); border: 1px solid #94a3b855; border-radius: 10px; padding: 16px; margin: 16px 0; font-size: 13px; }
++.tg-heading, .tg-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
++.tg-heading { justify-content: space-between; }
++.tg-heading h3 { margin: 0 0 12px; font-size: 15px; }
++.tg-toolbar { margin: 10px 0; }
++.taskgraph input { max-width: 160px; padding: 6px 8px; border: 1px solid #94a3b8; border-radius: 5px; color: inherit; background: transparent; }
++.taskgraph button { padding: 6px 10px; border: 1px solid #94a3b8; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
++.taskgraph button:disabled { opacity: .5; cursor: default; }
++.taskgraph button[aria-pressed="true"] { background: #0d948822; border-color: #0d9488; }
++.taskgraph [role="alert"], .taskgraph [role="status"] { color: #b45309; }
++.tg-canvas { max-height: 480px; overflow: auto; border: 1px solid #94a3b844; border-radius: 7px; background: #94a3b809; }
++.tg-canvas g[role="button"]:focus rect { stroke: #0d9488; stroke-width: 3; }
++.taskgraph table { width: 100%; border-collapse: collapse; text-align: left; }
++.taskgraph td, .taskgraph th { padding: 8px; border-bottom: 1px solid #94a3b833; overflow-wrap: anywhere; }
++.taskgraph details { margin-top: 12px; overflow: auto; }
++.taskgraph summary { cursor: pointer; }
++.tg-explanation { padding: 12px; border-left: 3px solid #0284c7; margin-top: 12px; overflow-wrap: anywhere; }
+--- /dev/null
++++ b/tauri-app/src/views/MissionTaskGraph.tsx
+@@ -0,0 +1,230 @@
++// SPDX-License-Identifier: BUSL-1.1
++import React, { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
++import { asRecord, newRequestKey, type MissionsChannel } from "../stores/missionsStore";
++import { emptyGraphState, graphReducer, graphErrorMessage, parseSnapshot, parseExplanation, parseDiff, parseConvergence,
++  type GraphSnapshot, type GraphNode } from "../stores/taskgraphStore";
++import "./MissionTaskGraph.css";
++
++type Props = { missionId: string; channel: MissionsChannel | null };
++type Pending = { id: string; kind: string; revision: number | null; occurrence?: string;
++  from?: number; to?: number; changed: boolean };
++const channelIds = new WeakMap<object, number>();
++let lastChannelId = 0;
++const labels: Record<string, string> = {
++  NOT_SELECTED: "未选入执行", NEEDS_REFINEMENT: "等待细化", WAITING_ORDER: "等待前序完成",
++  WAITING_DATA: "等待输入", WAITING_EVIDENCE: "等待证据", WAITING_APPROVAL: "等待授权",
++  STALE_BINDING: "绑定已变化", READY_CANDIDATE: "可供调度", WAITING_OPERATION_UNKNOWN: "等待效果核对",
++  OBSERVER_UNAVAILABLE: "来源不可用", GRAPH_INTEGRITY: "结构待修复", VALIDITY_RECHECK_PENDING: "等待有效性复核",
++};
++const completionLabels: Record<string, string> = {
++  COMPLETED: "已完成正式验收", AWAITING_INITIAL_PLAN: "等待初始计划",
++  AWAITING_COMPLETION_MAPPING: "等待确认完成要求", WAITING_EFFECT: "等待实际效果",
++  AWAITING_OUTCOME_REVIEW: "已执行，等待效果验收", RECONCILIATION_REQUIRED: "效果未知，等待核对",
++  WAITING_FORMAL_CONTENT_REVIEW: "准备完成，等待正式内容验收",
++};
++const nodeLabel = (node: GraphNode) => completionLabels[node.phase] || labels[node.readiness] || node.readiness;
++const colors = { refinement: "#64748b", order: "#8b5cf6", data: "#0284c7" };
++
++export function MissionTaskGraph(props: Props) {
++  if (props.channel && !channelIds.has(props.channel)) channelIds.set(props.channel, ++lastChannelId);
++  return <GraphSession key={props.missionId + ":" + (props.channel ? channelIds.get(props.channel) : "none")} {...props} />;
++}
++
++function Network({ snapshot, mode, inspect, disabled }: { snapshot: GraphSnapshot; mode: "hierarchy" | "execution";
++  inspect: (node: GraphNode) => void; disabled: boolean }) {
++  const marker = useId().replace(/:/g, "");
++  const points = useMemo(() => new Map(snapshot.nodes.map((node, index) =>
++    [node.occurrence_id, { x: 30 + Math.floor(index / 12) * 270, y: 35 + (index % 12) * 105 }])),
++  [snapshot]);
++  const edges = snapshot.edges.filter(edge => mode === "hierarchy" ? edge.kind === "refinement" : edge.kind !== "refinement");
++  const width = Math.max(550, Math.ceil(snapshot.nodes.length / 12) * 270 + 50);
++  const height = Math.max(140, Math.min(12, snapshot.nodes.length) * 105 + 45);
++  return <div className="tg-canvas" role="region" aria-label={mode === "hierarchy" ? "任务层级关系" : "任务执行依赖"} tabIndex={0}>
++    <svg width={width} height={height} role="img" aria-label={"完整执行图，共 " + snapshot.nodes.length + " 个节点"}>
++      <defs>{Object.entries(colors).map(([kind, color]) =>
++        <marker key={kind} id={marker + kind} markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
++          <path d="M0,0 L0,6 L7,3 z" fill={color} />
++        </marker>)}</defs>
++      {edges.map(edge => {
++        const from = points.get(edge.source)!, to = points.get(edge.target)!;
++        return <path key={edge.kind + ":" + edge.identity}
++          d={"M " + (from.x + 210) + " " + (from.y + 30) + " C " + (from.x + 250) + " " + (from.y + 30) +
++            ", " + (to.x - 25) + " " + (to.y + 30) + ", " + to.x + " " + (to.y + 30)}
++          fill="none" stroke={colors[edge.kind]} strokeWidth="1.5" markerEnd={"url(#" + marker + edge.kind + ")"}>
++          <title>{edge.kind + ": " + edge.source + " → " + edge.target}</title>
++        </path>;
++      })}
++      {snapshot.nodes.map(node => {
++        const point = points.get(node.occurrence_id)!;
++        return <g key={node.occurrence_id} transform={"translate(" + point.x + "," + point.y + ")"}
++          role="button" aria-disabled={disabled} tabIndex={disabled ? -1 : 0}
++          aria-label={node.task_id + "：" + nodeLabel(node)}
++          onClick={() => { if (!disabled) inspect(node); }}
++          onKeyDown={event => { if (!disabled && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); inspect(node); } }}>
++          <title>{node.task_id + "\n" + node.occurrence_id + "\n" + node.phase}</title>
++          <rect width="210" height="68" rx={node.form === "compound" ? 4 : 12} fill="var(--tg-node)"
++            stroke={snapshot.execution_frontier.includes(node.occurrence_id) ? "#0d9488" : "#94a3b8"} strokeWidth="1.5" />
++          <text x="10" y="23" fill="currentColor" fontSize="12">{node.task_id.length > 25 ? node.task_id.slice(0, 24) + "…" : node.task_id}</text>
++          <text x="10" y="47" fill="currentColor" fontSize="11">{snapshot.view_mode === "HISTORICAL_STRUCTURE" ? "历史记录" : nodeLabel(node)}</text>
++        </g>;
++      })}
++    </svg>
++  </div>;
++}
++
++function GraphSession({ missionId, channel }: Props) {
++  const [state, dispatch] = useReducer(graphReducer, emptyGraphState);
++  const [busy, setBusy] = useState(false);
++  const [mode, setMode] = useState<"hierarchy" | "execution">("hierarchy");
++  const [revisionText, setRevisionText] = useState("");
++  const [fromText, setFromText] = useState("");
++  const [toText, setToText] = useState("");
++  const pending = useRef<Pending | null>(null);
++  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
++  const shown = useRef(state.snapshot);
++  shown.current = state.snapshot;
++  const clear = () => { pending.current = null; setBusy(false); if (timer.current) clearTimeout(timer.current); timer.current = null; };
++
++  useEffect(() => {
++    let identity: string | null = null;
++    const off = channel?.onMessage(raw => {
++      const message = raw as unknown as { type?: string; payload?: unknown };
++      const body = asRecord(message.payload);
++      if (["companion_identity_unready", "companion_control_rechallenge", "companion_profile_unbound"].includes(message.type || "")
++          || (message.type === "companion_identity_status" && body.ready === false)) {
++        clear(); identity = null; dispatch({ type: "reset" }); return;
++      }
++      if (message.type === "companion_identity_status" || message.type === "companion_profile_bound") {
++        if (typeof body.profile_id === "string") {
++          const next = JSON.stringify([body.profile_id, body.profile_generation]);
++          if (identity !== null && identity !== next) { clear(); dispatch({ type: "reset" }); }
++          identity = next;
++        }
++        return;
++      }
++      if (message.type === "mission_changed" && body.mission_id === missionId) {
++        if (pending.current) pending.current.changed = true;
++        dispatch({ type: "stale" });
++        return;
++      }
++      const request = pending.current;
++      if (!request || body.request_id !== request.id || message.type !== request.kind + "_response") return;
++      clear();
++      if (body.ok !== true) {
++        let error = typeof body.error === "string" ? body.error : "读取失败，请重试";
++        if (body.taskgraph_error !== undefined) {
++          try { error = graphErrorMessage(body.taskgraph_error); }
++          catch { error = "执行图错误响应格式无效，请重新读取"; }
++        }
++        dispatch({ type: "error", error }); return;
++      }
++      try {
++        if (request.kind === "taskgraph.snapshot") {
++          const value = parseSnapshot(body.data, missionId, request.revision);
++          if (value.view_mode === "CURRENT" && shown.current?.view_mode === "CURRENT"
++            && value.read_token.through_seq < shown.current.read_token.through_seq) throw new Error("收到较旧的执行图，请重新读取");
++          dispatch({ type: "snapshot", value });
++          if (request.changed && value.view_mode === "CURRENT") dispatch({ type: "stale" });
++        } else if (request.kind === "taskgraph.why_not_ready") {
++          const value = parseExplanation(body.data, missionId);
++          if (value.occurrence_id !== request.occurrence) throw new Error("返回了其他任务节点的原因");
++          dispatch({ type: "explanation", value });
++          if (request.changed) dispatch({ type: "stale" });
++        } else if (request.kind === "taskgraph.diff") {
++          const value = parseDiff(body.data, missionId);
++          if (value.from_revision !== request.from || value.to_revision !== request.to) throw new Error("返回了其他版本的差异");
++          dispatch({ type: "diff", value });
++        } else {
++          dispatch({ type: "convergence", value: parseConvergence(body.data, missionId) });
++          if (request.changed) dispatch({ type: "stale" });
++        }
++      } catch (error) {
++        dispatch({ type: "error", error: error instanceof Error ? error.message : "执行图响应无效" });
++      }
++    });
++    const offState = channel?.onStateChange?.(() => {
++      clear(); dispatch({ type: "reset" }); // Authentication/tenant boundary: retain no previous screen.
++    });
++    return () => { off?.(); offState?.(); pending.current = null; if (timer.current) clearTimeout(timer.current); };
++  }, [channel, missionId]);
++
++  function request(kind: string, payload: Record<string, unknown>, detail: Partial<Pending> = {}) {
++    if (!channel || pending.current) return;
++    const id = newRequestKey();
++    pending.current = { id, kind, revision: null, changed: false, ...detail }; setBusy(true);
++    if (!channel.send({ type: kind, request_id: id, payload: { mission_id: missionId, ...payload } })) {
++      clear(); dispatch({ type: "error", error: "连接不可用，请求未发送" }); return;
++    }
++    timer.current = setTimeout(() => {
++      if (pending.current?.id === id) { clear(); dispatch({ type: "error", error: "读取超时，已保留上次画面" }); }
++    }, 30000);
++  }
++  function revision(value: string): number | null {
++    if (!/^\d+$/.test(value.trim())) return null;
++    const result = Number(value); return Number.isSafeInteger(result) && result >= 0 ? result : null;
++  }
++  function refresh() {
++    const selected = revisionText.trim() ? revision(revisionText) : null;
++    if (revisionText.trim() && selected === null) { dispatch({ type: "error", error: "请输入有效的历史版本号" }); return; }
++    request("taskgraph.snapshot", selected === null ? {} : { revision: selected }, { revision: selected });
++  }
++  const snapshot = state.snapshot;
++  const inspect = (node: GraphNode) => request("taskgraph.why_not_ready", { occurrence_id: node.occurrence_id }, { occurrence: node.occurrence_id });
++  return <section className="taskgraph" aria-label="TaskGraph 执行图">
++    <div className="tg-heading"><h3>执行图</h3><span>只读</span></div>
++    <div className="tg-toolbar">
++      <label>历史版本 <input aria-label="执行图历史版本" value={revisionText} onChange={e => setRevisionText(e.target.value)} placeholder="留空查看当前" inputMode="numeric" /></label>
++      <button disabled={busy || !channel} onClick={refresh}>{busy ? "读取中…" : "读取执行图"}</button>
++      <button disabled={busy || !channel} onClick={() => request("taskgraph.convergence", {})}>收敛状态</button>
++    </div>
++    {state.error && <p role="alert">{state.error}</p>}
++    {state.stale && <p role="status">画面尚未更新。刷新后再判断当前就绪状态。</p>}
++    {snapshot && <>
++      <p>{snapshot.view_mode === "HISTORICAL_STRUCTURE" ? "历史结构 · 不提供执行许可" : "当前执行图"}
++        {" · 版本 " + snapshot.read_token.plan_revision + " · 事件 " + snapshot.read_token.through_seq}</p>
++      <div className="tg-toolbar" aria-label="执行图视图">
++        <button aria-pressed={mode === "hierarchy"} onClick={() => setMode("hierarchy")}>层级关系</button>
++        <button aria-pressed={mode === "execution"} onClick={() => setMode("execution")}>执行依赖</button>
++        <span>灰：细化　紫：顺序　蓝：数据</span>
++      </div>
++      <Network snapshot={snapshot} mode={mode} inspect={inspect}
++        disabled={busy || state.stale || snapshot.view_mode !== "CURRENT"} />
++      <details><summary>{"全部节点（" + snapshot.nodes.length + "）"}</summary>
++        <table><thead><tr><th>任务 / 节点</th><th>阶段</th><th>就绪原因</th><th>合同 / 派发代次</th></tr></thead>
++          <tbody>{snapshot.nodes.map(node => <tr key={node.occurrence_id}><td>{node.task_id}<br /><small>{node.occurrence_id}</small></td>
++            <td>{node.phase}</td><td><button disabled={busy || state.stale || snapshot.view_mode !== "CURRENT"}
++              onClick={() => inspect(node)}>{nodeLabel(node)}</button></td>
++            <td>{node.contract_revision + " / " + node.dispatch_generation}</td></tr>)}</tbody></table>
++      </details>
++      <details><summary>{"根目标结果记录（" + snapshot.root_resolution_refs.length + "）"}</summary>
++        <p>来自该版本覆盖期间的原始提交记录；当前是否有效以最新就绪状态为准。</p>
++        {!snapshot.root_resolution_refs.length && <p>本次读取中没有匹配的根目标结果记录。</p>}
++        <ul>{snapshot.root_resolution_refs.map(ref => <li key={ref.id}>
++          {ref.id + " · 合同 " + ref.revision}<br /><small>{"内容 SHA-256：" + ref.content_hash}</small>
++        </li>)}</ul>
++      </details>
++    </>}
++    {state.explanation && <div className="tg-explanation"><strong>{labels[state.explanation.readiness] || state.explanation.readiness}</strong>
++      <p>{state.explanation.reason_codes.join(" · ")}</p>
++      {state.explanation.details.map((detail, index) => <p key={index}>{detail}</p>)}
++      <ul>{state.explanation.source_refs.map(ref => <li key={ref.kind + ":" + ref.id}>{ref.kind + " · " + ref.id + " @ " + ref.revision}</li>)}</ul>
++    </div>}
++    <details><summary>比较历史结构</summary><div className="tg-toolbar">
++      <input aria-label="比较起始版本" value={fromText} onChange={e => setFromText(e.target.value)} placeholder="起始版本" inputMode="numeric" />
++      <input aria-label="比较目标版本" value={toText} onChange={e => setToText(e.target.value)} placeholder="目标版本" inputMode="numeric" />
++      <button disabled={busy || !channel} onClick={() => {
++        const from = revision(fromText), to = revision(toText);
++        if (from === null || to === null) { dispatch({ type: "error", error: "请输入两个有效版本号" }); return; }
++        request("taskgraph.diff", { from_revision: from, to_revision: to }, { from, to });
++      }}>比较</button>
++    </div>{state.diff && <><p>{state.diff.from_revision + " → " + state.diff.to_revision + "，" + state.diff.changes.length + " 项变化"}</p>
++      <ul>{state.diff.changes.map(c => <li key={c.kind + ":" + c.identity}>{c.change + " · " + c.kind + " · " + c.identity}</li>)}</ul></>}</details>
++    {state.convergence && <details open><summary>{"收敛状态 · 事件 " + state.convergence.through_seq}</summary>
++      {state.convergenceStale && <p role="status">收敛状态已变化或读取失败，请重新读取；此处保留的是上次结果。</p>}
++      {!state.convergence.jobs.length && <p>本次完整读取中没有收敛任务。</p>}
++      {state.convergence.jobs.map(job => <div key={job.job_id}><strong>{job.state + " · " + job.job_id}</strong>
++        <ul>{job.targets.map(t => <li key={t.occurrence_id}>{t.task_id + " · " + t.target_kind}</li>)}</ul>
++        {job.diagnostic_refs.map(ref => <p key={ref.kind + ":" + ref.id}>{ref.kind + " · " + ref.id + " @ " + ref.revision}</p>)}
++      </div>)}</details>}
++  </section>;
++}
+--- a/tauri-app/src/views/MissionsView.tsx
++++ b/tauri-app/src/views/MissionsView.tsx
+@@ -29,6 +29,7 @@
+ import { PlanningAuthorization } from "./PlanningAuthorization";
+ import { OperationWorkspace } from "./OperationWorkspace";
+ import { MissionDiagnostics } from "./MissionDiagnostics";
++import { MissionTaskGraph } from "./MissionTaskGraph";
+ import {
+   asList as list,
+   asRecord as record,
+@@ -988,6 +989,8 @@
+ 
+             {detail.document != null && <MissionDocument key={selectedId} missionId={selectedId} document={record(detail.document)} channel={channel} onChanged={() => refreshSelected(selectedId)} />}
+ 
++            <MissionTaskGraph key={selectedId} missionId={selectedId} channel={channel} />
++
+             {status?.diagnostics_available === true && <MissionDiagnostics key={selectedId} missionId={selectedId} channel={channel} />}
+ 
+             <div style={box}>

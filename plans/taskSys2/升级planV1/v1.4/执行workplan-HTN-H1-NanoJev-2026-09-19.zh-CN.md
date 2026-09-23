@@ -116,3 +116,140 @@ Shadow 样本按 DecisionType 分开统计 agreement、high-confidence agreement
 - 相关定向测试：H1-H 请求绑定、协议切换、decision package/store、hierarchical event flow、inflight planning 合计 **248 PASS**；ruff、compileall、`git diff --check` 通过。
 - DeepSeeker 只读复核确认三个独立 blocker：planning authorization 没有权威 producer；HtnStore operation 只有 identity/binding，没有 UNKNOWN/reconciled 状态映射；没有 candidate proposal → `PlanShapeView` 的准入前预检。SDK 接线对此 fail-closed，提交 `H1-H-blocker-AdmissionContext-2026-09-20.md` 的补充记录，Host commit `91e40caa`。
 - 因上述 blocker，新协议的 admitted/compiled/committed 主链和格式重试的同 request ordinal 仍未宣称完成；完整 H1-H 门禁（full_target、旧模式 560、mutation、独立核验）必须等字段来源补齐后执行。
+
+## 执行记录（2026-09-20，主编排补充裁定：受约束换绑）
+
+- 用户明确要求继续完成并授权按架构最佳实践自行决策。主编排就"格式重试同 request_id、新 intent_id、绑定表记录实际 intent"作出补充裁定，记录在 `任务书-H1-2026-09-19/h1h-impl.md`。
+- 裁定内容：允许新增 `PlanningDecisionStore` 的事务化受约束换绑方法；本片白名单扩展 `src/agent_orchestrator/storage/planning_decision_store.py` 及必要的 store focused tests（已写入 `h1h-allow.txt`）。
+- 原因：请求身份（含 `intent_id`）在首次插入时冻结，而重试必须在同一 `request_id` 下产生新 `intent_id`；现有 `insert_planning_request` 只有"全等幂等返回 / 不同内容 StoreConflict"两条路径，缺"同一 request 身份、绑定表记录实际 intent"的表达。若不新增，实施者只能伪造 `intent_id` 或新建第二个 `request_id`，两者都会破坏 §34/§35 身份语义。
+- 边界（不放宽）：不改 schema/DDL/列集合；不改旧 `insert_planning_request` 幂等与 `StoreConflict` 语义；不改旧协议默认值/旧协议字节/H1-A–G 既有合同；`event_handler.py` 不得直接写 SQL。
+- 所需行为验收：①真实梯子——不可读 → 带 repair hint 重问 → 第二次评价复用既有格式重试（最多 1 次），ordinal 0→1，不新建第二套 retry loop；②`created_at` 差异——换绑后保留首次 `created_at`，且 `intent_id` 必变，两条断言都可区分；③冲突——不存在的 request、越序/终态后换绑必须 `StoreConflict`，拒绝后行逐字节原样；④回放——同 `(request_id, attempt_ordinal, raw_output_hash)` 返回既有行、不重复 compile/事件，同 ordinal 不同 raw 仍是 identity conflict，换绑本身幂等；⑤事务性——与同事务决定行写入全落或全滚，store 不自开连接。
+- 状态：仅计划记录与白名单更新。**未宣称实现完成**——实现由另一 Claude CLI 代理在 SDK 独立 worktree 执行，核验由独立会话执行；完整 H1-H 门禁（full_target、旧模式 560、sentinel ≤22、mutation ≥12 killed、独立核验）保持原样，仍须在实现落地后执行。
+
+## 执行记录（2026-09-20，当前收口）
+
+本节为收口记录，只追加事实与状态，不修改以上任何旧正文。
+
+**证据目录**：`.local-test-evidence/2026-09-20/continuation-store/`（原始 receipt 与 stream 日志；Git 只保存结论与索引）
+
+- 受约束换绑实现已落地并提交，H1-H 白名单正式扩展 Store writer：`src/agent_orchestrator/storage/planning_decision_store.py` 与 `src/agent_orchestrator/orchestrator/event_handler.py` 进入 `任务书-H1-2026-09-19/h1h-allow.txt` 白名单；新增 focused 测试 `tests/orchestrator/full_target/test_h1h_wiring.py`、`tests/orchestrator/full_target/test_planning_decision_store_rebind.py`。实现语义严格单列：从不插入（无行即 `StoreConflict`）、从不臆造身份、幂等重放先行返回、只 `UPDATE intent_id`（`created_at` 等冻结列不写）、单事务单时钟。
+- H1-H focused 门禁：**461 passed / 3 skipped**（3 个 skip 均为测试内声明式跳过）。
+- `full_target`：**3699 passed / 5 skipped / 0 failed**（5 个 skip 全为环境/开关性跳过）。
+- legacy hot-file 回归：**1960 passed / 7 failed / 20 skipped**。7 个失败已在 clean detached HEAD（`102ad3d`，不含未提交改动）**复现为完全相同结果**，与本次改动无关：6 个为 **p33 tiktoken 缺失**（`ModuleNotFoundError: No module named 'tiktoken'`，位于 `tokenizer.py:51`），1 个为 **AST hash 基线**漂移（`test_p33_source_dependencies.py:505`，`KnowledgeIndex.check` 的 AST dump 与冻结常量 `BASELINE_CHECK_AST` 不符）。`git diff --name-only` 仅 `event_handler.py` + store，未触及 p33 与 tokenizer。
+- 有效 mutation：**20 killed / 0 invalid / 4 survived**（目标 ≥12 有效 killed 已达标）。4 个 survivor 如实记录为 gap，不计数：**M14 malformed package_version coverage gap** 是唯一真实覆盖缺口——没有任何测试把畸形 `package_version`（非 int / bool / 未知字符串）喂给 `_planning_decision_package_version`，该拒绝分支未被钉住（源码行为本身正确）；M3/M17/M22 为弱 mutation，非行为缺口。
+- NanoJev gate/service slice：**78 passed**（新增 44 + 既有 34），ruff passed；SDK 侧 `full_target` **3748 passed / 5 skipped**。非 full_target 的 **1 个失败为 pre-existing local-capacity failure**（`test_deployment_capacity.py`，缺 SDK `local-capacity` extra），已实证在干净基线上同一用例以同一报错失败，与本改动无关。
+- PR-3 decision events + `Store.append_event` replay：**102 passed**，ruff passed。复用既有 `events` 表持久化，按 `idempotency_key` 幂等，additive 自定义 event type，不改任何封闭枚举、不新增表或 migration；同 key 不同 payload fail-closed，H1 `pd-` 前缀 `decision_id` 被拒。
+- **无真实 checkpoint**：本轮全部为 fake / shadow / runtime contract 与 Fake Provider，未加载、未下载任何模型权重。**禁止宣称真实模型结果或 Promotion Gate 通过**；`0.80 / 0.20` 是计划先验而非校准结果。NanoJev 生产编排未接线，且这是当前正确状态。
+- **下一项**：补 M14 行为钉子（为畸形 `package_version` 拒绝分支加行为测试），并**保持 NanoJev runtime / 真实模型接入 blocked**，直到真实 checkpoint 与校准证据就位。H1-H 主链 admitted/compiled/committed 与格式重试同 request ordinal 的完整宣称、以及旧模式 560、sentinel ≤22、独立核验仍维持原口径待执行。
+
+## 执行记录（2026-09-20，SDK NanoJev Shadow slice 完成）
+
+本节为追加事实记录，只写已完成的事实与状态，不修改以上任何旧正文。
+
+**证据**：SDK `.local-test-evidence/2026-09-20/sdk-nanojev-integration/real/r02_suite.json`（同目录另有 `r02_fixture_freeze.json`）。fixture digest `f77397a8c3ba647bbfafefde1dc939c7bc7d3ec4faa291ca9d981cf30613a3bd`（正文简称 `f77397...`）。Git 只保存结论、路径与哈希，原始 receipt 不入库。
+
+- **本片已完成的三个组件**：
+  1. `LocalNanoJevRuntime`（`agent_orchestrator.decision.local_runtime`）——本机 PyTorch MPS 真实推理运行时，模型常驻，权重不入 repo；
+  2. acceptance adapter——把 `DecisionRequest/Result` 与 NanoJev 输入输出互转的验收适配层；
+  3. real checkpoint MPS runner——用真实 checkpoint 驱动的 MPS 运行器（证据中 `device=mps`、`checkpoint_dir=/Users/denny/.cache/nanojev-install/checkpoint`、`implementation_dir=/Users/denny/.cache/nanojev-install/upstream`）。
+- **模型**：`Qwen/Qwen3-0.6B`（真实 checkpoint，非 fake；加载耗时约 11.4 s）。运行环境：macOS 26.4.1 arm64、Python 3.12.13。
+- **R02 套件规模与结果**：12 个 fixture + 4 个候选顺序重放。
+  - valid returns **12/12**；
+  - adapter errors **0**；
+  - shadow observations completed **12/12**（`status=completed`，`error=None`，每条都带 `existing_selected` 与 `shadow_selected`）；
+  - shadow_production_unchanged **12/12**（生产选择与 Shadow 前逐条一致）；
+  - order stable **4/4**（反转候选顺序后答案不变，`changed_answers` 为空）；
+  - definite hits **2/8**（按类型：`ready_task_priority` 1/4、`retry_or_escalate` 1/4）；
+  - ambiguous **4/4 accepted**（落在 `accepted_set` 内）；
+  - 参考量：与 existing 一致 5 次；mean top1 约 0.632、mean margin 约 0.302；latency p50 ≈ 118 ms / p95 ≈ 119 ms（20 次采样，非产品 SLA，p99 未报告）。
+- **仅此而已的边界**：本片只有 Shadow。**未进入 Primary，未做任何 promotion**；`mode=shadow`，生产结果仍由 existing provider 返回，Shadow 不获得执行权。证据文件自身的 caveat 也是同一口径（样本量 12+6，不构成生产就绪结论，不得读作 Primary promotion 结果）。
+- **模型质量 2/8 是发现，不是调参目标**。它记录的是当前 checkpoint 在“明确偏好”组上的现状，属于待后续数据解释的观察，本片不据此调参、不据此改 gate 阈值；`0.80 / 0.20` 仍是计划先验而非校准结果。证据中 agreement 与 definite hits 度量的是不同事情，命中不等于 production readiness。
+- **仍未完成**：HTN/H1-H 与 Primary gate 仍未完成。H1-H 主链 admitted/compiled/committed、格式重试同 request ordinal、旧模式 560、sentinel ≤22、mutation ≥12 killed、独立核验维持原口径待执行；NanoJev 生产编排亦未接线。
+
+## 执行记录（2026-09-20，PR-7 Shadow 接入：Host 接线）
+
+本节为追加事实记录，只写已完成的事实与状态，不修改以上任何旧正文。
+
+**任务书**：`任务书-PR7-2026-09-20/pr7-impl.md`（含白名单 `pr7-allow.txt`）。**SDK 侧 blocker 的裁决**：`plans/2026-09-20-nanojev-pr7-shadow/PR7-BLOCKER.md` 提出的 B-1（无权威配置宿主）与 B-2（无生产 caller/seam）由主编排裁定如下，本片按此执行：
+
+1. **Host 拥有 `decision.mode`**，解析后以**显式 typed policy** 传给 SDK；SDK 不新增配置文件/字段/环境变量，默认仍是 `EXISTING`。
+2. **`READY_TASK_PRIORITY` 只做 Shadow 观测**：观测 `frontier()` 的确定性顺序，**分配器授权集合保持唯一权威**。
+3. **`RETRY_OR_ESCALATE` 延后**：`RetryAction` 有六个值，本轮无映射裁定，不接线。
+4. **`decision_id` 用新确定性命名空间**，永不复用 `pd-`。
+5. 禁止：ad-hoc 环境变量、Primary、改 legacy 行为、改 checkpoint、打包发布。
+
+**落地内容**
+
+- SDK 新增 `src/agent_orchestrator/decision/host_integration.py`：`compute_ready_task_decision_id`（`njr-` + `\x1f` 分隔的确定性 id）、`frontier_priority_candidates` / `frontier_priority_candidate_set`、`build_ready_task_priority_request`、`shadow_observation_enabled`、`build_decision_service`、`observe_frontier_priority`、`ready_task_priority_decision`（算 plan → 可选观测 → 返回未改动的 plan）。`decision/__init__.py` re-export；`scheduling/allocator.py` **零改动**。
+- Host 新增 `backend/deskpet/orchestration/decision.py`（`DecisionSeam` / `DecisionSeamStatus` / `build_decision_seam` / `seam_available`）；`settings.py` 增 `decision_mode`（白名单 `existing`｜`shadow`）与 `decision_shadow_timeout_seconds`（正数、上限 60s）；`service.py` 在 `_open()` 末尾 `_install_decision_seam()`，journal 复用编排器自己的 Store（`DecisionEventJournal`，写既有 `events` 表，**无新表、无 migration**），`status()["decision"]` 出只读投影；`config.toml` 增 `[orchestration]` 段并把该键注释清楚。
+
+**测试与门禁**
+
+- SDK `tests/orchestrator/full_target`：**3866 PASS / 5 SKIP / 0 FAIL**（128.57s）。新增 `test_decision_host_integration.py` 30 条；决策+分配器相邻套件合计 **205 PASS**。
+- Host 新增 `tests/orchestration/test_decision_shadow.py`：**56 PASS**（SDK 源码环境）／**41 PASS / 15 SKIP**（vendored wheel 0.12.2；该 wheel 早于 decision 包，skip 是显式"合同缺席"跳过，不是静默通过）。默认 `EXISTING`、shadow 失败隔离/不阻塞、确定性 id、frontier 观测且授权不变、无 retry 接线五组行为全部钉住。
+- Host `tests/orchestration` 全量：**293 PASS / 97 FAIL**，与 `git stash` 干净基线（**237 PASS / 97 FAIL**）**逐条一致**——增量恰为本片 +56 PASS，97 项为既有 SDK pin/环境失败，**0 新失败**。
+- mutation：SDK 接缝 6 个行为可区分 mutation 全部 killed（M5"去掉字段分隔符"首轮 survived，据此补强测试后 killed；M7"用 frontier 顺序替换 allocate 授权"被 plan 相等断言杀死）。ruff 本片文件全绿。
+
+**如实记录的新发现（与 SDK 既有实现一致，非本片引入）**
+
+- `SHADOW` 模式下若候选 ≥ 2，`DecisionService` 只写 `DecisionRequested` + `ShadowDecisionProduced`，**不写 `DecisionProduced`**（生产答案在返回时尚未终局，观测是非阻塞的）。测试按实际行为钉住，不按事件名想当然。
+- `frontier()` 顺序 ≠ `allocate()` 授权顺序：前者恒按 `(-priority, ordinal)`；后者在 Task 有 §29.3 分数时按分数排。本片按 §57 口径观测 frontier 顺序，**不声称两者一致**。
+
+**仍未完成 / 边界**
+
+- 本片观测是**结构性的、不是模型驱动的**：无真实 NanoJev checkpoint，未加载任何权重。**不得**读作模型质量、shadow 收益或 Primary 就绪。
+- 事件落库路径只在接缝层验证过（真实 journal + 真实 Store），未在真实 Mission 驱动循环里跑端到端。
+- Primary、`RETRY_OR_ESCALATE`、真实 checkpoint 观测、H1-H 主链 admitted/compiled/committed 与旧模式 560/sentinel ≤22 门禁维持原口径待执行。未打包、未发布。
+
+## 执行记录（2026-09-20，PR-7 本地真实 runtime closure）
+
+用户随后授权把 source-level seam 收口到本地真实 Host runtime；扩展记录在
+`任务书-PR7-2026-09-20/pr7-impl.md` 与 `pr7-allow.txt`。扩展只允许真实 SDK caller、
+本地 editable-source runtime 和最小 Mission 证据，不允许公开发布、Primary、checkpoint、
+retry 映射或 legacy 行为改变。
+
+- 首次生产探针确认 backend/.venv 实际是 vendored `simple_harness_sdk 0.11.1`，且
+  `agent_orchestrator.decision` 不存在；Host pin 是 `0.12.2`。该版本 mismatch 先被
+  Host manifest 正确拒绝，证据保留在 `.local-test-evidence/2026-09-20/pr7-production-closure/`。
+- SDK `Orchestrator._decide()` 的 legacy `allocate()` 分支现在在计算完 `AllocationPlan`
+  后调用可选 Host observer；observer 无权修改 plan，异常被隔离到 progress log。
+- Host `DecisionSeam` 增加 async live callback；`OrchestrationService` 把它注入真实
+  Orchestrator，并保留可选的 test-only `FakeShadowProvider`。
+- 本地 backend/.venv 按明确 `editable-source` 身份接入 SDK `0.12.2`，source commit
+  `51dbed2`，443 个生产输入、source attestation digest
+  `d17399316412bf1470c3f7c043ab64e7e91d718fe46b2eeacfc97384ab59fa74`；未替换或发布
+  vendored wheel。
+- 最小真实 Mission（2 个 READY Task、真实 `Orchestrator.run()`、真实 Store/events 表、
+  FakeShadowProvider）通过：`decision.observations=1`、`failures=0`，落库
+  `DecisionRequested` + `ShadowDecisionProduced`，id 为 `njr-...`，授权计划仍由
+  allocator 保持权威。SDK 决策相关定向测试 **42 passed**；Host focused suite
+  source runtime **56 passed**。
+- 仍未完成：vendored release wheel 本身没有 decision 包；真实 NanoJev checkpoint、
+  模型质量数据、Primary、`RETRY_OR_ESCALATE`、H1-H 完整门禁均保持原状态。
+
+### PR-7 wheel runtime closure follow-up（2026-09-20）
+
+- 按授权将本地 runtime 从 editable source 切换为唯一开发候选 wheel：
+  `simple_harness_sdk-0.13.0.dev20260920-py3-none-any.whl`；未覆盖不可变 `0.12.2`，未发布。
+- wheel SHA-256：`9687d023c3fc9bc00c990c35c2827e035c3e56fbda49659e91acefc7fcfd2ef1`；candidate manifest SHA-256：`0fe8c0b5692e3d841d7ddcc5ab1e20fcf4d6cb4b2f54e2c39a87e5d203dad2a8`。
+- provenance：基准 commit `51dbed2eaf81d3225bcb15911c33838a79c1fcd3`，工作树 dirty，443 个生产输入，snapshot digest `0324aa4cc27cefbc72386344a2f52050aa0f7f47e2ad6251fc503536dd7e7b77`，`release_published=false`。
+- `verify_sdk_candidate` 在 backend/.venv 通过；无 editable 安装、无 SDK checkout `PYTHONPATH`。Host wheel runtime 真实 Mission：EXISTING=COMPLETED/0 observation/0 decision event；SHADOW=COMPLETED/1 observation/0 failure，SQLite 落库 `DecisionRequested` + `ShadowDecisionProduced`；均使用 FakeShadowProvider，无 checkpoint。
+- caller 热路径已改为 `ensure_future`，慢 shadow 不阻塞 allocator dispatch；同步 seam 在 event loop 中不再调用 `asyncio.run`，fail-open 返回原 allocator plan。DecisionService journal/drain 异常隔离已加固。
+- focused：Host wheel PR7+candidate 64 passed；SDK decision/observer 45 passed。既有 `test_start_mode_driver_composition.py` 的 1 个导入错误与本次变更无关，未扩大回归。
+- 未完成边界：hierarchical `allocate_v2` 未接 observer；Primary、真实 checkpoint、RETRY_OR_ESCALATE 仍按原计划冻结。
+
+## 执行范围变更（2026-09-21）
+
+本节是对前文执行记录的追加裁定，不改写前文已经发生的 NanoJev/PR-7 历史事实。依据
+`V1.4范围变更-2026-09-21-移出NanoJev.zh-CN.md`，NanoJev runtime、checkpoint、真实模型、Shadow、Primary、PR-7、HTN+Jev 专项和 `RETRY_OR_ESCALATE` 从 V1.4 当前交付中移出并延期。
+
+从现在起，本 workplan 的 active path 只剩：
+
+1. H1-H AdmissionContext 三条真实来源链；
+2. H1-H 独立核验、mutation、recovery 和 legacy 隔离；
+3. H1-I GPT-5.6 真实模型专项；
+4. 完整 H1 门禁和审计包。
+
+前文 NanoJev/PR-7 的测试结果、候选 wheel、checkpoint 审计和 Shadow 收据保留为历史材料，不计入任何 H1 通过证据，也不再派发后续实现任务。原始文档不删除，代码工作树不 reset/clean。
+
+原 H1-H 验收矩阵 I08 在当前执行中改为“无外部 Shadow 独立性”：在没有 NanoJev/Shadow provider、配置和 checkpoint 时，H1 三个 producer 仍必须真实运行，Commit 权限不得依赖外部 Shadow。I01–I08 总数量不变，详见范围变更补遗。

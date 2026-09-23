@@ -1,0 +1,2315 @@
+--- /dev/null
++++ b/src/agent_orchestrator/graph/execution_contracts.py
+@@ -0,0 +1,264 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Small, strict execution-preview contracts (schema preview-binding-v1)."""
++
++from __future__ import annotations
++
++import hashlib
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass
++from typing import Any, NoReturn
++
++from simple_harness.contracts import canonical_json
++
++from ..contracts.models import ContractError
++
++MAX_JSON_INT = 9_007_199_254_740_991
++MAX_IDENTIFIER = 512
++_SOURCE_CHANNELS = (
++    "request",
++    "authorization",
++    "network",
++    "methods",
++    "evidence",
++    "capabilities",
++    "operations",
++    "running_work",
++    "acceptances",
++    "demand",
++    "budget",
++    "inputs",
++)
++_PREVIEW_KEYS = frozenset(
++    {
++        "schema_version",
++        "decision_id",
++        "request_id",
++        "mission_id",
++        "base_revision",
++        "decision_hash",
++        "network_hash",
++        "candidate_hash",
++        "delta_hash",
++        "read_set_hash",
++        "validator_id",
++        "validator_version",
++        "source_reads",
++        "pending_compound_ids",
++        "required_convergence_ids",
++    }
++)
++_SOURCE_KEYS = frozenset({"channel", "identity", "digest", "coverage"})
++
++
++def _fail(field: str, detail: str) -> NoReturn:
++    raise ContractError(f"{field}: {detail}")
++
++
++def _text(value: object, field: str) -> str:
++    if not isinstance(value, str) or not value.strip():
++        _fail(field, "must be a nonempty string")
++    if len(value) > MAX_IDENTIFIER:
++        _fail(field, "exceeds 512 characters")
++    try:
++        value.encode("utf-8")
++    except UnicodeEncodeError:
++        _fail(field, "must be valid UTF-8")
++    return value
++
++
++def _hash(value: object, field: str) -> str:
++    if (
++        not isinstance(value, str)
++        or len(value) != 64
++        or any(c not in "0123456789abcdef" for c in value)
++    ):
++        _fail(field, "must be lowercase 64-character hexadecimal")
++    return value
++
++
++def _integer(value: object, field: str) -> int:
++    if type(value) is not int or not 0 <= value <= MAX_JSON_INT:
++        _fail(field, "must be an integer from 0 through 9007199254740991")
++    return value
++
++
++def _ids(value: object, field: str) -> tuple[str, ...]:
++    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
++        _fail(field, "must be an array")
++    if len(value) > 4096:
++        _fail(field, "exceeds 4096 items")
++    items = tuple(_text(item, f"{field}[]") for item in value)
++    if len(set(items)) != len(items):
++        _fail(field, "must not contain duplicates")
++    return tuple(sorted(items))
++
++
++@dataclass(frozen=True, slots=True, kw_only=True)
++class GraphSourceRead:
++    channel: str
++    identity: str
++    digest: str
++    coverage: str
++
++    def __post_init__(self) -> None:
++        channel = _text(self.channel, "channel")
++        if channel not in _SOURCE_CHANNELS:
++            _fail("channel", "is unknown")
++        _text(self.identity, "identity")
++        _hash(self.digest, "digest")
++        if self.coverage != "COMPLETE":
++            _fail("coverage", "must be COMPLETE")
++
++    def to_json(self) -> dict[str, str]:
++        return {
++            "channel": self.channel,
++            "identity": self.identity,
++            "digest": self.digest,
++            "coverage": self.coverage,
++        }
++
++    @classmethod
++    def from_json(cls, value: object) -> GraphSourceRead:
++        if not isinstance(value, Mapping):
++            _fail("source_read", "must be an object")
++        if any(not isinstance(key, str) for key in value):
++            _fail("source_read", "keys must be strings")
++        unknown = set(value) - _SOURCE_KEYS
++        if unknown:
++            _fail("source_read", f"unknown fields: {sorted(unknown)!r}")
++        if set(value) != _SOURCE_KEYS:
++            _fail("source_read", "all fields are required")
++        return cls(
++            channel=value["channel"],
++            identity=value["identity"],
++            digest=value["digest"],
++            coverage=value["coverage"],
++        )
++
++
++@dataclass(frozen=True, slots=True, kw_only=True)
++class PreviewBindingV1:
++    decision_id: str
++    request_id: str
++    mission_id: str
++    base_revision: int
++    decision_hash: str
++    network_hash: str
++    candidate_hash: str
++    delta_hash: str
++    read_set_hash: str
++    validator_id: str
++    validator_version: str
++    source_reads: tuple[GraphSourceRead, ...]
++    pending_compound_ids: tuple[str, ...]
++    required_convergence_ids: tuple[str, ...]
++    schema_version: int = 1
++
++    def __post_init__(self) -> None:
++        if type(self.schema_version) is not int or self.schema_version != 1:
++            _fail("schema_version", "must be integer 1")
++        for field in (
++            "decision_id",
++            "request_id",
++            "mission_id",
++            "validator_id",
++            "validator_version",
++        ):
++            _text(getattr(self, field), field)
++        _integer(self.base_revision, "base_revision")
++        for field in (
++            "decision_hash",
++            "network_hash",
++            "candidate_hash",
++            "delta_hash",
++            "read_set_hash",
++        ):
++            _hash(getattr(self, field), field)
++        if isinstance(self.source_reads, (str, bytes)) or not isinstance(
++            self.source_reads, Sequence
++        ):
++            _fail("source_reads", "must be an array")
++        if len(self.source_reads) != len(_SOURCE_CHANNELS):
++            _fail("source_reads", "must contain each of the twelve channels exactly once")
++        reads = tuple(
++            item if isinstance(item, GraphSourceRead) else GraphSourceRead.from_json(item)
++            for item in self.source_reads
++        )
++        channels = tuple(item.channel for item in reads)
++        if (
++            len(reads) != len(_SOURCE_CHANNELS)
++            or set(channels) != set(_SOURCE_CHANNELS)
++            or len(set(channels)) != len(channels)
++        ):
++            _fail("source_reads", "must contain each of the twelve channels exactly once")
++        object.__setattr__(
++            self, "source_reads", tuple(sorted(reads, key=lambda item: item.channel))
++        )
++        object.__setattr__(
++            self, "pending_compound_ids", _ids(self.pending_compound_ids, "pending_compound_ids")
++        )
++        object.__setattr__(
++            self,
++            "required_convergence_ids",
++            _ids(self.required_convergence_ids, "required_convergence_ids"),
++        )
++
++    def to_json(self) -> dict[str, Any]:
++        return {
++            "schema_version": self.schema_version,
++            "decision_id": self.decision_id,
++            "request_id": self.request_id,
++            "mission_id": self.mission_id,
++            "base_revision": self.base_revision,
++            "decision_hash": self.decision_hash,
++            "network_hash": self.network_hash,
++            "candidate_hash": self.candidate_hash,
++            "delta_hash": self.delta_hash,
++            "read_set_hash": self.read_set_hash,
++            "validator_id": self.validator_id,
++            "validator_version": self.validator_version,
++            "source_reads": [item.to_json() for item in self.source_reads],
++            "pending_compound_ids": list(self.pending_compound_ids),
++            "required_convergence_ids": list(self.required_convergence_ids),
++        }
++
++    def canonical_json(self) -> str:
++        return canonical_json(self.to_json())
++
++    def canonical_hash(self) -> str:
++        return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
++
++    @classmethod
++    def from_json(cls, value: object) -> PreviewBindingV1:
++        if not isinstance(value, Mapping):
++            _fail("preview", "must be an object")
++        if any(not isinstance(key, str) for key in value):
++            _fail("preview", "keys must be strings")
++        unknown = set(value) - _PREVIEW_KEYS
++        if unknown:
++            _fail("preview", f"unknown fields: {sorted(unknown)!r}")
++        if set(value) != _PREVIEW_KEYS:
++            _fail("preview", "all fields are required")
++        reads = value["source_reads"]
++        if isinstance(reads, (str, bytes)) or not isinstance(reads, Sequence):
++            _fail("source_reads", "must be an array")
++        return cls(
++            schema_version=value["schema_version"],
++            decision_id=value["decision_id"],
++            request_id=value["request_id"],
++            mission_id=value["mission_id"],
++            base_revision=value["base_revision"],
++            decision_hash=value["decision_hash"],
++            network_hash=value["network_hash"],
++            candidate_hash=value["candidate_hash"],
++            delta_hash=value["delta_hash"],
++            read_set_hash=value["read_set_hash"],
++            validator_id=value["validator_id"],
++            validator_version=value["validator_version"],
++            source_reads=tuple(GraphSourceRead.from_json(item) for item in reads),
++            pending_compound_ids=value["pending_compound_ids"],
++            required_convergence_ids=value["required_convergence_ids"],
++        )
++
++
++__all__ = ["GraphSourceRead", "PreviewBindingV1"]
+--- /dev/null
++++ b/src/agent_orchestrator/graph/network_codec.py
+@@ -0,0 +1,534 @@
++# SPDX-FileCopyrightText: 2026 DennyWanye
++# SPDX-License-Identifier: Apache-2.0
++"""Version-pinned NetworkDocument structural codec."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from collections.abc import Mapping
++from dataclasses import dataclass
++from pathlib import Path
++from typing import NoReturn, TypeAlias, cast
++
++from simple_harness.contracts import canonical_json, validate_json_value
++from simple_harness.contracts.json import JsonValue
++
++from ..contracts.htn import (
++    DataRequirement,
++    MethodInstanceDraft,
++    MethodInstanceId,
++    MissionRef,
++    ObligationCoverage,
++    ObligationId,
++    OccurrenceId,
++    OccurrenceSpec,
++    OrderConstraint,
++    PlanRevision,
++    TaskSemanticBindingV1,
++    TypedEdge,
++)
++from ..contracts.models import ContractError
++from ..contracts.semantic_base import TypedRef, TypedRefKind
++from .task_network import TaskNetworkSnapshot
++
++_MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
++_MAX_OBJECT_BYTES = 8 * 1024 * 1024
++_MAX_OBJECTS = 16384
++_MAX_ROOTS = 256
++_MAX_SET_ITEMS = 4096
++_JS_MAX = 9007199254740991
++_KINDS = frozenset(
++    {
++        "occurrence",
++        "task_semantics",
++        "method_instance",
++        "order_constraint",
++        "data_requirement",
++        "typed_edge",
++        "obligation_coverage",
++    }
++)
++_FIELDS = frozenset(
++    {
++        "schema_version",
++        "mission_id",
++        "revision",
++        "codec_manifest_hash",
++        "requirements_ref",
++        "root_occurrence_ids",
++        "adopted_instance_ids",
++        "required_obligation_ids",
++        "objects",
++    }
++)
++_O_FIELDS = frozenset({"kind", "identity", "sha256", "canonical_json"})
++_R_FIELDS = frozenset({"kind", "id", "revision", "content_hash"})
++CodecValue: TypeAlias = (
++    OccurrenceSpec
++    | TaskSemanticBindingV1
++    | MethodInstanceDraft
++    | OrderConstraint
++    | DataRequirement
++    | TypedEdge
++    | ObligationCoverage
++)
++JsonObject: TypeAlias = dict[str, JsonValue]
++
++
++def _bad(m: str) -> NoReturn:
++    raise ContractError(f"NETWORK_DOCUMENT_INVALID: {m}")
++
++
++def _pairs(p: list[tuple[str, object]]) -> dict[str, object]:
++    d: dict[str, object] = {}
++    for k, v in p:
++        if k in d:
++            _bad(f"duplicate JSON key {k!r}")
++        d[k] = v
++    return d
++
++
++def _obj(v: object, label: str) -> JsonObject:
++    if not isinstance(v, dict) or not all(isinstance(k, str) for k in v):
++        _bad(f"{label} must be a JSON object")
++    try:
++        validate_json_value(v, path=label)
++    except Exception as e:
++        _bad(f"{label} is not valid contract JSON: {type(e).__name__}")
++    return cast(JsonObject, v)
++
++
++def _canon(v: Mapping[str, object]) -> str:
++    try:
++        s = canonical_json(_obj(dict(v), "document"))
++    except (TypeError, ValueError, UnicodeError) as e:
++        _bad(f"document cannot be canonicalized: {type(e).__name__}")
++    try:
++        size = len(s.encode())
++    except UnicodeEncodeError as e:
++        _bad(f"document cannot be canonicalized: {type(e).__name__}")
++    if size > _MAX_DOCUMENT_BYTES:
++        _bad("document exceeds 16 MiB")
++    return s
++
++
++def _hex(v: object, label: str) -> str:
++    if not isinstance(v, str) or len(v) != 64 or not all(c in "0123456789abcdef" for c in v):
++        _bad(f"{label} must be a lowercase SHA-256")
++    return v
++
++
++def _int(v: object, label: str, min: int = 0) -> int:
++    if type(v) is not int or not min <= v <= _JS_MAX:
++        _bad(f"{label} must be an integer in range")
++    return v
++
++
++def _id(v: object, label: str) -> str:
++    if not isinstance(v, str) or not v or len(v) > 512:
++        _bad(f"{label} must be a nonempty identifier")
++    try:
++        v.encode("utf-8")
++    except UnicodeEncodeError:
++        _bad(f"{label} must be valid UTF-8")
++    return v
++
++
++def _manifest() -> str:
++    try:
++        raw = json.loads(
++            Path(__file__).with_name("network_codec_manifest_v4.json").read_text(),
++            object_pairs_hook=_pairs,
++        )
++    except (OSError, UnicodeError, json.JSONDecodeError) as e:
++        _bad(f"registered codec manifest is unreadable: {e}")
++    p = _obj(raw, "registered codec manifest")
++    if (
++        set(p) != {"manifest_version", "codecs", "supporting_sources"}
++        or p["manifest_version"] != 4
++        or not isinstance(p["codecs"], list)
++        or not isinstance(p["supporting_sources"], list)
++    ):
++        _bad("registered codec manifest has an invalid shape")
++    entries = [*p["codecs"], *p["supporting_sources"]]
++    if (
++        len(p["codecs"]) != 7
++        or {x.get("kind") for x in p["codecs"] if isinstance(x, dict)} != _KINDS
++    ):
++        _bad("registered codec manifest must declare exactly seven kinds")
++    root = Path(__file__).parents[2]
++    for source_entry in entries:
++        valid_shape = isinstance(source_entry, dict) and set(source_entry) in (
++            {"component", "kind", "source_path", "source_sha256"},
++            {"component", "source_path", "source_sha256"},
++        )
++        if not valid_shape:
++            _bad("registered codec manifest source has an invalid shape")
++        entry = cast(JsonObject, source_entry)
++        path = entry["source_path"]
++        expected = _hex(entry["source_sha256"], "manifest source_sha256")
++        if not isinstance(path, str):
++            _bad("registered codec manifest source path is invalid")
++        try:
++            actual = hashlib.sha256((root / path).read_bytes()).hexdigest()
++        except OSError as x:
++            _bad(f"registered codec source is unreadable: {path}: {x}")
++        if actual != expected:
++            _bad(f"registered codec source hash changed: {path}")
++    return hashlib.sha256(canonical_json(p).encode()).hexdigest()
++
++
++CODEC_MANIFEST_HASH = _manifest()
++
++
++@dataclass(frozen=True, slots=True, kw_only=True)
++class NetworkObjectV1:
++    kind: str
++    identity: str
++    sha256: str
++    canonical_json: str
++
++    def __post_init__(self) -> None:
++        _id(self.identity, "object.identity")
++        _hex(self.sha256, "object.sha256")
++        if not isinstance(self.kind, str) or self.kind not in _KINDS:
++            _bad("object.kind is unsupported")
++        if not isinstance(self.canonical_json, str):
++            _bad("object.canonical_json must be a string")
++        try:
++            size = len(self.canonical_json.encode("utf-8"))
++        except UnicodeEncodeError as error:
++            _bad(f"object.canonical_json is invalid UTF-8: {type(error).__name__}")
++        if size > _MAX_OBJECT_BYTES:
++            _bad("object.canonical_json exceeds 8 MiB")
++        _validated_object(self.kind, self.identity, self.sha256, self.canonical_json)
++
++    def to_json(self) -> JsonObject:
++        return {
++            "kind": self.kind,
++            "identity": self.identity,
++            "sha256": self.sha256,
++            "canonical_json": self.canonical_json,
++        }
++
++
++@dataclass(frozen=True, slots=True, kw_only=True)
++class NetworkDocumentV1:
++    """Immutable wire carrier with validated objects and explicit metadata.
++
++    Cross-object graph references are validated by ``decode``; possession of
++    this value alone is never a persisted-history or execution proof.
++    """
++
++    mission_id: str
++    revision: int
++    codec_manifest_hash: str
++    requirements_ref: TypedRef
++    root_occurrence_ids: tuple[str, ...]
++    adopted_instance_ids: tuple[str, ...]
++    required_obligation_ids: tuple[str, ...]
++    objects: tuple[NetworkObjectV1, ...]
++
++    def __post_init__(self) -> None:
++        _id(self.mission_id, "mission_id")
++        _int(self.revision, "revision")
++        _hex(self.codec_manifest_hash, "codec_manifest_hash")
++        if self.codec_manifest_hash != _manifest():
++            _bad("codec manifest is not explicitly supported")
++        _ref(self.requirements_ref)
++        for name, bound in (
++            ("root_occurrence_ids", _MAX_ROOTS),
++            ("adopted_instance_ids", _MAX_SET_ITEMS),
++            ("required_obligation_ids", _MAX_SET_ITEMS),
++        ):
++            values = getattr(self, name)
++            if not isinstance(values, (tuple, list)):
++                _bad(f"{name} must be a bounded sequence")
++            identifiers = tuple(_id(value, name) for value in values)
++            object.__setattr__(self, name, _set(identifiers, name, bound))
++        if not isinstance(self.objects, (tuple, list)) or len(self.objects) > _MAX_OBJECTS:
++            _bad("objects must be a bounded sequence")
++        if not all(isinstance(value, NetworkObjectV1) for value in self.objects):
++            _bad("objects must contain NetworkObjectV1 values")
++        objects = tuple(sorted(self.objects, key=lambda value: (value.kind, value.identity)))
++        if len({(value.kind, value.identity) for value in objects}) != len(objects):
++            _bad("objects have duplicate identity")
++        object.__setattr__(self, "objects", objects)
++        _canon(self.to_json())
++
++    def to_json(self) -> JsonObject:
++        return {
++            "schema_version": 1,
++            "mission_id": self.mission_id,
++            "revision": self.revision,
++            "codec_manifest_hash": self.codec_manifest_hash,
++            "requirements_ref": cast(JsonValue, self.requirements_ref.to_json()),
++            "root_occurrence_ids": list(self.root_occurrence_ids),
++            "adopted_instance_ids": list(self.adopted_instance_ids),
++            "required_obligation_ids": list(self.required_obligation_ids),
++            "objects": [x.to_json() for x in self.objects],
++        }
++
++
++@dataclass(frozen=True, slots=True, kw_only=True)
++class DecodedNetworkDocument:
++    document: NetworkDocumentV1
++    snapshot: TaskNetworkSnapshot
++
++
++def _json(x: CodecValue) -> JsonObject:
++    return _obj(x.to_json(), "original codec output")
++
++
++def _decode(k: str, v: JsonObject) -> CodecValue:
++    if k == "occurrence":
++        return OccurrenceSpec.from_json(v)
++    if k == "task_semantics":
++        return TaskSemanticBindingV1.from_json(v)
++    if k == "method_instance":
++        return MethodInstanceDraft.from_json(v)
++    if k == "order_constraint":
++        return OrderConstraint.from_json(v)
++    if k == "data_requirement":
++        return DataRequirement.from_json(v)
++    if k == "typed_edge":
++        return TypedEdge.from_json(v)
++    if k == "obligation_coverage":
++        return ObligationCoverage.from_json(v)
++    _bad(f"unknown codec kind {k!r}")
++
++
++def _identity(k: str, x: CodecValue) -> str:
++    if k == "occurrence" and isinstance(x, OccurrenceSpec):
++        return str(x.occurrence_id)
++    if k == "task_semantics" and isinstance(x, TaskSemanticBindingV1):
++        return canonical_json([str(x.task_id), int(x.contract_revision)])
++    if k == "method_instance" and isinstance(x, MethodInstanceDraft):
++        return str(x.instance_id)
++    if k == "order_constraint" and isinstance(x, OrderConstraint):
++        return canonical_json([str(x.before), str(x.after)])
++    if k == "data_requirement" and isinstance(x, DataRequirement):
++        return str(x.requirement_id)
++    if k in {"typed_edge", "obligation_coverage"} and isinstance(
++        x, (TypedEdge, ObligationCoverage)
++    ):
++        return hashlib.sha256(canonical_json(_json(x)).encode()).hexdigest()
++    _bad(f"{k} decoded to the wrong original type")
++
++
++def _one(k: str, x: CodecValue) -> NetworkObjectV1:
++    s = canonical_json(_json(x))
++    try:
++        content = s.encode("utf-8")
++    except UnicodeEncodeError:
++        _bad(f"{k} canonical_json must be valid UTF-8")
++    if len(content) > _MAX_OBJECT_BYTES:
++        _bad(f"{k} canonical_json exceeds 8 MiB")
++    return NetworkObjectV1(
++        kind=k,
++        identity=_identity(k, x),
++        sha256=hashlib.sha256(s.encode()).hexdigest(),
++        canonical_json=s,
++    )
++
++
++def _validated_object(kind: str, identity: str, digest: str, text: str) -> CodecValue:
++    try:
++        payload = _obj(
++            json.loads(
++                text, object_pairs_hook=_pairs, parse_constant=lambda value: _bad("non-finite JSON")
++            ),
++            "canonical_json",
++        )
++    except (json.JSONDecodeError, UnicodeError) as error:
++        _bad(f"object.canonical_json is invalid JSON: {type(error).__name__}")
++    if canonical_json(payload) != text:
++        _bad("object.canonical_json is not canonical")
++    if hashlib.sha256(text.encode("utf-8")).hexdigest() != digest:
++        _bad("object.sha256 does not match canonical_json")
++    try:
++        decoded = _decode(kind, payload)
++    except Exception as error:
++        _bad(f"object failed original {kind} decoder: {type(error).__name__}")
++    if canonical_json(_json(decoded)) != text:
++        _bad("object original decoder does not preserve canonical_json")
++    if _identity(kind, decoded) != identity:
++        _bad("object identity is invalid")
++    return decoded
++
++
++def _set(v: tuple[str, ...], label: str, n: int) -> tuple[str, ...]:
++    if len(v) > n or len(set(v)) != len(v):
++        _bad(f"{label} has duplicates or exceeds its bound")
++    return tuple(sorted(v))
++
++
++def _ref(x: object) -> TypedRef:
++    if not isinstance(x, TypedRef) or x.kind is not TypedRefKind.REQUIREMENTS:
++        _bad("requirements_ref must be a TypedRef of kind requirements")
++    raw = x.to_json()
++    if set(raw) != _R_FIELDS:
++        _bad("requirements_ref has unknown or missing fields")
++    _id(raw["id"], "requirements_ref.id")
++    _int(raw["revision"], "requirements_ref.revision")
++    _hex(raw["content_hash"], "requirements_ref.content_hash")
++    return x
++
++
++def encode(s: TaskNetworkSnapshot, requirements_ref: TypedRef) -> NetworkDocumentV1:
++    if not isinstance(s, TaskNetworkSnapshot):
++        _bad("encode requires TaskNetworkSnapshot")
++    src: list[tuple[str, CodecValue]] = [
++        *(("occurrence", x) for x in s.occurrences),
++        *(("task_semantics", x) for x in s.task_bindings),
++        *(("method_instance", x) for x in s.method_instances),
++        *(("order_constraint", x) for x in s.order_constraints),
++        *(("data_requirement", x) for x in s.data_requirements),
++        *(("typed_edge", x) for x in s.typed_edges),
++        *(("obligation_coverage", x) for x in s.obligation_coverage),
++    ]
++    objs = tuple(sorted((_one(k, x) for k, x in src), key=lambda x: (x.kind, x.identity)))
++    if len(objs) > _MAX_OBJECTS or len({(x.kind, x.identity) for x in objs}) != len(objs):
++        _bad("objects have duplicate identity or exceed their bound")
++    d = NetworkDocumentV1(
++        mission_id=_id(str(s.mission_id), "mission_id"),
++        revision=_int(int(s.plan_revision), "revision"),
++        codec_manifest_hash=_manifest(),
++        requirements_ref=_ref(requirements_ref),
++        root_occurrence_ids=_set(
++            tuple(map(str, s.root_occurrence_ids)), "root_occurrence_ids", _MAX_ROOTS
++        ),
++        adopted_instance_ids=_set(
++            tuple(map(str, s.adopted_instance_ids)), "adopted_instance_ids", _MAX_SET_ITEMS
++        ),
++        required_obligation_ids=_set(
++            tuple(map(str, s.required_obligations)), "required_obligation_ids", _MAX_SET_ITEMS
++        ),
++        objects=objs,
++    )
++    _canon(d.to_json())
++    return d
++
++
++def decode(
++    v: Mapping[str, object], *, expected_manifest: str | None = None
++) -> DecodedNetworkDocument:
++    if not isinstance(v, Mapping) or set(v) != _FIELDS:
++        _bad("document has unknown or missing fields")
++    _canon(v)
++    if _int(v["schema_version"], "schema_version") != 1:
++        _bad("schema_version must be 1")
++    manifest = _hex(v["codec_manifest_hash"], "codec_manifest_hash")
++    registered = _manifest()
++    if manifest != registered or (expected_manifest is not None and manifest != expected_manifest):
++        _bad("codec manifest is not explicitly supported")
++    rawref = v["requirements_ref"]
++    if not isinstance(rawref, Mapping) or set(rawref) != _R_FIELDS:
++        _bad("requirements_ref has unknown or missing fields")
++    try:
++        ref = _ref(TypedRef.from_json(dict(rawref), "requirements_ref"))
++    except ContractError:
++        raise
++    except Exception as e:
++        _bad(f"requirements_ref is invalid: {type(e).__name__}")
++    raw = v["objects"]
++    if not isinstance(raw, list) or len(raw) > _MAX_OBJECTS:
++        _bad("objects must be a bounded array")
++    groups: dict[str, list[CodecValue]] = {k: [] for k in _KINDS}
++    parsed: list[NetworkObjectV1] = []
++    seen: set[tuple[str, str]] = set()
++    for i, r in enumerate(raw):
++        if not isinstance(r, Mapping) or set(r) != _O_FIELDS:
++            _bad(f"objects[{i}] has unknown or missing fields")
++        k = r["kind"]
++        identity = _id(r["identity"], f"objects[{i}].identity")
++        digest = _hex(r["sha256"], f"objects[{i}].sha256")
++        text = r["canonical_json"]
++        if not isinstance(k, str) or k not in _KINDS or not isinstance(text, str):
++            _bad(f"objects[{i}] is invalid")
++        if len(text.encode()) > _MAX_OBJECT_BYTES:
++            _bad(f"objects[{i}].canonical_json exceeds 8 MiB")
++        try:
++            j = _obj(
++                json.loads(
++                    text, object_pairs_hook=_pairs, parse_constant=lambda x: _bad("non-finite JSON")
++                ),
++                "canonical_json",
++            )
++        except (json.JSONDecodeError, UnicodeError) as e:
++            _bad(f"objects[{i}].canonical_json is invalid JSON: {e}")
++        if canonical_json(j) != text:
++            _bad(f"objects[{i}].canonical_json is not canonical")
++        if hashlib.sha256(text.encode()).hexdigest() != digest:
++            _bad(f"objects[{i}].sha256 does not match canonical_json")
++        try:
++            x = _decode(k, j)
++        except Exception as e:
++            _bad(f"objects[{i}] failed original {k} decoder: {type(e).__name__}")
++        if canonical_json(_json(x)) != text:
++            _bad(f"objects[{i}] original decoder does not preserve canonical_json")
++        if _identity(k, x) != identity or (k, identity) in seen:
++            _bad(f"objects[{i}] identity is invalid or duplicate")
++        seen.add((k, identity))
++        groups[k].append(x)
++        parsed.append(
++            NetworkObjectV1(kind=k, identity=identity, sha256=digest, canonical_json=text)
++        )
++    if tuple((x.kind, x.identity) for x in parsed) != tuple(
++        sorted((x.kind, x.identity) for x in parsed)
++    ):
++        _bad("objects must be sorted by kind and identity")
++
++    def ids(f: str, n: int) -> tuple[str, ...]:
++        q = v[f]
++        if not isinstance(q, list):
++            _bad(f"{f} must be an array")
++        z = tuple(_id(x, f"{f}[]") for x in q)
++        if z != _set(z, f, n):
++            _bad(f"{f} must be sorted and unique")
++        return z
++
++    roots = ids("root_occurrence_ids", _MAX_ROOTS)
++    adopted = ids("adopted_instance_ids", _MAX_SET_ITEMS)
++    obligations = ids("required_obligation_ids", _MAX_SET_ITEMS)
++    try:
++        s = TaskNetworkSnapshot(
++            MissionRef(_id(v["mission_id"], "mission_id")),
++            PlanRevision(_int(v["revision"], "revision")),
++            tuple(cast(list[OccurrenceSpec], groups["occurrence"])),
++            tuple(cast(list[TaskSemanticBindingV1], groups["task_semantics"])),
++            tuple(cast(list[MethodInstanceDraft], groups["method_instance"])),
++            tuple(MethodInstanceId(x) for x in adopted),
++            tuple(OccurrenceId(x) for x in roots),
++            tuple(cast(list[OrderConstraint], groups["order_constraint"])),
++            tuple(cast(list[DataRequirement], groups["data_requirement"])),
++            tuple(cast(list[TypedEdge], groups["typed_edge"])),
++            tuple(cast(list[ObligationCoverage], groups["obligation_coverage"])),
++            tuple(ObligationId(x) for x in obligations),
++        )
++    except Exception as e:
++        _bad(f"TaskNetworkSnapshot construction failed: {type(e).__name__}: {e}")
++    return DecodedNetworkDocument(
++        document=NetworkDocumentV1(
++            mission_id=_id(v["mission_id"], "mission_id"),
++            revision=_int(v["revision"], "revision"),
++            codec_manifest_hash=manifest,
++            requirements_ref=ref,
++            root_occurrence_ids=roots,
++            adopted_instance_ids=adopted,
++            required_obligation_ids=obligations,
++            objects=tuple(parsed),
++        ),
++        snapshot=s,
++    )
++
++
++__all__ = (
++    "CODEC_MANIFEST_HASH",
++    "DecodedNetworkDocument",
++    "NetworkDocumentV1",
++    "NetworkObjectV1",
++    "decode",
++    "encode",
++)
+--- /dev/null
++++ b/src/agent_orchestrator/graph/network_codec_manifest_v1.json
+@@ -0,0 +1,15 @@
++{
++  "manifest_version": 1,
++  "codecs": [
++    {"kind": "data_requirement", "codec": "DataRequirement.to_json/from_json", "source_path": "agent_orchestrator/contracts/htn.py", "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++    {"kind": "method_instance", "codec": "MethodInstanceDraft.to_json/from_json", "source_path": "agent_orchestrator/contracts/htn.py", "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++    {"kind": "obligation_coverage", "codec": "ObligationCoverage.to_json/from_json", "source_path": "agent_orchestrator/contracts/htn.py", "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++    {"kind": "occurrence", "codec": "OccurrenceSpec.to_json/from_json", "source_path": "agent_orchestrator/contracts/htn.py", "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++    {"kind": "order_constraint", "codec": "OrderConstraint.to_json/from_json", "source_path": "agent_orchestrator/contracts/htn.py", "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++    {"kind": "task_semantics", "codec": "TaskSemanticBindingV1.to_json/from_json", "source_path": "agent_orchestrator/contracts/htn.py", "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++    {"kind": "typed_edge", "codec": "TypedEdge.to_json/from_json", "source_path": "agent_orchestrator/contracts/htn.py", "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"}
++  ],
++  "supporting_sources": [
++    {"component": "TaskNetworkSnapshot.constructor", "source_path": "agent_orchestrator/graph/task_network.py", "source_sha256": "5399dd8d43a1621ce37170fa5490e5ab7b58571e7212af98bf473cf87801d370"}
++  ]
++}
+--- /dev/null
++++ b/src/agent_orchestrator/graph/network_codec_manifest_v2.json
+@@ -0,0 +1,14 @@
++{"manifest_version":2,"codecs":[
++{"component":"OccurrenceSpec.to_json/from_json","kind":"occurrence","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"TaskSemanticBindingV1.to_json/from_json","kind":"task_semantics","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"MethodInstanceDraft.to_json/from_json","kind":"method_instance","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"OrderConstraint.to_json/from_json","kind":"order_constraint","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"DataRequirement.to_json/from_json","kind":"data_requirement","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"TypedEdge.to_json/from_json","kind":"typed_edge","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"ObligationCoverage.to_json/from_json","kind":"obligation_coverage","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"}
++],"supporting_sources":[
++{"component":"canonical_json and validate_json_value","source_path":"simple_harness/contracts/json.py","source_sha256":"07be368843c6de6c001feee4cc99eacdaa8f8fe4cc3c67896b5621c4579b895f"},
++{"component":"TypedRef and TypedRefKind","source_path":"agent_orchestrator/contracts/semantic_base.py","source_sha256":"e60c139c9c2f372a5a0aab1bd7a0d7f9ce7e96d4fa1be07a116661395db56363"},
++{"component":"ContractError","source_path":"agent_orchestrator/contracts/models.py","source_sha256":"ca16ec7c103bbeed6e2cfd43c8cf847f2604b275b9b997b62550b4431708b582"},
++{"component":"TaskNetworkSnapshot.constructor","source_path":"agent_orchestrator/graph/task_network.py","source_sha256":"5399dd8d43a1621ce37170fa5490e5ab7b58571e7212af98bf473cf87801d370"}
++]}
+--- /dev/null
++++ b/src/agent_orchestrator/graph/network_codec_manifest_v3.json
+@@ -0,0 +1,14 @@
++{"manifest_version":3,"codecs":[
++{"component":"OccurrenceSpec","kind":"occurrence","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"TaskSemanticBindingV1","kind":"task_semantics","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"MethodInstanceDraft","kind":"method_instance","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"OrderConstraint","kind":"order_constraint","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"DataRequirement","kind":"data_requirement","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"TypedEdge","kind":"typed_edge","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"},
++{"component":"ObligationCoverage","kind":"obligation_coverage","source_path":"agent_orchestrator/contracts/htn.py","source_sha256":"3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"}],"supporting_sources":[
++{"component":"json","source_path":"simple_harness/contracts/json.py","source_sha256":"07be368843c6de6c001feee4cc99eacdaa8f8fe4cc3c67896b5621c4579b895f"},
++{"component":"contracts export","source_path":"simple_harness/contracts/__init__.py","source_sha256":"eb04ec604a876295078db2fcddfc61d65d612cbe5a54c3f7111f5b49dae1d945"},
++{"component":"semantic","source_path":"agent_orchestrator/contracts/semantic_base.py","source_sha256":"e60c139c9c2f372a5a0aab1bd7a0d7f9ce7e96d4fa1be07a116661395db56363"},
++{"component":"evidence","source_path":"agent_orchestrator/contracts/evidence_state.py","source_sha256":"d251feb15bd77a1c58c5b983b3a30bd78eb5c2228e3f29b8333e6d9304ee24de"},
++{"component":"models","source_path":"agent_orchestrator/contracts/models.py","source_sha256":"ca16ec7c103bbeed6e2cfd43c8cf847f2604b275b9b997b62550b4431708b582"},
++{"component":"network","source_path":"agent_orchestrator/graph/task_network.py","source_sha256":"5399dd8d43a1621ce37170fa5490e5ab7b58571e7212af98bf473cf87801d370"}]}
+--- /dev/null
++++ b/src/agent_orchestrator/graph/network_codec_manifest_v4.json
+@@ -0,0 +1,94 @@
++{
++  "manifest_version": 4,
++  "codecs": [
++    {
++      "component": "OccurrenceSpec",
++      "kind": "occurrence",
++      "source_path": "agent_orchestrator/contracts/htn.py",
++      "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"
++    },
++    {
++      "component": "TaskSemanticBindingV1",
++      "kind": "task_semantics",
++      "source_path": "agent_orchestrator/contracts/htn.py",
++      "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"
++    },
++    {
++      "component": "MethodInstanceDraft",
++      "kind": "method_instance",
++      "source_path": "agent_orchestrator/contracts/htn.py",
++      "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"
++    },
++    {
++      "component": "OrderConstraint",
++      "kind": "order_constraint",
++      "source_path": "agent_orchestrator/contracts/htn.py",
++      "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"
++    },
++    {
++      "component": "DataRequirement",
++      "kind": "data_requirement",
++      "source_path": "agent_orchestrator/contracts/htn.py",
++      "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"
++    },
++    {
++      "component": "TypedEdge",
++      "kind": "typed_edge",
++      "source_path": "agent_orchestrator/contracts/htn.py",
++      "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"
++    },
++    {
++      "component": "ObligationCoverage",
++      "kind": "obligation_coverage",
++      "source_path": "agent_orchestrator/contracts/htn.py",
++      "source_sha256": "3750328911ca2851818778f74bf8b510933213593cc7825d8cea41b8f2b67a28"
++    }
++  ],
++  "supporting_sources": [
++    {
++      "component": "json",
++      "source_path": "simple_harness/contracts/json.py",
++      "source_sha256": "07be368843c6de6c001feee4cc99eacdaa8f8fe4cc3c67896b5621c4579b895f"
++    },
++    {
++      "component": "contracts export",
++      "source_path": "simple_harness/contracts/__init__.py",
++      "source_sha256": "eb04ec604a876295078db2fcddfc61d65d612cbe5a54c3f7111f5b49dae1d945"
++    },
++    {
++      "component": "semantic",
++      "source_path": "agent_orchestrator/contracts/semantic_base.py",
++      "source_sha256": "e60c139c9c2f372a5a0aab1bd7a0d7f9ce7e96d4fa1be07a116661395db56363"
++    },
++    {
++      "component": "evidence",
++      "source_path": "agent_orchestrator/contracts/evidence_state.py",
++      "source_sha256": "d251feb15bd77a1c58c5b983b3a30bd78eb5c2228e3f29b8333e6d9304ee24de"
++    },
++    {
++      "component": "models",
++      "source_path": "agent_orchestrator/contracts/models.py",
++      "source_sha256": "ca16ec7c103bbeed6e2cfd43c8cf847f2604b275b9b997b62550b4431708b582"
++    },
++    {
++      "component": "network",
++      "source_path": "agent_orchestrator/graph/task_network.py",
++      "source_sha256": "5399dd8d43a1621ce37170fa5490e5ab7b58571e7212af98bf473cf87801d370"
++    },
++    {
++      "component": "network document codec",
++      "source_path": "agent_orchestrator/graph/network_codec.py",
++      "source_sha256": "51d46575e747071a48f458e61eeefe13663fa635077db1e77bce4c086a6592f9"
++    },
++    {
++      "component": "state machines",
++      "source_path": "agent_orchestrator/contracts/state_machines.py",
++      "source_sha256": "dfddfcfd484f3beb089b81cc9702d0e3fb1986fe867d566d740734965c5caf07"
++    },
++    {
++      "component": "contract errors",
++      "source_path": "simple_harness/contracts/errors.py",
++      "source_sha256": "a0406110611ceeed34a61eedb38cf188c4f65ff9c382be7a5aed4017e566e537"
++    }
++  ]
++}
+--- /dev/null
++++ b/src/agent_orchestrator/graph/structural_diff.py
+@@ -0,0 +1,219 @@
++# SPDX-FileCopyrightText: 2026 DennyWanye
++# SPDX-License-Identifier: Apache-2.0
++"""Pure structural differences for already authorized historical documents.
++
++This module does not read a Store or grant access to a Mission. The eventual
++read facade must authorize both revisions and verify their persisted records.
++Only frozen object content is compared; runtime overlays are not accepted.
++"""
++
++from __future__ import annotations
++
++import hashlib
++from collections.abc import Mapping
++from dataclasses import dataclass
++from typing import NoReturn, cast
++
++from simple_harness.contracts import canonical_json
++from simple_harness.contracts.json import JsonValue
++
++from ..contracts.models import ContractError
++from .network_codec import NetworkDocumentV1, decode
++
++_JS_MAX = 2**53 - 1
++_MAX_CHANGES = 16384
++_CHANGE_FIELDS = {"kind", "identity", "before_hash", "after_hash"}
++_DIFF_FIELDS = {
++    "schema_version",
++    "mission_id",
++    "from_revision",
++    "to_revision",
++    "from_manifest_hash",
++    "to_manifest_hash",
++    "changes",
++    "complete",
++}
++
++
++def _invalid(reason: str) -> NoReturn:
++    raise ContractError(f"TASKGRAPH_DIFF_INVALID: {reason}")
++
++
++def _identifier(value: object, name: str) -> str:
++    if not isinstance(value, str) or not value.strip() or len(value) > 512:
++        _invalid(f"{name} must be a nonempty identifier of at most 512 characters")
++    try:
++        value.encode("utf-8")
++    except UnicodeEncodeError:
++        _invalid(f"{name} must be UTF-8")
++    return value
++
++
++def _digest(value: object, name: str) -> str:
++    if (
++        not isinstance(value, str)
++        or len(value) != 64
++        or any(c not in "0123456789abcdef" for c in value)
++    ):
++        _invalid(f"{name} must be a lowercase SHA-256")
++    return value
++
++
++def _revision(value: object, name: str) -> int:
++    if type(value) is not int or not 0 <= value <= _JS_MAX:
++        _invalid(f"{name} must be a nonnegative safe integer")
++    return value
++
++
++def _object(value: object, fields: set[str], name: str) -> Mapping[str, object]:
++    if not isinstance(value, Mapping) or set(value) != fields:
++        _invalid(f"{name} has missing or unknown fields")
++    return value
++
++
++@dataclass(frozen=True, slots=True, kw_only=True)
++class StructuralChange:
++    kind: str
++    identity: str
++    before_hash: str | None
++    after_hash: str | None
++
++    def __post_init__(self) -> None:
++        _identifier(self.kind, "kind")
++        _identifier(self.identity, "identity")
++        if self.before_hash is not None:
++            _digest(self.before_hash, "before_hash")
++        if self.after_hash is not None:
++            _digest(self.after_hash, "after_hash")
++        if self.before_hash == self.after_hash:
++            _invalid("a change must have different hashes and at least one object")
++
++    def to_json(self) -> dict[str, JsonValue]:
++        return {
++            "kind": self.kind,
++            "identity": self.identity,
++            "before_hash": self.before_hash,
++            "after_hash": self.after_hash,
++        }
++
++    @classmethod
++    def from_json(cls, value: object) -> StructuralChange:
++        data = _object(value, _CHANGE_FIELDS, "change")
++        return cls(
++            kind=cast(str, data["kind"]),
++            identity=cast(str, data["identity"]),
++            before_hash=cast(str | None, data["before_hash"]),
++            after_hash=cast(str | None, data["after_hash"]),
++        )
++
++
++@dataclass(frozen=True, slots=True, kw_only=True)
++class TaskGraphDiffV1:
++    mission_id: str
++    from_revision: int
++    to_revision: int
++    from_manifest_hash: str
++    to_manifest_hash: str
++    changes: tuple[StructuralChange, ...]
++    complete: bool
++    schema_version: int = 1
++
++    def __post_init__(self) -> None:
++        _identifier(self.mission_id, "mission_id")
++        _revision(self.from_revision, "from_revision")
++        _revision(self.to_revision, "to_revision")
++        _digest(self.from_manifest_hash, "from_manifest_hash")
++        _digest(self.to_manifest_hash, "to_manifest_hash")
++        if type(self.schema_version) is not int or self.schema_version != 1:
++            _invalid("schema_version must be 1")
++        if self.complete is not True:
++            _invalid("partial structural differences are unsupported")
++        if not isinstance(self.changes, (tuple, list)) or len(self.changes) > _MAX_CHANGES:
++            _invalid("changes must be a bounded sequence")
++        if not all(isinstance(change, StructuralChange) for change in self.changes):
++            _invalid("changes must contain StructuralChange values")
++        changes = tuple(sorted(self.changes, key=lambda change: (change.kind, change.identity)))
++        if len({(change.kind, change.identity) for change in changes}) != len(changes):
++            _invalid("duplicate change identity")
++        if self.from_revision == self.to_revision and (
++            self.from_manifest_hash != self.to_manifest_hash or changes
++        ):
++            _invalid("one immutable revision cannot have two structures")
++        if self.from_manifest_hash == self.to_manifest_hash and changes:
++            _invalid("identical documents cannot have changes")
++        object.__setattr__(self, "changes", changes)
++
++    def to_json(self) -> dict[str, JsonValue]:
++        return {
++            "schema_version": self.schema_version,
++            "mission_id": self.mission_id,
++            "from_revision": self.from_revision,
++            "to_revision": self.to_revision,
++            "from_manifest_hash": self.from_manifest_hash,
++            "to_manifest_hash": self.to_manifest_hash,
++            "changes": [change.to_json() for change in self.changes],
++            "complete": self.complete,
++        }
++
++    @classmethod
++    def from_json(cls, value: object) -> TaskGraphDiffV1:
++        data = _object(value, _DIFF_FIELDS, "diff")
++        raw_changes = data["changes"]
++        if not isinstance(raw_changes, list) or len(raw_changes) > _MAX_CHANGES:
++            _invalid("changes must be a bounded array")
++        return cls(
++            schema_version=cast(int, data["schema_version"]),
++            mission_id=cast(str, data["mission_id"]),
++            from_revision=cast(int, data["from_revision"]),
++            to_revision=cast(int, data["to_revision"]),
++            from_manifest_hash=cast(str, data["from_manifest_hash"]),
++            to_manifest_hash=cast(str, data["to_manifest_hash"]),
++            changes=tuple(StructuralChange.from_json(change) for change in raw_changes),
++            complete=cast(bool, data["complete"]),
++        )
++
++
++def diff_documents(before: NetworkDocumentV1, after: NetworkDocumentV1) -> TaskGraphDiffV1:
++    """Compare complete decoded objects, retaining top-level document hashes.
++
++    Set changes (roots/adoption/required obligations) and requirements references
++    are bound by the two document hashes, not represented as invented object kinds.
++    No current Task, Method state, witness, or execution permission is consulted.
++    """
++    if not isinstance(before, NetworkDocumentV1) or not isinstance(after, NetworkDocumentV1):
++        _invalid("both inputs must be NetworkDocumentV1")
++    if before.mission_id != after.mission_id:
++        _invalid("source missions differ")
++    # Directly constructed dataclasses are not evidence of decoder validation.
++    left = decode(before.to_json()).document
++    right = decode(after.to_json()).document
++    old = {(item.kind, item.identity): item.sha256 for item in left.objects}
++    new = {(item.kind, item.identity): item.sha256 for item in right.objects}
++    changed_keys = [key for key in sorted(old.keys() | new.keys()) if old.get(key) != new.get(key)]
++    if len(changed_keys) > _MAX_CHANGES:
++        _invalid("complete difference exceeds the public contract capacity")
++    changes = tuple(
++        StructuralChange(
++            kind=kind,
++            identity=identity,
++            before_hash=old.get((kind, identity)),
++            after_hash=new.get((kind, identity)),
++        )
++        for kind, identity in changed_keys
++    )
++    return TaskGraphDiffV1(
++        mission_id=left.mission_id,
++        from_revision=left.revision,
++        to_revision=right.revision,
++        from_manifest_hash=hashlib.sha256(
++            canonical_json(left.to_json()).encode("utf-8")
++        ).hexdigest(),
++        to_manifest_hash=hashlib.sha256(
++            canonical_json(right.to_json()).encode("utf-8")
++        ).hexdigest(),
++        changes=changes,
++        complete=True,
++    )
++
++
++__all__ = ("StructuralChange", "TaskGraphDiffV1", "diff_documents")
+--- /dev/null
++++ b/tests/orchestrator/full_target/taskgraph_exec/_htn_migration_fixture.py
+@@ -0,0 +1,209 @@
++# SPDX-FileCopyrightText: 2026 DennyWanye
++# SPDX-License-Identifier: Apache-2.0
++
++"""Real pre-extension HTN producers; no model, admission receipt or SQL fixture."""
++
++from __future__ import annotations
++
++import dataclasses
++import json
++import sys
++from pathlib import Path
++
++
++def install_fixture_imports(root: Path) -> None:
++    for path in (root / "tests/orchestrator", root / "tests/orchestrator/full_target"):
++        sys.path.insert(0, str(path))
++
++
++def build_fixture(root: Path, db: Path) -> dict:
++    install_fixture_imports(root)
++    from test_plan_commits import (
++        FUEL,
++        HIERARCHICAL_SEMANTICS,
++        AllExpr,
++        CommitPlanCommand,
++        CommitService,
++        CriterionExpr,
++        HtnStore,
++        Obligation,
++        ObligationStore,
++        PlanPrincipal,
++        RequirementsRevision,
++        Store,
++        _criterion,
++        _env,
++        _outer,
++        _spec,
++        assess_method,
++        compile_refinement_bundle,
++        ground_method,
++        root_network,
++        task_binding,
++    )
++
++    store = Store.open(db)
++    service = CommitService(store)
++    semantics = HtnStore(store)
++    commands = []
++    for n in range(2):
++        prefix = f"tg-upgrade-{n}"
++        mission, _ = service.create_mission(_spec(prefix, mode=HIERARCHICAL_SEMANTICS))
++        env = _env(mission.id)
++        contract = _outer(f"{prefix}.outer")
++        assert env.admit(contract).admitted
++        binding = task_binding(
++            env,
++            "plan.goal",
++            task_id=f"{prefix}-root",
++            obligation=f"{prefix}-obligation",
++            parameters={"subject": prefix},
++        )
++        ObligationStore(store).register(
++            Obligation(
++                obligation_id=binding.obligation_id,
++                mission_id=mission.id,
++                requirement_refs=("req-1",),
++                goal_signature_id="plan.goal",
++            ),
++            recursion_fuel=FUEL,
++        )
++        semantics.put_task_semantics(mission.id, binding)
++        semantics.register_method(contract, env.registry.registration(contract.method_ref()))
++        requirements = RequirementsRevision(
++            revision_id=f"{prefix}-requirements",
++            mission_id=mission.id,
++            revision=0,
++            criteria=(_criterion("c-root"),),
++            success_expression=AllExpr((CriterionExpr("c-root"),)),
++        )
++        semantics.insert_requirements_revision(requirements)
++        report = assess_method(
++            binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
++        )
++        draft = ground_method(
++            binding, contract, {}, report, catalog=env.catalog, schemas=env.schemas
++        )
++        bundle = compile_refinement_bundle(
++            draft,
++            root_network(env, binding),
++            method=contract,
++            catalog=env.catalog,
++            schemas=env.schemas,
++            registry=env.registry,
++        )
++        command = CommitPlanCommand(
++            command_id=f"{prefix}-command",
++            mission_id=mission.id,
++            delta=bundle.delta,
++            network=bundle.network,
++            task_bindings=bundle.task_bindings,
++            base_graph_version=1,
++            issued_by="manager-1",
++            scope_id="mission",
++            source={"intent_id": f"{prefix}-intent"},
++        )
++        receipt = service.commit_plan_revision(command, PlanPrincipal("manager-1", "mission", 0))
++        assert (
++            service.commit_plan_revision(command, PlanPrincipal("manager-1", "mission", 0))
++            == receipt
++        )
++        network = command.network
++        commands.append(
++            {
++                "mission_id": mission.id,
++                "command_id": command.command_id,
++                "intent_hash": command.intent_hash(),
++                "delta": command.delta.to_json(),
++                "task_bindings": [b.to_json() for b in command.task_bindings],
++                "network": {
++                    "mission_id": str(network.mission_id),
++                    "plan_revision": int(network.plan_revision),
++                    **{
++                        name: [item.to_json() for item in getattr(network, name)]
++                        for name in (
++                            "occurrences",
++                            "task_bindings",
++                            "method_instances",
++                            "order_constraints",
++                            "data_requirements",
++                            "typed_edges",
++                            "obligation_coverage",
++                        )
++                    },
++                    **{
++                        name: list(getattr(network, name))
++                        for name in (
++                            "adopted_instance_ids",
++                            "root_occurrence_ids",
++                            "required_obligations",
++                        )
++                    },
++                },
++                "receipt": dataclasses.asdict(receipt),
++            }
++        )
++        # Deliberately make current semantics/adoption differ from old plan data.
++        # These are real storage writes, not a claim of authorized runtime repair.
++        semantics.put_task_semantics(
++            mission.id, dataclasses.replace(binding, contract_revision=2, contract_hash="f" * 64)
++        )
++        semantics.set_method_instance_state(mission.id, str(draft.instance_id), "RETIRED")
++        assert semantics.get_task_semantics(str(binding.task_id), 1) == binding
++        assert semantics.get_task_semantics(str(binding.task_id), 2).contract_hash == "f" * 64
++        assert semantics.method_instance_state(mission.id, str(draft.instance_id)) == "RETIRED", (
++            "fixture retirement must be persisted"
++        )
++        commands[-1]["historical_difference"] = {
++            "task_id": str(binding.task_id),
++            "instance_id": str(draft.instance_id),
++            "old_revision": 1,
++            "old_hash": binding.contract_hash,
++            "current_revision": 2,
++            "current_hash": "f" * 64,
++            "current_method_state": "RETIRED",
++        }
++    assert not list(store.connection.execute("PRAGMA foreign_key_check"))
++    store.close()
++    return {"commands": commands, "model_calls": 0, "planning_admission": "NOT_EXERCISED"}
++
++
++def replay_fixture(store, fixture: dict) -> None:
++    from agent_orchestrator.contracts import htn
++    from agent_orchestrator.graph.task_network import TaskNetworkSnapshot
++    from agent_orchestrator.orchestrator.commit_service import CommitService
++    from agent_orchestrator.orchestrator.plan_commits import CommitPlanCommand, PlanPrincipal
++
++    codecs = {
++        "occurrences": htn.OccurrenceSpec,
++        "task_bindings": htn.TaskSemanticBindingV1,
++        "method_instances": htn.MethodInstanceDraft,
++        "order_constraints": htn.OrderConstraint,
++        "data_requirements": htn.DataRequirement,
++        "typed_edges": htn.TypedEdge,
++        "obligation_coverage": htn.ObligationCoverage,
++    }
++    for item in fixture["commands"]:
++        data = dict(item["network"])
++        for name, codec in codecs.items():
++            data[name] = tuple(codec.from_json(value) for value in data[name])
++        for name in ("adopted_instance_ids", "root_occurrence_ids", "required_obligations"):
++            data[name] = tuple(data[name])
++        command = CommitPlanCommand(
++            command_id=item["command_id"],
++            mission_id=item["mission_id"],
++            delta=htn.ProposedPlanDelta.from_json(item["delta"]),
++            network=TaskNetworkSnapshot(**data),
++            task_bindings=tuple(
++                htn.TaskSemanticBindingV1.from_json(b) for b in item["task_bindings"]
++            ),
++            base_graph_version=1,
++            issued_by="manager-1",
++            scope_id="mission",
++        )
++        assert command.intent_hash() == item["intent_hash"]
++        receipt = CommitService(store).commit_plan_revision(
++            command, PlanPrincipal("manager-1", "mission", 0)
++        )
++        # JSON roundtrip normalizes nested tuples in a dataclass receipt.
++        assert json.loads(json.dumps(dataclasses.asdict(receipt))) == item["receipt"]
+--- /dev/null
++++ b/tests/orchestrator/full_target/taskgraph_exec/test_execution_contracts.py
+@@ -0,0 +1,256 @@
++from __future__ import annotations
++
++import copy
++import hashlib
++import json
++import os
++from pathlib import Path
++
++import jsonschema
++import pytest
++
++from agent_orchestrator.contracts.models import ContractError
++from agent_orchestrator.graph.execution_contracts import GraphSourceRead, PreviewBindingV1
++
++CHANNELS = (
++    "request",
++    "authorization",
++    "network",
++    "methods",
++    "evidence",
++    "capabilities",
++    "operations",
++    "running_work",
++    "acceptances",
++    "demand",
++    "budget",
++    "inputs",
++)
++HASH = "a" * 64
++
++
++def _payload() -> dict:
++    return {
++        "schema_version": 1,
++        "decision_id": "decision-1",
++        "request_id": "request-1",
++        "mission_id": "mission-1",
++        "base_revision": 0,
++        "decision_hash": HASH,
++        "network_hash": "b" * 64,
++        "candidate_hash": "c" * 64,
++        "delta_hash": "d" * 64,
++        "read_set_hash": "e" * 64,
++        "validator_id": "validator-1",
++        "validator_version": "v1",
++        "source_reads": [
++            {"channel": channel, "identity": f"{channel}-1", "digest": HASH, "coverage": "COMPLETE"}
++            for channel in CHANNELS
++        ],
++        "pending_compound_ids": ["compound-2", "compound-1"],
++        "required_convergence_ids": ["convergence-2", "convergence-1"],
++    }
++
++
++def test_positive_payload_matches_frozen_schema() -> None:
++    payload = _payload()
++    binding = PreviewBindingV1.from_json(payload)
++    assert binding.to_json()["source_reads"][0]["channel"] == "acceptances"
++    assert binding.to_json()["pending_compound_ids"] == ["compound-1", "compound-2"]
++    schema_path = Path(
++        "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-21/taskgraph/parallel-221113/source-capture/inputs/simpleharness-taskgraph-code-plan-kit/schemas/preview-binding-v1.schema.json"
++    )
++    assert (
++        hashlib.sha256(schema_path.read_bytes()).hexdigest()
++        == os.environ["TG_REVIEWED_PREVIEW_SCHEMA_SHA256"]
++    )
++    jsonschema.Draft202012Validator(json.loads(schema_path.read_text())).validate(binding.to_json())
++
++
++@pytest.mark.parametrize("channel", CHANNELS)
++def test_each_missing_channel_is_rejected(channel: str) -> None:
++    payload = _payload()
++    payload["source_reads"] = [
++        item for item in payload["source_reads"] if item["channel"] != channel
++    ]
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++
++
++@pytest.mark.parametrize("channel", CHANNELS)
++def test_each_channel_replaced_by_unknown_is_rejected(channel: str) -> None:
++    payload = _payload()
++    next(item for item in payload["source_reads"] if item["channel"] == channel)["channel"] = (
++        "unknown"
++    )
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++
++
++@pytest.mark.parametrize("channel", CHANNELS)
++def test_each_duplicate_channel_is_rejected(channel: str) -> None:
++    payload = _payload()
++    item = copy.deepcopy(
++        next(item for item in payload["source_reads"] if item["channel"] == channel)
++    )
++    payload["source_reads"].append(item)
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++
++
++def test_incomplete_coverage_is_rejected() -> None:
++    payload = _payload()
++    payload["source_reads"][0]["coverage"] = "INCOMPLETE"
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++
++
++def test_unknown_fields_are_rejected_at_both_levels() -> None:
++    payload = _payload()
++    payload["extra"] = True
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++    payload = _payload()
++    payload["source_reads"][0]["extra"] = True
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("decision_hash", "A" * 64),
++        ("network_hash", "z" * 64),
++        ("candidate_hash", "a" * 63),
++        ("base_revision", True),
++        ("base_revision", -1),
++        ("base_revision", 9_007_199_254_740_992),
++        ("schema_version", True),
++        ("schema_version", 2),
++    ],
++)
++def test_numeric_bool_version_and_hash_bounds_are_rejected(field: str, value: object) -> None:
++    payload = _payload()
++    payload[field] = value
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++
++
++def test_duplicate_ids_are_rejected_and_valid_ids_are_sorted() -> None:
++    payload = _payload()
++    payload["pending_compound_ids"] = ["same", "same"]
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++    payload = _payload()
++    binding = PreviewBindingV1.from_json(payload)
++    assert binding.required_convergence_ids == ("convergence-1", "convergence-2")
++
++
++def test_constructor_detaches_mutable_nested_input() -> None:
++    reads = [
++        {"channel": channel, "identity": channel, "digest": HASH, "coverage": "COMPLETE"}
++        for channel in CHANNELS
++    ]
++    pending = ["pending"]
++    binding = PreviewBindingV1.from_json(
++        {**_payload(), "source_reads": reads, "pending_compound_ids": pending}
++    )
++    reads[0]["identity"] = "mutated"
++    pending.append("later")
++    request_read = next(item for item in binding.source_reads if item.channel == "request")
++    assert request_read.identity == "request"
++    assert binding.pending_compound_ids == ("pending",)
++
++
++def test_roundtrip_and_canonical_hash_are_stable() -> None:
++    first = PreviewBindingV1.from_json(_payload())
++    second = PreviewBindingV1.from_json(json.loads(first.canonical_json()))
++    assert first.to_json() == second.to_json()
++    assert first.canonical_hash() == second.canonical_hash()
++    assert first.canonical_hash() == hashlib.sha256(first.canonical_json().encode()).hexdigest()
++
++
++@pytest.mark.parametrize(
++    "field", ["decision_id", "request_id", "mission_id", "validator_id", "validator_version"]
++)
++def test_text_bounds_are_enforced(field: str) -> None:
++    payload = _payload()
++    payload[field] = "x" * 512
++    assert getattr(PreviewBindingV1.from_json(payload), field) == "x" * 512
++    payload[field] = "x" * 513
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++    payload[field] = "\ud800"
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++
++
++@pytest.mark.parametrize("field", ["pending_compound_ids", "required_convergence_ids"])
++def test_set_bounds_are_enforced(field: str) -> None:
++    payload = _payload()
++    payload[field] = [f"x-{i}" for i in range(4096)]
++    assert len(getattr(PreviewBindingV1.from_json(payload), field)) == 4096
++    payload[field] = [f"x-{i}" for i in range(4097)]
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++
++
++def test_non_string_mapping_keys_are_rejected() -> None:
++    payload = _payload()
++    payload[1] = "bad"
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++    payload = _payload()
++    payload["source_reads"][0][1] = "bad"
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json(payload)
++
++
++def test_constructor_rejects_same_invalid_shapes_as_from_json() -> None:
++    with pytest.raises(ContractError):
++        PreviewBindingV1(
++            source_reads=1,
++            **{key: value for key, value in _payload().items() if key != "source_reads"},
++        )
++    with pytest.raises(ContractError):
++        PreviewBindingV1.from_json({**_payload(), "source_reads": 1})
++
++
++def test_graph_source_read_constructor_and_from_json_share_validation() -> None:
++    with pytest.raises(ContractError):
++        GraphSourceRead(channel="request", identity="x", digest=HASH, coverage="INCOMPLETE")
++    with pytest.raises(ContractError):
++        GraphSourceRead.from_json(
++            {
++                "channel": "request",
++                "identity": "x",
++                "digest": HASH,
++                "coverage": "COMPLETE",
++                "extra": 1,
++            }
++        )
++
++
++@pytest.mark.parametrize("field", tuple(_payload()))
++def test_missing_preview_field_is_rejected(field: str) -> None:
++    payload = _payload()
++    del payload[field]
++    with pytest.raises(ContractError, match="all fields are required"):
++        PreviewBindingV1.from_json(payload)
++
++
++def test_complete_coverage_requires_explicit_constructor_input() -> None:
++    with pytest.raises(TypeError, match="coverage"):
++        GraphSourceRead(channel="request", identity="x", digest=HASH)
++
++
++def test_input_permutation_has_same_canonical_hash() -> None:
++    first = _payload()
++    second = copy.deepcopy(first)
++    second["source_reads"].reverse()
++    second["pending_compound_ids"].reverse()
++    second["required_convergence_ids"].reverse()
++    assert (
++        PreviewBindingV1.from_json(first).canonical_json()
++        == PreviewBindingV1.from_json(second).canonical_json()
++    )
+--- /dev/null
++++ b/tests/orchestrator/full_target/taskgraph_exec/test_migration_htn.py
+@@ -0,0 +1,125 @@
++# SPDX-FileCopyrightText: 2026 DennyWanye
++# SPDX-License-Identifier: Apache-2.0
++
++"""Registered migration preserves nonempty HTN rows and real command replay."""
++
++import json
++import os
++import shutil
++import sqlite3
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++from _htn_migration_fixture import build_fixture, replay_fixture
++from test_migration import descriptors, health, state
++
++from agent_orchestrator.storage import schema
++from agent_orchestrator.storage.htn_store import HtnStore
++from agent_orchestrator.storage.store import Store
++
++
++def assert_historical_difference(path, fixture):
++    with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as connection:
++        for command in fixture["commands"]:
++            difference = command["historical_difference"]
++            rows = connection.execute(
++                "SELECT binding_revision,binding_json FROM task_semantics "
++                "WHERE mission_id=? AND task_id=? ORDER BY binding_revision",
++                (command["mission_id"], difference["task_id"]),
++            ).fetchall()
++            assert [(r, json.loads(b)["contract_hash"]) for r, b in rows] == [
++                (1, difference["old_hash"]),
++                (2, "f" * 64),
++            ]
++            assert connection.execute(
++                "SELECT state FROM method_instances WHERE mission_id=? AND instance_id=?",
++                (command["mission_id"], difference["instance_id"]),
++            ).fetchall() == [("RETIRED",)]
++
++
++def test_two_real_htn_commits_survive_registered_migration_and_replay(tmp_path):
++    base = Path(os.environ["TG_BASE_SNAPSHOT"]).resolve(strict=True)
++    fixture_path = tmp_path / "producer.json"
++    original = tmp_path / "original.sqlite3"
++    script = """import json,sys
++from pathlib import Path
++from _htn_migration_fixture import build_fixture
++from agent_orchestrator.storage.store import Store
++assert Path(sys.modules[Store.__module__].__file__).resolve().is_relative_to(Path(sys.argv[1]))
++fixture=build_fixture(Path(sys.argv[1]),Path(sys.argv[2]))
++Path(sys.argv[3]).write_text(json.dumps(fixture,indent=2))
++"""
++    run = subprocess.run(
++        [sys.executable, "-c", script, str(base), str(original), str(fixture_path)],
++        env={
++            **os.environ,
++            "PYTHONDONTWRITEBYTECODE": "1",
++            "PYTHONPATH": os.pathsep.join([str(base / "src"), str(Path(__file__).parent)]),
++        },
++        cwd=tmp_path,
++        text=True,
++        capture_output=True,
++        timeout=30,
++    )
++    (tmp_path / "producer.stdout").write_text(run.stdout)
++    (tmp_path / "producer.stderr").write_text(run.stderr)
++    assert run.returncode == 0, run.stderr
++    fixture = json.loads(fixture_path.read_text())
++    assert_historical_difference(original, fixture)
++    before = state(original)
++    for table in (
++        "missions",
++        "tasks",
++        "task_semantics",
++        "method_contracts",
++        "method_instances",
++        "method_child_occurrences",
++        "plan_revisions",
++        "plan_memberships",
++        "data_requirements",
++        "requirements_revisions",
++        "budget_accounts",
++        "events",
++        "plan_commit_receipts",
++    ):
++        assert len(before["rows"][table]) >= 2, table
++    assert len(before["rows"]["missions"]) == 2
++    assert len(before["rows"]["plan_revisions"]) == 2
++    assert len(before["rows"]["orch_schema_migrations"]) == 22
++    assert len(fixture["commands"]) == 2
++    upgraded = tmp_path / "upgraded.sqlite3"
++    shutil.copy2(original, upgraded)
++    store = Store.open(upgraded)
++    store.close()
++    after = state(upgraded)
++    assert_historical_difference(upgraded, fixture)
++    for table, rows in before["rows"].items():
++        if table != "orch_schema_migrations":
++            assert after["rows"][table] == rows, table
++    assert descriptors(upgraded) == [(m.version, m.name, m.checksum) for m in schema.MIGRATIONS]
++    assert set(before["rows"]["orch_schema_migrations"]).issubset(
++        after["rows"]["orch_schema_migrations"]
++    )
++    assert len(after["rows"]["orch_schema_migrations"]) == 23
++    extension = {t for t in after["rows"] if t.startswith("taskgraph_")}
++    assert len(extension) == 9
++    assert all(after["rows"][t] == [] for t in extension)
++    store = Store.open(upgraded)
++    try:
++        replay_fixture(store, fixture)
++    finally:
++        store.close()
++    assert state(upgraded) == after
++    fresh = tmp_path / "fresh.sqlite3"
++    Store.open(fresh).close()
++    assert state(fresh)["objects"] == after["objects"]
++    health(upgraded)
++    assert state(original) == before
++
++
++def test_fixture_rejects_missing_retirement_write(tmp_path, monkeypatch):
++    monkeypatch.setattr(HtnStore, "set_method_instance_state", lambda *a: "RETIRED")
++    with pytest.raises(AssertionError, match="fixture retirement must be persisted"):
++        build_fixture(Path(__file__).resolve().parents[4], tmp_path / "negative.sqlite3")
+--- /dev/null
++++ b/tests/orchestrator/full_target/taskgraph_exec/test_network_codec.py
+@@ -0,0 +1,332 @@
++from __future__ import annotations
++
++import copy
++import hashlib
++import json
++import os
++import shutil
++import sys
++from dataclasses import FrozenInstanceError, fields, replace
++from pathlib import Path
++
++import pytest
++from jsonschema import Draft202012Validator
++
++_FULL = Path(__file__).resolve().parents[1]
++if str(_FULL) not in sys.path:
++    sys.path.insert(0, str(_FULL))
++
++from test_projection_integrity import snapshot, support_edge  # noqa: E402
++
++import agent_orchestrator.graph.network_codec as codec  # noqa: E402
++from agent_orchestrator.contracts.htn import (  # noqa: E402
++    OccurrenceId,
++    OrderConstraint,
++    PlanRevision,
++)
++from agent_orchestrator.contracts.models import ContractError  # noqa: E402
++from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind  # noqa: E402
++from agent_orchestrator.graph.network_codec import (  # noqa: E402
++    CODEC_MANIFEST_HASH,
++    decode,
++    encode,
++)
++from simple_harness.contracts import canonical_json  # noqa: E402
++
++
++def _requirements() -> TypedRef:
++    return TypedRef(
++        kind=TypedRefKind.REQUIREMENTS,
++        id="requirements-r1",
++        revision=1,
++        content_hash="a" * 64,
++    )
++
++
++def _document() -> dict[str, object]:
++    network = snapshot(typed_edges=(support_edge("evidence-1", "o-a", "support-1"),))
++    return encode(network, _requirements()).to_json()
++
++
++def test_round_trip_uses_all_seven_original_codecs_and_keeps_object_arrays() -> None:
++    document = _document()
++    kinds = [item["kind"] for item in document["objects"]]  # type: ignore[index]
++    assert set(kinds) == {
++        "occurrence",
++        "task_semantics",
++        "method_instance",
++        "order_constraint",
++        "data_requirement",
++        "typed_edge",
++        "obligation_coverage",
++    }
++    object_keys = [(item["kind"], item["identity"]) for item in document["objects"]]  # type: ignore[index]
++    assert len(object_keys) == len(set(object_keys))
++    decoded = decode(document, expected_manifest=CODEC_MANIFEST_HASH)
++    assert encode(decoded.snapshot, _requirements()).to_json() == document
++    assert decoded.document.to_json() == document
++    schema = Path(os.environ["TG_REVIEWED_NETWORK_SCHEMA"])
++    assert (
++        hashlib.sha256(schema.read_bytes()).hexdigest()
++        == os.environ["TG_REVIEWED_NETWORK_SCHEMA_SHA256"]
++    )
++    Draft202012Validator(json.loads(schema.read_text())).validate(document)
++
++
++def test_public_constructors_detach_mutable_inputs_and_require_keywords() -> None:
++    original = encode(snapshot(), _requirements())
++    roots = list(original.root_occurrence_ids)
++    adopted = list(original.adopted_instance_ids)
++    obligations = list(original.required_obligation_ids)
++    objects = list(original.objects)
++    detached = replace(
++        original,
++        root_occurrence_ids=roots,
++        adopted_instance_ids=adopted,
++        required_obligation_ids=obligations,
++        objects=objects,
++    )
++    for values in (roots, adopted, obligations, objects):
++        values.clear()
++    assert detached == original
++    assert decode(detached.to_json()).document == original
++    with pytest.raises(FrozenInstanceError):
++        detached.revision = 8
++    with pytest.raises(TypeError):
++        codec.NetworkObjectV1("occurrence", "o", "a" * 64, "{}")
++    with pytest.raises(TypeError):
++        codec.NetworkDocumentV1(*(getattr(detached, field.name) for field in fields(detached)))
++    with pytest.raises(TypeError):
++        codec.DecodedNetworkDocument(original, snapshot())
++    for changes in (
++        {"objects": [{}]},
++        {"objects": [original.objects[0]] * 2},
++        {"root_occurrence_ids": "o-a"},
++        {"root_occurrence_ids": ["o-a", "o-a"]},
++        {"root_occurrence_ids": ["\ud800"]},
++        {"revision": True},
++    ):
++        with pytest.raises(ContractError):
++            replace(original, **changes)
++    with pytest.raises(ContractError, match="manifest"):
++        replace(original, codec_manifest_hash="0" * 64)
++    with pytest.raises(ContractError, match="sha256"):
++        replace(original.objects[0], sha256="0" * 64)
++
++
++def test_composite_identity_exact_512_and_overflow_are_checked_at_encoding() -> None:
++    at_limit = OrderConstraint(before=OccurrenceId("a" * 250), after=OccurrenceId("b" * 255))
++    encoded = codec._one("order_constraint", at_limit)
++    assert len(encoded.identity) == 512
++    with pytest.raises(ContractError, match="identity"):
++        codec._one("order_constraint", replace(at_limit, before=OccurrenceId("a" * 251)))
++
++
++def test_zero_revision_matches_original_contract_and_bad_utf8_is_typed() -> None:
++    reference = replace(_requirements(), revision=0)
++    document = encode(snapshot(plan_revision=PlanRevision(0)), reference)
++    assert decode(document.to_json()).document == document
++    assert document.revision == document.requirements_ref.revision == 0
++    for field in ("identity", "canonical_json"):
++        values = dict(kind="occurrence", identity="o", sha256="a" * 64, canonical_json="{}")
++        values[field] = "\ud800"
++        with pytest.raises(ContractError, match="UTF-8"):
++            codec.NetworkObjectV1(**values)
++
++
++@pytest.mark.parametrize(
++    "mutate",
++    (
++        lambda value: value["objects"][0].__setitem__("sha256", "0" * 64),
++        lambda value: value["objects"][0].__setitem__("identity", "wrong"),
++        lambda value: value.__setitem__("codec_manifest_hash", "0" * 64),
++        lambda value: value["root_occurrence_ids"].append(value["root_occurrence_ids"][0]),
++    ),
++)
++def test_tampered_hash_identity_manifest_or_set_is_rejected(mutate) -> None:
++    document = copy.deepcopy(_document())
++    mutate(document)
++    with pytest.raises(ContractError, match="NETWORK_DOCUMENT_INVALID"):
++        decode(document)
++
++
++def test_duplicate_key_and_noncanonical_object_json_are_rejected() -> None:
++    document = _document()
++    document["objects"][0]["canonical_json"] = '{"x":1,"x":2}'  # type: ignore[index]
++    with pytest.raises(ContractError, match="duplicate JSON key"):
++        decode(document)
++
++    document = _document()
++    object_json = json.loads(document["objects"][0]["canonical_json"])  # type: ignore[index]
++    document["objects"][0]["canonical_json"] = json.dumps(object_json, indent=2)  # type: ignore[index]
++    with pytest.raises(ContractError, match="not canonical"):
++        decode(document)
++
++    document = _document()
++    document["objects"][0]["canonical_json"] = '{"value":NaN}'  # type: ignore[index]
++    with pytest.raises(ContractError, match="NETWORK_DOCUMENT_INVALID"):
++        decode(document)
++
++
++def test_bool_revision_and_non_requirements_ref_are_rejected() -> None:
++    document = _document()
++    document["revision"] = True
++    with pytest.raises(ContractError, match="revision must be an integer"):
++        decode(document)
++
++    document = _document()
++    document["requirements_ref"]["kind"] = "task"  # type: ignore[index]
++    with pytest.raises(ContractError, match="requirements_ref must be a TypedRef"):
++        decode(document)
++
++
++def _replace_object(document, kind, mutate) -> None:
++    for object_value in document["objects"]:  # type: ignore[index]
++        if object_value["kind"] == kind:
++            payload = json.loads(object_value["canonical_json"])
++            mutate(payload)
++            text = canonical_json(payload)
++            object_value["canonical_json"] = text
++            object_value["sha256"] = hashlib.sha256(text.encode()).hexdigest()
++            if kind == "order_constraint":
++                object_value["identity"] = canonical_json([payload["before"], payload["after"]])
++            return
++    raise AssertionError(f"fixture has no {kind}")
++
++
++def test_unknown_duplicate_fields_and_network_references_are_rejected() -> None:
++    document = _document()
++    document["objects"][0]["kind"] = "unknown"  # type: ignore[index]
++    with pytest.raises(ContractError, match="invalid"):
++        decode(document)
++
++    document = _document()
++    document["objects"].append(copy.deepcopy(document["objects"][0]))  # type: ignore[index]
++    with pytest.raises(ContractError, match="identity is invalid or duplicate"):
++        decode(document)
++
++    document = _document()
++    document["unknown"] = 1
++    with pytest.raises(ContractError, match="unknown or missing"):
++        decode(document)
++
++    for field in ("root_occurrence_ids", "adopted_instance_ids"):
++        document = _document()
++        document[field][0] = "missing"  # type: ignore[index]
++        document[field].sort()  # type: ignore[index]
++        with pytest.raises(ContractError, match="TaskNetworkSnapshot construction failed"):
++            decode(document)
++
++    document = _document()
++    _replace_object(
++        document, "order_constraint", lambda value: value.__setitem__("before", "missing")
++    )
++    with pytest.raises(ContractError, match="TaskNetworkSnapshot construction failed"):
++        decode(document)
++
++    document = _document()
++    _replace_object(
++        document,
++        "data_requirement",
++        lambda value: value.__setitem__("consumer_occurrence", "missing"),
++    )
++    with pytest.raises(ContractError, match="TaskNetworkSnapshot construction failed"):
++        decode(document)
++
++
++def test_sorting_internal_arrays_utf8_and_decoder_normalization_are_checked() -> None:
++    document = _document()
++    document["objects"][0], document["objects"][1] = document["objects"][1], document["objects"][0]  # type: ignore[index]
++    with pytest.raises(ContractError, match="objects must be sorted"):
++        decode(document)
++
++    document = _document()
++    document["adopted_instance_ids"].reverse()  # type: ignore[index]
++    with pytest.raises(ContractError, match="sorted and unique"):
++        decode(document)
++
++    document = _document()
++    occurrence = next(item for item in document["objects"] if item["kind"] == "occurrence")  # type: ignore[index]
++    payload = json.loads(occurrence["canonical_json"])
++    payload.pop("requiredness")
++    text = canonical_json(payload)
++    occurrence["canonical_json"] = text
++    occurrence["sha256"] = hashlib.sha256(text.encode()).hexdigest()
++    with pytest.raises(ContractError, match="does not preserve canonical_json"):
++        decode(document)
++
++    document = _document()
++    document["objects"][0]["canonical_json"] = "\ud800"  # type: ignore[index]
++    with pytest.raises(ContractError, match="invalid JSON|canonical"):
++        decode(document)
++
++
++def test_fixture_exact_capacity_and_one_byte_overflow_are_closed(monkeypatch) -> None:
++    document = _document()
++    text = canonical_json(document)
++    monkeypatch.setattr(codec, "_MAX_DOCUMENT_BYTES", len(text.encode()))
++    assert decode(document).document.to_json() == document
++    monkeypatch.setattr(codec, "_MAX_DOCUMENT_BYTES", len(text.encode()) - 1)
++    with pytest.raises(ContractError, match="exceeds 16 MiB"):
++        decode(document)
++    with pytest.raises(ContractError, match="exceeds 16 MiB"):
++        encode(
++            snapshot(typed_edges=(support_edge("evidence-1", "o-a", "support-1"),)), _requirements()
++        )
++    monkeypatch.setattr(codec, "_MAX_DOCUMENT_BYTES", 16 * 1024 * 1024)
++
++    document = _document()
++    size = max(len(item["canonical_json"].encode()) for item in document["objects"])  # type: ignore[index]
++    monkeypatch.setattr(codec, "_MAX_OBJECT_BYTES", size)
++    assert decode(document).document.to_json() == document
++    monkeypatch.setattr(codec, "_MAX_OBJECT_BYTES", size - 1)
++    with pytest.raises(ContractError, match="exceeds 8 MiB"):
++        decode(document)
++    with pytest.raises(ContractError, match="exceeds 8 MiB"):
++        encode(
++            snapshot(typed_edges=(support_edge("evidence-1", "o-a", "support-1"),)), _requirements()
++        )
++
++
++@pytest.mark.parametrize(
++    "changed_path",
++    (
++        "simple_harness/contracts/json.py",
++        "agent_orchestrator/contracts/semantic_base.py",
++        "agent_orchestrator/contracts/evidence_state.py",
++        "simple_harness/contracts/__init__.py",
++        "simple_harness/contracts/errors.py",
++        "agent_orchestrator/contracts/state_machines.py",
++        "agent_orchestrator/graph/network_codec.py",
++    ),
++)
++def test_manifest_rejects_runtime_dependency_drift_in_isolated_copy(
++    tmp_path, monkeypatch, changed_path
++) -> None:
++    root = tmp_path / "src"
++    manifest_dir = root / "agent_orchestrator/graph"
++    manifest_dir.mkdir(parents=True)
++    shutil.copy(codec.__file__, manifest_dir / "network_codec.py")
++    shutil.copy(
++        Path(codec.__file__).with_name("network_codec_manifest_v4.json"),
++        manifest_dir / "network_codec_manifest_v4.json",
++    )
++    for source_path in (
++        "simple_harness/contracts/json.py",
++        "simple_harness/contracts/__init__.py",
++        "simple_harness/contracts/errors.py",
++        "agent_orchestrator/contracts/state_machines.py",
++        "agent_orchestrator/contracts/semantic_base.py",
++        "agent_orchestrator/contracts/evidence_state.py",
++        "agent_orchestrator/contracts/models.py",
++        "agent_orchestrator/contracts/htn.py",
++        "agent_orchestrator/graph/task_network.py",
++    ):
++        target = root / source_path
++        target.parent.mkdir(parents=True, exist_ok=True)
++        shutil.copy(Path(codec.__file__).parents[2] / source_path, target)
++    drift = root / changed_path
++    drift.write_bytes(drift.read_bytes() + b"\n# isolated drift\n")
++    monkeypatch.setattr(codec, "__file__", str(manifest_dir / "network_codec.py"))
++    with pytest.raises(ContractError, match="source hash changed"):
++        codec._manifest()
+--- /dev/null
++++ b/tests/orchestrator/full_target/taskgraph_exec/test_structural_diff.py
+@@ -0,0 +1,203 @@
++from __future__ import annotations
++
++import hashlib
++import json
++import os
++import sys
++from dataclasses import FrozenInstanceError, replace
++from pathlib import Path
++
++import pytest
++from jsonschema import Draft202012Validator
++
++_FULL = Path(__file__).resolve().parents[1]
++if str(_FULL) not in sys.path:
++    sys.path.insert(0, str(_FULL))
++
++from test_projection_integrity import snapshot, support_edge  # noqa: E402
++
++from agent_orchestrator.contracts.htn import MissionRef, PlanRevision, Requiredness  # noqa: E402
++from agent_orchestrator.contracts.models import ContractError  # noqa: E402
++from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind  # noqa: E402
++from agent_orchestrator.graph.network_codec import encode  # noqa: E402
++from agent_orchestrator.graph.structural_diff import (  # noqa: E402
++    StructuralChange,
++    TaskGraphDiffV1,
++    diff_documents,
++)
++from simple_harness.contracts import canonical_json  # noqa: E402
++
++
++def document(**changes):
++    return encode(
++        snapshot(**changes),
++        TypedRef(
++            kind=TypedRefKind.REQUIREMENTS,
++            id="requirements-r1",
++            revision=1,
++            content_hash="a" * 64,
++        ),
++    )
++
++
++def test_all_changes_are_reported_with_exact_original_object_hashes():
++    before = document(typed_edges=(support_edge("e-old", "o-a", "support-old"),))
++    old_network = snapshot()
++    changed_occurrences = tuple(
++        replace(item, requiredness=Requiredness.OPTIONAL_AUTHORIZED)
++        if str(item.occurrence_id) == "o-a"
++        else item
++        for item in old_network.occurrences
++    )
++    after = document(
++        plan_revision=PlanRevision(2),
++        occurrences=changed_occurrences,
++        typed_edges=(support_edge("e-new", "o-d", "support-new"),),
++    )
++    result = diff_documents(before, after)
++    old = {(item.kind, item.identity): item.sha256 for item in before.objects}
++    new = {(item.kind, item.identity): item.sha256 for item in after.objects}
++    assert len(result.changes) == 3
++    assert {(item.kind, item.identity) for item in result.changes} == {
++        ("occurrence", "o-a"),
++        *((item.kind, item.identity) for item in before.objects if item.kind == "typed_edge"),
++        *((item.kind, item.identity) for item in after.objects if item.kind == "typed_edge"),
++    }
++    for item in result.changes:
++        assert item.before_hash == old.get((item.kind, item.identity))
++        assert item.after_hash == new.get((item.kind, item.identity))
++    assert (
++        result.from_manifest_hash
++        == hashlib.sha256(canonical_json(before.to_json()).encode()).hexdigest()
++    )
++    assert (
++        result.to_manifest_hash
++        == hashlib.sha256(canonical_json(after.to_json()).encode()).hexdigest()
++    )
++    assert TaskGraphDiffV1.from_json(result.to_json()) == result
++    schema = Path(os.environ["TG_REVIEWED_DIFF_SCHEMA"])
++    assert (
++        hashlib.sha256(schema.read_bytes()).hexdigest()
++        == os.environ["TG_REVIEWED_DIFF_SCHEMA_SHA256"]
++    )
++    Draft202012Validator(json.loads(schema.read_text())).validate(result.to_json())
++    reverse = diff_documents(after, before)
++    assert tuple(
++        (c.kind, c.identity, c.after_hash, c.before_hash) for c in reverse.changes
++    ) == tuple((c.kind, c.identity, c.before_hash, c.after_hash) for c in result.changes)
++
++
++def test_identical_documents_and_top_level_roots_are_not_invented_objects():
++    before = document()
++    assert diff_documents(before, before).changes == ()
++    after = replace(before, revision=2, root_occurrence_ids=("o-a", "o-root"))
++    result = diff_documents(before, after)
++    assert result.changes == ()
++    assert result.from_manifest_hash != result.to_manifest_hash
++    assert set(result.to_json()) == {
++        "schema_version",
++        "mission_id",
++        "from_revision",
++        "to_revision",
++        "from_manifest_hash",
++        "to_manifest_hash",
++        "changes",
++        "complete",
++    }
++
++
++def test_cross_mission_is_rejected_without_disclosing_source_identity():
++    before = document()
++    after = document(mission_id=MissionRef("private-other-mission"))
++    with pytest.raises(ContractError, match="source missions differ") as error:
++        diff_documents(before, after)
++    assert "private-other-mission" not in str(error.value)
++
++
++def test_one_revision_cannot_have_different_structure():
++    before = document()
++    after = replace(before, root_occurrence_ids=("o-a", "o-root"))
++    with pytest.raises(ContractError, match="one immutable revision"):
++        diff_documents(before, after)
++
++
++def test_decoder_validation_is_not_bypassed_by_direct_document_construction():
++    before = document()
++    with pytest.raises(ContractError):
++        bad_object = replace(before.objects[0], sha256="0" * 64)
++        after = replace(before, revision=2, objects=(bad_object, *before.objects[1:]))
++        diff_documents(before, after)
++
++
++@pytest.mark.parametrize(
++    "before,after",
++    [(None, None), ("a" * 64, "a" * 64), ("bad", None), (None, "F" * 64), (True, None)],
++)
++def test_invalid_change_hash_pairs_reject(before, after):
++    with pytest.raises(ContractError):
++        StructuralChange(kind="occurrence", identity="o-a", before_hash=before, after_hash=after)
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("schema_version", True),
++        ("schema_version", 2),
++        ("from_revision", True),
++        ("to_revision", -1),
++        ("from_revision", 2**53),
++        ("mission_id", " "),
++        ("mission_id", "x" * 513),
++        ("mission_id", "\ud800"),
++        ("from_manifest_hash", "A" * 64),
++        ("complete", False),
++        ("complete", 1),
++        ("extra", 1),
++        ("changes", {}),
++    ],
++)
++def test_invalid_public_diff_fields_reject(field, value):
++    raw = diff_documents(document(), document(plan_revision=PlanRevision(2))).to_json()
++    raw[field] = value
++    with pytest.raises(ContractError):
++        TaskGraphDiffV1.from_json(raw)
++
++
++def test_missing_fields_duplicate_changes_and_mutable_aliases_are_rejected_or_detached():
++    raw = diff_documents(document(), document(plan_revision=PlanRevision(2))).to_json()
++    for field in raw:
++        missing = {key: value for key, value in raw.items() if key != field}
++        with pytest.raises(ContractError, match="missing or unknown"):
++            TaskGraphDiffV1.from_json(missing)
++    change = StructuralChange(
++        kind="occurrence", identity="o-a", before_hash=None, after_hash="a" * 64
++    )
++    raw["changes"] = [change.to_json(), change.to_json()]
++    with pytest.raises(ContractError, match="duplicate change"):
++        TaskGraphDiffV1.from_json(raw)
++    mutable = [change]
++    result = TaskGraphDiffV1(
++        mission_id="m",
++        from_revision=0,
++        to_revision=2**53 - 1,
++        from_manifest_hash="b" * 64,
++        to_manifest_hash="c" * 64,
++        changes=mutable,
++        complete=True,
++    )
++    mutable.clear()
++    assert result.changes == (change,)
++    with pytest.raises(FrozenInstanceError):
++        result.complete = False
++
++
++def test_diff_overflow_rejects_instead_of_truncating(monkeypatch):
++    import agent_orchestrator.graph.structural_diff as module
++
++    before = document()
++    after = document(
++        plan_revision=PlanRevision(2), typed_edges=(support_edge("e-new", "o-a", "s"),)
++    )
++    monkeypatch.setattr(module, "_MAX_CHANGES", 0)
++    with pytest.raises(ContractError, match="complete difference exceeds"):
++        diff_documents(before, after)

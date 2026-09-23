@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "authorization_id": "example",
+  "request_key": "example",
+  "session_id": "example",
+  "agent_id": "example",
+  "caller_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "owner_contract_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "purpose": "CONTEXT_DISCLOSE",
+  "subject_refs": [],
+  "input_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "decision": "ALLOW",
+  "scope_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "policy_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "original_decision_receipt_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "observed_at_ms": 1,
+  "expires_at_ms": 1
+}

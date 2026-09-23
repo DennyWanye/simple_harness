@@ -1,0 +1,74 @@
+[
+  {
+    "id": "F-M01",
+    "mutation": "key evidence by id alone",
+    "must_be_killed_by": "F03",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M02",
+    "mutation": "ERROR -> PASS",
+    "must_be_killed_by": "F04",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M03",
+    "mutation": "SEMANTIC requires synthetic True check",
+    "must_be_killed_by": "F04",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M04",
+    "mutation": "key all invocations by Task subject",
+    "must_be_killed_by": "F05",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M05",
+    "mutation": "old judge directly releases pools",
+    "must_be_killed_by": "F06",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M06",
+    "mutation": "restored binding treated as current auth",
+    "must_be_killed_by": "F07",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M07",
+    "mutation": "put_source bypass epoch",
+    "must_be_killed_by": "F08",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M08",
+    "mutation": "cursor advances before pending insert",
+    "must_be_killed_by": "F09",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M09",
+    "mutation": "allow initial FINALIZED",
+    "must_be_killed_by": "F11",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M10",
+    "mutation": "allow final DELETE/REPLACE",
+    "must_be_killed_by": "F11",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M11",
+    "mutation": "allow BOUND pin without review",
+    "must_be_killed_by": "F11",
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "F-M12",
+    "mutation": "drop resolved schema hashes",
+    "must_be_killed_by": "F12",
+    "status": "PENDING_SDK_EXECUTION"
+  }
+]

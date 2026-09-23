@@ -1,0 +1,1015 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+
+"""Single-owner durable coordination around the stateless Provider port."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import logging
+import time
+from collections.abc import Callable, Mapping
+from contextlib import nullcontext
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Protocol, cast
+
+from simple_harness.contracts import (
+    FrozenJsonValue,
+    HarnessError,
+    RequestId,
+    RunId,
+    canonical_json,
+    thaw_json,
+)
+from simple_harness.observability import CorrelationContext, ObservabilityRuntime, Outcome
+from simple_harness.providers import (
+    CancelToken,
+    Provider,
+    ProviderAccountingIdentity,
+    ProviderAccountingObservation,
+    ProviderAccountingPort,
+    ProviderAccountingState,
+    ProviderAuthenticationError,
+    ProviderCancelledError,
+    ProviderPaymentRequiredError,
+    ProviderProtocolError,
+    ProviderRateLimitError,
+    ProviderReconciliationPort,
+    ProviderReconciliationState,
+    ProviderRequest,
+    ProviderRequestRejectedError,
+    ProviderResponse,
+    ProviderServerError,
+    ProviderUsage,
+)
+from simple_harness.providers.base import (
+    ProviderContinuationCapability,
+    ProviderContinuationMode,
+)
+
+from .budget import (
+    BudgetCharge,
+    BudgetPolicy,
+    BudgetSnapshot,
+    FrozenPriceEstimator,
+    budget_policy_fingerprint,
+)
+from .provider_admission import ProviderAdmissionPort
+from .provider_invocations import (
+    ProviderInvocationRecord,
+    ProviderInvocationState,
+    provider_invocation_id,
+    provider_request_fingerprint,
+    provider_request_json,
+    provider_response_from_json,
+    provider_response_json,
+)
+from .recovery import ResolutionOutcome
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from simple_harness.workflow.lease import WorkflowLease
+
+    from .recovery import ReconciliationResolution
+    from .uow import ExecutionLease
+
+
+class ProviderInvocationUnitOfWork(Protocol):
+    """SQLite implementation owns every method and its transaction boundary."""
+
+    def claim_provider_invocation(
+        self,
+        record: ProviderInvocationRecord,
+        *,
+        budget_policy: BudgetPolicy,
+        execution_lease: ExecutionLease,
+        context_use_grant=None,
+    ) -> ProviderInvocationRecord: ...
+
+    def read_provider_invocation(self, invocation_id: str) -> ProviderInvocationRecord | None: ...
+
+    def prepare_provider_context_use(self, attempt, *, execution_lease, now, retry=False): ...
+    def read_provider_context_use_grant(self, invocation_id, handoff_ordinal): ...
+    def read_provider_context_use(self, run_id, request_id): ...
+    def verify_provider_context_use_terminal(self, run_id, request_id, checkpoint, lease, now): ...
+
+    def hand_off_provider_invocation(
+        self,
+        invocation_id: str,
+        *,
+        expected_version: int,
+        handed_off_at: float,
+        execution_lease: ExecutionLease,
+        workflow_lease: WorkflowLease | None = None,
+    ) -> ProviderInvocationRecord: ...
+
+    def settle_provider_invocation(
+        self,
+        record: ProviderInvocationRecord,
+        *,
+        expected_version: int,
+        fault: Callable[[str], None] | None = None,
+        require_expired_runtime_lease: bool = False,
+    ) -> ProviderInvocationRecord: ...
+
+    def list_incomplete_provider_invocations(
+        self,
+    ) -> tuple[ProviderInvocationRecord, ...]: ...
+
+    def read_provider_budget(self, run_id: RunId) -> BudgetSnapshot: ...
+
+    def list_pending_provider_accounting(self) -> tuple[ProviderInvocationRecord, ...]: ...
+
+    def record_provider_accounting(self, record, *, observation, now, fault=None): ...
+
+    def record_provider_reconciliation(
+        self,
+        record: ProviderInvocationRecord,
+        *,
+        outcome: ResolutionOutcome,
+        response_json: object | None,
+        usage_json: object | None,
+        budget_charge: BudgetCharge,
+        evidence_ref: str,
+        now: float,
+        fault: Callable[[str], None] | None = None,
+    ) -> ProviderInvocationRecord: ...
+
+    def read_reconciliation_resolution(
+        self, *, kind: str, ledger_identity: str, handoff_attempt: int
+    ) -> ReconciliationResolution | None: ...
+
+    def reauthorize_provider_not_started(
+        self,
+        record: ProviderInvocationRecord,
+        *,
+        resolution,
+        execution_lease: ExecutionLease,
+        now: float,
+        context_use_grant=None,
+    ) -> ProviderInvocationRecord: ...
+
+
+def provider_binding_fingerprint(
+    budget_policy: BudgetPolicy,
+    estimator: FrozenPriceEstimator | None,
+    continuation_capability: ProviderContinuationCapability,
+) -> str:
+    return hashlib.sha256(
+        canonical_json(
+            {
+                "schema_version": 2,
+                "budget_policy_fingerprint": budget_policy_fingerprint(budget_policy, estimator),
+                "continuation_capability_fingerprint": (continuation_capability.fingerprint),
+            }
+        ).encode()
+    ).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderBinding:
+    """Immutable physical Provider and budget authority for one Run."""
+
+    provider: Provider
+    estimator: FrozenPriceEstimator | None
+    budget_policy: BudgetPolicy
+    continuation_capability: ProviderContinuationCapability = ProviderContinuationCapability()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.continuation_capability, ProviderContinuationCapability):
+            raise TypeError("continuation_capability must use ProviderContinuationCapability")
+        if self.continuation_capability.mode is ProviderContinuationMode.REJECT:
+            raise ValueError("provider is rejected by durable continuation policy")
+        if self.estimator is not None:
+            self.estimator.bind(self.provider.target)
+
+    @property
+    def budget_fingerprint(self) -> str:
+        return provider_binding_fingerprint(
+            self.budget_policy, self.estimator, self.continuation_capability
+        )
+
+
+class ProviderBindingResolver(Protocol):
+    def resolve(self, run_id: RunId) -> ProviderBinding: ...
+
+
+class ProviderInvocationUnknownError(HarnessError):
+    def __init__(self, invocation: ProviderInvocationRecord | None = None) -> None:
+        super().__init__(
+            "provider_invocation_unknown",
+            "Provider invocation outcome is unknown and cannot be replayed.",
+            retryable=False,
+        )
+        self.invocation = invocation
+
+
+class ProviderInvocationFailedError(HarnessError):
+    def __init__(self, error_code: str | None) -> None:
+        super().__init__(
+            "provider_invocation_failed",
+            "Provider invocation already failed.",
+            retryable=False,
+        )
+        self.provider_error_code = error_code
+
+
+class ProviderInvocationConflictError(HarnessError):
+    def __init__(self, public_message: str = "Provider invocation already handed off.") -> None:
+        super().__init__(
+            "provider_invocation_conflict",
+            public_message,
+            retryable=False,
+        )
+
+
+_DEFINITE_PROVIDER_FAILURES = (
+    ProviderAuthenticationError,
+    ProviderPaymentRequiredError,
+    ProviderProtocolError,
+    ProviderRateLimitError,
+    ProviderRequestRejectedError,
+    ProviderServerError,
+)
+
+
+def _underlying_handoff_error(exc: BaseException) -> BaseException:
+    """Innermost ``__cause__`` / ``__context__``; cycle-safe."""
+
+    seen: set[int] = set()
+    current = exc
+    while True:
+        ident = id(current)
+        if ident in seen:
+            return current
+        seen.add(ident)
+        nxt = current.__cause__ if current.__cause__ is not None else current.__context__
+        if nxt is None:
+            return current
+        current = nxt
+
+
+def _handoff_unknown_diagnostics(exc: BaseException) -> dict[str, object]:
+    """Short class name and HTTP status only. Never body, headers, or secrets.
+
+    Walk ``__cause__`` / ``__context__`` so a wrapper (MeteredProvider's
+    ``UnknownProviderUsage``) does not hide the underlying class and HTTP
+    status.  The wrapper is recorded separately as ``wrapper_class``.
+    """
+
+    root = _underlying_handoff_error(exc)
+    payload: dict[str, object] = {"error_class": type(root).__name__}
+    if type(root) is not type(exc):
+        payload["wrapper_class"] = type(exc).__name__
+    status = None
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        candidate = getattr(current, "status_code", None)
+        if isinstance(candidate, int) and not isinstance(candidate, bool):
+            status = candidate
+        current = current.__cause__ if current.__cause__ is not None else current.__context__
+    if status is not None:
+        payload["http_status"] = status
+    return payload
+
+
+class ProviderInvocationCoordinator:
+    """Durably claim, hand off once, and CAS-settle one Provider request."""
+
+    def __init__(
+        self,
+        *,
+        uow: ProviderInvocationUnitOfWork,
+        provider: Provider | None = None,
+        budget_policy: BudgetPolicy | None = None,
+        estimator: FrozenPriceEstimator | None = None,
+        resolver: ProviderBindingResolver | None = None,
+        context_use_authority=None,
+        provider_admission: ProviderAdmissionPort | None = None,
+        request_preparer: Callable[[ProviderRequest], ProviderRequest] | None = None,
+        clock=time.time,
+    ) -> None:
+        self._uow = uow
+        self._provider_admission = provider_admission
+        self._request_preparer = request_preparer
+        self._active_provider_calls: set[str] = set()
+        if resolver is None:
+            if provider is None or budget_policy is None:
+                raise TypeError("provider and budget_policy are required without resolver")
+            self._legacy_binding: ProviderBinding | None = ProviderBinding(
+                provider, estimator, budget_policy
+            )
+        else:
+            if provider is not None or budget_policy is not None or estimator is not None:
+                raise TypeError("resolver is mutually exclusive with fixed authority")
+            self._legacy_binding = None
+        self._resolver = resolver
+        self._clock = clock
+        self._context_use_authority = context_use_authority
+        if context_use_authority is not None:
+            from .context_use import _text
+
+            _text(context_use_authority.authority_scope_ref)
+            if not callable(getattr(context_use_authority, "authorize_recall_context_use", None)):
+                raise TypeError("context_use_authority_invalid")
+        configure = getattr(uow, "configure_context_use_authority", None)
+        if configure is not None:
+            configure(self.context_use_authority_scope)
+        elif context_use_authority is not None:
+            raise TypeError("context_use_durable_admission_port_required")
+        self._observability: ObservabilityRuntime | None = None
+
+    def _emit_attempt(
+        self,
+        record: ProviderInvocationRecord,
+        *,
+        outcome: Outcome,
+        error_code: str | None = None,
+    ) -> None:
+        if self._observability is None:
+            return
+        self._observability.emit_transition(
+            f"provider_attempt.{outcome.value}",
+            component="provider",
+            operation="invoke",
+            outcome=outcome,
+            correlation=CorrelationContext.from_authority_ids(
+                run_id=record.run_id.value,
+                request_id=record.request_id.value,
+                operation_id=record.invocation_id,
+            ),
+            attributes={
+                "entity_kind": "provider_attempt",
+                "entity_id": record.invocation_id,
+                "run_id": record.run_id.value,
+                "attempt": record.handoff_attempt,
+                "state_version": record.version,
+                "to_state": record.state.value,
+                "error_code": error_code,
+            },
+        )
+
+    def resolve(self, run_id: RunId) -> ProviderBinding:
+        binding = self._legacy_binding if self._resolver is None else self._resolver.resolve(run_id)
+        if not isinstance(binding, ProviderBinding):
+            raise TypeError("provider resolver must return ProviderBinding")
+        return binding
+
+    def budget_policy_fingerprint_for(self, run_id: RunId) -> str:
+        return self.resolve(run_id).budget_fingerprint
+
+    @property
+    def budget_policy_fingerprint(self) -> str:
+        if self._legacy_binding is None:
+            raise RuntimeError("per-Run provider authority has no global fingerprint")
+        return self._legacy_binding.budget_fingerprint
+
+    async def prepare_claim(
+        self,
+        run_id: RunId,
+        request: ProviderRequest,
+        *,
+        execution_lease: ExecutionLease,
+        context_use=None,
+    ) -> ProviderInvocationRecord:
+        from .runtime_audit import runtime_operation
+
+        with runtime_operation(
+            self._uow,
+            "provider.prepare",
+            lease=execution_lease,
+            clock=self._clock,
+            identity={"run": run_id.value, "request": provider_request_fingerprint(request)},
+        ):
+            return await self._prepare_claim_with_binding(
+                run_id,
+                request,
+                execution_lease=execution_lease,
+                binding=self.resolve(run_id),
+                context_use=context_use,
+            )
+
+    async def _prepare_claim_with_binding(
+        self,
+        run_id: RunId,
+        request: ProviderRequest,
+        *,
+        execution_lease: ExecutionLease,
+        binding: ProviderBinding,
+        context_use=None,
+    ) -> ProviderInvocationRecord:
+        if execution_lease.run_id != run_id.value or execution_lease.namespace != "runtime.kernel":
+            raise ProviderInvocationConflictError(
+                "Provider invocation requires the canonical Run lease."
+            )
+        fingerprint = provider_request_fingerprint(request)
+        invocation_id = provider_invocation_id(run_id, request.request_id)
+        reservation = (
+            BudgetCharge.unknown()
+            if binding.estimator is None
+            else binding.estimator.estimate_upper_bound(request)
+        )
+        record = ProviderInvocationRecord.claimed(
+            invocation_id=invocation_id,
+            run_id=run_id,
+            request_id=request.request_id,
+            request_fingerprint=fingerprint,
+            target=binding.provider.target,
+            estimator_snapshot=(
+                None if binding.estimator is None else binding.estimator.snapshot_json()
+            ),
+            estimator_digest=(
+                None if binding.estimator is None else binding.estimator.snapshot_digest
+            ),
+            reservation=reservation,
+            claimed_at=self._clock(),
+            request_json=provider_request_json(request),
+        )
+        extra = {}
+        if self._context_use_authority is not None or context_use is not None:
+            from .context_use import ProviderContextUseAttemptV1
+
+            if (
+                self._context_use_authority is None
+                or type(context_use) is not ProviderContextUseAttemptV1
+            ):
+                raise ProviderInvocationConflictError("context_use_required")
+            context_use.validate_provider_request(run_id, request)
+            existing = self._uow.read_provider_invocation(invocation_id)
+            grant = self._uow.read_provider_context_use_grant(invocation_id, 1)
+            if existing is not None and grant is None:
+                raise ProviderInvocationConflictError("context_use_legacy_claim_missing_carrier")
+            extra["context_use_grant"] = await self._authorize_context_use(
+                context_use, execution_lease
+            )
+            record = replace(record, claimed_at=self._clock())
+        claimed = self._uow.claim_provider_invocation(
+            record,
+            budget_policy=binding.budget_policy,
+            execution_lease=execution_lease,
+            **extra,
+        )
+        if (
+            claimed.run_id != run_id
+            or claimed.request_id != request.request_id
+            or claimed.request_fingerprint != fingerprint
+            or claimed.target != binding.provider.target
+            or claimed.target_digest != record.target_digest
+            or claimed.estimator_digest != record.estimator_digest
+        ):
+            raise ProviderInvocationConflictError("Provider invocation identity conflict.")
+        return claimed
+
+    @property
+    def context_use_required(self):
+        return self._context_use_authority is not None
+
+    @property
+    def context_use_authority_scope(self):
+        return (
+            None
+            if self._context_use_authority is None
+            else self._context_use_authority.authority_scope_ref
+        )
+
+    async def _authorize_context_use(self, attempt, lease, *, retry=False):
+        from .context_use import ProviderContextUseGrantV1
+
+        if attempt.authority_scope_ref != self.context_use_authority_scope:
+            raise ProviderInvocationConflictError("context_use_authority_scope_differs")
+        invocation_id = provider_invocation_id(
+            RunId(attempt.run_id), RequestId(attempt.provider_request_id)
+        )
+        existing = self._uow.read_provider_context_use_grant(invocation_id, attempt.handoff_ordinal)
+        if existing is not None:
+            comparison = attempt.to_json()
+            if retry:
+                comparison["requested_at"] = existing.attempt.requested_at
+            if comparison != existing.attempt.to_json():
+                raise ProviderInvocationConflictError("context_use_attempt_conflict")
+            return existing
+        prepared = self._uow.prepare_provider_context_use(
+            attempt, execution_lease=lease, now=self._clock(), retry=retry
+        )
+        receipts = []
+        for intent in prepared.intents:
+            receipts.append(
+                await self._context_use_authority.authorize_recall_context_use(
+                    intent.request(prepared)
+                )
+            )
+        return ProviderContextUseGrantV1(prepared, tuple(receipts))
+
+    def read_provider_context_use(self, run_id, request_id):
+        return self._uow.read_provider_context_use(run_id, request_id)
+
+    async def prepare_context_use_terminal(self, run_id, request, *, checkpoint, execution_lease):
+        """Host terminal decision, called only after durable response checkpoint.
+
+        Overrides may raise the exact MandatoryContextActionRequired rejection.
+        They must not replace this invocation's physical success or its usage.
+        The normal terminal verification still runs after this hook succeeds.
+        """
+        self._uow.verify_provider_context_use_terminal(
+            run_id, request.request_id, checkpoint, execution_lease, self._clock()
+        )
+
+    def verify_context_use_terminal(self, run_id, request_id, *, checkpoint, execution_lease):
+        if not self.context_use_required:
+            raise ValueError("context_use_terminal_authority_required")
+        return self._uow.verify_provider_context_use_terminal(
+            run_id, request_id, checkpoint, execution_lease, self._clock()
+        )
+
+    def read_provider_budget(self, run_id: RunId) -> BudgetSnapshot:
+        """Expose the durable budget authority without leaking the UoW."""
+
+        return self._uow.read_provider_budget(run_id)
+
+    def continuation_capability_for(self, run_id: RunId) -> ProviderContinuationCapability:
+        return self.resolve(run_id).continuation_capability
+
+    async def invoke(
+        self,
+        run_id: RunId,
+        request: ProviderRequest,
+        *,
+        cancel: CancelToken,
+        execution_lease: ExecutionLease,
+        workflow_lease: WorkflowLease | None = None,
+        context_use=None,
+    ) -> ProviderResponse:
+        if execution_lease.run_id != run_id.value or execution_lease.namespace != "runtime.kernel":
+            raise ProviderInvocationConflictError(
+                "Provider invocation requires the canonical Run lease."
+            )
+        from .runtime_audit import runtime_operation
+
+        with runtime_operation(
+            self._uow,
+            "provider.prepare",
+            lease=execution_lease,
+            clock=self._clock,
+            identity={"run": run_id.value, "request": provider_request_fingerprint(request)},
+        ) as receipt:
+            binding = self.resolve(run_id)
+            record = await self._prepare_claim_with_binding(
+                run_id,
+                request,
+                execution_lease=execution_lease,
+                binding=binding,
+                context_use=context_use,
+            )
+            receipt["invocation"] = record.invocation_id
+            receipt["version"] = record.version
+        if record.state is ProviderInvocationState.SUCCEEDED:
+            if record.response_json is None:
+                raise ProviderInvocationUnknownError(record)
+            return provider_response_from_json(
+                thaw_json(cast(FrozenJsonValue, record.response_json)),
+                expected_capability=binding.continuation_capability,
+            )
+        if record.state is ProviderInvocationState.FAILED:
+            raise ProviderInvocationFailedError(record.error_code)
+        if record.state is ProviderInvocationState.UNKNOWN:
+            resolution = self._uow.read_reconciliation_resolution(
+                kind="provider",
+                ledger_identity=record.invocation_id,
+                handoff_attempt=record.handoff_attempt,
+            )
+            if (
+                resolution is None
+                or resolution.outcome is not ResolutionOutcome.CONFIRMED_NOT_STARTED
+            ):
+                raise ProviderInvocationUnknownError(record)
+            extra = {}
+            if self.context_use_required:
+                retry = context_use.next_handoff(self._clock())
+                if retry.handoff_ordinal != record.handoff_attempt + 1:
+                    raise ProviderInvocationConflictError("context_use_retry_ordinal_differs")
+                extra["context_use_grant"] = await self._authorize_context_use(
+                    retry, execution_lease, retry=True
+                )
+            record = self._uow.reauthorize_provider_not_started(
+                record,
+                resolution=resolution,
+                execution_lease=execution_lease,
+                now=self._clock(),
+                **extra,
+            )
+        if record.state is ProviderInvocationState.HANDED_OFF:
+            raise ProviderInvocationConflictError()
+        wire_request = (
+            request if self._request_preparer is None else self._request_preparer(request)
+        )
+        capacity = getattr(binding.provider, "deployment_capacity", None)
+        if capacity is not None:
+            capacity.recover(self._uow)
+        async with (
+            capacity.guard(wire_request, cancel=cancel,
+                           key=capacity.record_key(self._uow, record))
+            if capacity is not None else nullcontext(None)
+        ) as capacity_handle:
+            return await self._invoke_physical(
+                record, binding, wire_request, cancel=cancel,
+                execution_lease=execution_lease, workflow_lease=workflow_lease,
+                capacity_handle=capacity_handle,
+            )
+
+    async def _invoke_physical(
+        self, record, binding, wire_request, *, cancel, execution_lease,
+        workflow_lease, capacity_handle=None,
+    ) -> ProviderResponse:
+        ticket = None
+        if self._provider_admission is not None:
+            ticket = await self._provider_admission.acquire(
+                request=wire_request,
+                record=record,
+                cancel=cancel,
+                uow=self._uow,
+                execution_lease=execution_lease,
+            )
+        active_here = False
+        try:
+            if record.invocation_id in self._active_provider_calls:
+                raise ProviderInvocationConflictError()
+            self._active_provider_calls.add(record.invocation_id)
+            active_here = True
+            try:
+                with (
+                    self._provider_admission.handoff(ticket, request=wire_request, cancel=cancel)
+                    if self._provider_admission is not None and ticket is not None
+                    else nullcontext()
+                ):
+                    if capacity_handle is not None:
+                        capacity_handle.handoff()
+                    handed_off = self._uow.hand_off_provider_invocation(
+                        record.invocation_id,
+                        expected_version=record.version,
+                        handed_off_at=self._clock(),
+                        execution_lease=execution_lease,
+                        workflow_lease=workflow_lease,
+                    )
+            except ValueError as exc:
+                current = self._uow.read_provider_invocation(record.invocation_id)
+                if current is not None and current.state is ProviderInvocationState.HANDED_OFF:
+                    raise ProviderInvocationConflictError() from exc
+                raise
+            self._emit_attempt(handed_off, outcome=Outcome.STARTED)
+
+            try:
+                response = await binding.provider.invoke(wire_request, cancel=cancel)
+            except _DEFINITE_PROVIDER_FAILURES as exc:
+                failed = handed_off.settle_failed(
+                    error_code=str(exc.code),
+                    at=self._clock(),
+                    expected_version=handed_off.version,
+                )
+                # A real empty/length response is a terminal billed call. Preserve
+                # its observed usage for the next admission and eventual import.
+                detail = getattr(exc, "detail", None)
+                observed = detail.get("usage") if isinstance(detail, Mapping) else None
+                if isinstance(observed, Mapping):
+                    usage = ProviderUsage(
+                        input_tokens=observed["input_tokens"],
+                        output_tokens=observed["output_tokens"],
+                        total_tokens=observed["total_tokens"],
+                        reasoning_tokens=observed.get("reasoning_tokens"),
+                    )
+                    failed_charge = (
+                        binding.estimator.charge_usage(usage)
+                        if binding.estimator is not None
+                        else BudgetCharge.unknown()
+                    )
+                    failed = replace(
+                        failed,
+                        usage_json={"usage": dict(observed), "budget": failed_charge.to_json()},
+                        budget_charge=failed_charge,
+                    )
+                self._uow.settle_provider_invocation(failed, expected_version=handed_off.version)
+                self._emit_attempt(failed, outcome=Outcome.FAILED, error_code=str(exc.code))
+                raise
+            except (ProviderCancelledError, asyncio.CancelledError) as exc:
+                unknown = await self._settle_unknown(
+                    handed_off,
+                    "provider_cancelled_after_handoff",
+                    diagnostics=_handoff_unknown_diagnostics(exc),
+                )
+                raise ProviderInvocationUnknownError(unknown) from exc
+            except BaseException as exc:
+                unknown = await self._settle_unknown(
+                    handed_off,
+                    "provider_error_after_handoff",
+                    diagnostics=_handoff_unknown_diagnostics(exc),
+                )
+                raise ProviderInvocationUnknownError(unknown) from exc
+
+            charge = self._response_charge(response, handed_off.budget_charge, binding=binding)
+            usage_json = {
+                "usage": (
+                    None
+                    if response.usage is None
+                    else {
+                        "input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                        "total_tokens": response.usage.total_tokens,
+                        "cache_tokens": response.usage.cache_tokens,
+                        "reasoning_tokens": response.usage.reasoning_tokens,
+                    }
+                ),
+                "budget": charge.to_json(),
+            }
+            try:
+                durable_response = provider_response_json(
+                    response, capability=binding.continuation_capability
+                )
+            except ValueError as exc:
+                failed = handed_off.settle_failed(
+                    error_code="provider_response_not_durable",
+                    at=self._clock(),
+                    expected_version=handed_off.version,
+                )
+                failed = replace(failed, usage_json=usage_json, budget_charge=charge)
+                self._uow.settle_provider_invocation(failed, expected_version=handed_off.version)
+                self._emit_attempt(
+                    failed, outcome=Outcome.FAILED, error_code="provider_response_not_durable"
+                )
+                raise ProviderProtocolError(private_cause=exc) from exc
+            succeeded = handed_off.settle_succeeded(
+                response_json=durable_response,
+                usage_json=usage_json,
+                budget_charge=charge,
+                at=self._clock(),
+                expected_version=handed_off.version,
+            )
+            try:
+                self._uow.settle_provider_invocation(succeeded, expected_version=handed_off.version)
+            except BaseException as exc:
+                current = self._uow.read_provider_invocation(record.invocation_id)
+                if current is not None and current.state is ProviderInvocationState.SUCCEEDED:
+                    return provider_response_from_json(
+                        thaw_json(cast(FrozenJsonValue, current.response_json)),
+                        expected_capability=binding.continuation_capability,
+                    )
+                if current is not None and current.state is ProviderInvocationState.HANDED_OFF:
+                    await self._settle_unknown(current, "provider_settlement_commit_unknown")
+                current = self._uow.read_provider_invocation(record.invocation_id)
+                raise ProviderInvocationUnknownError(current) from exc
+            logger.info(
+                "provider.invoked",
+                extra={
+                    "model": response.model,
+                    "input_tokens": (response.usage.input_tokens if response.usage else None),
+                    "output_tokens": (response.usage.output_tokens if response.usage else None),
+                    "total_tokens": (response.usage.total_tokens if response.usage else None),
+                },
+            )
+            self._emit_attempt(succeeded, outcome=Outcome.SUCCEEDED)
+            return response
+        finally:
+            if active_here:
+                self._active_provider_calls.discard(record.invocation_id)
+            if capacity_handle is not None:
+                current = self._uow.read_provider_invocation(record.invocation_id)
+                if (current is not None and current.state is ProviderInvocationState.CLAIMED
+                        and current.handoff_attempt == record.handoff_attempt):
+                    # The SDK handoff transaction did not commit; transport was not entered.
+                    capacity_handle.known_terminal = True
+                elif (current is not None and current.state is ProviderInvocationState.FAILED
+                      and current.error_code == "provider_admission_denied"):
+                    capacity_handle.known_terminal = True
+            if ticket is not None and self._provider_admission is not None:
+                self._provider_admission.observe(
+                    ticket,
+                    record=self._uow.read_provider_invocation(record.invocation_id),
+                )
+
+    def _response_charge(
+        self,
+        response: ProviderResponse,
+        reservation: BudgetCharge,
+        *,
+        binding: ProviderBinding,
+    ) -> BudgetCharge:
+        if (
+            response.usage is not None
+            and binding.estimator is not None
+            and response.model == binding.provider.target.model
+        ):
+            return binding.estimator.charge_usage(response.usage)
+        if response.usage is None and not reservation.is_unknown:
+            return reservation
+        if response.usage is not None:
+            logger.warning(
+                "provider.usage_untrusted",
+                extra={
+                    "target_model": binding.provider.target.model,
+                    "response_model": response.model,
+                },
+            )
+        logger.warning("provider.charge_unknown", extra={"model": response.model})
+        return BudgetCharge.unknown()
+
+    async def _settle_unknown(
+        self,
+        handed_off: ProviderInvocationRecord,
+        error_code: str,
+        *,
+        diagnostics: Mapping[str, object] | None = None,
+    ) -> ProviderInvocationRecord:
+        unknown = handed_off.settle_unknown(
+            error_code=error_code,
+            at=self._clock(),
+            expected_version=handed_off.version,
+        )
+        if diagnostics:
+            raw = unknown.usage_json
+            usage = (
+                dict(raw)
+                if isinstance(raw, Mapping)
+                else {"budget": unknown.budget_charge.to_json()}
+            )
+            class_name = diagnostics.get("error_class")
+            if isinstance(class_name, str) and class_name.isidentifier():
+                usage["error_class"] = class_name
+            wrapper_name = diagnostics.get("wrapper_class")
+            if isinstance(wrapper_name, str) and wrapper_name.isidentifier():
+                usage["wrapper_class"] = wrapper_name
+            status = diagnostics.get("http_status")
+            if isinstance(status, int) and not isinstance(status, bool):
+                usage["http_status"] = status
+            unknown = replace(unknown, usage_json=usage)
+        try:
+            if error_code == "recovered_after_handoff" and callable(
+                getattr(self._uow, "read_provider_runtime_lease", None)
+            ):
+                current = self._uow.settle_provider_invocation(
+                    unknown,
+                    expected_version=handed_off.version,
+                    require_expired_runtime_lease=True,
+                )
+            else:
+                current = self._uow.settle_provider_invocation(
+                    unknown, expected_version=handed_off.version
+                )
+            if current.state is ProviderInvocationState.HANDED_OFF:
+                return current
+        except ValueError:
+            observed = self._uow.read_provider_invocation(handed_off.invocation_id)
+            if observed is None or observed.state not in {
+                ProviderInvocationState.UNKNOWN,
+                ProviderInvocationState.SUCCEEDED,
+                ProviderInvocationState.FAILED,
+            }:
+                raise
+        observed = self._uow.read_provider_invocation(handed_off.invocation_id)
+        assert observed is not None
+        logger.warning("reconcile.unknown_settled", extra={"error_code": error_code})
+        self._emit_attempt(observed, outcome=Outcome.DEGRADED, error_code=error_code)
+        return observed
+
+    async def reconcile_incomplete(
+        self, *, provider_reconciliation: ProviderReconciliationPort | None = None
+    ) -> int:
+        """Observe uncertain handoffs without replaying their physical request."""
+
+        settled = 0
+        for record in self._uow.list_incomplete_provider_invocations():
+            if record.invocation_id in self._active_provider_calls:
+                continue
+            if record.state is ProviderInvocationState.CLAIMED:
+                continue
+            if record.state is ProviderInvocationState.HANDED_OFF:
+                await self._settle_unknown(record, "recovered_after_handoff")
+                current = self._uow.read_provider_invocation(record.invocation_id)
+                assert current is not None
+                record = current
+                if record.state is not ProviderInvocationState.UNKNOWN:
+                    continue  # live canonical lease, or another owner already settled it
+                settled += 1
+            if provider_reconciliation is None:
+                continue
+            observation = await provider_reconciliation.observe(record)
+            state = ProviderReconciliationState(observation.state)
+            if state is ProviderReconciliationState.STILL_UNKNOWN:
+                continue
+            if state is ProviderReconciliationState.COMPLETED:
+                response = observation.response
+                if not isinstance(response, ProviderResponse):
+                    raise ProviderInvocationConflictError(
+                        "Completed reconciliation requires ProviderResponse."
+                    )
+                if response.request_id != record.request_id:
+                    raise ProviderInvocationConflictError(
+                        "Reconciled Provider response belongs to another request."
+                    )
+                charge = self._response_charge_for_record(response, record)
+                usage_json = {
+                    "usage": (
+                        None
+                        if response.usage is None
+                        else {
+                            "input_tokens": response.usage.input_tokens,
+                            "output_tokens": response.usage.output_tokens,
+                            "total_tokens": response.usage.total_tokens,
+                        }
+                    ),
+                    "budget": charge.to_json(),
+                }
+                self._uow.record_provider_reconciliation(
+                    record,
+                    outcome=ResolutionOutcome.COMPLETED,
+                    response_json=provider_response_json(
+                        response,
+                        capability=self.resolve(record.run_id).continuation_capability,
+                    ),
+                    usage_json=usage_json,
+                    budget_charge=charge,
+                    evidence_ref=observation.evidence_ref,
+                    now=self._clock(),
+                )
+                logger.info(
+                    "provider.invoked",
+                    extra={
+                        "reconcile": True,
+                        "model": response.model,
+                        "input_tokens": (response.usage.input_tokens if response.usage else None),
+                        "output_tokens": (response.usage.output_tokens if response.usage else None),
+                        "total_tokens": (response.usage.total_tokens if response.usage else None),
+                    },
+                )
+            else:
+                self._uow.record_provider_reconciliation(
+                    record,
+                    outcome=ResolutionOutcome.CONFIRMED_NOT_STARTED,
+                    response_json=None,
+                    usage_json=None,
+                    budget_charge=record.budget_charge,
+                    evidence_ref=observation.evidence_ref,
+                    now=self._clock(),
+                )
+            settled += 1
+        if isinstance(provider_reconciliation, ProviderAccountingPort):
+            for original in self._uow.list_pending_provider_accounting():
+                # Observe without a DB transaction/lease. Only a typed receipt
+                # over the same original terminal call may be committed below.
+                accounting = await provider_reconciliation.observe_accounting(original)
+                if not isinstance(accounting, ProviderAccountingObservation):
+                    raise TypeError("provider accounting port returned an invalid observation")
+                if accounting.identity != ProviderAccountingIdentity.from_record(original):
+                    raise ProviderInvocationConflictError("Provider accounting identity differs.")
+                if accounting.state is ProviderAccountingState.STILL_UNKNOWN:
+                    continue
+                self._uow.record_provider_accounting(
+                    original,
+                    observation=accounting,
+                    now=self._clock(),
+                )
+                settled += 1
+        if self._provider_admission is not None:
+            self._provider_admission.recover(self._uow)
+        if self._legacy_binding is not None:
+            capacity = getattr(self._legacy_binding.provider, "deployment_capacity", None)
+            if capacity is not None:
+                capacity.recover(self._uow)
+        return settled
+
+    def _response_charge_for_record(
+        self, response: ProviderResponse, record: ProviderInvocationRecord
+    ) -> BudgetCharge:
+        if response.usage is None:
+            return (
+                record.budget_charge
+                if not record.budget_charge.is_unknown
+                else BudgetCharge.unknown()
+            )
+        snapshot = record.estimator_snapshot
+        if not isinstance(snapshot, Mapping):
+            return BudgetCharge.unknown()
+        estimator = FrozenPriceEstimator(
+            snapshot_id=str(snapshot["snapshot_id"]),
+            pricing_key=str(snapshot["pricing_key"]),
+            input_micros_per_million_tokens=int(snapshot["input_micros_per_million_tokens"]),
+            output_micros_per_million_tokens=int(snapshot["output_micros_per_million_tokens"]),
+            fixed_request_overhead_tokens=int(snapshot["fixed_request_overhead_tokens"]),
+            per_message_overhead_tokens=int(snapshot["per_message_overhead_tokens"]),
+            per_tool_overhead_tokens=int(snapshot["per_tool_overhead_tokens"]),
+        )
+        estimator.bind(record.target)
+        return estimator.charge_usage(response.usage)
+
+
+__all__ = (
+    "ProviderBinding",
+    "ProviderBindingResolver",
+    "ProviderInvocationConflictError",
+    "ProviderInvocationCoordinator",
+    "ProviderInvocationFailedError",
+    "ProviderInvocationUnitOfWork",
+    "ProviderInvocationUnknownError",
+    "provider_binding_fingerprint",
+)

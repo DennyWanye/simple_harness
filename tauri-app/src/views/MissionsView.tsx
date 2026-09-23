@@ -25,6 +25,9 @@ import { dark } from "../theme/components";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { MissionDocument, SourceDrafts, type SourceDraft } from "./MissionDocument";
 import { MissionSearch } from "./MissionSearch";
+import { PlanningQuestions } from "./PlanningQuestions";
+import { PlanningAuthorization } from "./PlanningAuthorization";
+import { OperationWorkspace } from "./OperationWorkspace";
 import { MissionDiagnostics } from "./MissionDiagnostics";
 import {
   asList as list,
@@ -695,6 +698,10 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     refreshSelected(missionId);
   };
 
+  const refreshPlanningQuestions = useCallback(() => {
+    if (selectedRef.current) refreshSelected(selectedRef.current);
+  }, [refreshSelected]);
+
   const detail = store.detail;
   const mission = record(detail?.mission);
   const selectedId = store.selectedId;
@@ -899,6 +906,12 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               );
             })}
 
+            <OperationWorkspace value={detail.operation_workspace} channel={channel}
+              onChanged={refreshPlanningQuestions} />
+            <PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
+              onChanged={refreshPlanningQuestions} />
+            <PlanningQuestions questions={list(detail.planning_questions)} channel={channel}
+              onAnswered={refreshPlanningQuestions} />
             {pendingApprovals.map((approval) => {
               const requestId = text(approval.request_id);
               const reason = reasons[requestId] ?? "";

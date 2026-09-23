@@ -29,6 +29,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from .decision import DecisionSeam, build_decision_seam, seam_available
 from .lock import InstanceLock
 from .manifest import MANIFEST_SCHEMA, build_manifest, distributions, write_manifest
 from .projection import (
@@ -102,6 +103,7 @@ class OrchestrationService:
         http_client: Any = None,
         test_scenario: str | None = None,
         drive: bool = True,
+        decision_shadow_provider: Any = None,
     ) -> None:
         self.root = Path(root)
         self.settings = settings
@@ -113,6 +115,9 @@ class OrchestrationService:
         self._http_client = http_client
         self._test_scenario = test_scenario
         self._drive_enabled = drive
+        # PR-7: test/local runtime may inject a typed shadow provider.  Production
+        # remains provider-free until a real NanoJev checkpoint is authorized.
+        self._decision_shadow_provider = decision_shadow_provider
         self._state = "created"
         self._reason: str | None = None
         self._lock = InstanceLock(self.root)
@@ -137,6 +142,10 @@ class OrchestrationService:
         self._closing = False
         self._failures = 0
         self._authorization_mode: str | None = None
+        # PR-7: the Host's NanoJev decision seam.  Built once from the effective
+        # settings, never from the environment; it observes READY_TASK_PRIORITY and
+        # never decides anything.  In the default ``existing`` mode it is inert.
+        self._decision: DecisionSeam | None = None
         self.on_write: Callable[[], None] | None = None  # the change pump's poke
 
     # ------------------------------------------------------------ lifecycle
@@ -267,7 +276,9 @@ class OrchestrationService:
         )
         knobs: dict[str, Any] = {}
         if self._snapshot is not None:  # a real model: the bounds the SDK real runs use
-            knobs = {"default_max_output_tokens": 8192, "max_output_tokens_ceiling": 32768}
+            # Reasoning tokens share the output limit. 8K truncated a real
+            # operation verdict before its closing envelope reached the Host.
+            knobs = {"default_max_output_tokens": 16384, "max_output_tokens_ceiling": 32768}
         self._config = OrchestratorConfig(
             evidence_root=self.root,
             model=self._snapshot.requested_model if self._snapshot is not None else "agent-model",
@@ -290,6 +301,7 @@ class OrchestrationService:
             **self._runtime_options,
         )
         await self._orchestrator.__aenter__()
+        self._install_hierarchical(self._orchestrator)
         self._install_native_verifier_pressure(self._orchestrator)
         self._control = MissionControlV1(
             self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
@@ -304,6 +316,59 @@ class OrchestrationService:
             from .native_compare import install_compare_policy
 
             install_compare_policy(self._orchestrator, self._principal)
+        # V1.4 scope amendment (2026-09-21): PR-7/NanoJev is deferred.
+        # Retain the historical seam below without attaching it to this runtime.
+
+    def _install_decision_seam(self) -> None:
+        """Build the PR-7 decision seam from the effective settings (plan §57).
+
+        The mode comes from ``config.toml [orchestration] decision_mode`` and
+        nowhere else.  The journal is the orchestrator's own store, so an
+        observation is filed as an additive event in the same library the Mission
+        lives in; no second database, no second schema.
+
+        This is deliberately non-fatal.  A wheel that predates the decision
+        package, or a store that is not ready, degrades the seam to "unavailable"
+        and the allocator behaves exactly as it always has.
+        """
+
+        if not seam_available():
+            self._decision = build_decision_seam(self.settings)
+            logger.info(
+                "decision_seam_unavailable mode=%s reason=%s",
+                self.settings.decision_mode,
+                self._decision.status.detail,
+            )
+            return
+        journal = None
+        store = getattr(self._orchestrator, "store", None)
+        if store is not None:
+            try:
+                from agent_orchestrator.decision import DecisionEventJournal
+
+                journal = DecisionEventJournal(store)
+            except Exception as error:  # noqa: BLE001 - an unusable store is not fatal
+                logger.info("decision_journal_unavailable reason=%s", type(error).__name__)
+                journal = None
+        self._decision = build_decision_seam(
+            self.settings,
+            journal=journal,
+            shadow_provider=self._decision_shadow_provider,
+        )
+        logger.info(
+            "decision_seam_ready mode=%s observation=%s",
+            self._decision.mode,
+            self._decision.observation_enabled,
+        )
+
+    async def observe_ready_priority(
+        self, mission: Any, tasks: Any, attempts: Any, plan: Any
+    ) -> bool:
+        """Host callback installed into the SDK's real allocation caller."""
+
+        if self._decision is None:
+            return False
+        return await self._decision.observe_ready_priority(mission, tasks, attempts, plan)
 
     def _publish_connector(self) -> Any:
         """The file publish connector, but only for a directory the user really authorised.
@@ -468,6 +533,18 @@ class OrchestrationService:
                 pass
             self._wake.clear()
 
+    def _install_hierarchical(self, orchestrator: Any) -> None:
+        # Old wheels and explicit historical fixture lanes keep their old protocol.
+        if self._test_scenario is None and hasattr(orchestrator, "install_hierarchical_deployment"):
+            from .hierarchical import install
+            install(orchestrator)
+
+    def _initialize_hierarchical_root(self, mission_id: str) -> None:
+        if self._test_scenario is None and hasattr(self._orchestrator, "install_hierarchical_deployment"):
+            from .hierarchical import initialize_root
+            mission = self._orchestrator.store.get_mission(mission_id)
+            initialize_root(self._orchestrator, mission, self._principal)
+
     def _install_native_verifier_pressure(self, orchestrator: Any) -> None:
         if not self._native_verifier_pressure:
             return
@@ -502,6 +579,7 @@ class OrchestrationService:
         )
         try:
             await candidate.__aenter__()
+            self._install_hierarchical(candidate)
             self._install_native_verifier_pressure(candidate)
             control = MissionControlV1(
                 candidate, tenant_id=self.tenant_id, principal=self._principal
@@ -617,6 +695,11 @@ class OrchestrationService:
                 "max_attempts": self.settings.default_mission_max_attempts,
             },
             "deployment_manifest": self._manifest,
+            "decision": (
+                self._decision.status.to_json()
+                if self._decision is not None
+                else {"mode": self.settings.decision_mode, "observation_enabled": False}
+            ),
             "owner": self.owner,
         }
 
@@ -712,6 +795,17 @@ class OrchestrationService:
             self.tenant_id, str(body.get("idempotency_key", "")),
         ) if self._orchestrator is not None else None
         existing = found[0] if found else None
+        if self._test_scenario is None and hasattr(self._orchestrator, "install_hierarchical_deployment"):
+            from agent_orchestrator.orchestrator.plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
+            from agent_orchestrator.orchestrator.planning_protocol_binding import planning_protocol_for_mission
+            if existing is None:
+                body.setdefault("orchestration_semantics_version", HIERARCHICAL_SEMANTICS)
+                body.setdefault("planning_protocol_version", "planning-decision-v1")
+            elif semantics_of(existing) == HIERARCHICAL_SEMANTICS:
+                body.setdefault("orchestration_semantics_version", HIERARCHICAL_SEMANTICS)
+                frozen = planning_protocol_for_mission(self._orchestrator.store, existing.id)
+                if frozen is not None:
+                    body.setdefault("planning_protocol_version", frozen["protocol_version"])
         profiles = self._context_profiles()
         if "runtime_profile_id" in body:
             selected = body["runtime_profile_id"]
@@ -763,7 +857,9 @@ class OrchestrationService:
             raise OrchestrationRequestError(
                 "orchestration_degraded", "编排循环目前不正常，暂不接受新的 Mission；已有的仍可取消或接管"
             )
-        receipt = self._call("create", self._door(request))
+        with self._orchestrator.store.transaction():
+            receipt = self._call("create", self._door(request))
+            self._initialize_hierarchical_root(receipt["mission_id"])
         self.wake()
         return {"mission_id": receipt["mission_id"], "created": receipt["created"], "spec_hash": receipt["spec_hash"]}
 
@@ -775,11 +871,49 @@ class OrchestrationService:
         if set(request) != {"mission", "sources"} or not isinstance(request["mission"], Mapping):
             raise OrchestrationRequestError("invalid_request", "需要 mission 与 sources 原子批次")
         self._refuse_secrets(request)
-        receipt = self._call("create_with_sources", {
-            "mission": self._door(request["mission"]), "sources": request["sources"],
-        })
+        with self._orchestrator.store.transaction():
+            receipt = self._call("create_with_sources", {
+                "mission": self._door(request["mission"]), "sources": request["sources"],
+            })
+            self._initialize_hierarchical_root(receipt["mission_id"])
         self.wake()
         return dict(receipt)
+
+    def planning_authorization(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        self._require()
+        self._refuse_secrets(request)
+        receipt = self._call("planning_authorization", dict(request))
+        self.wake()
+        return dict(receipt)
+
+    def answer_planning_question(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        self._require()
+        self._refuse_secrets(request)
+        receipt = self._call("answer_planning_question", dict(request))
+        self.wake()
+        return dict(receipt)
+
+    def approve_operation_completion_spec(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """Confirm requirements through the existing authenticated SDK facade."""
+        self._require()
+        self._refuse_secrets(request)
+        receipt = self._call("approve_operation_completion_spec", dict(request))
+        self.wake()
+        return dict(receipt)
+
+    def submit_operation_intent(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """Explicit operation submission; caller identity stays in the SDK facade."""
+        self._require()
+        if self._state == "degraded":
+            raise OrchestrationRequestError("orchestration_degraded", "编排循环异常，暂不接受新操作")
+        self._refuse_secrets(request)
+        receipt = self._call("submit_operation_intent", dict(request))
+        self.wake()
+        return dict(receipt)
+
+    def operation_intent_status(self, intent_id: str) -> dict[str, Any]:
+        self._require()
+        return dict(self._call("operation_intent_status", intent_id))
 
     def source_command(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
         """Explicit IPC verbs, using the same facade's fixed authenticated principal."""

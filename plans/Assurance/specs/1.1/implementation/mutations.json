@@ -1,0 +1,174 @@
+[
+  {
+    "id": "M01",
+    "mutation": "mandatory_bypass",
+    "change": "mandatory gate改成ANY可忽略",
+    "must_be_killed_by": [
+      "A02",
+      "A05",
+      "A18"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M02",
+    "mutation": "fake_official",
+    "change": "信模型official而不验dispatch",
+    "must_be_killed_by": [
+      "A07",
+      "A08"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M03",
+    "mutation": "wrong_subject_check",
+    "change": "删除check目标/manifest/assertion绑定",
+    "must_be_killed_by": [
+      "A04"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M04",
+    "mutation": "first_current_acceptance",
+    "change": "根只找任意CURRENT Acceptance",
+    "must_be_killed_by": [
+      "A13",
+      "A17",
+      "A18"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M05",
+    "mutation": "empty_effect_catalog",
+    "change": "无intent时effects=[]",
+    "must_be_killed_by": [
+      "A17",
+      "E01"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M06",
+    "mutation": "effect_receipt_nonempty",
+    "change": "Delivery只校operation_id非空",
+    "must_be_killed_by": [
+      "E04",
+      "E07"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M07",
+    "mutation": "latest_input",
+    "change": "旧Review读取latest输入",
+    "must_be_killed_by": [
+      "A11",
+      "A14"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M08",
+    "mutation": "empty_read_success",
+    "change": "失败查询返回COMPLETE空",
+    "must_be_killed_by": [
+      "V06",
+      "V09"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M09",
+    "mutation": "no_negative_epoch",
+    "change": "新反证不bump屏障",
+    "must_be_killed_by": [
+      "V07"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M10",
+    "mutation": "cached_anchor_cycle",
+    "change": "用旧VERIFIED作闭包锚",
+    "must_be_killed_by": [
+      "V03"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M11",
+    "mutation": "conflict_path_allowed",
+    "change": "删除clean closure校验",
+    "must_be_killed_by": [
+      "V05"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M12",
+    "mutation": "purpose_ignored",
+    "change": "删除consumer/purpose/scope绑定",
+    "must_be_killed_by": [
+      "V10"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M13",
+    "mutation": "inner_commit",
+    "change": "Acceptance内部提前commit",
+    "must_be_killed_by": [
+      "C01",
+      "C02"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M14",
+    "mutation": "ack_before_intent",
+    "change": "cursor先于真实pending工作持久化",
+    "must_be_killed_by": [
+      "C04"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M15",
+    "mutation": "lease_means_absent",
+    "change": "lease过期直接重发模型/操作",
+    "must_be_killed_by": [
+      "C03",
+      "C05"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  },
+  {
+    "id": "M16",
+    "mutation": "release_unknown_cost",
+    "change": "未知用量记0释放reservation",
+    "must_be_killed_by": [
+      "C05",
+      "C08"
+    ],
+    "sdk_status": "PENDING_SDK_EXECUTION",
+    "failure_rule": "behavior assertion; import/collection/env error not KILLED"
+  }
+]

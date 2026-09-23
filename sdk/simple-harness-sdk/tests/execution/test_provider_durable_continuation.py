@@ -1,0 +1,197 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import copy
+
+import pytest
+
+from simple_harness.contracts import (
+    CallId,
+    ContentBlock,
+    Message,
+    MessageRole,
+    RequestId,
+    canonical_json,
+)
+from simple_harness.execution.budget import BudgetPolicy
+from simple_harness.execution.dispatch import provider_binding_fingerprint
+from simple_harness.execution.provider_invocations import (
+    provider_response_from_json,
+    provider_response_json,
+)
+from simple_harness.providers import ProviderResponse, ProviderToolCall
+from simple_harness.providers.base import (
+    ProviderContinuationCapability,
+    ProviderContinuationMode,
+)
+
+
+def _response(*blocks: ContentBlock, metadata=None, opaque_ref=None) -> ProviderResponse:
+    return ProviderResponse(
+        RequestId("request-1"),
+        Message(MessageRole.ASSISTANT, blocks, metadata=metadata or {}),
+        opaque_continuation_ref=opaque_ref,
+    )
+
+
+def test_reasoning_disabled_rejects_hidden_reasoning_before_durable_encoding() -> None:
+    response = _response(
+        ContentBlock("output_text", {"text": "visible"}),
+        ContentBlock("reasoning", {"text": "HIDDEN_COT_CANARY"}),
+    )
+    with pytest.raises(ValueError, match="hidden reasoning"):
+        provider_response_json(response)
+
+
+def test_opaque_continuation_persists_public_ref_but_never_hidden_reasoning() -> None:
+    capability = ProviderContinuationCapability(ProviderContinuationMode.OPAQUE_REFERENCE)
+    payload = provider_response_json(
+        _response(
+            ContentBlock("output_text", {"text": "visible"}),
+            ContentBlock("reasoning", {"text": "HIDDEN_COT_CANARY"}),
+            metadata={"provider_private": "CREDENTIAL_CANARY"},
+            opaque_ref="provider-item-123",
+        ),
+        capability=capability,
+    )
+    encoded = canonical_json(payload)
+    assert "visible" in encoded
+    assert "provider-item-123" in encoded
+    assert "HIDDEN_COT_CANARY" not in encoded
+    assert "CREDENTIAL_CANARY" not in encoded
+    restored = provider_response_from_json(payload, expected_capability=capability)
+    assert restored.opaque_continuation_ref == "provider-item-123"
+
+
+def test_public_block_projection_strips_nested_private_provider_fields() -> None:
+    payload = provider_response_json(
+        _response(
+            ContentBlock(
+                "output_text",
+                {
+                    "text": "visible",
+                    "provider_private": "PRIVATE_BLOCK_CANARY",
+                    "credential": {"token": "CREDENTIAL_BLOCK_CANARY"},
+                },
+            )
+        )
+    )
+    encoded = canonical_json(payload)
+    assert "visible" in encoded
+    assert "PRIVATE_BLOCK_CANARY" not in encoded
+    assert "CREDENTIAL_BLOCK_CANARY" not in encoded
+
+
+@pytest.mark.parametrize(
+    "credential",
+    (
+        "Bearer provider-secret-token",
+        "sk-providersecret123",
+        "AKIA1234567890ABCDEF",
+        "-----BEGIN PRIVATE KEY-----",
+    ),
+)
+def test_public_text_rejects_credential_canary_before_durable_encoding(
+    credential: str,
+) -> None:
+    for content in (
+        f"visible {credential}",
+        (ContentBlock("output_text", {"text": f"visible {credential}"}),),
+    ):
+        response = ProviderResponse(RequestId("request-1"), Message(MessageRole.ASSISTANT, content))
+        with pytest.raises(ValueError, match="credential-like material"):
+            provider_response_json(response)
+
+
+def test_empty_assistant_content_is_only_public_with_tool_calls() -> None:
+    tool_response = ProviderResponse(
+        RequestId("request-1"),
+        Message(MessageRole.ASSISTANT, ""),
+        (ProviderToolCall(CallId("call-1"), "lookup", {}),),
+    )
+    payload = provider_response_json(tool_response)
+    assert provider_response_from_json(payload).message.content == ""
+
+    no_tool_response = ProviderResponse(
+        RequestId("request-2"),
+        Message(MessageRole.ASSISTANT, ""),
+    )
+    with pytest.raises(ValueError, match="non-empty text"):
+        provider_response_json(no_tool_response)
+
+
+def test_replay_rejects_changed_continuation_capability() -> None:
+    payload = provider_response_json(_response(ContentBlock("output_text", {"text": "ok"})))
+    with pytest.raises(ValueError, match="another continuation capability"):
+        provider_response_from_json(
+            payload,
+            expected_capability=ProviderContinuationCapability(
+                ProviderContinuationMode.PUBLIC_STATELESS
+            ),
+        )
+
+
+def test_current_durable_response_rejects_missing_continuation_capability() -> None:
+    payload = provider_response_json(_response(ContentBlock("output_text", {"text": "ok"})))
+    payload.pop("continuation")
+    with pytest.raises(ValueError, match="response fields differ"):
+        provider_response_from_json(payload)
+    restored = provider_response_from_json(payload, allow_legacy_public_response=True)
+    assert restored.message.content[0].data["text"] == "ok"
+
+
+def test_opaque_reference_is_bounded_public_identifier() -> None:
+    with pytest.raises(ValueError, match="bounded public identifier"):
+        _response(ContentBlock("output_text", {"text": "ok"}), opaque_ref="x" * 1025)
+
+
+def test_frozen_provider_binding_changes_with_continuation_capability() -> None:
+    policy = BudgetPolicy()
+    disabled = provider_binding_fingerprint(policy, None, ProviderContinuationCapability())
+    opaque = provider_binding_fingerprint(
+        policy,
+        None,
+        ProviderContinuationCapability(ProviderContinuationMode.OPAQUE_REFERENCE),
+    )
+    assert disabled != opaque
+
+
+@pytest.mark.parametrize(
+    ("mutate", "error"),
+    (
+        (lambda value: value.__setitem__("private", "SECRET"), "response fields differ"),
+        (
+            lambda value: value["continuation"].__setitem__("schema_version", True),
+            "continuation schema",
+        ),
+        (
+            lambda value: value["message"].__setitem__("metadata", {"private": "SECRET"}),
+            "metadata must be empty",
+        ),
+        (
+            lambda value: value["message"].__setitem__(
+                "content", [{"type": "provider_private", "secret": "SECRET"}]
+            ),
+            "non-public content block",
+        ),
+        (
+            lambda value: value["message"].__setitem__("private", "SECRET"),
+            "message fields differ",
+        ),
+        (
+            lambda value: value["message"]["content"][0].__setitem__("provider_private", "SECRET"),
+            "public content projection differs",
+        ),
+    ),
+)
+def test_durable_response_decoder_rejects_non_public_or_non_exact_payloads(
+    mutate,
+    error,  # type: ignore[no-untyped-def]
+) -> None:
+    payload = provider_response_json(_response(ContentBlock("output_text", {"text": "ok"})))
+    mutated = copy.deepcopy(payload)
+    mutate(mutated)
+    with pytest.raises(ValueError, match=error):
+        provider_response_from_json(mutated)

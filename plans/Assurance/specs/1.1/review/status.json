@@ -1,0 +1,15 @@
+{
+  "spec": "ASSURANCE-EXEC-1.1",
+  "findings": "F01–F15_RESOLVED_IN_SPEC",
+  "author_self_review": "COMPLETED_FOUR_PERSPECTIVES",
+  "independent_subagent_review": "NOT_RUN",
+  "receiver_review_input": "supplied F01–F15 and 18 source excerpts",
+  "local_source_verified": false,
+  "sdk_tests": "PENDING_SDK_EXECUTION",
+  "sdk_mutations": "PENDING_SDK_EXECUTION",
+  "host_native_verified": false,
+  "real_model_verified": false,
+  "body_wired": "IMPLEMENTATION_TARGET_NOT_YET_RUN",
+  "default_for_new_missions_at_completed_delivery": "ON_WITHOUT_EXTRA_ENABLE_APPROVAL",
+  "current_production_enablement": "NOT_AUTHORIZED_BY_REFERENCE_TESTS"
+}

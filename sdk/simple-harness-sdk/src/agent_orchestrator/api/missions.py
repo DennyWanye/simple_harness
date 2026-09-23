@@ -1,0 +1,167 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+
+"""Mission API (ORCH §4.2 ``api/missions.py``): create / get / cancel / events.
+
+``tenant_id`` is a parameter of the API caller — never read from an Agent payload
+(D25).  ``create`` validates the charter (§5): non-empty success criteria, a legal
+budget and a tool set the deployment actually offers; it is idempotent on
+``(tenant_id, idempotency_key)``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from ..contracts import Budget, ContractError, Event, Mission
+from ..governance.domains import CODE_DOMAIN, DOMAINS
+from ..orchestrator.commit_service import CommitService, MissionSpec
+from ..runtime.tool_gateway import TOOL_NAMES
+
+
+class MissionRequestError(ValueError):
+    pass
+
+
+def validate_spec(spec: MissionSpec, *, available_tools: Sequence[str] = TOOL_NAMES) -> None:
+    if not spec.goal.strip():
+        raise MissionRequestError("goal must not be blank")
+    if not spec.success_criteria or any(not c.strip() for c in spec.success_criteria):
+        raise MissionRequestError("success_criteria must be a non-empty list of non-blank strings")
+    if not spec.tenant_id.strip() or not spec.idempotency_key.strip():
+        raise MissionRequestError("tenant_id and idempotency_key are required")
+    unknown = set(spec.allowed_tools) - set(available_tools)
+    if unknown:
+        raise MissionRequestError(
+            f"allowed_tools not offered by this deployment: {sorted(unknown)}"
+        )
+    if not isinstance(spec.budget, Budget):
+        raise MissionRequestError("budget must be a Budget")
+    if spec.budget.max_attempts is not None and spec.budget.max_attempts < 1:
+        raise MissionRequestError("budget.max_attempts must be at least 1")
+    for path in spec.workspace_seed:
+        if path.startswith("/") or ".." in path.split("/"):
+            raise MissionRequestError(f"workspace_seed path escapes the workspace: {path}")
+    if spec.domain not in DOMAINS:  # P3.3 (D1): refused here, not silently defaulted
+        raise MissionRequestError(
+            f"unknown domain profile {spec.domain!r} (this deployment offers {sorted(DOMAINS)})"
+        )
+    if spec.runtime_profile_id is not None and (
+        not isinstance(spec.runtime_profile_id, str) or not spec.runtime_profile_id.strip()
+    ):
+        raise MissionRequestError("runtime_profile_id must be a nonempty profile reference")
+
+
+def spec_from_request(
+    tenant_id: str, request: Mapping[str, Any], *, default_tools: Sequence[str] = TOOL_NAMES
+) -> MissionSpec:
+    """The charter a caller's request describes; an omitted tool set is ``default_tools``
+    (the deployment's, when an orchestrator parses it — host support 0.9.8)."""
+
+    # review round 2 P2-1: a string is not a list of strings (it would split into characters)
+    for name in ("success_criteria", "stop_conditions", "untrusted_sources", "allowed_tools"):
+        value = request.get(name)
+        if value is not None and (
+            isinstance(value, str) or not all(isinstance(item, str) for item in value)
+        ):
+            raise MissionRequestError(f"{name} must be a list of strings")
+    seed = request.get("workspace_seed", {})
+    if not isinstance(seed, Mapping) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in seed.items()
+    ):
+        raise MissionRequestError("workspace_seed must map paths to text")
+    # host support S2 (P3.1-A06, the user's Phase3 gap G02): the step-4 charter fields are
+    # mapped too — before, a request naming them was accepted and they were silently lost
+    untrusted = request.get("untrusted_sources", ())
+    if isinstance(untrusted, str) or not all(isinstance(s, str) for s in untrusted):
+        raise MissionRequestError("untrusted_sources must be a list of path prefixes")
+    reserve = request.get("conflict_reserve_tokens", 0)
+    if isinstance(reserve, bool) or not isinstance(reserve, int) or reserve < 0:
+        raise MissionRequestError("conflict_reserve_tokens must be a non-negative integer")
+    search_policy = request.get("search_policy_version_id")
+    if search_policy is not None and (
+        not isinstance(search_policy, str) or not search_policy.strip()
+    ):
+        raise MissionRequestError("search_policy_version_id must be a nonempty registry reference")
+    runtime_profile = request.get("runtime_profile_id")
+    if runtime_profile is not None and (
+        not isinstance(runtime_profile, str) or not runtime_profile.strip()
+    ):
+        raise MissionRequestError("runtime_profile_id must be a nonempty profile reference")
+    synthesis = request.get("synthesis")
+    if synthesis is not None and not isinstance(synthesis, Mapping):
+        raise MissionRequestError("synthesis must be an object (a fixed synthesis Task template)")
+    # §8.1: the charter names the wire.  An *omitted* key keeps the MissionSpec default
+    # (legacy); a present value — including a non-string or an unknown name — is handed to
+    # the constructor so ``checked_planning_protocol`` refuses it, like every other field.
+    protocol_kwargs: dict[str, Any] = {}
+    if "orchestration_semantics_version" in request:
+        protocol_kwargs["orchestration_semantics_version"] = request["orchestration_semantics_version"]
+    if "planning_protocol_version" in request:
+        protocol_kwargs["planning_protocol_version"] = request["planning_protocol_version"]
+    try:
+        return MissionSpec(
+            goal=str(request.get("goal", "")),
+            success_criteria=tuple(request.get("success_criteria", ())),
+            tenant_id=tenant_id,
+            idempotency_key=str(request.get("idempotency_key", "")),
+            stop_conditions=tuple(
+                request.get("stop_conditions", ("verification_passed", "budget_exhausted"))
+            ),
+            allowed_tools=tuple(request.get("allowed_tools", default_tools)),
+            risk_level=str(request.get("risk_level", "sandbox")),
+            budget=Budget.from_json(request.get("budget", {})),
+            task_kind=str(request.get("task_kind", "code")),
+            workspace_seed=dict(request.get("workspace_seed", {})),
+            untrusted_sources=tuple(untrusted),
+            synthesis=None if synthesis is None else dict(synthesis),
+            conflict_reserve_tokens=reserve,
+            domain=str(request.get("domain", CODE_DOMAIN)),
+            search_policy_version_id=search_policy,
+            runtime_profile_id=runtime_profile,
+            **protocol_kwargs,
+        )
+    except (ContractError, TypeError, ValueError) as error:
+        raise MissionRequestError(str(error)) from error
+
+
+class MissionApi:
+    def __init__(self, commit: CommitService, *, orchestrator: Any = None) -> None:
+        """With ``orchestrator`` (host support 0.9.8, plan review P1-1) ``create`` goes
+        through :meth:`Orchestrator.create_mission` — the door that knows the deployment,
+        the action criteria, the provider kind and the policy binding."""
+
+        self._commit = commit
+        self._orchestrator = orchestrator
+
+    def _require_execution_root(self) -> None:
+        gate = self._commit._assurance_root_gate
+        if gate is not None:
+            gate.require_execution()
+
+    def create(self, *, tenant_id: str, request: Mapping[str, Any]) -> tuple[Mission, bool]:
+        self._require_execution_root()
+        if self._orchestrator is not None:
+            created: tuple[Mission, bool] = self._orchestrator.create_mission(
+                tenant_id=tenant_id, request=request
+            )
+            return created
+        spec = spec_from_request(tenant_id, request)
+        validate_spec(spec)
+        return self._commit.create_mission(spec)
+
+    def get(self, mission_id: str) -> dict[str, Any]:
+        self._require_execution_root()
+        return self._commit.store.snapshot(mission_id)
+
+    def cancel(self, mission_id: str) -> Mission:
+        self._require_execution_root()
+        return self._commit.cancel_mission(mission_id)
+
+    def events(self, mission_id: str, *, after_seq: int = 0) -> list[Event]:
+        self._require_execution_root()
+        return self._commit.store.list_events(mission_id, after_seq=after_seq)
+
+
+__all__ = ("MissionApi", "MissionRequestError", "spec_from_request", "validate_spec")

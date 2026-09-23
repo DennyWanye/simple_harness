@@ -1,0 +1,892 @@
+{
+  "Pin": {
+    "producer": "NativeAuthorizationAdapter + original recorder",
+    "caller": "current Host owner / TaskScope / Assurance read_use / OPS policy",
+    "authority_store": "original approval/policy/caller decision receipt; arp metadata holds exact ref",
+    "transaction": "real evaluation produces receipt; bool is not original source",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(Pin)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "Json": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(Json)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "Policy": {
+    "producer": "ContextPolicyService.submit / adopt",
+    "caller": "Host authenticated settings handler",
+    "authority_store": "arp_policy_objects + original approval/commit receipt + arp_context_policy_adoptions",
+    "transaction": "existing execution UOW; no automatic policy approval",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(Policy)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RuntimeProfile": {
+    "producer": "ContextPolicyService.submit / adopt",
+    "caller": "Host authenticated settings handler",
+    "authority_store": "arp_policy_objects + original approval/commit receipt + arp_context_policy_adoptions",
+    "transaction": "existing execution UOW; no automatic policy approval",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RuntimeProfile)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ModelLimits": {
+    "producer": "ModelMeterAdapter normalized DeepSeek/HF estimate",
+    "caller": "original wire request_preparer + ProviderBudgetGuard",
+    "authority_store": "approved deployment tokenizer/renderer manifest + exact prepared wire + prior original receipt",
+    "transaction": "pure meter then immutable request preparation",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ModelLimits)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "Section": {
+    "producer": "NativeContextComposer.assemble → ProviderInvocationCoordinator.prepare",
+    "caller": "AgentProviderWire.prepare_request after actual tool-call restoration",
+    "authority_store": "original Journal + TaskGraph InputManifest + Assurance certificates + arp_context_requests",
+    "transaction": "pure compose then original exec prepare transaction",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(Section)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "JournalGroup": {
+    "producer": "ProtocolGroupAdapter.snapshot",
+    "caller": "original closed-group journal append + original call-result observer",
+    "authority_store": "original Journal/AgentTurn/tool call-result ledger",
+    "transaction": "read snapshot, closed source group immutable",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(JournalGroup)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RecallItem": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RecallItem)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RetrievalReceipt": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RetrievalReceipt)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ContextManifest": {
+    "producer": "NativeContextComposer.assemble → ProviderInvocationCoordinator.prepare",
+    "caller": "AgentProviderWire.prepare_request after actual tool-call restoration",
+    "authority_store": "original Journal + TaskGraph InputManifest + Assurance certificates + arp_context_requests",
+    "transaction": "pure compose then original exec prepare transaction",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ContextManifest)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "Capability": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(Capability)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "Deployment": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(Deployment)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "CapabilityBinding": {
+    "producer": "NativeContextComposer.assemble → ProviderInvocationCoordinator.prepare",
+    "caller": "AgentProviderWire.prepare_request after actual tool-call restoration",
+    "authority_store": "original Journal + TaskGraph InputManifest + Assurance certificates + arp_context_requests",
+    "transaction": "pure compose then original exec prepare transaction",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(CapabilityBinding)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "Tool": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(Tool)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ToolSnapshot": {
+    "producer": "NativeContextComposer.assemble → ProviderInvocationCoordinator.prepare",
+    "caller": "AgentProviderWire.prepare_request after actual tool-call restoration",
+    "authority_store": "original Journal + TaskGraph InputManifest + Assurance certificates + arp_context_requests",
+    "transaction": "pure compose then original exec prepare transaction",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ToolSnapshot)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillFile": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillFile)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "Skill": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(Skill)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillUse": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillUse)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SessionDelete": {
+    "producer": "SessionLifecycleService / RuntimeRetentionService",
+    "caller": "AgentRuntime close/destroy/startup worker",
+    "authority_store": "original Agent/Turn/call/import/root records + arp_agent_sessions + marker",
+    "transaction": "Orch→FileGuard→execution→partition; no IO under writer",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SessionDelete)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SessionView": {
+    "producer": "SessionLifecycleService / RuntimeRetentionService",
+    "caller": "AgentRuntime close/destroy/startup worker",
+    "authority_store": "original Agent/Turn/call/import/root records + arp_agent_sessions + marker",
+    "transaction": "Orch→FileGuard→execution→partition; no IO under writer",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SessionView)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ToolResultView": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ToolResultView)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "Error": {
+    "producer": "RuntimePlaneErrorAdapter",
+    "caller": "all typed boundaries",
+    "authority_store": "error-catalogue.json + sanitized actual failure",
+    "transaction": "no state write just from Error DTO",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(Error)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "HostRequest": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(HostRequest)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "HostResponse": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(HostResponse)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "AuthorizationReceipt": {
+    "producer": "NativeAuthorizationAdapter + original recorder",
+    "caller": "current Host owner / TaskScope / Assurance read_use / OPS policy",
+    "authority_store": "original approval/policy/caller decision receipt; arp metadata holds exact ref",
+    "transaction": "real evaluation produces receipt; bool is not original source",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(AuthorizationReceipt)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillAdmitCommand": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillAdmitCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillSuspendCommand": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillSuspendCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ContextSettingsCommand": {
+    "producer": "ContextPolicyService.submit / adopt",
+    "caller": "Host authenticated settings handler",
+    "authority_store": "arp_policy_objects + original approval/commit receipt + arp_context_policy_adoptions",
+    "transaction": "existing execution UOW; no automatic policy approval",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ContextSettingsCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ContextSummaryView": {
+    "producer": "NativeContextComposer.assemble → ProviderInvocationCoordinator.prepare",
+    "caller": "AgentProviderWire.prepare_request after actual tool-call restoration",
+    "authority_store": "original Journal + TaskGraph InputManifest + Assurance certificates + arp_context_requests",
+    "transaction": "pure compose then original exec prepare transaction",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ContextSummaryView)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "CapabilityCatalogueItem": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(CapabilityCatalogueItem)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ToolCatalogueItem": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ToolCatalogueItem)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillCatalogueItem": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillCatalogueItem)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "TokenReceipt": {
+    "producer": "ModelMeterAdapter normalized DeepSeek/HF estimate",
+    "caller": "original wire request_preparer + ProviderBudgetGuard",
+    "authority_store": "approved deployment tokenizer/renderer manifest + exact prepared wire + prior original receipt",
+    "transaction": "pure meter then immutable request preparation",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(TokenReceipt)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "TurnCoverage": {
+    "producer": "ProtocolGroupAdapter.snapshot",
+    "caller": "original closed-group journal append + original call-result observer",
+    "authority_store": "original Journal/AgentTurn/tool call-result ledger",
+    "transaction": "read snapshot, closed source group immutable",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(TurnCoverage)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ProtocolGroupSnapshot": {
+    "producer": "ProtocolGroupAdapter.snapshot",
+    "caller": "original closed-group journal append + original call-result observer",
+    "authority_store": "original Journal/AgentTurn/tool call-result ledger",
+    "transaction": "read snapshot, closed source group immutable",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ProtocolGroupSnapshot)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SearchRequest": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SearchRequest)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SearchCoverage": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SearchCoverage)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SearchPage": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SearchPage)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "HistoryReadRequest": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(HistoryReadRequest)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "HistorySlice": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(HistorySlice)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "HistoryReadPage": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(HistoryReadPage)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ContextSettingsView": {
+    "producer": "ContextPolicyService.submit / adopt",
+    "caller": "Host authenticated settings handler",
+    "authority_store": "arp_policy_objects + original approval/commit receipt + arp_context_policy_adoptions",
+    "transaction": "existing execution UOW; no automatic policy approval",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ContextSettingsView)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "CommandReceiptView": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(CommandReceiptView)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ContextPolicySubmit": {
+    "producer": "ContextPolicyService.submit / adopt",
+    "caller": "Host authenticated settings handler",
+    "authority_store": "arp_policy_objects + original approval/commit receipt + arp_context_policy_adoptions",
+    "transaction": "existing execution UOW; no automatic policy approval",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ContextPolicySubmit)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "PolicySubmissionView": {
+    "producer": "ContextPolicyService.submit / adopt",
+    "caller": "Host authenticated settings handler",
+    "authority_store": "arp_policy_objects + original approval/commit receipt + arp_context_policy_adoptions",
+    "transaction": "existing execution UOW; no automatic policy approval",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(PolicySubmissionView)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ContextManifestPage": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ContextManifestPage)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ProviderDefinition": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ProviderDefinition)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "CatalogueScope": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(CatalogueScope)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "CatalogueSummary": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(CatalogueSummary)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "CataloguePage": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(CataloguePage)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillDetailsPage": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillDetailsPage)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "DependencyLock": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(DependencyLock)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillTrialCommand": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillTrialCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillEvaluationBinding": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillEvaluationBinding)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillLifecycleCommand": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillLifecycleCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "IndexJobPayload": {
+    "producer": "NativeJobWriter / resume_runtime_jobs",
+    "caller": "original Journal close, context exposure importer, destroy command",
+    "authority_store": "arp_jobs + original invocation/reserve/usage + index metadata",
+    "transaction": "job receipt never second execution fact; stable invoke ID on retry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(IndexJobPayload)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "PurgeJobPayload": {
+    "producer": "NativeJobWriter / resume_runtime_jobs",
+    "caller": "original Journal close, context exposure importer, destroy command",
+    "authority_store": "arp_jobs + original invocation/reserve/usage + index metadata",
+    "transaction": "job receipt never second execution fact; stable invoke ID on retry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(PurgeJobPayload)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "BindImportJobPayload": {
+    "producer": "NativeJobWriter / resume_runtime_jobs",
+    "caller": "original Journal close, context exposure importer, destroy command",
+    "authority_store": "arp_jobs + original invocation/reserve/usage + index metadata",
+    "transaction": "job receipt never second execution fact; stable invoke ID on retry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(BindImportJobPayload)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "JobResult": {
+    "producer": "NativeJobWriter / resume_runtime_jobs",
+    "caller": "original Journal close, context exposure importer, destroy command",
+    "authority_store": "arp_jobs + original invocation/reserve/usage + index metadata",
+    "transaction": "job receipt never second execution fact; stable invoke ID on retry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(JobResult)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "CollectionWitness": {
+    "producer": "SessionLifecycleService / RuntimeRetentionService",
+    "caller": "AgentRuntime close/destroy/startup worker",
+    "authority_store": "original Agent/Turn/call/import/root records + arp_agent_sessions + marker",
+    "transaction": "Orch→FileGuard→execution→partition; no IO under writer",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(CollectionWitness)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "CompleteSessionDisposal": {
+    "producer": "SessionLifecycleService / RuntimeRetentionService",
+    "caller": "AgentRuntime close/destroy/startup worker",
+    "authority_store": "original Agent/Turn/call/import/root records + arp_agent_sessions + marker",
+    "transaction": "Orch→FileGuard→execution→partition; no IO under writer",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(CompleteSessionDisposal)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SessionMarker": {
+    "producer": "SessionLifecycleService / RuntimeRetentionService",
+    "caller": "AgentRuntime close/destroy/startup worker",
+    "authority_store": "original Agent/Turn/call/import/root records + arp_agent_sessions + marker",
+    "transaction": "Orch→FileGuard→execution→partition; no IO under writer",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SessionMarker)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "IndexSnapshot": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(IndexSnapshot)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "IndexRebuildCommand": {
+    "producer": "SessionLifecycleService / RuntimeRetentionService",
+    "caller": "AgentRuntime close/destroy/startup worker",
+    "authority_store": "original Agent/Turn/call/import/root records + arp_agent_sessions + marker",
+    "transaction": "Orch→FileGuard→execution→partition; no IO under writer",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(IndexRebuildCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "PreparedRequestDisposition": {
+    "producer": "SessionLifecycleService / RuntimeRetentionService",
+    "caller": "AgentRuntime close/destroy/startup worker",
+    "authority_store": "original Agent/Turn/call/import/root records + arp_agent_sessions + marker",
+    "transaction": "Orch→FileGuard→execution→partition; no IO under writer",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(PreparedRequestDisposition)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "EmbeddingResource": {
+    "producer": "DurableEmbeddingAdapter.invoke",
+    "caller": "resume_runtime_jobs and SessionSearchService query creation",
+    "authority_store": "approved EmbeddingResource manifest + original invocation/usage/CAS",
+    "transaction": "sync embed bounded offload outside locks; original receipt then index",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(EmbeddingResource)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "EmbeddingCallReceipt": {
+    "producer": "DurableEmbeddingAdapter.invoke",
+    "caller": "resume_runtime_jobs and SessionSearchService query creation",
+    "authority_store": "approved EmbeddingResource manifest + original invocation/usage/CAS",
+    "transaction": "sync embed bounded offload outside locks; original receipt then index",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(EmbeddingCallReceipt)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RuntimeEvent": {
+    "producer": "RuntimePlaneStore append_event_binding_locked",
+    "caller": "original same transaction business writer",
+    "authority_store": "original event ID/seq/body + arp_event_bindings",
+    "transaction": "no second log; immutable metadata, Host consumes original event cursor",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RuntimeEvent)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ContextReadCommand": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ContextReadCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "CatalogueReadCommand": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(CatalogueReadCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillDetailsCommand": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillDetailsCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillInstallCommand": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillInstallCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ReceiptReadCommand": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ReceiptReadCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "PolicyReadCommand": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(PolicyReadCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SessionReadCommand": {
+    "producer": "RuntimePlaneApi typed facade",
+    "caller": "existing Host handlers fixed Principal",
+    "authority_store": "exact producer in host-verbs.json; receipts original store",
+    "transaction": "read scope plus exact snapshot; writes delegated not direct SQL",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SessionReadCommand)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillExecutionRequest": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillExecutionRequest)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ToolExecutionRequest": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ToolExecutionRequest)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "SkillLoadRequest": {
+    "producer": "SkillLifecycleService / FrozenSkillResolver / SkillExecutionAdapter",
+    "caller": "existing skill_install and existing execution tool gateway",
+    "authority_store": "immutable bundle CAS + dependency lock + original eval/call/reserve + arp_skill_uses",
+    "transaction": "management owner transaction; runtime original call UOW; cross owner manifest no fake ACID",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(SkillLoadRequest)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ErrorCode": {
+    "producer": "RuntimePlaneErrorAdapter",
+    "caller": "all typed boundaries",
+    "authority_store": "error-catalogue.json + sanitized actual failure",
+    "transaction": "no state write just from Error DTO",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ErrorCode)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "ManagementSearchPage": {
+    "producer": "SessionSearchService.start_or_resume / history_read",
+    "caller": "bound session_history tools and authenticated Host runtime handler",
+    "authority_store": "query_snapshots/search_queries/cursor_pages + original Journal exact reads",
+    "transaction": "FileGuard pages; each CAS partition write short; no network while locks",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(ManagementSearchPage)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "AgentContextPolicyAdoptedBody": {
+    "producer": "RuntimePlaneStore append_event_binding_locked",
+    "caller": "original same transaction business writer",
+    "authority_store": "original event ID/seq/body + arp_event_bindings",
+    "transaction": "no second log; immutable metadata, Host consumes original event cursor",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(AgentContextPolicyAdoptedBody)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RuntimeContextPreparedBody": {
+    "producer": "RuntimePlaneStore append_event_binding_locked",
+    "caller": "original same transaction business writer",
+    "authority_store": "original event ID/seq/body + arp_event_bindings",
+    "transaction": "no second log; immutable metadata, Host consumes original event cursor",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RuntimeContextPreparedBody)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RuntimeContextExposedBody": {
+    "producer": "RuntimePlaneStore append_event_binding_locked",
+    "caller": "original same transaction business writer",
+    "authority_store": "original event ID/seq/body + arp_event_bindings",
+    "transaction": "no second log; immutable metadata, Host consumes original event cursor",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RuntimeContextExposedBody)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RuntimeSessionStateChangedBody": {
+    "producer": "RuntimePlaneStore append_event_binding_locked",
+    "caller": "original same transaction business writer",
+    "authority_store": "original event ID/seq/body + arp_event_bindings",
+    "transaction": "no second log; immutable metadata, Host consumes original event cursor",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RuntimeSessionStateChangedBody)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RuntimeIndexGenerationPublishedBody": {
+    "producer": "RuntimePlaneStore append_event_binding_locked",
+    "caller": "original same transaction business writer",
+    "authority_store": "original event ID/seq/body + arp_event_bindings",
+    "transaction": "no second log; immutable metadata, Host consumes original event cursor",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RuntimeIndexGenerationPublishedBody)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RuntimeJobChangedBody": {
+    "producer": "RuntimePlaneStore append_event_binding_locked",
+    "caller": "original same transaction business writer",
+    "authority_store": "original event ID/seq/body + arp_event_bindings",
+    "transaction": "no second log; immutable metadata, Host consumes original event cursor",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RuntimeJobChangedBody)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "RuntimeCatalogueChangedBody": {
+    "producer": "RuntimePlaneStore append_event_binding_locked",
+    "caller": "original same transaction business writer",
+    "authority_store": "original event ID/seq/body + arp_event_bindings",
+    "transaction": "no second log; immutable metadata, Host consumes original event cursor",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(RuntimeCatalogueChangedBody)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "DeploymentDefinition": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(DeploymentDefinition)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  },
+  "DeploymentHealthSnapshot": {
+    "producer": "ManagedCatalogueOwnerAdapter register / transition / health",
+    "caller": "existing Host capability_catalog/skill_install authenticated command",
+    "authority_store": "existing managed definitions + arp_catalog_revisions / arp_catalog_activation / arp_registry_epoch in designated owner root",
+    "transaction": "single namespace owner; original pool mounts, no parallel registry",
+    "consumer": "see INTERFACES.md and host-verbs/model-tools for precise dispatch; context-free check validate_semantics(DeploymentHealthSnapshot)",
+    "definition_status": "SPECIFIED; not SDK existing claim",
+    "runtime_source_failure": "SOURCE_UNAVAILABLE",
+    "implementation_kind": "REUSE_ORIGINAL_OWNER_WITH_TYPED_ADAPTER"
+  }
+}

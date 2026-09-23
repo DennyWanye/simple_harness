@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "call_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "tool_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "status": "SUCCEEDED",
+  "result_artifact_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "operation_intent_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "inline_text": "example",
+  "representation": "INLINE",
+  "source_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "error_code": "example"
+}

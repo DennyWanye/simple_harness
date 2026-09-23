@@ -1,0 +1,14 @@
+{
+  "total_cost": 290,
+  "rows": [
+    {
+      "item": "A",
+      "cost": 120
+    },
+    {
+      "item": "B",
+      "cost": 100
+    }
+  ],
+  "source_version": 1
+}

@@ -1,0 +1,19 @@
+{
+  "current_session": "SELECT * FROM arp_agent_sessions WHERE agent_id=:agent_id AND state!='PURGED';",
+  "effective_policy": "SELECT * FROM arp_context_policy_adoptions WHERE session_id=:session_id ORDER BY adoption_revision DESC LIMIT 1;",
+  "exact_context": "SELECT * FROM arp_context_requests WHERE turn_id=:turn_id AND provider_request_ordinal=:ordinal;",
+  "active_index": "SELECT * FROM arp_index_publications WHERE session_id=:session_id AND state='ACTIVE';",
+  "index_chunk_page": "SELECT c.* FROM session_chunks c WHERE c.index_generation=:index_generation AND c.commit_seq<=:upper_commit AND c.rowid>:after_rowid ORDER BY c.rowid LIMIT :page_size;",
+  "index_vector_page": "SELECT c.*,v.dim,v.vector_le_f32,v.embedding_receipt_ref_json FROM session_chunks c LEFT JOIN session_vectors v ON v.chunk_id=c.chunk_id AND v.index_generation=c.index_generation AND v.embedding_fingerprint=:embedding AND v.commit_seq<=:upper_commit WHERE c.index_generation=:index_generation AND c.commit_seq<=:upper_commit AND c.rowid>:after_rowid ORDER BY c.rowid LIMIT :page_size;",
+  "words_page": "SELECT c.rowid,c.chunk_id FROM session_words JOIN session_chunks c ON c.rowid=session_words.rowid WHERE session_words MATCH :escaped_match AND c.index_generation=:index_generation AND c.commit_seq<=:upper_commit AND c.rowid>:after_rowid ORDER BY c.rowid LIMIT :page_size;",
+  "cursor_exact": "SELECT * FROM cursor_pages WHERE token_hash=:token_hash;",
+  "cursor_materialize": "UPDATE cursor_pages SET state='MATERIALIZED',page_json=:page_json,page_hash=:page_hash,next_token_hash=:next_token_hash WHERE token_hash=:token_hash AND state='PENDING' AND expires_at_ms>:now;",
+  "query_progress": "UPDATE search_queries SET after_rowid=:after_rowid,heap_json=:heap_json,elapsed_ms=:elapsed_ms,row_version=row_version+1 WHERE query_id=:query_id AND phase='SCANNING' AND row_version=:expected AND expires_at_ms>:now;",
+  "query_finalize": "UPDATE search_queries SET phase='RESULTS',final_results_json=:results,elapsed_ms=:elapsed_ms,row_version=row_version+1 WHERE query_id=:query_id AND phase='SCANNING' AND row_version=:expected;",
+  "catalogue_exact": "SELECT r.*,a.state,a.row_version,a.scope_ref_json FROM arp_catalog_revisions r JOIN arp_catalog_activation a USING(namespace_id,entry_kind,entry_id,revision,content_hash) WHERE r.namespace_id=:namespace AND r.entry_kind=:kind AND r.entry_id=:id AND r.revision=:revision AND r.content_hash=:hash;",
+  "claim_job": "UPDATE arp_jobs SET state='LEASED',owner_id=:owner,lease_until_ms=:lease,row_version=row_version+1,attempts=attempts+1 WHERE job_id=:job_id AND state='PENDING' AND row_version=:expected AND next_at_ms<=:now AND deadline_ms>:now;",
+  "finish_job": "UPDATE arp_jobs SET state='DONE',owner_id=NULL,lease_until_ms=NULL,row_version=row_version+1,result_receipt_ref_json=:receipt WHERE job_id=:job_id AND state='LEASED' AND owner_id=:owner AND row_version=:expected;",
+  "drain": "UPDATE arp_agent_sessions SET state='DRAINING',generation=generation+1,row_version=row_version+1,destroy_command_id=:command,destroy_command_hash=:hash,updated_at_ms=:now WHERE session_id=:session AND state IN ('CREATING','ACTIVE','QUARANTINED') AND row_version=:expected;",
+  "begin_purge": "UPDATE arp_agent_sessions SET state='PURGING',row_version=row_version+1,sealed_highwater=:highwater,delete_proof_ref_json=:proof,updated_at_ms=:now WHERE session_id=:session AND state='DRAINING' AND row_version=:expected;",
+  "finish_purge": "UPDATE arp_agent_sessions SET state='PURGED',row_version=row_version+1,updated_at_ms=:now WHERE session_id=:session AND state='PURGING' AND row_version=:expected;"
+}

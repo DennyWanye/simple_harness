@@ -1,0 +1,11 @@
+{
+  "scope": "REFERENCE_META_SCHEMA_ONLY",
+  "schemas": 24,
+  "positive_fixtures": 23,
+  "negative_fixtures": 23,
+  "six_purpose_bindings_and_invocations": 12,
+  "status": "PASS",
+  "sdk_verified": false,
+  "network_retrieval": false,
+  "runtime_dependency_added": false
+}

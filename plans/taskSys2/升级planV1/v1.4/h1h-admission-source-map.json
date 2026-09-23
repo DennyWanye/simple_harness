@@ -1,0 +1,116 @@
+{
+  "amendment": "H1H-ADM-1.0",
+  "candidate_head": "102ad3dfa2db38d575ea929d39ec5ed1561a71da",
+  "candidate_status": " M src/agent_orchestrator/orchestrator/action_commits.py\n M src/agent_orchestrator/orchestrator/event_handler.py\n M src/agent_orchestrator/orchestrator/hierarchical_dispatch.py\n M src/agent_orchestrator/planning/decision_adapter.py\n M src/agent_orchestrator/planning/decision_admission.py\n M src/agent_orchestrator/planning/htn/compiler.py\n M src/agent_orchestrator/storage/planning_decision_store.py\n M src/agent_orchestrator/storage/schema.py\n?? src/agent_orchestrator/api/planning_authorization.py\n?? src/agent_orchestrator/governance/planning_authorization.py\n?? src/agent_orchestrator/planning/plan_preview.py\n?? src/agent_orchestrator/runtime/planning_operations.py\n?? src/agent_orchestrator/storage/admission_seams_schema.py\n?? src/agent_orchestrator/storage/planning_admission_store.py\n?? tests/orchestrator/full_target/test_h1h_operation_admission.py\n?? tests/orchestrator/full_target/test_h1h_plan_preview.py\n?? tests/orchestrator/full_target/test_h1h_planning_authorization.py\n?? tests/orchestrator/full_target/test_h1h_wiring.py\n?? tests/orchestrator/full_target/test_planning_decision_store_rebind.py",
+  "host_head": "6c457908e49757035c21c6dc2b252415107a494c",
+  "sdk_main_head": "51dbed2eaf81d3225bcb15911c33838a79c1fcd3",
+  "contract_sources": [
+    {
+      "path": "/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/simpleharness-llm-native-htn-execution-plan-v2.zh-CN.md",
+      "sha256": "c5aff562be01be2a5edbcb8d3f05ce8ff546b87242ed0272c9f7d90048479d7c"
+    },
+    {
+      "path": "/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/LLM-native-HTN计划V2-裁定补遗-2026-09-18.zh-CN.md",
+      "sha256": "24fd0d7feacab5a2ada7634fb8fbbb923b4169fc34275edf9080943047b45d48"
+    },
+    {
+      "path": "/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/执行workplan-HTN-H1-NanoJev-2026-09-19.zh-CN.md",
+      "sha256": "41747c71f417a79000e8da3e841636b7154692907e202bc13a302cb8745ebc7e"
+    },
+    {
+      "path": "/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/任务书-H1-2026-09-19/h1h-impl.md",
+      "sha256": "28483da011306d7b27c44ea499f870795517282bb5529a1e84327ee66069da42"
+    },
+    {
+      "path": "/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/simpleharness-v14-h1h-admission-amendment.zh-CN.md",
+      "sha256": "fcc26712f40ea09c7edb757dc708c000bc31b7799e9180eb4f5b31e98f6bf2f5"
+    },
+    {
+      "path": "/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/V1.4范围变更-2026-09-21-移出NanoJev.zh-CN.md",
+      "sha256": "f20d42874a915186d2662612248359340bbbdf4b3adf1e850a81bb08c8c4d429"
+    }
+  ],
+  "symbols": [
+    {
+      "logical": "planning_request_reader",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/storage/planning_decision_store.py",
+      "symbol": "PlanningDecisionStore",
+      "sha256": "5487c82544f304fd0be904bad05301687627bcda61e82fbebe45b4fb1f602c20"
+    },
+    {
+      "logical": "mission_owner_guard",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/api/facade.py",
+      "symbol": "MissionControlV1._mission",
+      "sha256": "f771ae430ecc94d2b6fa541c3c8fb3bf0202e1f3dc4a85c723b90fb572d439fa"
+    },
+    {
+      "logical": "pure_compile_kernel",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/planning/htn/validation.py",
+      "symbol": "validate_delta",
+      "sha256": "406dc19d190b1ae6fb86af84e79b316882baf0b91a7727fd16c62ed695da4604"
+    },
+    {
+      "logical": "existing_action_writer",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/orchestrator/action_commits.py",
+      "symbol": "ActionCommitsMixin.propose_action",
+      "sha256": "af87eb7d86b2febfd976a54306a22937e338da8503e724ff27b842f93394b49e"
+    },
+    {
+      "logical": "existing_handoff_gate",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/orchestrator/action_commits.py",
+      "symbol": "ActionCommitsMixin.begin_handoff",
+      "sha256": "af87eb7d86b2febfd976a54306a22937e338da8503e724ff27b842f93394b49e"
+    },
+    {
+      "logical": "planning_authorization_producer",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/governance/planning_authorization.py",
+      "symbol": "PlanningAuthorizationSnapshot",
+      "sha256": "ef1a6150efa34558ee7b4f0941c6fa4f275f8c83ecca528a595ca552d6bbe87c"
+    },
+    {
+      "logical": "operation_snapshot_reader",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/runtime/planning_operations.py",
+      "symbol": "StoreOperationReader.read_running_work",
+      "sha256": "5beed3148a30896d77e5dc8c84609af2a6ed100cb4f1cd0b7fb7b60ae140f72e"
+    },
+    {
+      "logical": "pure_preview_pipeline",
+      "path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/planning/plan_preview.py",
+      "symbol": "preview_candidate",
+      "sha256": "958df979d442a5e8eae582e0bab81d5bfd1c7ccde284c3d6377f36a86e6b724b"
+    }
+  ],
+  "decision_enablement": [
+    "REFINE",
+    "REPAIR/REPLACE_METHOD",
+    "WAIT",
+    "NO_CHANGE",
+    "DECLARE_BLOCKED"
+  ],
+  "notes": [
+    "Source-map updated after the 2026-09-21 V1.4 scope change; the scope amendment is the active execution override.",
+    "NanoJev/PR-7/Shadow/HTN-Jev materials remain historical and are excluded from H1 evidence.",
+    "No reset, clean, cherry-pick, rebase, or pull performed.",
+    "09-19 binding rulings are preserved from the current H1-H taskbook and handoff."
+  ],
+  "scope_amendment": {
+    "path": "/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/V1.4范围变更-2026-09-21-移出NanoJev.zh-CN.md",
+    "sha256": "f20d42874a915186d2662612248359340bbbdf4b3adf1e850a81bb08c8c4d429",
+    "status": "ACTIVE_OVERRIDE",
+    "effective_date": "2026-09-21",
+    "supersedes_active_scope_only": true
+  },
+  "active_scope": [
+    "H1-H AdmissionContext seams",
+    "H1-H independent review and full gates",
+    "H1-I GPT-5.6 real-model scenarios"
+  ],
+  "deferred_scope": [
+    "NanoJev runtime/checkpoint/real model",
+    "PR-7 Host/SDK Shadow",
+    "Shadow/Primary/promotion",
+    "HTN+Jev special suite as a V1.4 gate",
+    "RETRY_OR_ESCALATE"
+  ],
+  "i08_override": "Run the H1 fixture with no external NanoJev/Shadow provider, config, checkpoint, or events; all three H1 producers and Commit authorization must remain independent."
+}

@@ -1,0 +1,72 @@
+{
+  "version": "1.1",
+  "adapter_rule": "Map actual recorded Event.type from current source to these internal classes at AS-0; new specified events are authored only by trusted writers. Do not infer authority from event name.",
+  "rows": [
+    {
+      "class": "CANDIDATE_READY",
+      "source": "original result/verified-artifact writer",
+      "consumers": [
+        "REVIEW"
+      ],
+      "work_key": "review_slot_key(mission,purpose,subject,requirements,scope,round)",
+      "action": "prepare original scoped Review once"
+    },
+    {
+      "class": "ACTUAL_REVIEW_TURN_AVAILABLE",
+      "source": "original execution collector; AssuranceReviewTurnImported",
+      "consumers": [
+        "REVIEW"
+      ],
+      "work_key": "collect:<intent>:<turn>:<raw_hash>",
+      "action": "parse only actual reply with frozen package/disclosure; persist official or bounded format repair"
+    },
+    {
+      "class": "ACTUAL_CHECK_AVAILABLE",
+      "source": "AssuranceLocalCheckFinished / actual execution check importer",
+      "consumers": [
+        "REVIEW",
+        "VALIDITY"
+      ],
+      "work_key": "existing pending review slot / current certificate consumer",
+      "action": "reevaluate exact checks; do not automatically duplicate model call"
+    },
+    {
+      "class": "SOURCE_OR_AUTHORITY_CHANGED",
+      "source": "all §8 writer hooks and actual ACL/policy import",
+      "consumers": [
+        "VALIDITY",
+        "CLOSEOUT"
+      ],
+      "work_key": "<consumer>:<use> / <mission>:<root_requirements>",
+      "action": "barrier already committed with source; enqueue bounded recompute without async false safety gap"
+    },
+    {
+      "class": "BUSINESS_OR_RUNTIME_SETTLED",
+      "source": "OCC accepted contributions/Resolution; actual operation/attempt/hold import",
+      "consumers": [
+        "REVIEW",
+        "CLOSEOUT"
+      ],
+      "work_key": "needed next composition review slot / root closeout",
+      "action": "fresh facts may unblock original pending work"
+    },
+    {
+      "class": "AssuranceStatusNotificationRequested",
+      "source": "unique Mission final writer",
+      "consumers": [
+        "NOTIFY"
+      ],
+      "work_key": "notify:<mission>:<final_event_id>",
+      "action": "at-least-once local status transport, no external business action"
+    },
+    {
+      "class": "DIAGNOSTIC_ONLY",
+      "source": "own WorkWaiting/CursorAdvanced/NotificationAck logs",
+      "consumers": [],
+      "work_key": null,
+      "action": "ignore classification, safely advance cursor without emitting recursive event"
+    }
+  ],
+  "activation": "seed current state at activation seq in same binding transaction; cursor missing rebuild from zero+stable keys",
+  "missing_source": "SOURCE_UNAVAILABLE with durable pending reason; no model retry fallback"
+}

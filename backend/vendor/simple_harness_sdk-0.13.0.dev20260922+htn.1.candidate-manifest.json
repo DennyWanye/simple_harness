@@ -1,0 +1,30 @@
+{
+  "artifacts": {
+    "simple_harness_sdk-0.13.0.dev20260922+htn.1-py3-none-any.whl": "af9e273061ceeeb3204ccbb4e4d32965fb3bba568e6c7e63f1af1b18244b9800"
+  },
+  "commit": "102ad3dfa2db38d575ea929d39ec5ed1561a71da",
+  "development_candidate": true,
+  "planned_tag": null,
+  "provenance": {
+    "release_published": false,
+    "source_commit": "102ad3dfa2db38d575ea929d39ec5ed1561a71da",
+    "source_input_count": 532,
+    "source_inputs_sha256": "008a088cf8cdfe1734d460acae40796907879bbfc06f39e3c4d89d9aed40976b",
+    "source_root": "/Users/denny/projects/simple-harness-sdk-h1h-impl",
+    "version_rewrites": [
+      {
+        "after": "5b40a0bddfc3843ac7148bdb8234480dd31c9165fed2b367d94792610171042d",
+        "before": "384c23ff655b06f5885e304c956f5fe17b3aac17459ad88bcd62fd474eaaab71",
+        "path": "src/simple_harness/version.py"
+      },
+      {
+        "after": "60fc7b107caaa5565907a79dbe7919386f90cedfd9843d25f28878b71b49e7df",
+        "before": "5b7062a3b0208510550c37158954cc144989663bd58a0e5d8239f5ab11d795c5",
+        "path": "src/agent_orchestrator/version.py"
+      }
+    ],
+    "working_tree_dirty": true
+  },
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.13.0.dev20260922+htn.1"
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.simpleharness.invalid/assurance/1.1/restore-authorization-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "root_incarnation_id",
+    "restore_manifest_hash",
+    "principal_id",
+    "tenant_id",
+    "authorized_exact_refs",
+    "authority_receipt_ref",
+    "not_before_ms",
+    "expires_at_ms",
+    "mode",
+    "current_policy_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "root_incarnation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "restore_manifest_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "principal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "authorized_exact_refs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 2048,
+      "items": {
+        "$ref": "common.schema.json#/$defs/ref"
+      },
+      "uniqueItems": true
+    },
+    "authority_receipt_ref": {
+      "allOf": [
+        {
+          "$ref": "common.schema.json#/$defs/ref"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "commit_receipt"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "not_before_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "expires_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "mode": {
+      "const": "READ_ONLY_REAUTHORIZED"
+    },
+    "current_policy_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

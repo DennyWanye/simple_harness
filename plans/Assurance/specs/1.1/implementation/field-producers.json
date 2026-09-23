@@ -1,0 +1,2578 @@
+[
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/pin_id",
+    "resolved_subtree_hash": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/review_key",
+    "resolved_subtree_hash": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/object_ref",
+    "resolved_subtree_hash": "abeb590d2be6cd11703c1113732e189ad19e20a323ff6f5fedda1f389ebc7bc3",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/blob_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/state",
+    "resolved_subtree_hash": "9e99c6ba81a1912f8c7220d333d5d07e48972488c59171180681efff8599bee2",
+    "producer_rule": "unique owner state reducer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/row_version",
+    "resolved_subtree_hash": "ea288f4ef558f5f1682c9ec4c9395734bd8290c18c696889964cd2b24e1dcfe8",
+    "producer_rule": "Store CAS",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/created_at_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/released_at_ms",
+    "resolved_subtree_hash": "f643b5cf980228a2255e76244b6c16baf81225e1f78635c36b2726bd3fda7558",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/source_receipt_ref",
+    "resolved_subtree_hash": "7feeae37aae97e49f0b8d1d64d75c1917c3570b6d752dfdd0f3679fe67d88e4a",
+    "producer_rule": "original CommitReceipt from transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/last_receipt_ref",
+    "resolved_subtree_hash": "7feeae37aae97e49f0b8d1d64d75c1917c3570b6d752dfdd0f3679fe67d88e4a",
+    "producer_rule": "actual transition receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/source_receipt_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "7c164bd8274b24d0b1e54fea965166520505263aaeadb58a6b1396bd46eaae7d",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/properties/last_receipt_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "7c164bd8274b24d0b1e54fea965166520505263aaeadb58a6b1396bd46eaae7d",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/0/properties/criterion",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/1/properties/all",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/blob-pin-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/2/properties/any",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "AssuranceStore.acquire_review_pins/bind_review_pins/release_review_pins within original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "53596229a0c86548d06702e4f62f5922e7edf4a42e15f194ad05be5d37591b43",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/check_spec_ref",
+    "resolved_subtree_hash": "763ac8045f51e237e33e0531a88fef0f7945e964d983854c5a13bf1003032068",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/subject_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/input_manifest_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/output_manifest_hash",
+    "resolved_subtree_hash": "804cbf0c6b152b674bed70f94fb1e2f30babbe975c5ebace2114715cf1822145",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/assertion_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/execution_ref",
+    "resolved_subtree_hash": "c8f1ef16b0a8a873f8f0f5ee0a40fa4f7b773c968f39f8b5d4c4019acf71ba8a",
+    "producer_rule": "local trusted recorder or executor import, never a supplied bool",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/adapter_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/environment_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/scope_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/execution_state",
+    "resolved_subtree_hash": "31154bc03331be34766680a379f0dbea35a30cc3bdd4be8704bff6e695d7fa18",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/verdict",
+    "resolved_subtree_hash": "7044e435a6963196f660cc1c54552702707d22c5bcc1a78dca100a20d7372eb0",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/evidence_refs",
+    "resolved_subtree_hash": "14ac1c471bb44a907eb7db2328417b43d27dfb64d9a22e336b5a4789a6fdb223",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/observed_at_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/not_after_ms",
+    "resolved_subtree_hash": "f0dcd4933fa1cec88b4091dd9cdde0e4eb8dcf8ca30146d43e6c4118399d5b70",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/check_spec_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "821aaddcaa74d4e4d62145e5c6268f797bcb23756be6e346e9d17de818a1f9e8",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/properties/execution_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "65e6b1d295cb732bae104242677e290a12f3022b950dd553c73260add413de80",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/allOf/0/if/properties/verdict",
+    "resolved_subtree_hash": "154d4b5e6aea468754e0b6d73691dee25a774bffa51708747af714b55a17d7a2",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/allOf/0/then/properties/execution_state",
+    "resolved_subtree_hash": "aca4c9a708000f4249cc211bec02606b5dd564f668a27e0040bd1351d687a733",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/0/properties/criterion",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/1/properties/all",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-binding-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/2/properties/any",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "import_assurance_check: real local/execution receipt -> original evidence writer + binding",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/checker_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/checker_version",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/implementation_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/assertion_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/execution_kind",
+    "resolved_subtree_hash": "2796bef1f8dae599883f76b073c85058d7ce4307877a3708dcefc9543195b3d2",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/input_schema_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/result_schema_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/scope_rule_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/environment_requirements",
+    "resolved_subtree_hash": "d27159e7acc8be454cd69883fa3140458176134ec78d6cb48b191162e83e842f",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/check-spec-v1.schema.json",
+    "json_pointer": "/properties/max_runtime_ms",
+    "resolved_subtree_hash": "37b7e7536a560d97718d3a290eccb38e9e301bb91dfe4dd19f9555ffd713008c",
+    "producer_rule": "registered_checker_install: immutable original CheckSpecRegistered event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/root_resolution_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/requirements_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/completion_spec_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/state",
+    "resolved_subtree_hash": "b3c9dea0937526cf92293cd8aa5bd398b06a532dc9f86865a81f8e518c51b4cd",
+    "producer_rule": "unique owner state reducer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/pending_effect_keys",
+    "resolved_subtree_hash": "fb63ba142e4020b821c5b7bfac8c3c2cc67c6dd1b3c7b7c016744f77c3e779d6",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/unsettled_operation_refs",
+    "resolved_subtree_hash": "fcb620f21729b2a87449adaec93b621f5c423804ffa90d918fc7ab36cdaee5a9",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/accounting_pending_refs",
+    "resolved_subtree_hash": "fcb620f21729b2a87449adaec93b621f5c423804ffa90d918fc7ab36cdaee5a9",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/dangerous_work_refs",
+    "resolved_subtree_hash": "fcb620f21729b2a87449adaec93b621f5c423804ffa90d918fc7ab36cdaee5a9",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/read_set",
+    "resolved_subtree_hash": "5d1a75c50999a11118ab5be66bbe486d781c9dd301a7ae606d1da206c74621b2",
+    "producer_rule": "complete snapshot reader + canonical_read_set",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/report_ref",
+    "resolved_subtree_hash": "52350dc3554f3fe1a3b08e3214e4f82dbea4dff14f770e6a158ddf443d643890",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/as_of_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/properties/reasons",
+    "resolved_subtree_hash": "a4fc4ff4982c2786610cb7ff01349742205198fd300bc9f638f977c6c59a9114",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/0/properties/criterion",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/1/properties/all",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/closeout-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/2/properties/any",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "try_finalize_assured_mission / _finalize_assured_mission_locked",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/pin/properties/id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/pin/properties/revision",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/pin/properties/content_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/ref/properties/kind",
+    "resolved_subtree_hash": "d5ed7713ee47276e654f995c6f7b695720bfffa31710754d968c801264ceda5c",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/ref/properties/pin",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/read_item/properties/channel",
+    "resolved_subtree_hash": "0cd7f5234184b16af69af5953ad778b30000fb119976ed98df1f23ea7026048b",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/read_item/properties/key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/read_item/properties/fingerprint",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/read_item/properties/coverage",
+    "resolved_subtree_hash": "9481da5593c5cf50584887f56d70f51557d6c955acfd6deebb90c9d5534775a3",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/catalogue_entry/properties/label",
+    "resolved_subtree_hash": "d81c8d9ac3dd66b9f00eec458dd1c410d01d11bf5124413810042772abaadaba",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/common.schema.json",
+    "json_pointer": "/$defs/catalogue_entry/properties/ref",
+    "resolved_subtree_hash": "abeb590d2be6cd11703c1113732e189ad19e20a323ff6f5fedda1f389ebc7bc3",
+    "producer_rule": "selected kind resolver from ref-resolution-map; pure schema shared vocabulary",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/requirements_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/scope_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/criteria",
+    "resolved_subtree_hash": "cd8c3057eb3ebc7d74ffd0b08a3aa5afdaf297029c17078c17851c21ab698a71",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/approval_receipt_ref",
+    "resolved_subtree_hash": "7feeae37aae97e49f0b8d1d64d75c1917c3570b6d752dfdd0f3679fe67d88e4a",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/adapter_version",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/criteria/items/properties/criterion_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/criteria/items/properties/mode",
+    "resolved_subtree_hash": "dbb55362b6c0834c6ea0e34a634f61d1ff64e56227905d35aa4868d0968db817",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/criteria/items/properties/any_check_sets",
+    "resolved_subtree_hash": "328958c2b2b057b58ec4e474288f2f4821db986b54c3cbf575e1bc8b1e02825c",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/criteria/items/properties/any_check_sets/items/items/allOf/1/properties/kind",
+    "resolved_subtree_hash": "821aaddcaa74d4e4d62145e5c6268f797bcb23756be6e346e9d17de818a1f9e8",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/criterion-policy-v1.schema.json",
+    "json_pointer": "/properties/approval_receipt_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "7c164bd8274b24d0b1e54fea965166520505263aaeadb58a6b1396bd46eaae7d",
+    "producer_rule": "approve_assurance_check_policy in original Requirements approval transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/review_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/batch_no",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/previous_batch_hash",
+    "resolved_subtree_hash": "804cbf0c6b152b674bed70f94fb1e2f30babbe975c5ebace2114715cf1822145",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/entries",
+    "resolved_subtree_hash": "68b87f58bc7a63bac6ce169780f9677fc9921476a7119f662420e0a7aa2ce581",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/reviewer_agent_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/turn_receipt_ref",
+    "resolved_subtree_hash": "7be0c7207f7b24ab1985473eeaee106b1d1211b55e90725a46c65c75d407d2b9",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/provider_input_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/visible_message_ids",
+    "resolved_subtree_hash": "2c251ae1f2e16bb2f034f645923c0e695d5872aa7b08d9898eeaaa3acc9ad420",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/delivery_receipt_ref",
+    "resolved_subtree_hash": "239f3ba87806eed58f586bdee1f96c20b42b188c368d20690e83c218066ac7e4",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/turn_receipt_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "28eab306de007f585e3693fc792210adf843e413266d98dc85c980a3d08d03e9",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/disclosure-batch-v1.schema.json",
+    "json_pointer": "/properties/delivery_receipt_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "7eb90b62e1e5c616f2f30c6673bb563b3c4e4506ada3355d3ebeedb392512f95",
+    "producer_rule": "import_reviewer_disclosure using actual Provider input manifest receipt",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-error-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-error-v1.schema.json",
+    "json_pointer": "/properties/request_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "fixed caller Host handler error adapter",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-error-v1.schema.json",
+    "json_pointer": "/properties/code",
+    "resolved_subtree_hash": "4188ac1742ae5ccd98ab6efa4cc8900b28412b1c4744f3005262f31c2bb4bc3e",
+    "producer_rule": "fixed caller Host handler error adapter",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-error-v1.schema.json",
+    "json_pointer": "/properties/message",
+    "resolved_subtree_hash": "60f70effff39bbc33445a1c0ccb3fbf175340444f21eda7d3d810cb684ad0bb4",
+    "producer_rule": "fixed caller Host handler error adapter",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-error-v1.schema.json",
+    "json_pointer": "/properties/retryable",
+    "resolved_subtree_hash": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "producer_rule": "fixed caller Host handler error adapter",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/request_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/view",
+    "resolved_subtree_hash": "95c64cc0a01d11cb3cf975302810170d31244fc487ac5bcd663ce49f4e80eb90",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/snapshot_seq",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/root_incarnation_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "local trust bootstrap outside backup authority",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/sdk_fingerprint",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/host_fingerprint",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/items",
+    "resolved_subtree_hash": "8f0cc99e0981a078cf2abe767413487a8c88ef6e674c48259b90339a0b910241",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/next_cursor",
+    "resolved_subtree_hash": "84fc6f62aa626107846ab5cca298472e728c494dee662d3adc54ed7bcde020ac",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/truncated",
+    "resolved_subtree_hash": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/items/items/properties/kind",
+    "resolved_subtree_hash": "032b36c02c91141d927b8aed521599cca44a26a9aafb2650525adad7be281947",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/items/items/properties/id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/items/items/properties/history_state",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/items/items/properties/current_use",
+    "resolved_subtree_hash": "5924f388384e59e0a9b305ca3fd8ad23d112ba686989098fc4a755c2b4518a8f",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/items/items/properties/reason_codes",
+    "resolved_subtree_hash": "fb63ba142e4020b821c5b7bfac8c3c2cc67c6dd1b3c7b7c016744f77c3e779d6",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/items/items/properties/evidence_count",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/items/items/properties/artifact_ref",
+    "resolved_subtree_hash": "c58f2a6634380991aefbaef304fb91429f373a0c75148cdc9055753a7364db42",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-response-v1.schema.json",
+    "json_pointer": "/properties/items/items/properties/artifact_ref/oneOf/1/allOf/1/properties/kind",
+    "resolved_subtree_hash": "8f05aef6f2f1253428386fc0fba96e813dc63eac4db39fd35c268d52dd2a36fc",
+    "producer_rule": "AssuranceApi.snapshot -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-request-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-request-v1.schema.json",
+    "json_pointer": "/properties/request_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-request-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-request-v1.schema.json",
+    "json_pointer": "/properties/review_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-request-v1.schema.json",
+    "json_pointer": "/properties/cursor",
+    "resolved_subtree_hash": "84fc6f62aa626107846ab5cca298472e728c494dee662d3adc54ed7bcde020ac",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-request-v1.schema.json",
+    "json_pointer": "/properties/limit",
+    "resolved_subtree_hash": "e238f277e0a0417952ce019bd53b77a638fadca658bd080cbd5b82e3ecede39f",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/request_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/view",
+    "resolved_subtree_hash": "95c64cc0a01d11cb3cf975302810170d31244fc487ac5bcd663ce49f4e80eb90",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/snapshot_seq",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/root_incarnation_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "local trust bootstrap outside backup authority",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/sdk_fingerprint",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/host_fingerprint",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/review_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/purpose",
+    "resolved_subtree_hash": "675a24c55501b9974ec9c2f982c581cd1532e16f7c050eb071bf7b5e6a231c70",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/package_ref",
+    "resolved_subtree_hash": "b5a4bccfdc82e81b9c78054c2087871c10c60664cc057f2868e716a427e36f80",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/record_ref",
+    "resolved_subtree_hash": "52350dc3554f3fe1a3b08e3214e4f82dbea4dff14f770e6a158ddf443d643890",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/official_status",
+    "resolved_subtree_hash": "0f8807ad378d3d5bf10df3f7982f6d86216ada8ec4947c304492525220573a13",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/verdict",
+    "resolved_subtree_hash": "3b478b8a551ae61391a80f5fcdd4ed85c01ca40272a7a137b06796f87dae328e",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/assessments",
+    "resolved_subtree_hash": "fd53bd192f8faf3f32a417ddc5bda5dcbad29acc2369f06ffa87b1ce18a86630",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/next_cursor",
+    "resolved_subtree_hash": "84fc6f62aa626107846ab5cca298472e728c494dee662d3adc54ed7bcde020ac",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/truncated",
+    "resolved_subtree_hash": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/current_use",
+    "resolved_subtree_hash": "c4ccf4060e751325527c4631cb81f2f59854b348ec0833e259cac8ba5af2acb7",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/package_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "4e9b8e585d066e29f393a7c66a7386c0392f965dd064cea73ac7fc06ff21f535",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/criterion_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/model_grade",
+    "resolved_subtree_hash": "7044e435a6963196f660cc1c54552702707d22c5bcc1a78dca100a20d7372eb0",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/effective_grade",
+    "resolved_subtree_hash": "7044e435a6963196f660cc1c54552702707d22c5bcc1a78dca100a20d7372eb0",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/check_gate",
+    "resolved_subtree_hash": "0b43387598ec0b714ec29b729dcc478d24341609b21843f55cb3eb30619a5b3f",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/reason_codes",
+    "resolved_subtree_hash": "a4fc4ff4982c2786610cb7ff01349742205198fd300bc9f638f977c6c59a9114",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-review-response-v1.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/evidence_labels",
+    "resolved_subtree_hash": "c13c639962f423ee63ed56530088d2b7570b01575859f7d4049267c84bf6b911",
+    "producer_rule": "AssuranceApi.review -> existing Host projection",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-snapshot-request-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-snapshot-request-v1.schema.json",
+    "json_pointer": "/properties/request_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-snapshot-request-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-snapshot-request-v1.schema.json",
+    "json_pointer": "/properties/view",
+    "resolved_subtree_hash": "95c64cc0a01d11cb3cf975302810170d31244fc487ac5bcd663ce49f4e80eb90",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-snapshot-request-v1.schema.json",
+    "json_pointer": "/properties/at_event_seq",
+    "resolved_subtree_hash": "f0dcd4933fa1cec88b4091dd9cdde0e4eb8dcf8ca30146d43e6c4118399d5b70",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-snapshot-request-v1.schema.json",
+    "json_pointer": "/properties/cursor",
+    "resolved_subtree_hash": "84fc6f62aa626107846ab5cca298472e728c494dee662d3adc54ed7bcde020ac",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-snapshot-request-v1.schema.json",
+    "json_pointer": "/properties/limit",
+    "resolved_subtree_hash": "e238f277e0a0417952ce019bd53b77a638fadca658bd080cbd5b82e3ecede39f",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-request-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-request-v1.schema.json",
+    "json_pointer": "/properties/request_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-request-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-request-v1.schema.json",
+    "json_pointer": "/properties/subject_ref",
+    "resolved_subtree_hash": "abeb590d2be6cd11703c1113732e189ad19e20a323ff6f5fedda1f389ebc7bc3",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-request-v1.schema.json",
+    "json_pointer": "/properties/view",
+    "resolved_subtree_hash": "95c64cc0a01d11cb3cf975302810170d31244fc487ac5bcd663ce49f4e80eb90",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-request-v1.schema.json",
+    "json_pointer": "/properties/at_event_seq",
+    "resolved_subtree_hash": "f0dcd4933fa1cec88b4091dd9cdde0e4eb8dcf8ca30146d43e6c4118399d5b70",
+    "producer_rule": "existing authenticated UI request transport; no caller fields",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/request_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/view",
+    "resolved_subtree_hash": "95c64cc0a01d11cb3cf975302810170d31244fc487ac5bcd663ce49f4e80eb90",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/snapshot_seq",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/root_incarnation_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "local trust bootstrap outside backup authority",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/sdk_fingerprint",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/host_fingerprint",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/subject_ref",
+    "resolved_subtree_hash": "abeb590d2be6cd11703c1113732e189ad19e20a323ff6f5fedda1f389ebc7bc3",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/purpose",
+    "resolved_subtree_hash": "13a332ebe19676b1586cbe51f39109448c17962e2ee3c4d95a86efe770231288",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/decision",
+    "resolved_subtree_hash": "63b03f644dbb6f0ee2943212d259d51b3129fd5d257f50614f8afea63644cc3a",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/diagnostic_only",
+    "resolved_subtree_hash": "02e70d99380d0cc184f95bd0d4c286c1c4d5e530ba725618c6321376ec9480b9",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/coverage",
+    "resolved_subtree_hash": "c3ad89e3f6e52a05c448fc53be4d20a5dc2ca63a247c3f19233e30cf2db9cc6f",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/reason_codes",
+    "resolved_subtree_hash": "a4fc4ff4982c2786610cb7ff01349742205198fd300bc9f638f977c6c59a9114",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/checked_at_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/expires_at_ms",
+    "resolved_subtree_hash": "f0dcd4933fa1cec88b4091dd9cdde0e4eb8dcf8ca30146d43e6c4118399d5b70",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/host-use-response-v1.schema.json",
+    "json_pointer": "/properties/certificate_ref",
+    "resolved_subtree_hash": "bcde375ebd4cbacf651311181173836b169d5a360c6ac158c6a2cdaf49be3f61",
+    "producer_rule": "AssuranceApi.use_check diagnostic only, not a certificate issuer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/check_spec_ref",
+    "resolved_subtree_hash": "763ac8045f51e237e33e0531a88fef0f7945e964d983854c5a13bf1003032068",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/subject_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/input_manifest_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/environment_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/run_nonce",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/started_at_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/finished_at_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/execution_state",
+    "resolved_subtree_hash": "31154bc03331be34766680a379f0dbea35a30cc3bdd4be8704bff6e695d7fa18",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/assertions",
+    "resolved_subtree_hash": "3677ed2e8e854e06a948b86bda2d4c9cd06820f51ab989a54786fb2cb6abda96",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/recorder_implementation_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/check_spec_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "821aaddcaa74d4e4d62145e5c6268f797bcb23756be6e346e9d17de818a1f9e8",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/assertions/items/properties/assertion_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/assertions/items/properties/verdict",
+    "resolved_subtree_hash": "7044e435a6963196f660cc1c54552702707d22c5bcc1a78dca100a20d7372eb0",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/local-check-receipt-v1.schema.json",
+    "json_pointer": "/properties/assertions/items/properties/output_hash",
+    "resolved_subtree_hash": "804cbf0c6b152b674bed70f94fb1e2f30babbe975c5ebace2114715cf1822145",
+    "producer_rule": "record_local_check_run -> trusted import_local_check -> original event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/consumer",
+    "resolved_subtree_hash": "bcb6707079220e3326866a8b1b1d49b373bce08270e9fc6cc4acd6cc0f81d8d1",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/work_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/trigger_event_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/target_epoch",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/target_fingerprint",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/state",
+    "resolved_subtree_hash": "4c2f2bb36d176bc336f43b49a9014804332655030146a369c32f224fb1a37fdc",
+    "producer_rule": "unique owner state reducer",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/row_version",
+    "resolved_subtree_hash": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "producer_rule": "Store CAS",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/tries",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/not_before_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/wait_reason",
+    "resolved_subtree_hash": "84fc6f62aa626107846ab5cca298472e728c494dee662d3adc54ed7bcde020ac",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/owner",
+    "resolved_subtree_hash": "84fc6f62aa626107846ab5cca298472e728c494dee662d3adc54ed7bcde020ac",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/pending-work-v1.schema.json",
+    "json_pointer": "/properties/lease_until_ms",
+    "resolved_subtree_hash": "f0dcd4933fa1cec88b4091dd9cdde0e4eb8dcf8ca30146d43e6c4118399d5b70",
+    "producer_rule": "AssuranceEventConsumer.ingest and tick claim/commit on original Store",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/mode",
+    "resolved_subtree_hash": "b61fa0e62c0ff5d5fbb39d72732411f8c3b278a705fe8abaf3e9f07f8b45820d",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/max_json_bytes",
+    "resolved_subtree_hash": "2bca501f05df95994c62e640ea4f44d644dc7e7d1c6b1b9c59f1591f6955ef2c",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/max_json_depth",
+    "resolved_subtree_hash": "305f5e67a4fe671a493b09640beb9ddc357f57c8e4576199e64f606c7bd47699",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/max_formula_nodes",
+    "resolved_subtree_hash": "346c0516401f05f97982176f345e76241dfd755772c5bfaaa515e318cf7169eb",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/max_criteria",
+    "resolved_subtree_hash": "71471e0aa42bb20c979a596ee3924dfac7a480b0bc66b9fda4d0c50901a7634c",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/max_ground_literals",
+    "resolved_subtree_hash": "fef9653073daf418e3407377b55fe3e1807c99015b32bdd96f5135d3f54cbd8f",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/max_rules",
+    "resolved_subtree_hash": "db338f672820fcebff62120b55bf13502cf46432c2f188b6214fde140cf7244c",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/format_retries",
+    "resolved_subtree_hash": "1149cbbaa1d7a60f4a0662b2349cf7ac0e258275a816b8f9c9c40fb806ae79b7",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/statement_time_unit",
+    "resolved_subtree_hash": "9040b53891b28477946745e02ae78336dcfe7c8fb81bf12c9db18f0328709c2a",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/require_independent_verifier",
+    "resolved_subtree_hash": "02e70d99380d0cc184f95bd0d4c286c1c4d5e530ba725618c6321376ec9480b9",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/unknown_effect_closeout",
+    "resolved_subtree_hash": "11a5833dc8a73ebea6e8529758dc5e40a33c5fa465c3e2e853c2850733447ecc",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/properties/cross_mission_evidence",
+    "resolved_subtree_hash": "6af452720d97d102cb96d5f60c95ed0cca85c257eb38943aa24d2f7721171f39",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/0/properties/criterion",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/1/properties/all",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/policy-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/2/properties/any",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "registered deployment profile frozen by bind_assurance_profile",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/root_incarnation_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "local trust bootstrap outside backup authority",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/restore_manifest_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/principal_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/tenant_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/authorized_exact_refs",
+    "resolved_subtree_hash": "e213f71a290a9f489d37c5ad89f5b1eeb32a432647e15e65a1fa68e19e7c6a65",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/authority_receipt_ref",
+    "resolved_subtree_hash": "7feeae37aae97e49f0b8d1d64d75c1917c3570b6d752dfdd0f3679fe67d88e4a",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/not_before_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/expires_at_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/mode",
+    "resolved_subtree_hash": "f437e15b76ae9e7ac18d75efaff646af13e1ae087f64ad401e2bbf4d5d9f7ecb",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/current_policy_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/restore-authorization-v1.schema.json",
+    "json_pointer": "/properties/authority_receipt_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "7c164bd8274b24d0b1e54fea965166520505263aaeadb58a6b1396bd46eaae7d",
+    "producer_rule": "current authenticated reauthorize_restored_read -> original receipt + root file",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "53596229a0c86548d06702e4f62f5922e7edf4a42e15f194ad05be5d37591b43",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/review_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/package_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/round_no",
+    "resolved_subtree_hash": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "producer_rule": "explicit independent-review request, not notification/retry",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/subject",
+    "resolved_subtree_hash": "ac2cb8bd2391422a0598b71607cd9b22cc9c21089f7fc5d0679c5bc8f88c599b",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/requirements_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/criterion_ids",
+    "resolved_subtree_hash": "2c251ae1f2e16bb2f034f645923c0e695d5872aa7b08d9898eeaaa3acc9ad420",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/mandatory_ids",
+    "resolved_subtree_hash": "081d59a6cd09369099ac11f1c2f5febe0c4b15e323812f35f4a6a63ba3b8e459",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/formula",
+    "resolved_subtree_hash": "e3dee9e6e129502a96e4500dc35002d147f4edabaa9dadc945cb58b2c02ad693",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/check_requirements",
+    "resolved_subtree_hash": "ba436553fe78bd1ee782826b38e2a41b44d48b66b1a48d03d3b8ca7f32d7191b",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/evidence_catalogue",
+    "resolved_subtree_hash": "cdc7252a44e7ae1ea16f5cffc603ab6a9b9a7f2e41a1a489be6b53fae9601762",
+    "producer_rule": "build_catalogue(review_key, exact refs)",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/producer_agent_ids",
+    "resolved_subtree_hash": "2c251ae1f2e16bb2f034f645923c0e695d5872aa7b08d9898eeaaa3acc9ad420",
+    "producer_rule": "actual Result/Attempt graph; empty forbidden",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/reviewer_policy_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/read_set",
+    "resolved_subtree_hash": "5d1a75c50999a11118ab5be66bbe486d781c9dd301a7ae606d1da206c74621b2",
+    "producer_rule": "complete snapshot reader + canonical_read_set",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/context_policy_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/criterion_policy_ref",
+    "resolved_subtree_hash": "c08132d14cca1891e180dd12174663f523035a15ae97e0525739be5b55f4a26f",
+    "producer_rule": "approve_check_policy in requirements transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/catalogue_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "hash of label/exact-ref mapping",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/subject/properties/purpose",
+    "resolved_subtree_hash": "675a24c55501b9974ec9c2f982c581cd1532e16f7c050eb071bf7b5e6a231c70",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/subject/properties/target",
+    "resolved_subtree_hash": "abeb590d2be6cd11703c1113732e189ad19e20a323ff6f5fedda1f389ebc7bc3",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/subject/properties/owner_task_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/subject/properties/occurrence_id",
+    "resolved_subtree_hash": "84fc6f62aa626107846ab5cca298472e728c494dee662d3adc54ed7bcde020ac",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/subject/properties/completion_scope_ref",
+    "resolved_subtree_hash": "04030fb5f36e32f1ac120fd094aabe266c6d8bf4a0ef3bb9305ef23688a45e19",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/subject/properties/method_instance_ref",
+    "resolved_subtree_hash": "04030fb5f36e32f1ac120fd094aabe266c6d8bf4a0ef3bb9305ef23688a45e19",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/subject/properties/input_manifest_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/subject/properties/output_manifest_hash",
+    "resolved_subtree_hash": "804cbf0c6b152b674bed70f94fb1e2f30babbe975c5ebace2114715cf1822145",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/check_requirements/items/properties/criterion_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/check_requirements/items/properties/mode",
+    "resolved_subtree_hash": "dbb55362b6c0834c6ea0e34a634f61d1ff64e56227905d35aa4868d0968db817",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/check_requirements/items/properties/any_check_sets",
+    "resolved_subtree_hash": "0e83c46a8ed3246a0eef4d02ead1a9205786c6f47db3c7c0ea26fce80fdb7a64",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/check_requirements/items/properties/any_check_sets/items/items/allOf/1/properties/kind",
+    "resolved_subtree_hash": "821aaddcaa74d4e4d62145e5c6268f797bcb23756be6e346e9d17de818a1f9e8",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/properties/criterion_policy_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "c7b5b2d1247788fef29b14a0a6c01551e3200515ae7061dcdb57e750f5056399",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/0/properties/criterion",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/1/properties/all",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-binding-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/2/properties/any",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "existing scoped/root/composition builder -> ensure_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/review_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/ordinal",
+    "resolved_subtree_hash": "70b74757dee33b3a037c47edc3c1ff6ef426c24f6737d7647eaa34f432fdb095",
+    "producer_rule": "initial or single format repair after known previous result",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/reason",
+    "resolved_subtree_hash": "0b5ec98a2bb35e9e9e215241502e4ca3a6016bfa15771f76bd4a17d17bec8e32",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/prior_failure_receipt_ref",
+    "resolved_subtree_hash": "8164e94b34fa37c0fe69f726dca54b3bd629f8418a007ee45a55fee58754737b",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/dispatch_intent_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/subject_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/creation_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/input_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/input_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/catalogue_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "hash of label/exact-ref mapping",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/reservation_fact_ref",
+    "resolved_subtree_hash": "72bba6e2ae94fcce2d4d32211b1e76ed385c48e6a3d2c2e7456872a377dc9ecf",
+    "producer_rule": "create_service_intent reserve receipt -> ReservationLinked event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/source_receipt_ref",
+    "resolved_subtree_hash": "7feeae37aae97e49f0b8d1d64d75c1917c3570b6d752dfdd0f3679fe67d88e4a",
+    "producer_rule": "original CommitReceipt from transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/prior_failure_receipt_ref/oneOf/1/allOf/1/properties/kind",
+    "resolved_subtree_hash": "7c164bd8274b24d0b1e54fea965166520505263aaeadb58a6b1396bd46eaae7d",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/reservation_fact_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "e0c51bf57ec45c903dc7efe268b4251237052f8b026e3f14976b3fed9545f831",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-invocation-v1.schema.json",
+    "json_pointer": "/properties/source_receipt_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "7c164bd8274b24d0b1e54fea965166520505263aaeadb58a6b1396bd46eaae7d",
+    "producer_rule": "ensure_assurance_review + original create_service_intent/reserve transaction",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "53596229a0c86548d06702e4f62f5922e7edf4a42e15f194ad05be5d37591b43",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/review_key",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/package_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/record_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/reviewer_agent_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/reviewer_turn_ref",
+    "resolved_subtree_hash": "7be0c7207f7b24ab1985473eeaee106b1d1211b55e90725a46c65c75d407d2b9",
+    "producer_rule": "original runtime collector import -> AgentTurnImported event",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/raw_output_ref",
+    "resolved_subtree_hash": "abeb590d2be6cd11703c1113732e189ad19e20a323ff6f5fedda1f389ebc7bc3",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/raw_output_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/codec_version",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/consumed_check_refs",
+    "resolved_subtree_hash": "f92ae4e819c90dec186d2777ea1b7b03732784485e3910ec49bce8ecbf9e4e4b",
+    "producer_rule": "typed_check_decision actual chosen witnesses",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/exposed_evidence_refs",
+    "resolved_subtree_hash": "cdc7252a44e7ae1ea16f5cffc603ab6a9b9a7f2e41a1a489be6b53fae9601762",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/evidence_manifest_hash",
+    "resolved_subtree_hash": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/binding_read_set",
+    "resolved_subtree_hash": "5d1a75c50999a11118ab5be66bbe486d781c9dd301a7ae606d1da206c74621b2",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/disclosure_refs",
+    "resolved_subtree_hash": "c5e596dcdedfb594da53691788ba0117a832e9b333271f909e6e6236c5d44caa",
+    "producer_rule": "original provider input manifest verified disclosure import",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/invocation_ordinal",
+    "resolved_subtree_hash": "70b74757dee33b3a037c47edc3c1ff6ef426c24f6737d7647eaa34f432fdb095",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/reviewer_turn_ref/allOf/1/properties/kind",
+    "resolved_subtree_hash": "28eab306de007f585e3693fc792210adf843e413266d98dc85c980a3d08d03e9",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/consumed_check_refs/items/allOf/1/properties/kind",
+    "resolved_subtree_hash": "d301b2881b95e00a7ae7e664b98973fdd4a8cf003c0c05795556545cfc518425",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/properties/disclosure_refs/items/allOf/1/properties/kind",
+    "resolved_subtree_hash": "7eb90b62e1e5c616f2f30c6673bb563b3c4e4506ada3355d3ebeedb392512f95",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/0/properties/criterion",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/1/properties/all",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-record-binding-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/2/properties/any",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "original collector -> import_official_assurance_review",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "53596229a0c86548d06702e4f62f5922e7edf4a42e15f194ad05be5d37591b43",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/verdict",
+    "resolved_subtree_hash": "8f3dbf677a2b0f8b24d2e5806b0161fb3a8645c9c902807810bd0f9ea0af024c",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/assessments",
+    "resolved_subtree_hash": "42e561f57c12c011c4becb9b4eb696172dd9bf43e2980f71e9889343eb561266",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/findings",
+    "resolved_subtree_hash": "389a11e43efba5b81c0293c8af45f11a24c1e4b04f6bd4b8b3be536dbab6090b",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/criterion_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/verdict",
+    "resolved_subtree_hash": "7044e435a6963196f660cc1c54552702707d22c5bcc1a78dca100a20d7372eb0",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/evidence_ids",
+    "resolved_subtree_hash": "fb63ba142e4020b821c5b7bfac8c3c2cc67c6dd1b3c7b7c016744f77c3e779d6",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/reason",
+    "resolved_subtree_hash": "76f40fe54111097ce499390ca72afd52912de308ffcd1c2686b3b439f0d8eaca",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/assessments/items/properties/limitations",
+    "resolved_subtree_hash": "bbae82e5c1b8c7d4bdaa64dfac6a41d4b3aa9afd2ef600787eb7d4d2d5bcff53",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/findings/items/properties/criterion_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/findings/items/properties/severity",
+    "resolved_subtree_hash": "450f5f6620936708e3a51e214ced6bc5340a2810cea40e95f736905a7de4118a",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/properties/findings/items/properties/reason",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/0/properties/criterion",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/1/properties/all",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/review-reply-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/2/properties/any",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "model reply candidate only; parse_review_reply never grants official status",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/success-formula-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/0/properties/criterion",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "original Requirements approval + bounded formula codec",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/success-formula-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/1/properties/all",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "original Requirements approval + bounded formula codec",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/success-formula-v1.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/2/properties/any",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "original Requirements approval + bounded formula codec",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/schema_version",
+    "resolved_subtree_hash": "53596229a0c86548d06702e4f62f5922e7edf4a42e15f194ad05be5d37591b43",
+    "producer_rule": "frozen schema constant",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/mission_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "MissionControl fixed caller + original Mission",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/consumer_kind",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/consumer_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/scope_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/principal_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/purpose",
+    "resolved_subtree_hash": "13a332ebe19676b1586cbe51f39109448c17962e2ee3c4d95a86efe770231288",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/truth",
+    "resolved_subtree_hash": "2bd7700196fb9033e0b3b2b47955250e2a544d988a8fe620c714d6aa23b50c3a",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/freshness",
+    "resolved_subtree_hash": "58777231f480437d8ed7fe952b5be856f62a1fb8025f4374e0eb1b3324093eed",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/availability",
+    "resolved_subtree_hash": "102b183eb7fd9941f7c3a5bef0a0f8cd69c47c46ff8b7f7eaf29a483aa47854b",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/decision",
+    "resolved_subtree_hash": "d71899eb17b27baa7453e0269b603d1c9625c59a52e63cdc78c70eb7d8c95a29",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/coverage",
+    "resolved_subtree_hash": "c3ad89e3f6e52a05c448fc53be4d20a5dc2ca63a247c3f19233e30cf2db9cc6f",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/policy_ref",
+    "resolved_subtree_hash": "b12a90cda30142b4711ab03ca2a1bb45bc80df9aab9185e33924acdd00db66b5",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/read_set",
+    "resolved_subtree_hash": "5d1a75c50999a11118ab5be66bbe486d781c9dd301a7ae606d1da206c74621b2",
+    "producer_rule": "complete snapshot reader + canonical_read_set",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/clean_support_refs",
+    "resolved_subtree_hash": "b9a5767bcc509e2ce237ef9af2141037be740e029cfec18754e2aa2915a68da6",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/issued_at_ms",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/not_after_ms",
+    "resolved_subtree_hash": "f0dcd4933fa1cec88b4091dd9cdde0e4eb8dcf8ca30146d43e6c4118399d5b70",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/reasons",
+    "resolved_subtree_hash": "a4fc4ff4982c2786610cb7ff01349742205198fd300bc9f638f977c6c59a9114",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/mission_epoch",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/environment_epoch",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/clock_generation",
+    "resolved_subtree_hash": "97cc9ecfdea92198bf1543891ceacaf026f49db6e3d51df80c94a88b26b0f2e4",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/properties/root_incarnation_id",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "local trust bootstrap outside backup authority",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/allOf/0/if/properties/decision",
+    "resolved_subtree_hash": "4725e348fe1c6146ff2b1748afd213784e466ef7752ced3ea5f59323fb19022d",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/allOf/0/then/properties/coverage",
+    "resolved_subtree_hash": "9481da5593c5cf50584887f56d70f51557d6c955acfd6deebb90c9d5534775a3",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/allOf/0/then/properties/truth",
+    "resolved_subtree_hash": "d18085c56ee56f61cf89bcc0729d0ff1be778712d8615ccf4da6921e4bbbf69a",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/allOf/0/then/properties/freshness",
+    "resolved_subtree_hash": "b7070bdcb855904f1bb4bf9bb87f7d351eb554efb950c76fd7f3bfb1c9c7d84b",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/allOf/0/then/properties/availability",
+    "resolved_subtree_hash": "0862c953594d54e4ceb1b68680d747d3870615aeb0965e292af30a26f3ad5a0c",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/0/properties/criterion",
+    "resolved_subtree_hash": "55ca4dc126bda376fd43fc498e8dc03bcb1137b6be849a125e28fc1b64e14e5a",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/1/properties/all",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  },
+  {
+    "schema_file": "contracts/use-certificate-v2.schema.json",
+    "json_pointer": "/$defs/formula/oneOf/2/properties/any",
+    "resolved_subtree_hash": "7b7c17bddcf8bfc06c2a9a1a23568fed41dc157a1bec2c745988ad2470c2dc7b",
+    "producer_rule": "ValidityService.compute outside write lock / commit_use_certificate recheck",
+    "semantic_contract": "ASSURANCE-EXEC-1.1.zh-CN.md §§3–12"
+  }
+]

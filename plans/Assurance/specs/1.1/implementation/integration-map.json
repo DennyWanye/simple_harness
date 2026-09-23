@@ -1,0 +1,657 @@
+{
+  "version": "1.1",
+  "single_merge_owner": "assigned WorkAgent integration owner; no parallel terminal or hot-file edits",
+  "seams": [
+    {
+      "id": "S01",
+      "purpose": "caller/factory",
+      "target_path": "src/agent_orchestrator/api/facade.py",
+      "symbol": "MissionControlV1",
+      "classification": "MODIFY_EXISTING",
+      "test": "A03",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "f18a824e9a181e5d7c755f6eb97e4db6a23358c46842f364fbfc0ea46e8cfbc7",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S02",
+      "purpose": "Requirements",
+      "target_path": "src/agent_orchestrator/contracts/resolution.py",
+      "symbol": "RequirementsRevision",
+      "classification": "REUSE_EXISTING",
+      "test": "E01",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "92dcb60352ba829275bfe4c732691f20d63a97eee875edb98db81672461fad60",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S03",
+      "purpose": "Task/Obligation/Scope",
+      "target_path": "src/agent_orchestrator/orchestrator/scoped_content_review.py",
+      "symbol": "read_task_content_projection",
+      "classification": "MODIFY_EXISTING",
+      "test": "A15",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "4fec9f5ec06b3c91964b96270c54c9903df8d239c9095d913de7ffea0a1653a1",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S04",
+      "purpose": "selected plan",
+      "target_path": "src/agent_orchestrator/orchestrator/scoped_composition_review.py",
+      "symbol": null,
+      "classification": "REUSE_REPORTED_NOT_EXCERPTED",
+      "test": "A14",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "TARGET_OR_REPORTED",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S05",
+      "purpose": "artifact/CAS",
+      "target_path": "src/agent_orchestrator/artifacts/store.py",
+      "symbol": "ArtifactStore.read",
+      "classification": "REUSE_EXISTING",
+      "test": "A11",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "fc06e35e04d63b233716d5d27e686b32c1b9ef3aafbb5d79413d7393b8bc2093",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "TARGET_OR_REPORTED",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S06",
+      "purpose": "pins/GC",
+      "target_path": "src/agent_orchestrator/artifacts/assurance_pins.py",
+      "symbol": "acquire_review_pins",
+      "classification": "NEW_TARGET",
+      "test": "A06",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "IMPLEMENTATION_TARGET_NOT_EXISTING_SOURCE",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S07",
+      "purpose": "CheckSpec/policy",
+      "target_path": "src/agent_orchestrator/orchestrator/assurance_policy_commits.py",
+      "symbol": "approve_assurance_check_policy",
+      "classification": "NEW_TARGET",
+      "test": "A04",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "IMPLEMENTATION_TARGET_NOT_EXISTING_SOURCE",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S08",
+      "purpose": "checks",
+      "target_path": "src/agent_orchestrator/verification/assurance_checks.py",
+      "symbol": "record_local_check_run",
+      "classification": "NEW_TARGET",
+      "test": "A04",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "IMPLEMENTATION_TARGET_NOT_EXISTING_SOURCE",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S09",
+      "purpose": "review preparation",
+      "target_path": "src/agent_orchestrator/orchestrator/root_review.py",
+      "symbol": "RootReviewCoordinator.cut",
+      "classification": "MODIFY_EXISTING",
+      "test": "A06",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "99134dfde726caa5d5bef2ed19917d42444b2d87ff433e756248d95ff29ce76b",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S10",
+      "purpose": "dispatch/reservation",
+      "target_path": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "symbol": "Orchestrator._ask_root_reviewer",
+      "classification": "MODIFY_EXISTING",
+      "test": "A12",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "40ea93bfdc762e66ff1e195ad3b70b47675da3cc63775edc062cf25b37687273",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S11",
+      "purpose": "catalogue/exposure",
+      "target_path": "src/agent_orchestrator/verification/reviewer_evidence_tools.py",
+      "symbol": "import_reviewer_disclosure",
+      "classification": "NEW_TARGET",
+      "test": "A10",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "TARGET_OR_REPORTED",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S12",
+      "purpose": "official collector",
+      "target_path": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "symbol": "Orchestrator._collect_root_review",
+      "classification": "MODIFY_EXISTING",
+      "test": "A08",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "40ea93bfdc762e66ff1e195ad3b70b47675da3cc63775edc062cf25b37687273",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S13",
+      "purpose": "source lifecycle writers",
+      "target_path": "src/agent_orchestrator/storage/store.py",
+      "symbol": "Store.put_source",
+      "classification": "MODIFY_REPORTED_WRITER",
+      "test": "V01",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "TARGET_OR_REPORTED",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S14",
+      "purpose": "Observation",
+      "target_path": "src/agent_orchestrator/storage/htn_store.py",
+      "symbol": "HtnStore.insert_observation",
+      "classification": "MODIFY_EXISTING",
+      "test": "V01",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "b53412a27bd5cb37f2863f6643a1176a784d1429968097c97d757b395242a3d3",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S15",
+      "purpose": "rules/support",
+      "target_path": "src/agent_orchestrator/storage/htn_store.py",
+      "symbol": "HtnStore.insert_justification_set",
+      "classification": "MODIFY_EXISTING",
+      "test": "V02",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "b53412a27bd5cb37f2863f6643a1176a784d1429968097c97d757b395242a3d3",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S16",
+      "purpose": "complete snapshot",
+      "target_path": "src/agent_orchestrator/knowledge/assurance_snapshot.py",
+      "symbol": "read_complete_evidence_snapshot",
+      "classification": "NEW_TARGET",
+      "test": "V06",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "IMPLEMENTATION_TARGET_NOT_EXISTING_SOURCE",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S17",
+      "purpose": "validity compute",
+      "target_path": "src/agent_orchestrator/knowledge/validity.py",
+      "symbol": "ValidityService",
+      "classification": "MODIFY_REPORTED_REUSE_CORE",
+      "test": "V09",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "TARGET_OR_REPORTED",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S18",
+      "purpose": "atomic barriers",
+      "target_path": "src/agent_orchestrator/storage/assurance_store.py",
+      "symbol": "mark_assurance_change_locked",
+      "classification": "NEW_TARGET",
+      "test": "V07",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "IMPLEMENTATION_TARGET_NOT_EXISTING_SOURCE",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S19",
+      "purpose": "scoped acceptance",
+      "target_path": "src/agent_orchestrator/orchestrator/resolution_commits.py",
+      "symbol": "ResolutionCommits.accept_review",
+      "classification": "MODIFY_EXISTING",
+      "test": "A13",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "TARGET_OR_REPORTED",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S20",
+      "purpose": "OCC effects",
+      "target_path": "src/agent_orchestrator/orchestrator/completion_status.py",
+      "symbol": "OperationCompletionReader",
+      "classification": "REUSE_REPORTED_NOT_EXCERPTED",
+      "test": "E03",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "TARGET_OR_REPORTED",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S21",
+      "purpose": "root/terminal",
+      "target_path": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "symbol": "CommitService.judge_mission",
+      "classification": "MODIFY_EXISTING",
+      "test": "A18",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "ad96a63e6b9bd042c23d61df535ed82d29bb96e2d5c87bd3a27175caf8e35edd",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S22",
+      "purpose": "actual running work",
+      "target_path": "src/agent_orchestrator/orchestrator/completion_support.py",
+      "symbol": "read_running_work",
+      "classification": "EXTEND_EQUIVALENT_EXISTING_AT_AS0",
+      "test": "C05",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "TARGET_OR_REPORTED",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S23",
+      "purpose": "accounting",
+      "target_path": "src/agent_orchestrator/orchestrator/accounting_recovery.py",
+      "symbol": "late accounting importer",
+      "classification": "REUSE_EXISTING_LOCATE_EXACT_SYMBOL",
+      "test": "C08",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "TARGET_OR_REPORTED",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S24",
+      "purpose": "cursor/pending consumers",
+      "target_path": "src/agent_orchestrator/orchestrator/assurance_events.py",
+      "symbol": "AssuranceEventConsumer",
+      "classification": "NEW_TARGET",
+      "test": "C04",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "IMPLEMENTATION_TARGET_NOT_EXISTING_SOURCE",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S25",
+      "purpose": "Host/native",
+      "target_path": "src/agent_orchestrator/api/assurance.py",
+      "symbol": "AssuranceApi",
+      "classification": "NEW_TARGET",
+      "test": "C07",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": null,
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "IMPLEMENTATION_TARGET_NOT_EXISTING_SOURCE",
+      "actual_host_paths": [
+        "backend/deskpet/orchestration/handlers.py",
+        "backend/deskpet/orchestration/service.py",
+        "backend/deskpet/orchestration/projection.py",
+        "backend/deskpet/sdk_adapters/sdk_candidate.py",
+        "tauri-app/src/views/MissionsView.tsx"
+      ],
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    },
+    {
+      "id": "S26",
+      "purpose": "restore/recovery",
+      "target_path": "src/agent_orchestrator/storage/offline_backup.py",
+      "symbol": "restore_offline",
+      "classification": "MODIFY_EXISTING",
+      "test": "C03",
+      "producer_rule": "ASSURANCE-EXEC-1.1 §§2–10",
+      "observed_sha256": "cd9428be99397666e9bfbdebf6c545c6d22377d0f25d8d7dd3a955888d905231",
+      "status": "SOURCE_MAP_PENDING_BEHAVIOR",
+      "evidence_kind": "ATTACHED_EXCERPT",
+      "owner": "single Assurance integration owner; existing runtime/governance writer remains authoritative",
+      "database": "orchestrator.db except S23 original execution/db importer and S05/S06 CAS, S25 Host, S26 multi-asset restore",
+      "verification": "NOT_RUN_LOCAL_SDK"
+    }
+  ],
+  "reviews": [
+    {
+      "purpose": "TASK_CONTENT",
+      "existing_sources": [
+        "scoped_content_review.read_task_content_projection",
+        "leaf_acceptance",
+        "VerifierRouter.verify"
+      ],
+      "budget_owner": "task",
+      "builder": "reuse existing + common assurance adapter",
+      "dispatch_api": "CommitService.create_service_intent / extracted _locked same orchestrator transaction",
+      "execution": "original AgentBridge, separate execution DB, receipt import",
+      "invocation_id": "mission:assurance:review_key:ordinal",
+      "collector": "original collector per purpose -> verified source adapter",
+      "official_writer": "existing HtnStore/Review coordinator guarded for this profile",
+      "no_parallel_pipeline": true,
+      "evidence": "attached/reported; implementation verification NOT_RUN"
+    },
+    {
+      "purpose": "METHOD_PLAN",
+      "existing_sources": [
+        "MethodRegistry admission",
+        "existing MethodProposal review builder"
+      ],
+      "budget_owner": "mission_planning",
+      "builder": "reuse existing + common assurance adapter",
+      "dispatch_api": "CommitService.create_service_intent / extracted _locked same orchestrator transaction",
+      "execution": "original AgentBridge, separate execution DB, receipt import",
+      "invocation_id": "mission:assurance:review_key:ordinal",
+      "collector": "original collector per purpose -> verified source adapter",
+      "official_writer": "existing HtnStore/Review coordinator guarded for this profile",
+      "no_parallel_pipeline": true,
+      "evidence": "attached/reported; implementation verification NOT_RUN"
+    },
+    {
+      "purpose": "COMPOSITION",
+      "existing_sources": [
+        "scoped_composition_review",
+        "composition_review"
+      ],
+      "budget_owner": "parent_compound_task",
+      "builder": "reuse existing + common assurance adapter",
+      "dispatch_api": "CommitService.create_service_intent / extracted _locked same orchestrator transaction",
+      "execution": "original AgentBridge, separate execution DB, receipt import",
+      "invocation_id": "mission:assurance:review_key:ordinal",
+      "collector": "original collector per purpose -> verified source adapter",
+      "official_writer": "existing HtnStore/Review coordinator guarded for this profile",
+      "no_parallel_pipeline": true,
+      "evidence": "attached/reported; implementation verification NOT_RUN"
+    },
+    {
+      "purpose": "ACTION_PROPOSAL",
+      "existing_sources": [
+        "operation_proposal_review",
+        "T0 producer"
+      ],
+      "budget_owner": "operation_task",
+      "builder": "reuse existing + common assurance adapter",
+      "dispatch_api": "CommitService.create_service_intent / extracted _locked same orchestrator transaction",
+      "execution": "original AgentBridge, separate execution DB, receipt import",
+      "invocation_id": "mission:assurance:review_key:ordinal",
+      "collector": "original collector per purpose -> verified source adapter",
+      "official_writer": "existing HtnStore/Review coordinator guarded for this profile",
+      "no_parallel_pipeline": true,
+      "evidence": "attached/reported; implementation verification NOT_RUN"
+    },
+    {
+      "purpose": "OPERATION_OUTCOME",
+      "existing_sources": [
+        "operation_outcomes",
+        "OperationCompletionReader"
+      ],
+      "budget_owner": "operation_task",
+      "builder": "reuse existing + common assurance adapter",
+      "dispatch_api": "CommitService.create_service_intent / extracted _locked same orchestrator transaction",
+      "execution": "original AgentBridge, separate execution DB, receipt import",
+      "invocation_id": "mission:assurance:review_key:ordinal",
+      "collector": "original collector per purpose -> verified source adapter",
+      "official_writer": "existing HtnStore/Review coordinator guarded for this profile",
+      "no_parallel_pipeline": true,
+      "evidence": "attached/reported; implementation verification NOT_RUN"
+    },
+    {
+      "purpose": "MISSION_FINAL",
+      "existing_sources": [
+        "RootReviewCoordinator.cut/record_review",
+        "Orchestrator._ask_root_reviewer/_collect_root_review"
+      ],
+      "budget_owner": "mission",
+      "builder": "reuse existing + common assurance adapter",
+      "dispatch_api": "CommitService.create_service_intent / extracted _locked same orchestrator transaction",
+      "execution": "original AgentBridge, separate execution DB, receipt import",
+      "invocation_id": "mission:assurance:review_key:ordinal",
+      "collector": "original collector per purpose -> verified source adapter",
+      "official_writer": "existing HtnStore/Review coordinator guarded for this profile",
+      "no_parallel_pipeline": true,
+      "evidence": "attached/reported; implementation verification NOT_RUN"
+    }
+  ],
+  "terminal_writers": [
+    {
+      "symbol": "CommitService.accept_result",
+      "policy": "scoped contribution, no effect promotion",
+      "source_file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "stage": "BODY_WIRED",
+      "behavior_status": "NOT_RUN"
+    },
+    {
+      "symbol": "ResolutionCommits.accept_review",
+      "policy": "OCC guard plus official/check/use binding",
+      "source_file": "src/agent_orchestrator/orchestrator/resolution_commits.py",
+      "stage": "BODY_WIRED",
+      "behavior_status": "NOT_RUN"
+    },
+    {
+      "symbol": "ResolutionCommits.commit_goal_resolution",
+      "policy": "all direct entry guards, exact effect closure",
+      "source_file": "src/agent_orchestrator/orchestrator/resolution_commits.py",
+      "stage": "BODY_WIRED",
+      "behavior_status": "NOT_RUN"
+    },
+    {
+      "symbol": "CommitService.judge_mission",
+      "policy": "profile branch requests closeout; no early release",
+      "source_file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "stage": "BODY_WIRED",
+      "behavior_status": "NOT_RUN"
+    },
+    {
+      "symbol": "CommitService._finalize_assured_mission_locked",
+      "policy": "NEW private extraction of real final writer; same transaction",
+      "source_file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "stage": "BODY_WIRED",
+      "behavior_status": "NOT_RUN"
+    },
+    {
+      "symbol": "RootReviewCoordinator.record_review",
+      "policy": "profile requires source witness",
+      "source_file": "src/agent_orchestrator/orchestrator/root_review.py",
+      "stage": "BODY_WIRED",
+      "behavior_status": "NOT_RUN"
+    },
+    {
+      "symbol": "Store.update_mission/update_task",
+      "policy": "call-site inventory, no unguarded terminal caller",
+      "source_file": "src/agent_orchestrator/storage/store.py",
+      "stage": "BODY_WIRED",
+      "behavior_status": "NOT_RUN"
+    },
+    {
+      "symbol": "cancel/fail/timeout cleanup",
+      "policy": "actual effects/holds retained; not a shortcut",
+      "source_file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "stage": "BODY_WIRED",
+      "behavior_status": "NOT_RUN"
+    }
+  ],
+  "invalidation_writers": [
+    {
+      "producer": "Store.put_source/source revoke/delete",
+      "barrier": "mission or global if shared scope incomplete",
+      "owner": "existing Store/Commit transaction",
+      "verification": "NOT_RUN"
+    },
+    {
+      "producer": "HtnStore.insert_observation",
+      "barrier": "mission",
+      "owner": "existing Store/Commit transaction",
+      "verification": "NOT_RUN"
+    },
+    {
+      "producer": "HtnStore.insert_justification_set/support members/rule admission",
+      "barrier": "mission",
+      "owner": "existing Store/Commit transaction",
+      "verification": "NOT_RUN"
+    },
+    {
+      "producer": "Requirements/OCC/Plan/Task contract writers",
+      "barrier": "mission",
+      "owner": "existing Store/Commit transaction",
+      "verification": "NOT_RUN"
+    },
+    {
+      "producer": "current ACL/policy/grant writers",
+      "barrier": "global or mission as declared",
+      "owner": "existing Store/Commit transaction",
+      "verification": "NOT_RUN"
+    },
+    {
+      "producer": "execution and operation correction importer",
+      "barrier": "orchestrator import transaction, not remote event time",
+      "owner": "existing Store/Commit transaction",
+      "verification": "NOT_RUN"
+    },
+    {
+      "producer": "artifact/check/review lifecycle writers",
+      "barrier": "mission/global",
+      "owner": "existing Store/Commit transaction",
+      "verification": "NOT_RUN"
+    },
+    {
+      "producer": "time discontinuity detector",
+      "barrier": "global clock_generation",
+      "owner": "existing Store/Commit transaction",
+      "verification": "NOT_RUN"
+    }
+  ],
+  "event_consumers": [
+    {
+      "consumer": "REVIEW",
+      "ingest": "same tx pending upsert + cursor CAS",
+      "prepare": "outside write transaction",
+      "commit": "existing effects + receipt + pending DONE",
+      "owner": "original Orchestrator tick"
+    },
+    {
+      "consumer": "VALIDITY",
+      "ingest": "same tx pending upsert + cursor CAS",
+      "prepare": "outside write transaction",
+      "commit": "existing effects + receipt + pending DONE",
+      "owner": "original Orchestrator tick"
+    },
+    {
+      "consumer": "CLOSEOUT",
+      "ingest": "same tx pending upsert + cursor CAS",
+      "prepare": "outside write transaction",
+      "commit": "existing effects + receipt + pending DONE",
+      "owner": "original Orchestrator tick"
+    },
+    {
+      "consumer": "NOTIFY",
+      "ingest": "same tx pending upsert + cursor CAS",
+      "prepare": "outside write transaction",
+      "commit": "existing effects + receipt + pending DONE",
+      "owner": "original Orchestrator tick"
+    }
+  ],
+  "restore": {
+    "entry": "storage/offline_backup.py::restore_offline",
+    "chosen_policy": "new root quarantine + current read-only reauthorization",
+    "external_revocation_log": "NOT_ASSUMED"
+  },
+  "host": {
+    "handlers": "backend/deskpet/orchestration/handlers.py::_ACTIONS + MESSAGE_TYPES",
+    "service": "backend/deskpet/orchestration/service.py::_control from fixed Principal",
+    "projection": "backend/deskpet/orchestration/projection.py",
+    "sdk_load": "backend/deskpet/sdk_adapters/sdk_candidate.py",
+    "ui": "tauri-app/src/views/MissionsView.tsx",
+    "verbs": [
+      "mission_assurance_snapshot",
+      "mission_assurance_review",
+      "mission_assurance_use_check"
+    ]
+  }
+}

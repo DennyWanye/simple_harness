@@ -1,0 +1,145 @@
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "simple-harness-sdk"
+dynamic = ["version"]
+description = "Embeddable durable agent runtime and workflow SDK"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSES/Apache-2.0.txt", "NOTICE"]
+authors = [
+  { name = "DennyWanye" },
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "httpx>=0.27,<1",
+]
+
+[project.optional-dependencies]
+planning-aries = ["unified-planning[aries]>=1.2,<2"]
+local-capacity = ["psutil>=7.2.2,<8"]
+deepseek-tokenizer = ["deepseek-recipe==0.1.1"]
+hf-tokenizer = ["transformers>=4.57,<6", "tokenizers>=0.22,<1", "jinja2>=3.1,<4"]
+testing = [
+  "pytest>=8.3,<9",
+]
+
+[project.entry-points.pytest11]
+simple_harness = "simple_harness.testing.pytest_plugin"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-anyio>=0.0.0",
+  "reuse>=5.0,<6",
+  "twine>=6.1,<7",
+  "ruff>=0.5,<1",
+  "mypy>=1.10,<2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/simple_harness", "src/agent_orchestrator"]
+core-metadata-version = "2.4"
+
+[tool.hatch.version]
+path = "src/simple_harness/version.py"
+
+[tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
+include = [
+  "/.github",
+  "/CHANGELOG.md",
+  "/docs",
+  "/LICENSES",
+  "/NOTICE",
+  "/README.md",
+  "/REUSE.toml",
+  "/pyproject.toml",
+  "/scripts",
+  "/src",
+  "/source-manifest.tsv",
+  "/tests",
+  "/uv.lock",
+]
+exclude = [
+  "/.git",
+  "/.local-test-evidence",
+  "/.pytest_cache",
+  "/.venv*",
+  "/build",
+  "/dist",
+  "**/__pycache__",
+  "**/*.pyc",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "h7_runtime_gate: frozen H7 Provider ReAct Tool restart and child runtime seams",
+  "h7_workflow_terminal_gate: frozen H7 strict and legacy workflow terminal projection seams",
+  "anyio: async tests using anyio",
+  "simple_harness_conformance: mark test as requiring conformance host fixture",
+  "real_provider: end-to-end test that calls a real LLM provider (opt in with --run-real-provider)",
+  "real_embedding: test that needs a real embedding model (opt in with --run-real-embedding)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+# Scoped to the public consumer surface and release-owned modules.
+# Legacy full-project typing debt remains outside the release-owned surface.
+files = [
+  "src/agent_orchestrator",
+  "src/simple_harness/runtime/commands.py",
+  "src/simple_harness/runtime/kernel.py",
+  "src/simple_harness/runtime/agent_memory.py",
+  "src/simple_harness/runtime/disclosure_protocol.py",
+  "src/simple_harness/runtime/evidence_protocol.py",
+  "src/simple_harness/runtime/memory_protocol.py",
+  "src/simple_harness/runtime/task_scope_protocol.py",
+  "src/simple_harness/runtime/workspace_binding_protocol.py",
+  "src/simple_harness/runtime/conversation_context_provider.py",
+  "src/simple_harness/runtime/consumer_adapter.py",
+  "src/simple_harness/runtime/ports.py",
+  "src/simple_harness/runtime/conversation_memory.py",
+  "src/simple_harness/runtime/conversation_context.py",
+  "src/simple_harness/runtime/start_snapshot.py",
+  "src/simple_harness/runtime/production.py",
+  "src/simple_harness/runtime/drivers/react_loop.py",
+  "src/simple_harness/runtime/termination.py",
+  "src/simple_harness/execution/delivery.py",
+  "src/simple_harness/execution/context_authority.py",
+  "src/simple_harness/execution/effects.py",
+  "src/simple_harness/execution/provider_invocations.py",
+  "src/simple_harness/execution/context_staging.py",
+  "src/simple_harness/execution/memory_outbox.py",
+  "src/simple_harness/execution/command_ingress.py",
+  "src/simple_harness/execution/uow.py",
+  "src/simple_harness/execution/sqlite/uow.py",
+  "src/simple_harness/execution/sqlite/migrations/execution_v3_to_v4.py",
+  "src/simple_harness/execution/sqlite/storage.py",
+  "src/simple_harness/testing/arm64_candidate.py",
+  "src/simple_harness/testing/sinks.py",
+  "src/simple_harness/providers/base.py",
+  "src/simple_harness/tools/runtime_catalog.py",
+  "tests/conformance/future_consumer_fixture.py",
+  "tests/typing/agent_memory_port.py",
+  "tests/typing/human_memory_protocol.py",
+]

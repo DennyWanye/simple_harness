@@ -1,0 +1,58 @@
+{
+  "kind": "TOOL",
+  "definition": {
+    "schema_version": 1,
+    "tool_id": "example",
+    "version": 1,
+    "description": "example",
+    "input_schema_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "output_schema_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "provider_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "effect_class": "READ_ONLY",
+    "required_capabilities": [],
+    "scope_policy_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "timeout_policy_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "retry_policy_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "result_bytes_limit": 1,
+    "inline_result_tokens": 1,
+    "implementation_digest": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "state": "QUARANTINED",
+  "state_revision": 1,
+  "current_usable": false,
+  "reason_codes": [
+    "NOT_ADMITTED"
+  ],
+  "registry_epoch": 1,
+  "exposed_in_context_id": null
+}

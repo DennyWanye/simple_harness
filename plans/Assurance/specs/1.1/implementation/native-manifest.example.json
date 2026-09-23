@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "isolated_host_root": "<ignored-run>/host",
+  "shared_host_root": "/Users/denny/projects/simple_harness",
+  "isolated_venv": "<ignored-run>/host/backend/.venv",
+  "userdata": "<ignored-run>/userdata",
+  "evidence_root": "<ignored-run>",
+  "wheel": "<ignored-run>/dist/<actual-wheel>.whl",
+  "sdk_source_fingerprint": "<actual-64-hex>",
+  "host_source_fingerprint": "<actual-64-hex>",
+  "lock_path": "<ignored-run>/host/backend/uv.lock",
+  "tauri_package_json": "<ignored-run>/host/tauri-app/package.json",
+  "backend_port": 17841,
+  "vite_port": 15173
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "provider_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "implementation_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+  "endpoint_namespace": "example",
+  "credential_ref_name": "example",
+  "health": "READY",
+  "registered": false,
+  "configured": false,
+  "compatible": false,
+  "supported_capabilities": [],
+  "supported_effect_classes": [],
+  "platforms": [],
+  "observed_at_ms": 1,
+  "expires_at_ms": 1,
+  "runtime_receipt_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  }
+}

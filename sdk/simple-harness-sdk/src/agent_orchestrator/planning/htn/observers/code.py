@@ -1,0 +1,1236 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+
+"""Read-only observers for the ``code`` pilot domain (§7.3 seed library, §6.6).
+
+Five observers over the six predicates the seed ``code`` domain declares.  Each one
+answers by running a **read-only command** against an isolated worktree and nothing
+else: no checkout, no fetch, no commit, no stash, no file written — and no
+``.pytest_cache`` either, which is why the collection command carries
+``-p no:cacheprovider``.
+
+The allowlist is the mechanism, not the intention.  :data:`READ_ONLY_GIT` and
+:data:`READ_ONLY_PYTHON` name the exact sub-commands this module may run, and
+:meth:`_Command.run` refuses anything else *before* spawning a process — so
+"observers only read" is a check rather than a comment, and adding a mutating
+command to an observer fails a test instead of mutating a repository.
+
+Every command has a timeout.  A timeout, a missing binary and a command that
+reported something inconclusive are all ``OBSERVER_UNAVAILABLE``: not being able to
+look is a third answer, never the proposition being false (AER §8.2).
+
+``code.working-tree-clean`` is the domain's CLOSED predicate, and it is the reason
+this file exists in P2 rather than P6: ``git status --porcelain`` genuinely
+*enumerates* the worktree, so an empty answer is a complete query and a non-empty
+one is an authoritative negative — the one observation shape §6.6 C28 lets a closed
+domain conclude FALSE from.
+"""
+
+from __future__ import annotations
+
+import re
+import shutil
+import subprocess  # noqa: S404 - read-only commands from a fixed allowlist, see _Command.run
+import sys
+import tempfile
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any
+
+from ....contracts.models import ContractError
+from ....knowledge.predicates import PredicateSignature
+from . import COMPLETE_COVERAGE, Observation, denial, observed, unavailable
+
+#: This module's own version, recorded on every observation so a later replay can
+#: tell which reader produced it (AER §8.1).
+OBSERVER_VERSION = "code-observers-v1"
+
+#: The git sub-commands an observer may run.  Every one of them only reads; the
+#: mutating half of git (checkout, fetch, commit, stash, clean, reset, ...) is
+#: absent on purpose and :meth:`_Command.run` refuses it.
+READ_ONLY_GIT: frozenset[str] = frozenset(
+    {"rev-parse", "status", "diff", "log", "ls-files", "show-ref", "cat-file"}
+)
+
+#: The python sub-commands an observer may run.  ``pytest --collect-only`` imports
+#: test modules, which is a read of the repository; running the tests themselves is
+#: gated separately (:attr:`CodeObserverConfig.allow_test_execution`).
+READ_ONLY_PYTHON: frozenset[str] = frozenset({"pytest"})
+
+#: The **only** tokens an observer command may carry before its ``--`` separator,
+#: per sub-command.  This is the other half of the allowlist and the half the P2.3c
+#: review found missing: checking the sub-command alone let ``--output=…`` and
+#: ``--junitxml=…`` through, and those are read-only sub-commands that *write files*.
+#: A flag is how a command is steered, so no flag is ever taken from a caller — the
+#: set is fixed here and the operands go after ``--``.
+TRUSTED_ARGUMENTS: Mapping[str, frozenset[str]] = {
+    "rev-parse": frozenset({"--is-inside-work-tree", "--verify", "--quiet"}),
+    "status": frozenset({"--porcelain"}),
+    "diff": frozenset({"--numstat", "--name-only"}),
+    "log": frozenset({"--oneline", "--max-count=1"}),
+    "ls-files": frozenset({"--cached"}),
+    "show-ref": frozenset({"--verify", "--quiet"}),
+    # ``-p`` prints a stored blob.  Printing is a read: unlike ``--output=`` it takes
+    # no destination, so there is no argument through which it could write.  It is
+    # what :class:`DependencyObserver` reads a manifest with, at ``HEAD``, without
+    # touching the worktree at all.
+    "cat-file": frozenset({"-e", "-t", "-p"}),
+    "pytest": frozenset({"--collect-only", "-q", "--no-header", "-p", "no:cacheprovider", "--co"}),
+}
+
+#: The separator after which a token is an *operand* rather than a flag.  Everything
+#: after it must not start with ``-``: that is what stops an operand from turning
+#: into a flag (``--junitxml=out.xml`` looks exactly like a test target otherwise).
+OPERAND_SEPARATOR = "--"
+
+#: Sub-commands that may carry caller-supplied **revision** operands *before* the
+#: separator, and how many.  G4: :func:`_operands` puts every caller token after
+#: ``--``, where git reads it as a pathspec, so a changeset predicate could only ever
+#: be asked about a path and never about ``HEAD~1..HEAD``.  A revision lives before
+#: the separator, so it is checked against its own grammar (:func:`revision`) instead
+#: of the path rule, and ``--`` is still emitted with nothing after it: no caller
+#: token can become a flag, and none can become a path either.
+#: ``rev-parse`` joined ``diff`` in the fourth review round (runner gap G7): asking
+#: whether a ref resolves is asking about a **revision**, and putting it after ``--``
+#: made git read ``refs/bisect/bad`` as a pathspec, which never resolves — so
+#: ``code.regression-commit-known`` was UNKNOWN on every worktree in the world.
+REVISION_OPERANDS: Mapping[str, int] = {"diff": 1, "rev-parse": 1}
+
+#: What a revision may be spelled with.  Deliberately narrower than git's own
+#: grammar: no ``:`` (``rev:path`` is a different read), no ``{`` (``@{upstream}``
+#: consults configuration), no whitespace, and — via :func:`operand` — no leading
+#: ``-``, because that is how a reading command is made to write.
+REVISION_CHARACTERS: frozenset[str] = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/~^-"
+)
+
+#: What tells a revision range apart from a path in a ``changeset`` argument.  A
+#: path that carries it is a traversal and has no business in an observer anyway.
+REVISION_RANGE = ".."
+
+DEFAULT_TIMEOUT_SECONDS = 20.0
+
+#: The whole of one ``observe()`` call, not one command.  An observer that runs two
+#: or three commands must still answer inside a bound (§6.6: an observation that
+#: never returns is not an observation), so the budget is per observer and each
+#: command gets whatever is left of it.
+DEFAULT_OBSERVER_BUDGET_SECONDS = 60.0
+
+#: How much of a worktree this module will copy to get a read-only place to import
+#: test modules in.  A repository bigger than this answers OBSERVER_UNAVAILABLE
+#: rather than being collected in place, because importing a test module runs module
+#: level code and that code may write.
+DEFAULT_MAX_COPY_BYTES = 256 * 1024 * 1024
+
+#: Never copied into the read-only snapshot: git's own state, caches, and the two
+#: directories that make a copy pointlessly enormous.
+COPY_EXCLUDES: tuple[str, ...] = (
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "node_modules",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+)
+
+#: Above this many changed lines a changeset is "too large for one review pass".
+#: A deployment convention, versioned with :data:`OBSERVER_VERSION`, not a law.
+DEFAULT_CHANGESET_LINE_LIMIT = 400
+
+
+@dataclass(frozen=True, slots=True)
+class CommandResult:
+    """What a read-only command answered, with its two failure modes kept apart."""
+
+    exit_code: int
+    stdout: str = ""
+    stderr: str = ""
+    timed_out: bool = False
+    #: The executable is not on this machine.  Not a fact about the repository.
+    missing: bool = False
+
+    @property
+    def usable(self) -> bool:
+        return not (self.timed_out or self.missing)
+
+    @property
+    def lines(self) -> tuple[str, ...]:
+        return tuple(line for line in self.stdout.splitlines() if line.strip())
+
+
+Runner = Callable[[Sequence[str], Path, float], CommandResult]
+
+
+def run_read_only(argv: Sequence[str], cwd: Path, timeout: float) -> CommandResult:
+    """Run one command, capture it, and never let it wait forever."""
+
+    try:
+        completed = subprocess.run(  # noqa: S603 - argv is allowlisted by _Command.run
+            list(argv),
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError:
+        return CommandResult(exit_code=-1, missing=True)
+    except subprocess.TimeoutExpired:
+        return CommandResult(exit_code=-1, timed_out=True)
+    except OSError as error:  # pragma: no cover - platform dependent
+        return CommandResult(exit_code=-1, stderr=str(error), missing=True)
+    return CommandResult(
+        exit_code=completed.returncode,
+        stdout=completed.stdout or "",
+        stderr=completed.stderr or "",
+    )
+
+
+def operand(value: object, name: str) -> str:
+    """One caller-supplied command **operand**, or a refusal.
+
+    An operand is a path, a ref or a test target.  It may not start with ``-``:
+    ``--junitxml=out.xml`` is a perfectly good-looking test target and a file write,
+    and the P2.3c review demonstrated exactly that.  It also may not be blank, carry
+    a NUL, or contain a newline — a shell is never involved here, but a newline in a
+    ref makes an argument list unreadable in a receipt.
+    """
+
+    if not isinstance(value, str):
+        raise ContractError(f"{name} must be a string")
+    text = value.strip()
+    if not text:
+        raise ContractError(f"{name} names nothing to read")
+    if text.startswith("-"):
+        raise ContractError(
+            f"{name} {value!r} starts with '-'; an observer takes operands, never flags — "
+            "a flag is how a read-only command is made to write (§6.6)"
+        )
+    if "\0" in text or "\n" in text or "\r" in text:
+        raise ContractError(f"{name} {value!r} contains a control character")
+    return text
+
+
+def revision(value: object, name: str) -> str:
+    """One caller-supplied **revision**, or a refusal.
+
+    A revision sits before ``--``, where git would read a flag, so it carries the
+    whole of :func:`operand`'s rule (nonblank, no leading ``-``, no control
+    characters) **and** the tighter :data:`REVISION_CHARACTERS` grammar on top.
+    """
+
+    text = operand(value, name)
+    stray = sorted(set(text) - REVISION_CHARACTERS)
+    if stray:
+        raise ContractError(
+            f"{name} {value!r} contains {stray}, which this observer does not accept in a "
+            "revision; a revision is read before '--' and so is spelled from a narrow set"
+        )
+    return text
+
+
+def changeset_operands(changeset: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split one ``changeset`` argument into ``(revisions, paths)``.
+
+    A value carrying ``..`` is a revision range and goes before the separator; every
+    other value is a path and goes after it, exactly as before G4.  The two are told
+    apart by shape rather than by a second argument because the ``changeset``
+    signature is already published and its content hash is frozen.
+    """
+
+    if REVISION_RANGE in changeset:
+        return (revision(changeset, "the changeset argument"),), ()
+    return (), (operand(changeset, "the changeset argument"),)
+
+
+@dataclass(frozen=True, slots=True)
+class CodeObserverConfig:
+    """Where to look, for how long, and with which reader."""
+
+    root: Path
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    runner: Runner = run_read_only
+    #: ``pytest --collect-only`` tells us whether a target *exists*; whether it fails
+    #: needs the target to run.  Collection *imports* the test module, which runs its
+    #: module-level code, so even collection happens in a throwaway copy — and
+    #: running the tests themselves is opt-in and off by default: without it
+    #: ``code.test-is-failing`` answers OBSERVER_UNAVAILABLE rather than guessing.
+    allow_test_execution: bool = False
+    changeset_line_limit: int = DEFAULT_CHANGESET_LINE_LIMIT
+    python_executable: str = field(default_factory=lambda: sys.executable)
+    #: The budget for one whole ``observe()`` call.  See
+    #: :data:`DEFAULT_OBSERVER_BUDGET_SECONDS`.
+    budget_seconds: float = DEFAULT_OBSERVER_BUDGET_SECONDS
+    max_copy_bytes: int = DEFAULT_MAX_COPY_BYTES
+    #: Set by :meth:`SuiteObserver._read` while it holds a throwaway copy, so the
+    #: commands of that one observation run there instead of in the real worktree.
+    workspace: Path | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "root", Path(self.root))
+        if float(self.timeout_seconds) <= 0:
+            raise ContractError("an observer command needs a positive timeout")
+        if float(self.budget_seconds) <= 0:
+            raise ContractError("an observer needs a positive budget")
+        if int(self.changeset_line_limit) < 1:
+            raise ContractError("changeset_line_limit must be at least 1")
+        if int(self.max_copy_bytes) < 1:
+            raise ContractError("max_copy_bytes must be at least 1")
+        if self.workspace is not None:
+            object.__setattr__(self, "workspace", Path(self.workspace))
+
+    @property
+    def working_root(self) -> Path:
+        """Where commands actually run: the throwaway copy if there is one."""
+
+        return self.root if self.workspace is None else self.workspace
+
+
+class BudgetExhausted(RuntimeError):
+    """The whole-observation budget ran out before this command could start."""
+
+
+class _Budget:
+    """One observation's wall-clock budget, spent across however many commands."""
+
+    def __init__(self, seconds: float) -> None:
+        self._deadline = time.monotonic() + float(seconds)
+
+    def remaining(self) -> float:
+        return self._deadline - time.monotonic()
+
+    def slice(self, per_command: float) -> float:
+        left = self.remaining()
+        if left <= 0:
+            raise BudgetExhausted("the observation budget is spent")
+        return min(float(per_command), left)
+
+
+class _Command:
+    """The allowlist gate.  Nothing in this module spawns a process around it.
+
+    Two halves, and the review found the second one missing:
+
+    1. the **sub-command** must be one of the reading ones;
+    2. every token before ``--`` must be one of :data:`TRUSTED_ARGUMENTS` for that
+       sub-command, and every token after it must be an operand rather than a flag.
+
+    Without (2) the gate is decoration: ``git diff --numstat --output=x`` and
+    ``pytest --collect-only --junitxml=x`` both pass a sub-command check and both
+    write a file.
+    """
+
+    def __init__(self, config: CodeObserverConfig, budget: _Budget | None = None) -> None:
+        self._config = config
+        self._budget = budget or _Budget(config.budget_seconds)
+
+    @property
+    def root(self) -> Path:
+        return self._config.working_root
+
+    @property
+    def budget(self) -> _Budget:
+        return self._budget
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        items = [str(item) for item in argv]
+        if not items:
+            raise ContractError("an observer command needs an executable")
+        program = Path(items[0]).name
+        rest = items[1:]
+        if program == "git":
+            allowed, arguments = READ_ONLY_GIT, rest
+        elif items[0] == self._config.python_executable and rest[:1] == ["-m"]:
+            allowed, arguments = READ_ONLY_PYTHON, rest[1:]
+        else:
+            raise ContractError(
+                f"observer command {items[0]!r} is not one of the read-only programs this "
+                "module may run; an observer reads the world and does not change it (§6.6)"
+            )
+        subcommand = arguments[0] if arguments else ""
+        if subcommand not in allowed:
+            raise ContractError(
+                f"{program} {subcommand!r} is not a read-only sub-command; the allowlist is "
+                f"{sorted(allowed)} and a mutating command is refused before it is spawned"
+            )
+        self._check_arguments(program, subcommand, arguments[1:])
+        if not self.root.is_dir():
+            return CommandResult(exit_code=-1, missing=True, stderr=f"{self.root} is not a dir")
+        try:
+            timeout = self._budget.slice(self._config.timeout_seconds)
+        except BudgetExhausted:
+            return CommandResult(exit_code=-1, timed_out=True, stderr="observer budget spent")
+        return self._config.runner(items, self.root, timeout)
+
+    @staticmethod
+    def _check_arguments(program: str, subcommand: str, tail: Sequence[str]) -> None:
+        trusted = TRUSTED_ARGUMENTS.get(subcommand, frozenset())
+        allowance = REVISION_OPERANDS.get(subcommand, 0) if program == "git" else 0
+        revisions = 0
+        seen_separator = False
+        for token in tail:
+            if token == OPERAND_SEPARATOR:
+                if seen_separator:
+                    raise ContractError(
+                        f"{program} {subcommand}: '{OPERAND_SEPARATOR}' appears twice"
+                    )
+                seen_separator = True
+                continue
+            if seen_separator:
+                if token.startswith("-"):
+                    raise ContractError(
+                        f"{program} {subcommand}: operand {token!r} starts with '-'; after "
+                        f"'{OPERAND_SEPARATOR}' a token is a path or a ref, never a flag"
+                    )
+                continue
+            if token not in trusted:
+                if revisions < allowance and not token.startswith("-"):
+                    # A token that starts with '-' is never a revision candidate: it
+                    # falls through to the flag refusal below, so the G4 allowance
+                    # cannot be used to smuggle a writing flag past the gate.
+                    revision(token, f"{program} {subcommand} revision")
+                    revisions += 1
+                    continue
+                raise ContractError(
+                    f"{program} {subcommand}: argument {token!r} is not one of this "
+                    f"sub-command's trusted arguments {sorted(trusted)}; an observer never "
+                    "takes a flag from a caller, because a flag is how a reading command is "
+                    "made to write (§6.6)"
+                )
+
+    def git(
+        self,
+        subcommand: str,
+        *flags: str,
+        revisions: Sequence[str] = (),
+        operands: Sequence[str] = (),
+    ) -> CommandResult:
+        named = [revision(item, "revision") for item in revisions]
+        tail = _operands(operands, separator_always=bool(named))
+        return self.run(["git", subcommand, *flags, *named, *tail])
+
+    def pytest(self, *flags: str, operands: Sequence[str] = ()) -> CommandResult:
+        return self.run(
+            [self._config.python_executable, "-m", "pytest", *flags, *_operands(operands)]
+        )
+
+
+def _operands(operands: Sequence[str], *, separator_always: bool = False) -> list[str]:
+    if not operands:
+        # A revision shape still ends in the separator, with nothing after it: that is
+        # what keeps the revision from also being read as a pathspec (G4).
+        return [OPERAND_SEPARATOR] if separator_always else []
+    return [OPERAND_SEPARATOR, *(operand(item, "operand") for item in operands)]
+
+
+def _directory_bytes(root: Path, limit: int) -> int | None:
+    """Total size of the files that would be copied, or ``None`` past ``limit``."""
+
+    total = 0
+    excluded = set(COPY_EXCLUDES)
+    for path in root.rglob("*"):
+        if any(part in excluded for part in path.parts):
+            continue
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            total += path.stat().st_size
+        except OSError:  # pragma: no cover - a file that vanished mid-walk
+            continue
+        if total > limit:
+            return None
+    return total
+
+
+@contextmanager
+def read_only_copy(root: Path, *, limit: int) -> Iterator[Path | None]:
+    """A throwaway copy of ``root`` to import code in, or ``None`` if it is too big.
+
+    Collecting a test target imports its module, and a module's top level may write
+    files.  An observer may not, so collection never happens in the real worktree:
+    it happens here, and the copy is deleted whatever happens.  ``.git`` is excluded
+    both because it is large and because a copy of it is not a repository an observer
+    should be able to touch at all.
+    """
+
+    if _directory_bytes(root, limit) is None:
+        yield None
+        return
+    target = Path(tempfile.mkdtemp(prefix="sh-observer-"))
+    try:
+        shutil.copytree(
+            root,
+            target / "workspace",
+            ignore=shutil.ignore_patterns(*COPY_EXCLUDES),
+            symlinks=False,
+            ignore_dangling_symlinks=True,
+        )
+        yield target / "workspace"
+    finally:
+        shutil.rmtree(target, ignore_errors=True)
+
+
+class _CodeObserver:
+    """Shared plumbing: the id, the predicates, and the dispatch to one reader."""
+
+    observer_name = ""
+    predicates: tuple[str, ...] = ()
+
+    def __init__(self, config: CodeObserverConfig) -> None:
+        self._config = config
+        #: Replaced per ``observe()`` call, so one observation's budget is its own.
+        self._command = _Command(config)
+
+    @property
+    def observer_id(self) -> str:
+        return self.observer_name
+
+    @property
+    def root(self) -> Path:
+        return self._config.root
+
+    def predicate_ids(self) -> tuple[str, ...]:
+        return self.predicates
+
+    def observe(
+        self,
+        signature: PredicateSignature,
+        arguments: Mapping[str, Any],
+        *,
+        now_ms: int,
+    ) -> Observation:
+        predicate = signature.predicate_ref.id
+        if predicate not in self.predicates:
+            raise ContractError(
+                f"{self.observer_id} does not observe {predicate!r}; it reads "
+                f"{sorted(self.predicates)}"
+            )
+        # One budget per observation (§6.6: an observation that never returns is not
+        # an observation).  Every command of this call spends from it, so an observer
+        # that runs three commands still answers inside the bound.
+        self._command = _Command(self._config, _Budget(self._config.budget_seconds))
+        try:
+            return self._read(predicate, signature, arguments, now_ms=now_ms)
+        except BudgetExhausted:
+            return unavailable(
+                self.observer_id,
+                predicate,
+                f"the observation budget of {self._config.budget_seconds}s was spent before "
+                "this observer could answer",
+            )
+
+    def _read(
+        self,
+        predicate: str,
+        signature: PredicateSignature,
+        arguments: Mapping[str, Any],
+        *,
+        now_ms: int,
+    ) -> Observation:  # pragma: no cover - every subclass overrides it
+        raise NotImplementedError
+
+    def _unusable(self, predicate: str, result: CommandResult, what: str) -> Observation:
+        if result.timed_out:
+            why = "timed out"
+        elif result.missing:
+            why = "could not be run on this machine"
+        else:
+            why = f"exited {result.exit_code}"
+        return unavailable(
+            self.observer_id,
+            predicate,
+            f"{what} {why}; not being able to look is not the proposition being false",
+        )
+
+
+class RepoObserver(_CodeObserver):
+    """Is there a usable checkout here, and is it clean?
+
+    ``code.working-tree-clean`` is CLOSED, so a non-empty ``git status --porcelain``
+    is recorded as an *authoritative negative* over the worktree scope: the command
+    enumerates the whole tree, which is exactly the completeness claim §6.6 C28 asks
+    for before a closed domain may say FALSE.
+    """
+
+    observer_name = "code.repo-observer"
+    predicates: tuple[str, ...] = ("code.repo-checked-out", "code.working-tree-clean")
+
+    def _read(
+        self,
+        predicate: str,
+        signature: PredicateSignature,
+        arguments: Mapping[str, Any],
+        *,
+        now_ms: int,
+    ) -> Observation:
+        if predicate == "code.repo-checked-out":
+            return self._checked_out(signature, arguments, now_ms=now_ms)
+        return self._clean(signature, arguments, now_ms=now_ms)
+
+    def _checked_out(
+        self, signature: PredicateSignature, arguments: Mapping[str, Any], *, now_ms: int
+    ) -> Observation:
+        result = self._command.git("rev-parse", "--is-inside-work-tree")
+        if result.missing and not self.root.is_dir():
+            # The workspace is not there at all, which *is* the answer to "is this
+            # repository checked out in a usable workspace".
+            return observed(
+                signature,
+                arguments,
+                polarity=False,
+                observer_id=self.observer_id,
+                now_ms=now_ms,
+                detail=f"{self.root} does not exist",
+                observer_version=OBSERVER_VERSION,
+            )
+        if not result.usable:
+            return self._unusable("code.repo-checked-out", result, "git rev-parse")
+        inside = result.exit_code == 0 and result.stdout.strip() == "true"
+        return observed(
+            signature,
+            arguments,
+            polarity=inside,
+            observer_id=self.observer_id,
+            now_ms=now_ms,
+            detail=f"git rev-parse --is-inside-work-tree said {result.stdout.strip()!r}",
+            observer_version=OBSERVER_VERSION,
+        )
+
+    def _clean(
+        self, signature: PredicateSignature, arguments: Mapping[str, Any], *, now_ms: int
+    ) -> Observation:
+        result = self._command.git("status", "--porcelain")
+        if not result.usable or result.exit_code != 0:
+            return self._unusable("code.working-tree-clean", result, "git status --porcelain")
+        if not result.lines:
+            return observed(
+                signature,
+                arguments,
+                polarity=True,
+                observer_id=self.observer_id,
+                now_ms=now_ms,
+                detail="git status --porcelain listed nothing",
+                observer_version=OBSERVER_VERSION,
+            )
+        return denial(
+            signature,
+            arguments,
+            observer_id=self.observer_id,
+            now_ms=now_ms,
+            coverage_scope=f"worktree:{self.root}",
+            detail=f"{len(result.lines)} path(s) are modified",
+            observer_version=OBSERVER_VERSION,
+        )
+
+
+class WorkspaceObserver(RepoObserver):
+    """The second observer ``code.working-tree-clean`` lists (§6.6 C28).
+
+    A CLOSED predicate needs at least one authoritative observer and may have
+    several; keeping a second identity means a deployment that separates "the git
+    checkout" from "the agent's workspace" can attribute the denial to the right one
+    instead of borrowing the other's name.
+    """
+
+    observer_name = "code.workspace-observer"
+    predicates: tuple[str, ...] = ("code.working-tree-clean",)
+
+
+class HistoryObserver(_CodeObserver):
+    """Has the commit that introduced the regression been identified?
+
+    Read-only: a finished ``git bisect`` leaves ``refs/bisect/bad`` behind, so asking
+    whether that ref resolves answers the predicate without starting, advancing or
+    resetting a bisect.
+
+    The ref goes through the **revision** path (G4's :data:`REVISION_OPERANDS`), not
+    the operand path.  Runner gap G7: an operand is emitted after ``--``, where git
+    reads it as a pathspec, and ``git rev-parse --verify --quiet -- refs/bisect/bad``
+    exits 1 on a repository where ``git rev-parse --verify --quiet refs/bisect/bad``
+    exits 0 and prints the sha.  The predicate was therefore UNKNOWN everywhere, and
+    the stub runner the suite used matched on substrings, so the stray ``--`` was
+    invisible to it.  The test beside this class now runs real git.
+    """
+
+    observer_name = "code.history-observer"
+    predicates: tuple[str, ...] = ("code.regression-commit-known",)
+
+    def _read(
+        self,
+        predicate: str,
+        signature: PredicateSignature,
+        arguments: Mapping[str, Any],
+        *,
+        now_ms: int,
+    ) -> Observation:
+        result = self._command.git(
+            "rev-parse", "--verify", "--quiet", revisions=("refs/bisect/bad",)
+        )
+        if not result.usable:
+            return self._unusable(predicate, result, "git rev-parse refs/bisect/bad")
+        found = result.exit_code == 0 and bool(result.stdout.strip())
+        return observed(
+            signature,
+            arguments,
+            polarity=found,
+            observer_id=self.observer_id,
+            now_ms=now_ms,
+            detail=(
+                f"refs/bisect/bad resolves to {result.stdout.strip()[:12]}"
+                if found
+                else "refs/bisect/bad does not resolve"
+            ),
+            observer_version=OBSERVER_VERSION,
+        )
+
+
+class ChangesetObserver(_CodeObserver):
+    """How big is this changeset — too large to review, or reviewable in one pass?
+
+    One reader answers both predicates from one ``git diff --numstat``, which is why
+    they cannot disagree with each other: a changeset the observer calls reviewable
+    is exactly one it does not call too large.
+    """
+
+    observer_name = "code.changeset-observer"
+    predicates: tuple[str, ...] = (
+        "code.changeset-too-large",
+        "code.changeset-reviewable",
+    )
+
+    def _read(
+        self,
+        predicate: str,
+        signature: PredicateSignature,
+        arguments: Mapping[str, Any],
+        *,
+        now_ms: int,
+    ) -> Observation:
+        try:
+            changeset = operand(arguments.get("changeset", ""), "the changeset argument")
+            revisions, paths = changeset_operands(changeset)
+        except ContractError as refused:
+            return unavailable(self.observer_id, predicate, str(refused))
+        result = self._command.git("diff", "--numstat", revisions=revisions, operands=paths)
+        if not result.usable or result.exit_code != 0:
+            return self._unusable(predicate, result, f"git diff --numstat {changeset}")
+        touched = _numstat_lines(result.lines)
+        if touched is None:
+            return unavailable(
+                self.observer_id,
+                predicate,
+                "git diff --numstat produced output this observer cannot read",
+            )
+        too_large = touched > int(self._config.changeset_line_limit)
+        polarity = too_large if predicate == "code.changeset-too-large" else not too_large
+        return observed(
+            signature,
+            arguments,
+            polarity=polarity,
+            observer_id=self.observer_id,
+            now_ms=now_ms,
+            detail=(
+                f"{touched} changed line(s) against a limit of "
+                f"{int(self._config.changeset_line_limit)}"
+            ),
+            observer_version=OBSERVER_VERSION,
+        )
+
+
+def _numstat_lines(lines: Sequence[str]) -> int | None:
+    """Total added + removed lines, or ``None`` when the output is not numstat.
+
+    A binary file's numstat row is ``-\t-\tpath``; it contributes no line count and
+    is not a parse failure, so it is skipped rather than turned into UNKNOWN.
+    """
+
+    total = 0
+    for line in lines:
+        parts = line.split("\t")
+        if len(parts) < 3:
+            return None
+        added, removed = parts[0], parts[1]
+        if added == "-" and removed == "-":
+            continue
+        try:
+            total += int(added) + int(removed)
+        except ValueError:
+            return None
+    return total
+
+
+class SuiteObserver(_CodeObserver):
+    """Is the named test currently failing?
+
+    Collection alone cannot answer this.  ``pytest --collect-only`` says whether the
+    target *exists*, and a target nobody can collect makes the question unanswerable
+    — which is ``OBSERVER_UNAVAILABLE``, not "the test passes".  Deciding that a test
+    fails needs the test to run, which executes repository code, so it is behind
+    :attr:`CodeObserverConfig.allow_test_execution` and off by default; the run is
+    still non-mutating (``-p no:cacheprovider``, no ``--last-failed`` state).
+    """
+
+    observer_name = "code.test-observer"
+    predicates: tuple[str, ...] = ("code.test-is-failing",)
+
+    def _read(
+        self,
+        predicate: str,
+        signature: PredicateSignature,
+        arguments: Mapping[str, Any],
+        *,
+        now_ms: int,
+    ) -> Observation:
+        try:
+            target = operand(arguments.get("test", ""), "the test argument")
+        except ContractError as refused:
+            return unavailable(self.observer_id, predicate, str(refused))
+        with read_only_copy(self._config.root, limit=self._config.max_copy_bytes) as workspace:
+            if workspace is None:
+                return unavailable(
+                    self.observer_id,
+                    predicate,
+                    f"the worktree is larger than {self._config.max_copy_bytes} bytes, so there "
+                    "is no throwaway copy to import test modules in; collecting in place would "
+                    "run module-level code against the real workspace",
+                )
+            command = _Command(replace(self._config, workspace=workspace), self._command.budget)
+            return self._read_in(command, predicate, signature, arguments, target, now_ms=now_ms)
+
+    def _read_in(
+        self,
+        command: _Command,
+        predicate: str,
+        signature: PredicateSignature,
+        arguments: Mapping[str, Any],
+        target: str,
+        *,
+        now_ms: int,
+    ) -> Observation:
+        collected = command.pytest(
+            "--collect-only", "-q", "--no-header", "-p", "no:cacheprovider", operands=(target,)
+        )
+        if not collected.usable:
+            return self._unusable(predicate, collected, "pytest --collect-only")
+        if collected.exit_code != 0:
+            return unavailable(
+                self.observer_id,
+                predicate,
+                f"pytest could not collect {target!r} (exit {collected.exit_code}); whether it "
+                "fails is unknown, which is not the same as it passing",
+            )
+        if not self._config.allow_test_execution:
+            return unavailable(
+                self.observer_id,
+                predicate,
+                f"{target!r} is collectable, but deciding whether it fails needs it to run and "
+                "test execution is not enabled for this observer",
+            )
+        ran = command.pytest("-q", "--no-header", "-p", "no:cacheprovider", operands=(target,))
+        if not ran.usable or ran.exit_code not in (0, 1):
+            return self._unusable(predicate, ran, "pytest")
+        return observed(
+            signature,
+            arguments,
+            polarity=ran.exit_code == 1,
+            observer_id=self.observer_id,
+            now_ms=now_ms,
+            detail=f"pytest exited {ran.exit_code} for {target!r}",
+            observer_version=OBSERVER_VERSION,
+        )
+
+
+#: The dependency manifests :class:`DependencyObserver` will read, in the order it
+#: reads them.  A fixed list and not a caller-supplied path: the manifest is *what
+#: this observer means by "declared"*, and taking the file name from the caller would
+#: let a proposition be answered out of any file in the repository.
+DEPENDENCY_MANIFESTS: tuple[str, ...] = (
+    "pyproject.toml",
+    "requirements.txt",
+    "setup.cfg",
+    "package.json",
+    "go.mod",
+    "Cargo.toml",
+)
+
+#: How the ``paths`` argument of ``code.diff-touches-only`` lists more than one path.
+#: The predicate parameter types are scalars (there is no list type), so the list
+#: travels as text and this is the separator — stated here rather than assumed at the
+#: call site.
+PATH_SEPARATOR = ","
+
+
+def authorised_paths(value: object) -> tuple[str, ...]:
+    """The authorised path prefixes of ``code.diff-touches-only``, or a refusal.
+
+    Each entry is a repository-relative path prefix.  ``..`` and absolute paths are
+    refused rather than normalised: an authorisation that can climb out of the tree
+    authorises the whole machine, and a caller that meant ``src`` can say ``src``.
+    """
+
+    if not isinstance(value, str):
+        raise ContractError("the paths argument must be a string")
+    entries = tuple(item.strip() for item in value.split(PATH_SEPARATOR) if item.strip())
+    if not entries:
+        raise ContractError(
+            "the paths argument authorises nothing; a changeset that may touch no path "
+            "is not a scope, it is a refusal to state one"
+        )
+    for item in entries:
+        if item.startswith("/") or item.startswith("-"):
+            raise ContractError(f"authorised path {item!r} is not repository-relative")
+        if ".." in Path(item).parts:
+            raise ContractError(f"authorised path {item!r} climbs out of the repository")
+    return entries
+
+
+def path_is_under(touched: str, authorised: Sequence[str]) -> bool:
+    """Whether one changed path lies under one of the authorised prefixes.
+
+    Compared segment by segment rather than by ``startswith``: ``src`` must not
+    authorise ``srcret/secrets.py``, and a textual prefix test says it does.
+    """
+
+    parts = Path(touched.strip()).parts
+    for prefix in authorised:
+        allowed = Path(prefix).parts
+        if parts[: len(allowed)] == allowed:
+            return True
+    return False
+
+
+class DiffScopeObserver(_CodeObserver):
+    """Does this changeset touch only the authorised paths?  (CLOSED, §6.6 C28)
+
+    ``git diff --name-only`` enumerates **every** path the changeset touches inside
+    the scope it is given, so a path outside the authorisation is an *authoritative
+    negative* — a complete, scoped, watermarked query — and the denial is admissible.
+    Output this observer cannot read is not an enumeration, so it answers UNAVAILABLE
+    rather than turning a parse failure into "the changeset is dirty".
+
+    An enumeration of **nothing** is the same kind of non-answer and is treated the
+    same way: git exits 0 and prints nothing for a misspelled path and for
+    ``HEAD..HEAD`` just as it does for a changeset that really touched nothing, so an
+    empty result cannot carry a completeness claim about this changeset.
+    """
+
+    observer_name = "code.diff-observer"
+    predicates: tuple[str, ...] = ("code.diff-touches-only",)
+
+    def _read(
+        self,
+        predicate: str,
+        signature: PredicateSignature,
+        arguments: Mapping[str, Any],
+        *,
+        now_ms: int,
+    ) -> Observation:
+        try:
+            changeset = operand(arguments.get("changeset", ""), "the changeset argument")
+            revisions, paths = changeset_operands(changeset)
+            allowed = authorised_paths(arguments.get("paths", ""))
+        except ContractError as refused:
+            return unavailable(self.observer_id, predicate, str(refused))
+        result = self._command.git("diff", "--name-only", revisions=revisions, operands=paths)
+        if not result.usable or result.exit_code != 0:
+            return self._unusable(predicate, result, f"git diff --name-only {changeset}")
+        touched = result.lines
+        if not touched:
+            # P0-2, fourth review round.  ``git diff --name-only`` exits 0 with no
+            # output for three quite different worlds: a changeset that touched
+            # nothing, a path that does not exist, and an empty range such as
+            # ``HEAD..HEAD``.  Returning TRUE here answered all three the same way,
+            # and answered them with COMPLETE_COVERAGE — a CLOSED safety gate passed
+            # by a typo in an argument.  An enumeration that enumerated nothing is not
+            # a complete query over this changeset; it is the observer failing to find
+            # the changeset, and that is UNAVAILABLE (AER §8.2, §6.6 C28).
+            return unavailable(
+                self.observer_id,
+                predicate,
+                f"git diff --name-only {changeset} enumerated no path at all; an empty "
+                "enumeration does not distinguish a changeset that touched nothing from a "
+                "changeset this observer could not find, so it is not evidence that only "
+                f"{list(allowed)} were touched",
+            )
+        outside = tuple(item for item in touched if not path_is_under(item, allowed))
+        if not outside:
+            return observed(
+                signature,
+                arguments,
+                polarity=True,
+                observer_id=self.observer_id,
+                now_ms=now_ms,
+                detail=(f"{len(touched)} touched path(s), all under {list(allowed)}"),
+                coverage=COMPLETE_COVERAGE,
+                coverage_scope=f"git-diff:{changeset}",
+                query_watermark_ms=now_ms,
+                observer_version=OBSERVER_VERSION,
+            )
+        return denial(
+            signature,
+            arguments,
+            observer_id=self.observer_id,
+            now_ms=now_ms,
+            coverage_scope=f"git-diff:{changeset}",
+            detail=(
+                f"{len(outside)} of {len(touched)} touched path(s) lie outside "
+                f"{list(allowed)}: {list(outside[:8])}"
+            ),
+            observer_version=OBSERVER_VERSION,
+        )
+
+
+class DependencyObserver(_CodeObserver):
+    """Is the named package declared in a dependency manifest?  (OPEN)
+
+    Read from the manifests **at ``HEAD``** with ``git cat-file -p``, never from the
+    worktree: what a repository declares is what it has committed, and a file an
+    agent wrote a minute ago is a claim rather than a declaration.
+
+    OPEN on purpose.  This observer reads the manifests it knows about, and a package
+    declared somewhere it does not read — a lock file, a constraints file, a private
+    index — is not a package that is absent.  So a miss is an ordinary negative
+    observation, which §6.6 reads as UNKNOWN for an OPEN predicate, and this observer
+    makes no completeness claim it could not support.
+    """
+
+    observer_name = "code.dependency-observer"
+    predicates: tuple[str, ...] = ("code.declared-dependency-present",)
+
+    def _read(
+        self,
+        predicate: str,
+        signature: PredicateSignature,
+        arguments: Mapping[str, Any],
+        *,
+        now_ms: int,
+    ) -> Observation:
+        try:
+            package = operand(arguments.get("package", ""), "the package argument")
+        except ContractError as refused:
+            return unavailable(self.observer_id, predicate, str(refused))
+        listed = self._command.git("ls-files", "--cached", operands=DEPENDENCY_MANIFESTS)
+        if not listed.usable or listed.exit_code != 0:
+            return self._unusable(predicate, listed, "git ls-files --cached")
+        manifests = listed.lines
+        if not manifests:
+            return unavailable(
+                self.observer_id,
+                predicate,
+                "this repository tracks none of the dependency manifests this observer reads "
+                f"({list(DEPENDENCY_MANIFESTS)}); nothing here declares anything, which is not "
+                "the same as the package being absent",
+            )
+        seen: list[str] = []
+        for name in manifests:
+            blob = self._command.git("cat-file", "-p", operands=(f"HEAD:{name}",))
+            if not blob.usable:
+                return self._unusable(predicate, blob, f"git cat-file -p HEAD:{name}")
+            if blob.exit_code != 0:
+                continue  # the path is tracked but not in this commit; not a fact about it
+            seen.append(name)
+            if declares_package(blob.stdout, package):
+                return observed(
+                    signature,
+                    arguments,
+                    polarity=True,
+                    observer_id=self.observer_id,
+                    now_ms=now_ms,
+                    detail=f"{name} at HEAD declares {package!r}",
+                    observer_version=OBSERVER_VERSION,
+                )
+        if not seen:
+            return unavailable(
+                self.observer_id,
+                predicate,
+                "every tracked dependency manifest is missing from HEAD, so there is nothing "
+                "to read; an unreadable manifest is not an absent dependency",
+            )
+        return observed(
+            signature,
+            arguments,
+            polarity=False,
+            observer_id=self.observer_id,
+            now_ms=now_ms,
+            detail=f"{package!r} appears in none of {seen}",
+            observer_version=OBSERVER_VERSION,
+        )
+
+
+#: What a package name may itself contain.  A match bounded by anything narrower
+#: (letters and digits alone) lets ``requests`` be answered by ``requests-mock``.
+NAME_CHARACTERS: frozenset[str] = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_-.")
+
+
+#: A ``/`` on either side of a match means it is part of a **path** — a homepage URL,
+#: a ``go.mod`` module path — and a path is not the bare name this predicate asks
+#: about.  Review round 4, P1-4①: without it ``declared-dependency-present('requests')``
+#: was answered TRUE by ``homepage = "https://github.com/psf/requests"``.
+PATH_CHARACTER = "/"
+
+#: A **bare** key before ``=``: ``dependencies = [...]``, ``requires-python = ...``.
+#: That is the manifest's own vocabulary, not something it declares, and matching it
+#: made ``declared-dependency-present('dependencies')`` TRUE on every pyproject.toml.
+#: JSON spells its keys quoted (``"requests": "^2"``), so this leaves package.json —
+#: where the package name really *is* the key — alone.
+_BARE_KEY = re.compile(r"^([a-z0-9_.\-]+)\s*=")
+
+#: ``[project.optional-dependencies]``: a section header names a table, not a package.
+_TABLE_HEADER = re.compile(r"^\[[^\]]*\]$")
+
+
+def declares_package(manifest: str, package: str) -> bool:
+    """Whether ``manifest`` declares ``package``, matched on whole names only.
+
+    A substring test would let ``requests`` be answered by ``requests-mock``, and a
+    dependency that is not there is exactly the case this predicate exists to catch.
+    The match is therefore bounded by :data:`NAME_CHARACTERS` — everything a package
+    name may itself contain, ``-`` and ``.`` included, so ``requests`` is not answered
+    by ``requests-mock`` — and it is deliberately syntax-agnostic: TOML, INI, JSON and
+    ``go.mod`` all spell a dependency as the name surrounded by punctuation, and
+    parsing four grammars to answer "is this name declared" would be four ways to be
+    wrong.
+
+    Syntax-agnostic is not the same as structure-blind, though, and the fourth P2.3c
+    review round measured what the difference costs: a whole-file search also answers
+    TRUE from a comment, from a URL, and from the manifest's **own key names**.  Four
+    cheap line-level rules remove those without committing to any one grammar — skip a
+    whole-line comment, skip a section header, ignore a bare key before ``=``, and
+    refuse a match that has a ``/`` against it.  A miss is still an ordinary negative
+    (this predicate is OPEN), so none of this can manufacture a denial.
+    """
+
+    name = package.strip().lower()
+    if not name:
+        return False
+    for raw in manifest.lower().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if _TABLE_HEADER.match(line):
+            continue
+        key = _BARE_KEY.match(line)
+        body = line[key.end() :] if key is not None and key.group(1) == name else line
+        if _names(body, name):
+            return True
+    return False
+
+
+def _names(text: str, name: str) -> bool:
+    """Whether ``name`` occurs in ``text`` as a whole, non-path name."""
+
+    boundary = NAME_CHARACTERS
+    start = 0
+    while True:
+        index = text.find(name, start)
+        if index < 0:
+            return False
+        before = text[index - 1] if index else ""
+        after = text[index + len(name) :][:1]
+        if (
+            before not in boundary
+            and after not in boundary
+            and before != PATH_CHARACTER
+            and after != PATH_CHARACTER
+        ):
+            return True
+        start = index + 1
+
+
+def code_observers(
+    root: Path | str,
+    *,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    runner: Runner = run_read_only,
+    allow_test_execution: bool = False,
+    changeset_line_limit: int = DEFAULT_CHANGESET_LINE_LIMIT,
+    budget_seconds: float = DEFAULT_OBSERVER_BUDGET_SECONDS,
+    max_copy_bytes: int = DEFAULT_MAX_COPY_BYTES,
+) -> tuple[_CodeObserver, ...]:
+    """The ``code`` observers, all pointed at one isolated worktree.
+
+    Seven since P2.3c part 3a: the five structural ones §7.3 asked for, plus the two
+    **business-state** readers L2 acceptance needs (``code.diff-touches-only`` and
+    ``code.declared-dependency-present``).
+    """
+
+    config = CodeObserverConfig(
+        root=Path(root),
+        timeout_seconds=timeout_seconds,
+        runner=runner,
+        allow_test_execution=allow_test_execution,
+        changeset_line_limit=changeset_line_limit,
+        budget_seconds=budget_seconds,
+        max_copy_bytes=max_copy_bytes,
+    )
+    return (
+        RepoObserver(config),
+        WorkspaceObserver(config),
+        HistoryObserver(config),
+        ChangesetObserver(config),
+        SuiteObserver(config),
+        DiffScopeObserver(config),
+        DependencyObserver(config),
+    )
+
+
+#: Predicate id → the observer ids that can read it.  Asserted against the seed
+#: domain's ``predicates.json`` by the suite, so an observer cannot drift away from
+#: the declaration that lists it.
+CODE_OBSERVER_COVERAGE: Mapping[str, tuple[str, ...]] = {
+    "code.repo-checked-out": ("code.repo-observer",),
+    "code.working-tree-clean": ("code.repo-observer", "code.workspace-observer"),
+    "code.regression-commit-known": ("code.history-observer",),
+    "code.changeset-too-large": ("code.changeset-observer",),
+    "code.changeset-reviewable": ("code.changeset-observer",),
+    "code.test-is-failing": ("code.test-observer",),
+    "code.diff-touches-only": ("code.diff-observer",),
+    "code.declared-dependency-present": ("code.dependency-observer",),
+}
+
+
+__all__ = (
+    "CODE_OBSERVER_COVERAGE",
+    "COPY_EXCLUDES",
+    "DEPENDENCY_MANIFESTS",
+    "NAME_CHARACTERS",
+    "DEFAULT_CHANGESET_LINE_LIMIT",
+    "DEFAULT_MAX_COPY_BYTES",
+    "DEFAULT_OBSERVER_BUDGET_SECONDS",
+    "DEFAULT_TIMEOUT_SECONDS",
+    "OBSERVER_VERSION",
+    "OPERAND_SEPARATOR",
+    "READ_ONLY_GIT",
+    "READ_ONLY_PYTHON",
+    "REVISION_CHARACTERS",
+    "REVISION_OPERANDS",
+    "REVISION_RANGE",
+    "TRUSTED_ARGUMENTS",
+    "PATH_SEPARATOR",
+    "BudgetExhausted",
+    "ChangesetObserver",
+    "DependencyObserver",
+    "DiffScopeObserver",
+    "CodeObserverConfig",
+    "CommandResult",
+    "HistoryObserver",
+    "RepoObserver",
+    "Runner",
+    "SuiteObserver",
+    "WorkspaceObserver",
+    "authorised_paths",
+    "changeset_operands",
+    "code_observers",
+    "declares_package",
+    "operand",
+    "path_is_under",
+    "read_only_copy",
+    "revision",
+    "run_read_only",
+)

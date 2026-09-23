@@ -1,0 +1,258 @@
+{
+  "amendment": "H1H-ADM-1.0",
+  "note": "36组真实SDK验收规范，不是已执行结果。",
+  "cases": [
+    {
+      "id": "A01",
+      "setup_and_action": "已认证 caller issue；request 同事务绑定；REFINE",
+      "required_assertions": "grant/issuer/request 三条 identity 对齐；一次正式 plan commit",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "A02",
+      "setup_and_action": "缺 grant 或 producer 不可读",
+      "required_assertions": "前者 AUTHORIZATION_REQUIRED，后者 SOURCE_UNAVAILABLE；均无 plan/write/handoff",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "A03",
+      "setup_and_action": "跨 tenant、跨 Mission、wrong grantee/scope",
+      "required_assertions": "拒绝；不泄漏他人 grant 细节",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "A04",
+      "setup_and_action": "发包后 revoke/renew",
+      "required_assertions": "旧回复 stale；不自动绑定到新 grant",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "A05",
+      "setup_and_action": "preview 后、Commit 前 TTL 到期",
+      "required_assertions": "事务内拒绝；无新 revision/outbox",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "A06",
+      "setup_and_action": "required_approvals=0、Method gate=True 但无 grant",
+      "required_assertions": "不能放行；有合法 grant 但外部 action 尚未审批时可以规划、不能发送",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "A07",
+      "setup_and_action": "相同签发 command 重送/改输入",
+      "required_assertions": "同输入回原 receipt 不延长 TTL；不同输入冲突",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "A08",
+      "setup_and_action": "已 Commit 后 grant 撤回，再送同 Decision",
+      "required_assertions": "有当前读权限时回原 receipt；不新增计划、不新派发；其他人不可读取",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O01",
+      "setup_and_action": "全量读三个集合为空；另测读取报错",
+      "required_assertions": "前者有 COMPLETE_EMPTY digest；后者不能变空",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O02",
+      "setup_and_action": "相同 target 的两个动作/Task、不同 hash/occurrence",
+      "required_assertions": "不猜 join；alias 不能覆盖原 link",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O03",
+      "setup_and_action": "退役方法仍有 UNKNOWN action",
+      "required_assertions": "即使不在 active plan，也被 mapper 发现并阻断",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O04",
+      "setup_and_action": "错 action_key/version/params_hash/tenant，悬空 link",
+      "required_assertions": "SOURCE_UNAVAILABLE；不查 latest 补齐",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O05",
+      "setup_and_action": "HANDED_OFF，lease 未过/已过",
+      "required_assertions": "都不能因 lease 自动判 NOT_APPLIED",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O06",
+      "setup_and_action": "UNKNOWN + 仅 reconcile 字符串/空查询；测试 executor 请求 rehandoff",
+      "required_assertions": "mapper 仍阻断且零 connector 调用；即使旧 executor 提出重发，新协议 begin_handoff 也拒绝不完整证明",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O07",
+      "setup_and_action": "匹配成功 receipt / 错成功 receipt；完整负证明 / 无迟到排除",
+      "required_assertions": "分别 APPLIED / SOURCE_UNAVAILABLE / NOT_APPLIED / UNRESOLVED",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O08",
+      "setup_and_action": "preview 读完后新增 action 或开始新的 handoff",
+      "required_assertions": "Commit 前集合复核抓到变化，不只查旧 unresolved 集",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O09",
+      "setup_and_action": "新模式 propose_action 与 link 写到一半抛异常；同次重送",
+      "required_assertions": "两者原子 rollback；重送恰好一份身份；handoff 不得看见无 link action",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "O10",
+      "setup_and_action": "Task cancelled 但 call 在途；活的外来 lease",
+      "required_assertions": "RuntimeWorkSnapshot 仍需收敛；不释放/伪造完成，不抢 lease",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P01",
+      "setup_and_action": "合法 REFINE 从真实 package 到 preview 到 Commit",
+      "required_assertions": "delta/compiled/Commit 身份一致；不是预览 A 提交 B",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P02",
+      "setup_and_action": "candidate ORDER cycle、refinement cycle",
+      "required_assertions": "分别正确 code；既有 plan、账本、文件不变",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P03",
+      "setup_and_action": "DATA 无端口、多绑、覆盖缺失、资源冲突",
+      "required_assertions": "typed 映射，不统一归 `cycle`",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P04",
+      "setup_and_action": "缺 registry/evidence/validator、PARTIAL_CHECK",
+      "required_assertions": "拒绝不完整检查；不填空 report",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P05",
+      "setup_and_action": "编译预览重复两次相同冻结输入",
+      "required_assertions": "候选 hash 相同；Store.total_changes=0、文件 hash 不变、tool/provider calls=0",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P06",
+      "setup_and_action": "修复候选结构非法但兄弟在跑",
+      "required_assertions": "不取消任何原工作；真正合法后才允许进入收敛流程",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P07",
+      "setup_and_action": "合法替换需收敛，暂停/重启后完成",
+      "required_assertions": "原 decision 不变；DEFERRED 可恢复；没有第二次 LLM 调用/重复 plan commit",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P08",
+      "setup_and_action": "WAIT/NO_CHANGE/DECLARE_BLOCKED（逐项参数化）",
+      "required_assertions": "shape/operation producer spy 被调用即失败；无 PlanRevision；合法报告仍能落库",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P09",
+      "setup_and_action": "WAIT 登记前目标已完成、订阅竞争",
+      "required_assertions": "立即可唤醒/反馈，不永远等待，不产生忙循环",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "P10",
+      "setup_and_action": "新增 DeltaProblemKind/未知 ProjectionProblemKind",
+      "required_assertions": "显式未映射失败；枚举覆盖断言红，不静默放行",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "I01",
+      "setup_and_action": "09-19 decode-only 两类输入",
+      "required_assertions": "先保留 raw/严格解码，再 NOT_ENABLED；authorization/preview/Commit 均无副作用",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "I02",
+      "setup_and_action": "同 raw/ordinal 重放与同 ordinal 不同 raw",
+      "required_assertions": "原身份幂等/冲突；无重复新事件和计划",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "I03",
+      "setup_and_action": "grant/request side binding 事务中真实子进程强退",
+      "required_assertions": "都未写或都已写；恢复不补签新权",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "I04",
+      "setup_and_action": "preview 已记录、未 Commit 强退",
+      "required_assertions": "原 raw 保留；重建当前来源再检查；不直接用旧 grant 放行",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "I05",
+      "setup_and_action": "Commit 完成回执返回前强退",
+      "required_assertions": "恢复命中原 receipt；新 revision/outbox 数量不变",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "I06",
+      "setup_and_action": "authorize 或 action row 在两个并发提交间改变",
+      "required_assertions": "至少一个因真实冲突/stale 拒绝；不得两份互相冲突的计划都放行",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "I07",
+      "setup_and_action": "关闭新协议、旧 Mission 冷恢复",
+      "required_assertions": "原 Prompt/package/event/canonical bytes、旧 golden、预算口径不变",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    },
+    {
+      "id": "I08",
+      "setup_and_action": "NanoJev shadow 有结果/无结果各运行同一 H1 fixture",
+      "required_assertions": "H1 三 producer 必须真实运行；Shadow 不能替代校验或改变 Commit 权限",
+      "status": "NOT_RUN",
+      "scope": "real_sdk_focused"
+    }
+  ]
+}

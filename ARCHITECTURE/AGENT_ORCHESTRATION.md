@@ -1,3 +1,33 @@
+最后更新：2026-09-23。跨电脑源码交付：完整 HTN + TaskGraph23 + Assurance WIP SDK 位于 `sdk/simple-harness-sdk/`；最终 TaskGraph Host UI2 源码位于 `development/taskgraph-host-overlay/`，尚未覆盖根 Host。根 Host 仍固定 HTN wheel。Assurance 主体、UseCertificate/acceptance/终态/生产装配未完成；仅局部 seam，不是整体产品 PASS。实际交接见 [HANDOFF](../HANDOFF-2026-09-23.md)，下文保留历史检查点。
+
+<!-- v14-final-integration-current -->
+最后更新：2026-09-22 CST。V1.4（去除NanoJev）本阶段核心最终集成与原生完整效果闭环 PASS，TaskGraph接线资料 READY。Host已安装 `0.13.0.dev20260922+htn.1`（wheel SHA-256 `af9e273061ceeeb3204ccbb4e4d32965fb3bba568e6c7e63f1af1b18244b9800`），528包内文件逐字节一致。新Mission默认hierarchical/独立world；Mission与根合同同事务，CompletionSpec确认后才规划。真实Tauri案例 `mission-5bb7c1fef5597956` 完成内容→操作审查→界面审批→ActionExecutor发布→效果验收→根Resolution→Mission COMPLETED：12次DeepSeek调用、98229tokens、0未知、1次发布。冷恢复/只读回放前后1Attempt/8intents/102events/12calls/1action不变。旧回放语义投影仍PARTIAL（23未知事件类型/1未覆盖字段/UI账本未对齐；覆盖字段差异0），不得将此记为全部回放通过。真实模型新请求默认输出16384，上限32768；历史失败保留。SDK候选dirty源码未整体合并main、未release，Host工作树改动保留。H6大批量晋级、H8 576局对比依用户要求移出阶段并停止，原完整门禁历史保持OPEN。后文旧状态仅为历史。 [Delivery and evidence](/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/最终集成与端到端交付-2026-09-22.md).
+<!-- /v14-final-integration-current -->
+
+最后更新：2026-09-22 18:33 CST。本阶段按用户新范围仅做最终集成与必要端到端验收；H6大批量候选晋级评测、H8四方案576局对比评测移出本阶段，功能与历史证据保留，不记为通过。H6 cohort-5在模型调用均已结算的边界停止，PID82450已退出：7个baseline已有成功回执，当前未完成案例不计PASS，停止前0未知用量；新版H8未启动，自动继续已取消。原H8为40 PASS/1 FAIL/1 INTERRUPTED。V1.4仍IN_PROGRESS，最终Host集成与完整实际操作闭环待验收；未合并、替换Host wheel或通知TaskGraph ready。
+
+最后更新：2026-09-22 18:07 CST。V1.4（去除NanoJev）IN_PROGRESS。主体H1–H8接线已实现，正在处理真实验收故障；未合并、替换Host wheel或通知TaskGraph ready。非流式manifest-18 H8停于40 PASS/1 FAIL/1 INTERRUPTED（HTTP524，125.96秒，1未知），534局未启动。H6 source-10真实COMPLETED/oracle=true，48calls/218041tokens/0unknown；cohort-4首baseline第25调用HTTP502（1.32秒）后停止，110908已知tokens/1未知，未晋级。已实现单次SSE传输、完整工具参数组装、断流拒绝与已知用量保留；真实文本/工具两探针通过，30项适配定点、3项计量/身份、22项旧Provider兼容通过。当前stream=true已冻结manifest-19；source-11真实COMPLETED/oracle=true，44calls/199597tokens/0unknown，唯一候选已产生，cohort-5的50局配对验证已自动开始；未宣称解决上游502或验证全部长请求稳定。UI07在manifest-18源码快照真实确认CONTENT_HASH_VERIFIED效果要求，唯一审批事件、0模型调用/0发布文件；不是完整效果执行。完整H6/H8、原14局、独立核验、最终Host集成仍开放。
+
+2026-09-22 Host 完成要求/操作请求补齐丢响应恢复：30 秒超时解除等待，保留原 command_id/idempotency_key；新请求忽略旧响应，父组件更新回调不会丢失在途请求。OperationWorkspace 单文件 4 PASS（65ms），覆盖精确重试/迟到响应；当前原生 UI 后继验证尚待，不代表 Host 或 V1.4 整体完成。证据 `.local-test-evidence/2026-09-22/v14-host/operation-lost-reply/junit.xml`，SHA-256 `34c2d5879ae6bdf3c2154cdd5c84147b513f3d801a938bd4c4ea43c09446b495`。
+
+最后更新：2026-09-22 CST。V1.4（去除 NanoJev）仍 IN_PROGRESS。真实 H6 source-6 COMPLETED、独立 code oracle=true，48次 DeepSeek v4.1 Flash 调用/228605 tokens/0 unknown，正式生成1个候选。Selection合成已分离 DATA 与候选材料来源，精确联合校验实际挂载；两个真实 T0 intent/review/materialization 同target精确隔离，2项定点PASS/0.43s；overlay跨Mission/Task错链拒绝3 PASS/1.69s；O04/I08按权威合同3 PASS/1.05s（专用caller-tenant reader与wheel安装并非这两项必要条件）。I07冷恢复+两项旧package字节golden 3 PASS/0.55s。H1-H静态35 MATCH/1 PARTIAL（I07完整legacy收尾），不是整门35 PASS。H6 cohort-1首个baseline FAILED（26898tokens），公共测试缩进错误已修且新增冻结前AST/隔离校验；原评测集合与失败证据保留，新source-7在独立runtime继续。H6晋级/H8矩阵/最终质量门及Host整体验收仍未完成，未通知TaskGraph ready。
+
+最后更新：2026-09-22 CST。V1.4（去除 NanoJev）仍 IN_PROGRESS。修复真实 H6 source-5 在 4 个 Task 完成后的派发中断：派发器与 completion freeze 共用 DATA-bound producer 的 accepted workspace overlay，保持精确 artifact/hash 校验及 ORDER-only/只读新增测试隔离；定点 3 PASS/1.46s。P06 参数 schema 错误以 typed ParameterBindingsError 归类 STRUCTURE_INVALID，真实在途兄弟/外来 lease 保留及合法替换冷恢复 1 PASS/1.04s。H1-H 静态映射现 32 MATCH/4 PARTIAL，非执行 32 PASS。source-5 27 次调用/119574 tokens/0 unknown，未完成，无 ready receipt；source-6 使用新冻结 manifest-12 继续真实闭环。H6 cohort、H8完整矩阵、剩余 H1 门禁和当前 Host 全链仍开放。未合并/重装 Host wheel，未通知 TaskGraph ready。
+
+Last updated: 2026-09-22 CST. V1.4 excluding NanoJev remains IN_PROGRESS. Real DeepSeek v4.1 Flash code Mission COMPLETED with independent domain success: 27 physical calls, 105645 tokens, 102.551s, zero unknown usage (manifest-6; h8-code-scoped-content-1/probe-receipt.json). This validates scoped TASK_CONTENT Worker/Critic wiring for this scenario, not the full H8 matrix. Prior-source full_target: 4106 PASS / 1 FAIL / 5 SKIP; the outdated drone template fixture subsequently passed its targeted recheck. H1-H extraction from that JUnit: 30 PASS / 6 PARTIAL. Current follow-up fixes cover effect preparation scope and registry eligibility; H6 real cohort, complete H8 matrix, remaining H1 gates and current Host effect UI remain open. Candidate not merged, Host wheel unchanged, TaskGraph readiness notification not sent. See the Host V1.4 acceptance repair checkpoint.
+
+最后更新：2026-09-22 CST。V1.4（去除 NanoJev）整体 IN_PROGRESS。D2原始回执/完整handoff负证明producer、D3延期冷恢复、H8真实进程强杀与AppWorld同episode重接已实现并完成具名局部验证；Host原生内容确认与冷恢复已实点通过（非完整效果Mission）。当前DeepSeek第5次最小聊天恢复200/可见输出/usage，正式Worker复验中；H6 cohort/H8完整矩阵及完整H1门禁仍未关闭。H1-H静态映射30 MATCH/6 PARTIAL不是执行PASS。候选未合并、Host wheel未重装、未通知TaskGraph ready。 [当前证据与边界](../plans/taskSys2/升级planV1/v1.4/验收修复检查点-2026-09-22.md)。下文保留历史时点。
+
+最后更新：2026-09-22 CST。V1.4（去除 NanoJev）主体接线已写入，进入验收，整体 IN_PROGRESS。Operation T0/T1/T3、D3、H2–H8 runtime 和 Host 完成确认/操作提交/规划授权/人工回答入口已接；H6 同库真实 cohort 入口及 H8 四臂冻结配置已补。当前专项 `test_v14_runtime_closure.py` **15 PASS / 0.72s**（首次 14 PASS/1 FAIL 为旧 v8 fixture 断言，与新 v9 默认不符，已修正）；仅覆盖具名15案例，不是 H1–H8 完整门禁。证据位于 SDK 候选 `.local-test-evidence/2026-09-22/v14-closure/{pytest-fixed.log,junit-fixed.xml}`。AppWorld 16条服务规则注册已核对，未计作业务场景PASS。真实单Mission/矩阵与Host原生UI验收继续中；候选未合并、Host wheel未重装，未通知TaskGraph ready。下文为历史检查点，当前状态以本段及Host V1.4主体编码检查点为准。
+
+最后更新：2026-09-22 CST。Operation 补遗继续实施，V1.4（去除 NanoJev）整体未完成。OC-1 Spec 批准与 OC-2 Scope/原子准备事务已接入；MIXED 保持 VERIFYING、禁止自动动作/重开 Worker。上一固定源码 full_target 为 4016 PASS / 8 FAIL / 5 SKIP（146.72s，589 文件 hash 不变）；8 项失败已修并经 231 项定向复验，后继组合相关 235 PASS（3.58s），不能合称全门通过。新增 Selection 准备/回放/回滚 2 PASS，真实非空 DATA 冻结及伪造 mount 拒绝 1 PASS，等待态不误停与内容完整性 10 PASS。完整 nested compound 与中间 local criterion 链正在实测；OC-3 payload/source reader 开始实现，T0/T1/T3 producer、D3、H1-I/完整 H1、H2–H8 收尾及当前 Host 原生 UI 仍待。无新 PlanAgent 待决；保留所有 dirty worktree，未合并/重装 Host/调用真实 Provider。
+
+最后更新：2026-09-21 CST。V1.4（去除 NanoJev）仍未完成。后继修复 operation/action link 同身份重放假冲突（原反例 1 FAIL / 4 PASS，修复相关 28 PASS；旧 action 相邻回归 74 PASS / 1 原有条件 SKIP），并保持重复重放零写与 alias 原子拒绝。新增取消 Task 的真实在途/lease 检查，与原 repair 套件共 8 PASS；两个真实 SQLite 写事务交错与真实方法退役后的 UNKNOWN 读取均已通过（后续组合首轮另有 cycle 夹具失败，已修正）。compiler 拒绝保留 typed report，collector 不再将非四类缺陷归为 COVERAGE_GAP；未知 producer code 强制 INTERNAL_CONTRACT_ERROR。最新相关 181 PASS / 3 既有 codec SKIP（2.00 秒），3 个 preview/collector 源文件 mypy 与定向 Ruff 通过。此前 full_target 3891/5 与 H1-H 20/8/8 是前一源码检查点，尚未重新全量/矩阵汇总。Operation 上游 producer、延期恢复合同、H1-I/完整 H1、H2–H8 与 Host UI 仍待，候选未合并。架构裁定问题见 Host plan 的 PLAN-AGENT-架构裁定请求-2026-09-21.md。
+
+最后更新：2026-09-21 CST。**V1.4（去除 NanoJev）整体未完成。** 候选 `codex/h1h-impl` / HEAD `102ad3dfa2db38d575ea929d39ec5ed1561a71da` 加保留的未提交改动，最新固定源码 full_target **3891 PASS / 5 SKIP / 137.29 秒**，1045 个 Python 源码/测试 hash 前后不变；5 个变更源码文件 mypy 通过。当前实际 H1-H matrix 为 **20 PASS / 8 PARTIAL / 8 NOT_COVERED / 0 FAIL**，exit 2，整门仍 OPEN。已完成本地修复：提交/最终decision原子恢复、UNKNOWN action保留预算、授权issuer/tenant/Mission隔离、原始reply CAS留存、两种固定decode-only先解码后拒绝；补齐A01/A03/I01/I04/P05/P08/P10等真实断言。历史8个旧fixture失败保留，补真实ArtifactStore后25定向及本次全量通过。真实 DeepSeek v4.1 Flash WAIT场景已完成（早于后继raw/授权修复）：190.609秒、40次物理串行调用全succeeded、4次WAIT注册/唤醒、4件accepted artifacts、所有reserved字段0；带测试调度/签发器，不代表Host UI或完整H1-I。Operation上游冻结身份/参数引用/物化链、其余门禁及H2–H8仍待；候选未合并、Host wheel未重装、原生UI未验。当前事实与原始证据索引见Host `plans/taskSys2/升级planV1/v1.4/WAIT复验-2026-09-21.md`，后文旧数字仅为历史。
+
+最后更新：2026-09-21 CST。**当前 V1.4（去除 NanoJev）状态纠正：整体未完成。** SDK 候选 WAIT 固定源码回归 3812 passed / 5 skipped（138.38 秒，545 个源码/测试 hash 不变）；后续 authority/operation 定向 41 passed（0.72 秒）属于更新后的局部源码。H1-H 原“36/36”仅为测试执行数，修正规格映射后为 **5 PASS / 10 PARTIAL / 21 NOT_COVERED**，不能关闭门禁。真实 DeepSeek WAIT 注册→Worker 完成→唤醒 PASS（49.503 秒、9 次物理调用）；同 Mission 恢复完成 4 件 accepted artifacts，但在 240.089 秒/20 次新增调用边界下仍 ACTIVE，最终评审标签拼错被严格拒绝，不能报 H1-I 完成。旧模式回归 559 PASS / 1 timeout FAIL / 13 SKIP；失败文件原样复跑 6 PASS，原因未定，原失败保留。候选未合并、Host wheel 未重装、原生 UI 未验。后文旧检查点保留历史时点，不覆盖本条。详见 Host `plans/taskSys2/升级planV1/v1.4/WAIT复验-2026-09-21.md`。
+
 最后更新：2026-09-15 11:15 CST。A96 已冻结12个dev题，小对照 D-arm smoke 超时失败（未知用量1），96次未启动。[冻结](../plans/taskSys2/testPhase1-a96-freeze-2026-09-15.md)。
 
 最后更新：2026-09-15 10:45 CST。N5 A 轮 Qwen 干净/攻击各一例已在 69d679c 上评分；系统观察晋级，KnowledgeUsed 0。A 轮未完成。[记录](../plans/taskSys2/testPhase1-n5-blackboard-2026-09-15.md)。
@@ -294,6 +324,8 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
 | `enabled` | true | 按 CLAUDE.md：测试阶段已完成的能力默认开启 |
 | `max_concurrency` / `max_concurrent_model_calls` | 1 / 1 | 与主对话共用 provider 限额。**只在编排库第一次 seed 时进入 ACTIVE 策略**，之后修改只会记一条 `PolicyConfigDrift`，要经策略晋级才会生效 |
 | `default_mission_max_tokens` / `default_mission_max_attempts` | 400000 / 12 | 代码常量（`OrchestrationSettings`），不从 config 读。**本部署不提供无上限的 Mission**：<br>• 请求里预算留空的项，由 Host 门口补上这个默认值；<br>• 用户填了的值原样保留；<br>• 0、负数、非整数一律拒绝，不会被默认值替换；<br>• 默认值在进 facade 之前补上，所以回执的 spec hash 已经包含它；<br>• `orchestration_status.mission_budget_defaults` 把默认值下发给表单占位符，详情显示实际生效的预算。<br>依据：原生验收时，留空预算的 Mission 被真实 Planner 编出 800 tokens 的 Task 预算，结果以 `budget_exhausted` 失败。裁决见计划 journal §4.4。<br>12 次的理由：Mission 级尝试次数统计的是所有 Task 的全部 Worker Attempt |
+| `decision_mode` | `"existing"` | NanoJev 决策滚动模式（§11）。白名单只有 `existing`｜`shadow`；**未知值/非字符串/缺键一律 `existing`**，`nanojev` 刻意不在白名单（Primary 是后续门）。只从 config 读，环境变量无效 |
+| `decision_shadow_timeout_seconds` | 空（无 Host 侧上限） | `shadow` 下观测的超时上限。只接受正数，硬上限 60s；0/负数/非数字/布尔 → 不设 Host 侧上限。超时按"观测失败"处理，plan 不受影响 |
 
 ## 8. 模型与费用
 
@@ -338,6 +370,49 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
   - **元数据可读**：放行 stat 才能让 venv 的软链解析正常，代价是沙箱里的代码能探测任意路径是否存在、大小与修改时间，但读不到内容。
   - **用到的是已废弃且无公开文档的接口**：seatbelt 与 `sandbox_check`（Chromium、WebKit 也在用）。每次启动由探针重新验证；探针不过就退回 `off`。
   - **回收耗时受外部工具影响**：认进程要靠 `ps`，不隔离模式还要靠 `lsof`，两者都有单次超时，但极端情况下一次回收仍可能偏慢；正确性不受影响。
+
+## 11. NanoJev 决策接缝（PR-7，Shadow-only）
+
+- 最后更新：2026-09-20
+- 计划来源：`plans/taskSys2/升级planV1/v1.4/NanoJevAdd.md` §57 PR-7（Shadow 接入）+ 本仓任务书 `plans/taskSys2/升级planV1/v1.4/任务书-PR7-2026-09-20/pr7-impl.md`
+
+**生产链路**
+
+| 层 | 位置 | 职责 |
+|---|---|---|
+| 配置载体 | `config.toml [orchestration] decision_mode` / `decision_shadow_timeout_seconds` | Host 唯一真源。缺省在 `deskpet/orchestration/settings.py`：`decision_mode = "existing"`、超时 `None`。**只从本文件读，环境变量无效** |
+| 解析 | `settings.py::_decision_mode` / `_shadow_timeout` | 白名单只有 `("existing", "shadow")`。未知值、非字符串、缺键、空串 → `existing`；`nanojev` 刻意不在白名单，故 Primary 配置写不出来。超时只接受正数，上限 60s，其余 → `None` |
+| Host 接缝 | `deskpet/orchestration/decision.py::DecisionSeam` | 把设置变成显式 typed `DecisionPolicy`（`build_decision_seam`）；`ready_priority_plan()` 调既有 `allocate()`，仅在 `shadow` 且拿到 journal 时才追加观测；`DecisionSeamStatus` 供 `status()["decision"]` 投影 |
+| 装配 | `deskpet/orchestration/service.py::_install_decision_seam` | 在 `_open()` 末尾一次性构建，journal 用编排器自己的 Store（`DecisionEventJournal`，写 `orchestrator.db` 的既有 `events` 表，无新表）。构建失败只记日志，不影响启动 |
+| SDK 接缝 | SDK `agent_orchestrator/decision/host_integration.py` | Host 面向的调用点：`frontier_priority_candidates`（`frontier()` 顺序）、`compute_ready_task_decision_id`（`njr-` 确定性 id）、`observe_frontier_priority`、`ready_task_priority_decision`。SDK 侧不读任何配置 |
+| 事件 | SDK `decision/events.py` 既有 `DecisionEventJournal` | additive 事件类型，按 `idempotency_key` 幂等；`pd-` 前缀被拒 |
+
+**硬约束（不因本片放宽）**
+
+- **分配器授权集合是唯一权威**：`READY_TASK_PRIORITY` 只观测 `frontier()` 顺序，观测前后 `AllocationPlan` 逐字节相同（`grants`/`scores`/`open_attempts`/`eligible`/`slots` 全部相等）。Shadow 答案永不生效——即使它"很有信心"，或指向一个被 paused/依赖挡住的 Task（该 Task 根本不在候选集里，越界答案被 SDK 结果校验拒绝）。
+- **默认 `EXISTING`**：缺键、拼错、类型不对都落在既有的确定性路径上，不观测、不打事件、不调模型。
+- **无 ad-hoc 环境变量**：`decision.py` 不出现 `os.environ`/`getenv`；设置只从 `config.toml` 读。
+- **Primary 不可达**：Host 白名单无 `nanojev`，SDK 侧 `DecisionMode.NANOJEV` 也不被本接缝引用。
+- **`RETRY_OR_ESCALATE` 未接线（blocker）**：`RetryAction` 有六个值，映射到两值契约需要单独裁定。本片不猜；`tests/orchestration/test_decision_shadow.py` 用 AST 扫描钉住"除状态位 `retry_wired`（恒 False）外，模块不引用任何 retry/escalate 标识"。
+- **观测失败不是生产失败**：shadow 异常/超时/越界、journal 写失败、缺 `mission_id` 一律转成 "plan 照常返回 + `status()["decision"].failures += 1`"，不抛进驱动循环。
+- **0/1 候选不调模型**：`frontier()` 少于 2 个候选（含 0 个）时直接返回，连请求都不构造——Host 接缝与 SDK 接缝各有一道同样的闸。
+- **无 journal 不观测**：没有可归因的事件汇时，不调用模型（不存在"悄悄观测"这条路）。
+
+**已知边界（如实记录，未绕过）**
+
+- 本片观测是**结构性的、不是模型驱动的**：没有真实 NanoJev checkpoint、没有加载任何权重。它是"接缝通了、数据能收"，**不得**读作模型质量、shadow 收益或 Primary 就绪。
+- `frontier()` 顺序 ≠ `allocate()` 授权顺序：`frontier()` 按 `(-priority, ordinal)`；`allocate()` 在 Task 有 §29.3 分数时按分数排，仅对无分数的 Task 回落到 `(-priority, ordinal)`。本片按 §57 的口径观测 frontier 顺序，**不声称两者一致**。
+- 观测的事件落库路径只在接缝层测过（真实 `DecisionEventJournal` + 真实 `Store`），未在真实 Mission 的驱动循环里跑过端到端。
+
+**验证状态（2026-09-20）**
+
+- SDK `tests/orchestrator/full_target`：**3866 PASS / 5 SKIP / 0 FAIL**（5 skip 全为环境/开关性）。
+- SDK 决策+分配器相邻套件：**205 PASS**（含新增接缝 30 条）。
+- Host `tests/orchestration/test_decision_shadow.py`：**56 PASS**（SDK 源码环境）／**41 PASS / 15 SKIP**（vendored wheel 0.12.2——该 wheel 早于 decision 包，skip 是显式声明的"合同缺席"，不是静默通过）。
+- Host `tests/orchestration` 全量：**293 PASS / 97 FAIL**；与 `git stash` 干净基线**逐条一致**（基线 237 PASS / 97 FAIL，+56 恰为本片新增；97 项为既有 SDK pin/环境失败）。
+- mutation：SDK 接缝 6 个行为可区分 mutation 全部 killed（含"去掉字段分隔符"与"用 frontier 顺序替换 allocate 授权"两条语义型）；Host 接缝的 mode 短路、journal 闸、候选数闸、id 前缀由行为测试钉住。
+- ruff：本片新增/修改文件全绿（`manifest.py` 的 2 条为既有）。
+- **未验证**：真实模型/checkpoint 观测、真实 Mission 驱动循环内的端到端、Primary、`RETRY_OR_ESCALATE`。未打包、未发布。
   - **宿主崩溃后的逃逸进程认不出来**：金丝雀随执行目录一起删除，宿主重启时没有线索可扫（SDK journal 已登记，留待后续处理）。
 - DeepSeek 价目没有注入，金额显示"未计价"。
 - 策略只读：提议、评测、晋级要用 SDK CLI。
@@ -349,3 +424,36 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
 Source-native slot binding (2026-09-13 08:24 CST): launcher supports explicit 1..4 logical/model slots, default 1/1; values are part of the source identity and are written only before first backend startup. Resume checks exact integer config without rewriting seeded policy. Older source runs require their recorded pre-slot launcher. Main verification: g-source-slots-search-v2, 32 PASS/2.09s (runner2.70s; includes controlled search software test). Terra rework fixed incomplete CLI oracle and TOML bool equality; native multi-Mission load remains OPEN.
 
 Real N1 v14 (SDK4e79dac/Hoste6a1dac7) reached verification_passed in223.94s: seven literal VERIFIED,three SUPPORTED,224843tokens settled/0reserved,12Providerhandoffs (10succeeded/2failed withusage),0rehandoffs. Actual UI opened REPORT and full table citation; cold same-state12->12. Raw case-summary SHA25684d7385071c30cab20e668f5b25eef41e4f53c1f1abcbf6212649b74bd81fc04 under Host .local-test-evidence/2026-09-13/p33-g/source-ui-n1-v14/. Manual quality FAIL: REPORT3.1 says both sources lack frozen build/install/verification records, contradicted sourceAline7 historical builds/startup failures. Both Worker/Critic had read whole sources. Runtime/citation/cold PASS does not close N1 report quality. Doc8 successor guidance and original400000/12 recheck in progress. Native owned groups94307/97182 exited0,noresidual; lifecycles477.554/80.27s include UI/analysis waiting. No packaging/P36/push.
+
+## PR-7 local runtime closure (2026-09-20)
+
+The initial production probe found the backend environment importing SDK `0.11.1` without
+`agent_orchestrator.decision`, while the Host pin is `0.12.2`. The authorized local closure
+uses an explicitly attested editable SDK source (`51dbed2`, 443 source inputs) in the
+development environment; it does not replace or publish the release wheel.
+
+The live caller is `Orchestrator._decide()`'s existing `allocate()` branch. It computes the
+`AllocationPlan` first and then calls an optional Host observer with that plan. The observer
+cannot replace or reorder grants and callback/provider failures are isolated. A real
+two-ready-Task Mission reached the observer and persisted `DecisionRequested` plus
+`ShadowDecisionProduced` (`njr-` identity) in the existing `orchestrator.db` `events` table.
+The run used a FakeShadowProvider because no NanoJev checkpoint is authorized in PR-7.
+Default `EXISTING` remains short-circuited; Primary and `RETRY_OR_ESCALATE` remain out of
+scope. Evidence is under `.local-test-evidence/2026-09-20/pr7-production-closure/`.
+
+## PR-7 wheel runtime closure update (2026-09-20)
+
+The local runtime now uses the non-public development candidate
+`0.13.0.dev20260920` from `backend/vendor`, with candidate and lock identity bound to
+wheel SHA `9687d023c3fc9bc00c990c35c2827e035c3e56fbda49659e91acefc7fcfd2ef1`. The
+manifest records dirty-source provenance (`51dbed2`, 443 inputs, snapshot digest
+`74b4067b…`, `release_published=false`). Backend/.venv imports this wheel without an
+editable install or SDK checkout path. A real two-ready-task Mission completed in both
+EXISTING and SHADOW; SHADOW persisted DecisionRequested and ShadowDecisionProduced
+with FakeShadowProvider, while EXISTING emitted no decision events. The SDK caller
+schedules async observation via a retained task, so provider latency cannot delay the
+allocator; sync Host seam refuses `asyncio.run` from a running loop. `allocate_v2`,
+Primary, real checkpoint and RETRY_OR_ESCALATE remain outside PR-7.
+最后更新：2026-09-20 CST。**NanoJev/PR7 状态边界：** local Host runtime candidate 已对齐，但仍 Shadow-only；T09 真实双Task事件通过，grants six-invariance 只到 probe-level；T01 计数为 non-vacuous。R02 真实运行质量为 2/8，不能升 Primary。H1-H 仍处于候选 worktree，相关门禁未闭合；不宣称完整 H1 或 Primary。[依据：`candidate-closure-terra.md`、`t09-grants-closure-terra.md`、`t01-call-counter-sol.md`、`r02-real-deepseek.md`、`h1-gate-closure-sol.md`]
+最后更新：2026-09-21 CST。SDK H1-H 候选的 WAIT 由现有持久事件关系驱动，按权威 Task semantic identity 和实际状态判断；登记+结算、唤醒+Planner package+预算+binding 分别同事务。Task 终态与 Acceptance 分开，新协议 package v6/int5 冻结状态和 occurrence outcome；legacy 包不变，历史 v5 request 继续识别为 int4。160 项定向及 48 项重叠回归通过，完整复验与真实 Worker WAIT 尚待；不代表 Host 运行版本更新或 H1-H8 完成。[验证范围](../plans/taskSys2/升级planV1/v1.4/WAIT复验-2026-09-21.md)。
+最后更新：2026-09-21 CST。Operation 补遗实施中，V1.4（去除 NanoJev）整体未完成。新增完成规格批准命令 Host handler → SDK facade → 原 CommitService/Store，Spec/receipt/event 同事务；来源、租户、重放、过期拒绝及迁移定向 27 PASS（0.54 秒，后继 Task contract hash 修正仍在复验）。Host 在独立临时源码副本对齐两包版本后，真实 service/handler 接线 11 PASS（18.28 秒）；仅为派生源码接线证据，不是当前候选字节、wheel 或 UI 验收。移除启动/重建路径上已延期的 PR-7 observer 依赖，保留历史文件。Scope/Plan Commit、准备与效果区分、T0/T3、D3 及完整 H1–H8 仍待；未合并/重装 Host。当前无新增 PlanAgent 架构待决。详见 Host V1.4 的 Operation补遗实施记录-2026-09-21.md。

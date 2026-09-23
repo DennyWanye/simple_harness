@@ -1,0 +1,140 @@
+{
+  "original_reference": [
+    {
+      "id": "duplicate_keys",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 1
+    },
+    {
+      "id": "bool_as_int",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 1
+    },
+    {
+      "id": "mandatory_ignored",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 1
+    },
+    {
+      "id": "wrong_evidence_allowed",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 1
+    },
+    {
+      "id": "cycle_self_certifies",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 1
+    },
+    {
+      "id": "conflict_path_used",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 1
+    },
+    {
+      "id": "proof_context_ignored",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 4
+    },
+    {
+      "id": "expiry_inclusive",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 1
+    },
+    {
+      "id": "negative_set_ignored",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 2
+    },
+    {
+      "id": "milestone_ignored",
+      "scope": "REFERENCE_ONLY",
+      "returncode": 1,
+      "verdict": "KILLED",
+      "behavior_failures": 2
+    }
+  ],
+  "review_findings_reference": [
+    {
+      "id": "F03_ignore_disclosure",
+      "scope": "REFERENCE_RULES_AND_SQL_ONLY",
+      "result": "KILLED",
+      "assertion_failures": 2,
+      "returncode": 1
+    },
+    {
+      "id": "F04_error_becomes_pass",
+      "scope": "REFERENCE_RULES_AND_SQL_ONLY",
+      "result": "KILLED",
+      "assertion_failures": 4,
+      "returncode": 1
+    },
+    {
+      "id": "F04_semantic_invented_gate",
+      "scope": "REFERENCE_RULES_AND_SQL_ONLY",
+      "result": "KILLED",
+      "assertion_failures": 1,
+      "returncode": 1
+    },
+    {
+      "id": "F07_accept_backup_grant",
+      "scope": "REFERENCE_RULES_AND_SQL_ONLY",
+      "result": "KILLED",
+      "assertion_failures": 1,
+      "returncode": 1
+    },
+    {
+      "id": "F08_ignore_duplicate_read_key",
+      "scope": "REFERENCE_RULES_AND_SQL_ONLY",
+      "result": "KILLED",
+      "assertion_failures": 2,
+      "returncode": 1
+    },
+    {
+      "id": "F11_initial_finalized",
+      "scope": "REFERENCE_RULES_AND_SQL_ONLY",
+      "result": "KILLED",
+      "assertion_failures": 5,
+      "returncode": 1
+    },
+    {
+      "id": "F11_finalized_delete",
+      "scope": "REFERENCE_RULES_AND_SQL_ONLY",
+      "result": "KILLED",
+      "assertion_failures": 3,
+      "returncode": 1
+    },
+    {
+      "id": "F11_finalized_replace",
+      "scope": "REFERENCE_RULES_AND_SQL_ONLY",
+      "result": "KILLED",
+      "assertion_failures": 1,
+      "returncode": 1
+    },
+    {
+      "id": "F11_bound_no_review",
+      "scope": "REFERENCE_RULES_AND_SQL_ONLY",
+      "result": "KILLED",
+      "assertion_failures": 1,
+      "returncode": 1
+    }
+  ],
+  "production_mutations": "PENDING_SDK_EXECUTION"
+}

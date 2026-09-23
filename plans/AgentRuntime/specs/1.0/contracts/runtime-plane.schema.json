@@ -1,0 +1,2445 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:simpleharness:runtime-plane:v1",
+  "$defs": {
+    "Pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "content_hash"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "agent",
+            "task",
+            "requirements",
+            "plan",
+            "method",
+            "acceptance",
+            "review",
+            "resolution",
+            "operation",
+            "artifact",
+            "manifest",
+            "source",
+            "observation",
+            "policy",
+            "authority",
+            "capability",
+            "provider",
+            "tool",
+            "skill",
+            "execution_receipt",
+            "commit_receipt",
+            "journal_group",
+            "reservation_fact",
+            "workflow",
+            "check_spec",
+            "session",
+            "schema",
+            "deployment",
+            "catalogue",
+            "check_policy"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Json": {
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Json"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Json"
+          }
+        }
+      ]
+    },
+    "Policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "policy_id",
+        "max_context_tokens",
+        "output_reserve_tokens",
+        "safety_reserve_tokens",
+        "tool_headroom_tokens",
+        "recent_min_tokens",
+        "recall_max_tokens",
+        "fixed_soft_max_tokens",
+        "section_soft_caps",
+        "max_candidates",
+        "max_recall_items",
+        "max_group_count",
+        "max_manifest_bytes",
+        "max_request_bytes",
+        "embedding_chunk_tokens",
+        "embedding_overlap_tokens",
+        "max_session_disk_bytes",
+        "max_retrieval_ms",
+        "index_mode",
+        "embedding_required_for_activation"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "policy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "max_context_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "output_reserve_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "safety_reserve_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tool_headroom_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recent_min_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recall_max_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fixed_soft_max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "section_soft_caps": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E"
+          ],
+          "properties": {
+            "A": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "B": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "C": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "D": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "E": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "max_candidates": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "max_recall_items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "max_group_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "max_manifest_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_request_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "embedding_chunk_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "embedding_overlap_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_session_disk_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_retrieval_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "index_mode": {
+          "enum": [
+            "ON_CLOSED_GROUP"
+          ]
+        },
+        "embedding_required_for_activation": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RuntimeProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "profile_id",
+        "profile_revision",
+        "context_policy",
+        "owner_mode",
+        "retention_policy_ref",
+        "capability_registry_ref",
+        "activation_receipt_ref",
+        "default_skill_policy_ref",
+        "parallel_model_per_agent",
+        "allow_lexical_degradation"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "profile_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "profile_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "context_policy": {
+          "$ref": "#/$defs/Policy"
+        },
+        "owner_mode": {
+          "enum": [
+            "MISSION",
+            "STANDALONE_CHAT"
+          ]
+        },
+        "retention_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "capability_registry_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "activation_receipt_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "default_skill_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "parallel_model_per_agent": {
+          "const": 1
+        },
+        "allow_lexical_degradation": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ModelLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "provider_ref",
+        "model_ref",
+        "input_limit_tokens",
+        "combined_limit_tokens",
+        "max_output_tokens",
+        "supports_tools",
+        "supports_images",
+        "counter_id",
+        "counter_revision",
+        "count_mode",
+        "renderer_hash",
+        "capability_receipt_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "provider_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "model_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "input_limit_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "combined_limit_tokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "supports_tools": {
+          "type": "boolean"
+        },
+        "supports_images": {
+          "type": "boolean"
+        },
+        "counter_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "counter_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "count_mode": {
+          "enum": [
+            "EXACT",
+            "CERTIFIED_UPPER_BOUND"
+          ]
+        },
+        "renderer_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "capability_receipt_ref": {
+          "$ref": "#/$defs/Pin"
+        }
+      }
+    },
+    "Section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "section",
+        "block_id",
+        "source_refs",
+        "view_ref",
+        "trust",
+        "required",
+        "budget_charge",
+        "validity_witness_ref"
+      ],
+      "properties": {
+        "section": {
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G"
+          ]
+        },
+        "block_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        },
+        "view_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "trust": {
+          "enum": [
+            "CONTROL",
+            "USER_INPUT",
+            "RAW_DIALOGUE",
+            "AGENT_CLAIM",
+            "TOOL_RESULT",
+            "VERIFIER_FEEDBACK",
+            "VALIDATED_EVIDENCE",
+            "SKILL_INSTRUCTIONS"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "budget_charge": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "validity_witness_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "JournalGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "group_id",
+        "seq_from",
+        "seq_to",
+        "source_hash",
+        "closed",
+        "record_ids",
+        "rendered_view_ref",
+        "budget_charge",
+        "complete_input_turns",
+        "turn_id"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "group_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "seq_from": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seq_to": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "closed": {
+          "type": "boolean"
+        },
+        "record_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 4096
+        },
+        "rendered_view_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "budget_charge": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete_input_turns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "turn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "RecallItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "chunk_id",
+        "source_group_ids",
+        "source_record_refs",
+        "view_ref",
+        "budget_charge",
+        "rank_ordinal",
+        "provenance",
+        "source_epoch"
+      ],
+      "properties": {
+        "chunk_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source_group_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "source_record_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        },
+        "view_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "budget_charge": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rank_ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provenance": {
+          "enum": [
+            "USER_INPUT",
+            "RAW_DIALOGUE",
+            "AGENT_CLAIM",
+            "TOOL_RESULT",
+            "VERIFIER_FEEDBACK"
+          ]
+        },
+        "source_epoch": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "RetrievalReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "session_id",
+        "generation",
+        "query_hash",
+        "journal_highwater",
+        "index_snapshot_id",
+        "embedding_ref",
+        "searched_closed_groups",
+        "indexed_closed_groups",
+        "status",
+        "degradations",
+        "returned_items",
+        "excluded_group_ids",
+        "elapsed_ms",
+        "policy_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "query_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "journal_highwater": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "index_snapshot_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "embedding_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "searched_closed_groups": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "indexed_closed_groups": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "enum": [
+            "COMPLETE",
+            "PARTIAL",
+            "LEXICAL_ONLY",
+            "UNAVAILABLE"
+          ]
+        },
+        "degradations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 16
+        },
+        "returned_items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecallItem"
+          },
+          "maxItems": 128
+        },
+        "excluded_group_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 100000
+        },
+        "elapsed_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/Pin"
+        }
+      }
+    },
+    "ContextManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "context_id",
+        "session_id",
+        "agent_id",
+        "turn_id",
+        "provider_request_ordinal",
+        "session_generation",
+        "profile_ref",
+        "model_limits",
+        "owner_contract_ref",
+        "journal_highwater",
+        "sections",
+        "recent_group_ids",
+        "recent_complete_turn_count",
+        "recalled_chunk_ids",
+        "retrieval_receipt_ref",
+        "tool_snapshot_ref",
+        "skill_refs",
+        "planned_request_hash",
+        "input_token_charge",
+        "effective_input_budget",
+        "reserved_output_tokens",
+        "safety_reserve_tokens",
+        "tool_headroom_tokens",
+        "counter_mode",
+        "registry_epoch",
+        "authority_refs",
+        "source_read_set_ref",
+        "creation_root_id",
+        "effective_context_policy_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "context_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "provider_request_ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "profile_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "model_limits": {
+          "$ref": "#/$defs/ModelLimits"
+        },
+        "owner_contract_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "journal_highwater": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Section"
+          },
+          "maxItems": 100000
+        },
+        "recent_group_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 100000
+        },
+        "recent_complete_turn_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recalled_chunk_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "retrieval_receipt_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tool_snapshot_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "skill_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        },
+        "planned_request_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "input_token_charge": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "effective_input_budget": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reserved_output_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "safety_reserve_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tool_headroom_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "counter_mode": {
+          "enum": [
+            "EXACT",
+            "CERTIFIED_UPPER_BOUND"
+          ]
+        },
+        "registry_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "authority_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        },
+        "source_read_set_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "creation_root_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "effective_context_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        }
+      }
+    },
+    "Capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "capability_id",
+        "version",
+        "input_schema_ref",
+        "output_schema_ref",
+        "description",
+        "required_semantics",
+        "verification_policy_ref",
+        "provider_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "capability_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "input_schema_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "output_schema_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "required_semantics": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 64
+        },
+        "verification_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "provider_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        }
+      }
+    },
+    "Deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "provider_ref",
+        "implementation_digest",
+        "endpoint_namespace",
+        "credential_ref_name",
+        "health",
+        "registered",
+        "configured",
+        "compatible",
+        "supported_capabilities",
+        "supported_effect_classes",
+        "platforms",
+        "observed_at_ms",
+        "expires_at_ms",
+        "runtime_receipt_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "provider_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "implementation_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "endpoint_namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "credential_ref_name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "health": {
+          "enum": [
+            "READY",
+            "UNAVAILABLE",
+            "UNKNOWN"
+          ]
+        },
+        "registered": {
+          "type": "boolean"
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "compatible": {
+          "type": "boolean"
+        },
+        "supported_capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        },
+        "supported_effect_classes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "READ_ONLY",
+              "SANDBOX_WRITE",
+              "EXTERNAL_EFFECT"
+            ]
+          },
+          "maxItems": 3
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 16
+        },
+        "observed_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtime_receipt_ref": {
+          "$ref": "#/$defs/Pin"
+        }
+      }
+    },
+    "CapabilityBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "binding_id",
+        "session_id",
+        "owner_contract_ref",
+        "requirement_key",
+        "capability_ref",
+        "provider_ref",
+        "deployment_ref",
+        "input_manifest_ref",
+        "authority_refs",
+        "registry_epoch",
+        "invocation_mode",
+        "verification_policy_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "binding_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "owner_contract_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "requirement_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "capability_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "provider_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "deployment_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "input_manifest_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "authority_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        },
+        "registry_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "invocation_mode": {
+          "enum": [
+            "MODEL",
+            "TOOL",
+            "SKILL",
+            "WORKFLOW",
+            "CONTROLLER"
+          ]
+        },
+        "verification_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        }
+      }
+    },
+    "Tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "tool_id",
+        "version",
+        "description",
+        "input_schema_ref",
+        "output_schema_ref",
+        "provider_ref",
+        "effect_class",
+        "required_capabilities",
+        "scope_policy_ref",
+        "timeout_policy_ref",
+        "retry_policy_ref",
+        "result_bytes_limit",
+        "inline_result_tokens",
+        "implementation_digest"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "tool_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "input_schema_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "output_schema_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "provider_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "effect_class": {
+          "enum": [
+            "READ_ONLY",
+            "SANDBOX_WRITE",
+            "EXTERNAL_EFFECT"
+          ]
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        },
+        "scope_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "timeout_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "retry_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "result_bytes_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "inline_result_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "implementation_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "ToolSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "snapshot_id",
+        "session_id",
+        "generation",
+        "registry_epoch",
+        "tools",
+        "catalogue_hash"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "snapshot_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "registry_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "model_name",
+              "tool_ref",
+              "schema_ref",
+              "provider_ref",
+              "effective_authority_refs"
+            ],
+            "properties": {
+              "model_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "tool_ref": {
+                "$ref": "#/$defs/Pin"
+              },
+              "schema_ref": {
+                "$ref": "#/$defs/Pin"
+              },
+              "provider_ref": {
+                "$ref": "#/$defs/Pin"
+              },
+              "effective_authority_refs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Pin"
+                },
+                "maxItems": 32
+              }
+            }
+          },
+          "maxItems": 256
+        },
+        "catalogue_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "SkillFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_path",
+        "size_bytes",
+        "sha256",
+        "role"
+      ],
+      "properties": {
+        "relative_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "role": {
+          "enum": [
+            "INSTRUCTIONS",
+            "REFERENCE",
+            "SCRIPT",
+            "ASSET"
+          ]
+        }
+      }
+    },
+    "Skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "skill_id",
+        "version",
+        "name",
+        "description",
+        "files",
+        "instructions_path",
+        "input_schema_ref",
+        "output_schema_ref",
+        "capability_ref",
+        "required_tool_refs",
+        "required_skill_refs",
+        "implementation",
+        "requested_permission_policy_ref",
+        "verification_policy_ref",
+        "origin_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "skill_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkillFile"
+          },
+          "maxItems": 1024
+        },
+        "instructions_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "input_schema_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "output_schema_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "capability_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "required_tool_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        },
+        "required_skill_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 64
+        },
+        "implementation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "INSTRUCTIONS"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "script_path",
+                "runner_ref",
+                "argv_template"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "SCRIPT"
+                },
+                "script_path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "runner_ref": {
+                  "$ref": "#/$defs/Pin"
+                },
+                "argv_template": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "maxItems": 64
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "workflow_ref"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "WORKFLOW"
+                },
+                "workflow_ref": {
+                  "$ref": "#/$defs/Pin"
+                }
+              }
+            }
+          ]
+        },
+        "requested_permission_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "verification_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "origin_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        }
+      }
+    },
+    "SkillUse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "use_id",
+        "session_id",
+        "turn_id",
+        "skill_ref",
+        "bundle_digest",
+        "owner_contract_ref",
+        "input_manifest_ref",
+        "dependency_lock_refs",
+        "tool_snapshot_ref",
+        "evaluation_ref",
+        "authority_refs",
+        "mode",
+        "reservation_fact_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "use_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "skill_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "bundle_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "owner_contract_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "input_manifest_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "dependency_lock_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 256
+        },
+        "tool_snapshot_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "evaluation_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "authority_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 64
+        },
+        "mode": {
+          "enum": [
+            "INSTRUCTIONS",
+            "SCRIPT",
+            "WORKFLOW"
+          ]
+        },
+        "reservation_fact_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "SessionDelete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "session_id",
+        "expected_generation",
+        "command_id",
+        "reason",
+        "retention_policy_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expected_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "reason": {
+          "enum": [
+            "OWNER_CLOSED",
+            "USER_DESTROY"
+          ]
+        },
+        "retention_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        }
+      }
+    },
+    "SessionView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "session_id",
+        "agent_id",
+        "root_id",
+        "generation",
+        "state",
+        "journal_seq_from",
+        "sealed_highwater",
+        "pending_index_groups",
+        "embedding_available",
+        "deletable",
+        "blocking_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "root_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "CREATING",
+            "ACTIVE",
+            "DRAINING",
+            "PURGING",
+            "PURGED",
+            "QUARANTINED"
+          ]
+        },
+        "journal_seq_from": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sealed_highwater": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending_index_groups": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "embedding_available": {
+          "type": "boolean"
+        },
+        "deletable": {
+          "type": "boolean"
+        },
+        "blocking_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 128
+        }
+      }
+    },
+    "ToolResultView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "call_ref",
+        "tool_ref",
+        "status",
+        "result_artifact_ref",
+        "operation_intent_ref",
+        "inline_text",
+        "representation",
+        "source_hash",
+        "error_code"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "call_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "tool_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "status": {
+          "enum": [
+            "SUCCEEDED",
+            "FAILED",
+            "UNKNOWN",
+            "PENDING_OPERATION"
+          ]
+        },
+        "result_artifact_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation_intent_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inline_text": {
+          "type": "string",
+          "maxLength": 32000
+        },
+        "representation": {
+          "enum": [
+            "INLINE",
+            "REFERENCED",
+            "NONE"
+          ]
+        },
+        "source_hash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "code",
+        "stage",
+        "retry",
+        "field_path",
+        "message",
+        "source_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "retry": {
+          "enum": [
+            "NONE",
+            "RECHECK_SAME_REQUEST",
+            "NEW_REQUEST_AFTER_CHANGE",
+            "RESUME_SAME_CALL"
+          ]
+        },
+        "field_path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "maxItems": 32
+        }
+      }
+    },
+    "HostRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "verb",
+        "command_id",
+        "subject_id",
+        "expected_revision",
+        "cursor",
+        "limit",
+        "payload_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "verb": {
+          "enum": [
+            "agent_context_summary",
+            "agent_context_history",
+            "agent_context_settings_update",
+            "agent_session_destroy",
+            "agent_capabilities_list",
+            "agent_skills_list",
+            "agent_skill_install",
+            "agent_skill_admit",
+            "agent_skill_suspend",
+            "agent_tool_catalogue"
+          ]
+        },
+        "command_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expected_revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "payload_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "HostResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "request_verb",
+        "subject_id",
+        "view_revision",
+        "as_of_context_id",
+        "items",
+        "next_cursor",
+        "error"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "request_verb": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "view_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "as_of_context_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ContextSummaryView"
+              },
+              {
+                "$ref": "#/$defs/SessionView"
+              },
+              {
+                "$ref": "#/$defs/CapabilityCatalogueItem"
+              },
+              {
+                "$ref": "#/$defs/ToolCatalogueItem"
+              },
+              {
+                "$ref": "#/$defs/SkillCatalogueItem"
+              }
+            ]
+          },
+          "maxItems": 100
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "AuthorizationReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "authorization_id",
+        "request_key",
+        "session_id",
+        "agent_id",
+        "caller_ref",
+        "owner_contract_ref",
+        "purpose",
+        "subject_refs",
+        "input_hash",
+        "decision",
+        "scope_ref",
+        "policy_ref",
+        "original_decision_receipt_ref",
+        "observed_at_ms",
+        "expires_at_ms"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "authorization_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "request_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "caller_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "owner_contract_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "purpose": {
+          "enum": [
+            "CONTEXT_DISCLOSE",
+            "HISTORY_READ",
+            "SKILL_LOAD",
+            "TOOL_EXECUTE",
+            "SESSION_DESTROY",
+            "REGISTRY_MUTATE"
+          ]
+        },
+        "subject_refs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/Pin"
+          }
+        },
+        "input_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "decision": {
+          "enum": [
+            "ALLOW",
+            "DENY",
+            "NEEDS_APPROVAL",
+            "UNAVAILABLE"
+          ]
+        },
+        "scope_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "original_decision_receipt_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "observed_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "SkillAdmitCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "skill_ref",
+        "evaluation_acceptance_ref",
+        "evaluation_policy_ref",
+        "scope_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "skill_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "evaluation_acceptance_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "evaluation_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "scope_ref": {
+          "$ref": "#/$defs/Pin"
+        }
+      }
+    },
+    "SkillSuspendCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "skill_ref",
+        "reason"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "skill_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "ContextSettingsCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "session_id",
+        "candidate_policy_ref",
+        "expected_effective_policy_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "candidate_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        },
+        "expected_effective_policy_ref": {
+          "$ref": "#/$defs/Pin"
+        }
+      }
+    },
+    "ContextSummaryView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "session_id",
+        "context_id",
+        "historical",
+        "manifest_ref",
+        "input_charge",
+        "input_budget",
+        "output_reserve",
+        "recent_complete_turns",
+        "recall_count",
+        "retrieval_status",
+        "session_state",
+        "current_access",
+        "degradations"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "context_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "historical": {
+          "type": "boolean"
+        },
+        "manifest_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input_charge": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input_budget": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_reserve": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recent_complete_turns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recall_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retrieval_status": {
+          "enum": [
+            "COMPLETE",
+            "PARTIAL",
+            "LEXICAL_ONLY",
+            "UNAVAILABLE",
+            "NOT_REQUESTED"
+          ]
+        },
+        "session_state": {
+          "enum": [
+            "CREATING",
+            "ACTIVE",
+            "DRAINING",
+            "PURGING",
+            "PURGED",
+            "QUARANTINED"
+          ]
+        },
+        "current_access": {
+          "enum": [
+            "ALLOWED",
+            "DENIED",
+            "UNKNOWN"
+          ]
+        },
+        "degradations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "CapabilityCatalogueItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "definition",
+        "state",
+        "state_revision",
+        "current_usable",
+        "reason_codes",
+        "registry_epoch"
+      ],
+      "properties": {
+        "kind": {
+          "const": "CAPABILITY"
+        },
+        "definition": {
+          "$ref": "#/$defs/Capability"
+        },
+        "state": {
+          "enum": [
+            "QUARANTINED",
+            "TRIAL",
+            "ADMITTED",
+            "SUSPENDED",
+            "RETIRED"
+          ]
+        },
+        "state_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "current_usable": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "registry_epoch": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "ToolCatalogueItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "definition",
+        "state",
+        "state_revision",
+        "current_usable",
+        "reason_codes",
+        "registry_epoch",
+        "exposed_in_context_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "TOOL"
+        },
+        "definition": {
+          "$ref": "#/$defs/Tool"
+        },
+        "state": {
+          "enum": [
+            "QUARANTINED",
+            "TRIAL",
+            "ADMITTED",
+            "SUSPENDED",
+            "RETIRED"
+          ]
+        },
+        "state_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "current_usable": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "registry_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exposed_in_context_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        }
+      }
+    },
+    "SkillCatalogueItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "definition",
+        "state",
+        "state_revision",
+        "current_usable",
+        "reason_codes",
+        "registry_epoch",
+        "evaluation_ref"
+      ],
+      "properties": {
+        "kind": {
+          "const": "SKILL"
+        },
+        "definition": {
+          "$ref": "#/$defs/Skill"
+        },
+        "state": {
+          "enum": [
+            "QUARANTINED",
+            "TRIAL",
+            "ADMITTED",
+            "SUSPENDED",
+            "RETIRED"
+          ]
+        },
+        "state_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "current_usable": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "registry_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evaluation_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

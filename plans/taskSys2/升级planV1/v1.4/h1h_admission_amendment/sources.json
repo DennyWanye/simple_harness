@@ -1,0 +1,175 @@
+{
+  "amendment": "H1H-ADM-1.0",
+  "remote_reference_only": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+  "local_candidate_is_authority": true,
+  "sources": [
+    {
+      "id": "S1",
+      "title": "SimpleHarness LLM-Native HTN Core 代码级执行计划 V2",
+      "file_name": "simpleharness-llm-native-htn-execution-plan-v2.zh-CN.md",
+      "sections": [
+        "24",
+        "32",
+        "34",
+        "43",
+        "44",
+        "45",
+        "59",
+        "60",
+        "61"
+      ],
+      "basis": "provided_file"
+    },
+    {
+      "id": "H1",
+      "title": "用户提供的 V1.4 H1-H AdmissionContext handoff",
+      "basis": "user_message",
+      "local_diff_access": "not_available",
+      "reported_focused": {
+        "passed": 19,
+        "failed": 13,
+        "reexecuted_here": false
+      }
+    },
+    {
+      "id": "S2",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/planning/decision_admission.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/planning/decision_admission.py"
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/governance/permissions.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/governance/permissions.py"
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/planning/htn/applicability.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/planning/htn/applicability.py"
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/orchestrator/_read_set.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/orchestrator/_read_set.py"
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/api/facade.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/api/facade.py"
+        }
+      ]
+    },
+    {
+      "id": "S7",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/storage/htn_schema.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/storage/htn_schema.py"
+        }
+      ]
+    },
+    {
+      "id": "S8",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/orchestrator/action_commits.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/orchestrator/action_commits.py"
+        }
+      ]
+    },
+    {
+      "id": "S9",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/runtime/actions.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/runtime/actions.py"
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/planning/htn/validation.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/planning/htn/validation.py"
+        },
+        {
+          "path": "src/agent_orchestrator/graph/projection_validation.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/graph/projection_validation.py"
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "basis": "read_only_github_source",
+      "commit": "5ac3f05890a4c5160e2f103a01f863753ea5d498",
+      "files": [
+        {
+          "path": "src/agent_orchestrator/planning/decision_adapter.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/planning/decision_adapter.py"
+        },
+        {
+          "path": "src/agent_orchestrator/storage/planning_decision_store.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/storage/planning_decision_store.py"
+        },
+        {
+          "path": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+          "url": "https://github.com/DennyWanye/simple-harness-sdk/blob/5ac3f05890a4c5160e2f103a01f863753ea5d498/src/agent_orchestrator/orchestrator/hierarchical_dispatch.py"
+        }
+      ]
+    },
+    {
+      "id": "W1",
+      "basis": "official_documentation",
+      "title": "SQLite Isolation",
+      "url": "https://www.sqlite.org/isolation.html"
+    },
+    {
+      "id": "W2",
+      "basis": "official_documentation",
+      "title": "SQLite Foreign Key Support",
+      "url": "https://www.sqlite.org/foreignkeys.html"
+    },
+    {
+      "id": "W3",
+      "basis": "official_documentation",
+      "title": "Python 3.11 sqlite3",
+      "url": "https://docs.python.org/3.11/library/sqlite3.html"
+    }
+  ]
+}

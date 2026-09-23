@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.simpleharness.invalid/assurance/1.1/pending-work-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "consumer",
+    "work_key",
+    "trigger_event_id",
+    "target_epoch",
+    "target_fingerprint",
+    "state",
+    "row_version",
+    "tries",
+    "not_before_ms",
+    "wait_reason",
+    "owner",
+    "lease_until_ms"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "consumer": {
+      "enum": [
+        "REVIEW",
+        "VALIDITY",
+        "CLOSEOUT",
+        "NOTIFY"
+      ]
+    },
+    "work_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "trigger_event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "target_epoch": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "target_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "state": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "WAITING",
+        "DONE",
+        "REJECTED"
+      ]
+    },
+    "row_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tries": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "not_before_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "wait_reason": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      ]
+    },
+    "owner": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      ]
+    },
+    "lease_until_ms": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      ]
+    }
+  }
+}

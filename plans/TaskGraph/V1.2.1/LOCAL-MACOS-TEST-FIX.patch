@@ -1,0 +1,20 @@
+--- a/tests/test_v121_readiness_fixes.py
++++ b/tests/test_v121_readiness_fixes.py
+@@ -28,7 +28,7 @@
+             base = Path(d); real = base / 'private'; real.mkdir()
+             alias = base / 'var'; alias.symlink_to(real, target_is_directory=True)
+             (real / 'test_a.py').write_text('def test_a(): pass\n')
+-            self.assertEqual(physical_test_path(alias, 'test_a.py::test_a'), real / 'test_a.py')
++            self.assertEqual(physical_test_path(alias, 'test_a.py::test_a'), (real / 'test_a.py').resolve())
+             reg = {'status': 'STATIC_REGISTRY_EXTRACTED_NOT_COLLECTED', 'cases': [
+                 {'id':'P01','actual_nodeids':['test_a.py::test_a']} ]}
+             self.assertEqual(targets_from_registry(reg, alias), ['test_a.py::test_a'])
+@@ -203,7 +203,7 @@
+     def test_patch_cli_only_writes_derived_snapshot(self):
+         with tempfile.TemporaryDirectory() as d:
+             base=Path(d).resolve();candidate=base/'candidate';candidate.mkdir()
+-            venv.EnvBuilder(with_pip=False).create(candidate/'.venv')
++            venv.EnvBuilder(with_pip=False, symlinks=(os.name != 'nt')).create(candidate/'.venv')
+             evidence=base/'evidence';frozen=evidence/'snapshot/sdk';store=frozen/'src/agent_orchestrator/storage/store.py'
+             store.parent.mkdir(parents=True);raw=self.SOURCE.encode();store.write_bytes(raw)
+             original_file=candidate/'DO_NOT_TOUCH';original_file.write_text('dirty user bytes')
