@@ -1,6 +1,6 @@
 # ARP-EXEC-1.1.1 主体施工交接（arp-1.1.1 分支）
 
-最后更新：2026-09-24（RP-E1 完成时；已合并 origin/main bd0f6d59 = Assurance 1.1 完成）。
+最后更新：2026-09-24（RP-E2 完成时；已合并 origin/main bd0f6d59 = Assurance 1.1 完成）。
 
 ## 当前状态
 
@@ -16,12 +16,13 @@
 | RP-D1 会话销毁 / 处置证明 / 清理 / 同身份恢复 / 重建门 / 保留许可 | 完成 | `0dcb7bd5` | `06-RP-D1-会话销毁-清理-恢复实施记录.md` |
 | RP-D2 Host verbs typed 服务（`api/runtime_plane.py`，23 个动词 + 信封 + 命令回执） | 完成 | `20cfdccc` | `07-RP-D2-Host动词typed服务实施记录.md` |
 | RP-E1 Assurance 接入（BW09：真实 `SkillAcceptancePort`）+ 87 条验收场景对账 + 5 条补缺测试 | 完成 | `717dbeec` | `08-RP-E1-Assurance接入与验收对账实施记录.md` |
-| RP-E2 状态机随机测试小号版（6 动作 / 2000 步） | 未开始 | | |
-| RP-E3 Host 接线（RuntimePlaneService 处理器、评估 Mission 派发、ArpPorts 端口）+ 安装后导入核对 + 真机路径 + 真实模型 12 局 | 未开始，需 Host 侧工作 | | |
+| RP-E2 状态机随机测试小号版（6 动作 / 5 种子 × 400 步）+ 同键创建复活缺陷修复 | 完成 | `adeca07f` | `09-RP-E2-状态机随机测试实施记录.md` |
+| RP-E3 接线：编排装配层走 `build_arp_runtime`（现为 AllowAll + 旧运行时，见 `agent_orchestrator/runtime/assembly.py:585-625`）、`AgentBridge.create` 传认证调用方、DeepSeek 计数器出具 EXACT 计数认证（`MeterBinding`）、Host 提供 root/embedding/acceptance/artifacts/script_runner 五端口与评估 Mission 派发（`evaluation_mission_key`）、Host 处理器接 `RuntimePlaneService` | 未开始 | | 勘察结论见本行 |
+| RP-E4 安装后导入核对 + 真机路径 + 真实模型 12 局 | 未开始，依赖 RP-E3 | | |
 
 ## 怎么继续
 
-1. 进 worktree：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-arp`，SDK 在 `sdk/simple-harness-sdk`，跑测试用 `uv run --frozen python -m pytest tests/agents/arp -q`（应 340 passed（RP-E1 后；RP-D2 时 333））；SDK venv 需 `uv sync --extra skill-import --extra testing`。
+1. 进 worktree：`/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-arp`，SDK 在 `sdk/simple-harness-sdk`，跑测试用 `uv run --frozen python -m pytest tests/agents/arp -q`（应 346 passed（RP-E2 后；RP-E1 时 340））；SDK venv 需 `uv sync --extra skill-import --extra testing`。
 2. 主仓库 `simple_harness` 上有他人未提交的 Assurance 文件，不要碰；本分支不向公开仓库推送。
 3. 下一片 RP-E：统一验收（对照规格 `implementation/sdk-cases.json` / TEST-PLAN 的用例清单，把 01–07 记录 §5 的遗留项排入）+ Assurance 接入（BW09：`SkillAcceptancePort` 由 Assurance 后继实现替换 `PendingAssuranceAcceptance`）。Host 侧接线入口：`RuntimePlaneService(runtime).handle(HostRequest, caller)`（`simple_harness.api`），Host 需提供 `ArpPorts.artifacts`（认证 artifact 读口）与 `ArpPorts.script_runner`。
 4. 每片：测试先行 → 定向测试 → legacy `tests/agents` 与 `tests/execution` 各跑一次对比基线 → 独立核验（子代理用 opus 5.5，禁 fable；≤2 轮，只报阻断级）→ 中文记录 → 提交 → 更新本文件。
