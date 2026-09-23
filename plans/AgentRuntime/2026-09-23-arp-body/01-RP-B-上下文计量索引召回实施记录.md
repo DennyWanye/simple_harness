@@ -1,6 +1,6 @@
 # ARP-EXEC-1.1.1 主体施工 RP-B：Context 装填、真实计量、Session 分区索引、检索与自动召回
 
-日期：2026-09-23。分支 `arp-1.1.1`（worktree `simple_harness-arp`），上一片 RP-A 提交 `7211546d`。本记录只写本机核实过的事实与本片做出的实现决定；没做的明确写"未做"。
+日期：2026-09-23。分支 `arp-1.1.1`（worktree `simple_harness-arp`），上一片 RP-A 提交 `7211546d`；本片提交 `35a4b67a`。本记录只写本机核实过的事实与本片做出的实现决定；没做的明确写"未做"。
 
 ## 1. 交付物（SDK `src/simple_harness/agents/arp/`）
 
