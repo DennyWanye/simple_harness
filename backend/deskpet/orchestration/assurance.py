@@ -167,7 +167,10 @@ def project_check_policies(service: Any, mission_id: str | None = None) -> int:
     if service._assurance is None or orchestrator is None:
         return 0
     from agent_orchestrator.assurance.codec import AssuranceError, fingerprint
-    from agent_orchestrator.orchestrator.assurance_check_policy import lossless_scope_mapping
+    from agent_orchestrator.orchestrator.assurance_check_policy import (
+        lossless_scope_mapping,
+        mission_final_scope_id,
+    )
     from agent_orchestrator.storage.assurance_store import AssuranceStore
 
     store = orchestrator.store
@@ -178,10 +181,47 @@ def project_check_policies(service: Any, mission_id: str | None = None) -> int:
         sql += " WHERE mission_id=?"
         args = (mission_id,)
     rows = store.connection.execute(sql + " ORDER BY created_at_ms, scope_id", args).fetchall()
+    def approve(mid: str, scope_id: str, purpose: str) -> bool:
+        # One command per (Scope, purpose); the SDK approval receipt makes replays
+        # free. MISSION_FINAL is the root review's own domain (root Scope + the
+        # whole root requirements) — Host real model run 15, 2026-09-23.
+        key = scope_id if purpose == "CONTENT" else f"mission-final:{scope_id}"
+        if key in done:
+            return False
+        command_id = f"host-check-policy:{key}"
+        receipt_id = "assurance-check-policy-approval:" + fingerprint({
+            "mission": mid, "tenant": service.tenant_id,
+            "principal": service._principal.principal_id, "command": command_id,
+        })
+        if store.get_receipt(receipt_id) is not None:
+            done.add(key)
+            return False
+        try:
+            requirements_ref, scope_ref, mapping = lossless_scope_mapping(
+                orchestrator.commit, mission_id=mid, scope_id=scope_id, purpose=purpose)
+            command = {
+                "mission_id": mid, "command_id": command_id,
+                "requirements_ref": requirements_ref.to_json(),
+                "completion_scope": scope_ref.to_json(),
+                "candidate_mapping": [policy.to_json() for policy in mapping],
+            }
+            if purpose != "CONTENT":
+                command["purpose"] = purpose
+            service._call("approve_assurance_check_policy", command)
+        except (AssuranceError, OrchestrationRequestError) as error:
+            # Retried on the next round; a Scope whose projection is not current
+            # yet (or never resolvable) is reported, never guessed.
+            logger.warning("assurance %s check policy not projected for %s: %s", purpose, scope_id, error)
+            return False
+        done.add(key)
+        return True
+
     approved = 0
+    assured: set[str] = set()
     for row in rows:
         mid, scope_id = str(row[0]), str(row[1])
         if scope_id in done:
+            assured.add(mid)
             continue
         try:
             if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
@@ -190,28 +230,15 @@ def project_check_policies(service: Any, mission_id: str | None = None) -> int:
         except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
             done.add(scope_id)
             continue
-        command_id = f"host-check-policy:{scope_id}"
-        receipt_id = "assurance-check-policy-approval:" + fingerprint({
-            "mission": mid, "tenant": service.tenant_id,
-            "principal": service._principal.principal_id, "command": command_id,
-        })
-        if store.get_receipt(receipt_id) is not None:
-            done.add(scope_id)
-            continue
+        assured.add(mid)
+        approved += approve(mid, scope_id, "CONTENT")
+    for mid in sorted(assured):
         try:
-            requirements_ref, scope_ref, mapping = lossless_scope_mapping(
-                orchestrator.commit, mission_id=mid, scope_id=scope_id)
-            service._call("approve_assurance_check_policy", {
-                "mission_id": mid, "command_id": command_id,
-                "requirements_ref": requirements_ref.to_json(),
-                "completion_scope": scope_ref.to_json(),
-                "candidate_mapping": [policy.to_json() for policy in mapping],
-            })
-        except (AssuranceError, OrchestrationRequestError) as error:
-            # Retried on the next round; a Scope whose projection is not current
-            # yet (or never resolvable) is reported, never guessed.
-            logger.warning("assurance check policy not projected for %s: %s", scope_id, error)
+            if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
+                continue
+        except Exception:  # noqa: BLE001 - not assured
             continue
-        done.add(scope_id)
-        approved += 1
+        root_scope = mission_final_scope_id(orchestrator, mid)
+        if root_scope is not None:
+            approved += approve(mid, root_scope, "MISSION_FINAL")
     return approved
