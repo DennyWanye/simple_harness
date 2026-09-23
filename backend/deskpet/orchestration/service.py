@@ -19,6 +19,7 @@ be taken over).
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import json
 import logging
 import os
@@ -104,6 +105,7 @@ class OrchestrationService:
         test_scenario: str | None = None,
         drive: bool = True,
         decision_shadow_provider: Any = None,
+        taskgraph_deployment: Any = None,
     ) -> None:
         self.root = Path(root)
         self.settings = settings
@@ -115,6 +117,10 @@ class OrchestrationService:
         self._http_client = http_client
         self._test_scenario = test_scenario
         self._drive_enabled = drive
+        # Trusted deployment composition only: never populated from IPC/model
+        # input. None selects the package-owned production deployment reader.
+        self._taskgraph_deployment = taskgraph_deployment
+        self._taskgraph: Any = None
         # PR-7: test/local runtime may inject a typed shadow provider.  Production
         # remains provider-free until a real NanoJev checkpoint is authorized.
         self._decision_shadow_provider = decision_shadow_provider
@@ -147,6 +153,10 @@ class OrchestrationService:
         # never decides anything.  In the default ``existing`` mode it is inert.
         self._decision: DecisionSeam | None = None
         self.on_write: Callable[[], None] | None = None  # the change pump's poke
+        # Assurance 1.1 (plan §13): the SDK deployment installed on the current
+        # Orchestrator lifetime, and the NOTIFY payloads it delivered (bounded).
+        self._assurance: Any = None
+        self._assurance_notices: deque[dict[str, Any]] = deque(maxlen=256)
 
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -296,13 +306,24 @@ class OrchestrationService:
             **({"local_profile_path": self.settings.local_model_profile}
                if self.settings.local_model_profile else {}),
         )
+        taskgraph = assurance = None
+
+        def assemble_startup(orchestrator: Any) -> None:
+            nonlocal taskgraph, assurance
+            self._install_hierarchical(orchestrator)
+            taskgraph = self._install_taskgraph(orchestrator)
+            assurance = self._install_assurance(orchestrator)
+
         self._orchestrator = Orchestrator(
             self._config, provider, owner=self.owner, connectors=self._connectors,
+            startup_assembly=assemble_startup,
+            assurance_root_setup=self._assurance_root_setup(),
             **self._runtime_options,
         )
         await self._orchestrator.__aenter__()
-        self._install_hierarchical(self._orchestrator)
         self._install_native_verifier_pressure(self._orchestrator)
+        self._taskgraph = taskgraph
+        self._assurance = assurance
         self._control = MissionControlV1(
             self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
         )
@@ -449,6 +470,8 @@ class OrchestrationService:
         orchestrator, self._orchestrator = self._orchestrator, None
         self._control = None
         self._policy = None
+        self._taskgraph = None
+        self._assurance = None
         if orchestrator is not None:
             try:
                 await orchestrator.__aexit__(None, None, None)
@@ -555,6 +578,35 @@ class OrchestrationService:
             control_root=self._effective_provider.control_root,
         )
 
+    def _assurance_root_setup(self) -> Any:
+        """The authenticated native root installation, or None for fixture lanes."""
+        if self._test_scenario is not None:
+            return None
+        from .assurance import root_setup
+        return root_setup(self)
+
+    def _install_assurance(self, orchestrator: Any) -> Any:
+        from .assurance import install_assurance
+        return install_assurance(self, orchestrator)
+
+    def _install_taskgraph(self, orchestrator: Any) -> Any:
+        if self._test_scenario is not None and self._taskgraph_deployment is None:
+            return None
+        from agent_orchestrator.orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
+        from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
+        from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
+
+        ports = self._taskgraph_deployment
+        if ports is None:
+            ports = TaskGraphDeploymentPorts(tenant_id=self.tenant_id, principal=self._principal,
+                graph_budget=DEFAULT_PROJECTION_BUDGET, deployment_acceptance=InstalledHtnWiringAcceptance())
+        if (not isinstance(ports, TaskGraphDeploymentPorts)
+                or ports.tenant_id != self.tenant_id or ports.principal != self._principal):
+            raise RuntimeError("执行图部署必须绑定当前认证身份和租户")
+        # The SDK creates readers/history against this candidate's original
+        # Store. Rebuild must not retain any collaborator from the closed Store.
+        return orchestrator.install_taskgraph(ports)
+
     async def _rebuild(self) -> None:
         from agent_orchestrator.api.facade import MissionControlV1
         from agent_orchestrator.api.policies import PolicyApi
@@ -563,6 +615,8 @@ class OrchestrationService:
         old, self._orchestrator = self._orchestrator, None
         self._control = None
         self._policy = None
+        self._taskgraph = None
+        self._assurance = None
         if old is not None:
             try:
                 await old.__aexit__(None, None, None)
@@ -573,13 +627,22 @@ class OrchestrationService:
             **({"local_profile_path": self.settings.local_model_profile}
                if self.settings.local_model_profile else {}),
         )
+        taskgraph = assurance = None
+
+        def assemble_startup(orchestrator: Any) -> None:
+            nonlocal taskgraph, assurance
+            self._install_hierarchical(orchestrator)
+            taskgraph = self._install_taskgraph(orchestrator)
+            assurance = self._install_assurance(orchestrator)
+
         candidate = Orchestrator(
             self._config, self._effective_provider, owner=self.owner, connectors=self._connectors,
+            startup_assembly=assemble_startup,
+            assurance_root_setup=self._assurance_root_setup(),
             **self._runtime_options,
         )
         try:
             await candidate.__aenter__()
-            self._install_hierarchical(candidate)
             self._install_native_verifier_pressure(candidate)
             control = MissionControlV1(
                 candidate, tenant_id=self.tenant_id, principal=self._principal
@@ -597,6 +660,8 @@ class OrchestrationService:
         self._control = control
         self._diagnostics_available = self._detect_diagnostics()
         self._policy = policy
+        self._taskgraph = taskgraph
+        self._assurance = assurance
 
     async def drain(self, timeout: float = 60.0) -> bool:
         """Tests (``drive=False``): run the loop until idle or ``timeout``.  False when it
@@ -681,6 +746,9 @@ class OrchestrationService:
             "publish": dict(self._publish),
             "test_scenario": self._test_scenario,
             "diagnostics_available": self._diagnostics_available,
+            "assurance_available": self._assurance is not None,
+            "assurance_profile": self.settings.assurance_profile,
+            "assurance_notices": len(self._assurance_notices),
             "context_profiles": self._context_profiles(),
             "default_context_profile_id": self._context_default(),
             "context_unavailable_reason": (
@@ -882,6 +950,9 @@ class OrchestrationService:
     def planning_authorization(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._require()
         self._refuse_secrets(request)
+        # Planning delegation is a separate authority from the TaskGraph kernel.
+        # Enabling the kernel remains an explicit authenticated internal command;
+        # do not turn every active planning grant into a durable policy binding.
         receipt = self._call("planning_authorization", dict(request))
         self.wake()
         return dict(receipt)
@@ -1017,6 +1088,30 @@ class OrchestrationService:
                     "fingerprint": profile.context_snapshot()["fingerprint"],
                 }
             return detail
+
+    def taskgraph_read(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
+        from .taskgraph import read_taskgraph
+        return read_taskgraph(self, operation, request)
+
+    def assurance_read(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
+        from .assurance import read_assurance
+        return read_assurance(self, verb, request)
+
+    def enable_taskgraph_contract(self, mission_id: str, command_id: str) -> dict[str, Any]:
+        """Authenticated deployment composition; deliberately absent from IPC verbs.
+
+        The original policy command checks delegation, final deployment evidence,
+        protocol and quiescence in one transaction. A failed check leaves the old
+        Mission unchanged; this Host never creates a grant or baseline proof.
+        """
+        self._require()._mission(mission_id)
+        if self._taskgraph is None:
+            raise OrchestrationRequestError("taskgraph_unavailable", "当前部署尚未安装执行图")
+        receipt = dict(self._taskgraph.policy.enable_taskgraph_contract(mission_id, command_id))
+        self._wake.set()
+        if self.on_write is not None:
+            self.on_write()
+        return receipt
 
     def events(self, mission_id: str, *, after_seq: Any = 0, limit: Any = 50) -> dict[str, Any]:
         # whitelisted rows: the raw payloads stay inside (review P2-3)

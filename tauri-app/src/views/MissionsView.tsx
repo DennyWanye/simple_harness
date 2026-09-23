@@ -29,6 +29,8 @@ import { PlanningQuestions } from "./PlanningQuestions";
 import { PlanningAuthorization } from "./PlanningAuthorization";
 import { OperationWorkspace } from "./OperationWorkspace";
 import { MissionDiagnostics } from "./MissionDiagnostics";
+import { MissionTaskGraph } from "./MissionTaskGraph";
+import { MissionAssurance } from "./MissionAssurance";
 import {
   asList as list,
   asRecord as record,
@@ -986,9 +988,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               );
             })}
 
-            {detail.document != null && <MissionDocument key={selectedId} missionId={selectedId} document={record(detail.document)} channel={channel} onChanged={() => refreshSelected(selectedId)} />}
+            {detail.document != null && <MissionDocument key={selectedId + ":document"} missionId={selectedId} document={record(detail.document)} channel={channel} onChanged={() => refreshSelected(selectedId)} />}
 
-            {status?.diagnostics_available === true && <MissionDiagnostics key={selectedId} missionId={selectedId} channel={channel} />}
+            <MissionTaskGraph key={selectedId + ":taskgraph"} missionId={selectedId} channel={channel} />
+
+            {status?.assurance_available === true && <MissionAssurance key={selectedId + ":assurance"} missionId={selectedId} channel={channel} />}
+
+            {status?.diagnostics_available === true && <MissionDiagnostics key={selectedId + ":diagnostics"} missionId={selectedId} channel={channel} />}
 
             <div style={box}>
               <div style={heading}>Task 与验证</div>

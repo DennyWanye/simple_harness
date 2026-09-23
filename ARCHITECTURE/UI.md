@@ -1,3 +1,5 @@
+最后更新：2026-09-23 CST（Assurance 第九段，Host/UI 接线）。MissionsView 在执行图之后新增「保证状态」区块（`views/MissionAssurance.tsx`，按 `status.assurance_available` 挂载）：按需读取当前/历史（事件序号）保证快照，五类条目（准则/审阅/待效果/结案/贡献）分列历史状态与当前可用性，分页与状态变化重来，审阅详情与只诊断的结果可用性核查；所有 DTO 由 `stores/assuranceStore.ts` 按 host-*-v1 合同严格解析，不符合同保留上次画面并报协议错误。同次合入 TaskGraph UI2 overlay 的执行图视图。vitest 875 通过（新 9）。
+
 最后更新：2026-09-15 01:41 CST。当前a30639e源码原生v53冷恢复/产物/回放/支持报告实点通过，5旧调用保持、0新调用；约两分钟启动等待仍保留。新完整v8和本地N2 v4待终态；N1–N8/正式A96B96未关闭、Flash0、无打包。 [证据与范围](../plans/taskSys2/testPhase1-budget-analysis-followup-2026-09-15.md)。
 
 最后更新：2026-09-15 00:55 CST。最新N2/N7源码UI v52实点冷恢复/产物/回放/支持报告通过，5调用/4工具效果/42事件不变，0新模型调用；新完整回归v7与N2 v3仍运行。提示接线和离线分析相邻87PASS；N1–N8/正式矩阵仍OPEN、Flash0、无打包。 [本轮证据](../plans/taskSys2/testPhase1-budget-analysis-followup-2026-09-15.md)。
