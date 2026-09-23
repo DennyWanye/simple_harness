@@ -106,6 +106,7 @@ class OrchestrationService:
         drive: bool = True,
         decision_shadow_provider: Any = None,
         taskgraph_deployment: Any = None,
+        native_test_counter: Any = None,
     ) -> None:
         self.root = Path(root)
         self.settings = settings
@@ -121,6 +122,11 @@ class OrchestrationService:
         # input. None selects the package-owned production deployment reader.
         self._taskgraph_deployment = taskgraph_deployment
         self._taskgraph: Any = None
+        # ARP-EXEC-1.1.1 (RP-E3): the Host's native runtime plane composition, built per
+        # Orchestrator lifetime; ``native_test_counter`` is trusted test composition only
+        # (a certified fixture counter standing in for the DeepSeek one).
+        self._native: Any = None
+        self._native_test_counter = native_test_counter
         # PR-7: test/local runtime may inject a typed shadow provider.  Production
         # remains provider-free until a real NanoJev checkpoint is authorized.
         self._decision_shadow_provider = decision_shadow_provider
@@ -302,10 +308,13 @@ class OrchestrationService:
             **knobs,
         )
         self._effective_provider = provider  # kept for a rebuild after repeated failures
+        self._native = self._build_native()
         self._runtime_options = source_runtime_options(
             self._config, provider, self._snapshot,
             **({"local_profile_path": self.settings.local_model_profile}
                if self.settings.local_model_profile else {}),
+            settings=self.settings, native=self._native,
+            native_test_counter=self._native_test_counter,
         )
         taskgraph = assurance = None
 
@@ -314,6 +323,8 @@ class OrchestrationService:
             self._install_hierarchical(orchestrator)
             taskgraph = self._install_taskgraph(orchestrator)
             assurance = self._install_assurance(orchestrator)
+            if self._native is not None:
+                self._native.bind_orchestrator(orchestrator)
 
         self._orchestrator = Orchestrator(
             self._config, provider, owner=self.owner, connectors=self._connectors,
@@ -580,6 +591,117 @@ class OrchestrationService:
             control_root=self._effective_provider.control_root,
         )
 
+    # ------------------------------------------------------------ native plane (RP-E3)
+    def _build_native(self) -> Any:
+        """The Host's native-plane composition, or None when this deployment keeps the
+        legacy pools (explicit opt-out, or a fixture lane)."""
+        if self.settings.native_plane != "on" or self._test_scenario is not None:
+            return None
+        from .native_plane import HostNativePlane
+
+        if self._native_test_counter is not None:
+            meter_factory = self._native_test_counter.meter_factory
+        else:
+            from agent_orchestrator.runtime.deepseek_meter import deepseek_meter_binding
+            meter_factory = deepseek_meter_binding
+        models_dir = None
+        try:
+            from paths import user_models_dir
+            models_dir = Path(user_models_dir())
+        except Exception:  # noqa: BLE001 - no model directory means lexical-only, reported
+            models_dir = None
+        return HostNativePlane(
+            tenant_id=self.tenant_id, principal_id=str(self._principal.principal_id),
+            allowed_tools=tuple(self._deployment.allowed_tools) if self._deployment is not None else (),
+            models_dir=models_dir, meter_factory=meter_factory,
+        )
+
+    def _native_profile_ids(self) -> list[str]:
+        from .native_plane import is_native_profile
+        return [key for key in self._runtime_options.get("profiles", {}) if is_native_profile(key)]
+
+    def _native_pool(self, profile_id: str | None) -> Any:
+        self._require()
+        native = self._native_profile_ids()
+        if self._native is None or not native:
+            raise OrchestrationRequestError("native_plane_unavailable", "当前部署没有可用的原生运行平面")
+        selected = profile_id or self._context_default()
+        if selected not in native:
+            raise OrchestrationRequestError("invalid_request", "所选运行配置不在原生运行平面上")
+        return self._orchestrator.assembled.pool(selected)
+
+    async def runtime_plane(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """One ``HostRequest`` of the SDK runtime plane (``agent_*`` verbs) → one ``HostResponse``.
+
+        The caller is the Host's principal, derived here and never from the body; the SDK
+        answers every failure as its typed ``Error`` DTO inside the response."""
+        if not isinstance(request, Mapping):
+            raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
+        body = dict(request)
+        profile_id = body.pop("profile_id", None)
+        if profile_id is not None and not isinstance(profile_id, str):
+            raise OrchestrationRequestError("invalid_request", "profile_id 必须是字符串")
+        self._refuse_secrets(body)
+        pool = self._native_pool(profile_id)
+        from simple_harness.api.runtime_plane import RuntimePlaneService
+
+        response = await RuntimePlaneService(pool.runtime).handle(body, caller=self._native.control_caller(body))
+        self.wake()
+        return response
+
+    @staticmethod
+    def _evaluation_pin(request: Mapping[str, Any]) -> Any:
+        from simple_harness.agents.arp.pins import Pin
+
+        try:
+            pin = Pin.from_json(dict(request.get("evaluation_ref") or {}))
+        except Exception as error:  # noqa: BLE001 - malformed reference
+            raise OrchestrationRequestError("invalid_request", "evaluation_ref 不是有效的评估引用") from error
+        if pin.kind != "evaluation":
+            raise OrchestrationRequestError("invalid_request", "evaluation_ref 必须指向一条 Skill 评估")
+        return pin
+
+    def skill_evaluation_mission(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """Create (idempotently) the original Assurance Mission of one Skill evaluation: its
+        idempotency key is the evaluation's own key, which is what later ties an acceptance
+        certificate back to the evaluation."""
+        from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key
+
+        if not isinstance(request, Mapping):
+            raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
+        pin = self._evaluation_pin(request)
+        key = evaluation_mission_key(pin)
+        body = {k: v for k, v in request.items() if k not in ("evaluation_ref", "idempotency_key")}
+        body["idempotency_key"] = key
+        receipt = self.create_mission(body)
+        return {**receipt, "idempotency_key": key, "evaluation_ref": pin.to_json()}
+
+    def skill_evaluation_dispatch(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """Record which Mission and which task an evaluation was dispatched to (once).  The
+        Mission must be this tenant's and must be the evaluation's original Mission; the
+        task must belong to it.  The record never marks the evaluation as passed."""
+        from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key
+
+        if not isinstance(request, Mapping):
+            raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
+        pin = self._evaluation_pin(request)
+        mission_id, task_id, command_id = request.get("mission_id"), request.get("task_id"), request.get("command_id")
+        for name, value in (("mission_id", mission_id), ("task_id", task_id), ("command_id", command_id)):
+            if not isinstance(value, str) or not value.strip():
+                raise OrchestrationRequestError("invalid_request", f"{name} 不能为空")
+        control = self._require()
+        mission = control._mission(mission_id)
+        if mission.idempotency_key != evaluation_mission_key(pin):
+            raise OrchestrationRequestError("invalid_request", "这个 Mission 不是该评估的原始 Mission")
+        task = self._orchestrator.store.get_task(task_id)
+        if task is None or task.mission_id != mission_id:
+            raise OrchestrationRequestError("not_found", "任务不属于这个 Mission")
+        pool = self._native_pool(request.get("profile_id") if isinstance(request.get("profile_id"), str) else None)
+        caller = self._native.control_caller({"command_id": command_id, "evaluation_ref": pin.to_json(), "mission_id": mission_id, "task_id": task_id})
+        body = pool.runtime.arp.lifecycle.record_evaluation_dispatch(pin, mission_id=mission_id, task_id=task_id, caller=caller, command_id=command_id)
+        self.wake()
+        return dict(body)
+
     def _assurance_root_setup(self) -> Any:
         """The authenticated native root installation, or None for fixture lanes."""
         if self._test_scenario is not None:
@@ -636,10 +758,13 @@ class OrchestrationService:
                 await old.__aexit__(None, None, None)
             except Exception:
                 logger.exception("orchestrator close during rebuild failed")
+        self._native = self._build_native()
         self._runtime_options = source_runtime_options(
             self._config, self._effective_provider, self._snapshot,
             **({"local_profile_path": self.settings.local_model_profile}
                if self.settings.local_model_profile else {}),
+            settings=self.settings, native=self._native,
+            native_test_counter=self._native_test_counter,
         )
         taskgraph = assurance = None
 
@@ -648,6 +773,8 @@ class OrchestrationService:
             self._install_hierarchical(orchestrator)
             taskgraph = self._install_taskgraph(orchestrator)
             assurance = self._install_assurance(orchestrator)
+            if self._native is not None:
+                self._native.bind_orchestrator(orchestrator)
 
         candidate = Orchestrator(
             self._config, self._effective_provider, owner=self.owner, connectors=self._connectors,
@@ -706,25 +833,37 @@ class OrchestrationService:
                 "max_output_tokens_ceiling": profile.max_output_tokens_ceiling,
                 "mission_max_tokens": 4_000_000,
             }]
-        return [
-            {
-                "profile_id": long_context_profile_id(tokens),
-                "max_input_tokens": profiles[long_context_profile_id(tokens)].context_policy.input_budget(),
-                "default_max_output_tokens": 8192,
-                "max_output_tokens_ceiling": 32768,
-                # A bounded multi-turn allowance, not a charge for unused capacity.
-                "mission_max_tokens": 4_000_000 if tokens == 262_144 else 8_000_000,
-            }
-            for tokens in CONTEXT_INPUT_LIMITS if long_context_profile_id(tokens) in profiles
-        ]
+        from .native_plane import native_profile_id
+
+        rows = []
+        for tokens in CONTEXT_INPUT_LIMITS:
+            for identifier, native in ((long_context_profile_id(tokens), False), (native_profile_id(tokens), True)):
+                if identifier not in profiles:
+                    continue
+                rows.append({
+                    "profile_id": identifier,
+                    "max_input_tokens": profiles[identifier].context_policy.input_budget(),
+                    "default_max_output_tokens": 8192,
+                    "max_output_tokens_ceiling": 32768,
+                    # A bounded multi-turn allowance, not a charge for unused capacity.
+                    "mission_max_tokens": 4_000_000 if tokens == 262_144 else 8_000_000,
+                    "native_plane": native,
+                })
+        return rows
 
     def _context_default(self) -> str | None:
         from .local_profile import LOCAL_PROFILE_ID
 
         if LOCAL_PROFILE_ID in self._runtime_options.get("profiles", {}):
             return LOCAL_PROFILE_ID
-        selected = long_context_profile_id(self.settings.context_input_tokens)
-        return selected if any(p["profile_id"] == selected for p in self._context_profiles()) else None
+        from .native_plane import native_profile_id
+
+        # RP-E3: a new Mission takes the native pool when this deployment assembled one.
+        available = {p["profile_id"] for p in self._context_profiles()}
+        for selected in (native_profile_id(self.settings.context_input_tokens), long_context_profile_id(self.settings.context_input_tokens)):
+            if selected in available:
+                return selected
+        return None
 
     def _mission_token_default(self, profile_id: str | None = None) -> int:
         selected = profile_id or self._context_default()
@@ -765,6 +904,11 @@ class OrchestrationService:
             "assurance_profile": self.settings.assurance_profile,
             "assurance_notices": len(self._assurance_notices),
             "context_profiles": self._context_profiles(),
+            "native_plane": (
+                self._native.status() if self._native is not None
+                else {"enabled": self.settings.native_plane == "on", "available": False,
+                      "reason": "夹具场景保留原有执行池" if self._test_scenario is not None else "原生运行平面已关闭"}
+            ),
             "default_context_profile_id": self._context_default(),
             "context_unavailable_reason": (
                 "旧执行库尚未具备按请求计量的恢复身份；当前保留原配置，长上下文需使用新的执行库。"

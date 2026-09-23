@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [manifest]
-overrides = [{ name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260923+assurance.14-py3-none-any.whl" }]
+overrides = [{ name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.1-py3-none-any.whl" }]
 
 [[package]]
 name = "accelerate"
@@ -899,6 +899,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d3/f4/561c49bca97af561d34eed27e3e831135eb5cb88e754c1150be41820f5c6/dateparser-1.4.1.tar.gz", hash = "sha256:f265df13c0380e2e07543ba74b67c0681aaa1096981ffcd35227e1aa0cb81c7c", size = 314734, upload-time = "2026-06-15T08:45:47.659Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/7c/2e5dcf53909deddd0bf38cbe277ad9806be038276b1c6c436561b4d9b2e2/dateparser-1.4.1-py3-none-any.whl", hash = "sha256:f25d4e051a84be27a35bd297e3e1dc59ff78373701b89be352ba80372d22d0d0", size = 300503, upload-time = "2026-06-15T08:45:45.951Z" },
+]
+
+[[package]]
+name = "deepseek-recipe"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ea/e9/8b9dedbcd3aaabac393cd08c99a1c0f0670ea6493ac727fc2857bb4f88dd/deepseek_recipe-0.1.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:cadb53a202960fc5d381f52a9c30afb0e44d7eaaa22197e851c09789bf65b83e", size = 8295918, upload-time = "2026-09-10T09:27:58.374Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/79/a41fe43c0c658b0277947a22cb7cea922cdda1b7a9cc03fb39e6af5ec17f/deepseek_recipe-0.1.1-cp310-abi3-macosx_11_0_x86_64.whl", hash = "sha256:b6d9c52dead2d550f1487d74b999e40692b8633e9be5f41eb5be7bff47ba3717", size = 8885802, upload-time = "2026-09-10T14:06:24.494Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/b1/248eb99f7e659a43c5eff9fe42b773ce927607e5b5c058ecf1649be8d034/deepseek_recipe-0.1.1-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:5a5b1fec4e5663d97527370227fda418495f21c6ff73e95663624e906a35c25b", size = 9928176, upload-time = "2026-09-11T11:26:08.514Z" },
+    { url = "https://files.pythonhosted.org/packages/45/87/8be03c8cc4f86ac27577b20466c40ad5a77c1fd1d3d4a438bd0120d0cbae/deepseek_recipe-0.1.1-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:7818802935becc76ac9b81af6b4a1e5390ec65355cecefd1fd4790f51845c1c5", size = 11367229, upload-time = "2026-09-10T13:33:15.132Z" },
 ]
 
 [[package]]
@@ -7629,6 +7640,7 @@ dependencies = [
     { name = "anthropic" },
     { name = "browser-use" },
     { name = "cryptography" },
+    { name = "deepseek-recipe" },
     { name = "edge-tts" },
     { name = "fastapi" },
     { name = "faster-whisper" },
@@ -7690,6 +7702,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=0.40" },
     { name = "browser-use", specifier = ">=0.1.40" },
     { name = "cryptography", specifier = "==49.0.0" },
+    { name = "deepseek-recipe", specifier = "==0.1.1" },
     { name = "edge-tts", specifier = ">=7.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "faster-whisper", specifier = ">=1.1" },
@@ -7723,7 +7736,7 @@ requires-dist = [
     { name = "selectolax", specifier = ">=0.3" },
     { name = "sentence-transformers", specifier = ">=5.7" },
     { name = "silero-vad", specifier = ">=5.1.2,<6" },
-    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260923+assurance.14-py3-none-any.whl" },
+    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.1-py3-none-any.whl" },
     { name = "simple-harness-service-sdk", extras = ["realtime"], path = "vendor/simple_harness_service_sdk-0.3.13-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
@@ -7743,13 +7756,13 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "simple-harness-sdk"
-version = "0.13.0.dev20260923+assurance.14"
-source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260923+assurance.14-py3-none-any.whl" }
+version = "0.13.0.dev20260924+arp.1"
+source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.1-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
 ]
 wheels = [
-    { filename = "simple_harness_sdk-0.13.0.dev20260923+assurance.14-py3-none-any.whl", hash = "sha256:56eb37b615bf4db6020d4373870bc2a9226fde788575e90eb6ddbc84b1a567fb" },
+    { filename = "simple_harness_sdk-0.13.0.dev20260924+arp.1-py3-none-any.whl", hash = "sha256:e72460bc93c7b7fb822e7e6f030e44a7a0af571d615539733d4e6a236f47cace" },
 ]
 
 [package.metadata]
@@ -7759,11 +7772,12 @@ requires-dist = [
     { name = "jinja2", marker = "extra == 'hf-tokenizer'", specifier = ">=3.1,<4" },
     { name = "psutil", marker = "extra == 'local-capacity'", specifier = ">=7.2.2,<8" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8.3,<9" },
+    { name = "pyyaml", marker = "extra == 'skill-import'", specifier = ">=6.0,<7" },
     { name = "tokenizers", marker = "extra == 'hf-tokenizer'", specifier = ">=0.22,<1" },
     { name = "transformers", marker = "extra == 'hf-tokenizer'", specifier = ">=4.57,<6" },
     { name = "unified-planning", extras = ["aries"], marker = "extra == 'planning-aries'", specifier = ">=1.2,<2" },
 ]
-provides-extras = ["deepseek-tokenizer", "hf-tokenizer", "local-capacity", "planning-aries", "testing"]
+provides-extras = ["deepseek-tokenizer", "hf-tokenizer", "local-capacity", "planning-aries", "skill-import", "testing"]
 
 [[package]]
 name = "simple-harness-service-sdk"

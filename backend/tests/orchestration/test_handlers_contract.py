@@ -51,6 +51,9 @@ def test_message_types_are_the_planned_set():
         "mission_assurance_snapshot",
         "mission_assurance_review",
         "mission_assurance_use_check",
+        "agent_runtime_request",
+        "agent_skill_evaluation_mission",
+        "agent_skill_evaluation_dispatch",
     }
 
 

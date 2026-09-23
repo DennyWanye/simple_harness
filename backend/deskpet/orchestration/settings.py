@@ -76,6 +76,15 @@ class OrchestrationSettings:
     # lane. The Host always passes its own selection point, so the SDK's default
     # selection never decides for a Host Mission.
     assurance_profile: str = "on"
+    # ARP-EXEC-1.1.1 (RP-E3): whether new official-DeepSeek Missions run on the native
+    # runtime plane ("on", the default in the testing phase) or keep the legacy pools
+    # ("off", the explicit opt-out).  A native pool needs the certified DeepSeek counter;
+    # without one no native pool is assembled and the status says why.
+    native_plane: str = "on"
+    # Hosts this deployment declares to relay verbatim to official DeepSeek (a day-card
+    # gateway, a local forwarder), comma separated and lower-cased.  Empty means only
+    # api.deepseek.com counts as official.
+    deepseek_compatible_hosts: str = ""
 
 
 def _assurance_profile(value: Any) -> str:
@@ -83,6 +92,20 @@ def _assurance_profile(value: Any) -> str:
         return "on"
     normalised = value.strip().lower()
     return normalised if normalised in ("on", "off") else "on"
+
+
+def _compatible_hosts(value: Any) -> str:
+    items = value.split(",") if isinstance(value, str) else (value if isinstance(value, list) else [])
+    hosts = []
+    for item in items:
+        if isinstance(item, str) and item.strip():
+            hosts.append(item.strip().lower())
+    return ",".join(dict.fromkeys(hosts))
+
+
+def compatible_hosts(settings: Any) -> frozenset[str]:
+    raw = getattr(settings, "deepseek_compatible_hosts", "") or ""
+    return frozenset(h.strip().lower() for h in str(raw).split(",") if h.strip())
 
 
 def _bounded_int(value: Any, default: int, low: int, high: int) -> int:
@@ -141,6 +164,8 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         decision_mode=_decision_mode(raw.get("decision_mode")),
         decision_shadow_timeout_seconds=_shadow_timeout(raw.get("decision_shadow_timeout_seconds")),
         assurance_profile=_assurance_profile(raw.get("assurance_profile")),
+        native_plane=_assurance_profile(raw.get("native_plane")),
+        deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),
     )
 
 

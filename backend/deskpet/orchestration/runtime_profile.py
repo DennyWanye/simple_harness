@@ -27,11 +27,52 @@ def long_context_profile_id(tokens: int) -> str:
     return f"deepseek-context-{tokens // 1024}k-v1"
 
 
+DEEPSEEK_COUNTER_MODELS = frozenset({"deepseek-flash", "deepseek-v4.1-flash"})
+
+
+def tokenizer_path() -> Path | None:
+    """The pinned DeepSeek tokenizer: ``DESKPET_ORCH_TOKENIZER_PATH`` (absolute), else the
+    deployment's model directory (``<models>/deepseek-v41/tokenizer.json``)."""
+
+    configured = os.environ.get(TOKENIZER_PATH_ENV)
+    if configured:
+        path = Path(configured)
+        return path if path.is_absolute() else None
+    try:
+        from paths import user_models_dir
+    except ImportError:
+        return None
+    candidate = Path(user_models_dir()) / "deepseek-v41" / "tokenizer.json"
+    return candidate if candidate.is_file() else None
+
+
+def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None) -> Any:
+    """The certified official V4.1 counter for an official (or declared-compatible) DeepSeek
+    endpoint, or None for any other provider."""
+
+    if snapshot is None or snapshot.requested_model not in DEEPSEEK_COUNTER_MODELS:
+        return None
+    from .settings import compatible_hosts
+
+    host = urlparse(snapshot.base_url).hostname
+    if host not in DEEPSEEK_OFFICIAL_HOSTS and (host or "").lower() not in compatible_hosts(settings):
+        return None
+    from agent_orchestrator.runtime.deepseek_meter import CertifiedDeepSeekCounter
+
+    path = tokenizer_path()
+    if path is None:
+        raise RuntimeError("源码 DeepSeek profile 需要绝对路径 DESKPET_ORCH_TOKENIZER_PATH")
+    return CertifiedDeepSeekCounter(path, model=snapshot.requested_model)
+
+
 def source_runtime_options(
     config: Any,
     provider: Any,
     snapshot: ProviderSnapshot | None,
     *, local_profile_path: str = "",
+    settings: Any = None,
+    native: Any = None,
+    native_test_counter: Any = None,
 ) -> dict[str, Any]:
     # The candidate wheel now ships the same context ports as source runs.
     # Resolve the persisted pool identity in both installations; dropping these
@@ -47,22 +88,11 @@ def source_runtime_options(
         from .local_profile import local_runtime_options
         return local_runtime_options(config, provider, snapshot, local_profile_path)
 
-    counter = None
-    if (
-        snapshot is not None
-        and snapshot.requested_model == "deepseek-flash"
-        and urlparse(snapshot.base_url).hostname in DEEPSEEK_OFFICIAL_HOSTS
-    ):
-        from agent_orchestrator.runtime.deepseek_tokens import DeepSeekV41TokenEstimator
-
-        configured = os.environ.get(TOKENIZER_PATH_ENV)
-        if not configured or not Path(configured).is_absolute():
-            raise RuntimeError(
-                "源码 DeepSeek profile 需要绝对路径 DESKPET_ORCH_TOKENIZER_PATH"
-            )
-        counter = DeepSeekV41TokenEstimator(
-            Path(configured), model=snapshot.requested_model
-        )
+    counter = deepseek_counter_for(snapshot, settings)
+    # Trusted deployment composition only (tests): a certified fixture counter that
+    # stands in for the DeepSeek one so the native pools can be assembled offline.
+    if counter is None and native_test_counter is not None:
+        counter = native_test_counter
 
     policy = resolve_profile_context_policy(config, tokenizer=counter)
     options: dict[str, Any] = {
@@ -102,6 +132,29 @@ def source_runtime_options(
                 provider_kind="env", context_policy=frozen, tokenizer=counter,
                 default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
             )
+        if native is not None and getattr(settings, "native_plane", "on") == "on":
+            from .native_plane import native_profile_id
+
+            # ARP-EXEC-1.1.1: the native-plane pools, beside (never instead of) the legacy
+            # ones.  An existing Mission keeps the pool it was frozen on.
+            for tokens in CONTEXT_INPUT_LIMITS:
+                identifier = native_profile_id(tokens)
+                wanted = ContextPolicy(
+                    max_input_tokens=tokens, output_reserve=32768,
+                    max_tool_result_tokens=16384, render_slack_tokens=0,
+                )
+                frozen = resolve_profile_context_policy(
+                    config, profile_id=identifier, tokenizer=counter, fresh_policy=wanted,
+                )
+                if frozen != wanted:
+                    raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
+                options["profiles"][identifier] = RuntimeProfile(
+                    identifier, provider, config.model, price_table=config.price_table,
+                    provider_kind="env" if snapshot is not None else "fixtures",
+                    context_policy=frozen, tokenizer=counter,
+                    default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
+                    native_plane=native.assembly(identifier, tokens=tokens, counter=counter),
+                )
         options["provider_token_estimators"] = {key: counter for key in options["profiles"]}
         frozen_admission = profile_has_frozen_admission(config, "default")
         if frozen_admission is False or (frozen_admission is None and policy is None):
