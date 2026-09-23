@@ -152,6 +152,7 @@ async def test_check_policy_projection_is_replay_safe_and_needs_a_frozen_scope(o
         await service.close()
 
 
+@pytest.mark.asyncio
 async def test_check_policy_projector_is_installed_into_the_sdk_review_runtime(orchestration_root, principal):
     """Real model run 7 (2026-09-23): the plan froze the Scope and ran the review in
     one loop run, so the after-run projection was too late. The SDK review runtime
@@ -164,7 +165,7 @@ async def test_check_policy_projector_is_installed_into_the_sdk_review_runtime(o
         projector = runtime._check_policy_projector
         assert projector is not None
         # Same function as the loop hook: nothing to project before a Scope is frozen.
-        assert projector("mission-none") is None
+        assert projector("mission-none") == 0
         assert project_check_policies(service, "mission-none") == 0
     finally:
         await service.close()
