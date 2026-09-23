@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "context_id": "example",
+  "session_id": "example",
+  "agent_id": "example",
+  "turn_id": "example",
+  "provider_request_ordinal": 1,
+  "session_generation": 1,
+  "profile_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "model_limits": {
+    "schema_version": 1,
+    "provider_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "model_ref": "example",
+    "input_limit_tokens": 1,
+    "combined_limit_tokens": 1,
+    "max_output_tokens": 1,
+    "supports_tools": false,
+    "supports_images": false,
+    "counter_id": "example",
+    "counter_revision": 1,
+    "count_mode": "EXACT",
+    "renderer_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "capability_receipt_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  },
+  "owner_contract_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "journal_highwater": 1,
+  "sections": [],
+  "recent_group_ids": [],
+  "recent_complete_turn_count": 1,
+  "recalled_chunk_ids": [],
+  "retrieval_receipt_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "tool_snapshot_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "skill_refs": [],
+  "planned_request_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "input_token_charge": 1,
+  "effective_input_budget": 1,
+  "reserved_output_tokens": 1,
+  "safety_reserve_tokens": 1,
+  "tool_headroom_tokens": 1,
+  "counter_mode": "EXACT",
+  "registry_epoch": 1,
+  "authority_refs": [],
+  "source_read_set_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "creation_root_id": "example",
+  "effective_context_policy_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  }
+}

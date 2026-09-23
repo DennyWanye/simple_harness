@@ -1,0 +1,333 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-09-23T03:03:58.520556+00:00",
+  "scope": "selected source files only; not full dirty fingerprint or installed wheel verification",
+  "runtime_scope": "native-only; Pi and replaceable runtime excluded by user",
+  "original_zip": {
+    "path": "/Users/denny/Downloads/simpleharness-agent-runtime-plane-1.0-2026-09-22.zip",
+    "sha256": "3343a14874676e4b7b320cf8ee1f41c422e68f856249cf88e28b9d0ab7e9f8aa"
+  },
+  "heads": {
+    "host": "6c457908e49757035c21c6dc2b252415107a494c",
+    "htn_sdk": "102ad3dfa2db38d575ea929d39ec5ed1561a71da"
+  },
+  "sources": [
+    {
+      "basis": "host",
+      "relative_path": "ARCHITECTURE/index.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/ARCHITECTURE/index.md",
+      "sha256": "8158408350077e6b08510f785d9dbd4adfc3f7bb2d4a30676a6a7b02f612bfc5",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "ARCHITECTURE/TASKGRAPH.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/ARCHITECTURE/TASKGRAPH.md",
+      "sha256": "e2cd9540323f9a4b8ef73a2bc494029298ec49019d2ecc8cbf32fdca57038d01",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "plans/TaskGraph/V1.2.1/TASKGRAPH-MAIN-HANDOFF-2026-09-23.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/plans/TaskGraph/V1.2.1/TASKGRAPH-MAIN-HANDOFF-2026-09-23.md",
+      "sha256": "208ac1bd1ecd6f54414be3bc15ca82f7e67b39a40822eba214a525a3336eca81",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "plans/TaskGraph/V1.2.1/MAIN-RESULTS-2026-09-23.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/plans/TaskGraph/V1.2.1/MAIN-RESULTS-2026-09-23.md",
+      "sha256": "64a33bdec05310a8c2d710aefc85c8e580b775fac9cfa08e14f646a50a857a7e",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "plans/Assurance/2026-09-22-plan-review/REVIEW-ASSURANCE-EXEC-1.1.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/plans/Assurance/2026-09-22-plan-review/REVIEW-ASSURANCE-EXEC-1.1.md",
+      "sha256": "de17ac87bff6b791110f02644d2c9ce1f867209d2efb0b03a2015e7da8b1cf6b",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "backend/deskpet/orchestration/runtime_profile.py",
+      "absolute_path": "/Users/denny/projects/simple_harness/backend/deskpet/orchestration/runtime_profile.py",
+      "sha256": "f0b4fbd39d141f60ba9f3b62b3982b0d0aee69b49ad18eb02510a7150de300d7",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "backend/deskpet/orchestration/handlers.py",
+      "absolute_path": "/Users/denny/projects/simple_harness/backend/deskpet/orchestration/handlers.py",
+      "sha256": "4923390ef798b79ccb606bbcf11179f7df6f0cb308331ff17247b859fae05578",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "backend/deskpet/sdk_adapters/capability_catalog.py",
+      "absolute_path": "/Users/denny/projects/simple_harness/backend/deskpet/sdk_adapters/capability_catalog.py",
+      "sha256": "1771ac4cbfe6ec37f1b7c25e47c37eb6a6dde4927e1533f8bf8a930fd94c28c4",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "backend/deskpet/sdk_adapters/skill_resolver.py",
+      "absolute_path": "/Users/denny/projects/simple_harness/backend/deskpet/sdk_adapters/skill_resolver.py",
+      "sha256": "eb562cfa80174f1885c29bfb8e9367d70980bfa4f4fad3a50e261ec0f77fb649",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "backend/deskpet/capabilities/skill_install.py",
+      "absolute_path": "/Users/denny/projects/simple_harness/backend/deskpet/capabilities/skill_install.py",
+      "sha256": "00fe56547d0372d7fb944604871c9742b544f6fe0dba627bb6bf12fff1febb2a",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "host",
+      "relative_path": "backend/pyproject.toml",
+      "absolute_path": "/Users/denny/projects/simple_harness/backend/pyproject.toml",
+      "sha256": "35146e27276082d69dd9137606b2f82106df5d6d8db9c62fac47b6b3f958f86a",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/agents/runtime.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/agents/runtime.py",
+      "sha256": "9ba7565051cc217e820dee977e51d14e4c196ca0f3e2ded4ea7ab9be6e735070",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/agents/ports.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/agents/ports.py",
+      "sha256": "6026933fc7863edea10e05ee15009e689bd9823e4daad54f1fef9cac3b1ea29a",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/agents/execution.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/agents/execution.py",
+      "sha256": "4afc341eafc06ec4f0345ead9da16ba375c99274a129f2beb2dbc7aaafd9737a",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/agents/wire.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/agents/wire.py",
+      "sha256": "0e6ac51a1b0b1f19bd0927c82d0adaa82ccbd8a91cae5627488a5a32636d9868",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/agents/context/protocol_groups.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/agents/context/protocol_groups.py",
+      "sha256": "43402a2c377eb5d512a66f782dbc54d1d22279568ff81f0e34cc3232005082a7",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/agents/context/tokenizer.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/agents/context/tokenizer.py",
+      "sha256": "dd26f394380e042092a7bc5946dae756012d1a7cefcd40882b065267da415993",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/agents/memory/embedding.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/agents/memory/embedding.py",
+      "sha256": "7a79ffb3b2f995fd272ea1366ec642ec7233c657f8aa1fc472238d13b8542c63",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/agents/memory/index_jobs.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/agents/memory/index_jobs.py",
+      "sha256": "a585d602a6b5a008f1135a20f6477b6fb52b920833ab4d86b30805e009df8f4d",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/execution/dispatch.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/execution/dispatch.py",
+      "sha256": "fc19d4f8483cb8568a6962a8f17e87f04a5e3224db59e6a95f86f9f34a4aa4e5",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/execution/sqlite/uow.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/execution/sqlite/uow.py",
+      "sha256": "db88e4bab7c7166aaa0a3f778d024fcf315b5055669476516f84ad9e9117bac6",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/execution/sqlite/database.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/execution/sqlite/database.py",
+      "sha256": "4d8224f408058af861192b34b02decaf528c8780709cbec0775739b9dad12972",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/simple_harness/tools/runtime_catalog.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/simple_harness/tools/runtime_catalog.py",
+      "sha256": "d5b69cf5bfe81df82cb936e0c6085a2e66e4c597413159ced974b15afb2fbcd2",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/agent_orchestrator/runtime/agent_worker.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/runtime/agent_worker.py",
+      "sha256": "108cecc3ff761546a0c4a366fa7b1908ecf8b073151c39342cb78c50df4a42e6",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/agent_orchestrator/runtime/assembly.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/runtime/assembly.py",
+      "sha256": "b55bd03b0fae362a51832e1999e44d4c0c8893ef9604a9a737ad4c8f6b9ea1af",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/agent_orchestrator/runtime/deepseek_tokens.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/runtime/deepseek_tokens.py",
+      "sha256": "750be03fa8d9a16b624d428a27f42570737a513583ec6c52f1f99b3b8c95d821",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/agent_orchestrator/runtime/hf_chat_tokens.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/runtime/hf_chat_tokens.py",
+      "sha256": "8cac8f5a7d97c58e73297ca68de60fbaac92afee3e8ab44b51d97156a0968f5f",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "htn_sdk",
+      "relative_path": "src/agent_orchestrator/runtime/provider_budget_guard.py",
+      "absolute_path": "/Users/denny/projects/simple-harness-sdk-h1h-impl/src/agent_orchestrator/runtime/provider_budget_guard.py",
+      "sha256": "fb6d8357b46d510815c39394bdcfa996a38b9748220ae3f91b37a185a27e4d6e",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "ARP-EXEC-1.0.zh-CN.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/ARP-EXEC-1.0.zh-CN.md",
+      "sha256": "ee016b103ff2213da7dc44d6170be0b8008b18838faf3146b6b58d712c6ad65e",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "contracts/runtime-plane.schema.json",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/contracts/runtime-plane.schema.json",
+      "sha256": "bf9e102df688147ddb88f68e72f2acfb889600805b0aa140e17cde11bb936688",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "implementation/INTERFACES.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/implementation/INTERFACES.md",
+      "sha256": "b0fc0e205598b4aa2c2294e2f16dcb881a70ffc14f03ac9967545609eeb34232",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "implementation/HOST-DTOS.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/implementation/HOST-DTOS.md",
+      "sha256": "e8216f1536662af964b6c1fdc71efbf0f1c7b4caa73c3f4bc329a5124b05443c",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "implementation/FIELD-CONTRACTS.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/implementation/FIELD-CONTRACTS.md",
+      "sha256": "4465cc4195c8c32dcbafe3dc63263d38fdcad57de3291ddc170c9a559ebb6380",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "implementation/source-map.json",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/implementation/source-map.json",
+      "sha256": "0da0e1f0020debaa2cd752585c5444b5d884397bb2637658a068f3e73a0cf513",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "implementation/seams.json",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/implementation/seams.json",
+      "sha256": "39b090d615af6452d5f8c42bcba51c3da8a0ebf85ab109721ede61efa23b07e1",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "implementation/BODY-WIRED.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/implementation/BODY-WIRED.md",
+      "sha256": "b4b2eb6ba503794be5d9f5423497213999b3088f02ffca04bd0766a17ccd7d4a",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "implementation/TEST-PLAN.md",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/implementation/TEST-PLAN.md",
+      "sha256": "89faa999529456edb04f1418176dc609afbe0588071bba96e8578ed74e3f03dd",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "implementation/mutations.json",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/implementation/mutations.json",
+      "sha256": "c458d53fe099f75ceb72ff2de2c7fa3262d68d6c15c114eea02cdb8fe14b359e",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "sql/execution_additive.sql",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/sql/execution_additive.sql",
+      "sha256": "3309301b836271d2a6e128072122f2defc73a48ea5b1a100ff13b44d6f83d988",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "sql/session_partition.sql",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/sql/session_partition.sql",
+      "sha256": "69660da423a467014dcd22b8a10792a61d8d8833f722f9cb5ffbcd1f1f2e5cca",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "sql/queries.json",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/sql/queries.json",
+      "sha256": "6d9fd40f79a19a060cfb61f7e75503189269b98ee81d3b88b387e9fe7095c579",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    },
+    {
+      "basis": "plan_package",
+      "relative_path": "reference/runtime_rules.py",
+      "absolute_path": "/Users/denny/projects/simple_harness/.local-test-evidence/2026-09-23/arp-review/simpleharness-agent-runtime-plane-1.0-2026-09-22/reference/runtime_rules.py",
+      "sha256": "10c90818b6cc75df26970c90624e6c921f19f4ea2f991335ce777443df2f86cd",
+      "verification": "PATH_AND_FILE_HASH_ONLY_NOT_BEHAVIOR"
+    }
+  ],
+  "raw_local_evidence": [
+    {
+      "relative_path": ".local-test-evidence/2026-09-23/arp-review/review-checks.json",
+      "sha256": "64805873a36cec4c6ec6ce73bf0eed99e1494c48c26d529a70d478958d88124c",
+      "included_in_handoff_zip": false
+    },
+    {
+      "relative_path": ".local-test-evidence/2026-09-23/arp-review/extended-checks.json",
+      "sha256": "8af1491d5e3cb4297349382a438c9ab96b8856e1ccff6a6682aabc580d7979f6",
+      "included_in_handoff_zip": false
+    },
+    {
+      "relative_path": ".local-test-evidence/2026-09-23/arp-review/extended_contract_probes.py",
+      "sha256": "ba22b70e71d2721ab4eb8d5351191a42a2d2b645e9ce04700751c1fdc5fec150",
+      "included_in_handoff_zip": false
+    },
+    {
+      "relative_path": ".local-test-evidence/2026-09-23/arp-review/external-research.json",
+      "sha256": "bb76230e656964cac502e6ff1396daefaf6a7dfc4759f334099f116b2ddb19dc",
+      "included_in_handoff_zip": false
+    }
+  ],
+  "taskgraph_candidate": "Use documented taskgraph.23 plus final Host UI2 and actual Assurance successor; this index does not freeze the latest Assurance worktree."
+}

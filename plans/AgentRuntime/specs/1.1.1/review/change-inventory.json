@@ -1,0 +1,338 @@
+[
+  {
+    "path": "ARP-EXEC-1.1.1.zh-CN.md",
+    "kind": "NEW",
+    "prior_hash": null,
+    "current_hash": "6b71bfec98f83edc683346d37ec9447e79ad751eb394f252fac1a3f3926c7a36",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "DECISIONS.md",
+    "kind": "MODIFIED",
+    "prior_hash": "8227a0c7d4ce7f83aec2dd3f05c842934bec272ae539258daf03fb6fb2692f44",
+    "current_hash": "fe05fe0a4fbb7bb9d807d53031eaa6d69a25625257fe4f91634b870a05466603",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "README.md",
+    "kind": "MODIFIED",
+    "prior_hash": "b4df32bed4b3f03c812aa2e41e1e2838764c1421246293e453b8815af4f09ad0",
+    "current_hash": "5b40539a788fd409d8e4527e251e1950f3a55d071ba6feef12f3b222a2b3b051",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "VALIDATION.md",
+    "kind": "MODIFIED",
+    "prior_hash": "0b44ac799eb32dce699cb721139995651889ea7e6b5d836772498469344a2dc7",
+    "current_hash": "019cbc282a868be84bdd3f90cc604fe838b934ddb863414b63d62d37e310735b",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "contracts/error-catalogue.json",
+    "kind": "MODIFIED",
+    "prior_hash": "3e2cb20a1811647e200a007a59cf1b73dd3475f3b95e45ed38203531f336ead4",
+    "current_hash": "0aeb55b9141e320f8dd3818ee018f701f2cd6b5dd1accc280bcc8f7bbe287295",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "contracts/event-catalogue.json",
+    "kind": "MODIFIED",
+    "prior_hash": "5c43aa3c0b73819c834de7bf158d47748bf8b39fa5622a1c95c75f73f23c90e4",
+    "current_hash": "683a9490757403cca7b1f3d3fc0a8850d2065ed493ff060b7caf357357e97c5b",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "contracts/host-verbs.json",
+    "kind": "MODIFIED",
+    "prior_hash": "4241256ec612626b47a252171299ff2d751f7c5ca23ed5bbdbb5ca03ecd879a1",
+    "current_hash": "521ddaa0bcff567b64e919057b7235ff99e960b3c65146280b0100a828e125e9",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "contracts/runtime-plane.schema.json",
+    "kind": "MODIFIED",
+    "prior_hash": "328ecd599c52314f953f8632398fea0e5d853dea027f0c7123d77e02810e9e7a",
+    "current_hash": "7698432e5eaeddb626f9fa44c34a3e3b90f3b213d996a4cef97405745d354933",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "examples/typed-fixtures.json",
+    "kind": "MODIFIED",
+    "prior_hash": "3042440d9103c3bd83d113273de1e16a028878c43e923c146cf4bddc77a009a3",
+    "current_hash": "169472fa98b6b21c7ae55f907d633d85dd0036fece0689bf1918773614e2b2b6",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/BODY-WIRED.md",
+    "kind": "MODIFIED",
+    "prior_hash": "b6d36a91fd9fd122d7bb51869c63314279bff69737e25a2051a60299987531ab",
+    "current_hash": "140d67e70248495fc89698f3cdd16f3fde6deac312de663b5192b2f80b84bcdb",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/CONTEXT-RECALL.md",
+    "kind": "NEW",
+    "prior_hash": null,
+    "current_hash": "235f938a4dc24418c129407a83720ee04c52bc279f9013e329c6f614a20c58dd",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/CONTEXT-SEARCH.md",
+    "kind": "MODIFIED",
+    "prior_hash": "6e02203c1c7734391f6dd8a393de0004245f29ead4b25c8a0a0ba8c57a2e5e20",
+    "current_hash": "5b7241e34bd8820f5ee990dc42fd05d3eeac63c7a5e879cf623ec15bba35c174",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/FIELD-CONTRACTS.md",
+    "kind": "MODIFIED",
+    "prior_hash": "0b0539fe50d2a8806af2f7757e6b5aeddf8c92c90121f6df76ee9f166a95e30b",
+    "current_hash": "eb4b8e977cd677690b831773c254914cf459220fa75ff100c90340010a029ec7",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/HOST-DTOS.md",
+    "kind": "MODIFIED",
+    "prior_hash": "9a970b029381a6fe4f127018e7be35eeaeb580e3d2170a0e6527a9100731b5c1",
+    "current_hash": "4511c20b35eb1bd0f07400be3400baa6bcc18d18e1ee1b2d7f75188d1047ec8a",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/INTERFACES.md",
+    "kind": "MODIFIED",
+    "prior_hash": "f503316fdd23a524e25952a69da391710c84c9eac67e56997ed3f39d79dbdb8b",
+    "current_hash": "211bf4f33c7d390fdec341bc064fa1128bd1445af1dcc81c7ecb48627ce982bd",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/JOBS-LIFECYCLE.md",
+    "kind": "MODIFIED",
+    "prior_hash": "06e96687bf5688d69645a0776c084f0673c695379b1a18c1d17dae72bd4c9afe",
+    "current_hash": "9c876285791824a5d6d5ce3789a194432bea98a54677510cb293bd15e8455897",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/TEST-PLAN.md",
+    "kind": "MODIFIED",
+    "prior_hash": "5a88cc068d7a72cd2b31b6f446db5177520ed9d476b4066045efe00d10430fe5",
+    "current_hash": "0379b60e19ea46e3bd3808d3ae12dc31c49a7e632252a2e3ae7c28f8deab882d",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/decisions.json",
+    "kind": "MODIFIED",
+    "prior_hash": "01e4aee74f499c6a27e898438aef4d7be375181c7aae840d974c638846580c47",
+    "current_hash": "882fd75de1c1e3a41cb64dc25f04f84c426390a63f531be7c5a5773dcfd46c3a",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/field-producers.json",
+    "kind": "MODIFIED",
+    "prior_hash": "c79799abcaec1983933616647877c9501aa811c4b91f8b8291053eff86e3028e",
+    "current_hash": "f968f690c4f91c8fc93a428e88f11855b5f0d75a7806c81078d07d2c378627d1",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/integration-map.json",
+    "kind": "MODIFIED",
+    "prior_hash": "47e3b4576e2062a5214f0f923ab6b67ff6dda6beff064123b447a93e65bb3d5f",
+    "current_hash": "c8e08c3a07973b777355c2f0da185837e930e675b508f9fa446f6bd624675d41",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/ref-resolution-map.json",
+    "kind": "MODIFIED",
+    "prior_hash": "6d18063402d22c706d675ae091614fb25765f5cf69b745c87cfd797136c0a51b",
+    "current_hash": "38fc8abe8638395b7f6b3e9d9166a5a457b6070fe29863bef9877a8d621dce56",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/review-decisions.json",
+    "kind": "NEW",
+    "prior_hash": null,
+    "current_hash": "11ddfb1b227ddf001abb5abf29d79e64b1a534bd0cd4d9c0b1df7b494dd5bdbd",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/review-mutations.json",
+    "kind": "NEW",
+    "prior_hash": null,
+    "current_hash": "075578c05f28a30656d9c326408512e728c4e7df2a92cfe1434004358ca3b71a",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/sdk-cases.json",
+    "kind": "MODIFIED",
+    "prior_hash": "a05bf946282792535c349735d47136064d81743107c821e2c84f36f24b018314",
+    "current_hash": "4e7fcf2c0aa223abf08b2edb1887c954e062c5db8faa5c9edb4de79900bae5bd",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/seams.json",
+    "kind": "MODIFIED",
+    "prior_hash": "300ceb312a70eacbead4c859e38074dd92890d75ce6ee0563b8cabc6b6d18fa1",
+    "current_hash": "ce30df6c3f5dcb4b34ad5a6d567a7931d4b8341cf22a587f4291a4953c788651",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/traceability.json",
+    "kind": "MODIFIED",
+    "prior_hash": "74f04ea689cf634909423f77473b89342f21e07ba39115fb71343bf3f4a26350",
+    "current_hash": "2d6d016cd8d902d40e38270a49386d4bc59ba43064b3afe6a157a215d82c65c9",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "implementation/type-producers.json",
+    "kind": "MODIFIED",
+    "prior_hash": "162934959aced74b9d129b84264956258360012f7d5ff4d033b8cacf41707909",
+    "current_hash": "4761e8fac1382e70e15bdd3d6422c74253a8f57c016b9ec887d0ea4a45230740",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "reference/context_recall.py",
+    "kind": "NEW",
+    "prior_hash": null,
+    "current_hash": "21d65b18503e17ecfe984eb32eee0f84f9ebd9c27f0e3598e0fb3e8b85bf9f9d",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "reference/purge_rules.py",
+    "kind": "NEW",
+    "prior_hash": null,
+    "current_hash": "f8787a9e0245353c6f4d144b6f30559b477efa21ccd5c927a4a2727c6d680e8a",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "reference/retrieval_status.py",
+    "kind": "NEW",
+    "prior_hash": null,
+    "current_hash": "5172380b3ffc8baf69e223052168335ee4149ca18881465805f2156fd242fae2",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "reference/runtime_rules.py",
+    "kind": "MODIFIED",
+    "prior_hash": "b2a07cde0531af8d7608d5ac2bab582bccc85af89856210384ba07b044fc3166",
+    "current_hash": "f52cf632167e100dbd345c47d468123be4221f8d4eb1c811c9f4ec4708272866",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "reference/schema_codec.py",
+    "kind": "MODIFIED",
+    "prior_hash": "5d316cdc8ef3e9ef4b4c4e1189b7f9c2ad3f6d7e0ad0f8aa757069cffa1307c0",
+    "current_hash": "71a46368964dfc0cf5a70def9a6a9545283659d5304f6d219ad71d043585a55a",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "reference/search_scan.py",
+    "kind": "MODIFIED",
+    "prior_hash": "f4a37dd267bac9b7f7c2384af0066fef3dea86255c310294a6e819da0b287d4c",
+    "current_hash": "e74deef13a00130ae5b4457f38ba8a36fcf5ba648d6418583c9a3759e099aced",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "review/CHALLENGE-REPORT.md",
+    "kind": "MODIFIED",
+    "prior_hash": "194c4f4e309189ff67bd1f76971d3176481932b615d6dac8bedb9c46ca6a2542",
+    "current_hash": "f814d80fb5375c8d617d8266ef168263c80b9f5bdeccf7ab6d89d7617ecc3070",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "source-map.json",
+    "kind": "MODIFIED",
+    "prior_hash": "6e479f2fe6c577f59d3e39287c7a4d73227e302ebe54370355146cec5fdc29b8",
+    "current_hash": "85f4a565b3380c89dc7dbca1197405b025ce553375de433b84ed51f7f8f41801",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "sql/MIGRATION-CONTRACT.md",
+    "kind": "MODIFIED",
+    "prior_hash": "4b4f7593cc67b347397bc7d316c5c6f0e7948b52d13798b498657902a886f95d",
+    "current_hash": "9b4eb2d6e5dae990aff195d2a4a745c4e72f2c2fa347274e6b0a152bc9b426d3",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "sql/execution_additive.sql",
+    "kind": "MODIFIED",
+    "prior_hash": "9a5fc525c168a47ebbafa827aed8f7a806b09bcde8a6a5affc26b41d4bc61b3d",
+    "current_hash": "592ac4e4044c7c947ed8ed1188bb9d517893e83d1ac65e60bc9a5cfed8294643",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "sql/queries.json",
+    "kind": "MODIFIED",
+    "prior_hash": "deb76741f68b505c4be8a69ea53f3e47eab668c6f67fea9f7f69eb87eabc4ca4",
+    "current_hash": "656b4d6807fddc18a83ce20941f1f5dfd68492ce3b3443226c98f6b0a3d2631b",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "sql/session_partition.sql",
+    "kind": "MODIFIED",
+    "prior_hash": "8ff010f370011294b0f4a61f3b9c990e26e697e5d4b92de726833f2adad1a947",
+    "current_hash": "df75e4eb4c6f105d5efce4d6e211e9f0f79195fa53b10db9d534ae0c6a8e440b",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "tests/sql_fixture.py",
+    "kind": "MODIFIED",
+    "prior_hash": "d909fc669d3426a1435d2bb1691f891d1187daea5891816d38f5394e4cc4211d",
+    "current_hash": "1c2dcfbcc1c6b64c58239dfb0dcf708227785f048ca453facb84f2bde5ca51ad",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "tests/test_additional_boundaries.py",
+    "kind": "MODIFIED",
+    "prior_hash": "fca64d1ffabae80efc4e0fda50ffb16b044383e91e158334cff0db41aef21f77",
+    "current_hash": "669038f1b588b14f9a3c07a40d25bcdb411fe6d08b2bd1de93cd286a7bd48947",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "tests/test_contracts.py",
+    "kind": "MODIFIED",
+    "prior_hash": "eb901824399272849914709ad5d879106b93ce04b955841271dd4392cb21406e",
+    "current_hash": "bc86f536e35ab42459bc44edbdf7b6b6cee42818f28237b6897bac4d1762db4f",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "tests/test_review_r1_r5.py",
+    "kind": "NEW",
+    "prior_hash": null,
+    "current_hash": "aa8c5f4794c90db3bab959efcdc554d97c5ea33c8bc4b2b9c63cc45a0ccb5376",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "tests/test_rules.py",
+    "kind": "MODIFIED",
+    "prior_hash": "69865e08029ee47b06164614736cd06b3bcbff3d12e7606215efcb244b0c1be5",
+    "current_hash": "cbd2363e63c895c28ef39766dfd69f86ea47ee352be10405b0c194fe7ce6c8be",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "tests/test_sql.py",
+    "kind": "MODIFIED",
+    "prior_hash": "ab67e3ad69b0b7bbd693cbbc59571a080b9bc927fe8c7c965e6c5ab5be1db348",
+    "current_hash": "4af5f4a6b804ed28dc4972b70d4d1bdad93ef980de982cedd3bd3449fbb8da41",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "tools/check_plan.py",
+    "kind": "MODIFIED",
+    "prior_hash": "dee7a889f78508eb46154c03a58d7700fa9d44a1474091f26ab40d95f43fc02c",
+    "current_hash": "02fe82d8952ff6aa569f38c6c51be4a5bbbe5b21641d01c9443991cfb0385c21",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "tools/run_reference_mutations.py",
+    "kind": "MODIFIED",
+    "prior_hash": "ff2b22fa0c3944d22d5ef73ff5ae2cc2aca28651bc5c63b84944e354452f9745",
+    "current_hash": "fd9c976ed4c2758a171ce9eb33f6c9d666844d5716c7566008cfd227899887ff",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  },
+  {
+    "path": "tools/run_review_mutations.py",
+    "kind": "NEW",
+    "prior_hash": null,
+    "current_hash": "4ac62e74102e090e45a73ac29eb12b4bfe637bffe1bf1f1f7a00da0d4118c350",
+    "scope": "PLAN_PACKAGE_BYTES_NOT_SDK"
+  }
+]

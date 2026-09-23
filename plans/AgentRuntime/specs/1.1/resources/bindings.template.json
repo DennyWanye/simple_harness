@@ -1,0 +1,30 @@
+{
+  "scope": "resource inventory template, never production defaults",
+  "integration_parent": {
+    "reported_taskgraph_version": "0.13.0.dev20260922+taskgraph.23",
+    "actual_assurance_successor_fingerprint": null,
+    "actual_wheel_hash": null
+  },
+  "chat": {
+    "profile": "current user approved DeepSeek profile",
+    "actual_endpoint_protocol_hash": null,
+    "actual_tokenizer_manifest_hash": null,
+    "actual_counter_code_hash": null,
+    "actual_serializer_hash": null,
+    "prior_adapter_verified": false
+  },
+  "embedding": {
+    "selected_candidate": "BAAI/bge-m3 dense local SentenceTransformer",
+    "dimension": 1024,
+    "model_manifest_sha256": null,
+    "library_lock_sha256": null,
+    "local_files_present": null,
+    "actual_approved_resource_ref": null
+  },
+  "platforms": {
+    "macOS": "PENDING_NATIVE_UI",
+    "Linux": "PENDING_REGISTERED_EXISTING_ENVIRONMENT",
+    "Windows": "PENDING_NOT_INHERITED"
+  },
+  "status": "ENVIRONMENT_DEPENDENCIES_NOT_VERIFIED"
+}

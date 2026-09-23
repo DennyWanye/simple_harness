@@ -1,0 +1,51 @@
+{
+  "version": "1.1.1",
+  "original_zip": "simpleharness-agent-runtime-plane-1.1.1-2026-09-23.zip",
+  "original_zip_sha256": "a17f9784cf1508027cbbcbf826f0ca55da97a95ae75bacdbda0369420280b22b",
+  "export_scope": "plan_documents_contracts_reference_sources_no_raw_test_evidence",
+  "original_manifest": "UPSTREAM-DELIVERY-MANIFEST.json",
+  "omitted": [
+    {
+      "path": "inputs/ARP-EXEC-1.0-HISTORICAL.zip",
+      "bytes": 294410,
+      "sha256": "3343a14874676e4b7b320cf8ee1f41c422e68f856249cf88e28b9d0ab7e9f8aa",
+      "reason": "historical_archive_duplicate_versions_in_specs"
+    },
+    {
+      "path": "reports/inheritance-check.json",
+      "bytes": 345,
+      "sha256": "34ad2fc61cf34dd50bc12320297af25b362a18d391cdeea6392efa86ecc23813",
+      "reason": "raw_machine_report_local_only"
+    },
+    {
+      "path": "reports/original-1.1-probes.json",
+      "bytes": 471,
+      "sha256": "39d9d66a7d886809544cc5c6d34cad404a6be3f57e5ec8209f970ae922b4dec8",
+      "reason": "raw_machine_report_local_only"
+    },
+    {
+      "path": "reports/reference-mutations.json",
+      "bytes": 3112,
+      "sha256": "9143e887370a642ad49be4af5619ee29a61bd04ff00c31b39f0c24576de9f2f2",
+      "reason": "raw_machine_report_local_only"
+    },
+    {
+      "path": "reports/review-mutations.json",
+      "bytes": 1741,
+      "sha256": "60c6b1ed335e1c97b5ef5c0d8c4a83ab723703643acad3a6619cb5e668b66a3a",
+      "reason": "raw_machine_report_local_only"
+    },
+    {
+      "path": "reports/schema-validation.json",
+      "bytes": 222,
+      "sha256": "12199381764cfb00761c6ec2ec24e03a7723669c26bfdf41d9b319bb7cdff836",
+      "reason": "raw_machine_report_local_only"
+    },
+    {
+      "path": "reports/validation.json",
+      "bytes": 14354,
+      "sha256": "daa1ce5d50ed105c3ee35dcb072c46c4d1723b40e933032776e4b046f3d0ffcd",
+      "reason": "raw_machine_report_local_only"
+    }
+  ]
+}

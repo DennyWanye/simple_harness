@@ -1,0 +1,66 @@
+[
+  {
+    "role": "root standalone chat",
+    "reported_entry": "AgentRuntime.create / BaseAgent.submit",
+    "binding_rule": "explicit STANDALONE owner policy; B/C/D NOT_APPLICABLE is construction mode",
+    "actual_call_edges": [],
+    "actual_status": "PENDING_LOCAL_CONFIRMATION",
+    "must_not_bypass": "AgentProviderWire final serializer/context freeze/current handoff guard"
+  },
+  {
+    "role": "child/delegate",
+    "reported_entry": "AgentRuntime child/delegation factory",
+    "binding_rule": "child config/owner/session independent; original creation ticket reused",
+    "actual_call_edges": [],
+    "actual_status": "PENDING_LOCAL_CONFIRMATION",
+    "must_not_bypass": "AgentProviderWire final serializer/context freeze/current handoff guard"
+  },
+  {
+    "role": "create_many",
+    "reported_entry": "AgentRuntime.create_many and existing batch ledger",
+    "binding_rule": "all staged until final batch visible, no inference during create",
+    "actual_call_edges": [],
+    "actual_status": "PENDING_LOCAL_CONFIRMATION",
+    "must_not_bypass": "AgentProviderWire final serializer/context freeze/current handoff guard"
+  },
+  {
+    "role": "HTN Planner / Manager / MethodSynthesizer",
+    "reported_entry": "agent_orchestrator/runtime/agent_worker.py::AgentBridge",
+    "binding_rule": "original typed service dispatch → BaseAgent → same prepare hook",
+    "actual_call_edges": [],
+    "actual_status": "PENDING_LOCAL_CONFIRMATION",
+    "must_not_bypass": "AgentProviderWire final serializer/context freeze/current handoff guard"
+  },
+  {
+    "role": "Worker",
+    "reported_entry": "AgentBridge",
+    "binding_rule": "original Task/Attempt/manifest owner; no second task",
+    "actual_call_edges": [],
+    "actual_status": "PENDING_LOCAL_CONFIRMATION",
+    "must_not_bypass": "AgentProviderWire final serializer/context freeze/current handoff guard"
+  },
+  {
+    "role": "Critic / Verifier / root / Mission judge",
+    "reported_entry": "AgentBridge + actual Assurance review coordinators",
+    "binding_rule": "each actual invocation through original ProviderInvocationCoordinator; preserve official exposure",
+    "actual_call_edges": [],
+    "actual_status": "PENDING_LOCAL_CONFIRMATION",
+    "must_not_bypass": "AgentProviderWire final serializer/context freeze/current handoff guard"
+  },
+  {
+    "role": "backend LLM-native planning",
+    "reported_entry": "existing HTN dispatch",
+    "binding_rule": "same BaseAgent adapter not direct client; non-LLM solver tools unchanged",
+    "actual_call_edges": [],
+    "actual_status": "PENDING_LOCAL_CONFIRMATION",
+    "must_not_bypass": "AgentProviderWire final serializer/context freeze/current handoff guard"
+  },
+  {
+    "role": "recovery",
+    "reported_entry": "AgentRuntime.open/startup original kernel restore",
+    "binding_rule": "frozen calls replay exact; no recomposition of old identity",
+    "actual_call_edges": [],
+    "actual_status": "PENDING_LOCAL_CONFIRMATION",
+    "must_not_bypass": "AgentProviderWire final serializer/context freeze/current handoff guard"
+  }
+]

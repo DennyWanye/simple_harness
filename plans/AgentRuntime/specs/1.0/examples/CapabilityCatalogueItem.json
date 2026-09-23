@@ -1,0 +1,36 @@
+{
+  "kind": "CAPABILITY",
+  "definition": {
+    "schema_version": 1,
+    "capability_id": "example",
+    "version": 1,
+    "input_schema_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "output_schema_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "description": "example",
+    "required_semantics": [],
+    "verification_policy_ref": {
+      "kind": "agent",
+      "id": "example",
+      "revision": 1,
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "provider_refs": []
+  },
+  "state": "QUARANTINED",
+  "state_revision": 1,
+  "current_usable": false,
+  "reason_codes": [
+    "NOT_ADMITTED"
+  ],
+  "registry_epoch": 1
+}

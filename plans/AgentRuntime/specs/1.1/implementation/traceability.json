@@ -1,0 +1,301 @@
+[
+  {
+    "issue": "Q01",
+    "case_ids": [
+      "case:N01"
+    ],
+    "contract_assets": [
+      "contracts/runtime-plane.schema.json",
+      "implementation/ref-resolution-map.json"
+    ],
+    "semantic_oracle": "正确profile通过；把agent替代profile拒绝",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q02",
+    "case_ids": [
+      "case:N02"
+    ],
+    "contract_assets": [
+      "implementation/HOST-DTOS.md",
+      "implementation/CONTEXT-SEARCH.md"
+    ],
+    "semantic_oracle": "早期命中在后续扫描页仍被找到；cursor陈旧拒绝",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q03",
+    "case_ids": [
+      "case:N03"
+    ],
+    "contract_assets": [
+      "implementation/HOST-DTOS.md",
+      "examples/host-settings-flow.json"
+    ],
+    "semantic_oracle": "adoption3竞争4拒绝；断线同命令读原回执",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q04",
+    "case_ids": [
+      "case:N04"
+    ],
+    "contract_assets": [
+      "source-map.json",
+      "implementation/role-coverage.json"
+    ],
+    "semantic_oracle": "bridge实际为agent_worker；全role最终经过真实wire guard",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q05",
+    "case_ids": [
+      "case:N05"
+    ],
+    "contract_assets": [
+      "resources/DEPENDENCIES.md",
+      "implementation/INTERFACES.md"
+    ],
+    "semantic_oracle": "P单扣；512K配置不冒充真实端点支持",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q06",
+    "case_ids": [
+      "case:N06"
+    ],
+    "contract_assets": [
+      "resources/DEPENDENCIES.md",
+      "implementation/JOBS-LIFECYCLE.md"
+    ],
+    "semantic_oracle": "HashEmbedder不可生产；timeout不重复付费；lexical状态明确",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q07",
+    "case_ids": [
+      "case:N07"
+    ],
+    "contract_assets": [
+      "implementation/INTERFACES.md",
+      "ARP-EXEC-1.1.zh-CN.md"
+    ],
+    "semantic_oracle": "standalone显式mode；无真实评价来源拒绝激活",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q08",
+    "case_ids": [
+      "case:N08"
+    ],
+    "contract_assets": [
+      "implementation/INTERFACES.md",
+      "sql/execution_additive.sql"
+    ],
+    "semantic_oracle": "kernel登记后崩溃同IDs恢复且不提前调用模型",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q09",
+    "case_ids": [
+      "case:N09"
+    ],
+    "contract_assets": [
+      "ARP-EXEC-1.1.zh-CN.md",
+      "reference/runtime_rules.py"
+    ],
+    "semantic_oracle": "与handoff竞争失败必须核对原请求",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q10",
+    "case_ids": [
+      "case:N10"
+    ],
+    "contract_assets": [
+      "implementation/CONTEXT-SEARCH.md",
+      "reference/runtime_rules.py"
+    ],
+    "semantic_oracle": "旧Turn中间组被移除不计1；早anchor仍保留",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q11",
+    "case_ids": [
+      "case:N11"
+    ],
+    "contract_assets": [
+      "sql/session_partition.sql",
+      "implementation/JOBS-LIFECYCLE.md"
+    ],
+    "semantic_oracle": "同span跨gen可共存；同closedgroup不同sourcehash拒绝",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q12",
+    "case_ids": [
+      "case:N12"
+    ],
+    "contract_assets": [
+      "implementation/CONTEXT-SEARCH.md",
+      "reference/runtime_rules.py"
+    ],
+    "semantic_oracle": "1e308非零finite；PARTIAL无全局排名；追加不混快照",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q13",
+    "case_ids": [
+      "case:N13"
+    ],
+    "contract_assets": [
+      "implementation/JOBS-LIFECYCLE.md",
+      "contracts/runtime-plane.schema.json"
+    ],
+    "semantic_oracle": "lease过期只重领协调；index成功ACK前退出可幂等继续",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q14",
+    "case_ids": [
+      "case:N14"
+    ],
+    "contract_assets": [
+      "implementation/JOBS-LIFECYCLE.md"
+    ],
+    "semantic_oracle": "drain允许已有Turn结束；destroy不需新LLM结束；busy保留",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q15",
+    "case_ids": [
+      "case:N15"
+    ],
+    "contract_assets": [
+      "ARP-EXEC-1.1.zh-CN.md",
+      "implementation/integration-map.json"
+    ],
+    "semantic_oracle": "health正常刷新不全局失效；撤权阻断相应新调用",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q16",
+    "case_ids": [
+      "case:N16"
+    ],
+    "contract_assets": [
+      "ARP-EXEC-1.1.zh-CN.md",
+      "implementation/INTERFACES.md"
+    ],
+    "semantic_oracle": "旧页面已安装仍可管理但未获准不可调用；依赖diamond冲突",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q17",
+    "case_ids": [
+      "case:N17"
+    ],
+    "contract_assets": [
+      "implementation/HOST-DTOS.md",
+      "contracts/runtime-plane.schema.json"
+    ],
+    "semantic_oracle": "800文件可分页，模型不披露credentialref/endpoint",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q18",
+    "case_ids": [
+      "case:N18"
+    ],
+    "contract_assets": [
+      "contracts/error-catalogue.json",
+      "contracts/event-catalogue.json"
+    ],
+    "semantic_oracle": "未请求/空/部分/不可用组合可表达；未知错误不透传",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q19",
+    "case_ids": [
+      "case:N19"
+    ],
+    "contract_assets": [
+      "sql/MIGRATION-CONTRACT.md",
+      "sql/execution_additive.sql"
+    ],
+    "semantic_oracle": "不占用TG25作为exec号；OR REPLACE被拒；正式根不依赖temp不阻删",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  },
+  {
+    "issue": "Q20",
+    "case_ids": [
+      "case:N20"
+    ],
+    "contract_assets": [
+      "implementation/TEST-PLAN.md",
+      "implementation/BODY-WIRED.md"
+    ],
+    "semantic_oracle": "未来测试未运行不阻纯编码；没有原生/模型证据不填完成",
+    "reference_test": "tests/test_contracts.py / tests/test_rules.py / tests/test_sql.py (exact result listing in validation report)",
+    "actual_nodeids": [],
+    "production_mutation": "new Q case injects opposite of oracle; original16 remain independent",
+    "status": "SPECIFIED_NOT_SDK_PASS"
+  }
+]

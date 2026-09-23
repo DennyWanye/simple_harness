@@ -1,0 +1,1761 @@
+[
+  {
+    "id": "R01",
+    "given": "同creation key重复创建；再提交异body",
+    "when": "真实Agent创建/绑定",
+    "then": "同body一Agent一session；异body冲突；无新identity",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_create_replay",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R01/",
+    "qualified_id": "case:R01",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "R02",
+    "given": "同input_id重复提交再用异hash提交",
+    "when": "原BaseAgent.submit/Journal",
+    "then": "原receipt重放；Journal不重复；异hash拒绝",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_submit_replay",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R02/",
+    "qualified_id": "case:R02",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "R03",
+    "given": "ACTIVE Agent进程退出，在同root重启",
+    "when": "原Runtime恢复",
+    "then": "同session和未决请求；不删除临时库、不生成新原始调用",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_crash_not_destroy",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R03/",
+    "qualified_id": "case:R03",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "R04",
+    "given": "同Agent连续两个AgentTurn，第一个完成",
+    "when": "原turn/result",
+    "then": "session不销毁；history延续；第二Agent完全隔离",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_turn_not_session",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R04/",
+    "qualified_id": "case:R04",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "R05",
+    "given": "原close后请求新input，同时旧call仍返回",
+    "when": "原close/collector",
+    "then": "拒绝新输入；旧raw/费用仍入原ledger；不因CLOSED推断未应用",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_close_draining",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R05/",
+    "qualified_id": "case:R05",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "R06",
+    "given": "完成准备但原tool outcome UNKNOWN后destroy",
+    "when": "真实SessionDisposalReader",
+    "then": "DRAINING+明确blocker；无unlink、不释放UNKNOWN hold",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_destroy_unknown",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R06/",
+    "qualified_id": "case:R06",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "R07",
+    "given": "所有真实责任收敛后destroy，在rename前/后退出",
+    "when": "真正SQL/fileguard/purge",
+    "then": "可重入完成PURGED；DB/WAL/SHM不存在；墓碑保留",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_delete_index",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R07/",
+    "qualified_id": "case:R07",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "R08",
+    "given": "embedding请求发出后destroy进入DRAINING，再返回向量",
+    "when": "原embedding调用+index importer",
+    "then": "费用持久但向量拒绝写入；不能mkdir复活",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_late_embedding",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R08/",
+    "qualified_id": "case:R08",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "R09",
+    "given": "session目录被替换为跨root symlink/junction",
+    "when": "真实安全文件打开",
+    "then": "拒绝访问/删除；外部目录不变",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_wrong_root",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R09/",
+    "qualified_id": "case:R09",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "R10",
+    "given": "t0备份，t1销毁/撤权，t2还原旧备份到新root",
+    "when": "原restore+Assurance",
+    "then": "quarantine；不自动读私有history、Skill授权或执行旧调用",
+    "target_nodeid": "tests/agent_runtime_plane/test_lifecycle.py::test_restored_backup",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/R10/",
+    "qualified_id": "case:R10",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C01",
+    "given": "固定512K policy与不同长短组/actual token meter",
+    "when": "真实Composer+tokenizer",
+    "then": "公式实际成立；N随A-E/recall变化；不按固定20轮",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_formula_dynamic_n",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C01/",
+    "qualified_id": "case:C01",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C02",
+    "given": "历史含巨大中间组、其前更小组",
+    "when": "完整组装",
+    "then": "停止于大组；不越过挑旧小组；current tail保留",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_recent_contiguous",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C02/",
+    "qualified_id": "case:C02",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C03",
+    "given": "一个assistant发多个tool_calls，结果乱序到达",
+    "when": "原tool ledger/protocol parser",
+    "then": "按call_id关联；不丢缺失result或拆tool group",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_tool_protocol",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C03/",
+    "qualified_id": "case:C03",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C04",
+    "given": "召回chunk覆盖扩入recent的group",
+    "when": "真实recall+组装",
+    "then": "先去重再装recent；不回填造成震荡",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_recall_overlap",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C04/",
+    "qualified_id": "case:C04",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C05",
+    "given": "A-E硬块+current tail超过实际U",
+    "when": "真实guard",
+    "then": "无Provider handoff/reserve；明确REQUIRED_CONTEXT_TOO_LARGE",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_large_required",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C05/",
+    "qualified_id": "case:C05",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C06",
+    "given": "messages较小但tool schemas/media/response_format很大",
+    "when": "真实renderer/counter",
+    "then": "全部计量；任一模型不支持或未知成本不放行",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_full_wire_count",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C06/",
+    "qualified_id": "case:C06",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C07",
+    "given": "prepare后插入新history/更新skill，原调用UNKNOWN恢复",
+    "when": "原request/recovery",
+    "then": "原input hash/ContextManifest不变；新变化仅下一合法请求",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_frozen_retry",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C07/",
+    "qualified_id": "case:C07",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C08",
+    "given": "活动session批准新窗口配置，另有已冻结请求",
+    "when": "原configwriter/Context prepare",
+    "then": "旧request不变；新请求绑定精确effective_policy_ref",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_policy_change",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C08/",
+    "qualified_id": "case:C08",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C09",
+    "given": "工具结果已写账本但尚未进入模型后续input",
+    "when": "真实Exposure importer",
+    "then": "不签已曝光；实际input关联后才可被Verifier引用",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_exposure_not_prepared",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C09/",
+    "qualified_id": "case:C09",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "C10",
+    "given": "工具返回超大真实内容",
+    "when": "真实presenter/CAS/Journal",
+    "then": "原文完整、REFERENCED合法；不会悄改旧frozenmessage或预算",
+    "target_nodeid": "tests/agent_runtime_plane/test_context.py::test_oversized_tool",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/C10/",
+    "qualified_id": "case:C10",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M01",
+    "given": "插入超过2000条并使最早记录相关，退出recent",
+    "when": "真实Journal/index/search",
+    "then": "最早记录可精确和语义检索，不限最近2000",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_all_history",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M01/",
+    "qualified_id": "case:M01",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M02",
+    "given": "Journal闭合后杀进程，index尚未完成",
+    "when": "真实job/FTS/embedding",
+    "then": "原文可恢复，index partial可见，续做不丢记录",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_index_lag",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M02/",
+    "qualified_id": "case:M02",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M03",
+    "given": "本机获准embedding adapter处理实际文本",
+    "when": "真实EmbeddingPort调用账本",
+    "then": "真实model fp/dim/usage；拒绝hash/随机向量替身",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_real_embedding",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M03/",
+    "qualified_id": "case:M03",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M04",
+    "given": "同chunk两model fp/dim并存，再切querymodel",
+    "when": "真实index reader",
+    "then": "只查询匹配空间；NaN/zero/dim错误具名拒绝",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_vector_spaces",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M04/",
+    "qualified_id": "case:M04",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M05",
+    "given": "group1/3已索引、group2失败",
+    "when": "真实coveragewriter",
+    "then": "highwater不跨洞；不以MAX(seq)声称完整",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_coverage_hole",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M05/",
+    "qualified_id": "case:M05",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M06",
+    "given": "恶意模型要求另一个agent/sessionid",
+    "when": "真实工具context/SQLscope",
+    "then": "读取前拒绝；不泄漏其他session的正文和存在性",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_cross_session",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M06/",
+    "qualified_id": "case:M06",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M07",
+    "given": "索引内容仍有但源权限/用途已撤回",
+    "when": "真实Assurance读取门",
+    "then": "候选可内部过滤但正文不披露；不把历史命令当新授权",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_revoked_memory",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M07/",
+    "qualified_id": "case:M07",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M08",
+    "given": "大量vector超本轮扫描时限",
+    "when": "分页reader/receipt",
+    "then": "PARTIAL与resume cursor；不回空集说无历史",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_retrieval_timeout",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M08/",
+    "qualified_id": "case:M08",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M09",
+    "given": "中英/短中文/标识符/FTS特殊符号",
+    "when": "真实FTS5/参数化query",
+    "then": "不SQL注入、不拼MATCH语法；短词明确fallback；原文bytes不变",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_fts_unicode",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M09/",
+    "qualified_id": "case:M09",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "M10",
+    "given": "一次真实零命中，另一次embedding/SQL故障",
+    "when": "真实retrieval statuses",
+    "then": "COMPLETE_EMPTY与LEXICAL_ONLY/PARTIAL/ERROR分开；默认profile有实际语义能力",
+    "target_nodeid": "tests/agent_runtime_plane/test_memory.py::test_degraded_and_empty",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/M10/",
+    "qualified_id": "case:M10",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K01",
+    "given": "多个实际注册provider一项不健康/不具语义/无权限",
+    "when": "真实resolver/registry",
+    "then": "过滤先于priority；单provider不额外LLM路由",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_provider_selection",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K01/",
+    "qualified_id": "case:K01",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K02",
+    "given": "已handoff provider调用UNKNOWN，备用可用",
+    "when": "原callledger+resolver",
+    "then": "不通过fallback产生重复真实调用",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_no_provider_fallback_unknown",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K02/",
+    "qualified_id": "case:K02",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K03",
+    "given": "zip含../、absolute、symlink、大小写冲突、超限数据",
+    "when": "真实SkillInstaller",
+    "then": "隔离阶段拒绝；不执行scripts或写root外",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_skill_archive_security",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K03/",
+    "qualified_id": "case:K03",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K04",
+    "given": "多技能目录，只选一个加载，引用一个resource",
+    "when": "真实loader+Context",
+    "then": "只目录摘要＋所选内容计费；无全库塞context",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_progressive_load",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K04/",
+    "qualified_id": "case:K04",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K05",
+    "given": "检查bundle后工作区同名脚本被替换",
+    "when": "真实immutablemount/executor",
+    "then": "仍执行冻结版或拒绝；不执行未审字节",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_skill_execution_pin",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K05/",
+    "qualified_id": "case:K05",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K06",
+    "given": "技能相互依赖/超16层/依赖未准入",
+    "when": "真实registry/dependencyresolver",
+    "then": "拒绝；有限图解包，不能递归自授权限",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_dependency_cycle",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K06/",
+    "qualified_id": "case:K06",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K07",
+    "given": "模型建议ADMITTED；另有真实批准eval和当前权限",
+    "when": "真实原evaluation Review/registry writer",
+    "then": "模型不能自晋级；合法policy/eval精确bundle才能admit",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_promotion",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K07/",
+    "qualified_id": "case:K07",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K08",
+    "given": "Skill loaded后撤销，再请求原toolcall",
+    "when": "真实registryepoch+toolgate",
+    "then": "新handoff拒绝；旧费用/结果可导入，不重新绑定latest",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_suspend_hot",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K08/",
+    "qualified_id": "case:K08",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K09",
+    "given": "以Skill调用已部署workflow含只读＋受控写步骤",
+    "when": "原workflowexecutor/toolgateway",
+    "then": "不增加Mission/TaskGraph权威；步骤原执行身份可恢复，副作用沿OPS",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_workflow_is_tool",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K09/",
+    "qualified_id": "case:K09",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "K10",
+    "given": "Agent提出将含私有session内容的trace保存全局skill",
+    "when": "真实skillpropose/install",
+    "then": "默认仅scope候选；脱敏/批准与eval后才可分享，无隐式全局记忆",
+    "target_nodeid": "tests/agent_runtime_plane/test_capability_skill.py::test_private_trace_to_skill",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/K10/",
+    "qualified_id": "case:K10",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T01",
+    "given": "两MCP server同名工具/同显示名",
+    "when": "真实toolregistryadapter",
+    "then": "本地namespacedidentity不冲突；server annotation不作授权",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_exact_catalogue",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T01/",
+    "qualified_id": "case:T01",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T02",
+    "given": "模型猜toolname/ID调用未曝光工具",
+    "when": "原ToolGateway",
+    "then": "拒绝；目录可见也不等于本请求可调用",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_unexposed_tool",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T02/",
+    "qualified_id": "case:T02",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T03",
+    "given": "重复JSON key、错误params、domain参数scope、伪principal",
+    "when": "strict codec+原auth",
+    "then": "结构权限与合法domainparams区分；不误提升scope",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_schema_and_auth",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T03/",
+    "qualified_id": "case:T03",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T04",
+    "given": "Python/脚本尝试宿主目录、网络、子进程逃逸",
+    "when": "真实sandbox executor",
+    "then": "实际边界阻止；平台不支持则CAPABILITY_UNAVAILABLE",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_sandbox_write",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T04/",
+    "qualified_id": "case:T04",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T05",
+    "given": "指令skill要求发报告，已有准备贡献",
+    "when": "原OPS/OCC production chain",
+    "then": "只生成原意图/Review/授权；未完成效果不得成功",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_external_effect",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T05/",
+    "qualified_id": "case:T05",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T06",
+    "given": "toolresult跨媒体/二进制/超inline长度",
+    "when": "真实receipt/viewer",
+    "then": "合法ref与boundedtext；binary不塞无限字符串",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_large_tool_result",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T06/",
+    "qualified_id": "case:T06",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T07",
+    "given": "call已产生后registry同名工具升级",
+    "when": "原snapshot/collector",
+    "then": "按发起请求的exactref处理；拒绝未授权新实现",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_schema_update_midcall",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T07/",
+    "qualified_id": "case:T07",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T08",
+    "given": "父Agent等workflow/subtool，模型槽全占",
+    "when": "原admission/runtime",
+    "then": "等待时释放不需要的槽；收据/import/取消仍推进",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_resource_deadlock",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T08/",
+    "qualified_id": "case:T08",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T09",
+    "given": "工具exit0但产物违背Task准则",
+    "when": "原Assurance",
+    "then": "仅tool成功，不自动Acceptance或Mission完成",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_truth_not_exitcode",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T09/",
+    "qualified_id": "case:T09",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "T10",
+    "given": "native toolcall、skill script、workflow、直接provider四入口",
+    "when": "实际调用边审查+行为tests",
+    "then": "同authority/accounting/fence生效；无旁路",
+    "target_nodeid": "tests/agent_runtime_plane/test_tools.py::test_all_entrypoints",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/T10/",
+    "qualified_id": "case:T10",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I01",
+    "given": "真实执行库有旧Agent/turn/journal/ledger数据",
+    "when": "原migration runner",
+    "then": "新建/升级/rollback/FK/checksum/幂等reopen；旧bytes保持",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_execution_migration",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I01/",
+    "qualified_id": "case:I01",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I02",
+    "given": "索引DB已写centraljob未ACK、或context原request已存import未回",
+    "when": "实际两个库+进程强退",
+    "then": "相同source/call身份重入，不新计费/不丢正式记录",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_multi_db_import",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I02/",
+    "qualified_id": "case:I02",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I03",
+    "given": "sessiondestroy同时Assurance审阅仍pin某正文",
+    "when": "真实原GC集合+ARP root",
+    "then": "临时DB可按条件删，正式pin仍读得到；无提前GC",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_gc_liveroot",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I03/",
+    "qualified_id": "case:I03",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I04",
+    "given": "原生UI查看当前/过去Context，更新policy、撤权",
+    "when": "实际authenticatedHost/Tauri",
+    "then": "显示正确N/reserve/recallstatus；旧content不由latest覆盖",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_host_current_history",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I04/",
+    "qualified_id": "case:I04",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I05",
+    "given": "断线重连/旧cursor/跨用户请求/坏DTO",
+    "when": "真实Hostwire/UIstore",
+    "then": "恢复有权限元数据，stale cursor具名拒绝，坏数据不填0正常显示",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_host_reconnect",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I05/",
+    "qualified_id": "case:I05",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I06",
+    "given": "同样旧Agent输入在升级前后原路径",
+    "when": "真实legacygoldens",
+    "then": "旧config/prompt/request/event字节不漂移；缺newbinding不冒充legacy",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_legacy_compatibility",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I06/",
+    "qualified_id": "case:I06",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I07",
+    "given": "BODY_WIRED及全部门后新Agentfactory",
+    "when": "原Host激活/factory",
+    "then": "新默认ARP；旧活动session不切；未完成TG不被打开",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_default_new_profile",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I07/",
+    "qualified_id": "case:I07",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I08",
+    "given": "代码与文档以外一个确定性数据处理controller",
+    "when": "真实capability/domain注册",
+    "then": "Core不改domain if；typedinput/output/原验收成立",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_new_domain_registration",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I08/",
+    "qualified_id": "case:I08",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I09",
+    "given": "macOS与实际Linux（及声称支持Windows时）",
+    "when": "实际venv/wheel/隔离root",
+    "then": "importidentity、文件锁/删除与tokenizer/FTS实测；不拿Linux冒充Mac",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_native_platform",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I09/",
+    "qualified_id": "case:I09",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "I10",
+    "given": "LM1–4每类3局固定输入预算",
+    "when": "真正获准模型/embedding",
+    "then": "12/12硬不变量，每类≥2/3业务成功、总≥10/12；失败保留",
+    "target_nodeid": "tests/agent_runtime_plane/test_integration.py::test_real_model_matrix",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original Store/UOW",
+      "relevant original Journal/Compiler/Commit",
+      "real source producers and resolvers"
+    ],
+    "allowed_stubs": [
+      "provider transport except M03/I10",
+      "controlled external target except explicitly native case"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/I10/",
+    "qualified_id": "case:I10",
+    "inherited_from": "ARP-EXEC-1.0"
+  },
+  {
+    "id": "N01",
+    "qualified_id": "case:N01",
+    "review_issue": "Q01",
+    "given": "44个内部Pin种类，逐字段子集与白名单resolver，不改公共TypedRef",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "正确profile通过；把agent替代profile拒绝",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q01.py::test_q01_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N01/",
+    "assets": [
+      "contracts/runtime-plane.schema.json",
+      "implementation/ref-resolution-map.json"
+    ]
+  },
+  {
+    "id": "N02",
+    "qualified_id": "case:N02",
+    "review_issue": "Q02",
+    "given": "Search扫描进度与固定排名分页、UTF8原文范围页，管理/模型purpose隔离",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "早期命中在后续扫描页仍被找到；cursor陈旧拒绝",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q02.py::test_q02_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N02/",
+    "assets": [
+      "implementation/HOST-DTOS.md",
+      "implementation/CONTEXT-SEARCH.md"
+    ]
+  },
+  {
+    "id": "N03",
+    "qualified_id": "case:N03",
+    "review_issue": "Q03",
+    "given": "policy批准与adoption分开，首次GET完整，更新CAS与命令回执读口",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "adoption3竞争4拒绝；断线同命令读原回执",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q03.py::test_q03_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N03/",
+    "assets": [
+      "implementation/HOST-DTOS.md",
+      "examples/host-settings-flow.json"
+    ]
+  },
+  {
+    "id": "N04",
+    "qualified_id": "case:N04",
+    "review_issue": "Q04",
+    "given": "TaskGraph23与Assurance后继为合并链；已报告真实位置入source-map，未见后继字节不伪hash",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "bridge实际为agent_worker；全role最终经过真实wire guard",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q04.py::test_q04_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N04/",
+    "assets": [
+      "source-map.json",
+      "implementation/role-coverage.json"
+    ]
+  },
+  {
+    "id": "N05",
+    "qualified_id": "case:N05",
+    "review_issue": "Q05",
+    "given": "复用DeepSeek/HF计量，公开wire/P/O/计费分开，先恢复tools后冻结",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "P单扣；512K配置不冒充真实端点支持",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q05.py::test_q05_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N05/",
+    "assets": [
+      "resources/DEPENDENCIES.md",
+      "implementation/INTERFACES.md"
+    ]
+  },
+  {
+    "id": "N06",
+    "qualified_id": "case:N06",
+    "review_issue": "Q06",
+    "given": "获准本地BGE-M3 dense或明确兼容已批准资源，原call/usage桥；activation真值表",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "HashEmbedder不可生产；timeout不重复付费；lexical状态明确",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q06.py::test_q06_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N06/",
+    "assets": [
+      "resources/DEPENDENCIES.md",
+      "implementation/JOBS-LIFECYCLE.md"
+    ]
+  },
+  {
+    "id": "N07",
+    "qualified_id": "case:N07",
+    "review_issue": "Q07",
+    "given": "原权限评价点记录真实receipt；bootstrap先批准安装payload再profile，不靠AllowAll",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "standalone显式mode；无真实评价来源拒绝激活",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q07.py::test_q07_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N07/",
+    "assets": [
+      "implementation/INTERFACES.md",
+      "ARP-EXEC-1.1.zh-CN.md"
+    ]
+  },
+  {
+    "id": "N08",
+    "qualified_id": "case:N08",
+    "review_issue": "Q08",
+    "given": "持久creation intent+kernel defer-drive+同UOW最终binding；禁止嵌套facade假原子",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "kernel登记后崩溃同IDs恢复且不提前调用模型",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q08.py::test_q08_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N08/",
+    "assets": [
+      "implementation/INTERFACES.md",
+      "sql/execution_additive.sql"
+    ]
+  },
+  {
+    "id": "N09",
+    "qualified_id": "case:N09",
+    "review_issue": "Q09",
+    "given": "旧请求取消未发送+原hold结算回执后新ordinal；已handoff/UNKNOWN不替代",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "与handoff竞争失败必须核对原请求",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q09.py::test_q09_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N09/",
+    "assets": [
+      "ARP-EXEC-1.1.zh-CN.md",
+      "reference/runtime_rules.py"
+    ]
+  },
+  {
+    "id": "N10",
+    "qualified_id": "case:N10",
+    "review_issue": "Q10",
+    "given": "原协议组锚点/闭组，N按完整历史Turn集合，不逐组相加",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "旧Turn中间组被移除不计1；早anchor仍保留",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q10.py::test_q10_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N10/",
+    "assets": [
+      "implementation/CONTEXT-SEARCH.md",
+      "reference/runtime_rules.py"
+    ]
+  },
+  {
+    "id": "N11",
+    "qualified_id": "case:N11",
+    "review_issue": "Q11",
+    "given": "Journal源不可变，view/chunker/model新index generation；固定upper_commit快照",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "同span跨gen可共存；同closedgroup不同sourcehash拒绝",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q11.py::test_q11_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N11/",
+    "assets": [
+      "sql/session_partition.sql",
+      "implementation/JOBS-LIFECYCLE.md"
+    ]
+  },
+  {
+    "id": "N12",
+    "qualified_id": "case:N12",
+    "review_issue": "Q12",
+    "given": "全snapshot分批扫描、固定词面+RRF、短中文fallback、稳健f32归一化",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "1e308非零finite；PARTIAL无全局排名；追加不混快照",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q12.py::test_q12_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N12/",
+    "assets": [
+      "implementation/CONTEXT-SEARCH.md",
+      "reference/runtime_rules.py"
+    ]
+  },
+  {
+    "id": "N13",
+    "qualified_id": "case:N13",
+    "review_issue": "Q13",
+    "given": "INDEX/PURGE/BIND_IMPORT三种严格job；SUMMARY不启用；原调用身份恢复",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "lease过期只重领协调；index成功ACK前退出可幂等继续",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q13.py::test_q13_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N13/",
+    "assets": [
+      "implementation/JOBS-LIFECYCLE.md",
+      "contracts/runtime-plane.schema.json"
+    ]
+  },
+  {
+    "id": "N14",
+    "qualified_id": "case:N14",
+    "review_issue": "Q14",
+    "given": "close drain与destroy不同；七集合disposal；固定无环锁序",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "drain允许已有Turn结束；destroy不需新LLM结束；busy保留",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q14.py::test_q14_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N14/",
+    "assets": [
+      "implementation/JOBS-LIFECYCLE.md"
+    ]
+  },
+  {
+    "id": "N15",
+    "qualified_id": "case:N15",
+    "review_issue": "Q15",
+    "given": "原Host目录唯一realm owner，多pool挂载；ProviderDefinition与priority明确",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "health正常刷新不全局失效；撤权阻断相应新调用",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q15.py::test_q15_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N15/",
+    "assets": [
+      "ARP-EXEC-1.1.zh-CN.md",
+      "implementation/integration-map.json"
+    ]
+  },
+  {
+    "id": "N16",
+    "qualified_id": "case:N16",
+    "review_issue": "Q16",
+    "given": "safe import/quarantine/unresolved lock/trial/eval/admit完整，原runner执行",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "旧页面已安装仍可管理但未获准不可调用；依赖diamond冲突",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q16.py::test_q16_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N16/",
+    "assets": [
+      "ARP-EXEC-1.1.zh-CN.md",
+      "implementation/INTERFACES.md"
+    ]
+  },
+  {
+    "id": "N17",
+    "qualified_id": "case:N17",
+    "review_issue": "Q17",
+    "given": "管理/模型summary+受权details分页，完整包不塞进单项64KiB",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "800文件可分页，模型不披露credentialref/endpoint",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q17.py::test_q17_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N17/",
+    "assets": [
+      "implementation/HOST-DTOS.md",
+      "contracts/runtime-plane.schema.json"
+    ]
+  },
+  {
+    "id": "N18",
+    "qualified_id": "case:N18",
+    "review_issue": "Q18",
+    "given": "统一ErrorCode目录+严格事件body+原eventseq来源，不再任意字符串码",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "未请求/空/部分/不可用组合可表达；未知错误不透传",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q18.py::test_q18_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N18/",
+    "assets": [
+      "contracts/error-catalogue.json",
+      "contracts/event-catalogue.json"
+    ]
+  },
+  {
+    "id": "N19",
+    "qualified_id": "case:N19",
+    "review_issue": "Q19",
+    "given": "exec和partition独立迁移；所有连接FK/recursive triggers；精确retention/原roottransfer",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "不占用TG25作为exec号；OR REPLACE被拒；正式根不依赖temp不阻删",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q19.py::test_q19_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N19/",
+    "assets": [
+      "sql/MIGRATION-CONTRACT.md",
+      "sql/execution_additive.sql"
+    ]
+  },
+  {
+    "id": "N20",
+    "qualified_id": "case:N20",
+    "review_issue": "Q20",
+    "given": "保留60+新增20；MU10/BW05纠正；主体优先、平台/实际资源依赖显式",
+    "when": "通过实际原生production入口和真实Store/UOW/mapper执行对应正常与负向组合",
+    "then": "未来测试未运行不阻纯编码；没有原生/模型证据不填完成",
+    "target_nodeid": "tests/agent_runtime_plane/test_revision_q20.py::test_q20_contract_closure",
+    "actual_nodeids": [],
+    "status": "PENDING_SDK_EXECUTION",
+    "real_components": [
+      "original native Runtime/UOW/ledger",
+      "target producer/resolver/host seam",
+      "actual schema migration in isolated full candidate DB"
+    ],
+    "allowed_stubs": [
+      "model transport only for deterministic fault tests",
+      "controlled external service fixture; not authorization/Commit/tokenizer coverage proof"
+    ],
+    "evidence_path": ".local-test-evidence/<date>/agent-runtime/<run-id>/N20/",
+    "assets": [
+      "implementation/TEST-PLAN.md",
+      "implementation/BODY-WIRED.md"
+    ]
+  }
+]

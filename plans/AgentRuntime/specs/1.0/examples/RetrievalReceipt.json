@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "session_id": "example",
+  "generation": 1,
+  "query_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "journal_highwater": 1,
+  "index_snapshot_id": "example",
+  "embedding_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "searched_closed_groups": 1,
+  "indexed_closed_groups": 1,
+  "status": "COMPLETE",
+  "degradations": [],
+  "returned_items": [],
+  "excluded_group_ids": [],
+  "elapsed_ms": 1,
+  "policy_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  }
+}

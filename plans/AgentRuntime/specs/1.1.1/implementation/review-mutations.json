@@ -1,0 +1,49 @@
+[
+  {
+    "id": "RV-MU1",
+    "issue": "R1",
+    "mutation": "去掉destroy latch/rebuild拒绝",
+    "must_fail_cases": [
+      "case:RV_R1"
+    ],
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "RV-MU2",
+    "issue": "R2",
+    "mutation": "去掉receipt.status与coverage/phase联动",
+    "must_fail_cases": [
+      "case:RV_R2"
+    ],
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "RV-MU3",
+    "issue": "R3",
+    "mutation": "自动recall改取latest或重启换query callkey",
+    "must_fail_cases": [
+      "case:RV_R3A",
+      "case:RV_R3B",
+      "case:RV_R3C"
+    ],
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "RV-MU4",
+    "issue": "R4",
+    "mutation": "tie只按chunk_id",
+    "must_fail_cases": [
+      "case:RV_R4"
+    ],
+    "status": "PENDING_SDK_EXECUTION"
+  },
+  {
+    "id": "RV-MU5",
+    "issue": "R5",
+    "mutation": "settings接受超出运行硬上限",
+    "must_fail_cases": [
+      "case:RV_R5"
+    ],
+    "status": "PENDING_SDK_EXECUTION"
+  }
+]

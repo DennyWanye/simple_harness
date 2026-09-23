@@ -1,0 +1,2642 @@
+[
+  {
+    "contract": "Pin",
+    "field": "kind",
+    "producer": "RuntimeRefResolver.export_exact_pin",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "a0e973b6817aaa8be78f055fcaff73c9a81221cd1604240204fb5ccef71e34e1",
+    "schema_pointer": "/$defs/Pin/properties/kind"
+  },
+  {
+    "contract": "Pin",
+    "field": "id",
+    "producer": "RuntimeRefResolver.export_exact_pin",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Pin/properties/id"
+  },
+  {
+    "contract": "Pin",
+    "field": "revision",
+    "producer": "RuntimeRefResolver.export_exact_pin",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/Pin/properties/revision"
+  },
+  {
+    "contract": "Pin",
+    "field": "content_hash",
+    "producer": "RuntimeRefResolver.export_exact_pin",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/Pin/properties/content_hash"
+  },
+  {
+    "contract": "Policy",
+    "field": "schema_version",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/Policy/properties/schema_version"
+  },
+  {
+    "contract": "Policy",
+    "field": "policy_id",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Policy/properties/policy_id"
+  },
+  {
+    "contract": "Policy",
+    "field": "max_context_tokens",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Policy/properties/max_context_tokens"
+  },
+  {
+    "contract": "Policy",
+    "field": "output_reserve_tokens",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Policy/properties/output_reserve_tokens"
+  },
+  {
+    "contract": "Policy",
+    "field": "safety_reserve_tokens",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/Policy/properties/safety_reserve_tokens"
+  },
+  {
+    "contract": "Policy",
+    "field": "tool_headroom_tokens",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/Policy/properties/tool_headroom_tokens"
+  },
+  {
+    "contract": "Policy",
+    "field": "recent_min_tokens",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/Policy/properties/recent_min_tokens"
+  },
+  {
+    "contract": "Policy",
+    "field": "recall_max_tokens",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/Policy/properties/recall_max_tokens"
+  },
+  {
+    "contract": "Policy",
+    "field": "fixed_soft_max_tokens",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Policy/properties/fixed_soft_max_tokens"
+  },
+  {
+    "contract": "Policy",
+    "field": "section_soft_caps",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "236b430f83a60b70a09f77f9c860e9cadf8d4e74aba3d184af7ab9f35c31d872",
+    "schema_pointer": "/$defs/Policy/properties/section_soft_caps"
+  },
+  {
+    "contract": "Policy",
+    "field": "max_candidates",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3c6cdf1b15483b51c760337fb07dff60251fa9fef467754cd0bfa3fc1377a012",
+    "schema_pointer": "/$defs/Policy/properties/max_candidates"
+  },
+  {
+    "contract": "Policy",
+    "field": "max_recall_items",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "61a8418cef138557b714a10b1b064b05a386ec4f14fd9a76a28ff86382314307",
+    "schema_pointer": "/$defs/Policy/properties/max_recall_items"
+  },
+  {
+    "contract": "Policy",
+    "field": "max_group_count",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8289f552d4d24e4308255bc8207baf3fc98964f94f86acf833a0ff8d94de3342",
+    "schema_pointer": "/$defs/Policy/properties/max_group_count"
+  },
+  {
+    "contract": "Policy",
+    "field": "max_manifest_bytes",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Policy/properties/max_manifest_bytes"
+  },
+  {
+    "contract": "Policy",
+    "field": "max_request_bytes",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Policy/properties/max_request_bytes"
+  },
+  {
+    "contract": "Policy",
+    "field": "embedding_chunk_tokens",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Policy/properties/embedding_chunk_tokens"
+  },
+  {
+    "contract": "Policy",
+    "field": "embedding_overlap_tokens",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/Policy/properties/embedding_overlap_tokens"
+  },
+  {
+    "contract": "Policy",
+    "field": "max_session_disk_bytes",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Policy/properties/max_session_disk_bytes"
+  },
+  {
+    "contract": "Policy",
+    "field": "max_retrieval_ms",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Policy/properties/max_retrieval_ms"
+  },
+  {
+    "contract": "Policy",
+    "field": "index_mode",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "b139723aa51c17ee7d646a14795c9ab8495b130db0cf7f471703740d71a5c002",
+    "schema_pointer": "/$defs/Policy/properties/index_mode"
+  },
+  {
+    "contract": "Policy",
+    "field": "embedding_required_for_activation",
+    "producer": "Authenticated RuntimePlanePolicyCommands.approve",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/Policy/properties/embedding_required_for_activation"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "schema_version",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/schema_version"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "profile_id",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/profile_id"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "profile_revision",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/profile_revision"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "context_policy",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "cdbf19eecd2d756619557443f960afa62498158d903aee9b2be7eeee742f614b",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/context_policy"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "owner_mode",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "a2c654d519f6398b16c4f19320d703956efba24eebdc0b7d77913d5433309053",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/owner_mode"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "retention_policy_ref",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/retention_policy_ref"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "capability_registry_ref",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/capability_registry_ref"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "activation_receipt_ref",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/activation_receipt_ref"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "default_skill_policy_ref",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/default_skill_policy_ref"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "parallel_model_per_agent",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/parallel_model_per_agent"
+  },
+  {
+    "contract": "RuntimeProfile",
+    "field": "allow_lexical_degradation",
+    "producer": "RuntimePlaneService.bind_agent_profile_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/RuntimeProfile/properties/allow_lexical_degradation"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "schema_version",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/ModelLimits/properties/schema_version"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "provider_ref",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ModelLimits/properties/provider_ref"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "model_ref",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ModelLimits/properties/model_ref"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "input_limit_tokens",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/ModelLimits/properties/input_limit_tokens"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "combined_limit_tokens",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "bbac11b1da2863d716eb4dd79be9f3ef76fff6606d52ecde3068a152f87b9cd0",
+    "schema_pointer": "/$defs/ModelLimits/properties/combined_limit_tokens"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "max_output_tokens",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/ModelLimits/properties/max_output_tokens"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "supports_tools",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/ModelLimits/properties/supports_tools"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "supports_images",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/ModelLimits/properties/supports_images"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "counter_id",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ModelLimits/properties/counter_id"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "counter_revision",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/ModelLimits/properties/counter_revision"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "count_mode",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "a01d8b46ce0d35f1f1bb4f563f0debded15ba959ad54abf2967fbf3d03b5daa0",
+    "schema_pointer": "/$defs/ModelLimits/properties/count_mode"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "renderer_hash",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/ModelLimits/properties/renderer_hash"
+  },
+  {
+    "contract": "ModelLimits",
+    "field": "capability_receipt_ref",
+    "producer": "ActualProviderAdapter.describe_and_measure",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ModelLimits/properties/capability_receipt_ref"
+  },
+  {
+    "contract": "Section",
+    "field": "section",
+    "producer": "ContextSourceReader.read_snapshot (R06-R10 per section)",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "a122845a24a3412bbc3a8be6e56338eb1bea9f35bcec78b27e16a0224b3eb90a",
+    "schema_pointer": "/$defs/Section/properties/section"
+  },
+  {
+    "contract": "Section",
+    "field": "block_id",
+    "producer": "ContextSourceReader.read_snapshot (R06-R10 per section)",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Section/properties/block_id"
+  },
+  {
+    "contract": "Section",
+    "field": "source_refs",
+    "producer": "ContextSourceReader.read_snapshot (R06-R10 per section)",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/Section/properties/source_refs"
+  },
+  {
+    "contract": "Section",
+    "field": "view_ref",
+    "producer": "ContextSourceReader.read_snapshot (R06-R10 per section)",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Section/properties/view_ref"
+  },
+  {
+    "contract": "Section",
+    "field": "trust",
+    "producer": "ContextSourceReader.read_snapshot (R06-R10 per section)",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "269bfed051802019a8aac349220815e824d47f5b1ef3c9e653b7a3b8b1bc636a",
+    "schema_pointer": "/$defs/Section/properties/trust"
+  },
+  {
+    "contract": "Section",
+    "field": "required",
+    "producer": "ContextSourceReader.read_snapshot (R06-R10 per section)",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/Section/properties/required"
+  },
+  {
+    "contract": "Section",
+    "field": "budget_charge",
+    "producer": "ContextSourceReader.read_snapshot (R06-R10 per section)",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/Section/properties/budget_charge"
+  },
+  {
+    "contract": "Section",
+    "field": "validity_witness_ref",
+    "producer": "ContextSourceReader.read_snapshot (R06-R10 per section)",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "91f0ffa83fe70ab4a79beaa7d6d971cca244bed9e564852cefb390c060f59ede",
+    "schema_pointer": "/$defs/Section/properties/validity_witness_ref"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "session_id",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/JournalGroup/properties/session_id"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "group_id",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/JournalGroup/properties/group_id"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "seq_from",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/JournalGroup/properties/seq_from"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "seq_to",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/JournalGroup/properties/seq_to"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "source_hash",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/JournalGroup/properties/source_hash"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "closed",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/JournalGroup/properties/closed"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "record_ids",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8ec42554be9a69c27270ae955b8b5416d17c51b60f7f61624d8349e0c788934b",
+    "schema_pointer": "/$defs/JournalGroup/properties/record_ids"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "rendered_view_ref",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/JournalGroup/properties/rendered_view_ref"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "budget_charge",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/JournalGroup/properties/budget_charge"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "complete_input_turns",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/JournalGroup/properties/complete_input_turns"
+  },
+  {
+    "contract": "JournalGroup",
+    "field": "turn_id",
+    "producer": "OriginalProtocolGroups.read_agent_journal",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/JournalGroup/properties/turn_id"
+  },
+  {
+    "contract": "RecallItem",
+    "field": "chunk_id",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/RecallItem/properties/chunk_id"
+  },
+  {
+    "contract": "RecallItem",
+    "field": "source_group_ids",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "06b8915937b75f468e0dc2efe6f7bec296b566c7ce556ab755d325fe8c74f04a",
+    "schema_pointer": "/$defs/RecallItem/properties/source_group_ids"
+  },
+  {
+    "contract": "RecallItem",
+    "field": "source_record_refs",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/RecallItem/properties/source_record_refs"
+  },
+  {
+    "contract": "RecallItem",
+    "field": "view_ref",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/RecallItem/properties/view_ref"
+  },
+  {
+    "contract": "RecallItem",
+    "field": "budget_charge",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/RecallItem/properties/budget_charge"
+  },
+  {
+    "contract": "RecallItem",
+    "field": "rank_ordinal",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/RecallItem/properties/rank_ordinal"
+  },
+  {
+    "contract": "RecallItem",
+    "field": "provenance",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "37212825cd5794423b1b8fd4f31961182f4888e46febf8e54070c5c73d91d3ff",
+    "schema_pointer": "/$defs/RecallItem/properties/provenance"
+  },
+  {
+    "contract": "RecallItem",
+    "field": "source_epoch",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/RecallItem/properties/source_epoch"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "schema_version",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/schema_version"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "session_id",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/session_id"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "generation",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/generation"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "query_hash",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/query_hash"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "journal_highwater",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/journal_highwater"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "index_snapshot_id",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/index_snapshot_id"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "embedding_ref",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "91f0ffa83fe70ab4a79beaa7d6d971cca244bed9e564852cefb390c060f59ede",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/embedding_ref"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "searched_closed_groups",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/searched_closed_groups"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "indexed_closed_groups",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/indexed_closed_groups"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "status",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "bbcf0b4feceff4bce3a847936519e613497cee9a2c66929582ad531c4a0f7761",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/status"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "degradations",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "fdc43c9b877c5aae17b5137b67c77778e6d24761d79915b2dd690c1e5c7eb6e9",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/degradations"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "returned_items",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "d9d4c3cbf610c8c810d338a05a36fad0df758fd62f12d1e556aa492ecd545832",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/returned_items"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "excluded_group_ids",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "05ebe5199b6656991b8a3c3e0e9f2e640d0f96d185bec102ba1b3e4f9172dea1",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/excluded_group_ids"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "elapsed_ms",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/elapsed_ms"
+  },
+  {
+    "contract": "RetrievalReceipt",
+    "field": "policy_ref",
+    "producer": "SessionRetriever.search",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/RetrievalReceipt/properties/policy_ref"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "schema_version",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/ContextManifest/properties/schema_version"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "context_id",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ContextManifest/properties/context_id"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "session_id",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ContextManifest/properties/session_id"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "agent_id",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ContextManifest/properties/agent_id"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "turn_id",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ContextManifest/properties/turn_id"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "provider_request_ordinal",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextManifest/properties/provider_request_ordinal"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "session_generation",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/ContextManifest/properties/session_generation"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "profile_ref",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ContextManifest/properties/profile_ref"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "model_limits",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "01b9321bc2ec6c3fc5de7f66303aa007944ce6aaf46664d913e41434bccdcd9f",
+    "schema_pointer": "/$defs/ContextManifest/properties/model_limits"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "owner_contract_ref",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ContextManifest/properties/owner_contract_ref"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "journal_highwater",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextManifest/properties/journal_highwater"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "sections",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "432112b16d99c79f4646711090bb022937255a3a2cf63da2507f190ccee1c400",
+    "schema_pointer": "/$defs/ContextManifest/properties/sections"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "recent_group_ids",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "05ebe5199b6656991b8a3c3e0e9f2e640d0f96d185bec102ba1b3e4f9172dea1",
+    "schema_pointer": "/$defs/ContextManifest/properties/recent_group_ids"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "recent_complete_turn_count",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextManifest/properties/recent_complete_turn_count"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "recalled_chunk_ids",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "06b8915937b75f468e0dc2efe6f7bec296b566c7ce556ab755d325fe8c74f04a",
+    "schema_pointer": "/$defs/ContextManifest/properties/recalled_chunk_ids"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "retrieval_receipt_ref",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "91f0ffa83fe70ab4a79beaa7d6d971cca244bed9e564852cefb390c060f59ede",
+    "schema_pointer": "/$defs/ContextManifest/properties/retrieval_receipt_ref"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "tool_snapshot_ref",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ContextManifest/properties/tool_snapshot_ref"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "skill_refs",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/ContextManifest/properties/skill_refs"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "planned_request_hash",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/ContextManifest/properties/planned_request_hash"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "input_token_charge",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextManifest/properties/input_token_charge"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "effective_input_budget",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextManifest/properties/effective_input_budget"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "reserved_output_tokens",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/ContextManifest/properties/reserved_output_tokens"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "safety_reserve_tokens",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextManifest/properties/safety_reserve_tokens"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "tool_headroom_tokens",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextManifest/properties/tool_headroom_tokens"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "counter_mode",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "a01d8b46ce0d35f1f1bb4f563f0debded15ba959ad54abf2967fbf3d03b5daa0",
+    "schema_pointer": "/$defs/ContextManifest/properties/counter_mode"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "registry_epoch",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextManifest/properties/registry_epoch"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "authority_refs",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/ContextManifest/properties/authority_refs"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "source_read_set_ref",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ContextManifest/properties/source_read_set_ref"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "creation_root_id",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ContextManifest/properties/creation_root_id"
+  },
+  {
+    "contract": "ContextManifest",
+    "field": "effective_context_policy_ref",
+    "producer": "ContextComposerV2.compose + original ProviderRequest prepare UOW",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ContextManifest/properties/effective_context_policy_ref"
+  },
+  {
+    "contract": "Capability",
+    "field": "schema_version",
+    "producer": "CapabilityRegistry.register_definition",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/Capability/properties/schema_version"
+  },
+  {
+    "contract": "Capability",
+    "field": "capability_id",
+    "producer": "CapabilityRegistry.register_definition",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Capability/properties/capability_id"
+  },
+  {
+    "contract": "Capability",
+    "field": "version",
+    "producer": "CapabilityRegistry.register_definition",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Capability/properties/version"
+  },
+  {
+    "contract": "Capability",
+    "field": "input_schema_ref",
+    "producer": "CapabilityRegistry.register_definition",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Capability/properties/input_schema_ref"
+  },
+  {
+    "contract": "Capability",
+    "field": "output_schema_ref",
+    "producer": "CapabilityRegistry.register_definition",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Capability/properties/output_schema_ref"
+  },
+  {
+    "contract": "Capability",
+    "field": "description",
+    "producer": "CapabilityRegistry.register_definition",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "f6e77cc3d7f13dfe2812301d7eb1ea0abd5883655937b211f8b21e1d3cc492ec",
+    "schema_pointer": "/$defs/Capability/properties/description"
+  },
+  {
+    "contract": "Capability",
+    "field": "required_semantics",
+    "producer": "CapabilityRegistry.register_definition",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8e5c97196a8aeab4d0de3efdd6f9ae98ed9eb1691126a063f3013aebe3b4b138",
+    "schema_pointer": "/$defs/Capability/properties/required_semantics"
+  },
+  {
+    "contract": "Capability",
+    "field": "verification_policy_ref",
+    "producer": "CapabilityRegistry.register_definition",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Capability/properties/verification_policy_ref"
+  },
+  {
+    "contract": "Capability",
+    "field": "provider_refs",
+    "producer": "CapabilityRegistry.register_definition",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/Capability/properties/provider_refs"
+  },
+  {
+    "contract": "Deployment",
+    "field": "schema_version",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/Deployment/properties/schema_version"
+  },
+  {
+    "contract": "Deployment",
+    "field": "provider_ref",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Deployment/properties/provider_ref"
+  },
+  {
+    "contract": "Deployment",
+    "field": "implementation_digest",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/Deployment/properties/implementation_digest"
+  },
+  {
+    "contract": "Deployment",
+    "field": "endpoint_namespace",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Deployment/properties/endpoint_namespace"
+  },
+  {
+    "contract": "Deployment",
+    "field": "credential_ref_name",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8b88a9e6ad3b46c5e5cc91f3ab29817118f458caca109b2d28e98b0140f05119",
+    "schema_pointer": "/$defs/Deployment/properties/credential_ref_name"
+  },
+  {
+    "contract": "Deployment",
+    "field": "health",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "f23da10d0d79d10073ac66549fce27c4f4178cecb5761991e737326cb1ac1f69",
+    "schema_pointer": "/$defs/Deployment/properties/health"
+  },
+  {
+    "contract": "Deployment",
+    "field": "registered",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/Deployment/properties/registered"
+  },
+  {
+    "contract": "Deployment",
+    "field": "configured",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/Deployment/properties/configured"
+  },
+  {
+    "contract": "Deployment",
+    "field": "compatible",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/Deployment/properties/compatible"
+  },
+  {
+    "contract": "Deployment",
+    "field": "supported_capabilities",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/Deployment/properties/supported_capabilities"
+  },
+  {
+    "contract": "Deployment",
+    "field": "supported_effect_classes",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7a6c2242396bf458ff554db67f095f477c84badf39fa975aa71d77911b916eea",
+    "schema_pointer": "/$defs/Deployment/properties/supported_effect_classes"
+  },
+  {
+    "contract": "Deployment",
+    "field": "platforms",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "fdc43c9b877c5aae17b5137b67c77778e6d24761d79915b2dd690c1e5c7eb6e9",
+    "schema_pointer": "/$defs/Deployment/properties/platforms"
+  },
+  {
+    "contract": "Deployment",
+    "field": "observed_at_ms",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/Deployment/properties/observed_at_ms"
+  },
+  {
+    "contract": "Deployment",
+    "field": "expires_at_ms",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/Deployment/properties/expires_at_ms"
+  },
+  {
+    "contract": "Deployment",
+    "field": "runtime_receipt_ref",
+    "producer": "ProviderRegistry.bind_deployment + actual probe",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Deployment/properties/runtime_receipt_ref"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "schema_version",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/schema_version"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "binding_id",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/binding_id"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "session_id",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/session_id"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "owner_contract_ref",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/owner_contract_ref"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "requirement_key",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/requirement_key"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "capability_ref",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/capability_ref"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "provider_ref",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/provider_ref"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "deployment_ref",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/deployment_ref"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "input_manifest_ref",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/input_manifest_ref"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "authority_refs",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/authority_refs"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "registry_epoch",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/registry_epoch"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "invocation_mode",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "c3cf21aaaf61e1ba85cb4ab979062cb8a4dcaa05ec5efecade200d3f8fc4755a",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/invocation_mode"
+  },
+  {
+    "contract": "CapabilityBinding",
+    "field": "verification_policy_ref",
+    "producer": "CapabilityResolver.resolve_requirement",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/CapabilityBinding/properties/verification_policy_ref"
+  },
+  {
+    "contract": "Tool",
+    "field": "schema_version",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/Tool/properties/schema_version"
+  },
+  {
+    "contract": "Tool",
+    "field": "tool_id",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Tool/properties/tool_id"
+  },
+  {
+    "contract": "Tool",
+    "field": "version",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Tool/properties/version"
+  },
+  {
+    "contract": "Tool",
+    "field": "description",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "f6e77cc3d7f13dfe2812301d7eb1ea0abd5883655937b211f8b21e1d3cc492ec",
+    "schema_pointer": "/$defs/Tool/properties/description"
+  },
+  {
+    "contract": "Tool",
+    "field": "input_schema_ref",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Tool/properties/input_schema_ref"
+  },
+  {
+    "contract": "Tool",
+    "field": "output_schema_ref",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Tool/properties/output_schema_ref"
+  },
+  {
+    "contract": "Tool",
+    "field": "provider_ref",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Tool/properties/provider_ref"
+  },
+  {
+    "contract": "Tool",
+    "field": "effect_class",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "b8483f7dc29f962fc82bda9f630ec4e26dfd8aef0b41195f56ef9947c895da74",
+    "schema_pointer": "/$defs/Tool/properties/effect_class"
+  },
+  {
+    "contract": "Tool",
+    "field": "required_capabilities",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/Tool/properties/required_capabilities"
+  },
+  {
+    "contract": "Tool",
+    "field": "scope_policy_ref",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Tool/properties/scope_policy_ref"
+  },
+  {
+    "contract": "Tool",
+    "field": "timeout_policy_ref",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Tool/properties/timeout_policy_ref"
+  },
+  {
+    "contract": "Tool",
+    "field": "retry_policy_ref",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Tool/properties/retry_policy_ref"
+  },
+  {
+    "contract": "Tool",
+    "field": "result_bytes_limit",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Tool/properties/result_bytes_limit"
+  },
+  {
+    "contract": "Tool",
+    "field": "inline_result_tokens",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Tool/properties/inline_result_tokens"
+  },
+  {
+    "contract": "Tool",
+    "field": "implementation_digest",
+    "producer": "OriginalToolRegistry.install_verified_adapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/Tool/properties/implementation_digest"
+  },
+  {
+    "contract": "ToolSnapshot",
+    "field": "schema_version",
+    "producer": "ToolExposureService.prepare",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/ToolSnapshot/properties/schema_version"
+  },
+  {
+    "contract": "ToolSnapshot",
+    "field": "snapshot_id",
+    "producer": "ToolExposureService.prepare",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ToolSnapshot/properties/snapshot_id"
+  },
+  {
+    "contract": "ToolSnapshot",
+    "field": "session_id",
+    "producer": "ToolExposureService.prepare",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ToolSnapshot/properties/session_id"
+  },
+  {
+    "contract": "ToolSnapshot",
+    "field": "generation",
+    "producer": "ToolExposureService.prepare",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/ToolSnapshot/properties/generation"
+  },
+  {
+    "contract": "ToolSnapshot",
+    "field": "registry_epoch",
+    "producer": "ToolExposureService.prepare",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ToolSnapshot/properties/registry_epoch"
+  },
+  {
+    "contract": "ToolSnapshot",
+    "field": "tools",
+    "producer": "ToolExposureService.prepare",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "5daba168a8fd6355e00f3e69dc38608033581a6220f876207ea9de5df419df30",
+    "schema_pointer": "/$defs/ToolSnapshot/properties/tools"
+  },
+  {
+    "contract": "ToolSnapshot",
+    "field": "catalogue_hash",
+    "producer": "ToolExposureService.prepare",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/ToolSnapshot/properties/catalogue_hash"
+  },
+  {
+    "contract": "SkillFile",
+    "field": "relative_path",
+    "producer": "SkillRegistryCommands.install actual unpack/hash",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SkillFile/properties/relative_path"
+  },
+  {
+    "contract": "SkillFile",
+    "field": "size_bytes",
+    "producer": "SkillRegistryCommands.install actual unpack/hash",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/SkillFile/properties/size_bytes"
+  },
+  {
+    "contract": "SkillFile",
+    "field": "sha256",
+    "producer": "SkillRegistryCommands.install actual unpack/hash",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/SkillFile/properties/sha256"
+  },
+  {
+    "contract": "SkillFile",
+    "field": "role",
+    "producer": "SkillRegistryCommands.install actual unpack/hash",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "ea90a489428da95612575239a6f5f5f97d324345aedb413a2eaddb3d74178bb4",
+    "schema_pointer": "/$defs/SkillFile/properties/role"
+  },
+  {
+    "contract": "Skill",
+    "field": "schema_version",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/Skill/properties/schema_version"
+  },
+  {
+    "contract": "Skill",
+    "field": "skill_id",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Skill/properties/skill_id"
+  },
+  {
+    "contract": "Skill",
+    "field": "version",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/Skill/properties/version"
+  },
+  {
+    "contract": "Skill",
+    "field": "name",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Skill/properties/name"
+  },
+  {
+    "contract": "Skill",
+    "field": "description",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "f6e77cc3d7f13dfe2812301d7eb1ea0abd5883655937b211f8b21e1d3cc492ec",
+    "schema_pointer": "/$defs/Skill/properties/description"
+  },
+  {
+    "contract": "Skill",
+    "field": "files",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "1ae6f585838c05310e2f60156171039984a03e6eae4a5773dc732ec072487656",
+    "schema_pointer": "/$defs/Skill/properties/files"
+  },
+  {
+    "contract": "Skill",
+    "field": "instructions_path",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Skill/properties/instructions_path"
+  },
+  {
+    "contract": "Skill",
+    "field": "input_schema_ref",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Skill/properties/input_schema_ref"
+  },
+  {
+    "contract": "Skill",
+    "field": "output_schema_ref",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Skill/properties/output_schema_ref"
+  },
+  {
+    "contract": "Skill",
+    "field": "capability_ref",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Skill/properties/capability_ref"
+  },
+  {
+    "contract": "Skill",
+    "field": "required_tool_refs",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/Skill/properties/required_tool_refs"
+  },
+  {
+    "contract": "Skill",
+    "field": "required_skill_refs",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "36ddb797e4a158ee8262afe323c4548b87b363fdf6fd7622d27cfb2e248c0af3",
+    "schema_pointer": "/$defs/Skill/properties/required_skill_refs"
+  },
+  {
+    "contract": "Skill",
+    "field": "implementation",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "cdae51e4d4101efae530096c62ba7ef17228f6e0e5af9daf2410838ef3b2fffd",
+    "schema_pointer": "/$defs/Skill/properties/implementation"
+  },
+  {
+    "contract": "Skill",
+    "field": "requested_permission_policy_ref",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Skill/properties/requested_permission_policy_ref"
+  },
+  {
+    "contract": "Skill",
+    "field": "verification_policy_ref",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/Skill/properties/verification_policy_ref"
+  },
+  {
+    "contract": "Skill",
+    "field": "origin_refs",
+    "producer": "SkillRegistryCommands.install normalized candidate",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/Skill/properties/origin_refs"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "schema_version",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/SkillUse/properties/schema_version"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "use_id",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SkillUse/properties/use_id"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "session_id",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SkillUse/properties/session_id"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "turn_id",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SkillUse/properties/turn_id"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "skill_ref",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillUse/properties/skill_ref"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "bundle_digest",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/SkillUse/properties/bundle_digest"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "owner_contract_ref",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillUse/properties/owner_contract_ref"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "input_manifest_ref",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillUse/properties/input_manifest_ref"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "dependency_lock_refs",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "26d919f7388bfe57cd51e4bcc0d59073fc2277e6dea4544477bdad3dda733152",
+    "schema_pointer": "/$defs/SkillUse/properties/dependency_lock_refs"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "tool_snapshot_ref",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillUse/properties/tool_snapshot_ref"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "evaluation_ref",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillUse/properties/evaluation_ref"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "authority_refs",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "36ddb797e4a158ee8262afe323c4548b87b363fdf6fd7622d27cfb2e248c0af3",
+    "schema_pointer": "/$defs/SkillUse/properties/authority_refs"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "mode",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2e3897736a4c56843e56d62f2b4a548bdb14093170dff871c7f1c0ff2b30ba81",
+    "schema_pointer": "/$defs/SkillUse/properties/mode"
+  },
+  {
+    "contract": "SkillUse",
+    "field": "reservation_fact_ref",
+    "producer": "SkillUseService.bind_original_execution_locked",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "91f0ffa83fe70ab4a79beaa7d6d971cca244bed9e564852cefb390c060f59ede",
+    "schema_pointer": "/$defs/SkillUse/properties/reservation_fact_ref"
+  },
+  {
+    "contract": "SessionDelete",
+    "field": "schema_version",
+    "producer": "Authenticated RuntimePlaneApi.destroy",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/SessionDelete/properties/schema_version"
+  },
+  {
+    "contract": "SessionDelete",
+    "field": "session_id",
+    "producer": "Authenticated RuntimePlaneApi.destroy",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SessionDelete/properties/session_id"
+  },
+  {
+    "contract": "SessionDelete",
+    "field": "expected_generation",
+    "producer": "Authenticated RuntimePlaneApi.destroy",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/SessionDelete/properties/expected_generation"
+  },
+  {
+    "contract": "SessionDelete",
+    "field": "command_id",
+    "producer": "Authenticated RuntimePlaneApi.destroy",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SessionDelete/properties/command_id"
+  },
+  {
+    "contract": "SessionDelete",
+    "field": "reason",
+    "producer": "Authenticated RuntimePlaneApi.destroy",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "60a498dda7aac63a908548ea6cfa0695490351ebdedc9fa5e30221fa22105b47",
+    "schema_pointer": "/$defs/SessionDelete/properties/reason"
+  },
+  {
+    "contract": "SessionDelete",
+    "field": "retention_policy_ref",
+    "producer": "Authenticated RuntimePlaneApi.destroy",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SessionDelete/properties/retention_policy_ref"
+  },
+  {
+    "contract": "SessionView",
+    "field": "schema_version",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/SessionView/properties/schema_version"
+  },
+  {
+    "contract": "SessionView",
+    "field": "session_id",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SessionView/properties/session_id"
+  },
+  {
+    "contract": "SessionView",
+    "field": "agent_id",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SessionView/properties/agent_id"
+  },
+  {
+    "contract": "SessionView",
+    "field": "root_id",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SessionView/properties/root_id"
+  },
+  {
+    "contract": "SessionView",
+    "field": "generation",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/SessionView/properties/generation"
+  },
+  {
+    "contract": "SessionView",
+    "field": "state",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2e1106d481ec425ce3af3ecc20b51ce5b2e494c7899e77046039d4ca724aa7d4",
+    "schema_pointer": "/$defs/SessionView/properties/state"
+  },
+  {
+    "contract": "SessionView",
+    "field": "journal_seq_from",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/SessionView/properties/journal_seq_from"
+  },
+  {
+    "contract": "SessionView",
+    "field": "sealed_highwater",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "6235849750808e24ffea82ce4e74dc8083f56fc2b41c722cae0b188eb11f353c",
+    "schema_pointer": "/$defs/SessionView/properties/sealed_highwater"
+  },
+  {
+    "contract": "SessionView",
+    "field": "pending_index_groups",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/SessionView/properties/pending_index_groups"
+  },
+  {
+    "contract": "SessionView",
+    "field": "embedding_available",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/SessionView/properties/embedding_available"
+  },
+  {
+    "contract": "SessionView",
+    "field": "deletable",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/SessionView/properties/deletable"
+  },
+  {
+    "contract": "SessionView",
+    "field": "blocking_refs",
+    "producer": "SessionDisposalReader.read_complete + actual session record",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/SessionView/properties/blocking_refs"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "schema_version",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/ToolResultView/properties/schema_version"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "call_ref",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ToolResultView/properties/call_ref"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "tool_ref",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ToolResultView/properties/tool_ref"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "status",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "d75d2ddbce08e97353fdae084ecea2248c1ae16f7ee51ed761f3c8b2674f1fb3",
+    "schema_pointer": "/$defs/ToolResultView/properties/status"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "result_artifact_ref",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "91f0ffa83fe70ab4a79beaa7d6d971cca244bed9e564852cefb390c060f59ede",
+    "schema_pointer": "/$defs/ToolResultView/properties/result_artifact_ref"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "operation_intent_ref",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "91f0ffa83fe70ab4a79beaa7d6d971cca244bed9e564852cefb390c060f59ede",
+    "schema_pointer": "/$defs/ToolResultView/properties/operation_intent_ref"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "inline_text",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "df25b943ad53640b234fc8ec6b7d52f99149bcf5cdebe3c4d3e692e7d95795cc",
+    "schema_pointer": "/$defs/ToolResultView/properties/inline_text"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "representation",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "13dbcb45b54486d731581619ed2b3f3cbd4170c9d91dd1ca63e32e31024f8ee4",
+    "schema_pointer": "/$defs/ToolResultView/properties/representation"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "source_hash",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "5fb35867403dbfd3ed63041d44899ab290163ea012525f9523fce7c86a4c95a8",
+    "schema_pointer": "/$defs/ToolResultView/properties/source_hash"
+  },
+  {
+    "contract": "ToolResultView",
+    "field": "error_code",
+    "producer": "OriginalToolCollector + ToolResultPresenter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8b88a9e6ad3b46c5e5cc91f3ab29817118f458caca109b2d28e98b0140f05119",
+    "schema_pointer": "/$defs/ToolResultView/properties/error_code"
+  },
+  {
+    "contract": "Error",
+    "field": "schema_version",
+    "producer": "RuntimePlaneErrorAdapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/Error/properties/schema_version"
+  },
+  {
+    "contract": "Error",
+    "field": "code",
+    "producer": "RuntimePlaneErrorAdapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Error/properties/code"
+  },
+  {
+    "contract": "Error",
+    "field": "stage",
+    "producer": "RuntimePlaneErrorAdapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/Error/properties/stage"
+  },
+  {
+    "contract": "Error",
+    "field": "retry",
+    "producer": "RuntimePlaneErrorAdapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "530f3c4d3479c9ef2f3ba9a503afc9b2a9d87ec827f76146e7df648a6187dffb",
+    "schema_pointer": "/$defs/Error/properties/retry"
+  },
+  {
+    "contract": "Error",
+    "field": "field_path",
+    "producer": "RuntimePlaneErrorAdapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8b88a9e6ad3b46c5e5cc91f3ab29817118f458caca109b2d28e98b0140f05119",
+    "schema_pointer": "/$defs/Error/properties/field_path"
+  },
+  {
+    "contract": "Error",
+    "field": "message",
+    "producer": "RuntimePlaneErrorAdapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "f6e77cc3d7f13dfe2812301d7eb1ea0abd5883655937b211f8b21e1d3cc492ec",
+    "schema_pointer": "/$defs/Error/properties/message"
+  },
+  {
+    "contract": "Error",
+    "field": "source_refs",
+    "producer": "RuntimePlaneErrorAdapter",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8b8907cab6a570104b1bbb739d9ede8c9b4a2b22abd0f93c6989d197d3bb7a2c",
+    "schema_pointer": "/$defs/Error/properties/source_refs"
+  },
+  {
+    "contract": "HostRequest",
+    "field": "schema_version",
+    "producer": "Authenticated Host dispatcher strict decode",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/HostRequest/properties/schema_version"
+  },
+  {
+    "contract": "HostRequest",
+    "field": "verb",
+    "producer": "Authenticated Host dispatcher strict decode",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "4ebda9de3883ecf88e63366ebb5876f1e7cc6ab0c508789b43eec00cc5ab7e25",
+    "schema_pointer": "/$defs/HostRequest/properties/verb"
+  },
+  {
+    "contract": "HostRequest",
+    "field": "command_id",
+    "producer": "Authenticated Host dispatcher strict decode",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8b88a9e6ad3b46c5e5cc91f3ab29817118f458caca109b2d28e98b0140f05119",
+    "schema_pointer": "/$defs/HostRequest/properties/command_id"
+  },
+  {
+    "contract": "HostRequest",
+    "field": "subject_id",
+    "producer": "Authenticated Host dispatcher strict decode",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/HostRequest/properties/subject_id"
+  },
+  {
+    "contract": "HostRequest",
+    "field": "expected_revision",
+    "producer": "Authenticated Host dispatcher strict decode",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "6235849750808e24ffea82ce4e74dc8083f56fc2b41c722cae0b188eb11f353c",
+    "schema_pointer": "/$defs/HostRequest/properties/expected_revision"
+  },
+  {
+    "contract": "HostRequest",
+    "field": "cursor",
+    "producer": "Authenticated Host dispatcher strict decode",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8b88a9e6ad3b46c5e5cc91f3ab29817118f458caca109b2d28e98b0140f05119",
+    "schema_pointer": "/$defs/HostRequest/properties/cursor"
+  },
+  {
+    "contract": "HostRequest",
+    "field": "limit",
+    "producer": "Authenticated Host dispatcher strict decode",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "e238f277e0a0417952ce019bd53b77a638fadca658bd080cbd5b82e3ecede39f",
+    "schema_pointer": "/$defs/HostRequest/properties/limit"
+  },
+  {
+    "contract": "HostRequest",
+    "field": "payload_ref",
+    "producer": "Authenticated Host dispatcher strict decode",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "91f0ffa83fe70ab4a79beaa7d6d971cca244bed9e564852cefb390c060f59ede",
+    "schema_pointer": "/$defs/HostRequest/properties/payload_ref"
+  },
+  {
+    "contract": "HostResponse",
+    "field": "schema_version",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/HostResponse/properties/schema_version"
+  },
+  {
+    "contract": "HostResponse",
+    "field": "request_verb",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/HostResponse/properties/request_verb"
+  },
+  {
+    "contract": "HostResponse",
+    "field": "subject_id",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/HostResponse/properties/subject_id"
+  },
+  {
+    "contract": "HostResponse",
+    "field": "view_revision",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/HostResponse/properties/view_revision"
+  },
+  {
+    "contract": "HostResponse",
+    "field": "as_of_context_id",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8b88a9e6ad3b46c5e5cc91f3ab29817118f458caca109b2d28e98b0140f05119",
+    "schema_pointer": "/$defs/HostResponse/properties/as_of_context_id"
+  },
+  {
+    "contract": "HostResponse",
+    "field": "items",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "63ae4a03adb871aa9a69e32d6e3370b597425456d6866b2e696122df53904b13",
+    "schema_pointer": "/$defs/HostResponse/properties/items"
+  },
+  {
+    "contract": "HostResponse",
+    "field": "next_cursor",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8b88a9e6ad3b46c5e5cc91f3ab29817118f458caca109b2d28e98b0140f05119",
+    "schema_pointer": "/$defs/HostResponse/properties/next_cursor"
+  },
+  {
+    "contract": "HostResponse",
+    "field": "error",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "e32a52c8359912f84b1977ff1607ec496bac4921b5c7c54a3c291dec15e47bd4",
+    "schema_pointer": "/$defs/HostResponse/properties/error"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "schema_version",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/schema_version"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "authorization_id",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/authorization_id"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "request_key",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/request_key"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "session_id",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/session_id"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "agent_id",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/agent_id"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "caller_ref",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/caller_ref"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "owner_contract_ref",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/owner_contract_ref"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "purpose",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "5607b2aa13bdee891d38a8b980ca74a90c6ed2059f2edeb3aafed60a71507fa2",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/purpose"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "subject_refs",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "09a688a5c188c270d4151fa34ac07207ea36854bf7c1126809a455ff4d8f3514",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/subject_refs"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "input_hash",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "67f459c542f6ec4afe79b51471d533c7b954d14e76adcfb186445758052e48d2",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/input_hash"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "decision",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "972eec97ca634d4350d18b414424b731867d176417ac2cfcee9b6cefc746cd50",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/decision"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "scope_ref",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/scope_ref"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "policy_ref",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/policy_ref"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "original_decision_receipt_ref",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/original_decision_receipt_ref"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "observed_at_ms",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/observed_at_ms"
+  },
+  {
+    "contract": "AuthorizationReceipt",
+    "field": "expires_at_ms",
+    "producer": "RuntimeAuthorizationRecorder.after_real_authorizer",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/AuthorizationReceipt/properties/expires_at_ms"
+  },
+  {
+    "contract": "SkillAdmitCommand",
+    "field": "schema_version",
+    "producer": "Authenticated SkillRegistryApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/SkillAdmitCommand/properties/schema_version"
+  },
+  {
+    "contract": "SkillAdmitCommand",
+    "field": "skill_ref",
+    "producer": "Authenticated SkillRegistryApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillAdmitCommand/properties/skill_ref"
+  },
+  {
+    "contract": "SkillAdmitCommand",
+    "field": "evaluation_acceptance_ref",
+    "producer": "Authenticated SkillRegistryApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillAdmitCommand/properties/evaluation_acceptance_ref"
+  },
+  {
+    "contract": "SkillAdmitCommand",
+    "field": "evaluation_policy_ref",
+    "producer": "Authenticated SkillRegistryApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillAdmitCommand/properties/evaluation_policy_ref"
+  },
+  {
+    "contract": "SkillAdmitCommand",
+    "field": "scope_ref",
+    "producer": "Authenticated SkillRegistryApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillAdmitCommand/properties/scope_ref"
+  },
+  {
+    "contract": "SkillSuspendCommand",
+    "field": "schema_version",
+    "producer": "Authenticated SkillRegistryApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/SkillSuspendCommand/properties/schema_version"
+  },
+  {
+    "contract": "SkillSuspendCommand",
+    "field": "skill_ref",
+    "producer": "Authenticated SkillRegistryApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/SkillSuspendCommand/properties/skill_ref"
+  },
+  {
+    "contract": "SkillSuspendCommand",
+    "field": "reason",
+    "producer": "Authenticated SkillRegistryApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/SkillSuspendCommand/properties/reason"
+  },
+  {
+    "contract": "ContextSettingsCommand",
+    "field": "schema_version",
+    "producer": "Authenticated RuntimePlaneApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/ContextSettingsCommand/properties/schema_version"
+  },
+  {
+    "contract": "ContextSettingsCommand",
+    "field": "session_id",
+    "producer": "Authenticated RuntimePlaneApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ContextSettingsCommand/properties/session_id"
+  },
+  {
+    "contract": "ContextSettingsCommand",
+    "field": "candidate_policy_ref",
+    "producer": "Authenticated RuntimePlaneApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ContextSettingsCommand/properties/candidate_policy_ref"
+  },
+  {
+    "contract": "ContextSettingsCommand",
+    "field": "expected_effective_policy_ref",
+    "producer": "Authenticated RuntimePlaneApi",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "3bdbaec01be07c076096a1c9fc339bc5e4a3fe614b01af008b1dcc064fe39b7d",
+    "schema_pointer": "/$defs/ContextSettingsCommand/properties/expected_effective_policy_ref"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "schema_version",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2b1ca15c563683f2de5ae5d2b8e1c8a1f89764ed476465f01edf20fd55454a12",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/schema_version"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "session_id",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/session_id"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "context_id",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "8b88a9e6ad3b46c5e5cc91f3ab29817118f458caca109b2d28e98b0140f05119",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/context_id"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "historical",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/historical"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "manifest_ref",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "91f0ffa83fe70ab4a79beaa7d6d971cca244bed9e564852cefb390c060f59ede",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/manifest_ref"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "input_charge",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/input_charge"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "input_budget",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/input_budget"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "output_reserve",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/output_reserve"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "recent_complete_turns",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/recent_complete_turns"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "recall_count",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/recall_count"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "retrieval_status",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "87ad85aad5092095804ea73875b88a2a9a4f6813c7b6285a285c300d416d7661",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/retrieval_status"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "session_state",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2e1106d481ec425ce3af3ecc20b51ce5b2e494c7899e77046039d4ca724aa7d4",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/session_state"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "current_access",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0f9ea8d786b5cef923ddda473b4746b26e1b94e78900186a988ac8057bb65d6d",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/current_access"
+  },
+  {
+    "contract": "ContextSummaryView",
+    "field": "degradations",
+    "producer": "Host RuntimePlane projection",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "4294af1f368fd32c5f7657f78eaa69a55bd61239be4aed33e213b4d91021bdd0",
+    "schema_pointer": "/$defs/ContextSummaryView/properties/degradations"
+  },
+  {
+    "contract": "CapabilityCatalogueItem",
+    "field": "kind",
+    "producer": "Host capability projection + current Registry/Authorization",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "d45109605e2e110949f3622eb02e904e148d543a826bffe1a37396675a9cf50d",
+    "schema_pointer": "/$defs/CapabilityCatalogueItem/properties/kind"
+  },
+  {
+    "contract": "CapabilityCatalogueItem",
+    "field": "definition",
+    "producer": "Host capability projection + current Registry/Authorization",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "e1f1f7326da0549550944868573634a873ebb7037aa7441815a87c9c8d09b077",
+    "schema_pointer": "/$defs/CapabilityCatalogueItem/properties/definition"
+  },
+  {
+    "contract": "CapabilityCatalogueItem",
+    "field": "state",
+    "producer": "Host capability projection + current Registry/Authorization",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "66bd60268087026044e95461b77cbf2cf76c5588c8a9fa5a26dbf3e832f7668f",
+    "schema_pointer": "/$defs/CapabilityCatalogueItem/properties/state"
+  },
+  {
+    "contract": "CapabilityCatalogueItem",
+    "field": "state_revision",
+    "producer": "Host capability projection + current Registry/Authorization",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/CapabilityCatalogueItem/properties/state_revision"
+  },
+  {
+    "contract": "CapabilityCatalogueItem",
+    "field": "current_usable",
+    "producer": "Host capability projection + current Registry/Authorization",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/CapabilityCatalogueItem/properties/current_usable"
+  },
+  {
+    "contract": "CapabilityCatalogueItem",
+    "field": "reason_codes",
+    "producer": "Host capability projection + current Registry/Authorization",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "68de9c625c5fa841ccf33fd7606ca3512c5161f93c061a372d742a0a3b5f6361",
+    "schema_pointer": "/$defs/CapabilityCatalogueItem/properties/reason_codes"
+  },
+  {
+    "contract": "CapabilityCatalogueItem",
+    "field": "registry_epoch",
+    "producer": "Host capability projection + current Registry/Authorization",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/CapabilityCatalogueItem/properties/registry_epoch"
+  },
+  {
+    "contract": "ToolCatalogueItem",
+    "field": "kind",
+    "producer": "Host tool projection + actual request snapshot",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "03e1a8acb146dbd9535d187ff99de09f2c1d64f2f9fe56d0560634fa17a0589c",
+    "schema_pointer": "/$defs/ToolCatalogueItem/properties/kind"
+  },
+  {
+    "contract": "ToolCatalogueItem",
+    "field": "definition",
+    "producer": "Host tool projection + actual request snapshot",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "fc2c688a16969880d2004c1ee486f7a9c87968d9abc800605f81b592ed6b7302",
+    "schema_pointer": "/$defs/ToolCatalogueItem/properties/definition"
+  },
+  {
+    "contract": "ToolCatalogueItem",
+    "field": "state",
+    "producer": "Host tool projection + actual request snapshot",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "66bd60268087026044e95461b77cbf2cf76c5588c8a9fa5a26dbf3e832f7668f",
+    "schema_pointer": "/$defs/ToolCatalogueItem/properties/state"
+  },
+  {
+    "contract": "ToolCatalogueItem",
+    "field": "state_revision",
+    "producer": "Host tool projection + actual request snapshot",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/ToolCatalogueItem/properties/state_revision"
+  },
+  {
+    "contract": "ToolCatalogueItem",
+    "field": "current_usable",
+    "producer": "Host tool projection + actual request snapshot",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/ToolCatalogueItem/properties/current_usable"
+  },
+  {
+    "contract": "ToolCatalogueItem",
+    "field": "reason_codes",
+    "producer": "Host tool projection + actual request snapshot",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "68de9c625c5fa841ccf33fd7606ca3512c5161f93c061a372d742a0a3b5f6361",
+    "schema_pointer": "/$defs/ToolCatalogueItem/properties/reason_codes"
+  },
+  {
+    "contract": "ToolCatalogueItem",
+    "field": "registry_epoch",
+    "producer": "Host tool projection + actual request snapshot",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/ToolCatalogueItem/properties/registry_epoch"
+  },
+  {
+    "contract": "ToolCatalogueItem",
+    "field": "exposed_in_context_id",
+    "producer": "Host tool projection + actual request snapshot",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "f0cdcc704edbec71dc981ea463333dc01e4c382c4857e1df2ba047ef1b113979",
+    "schema_pointer": "/$defs/ToolCatalogueItem/properties/exposed_in_context_id"
+  },
+  {
+    "contract": "SkillCatalogueItem",
+    "field": "kind",
+    "producer": "Host skill projection + Registry activation/evaluation",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "6db66f3a091ab45db4780c07c11c7c7e2ff2146e507fc8679b9af50b457a710a",
+    "schema_pointer": "/$defs/SkillCatalogueItem/properties/kind"
+  },
+  {
+    "contract": "SkillCatalogueItem",
+    "field": "definition",
+    "producer": "Host skill projection + Registry activation/evaluation",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "523221e2d4b855fc7154cec8358499febbfd6464daa026f26d295fb50176be79",
+    "schema_pointer": "/$defs/SkillCatalogueItem/properties/definition"
+  },
+  {
+    "contract": "SkillCatalogueItem",
+    "field": "state",
+    "producer": "Host skill projection + Registry activation/evaluation",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "66bd60268087026044e95461b77cbf2cf76c5588c8a9fa5a26dbf3e832f7668f",
+    "schema_pointer": "/$defs/SkillCatalogueItem/properties/state"
+  },
+  {
+    "contract": "SkillCatalogueItem",
+    "field": "state_revision",
+    "producer": "Host skill projection + Registry activation/evaluation",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "2a1379ebe9f4b632fbdf3732d4b86b26e9fbf2aa92cf2449dde7bf4dc122060f",
+    "schema_pointer": "/$defs/SkillCatalogueItem/properties/state_revision"
+  },
+  {
+    "contract": "SkillCatalogueItem",
+    "field": "current_usable",
+    "producer": "Host skill projection + Registry activation/evaluation",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    "schema_pointer": "/$defs/SkillCatalogueItem/properties/current_usable"
+  },
+  {
+    "contract": "SkillCatalogueItem",
+    "field": "reason_codes",
+    "producer": "Host skill projection + Registry activation/evaluation",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "68de9c625c5fa841ccf33fd7606ca3512c5161f93c061a372d742a0a3b5f6361",
+    "schema_pointer": "/$defs/SkillCatalogueItem/properties/reason_codes"
+  },
+  {
+    "contract": "SkillCatalogueItem",
+    "field": "registry_epoch",
+    "producer": "Host skill projection + Registry activation/evaluation",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "schema_pointer": "/$defs/SkillCatalogueItem/properties/registry_epoch"
+  },
+  {
+    "contract": "SkillCatalogueItem",
+    "field": "evaluation_ref",
+    "producer": "Host skill projection + Registry activation/evaluation",
+    "semantics_source": "implementation/FIELD-CONTRACTS.md",
+    "schema_subtree_sha256": "91f0ffa83fe70ab4a79beaa7d6d971cca244bed9e564852cefb390c060f59ede",
+    "schema_pointer": "/$defs/SkillCatalogueItem/properties/evaluation_ref"
+  }
+]

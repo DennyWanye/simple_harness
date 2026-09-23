@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "policy_id": "agent-context-512k-v1",
+  "max_context_tokens": 524288,
+  "output_reserve_tokens": 8192,
+  "safety_reserve_tokens": 2048,
+  "tool_headroom_tokens": 0,
+  "recent_min_tokens": 65536,
+  "recall_max_tokens": 98304,
+  "fixed_soft_max_tokens": 131072,
+  "section_soft_caps": {
+    "A": 8192,
+    "B": 24576,
+    "C": 32768,
+    "D": 40960,
+    "E": 24576
+  },
+  "max_candidates": 128,
+  "max_recall_items": 32,
+  "max_group_count": 32768,
+  "max_manifest_bytes": 8388608,
+  "max_request_bytes": 16777216,
+  "embedding_chunk_tokens": 1024,
+  "embedding_overlap_tokens": 128,
+  "max_session_disk_bytes": 2147483648,
+  "max_retrieval_ms": 2000,
+  "index_mode": "ON_CLOSED_GROUP",
+  "embedding_required_for_activation": true
+}

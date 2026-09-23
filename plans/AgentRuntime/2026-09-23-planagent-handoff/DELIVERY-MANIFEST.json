@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "scope": "handoff delivery only, not revised plan acceptance",
+  "files": [
+    {
+      "path": "README.md",
+      "size_bytes": 1409,
+      "sha256": "ee831db9629096edcda52d6203e2a3d6c7ca7d7b8df8a823ed51c14a36c3d0e6"
+    },
+    {
+      "path": "HANDOFF-PlanAgent-ARP-1.0.md",
+      "size_bytes": 36044,
+      "sha256": "e633aafbabad57e0d21cbd7ad6f6e622bbff7c998019de3fa2a88b76fa7e8db0"
+    },
+    {
+      "path": "DECISIONS-TEMPLATE.md",
+      "size_bytes": 1892,
+      "sha256": "f487b69e1db741f2b121eb7dc101bc668aa1439325e9c189716ec9cf493ae15b"
+    },
+    {
+      "path": "SOURCE-INDEX.json",
+      "size_bytes": 17992,
+      "sha256": "82d685341e8c466278ceaaac9860727b41286895251d2066883927593de5227b"
+    },
+    {
+      "path": "simpleharness-agent-runtime-plane-1.0-2026-09-22.zip",
+      "size_bytes": 294410,
+      "sha256": "3343a14874676e4b7b320cf8ee1f41c422e68f856249cf88e28b9d0ab7e9f8aa"
+    }
+  ]
+}

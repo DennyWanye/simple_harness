@@ -1,0 +1,32 @@
+[
+  {
+    "path": "inputs/base-agent-phase1-plan.zh-CN.md",
+    "sha256": "c56d57c42f8adc3590f12d57c0fdeb431980d81f99c12bac0051188d4c21f946",
+    "status": "SOURCE_DOCUMENT_NOT_RUNNING_CODE"
+  },
+  {
+    "path": "inputs/simpleharness-llm-native-htn-execution-plan-v2.zh-CN.md",
+    "sha256": "c5aff562be01be2a5edbcb8d3f05ce8ff546b87242ed0272c9f7d90048479d7c",
+    "status": "SOURCE_DOCUMENT_NOT_RUNNING_CODE"
+  },
+  {
+    "path": "inputs/simpleharness-taskgraph-code-execution-plan.zh-CN.md",
+    "sha256": "f36eaa1cf106a1f84d6efd2a4cdcbbe25e55fc5ed4df7510e13df3b728f615d1",
+    "status": "SOURCE_DOCUMENT_NOT_RUNNING_CODE"
+  },
+  {
+    "path": "inputs/ASSURANCE-EXEC-1.1.zh-CN.md",
+    "sha256": "5af3ae76a4c07b7926ad720a2dc48c52e41e76bc91e3a80e5559799de8d8f08e",
+    "status": "SOURCE_DOCUMENT_NOT_RUNNING_CODE"
+  },
+  {
+    "path": "inputs/V1.4-Operation完成合同补遗-2026-09-21.md",
+    "sha256": "8bf6a1c8ee40c2ada9ab88f51806e401ba8a690ea4ac1a481154f7e9ccfcb74f",
+    "status": "SOURCE_DOCUMENT_NOT_RUNNING_CODE"
+  },
+  {
+    "path": "inputs/V1.4-D1-D2-D3-Operation补遗-2026-09-21.md",
+    "sha256": "a2657120e1c44479a268ca19e0ab0b3da1eb65d7b3db6512df7ef2e3d1520725",
+    "status": "SOURCE_DOCUMENT_NOT_RUNNING_CODE"
+  }
+]

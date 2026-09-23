@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "verb": "agent_context_summary",
+  "command_id": "example",
+  "subject_id": "example",
+  "expected_revision": 1,
+  "cursor": "example",
+  "limit": 1,
+  "payload_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  }
+}

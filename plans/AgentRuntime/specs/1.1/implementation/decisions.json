@@ -1,0 +1,281 @@
+[
+  {
+    "id": "Q01",
+    "status": "RESOLVED",
+    "decision": "44个内部Pin种类，逐字段子集与白名单resolver，不改公共TypedRef",
+    "assets": [
+      "contracts/runtime-plane.schema.json",
+      "implementation/ref-resolution-map.json"
+    ],
+    "oracle": "正确profile通过；把agent替代profile拒绝",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N01",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q02",
+    "status": "RESOLVED",
+    "decision": "Search扫描进度与固定排名分页、UTF8原文范围页，管理/模型purpose隔离",
+    "assets": [
+      "implementation/HOST-DTOS.md",
+      "implementation/CONTEXT-SEARCH.md"
+    ],
+    "oracle": "早期命中在后续扫描页仍被找到；cursor陈旧拒绝",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N02",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q03",
+    "status": "RESOLVED",
+    "decision": "policy批准与adoption分开，首次GET完整，更新CAS与命令回执读口",
+    "assets": [
+      "implementation/HOST-DTOS.md",
+      "examples/host-settings-flow.json"
+    ],
+    "oracle": "adoption3竞争4拒绝；断线同命令读原回执",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N03",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q04",
+    "status": "MAPPED",
+    "decision": "TaskGraph23与Assurance后继为合并链；已报告真实位置入source-map，未见后继字节不伪hash",
+    "assets": [
+      "source-map.json",
+      "implementation/role-coverage.json"
+    ],
+    "oracle": "bridge实际为agent_worker；全role最终经过真实wire guard",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N04",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": "exact integrated successor/resource inventory; no current hash fabrication"
+  },
+  {
+    "id": "Q05",
+    "status": "ENVIRONMENT_DEPENDENCY",
+    "decision": "复用DeepSeek/HF计量，公开wire/P/O/计费分开，先恢复tools后冻结",
+    "assets": [
+      "resources/DEPENDENCIES.md",
+      "implementation/INTERFACES.md"
+    ],
+    "oracle": "P单扣；512K配置不冒充真实端点支持",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N05",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": "exact integrated successor/resource inventory; no current hash fabrication"
+  },
+  {
+    "id": "Q06",
+    "status": "ENVIRONMENT_DEPENDENCY",
+    "decision": "获准本地BGE-M3 dense或明确兼容已批准资源，原call/usage桥；activation真值表",
+    "assets": [
+      "resources/DEPENDENCIES.md",
+      "implementation/JOBS-LIFECYCLE.md"
+    ],
+    "oracle": "HashEmbedder不可生产；timeout不重复付费；lexical状态明确",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N06",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": "exact integrated successor/resource inventory; no current hash fabrication"
+  },
+  {
+    "id": "Q07",
+    "status": "RESOLVED",
+    "decision": "原权限评价点记录真实receipt；bootstrap先批准安装payload再profile，不靠AllowAll",
+    "assets": [
+      "implementation/INTERFACES.md",
+      "ARP-EXEC-1.1.zh-CN.md"
+    ],
+    "oracle": "standalone显式mode；无真实评价来源拒绝激活",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N07",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q08",
+    "status": "RESOLVED",
+    "decision": "持久creation intent+kernel defer-drive+同UOW最终binding；禁止嵌套facade假原子",
+    "assets": [
+      "implementation/INTERFACES.md",
+      "sql/execution_additive.sql"
+    ],
+    "oracle": "kernel登记后崩溃同IDs恢复且不提前调用模型",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N08",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q09",
+    "status": "RESOLVED",
+    "decision": "旧请求取消未发送+原hold结算回执后新ordinal；已handoff/UNKNOWN不替代",
+    "assets": [
+      "ARP-EXEC-1.1.zh-CN.md",
+      "reference/runtime_rules.py"
+    ],
+    "oracle": "与handoff竞争失败必须核对原请求",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N09",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q10",
+    "status": "RESOLVED",
+    "decision": "原协议组锚点/闭组，N按完整历史Turn集合，不逐组相加",
+    "assets": [
+      "implementation/CONTEXT-SEARCH.md",
+      "reference/runtime_rules.py"
+    ],
+    "oracle": "旧Turn中间组被移除不计1；早anchor仍保留",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N10",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q11",
+    "status": "RESOLVED",
+    "decision": "Journal源不可变，view/chunker/model新index generation；固定upper_commit快照",
+    "assets": [
+      "sql/session_partition.sql",
+      "implementation/JOBS-LIFECYCLE.md"
+    ],
+    "oracle": "同span跨gen可共存；同closedgroup不同sourcehash拒绝",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N11",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q12",
+    "status": "RESOLVED",
+    "decision": "全snapshot分批扫描、固定词面+RRF、短中文fallback、稳健f32归一化",
+    "assets": [
+      "implementation/CONTEXT-SEARCH.md",
+      "reference/runtime_rules.py"
+    ],
+    "oracle": "1e308非零finite；PARTIAL无全局排名；追加不混快照",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N12",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q13",
+    "status": "RESOLVED",
+    "decision": "INDEX/PURGE/BIND_IMPORT三种严格job；SUMMARY不启用；原调用身份恢复",
+    "assets": [
+      "implementation/JOBS-LIFECYCLE.md",
+      "contracts/runtime-plane.schema.json"
+    ],
+    "oracle": "lease过期只重领协调；index成功ACK前退出可幂等继续",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N13",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q14",
+    "status": "RESOLVED",
+    "decision": "close drain与destroy不同；七集合disposal；固定无环锁序",
+    "assets": [
+      "implementation/JOBS-LIFECYCLE.md"
+    ],
+    "oracle": "drain允许已有Turn结束；destroy不需新LLM结束；busy保留",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N14",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q15",
+    "status": "RESOLVED",
+    "decision": "原Host目录唯一realm owner，多pool挂载；ProviderDefinition与priority明确",
+    "assets": [
+      "ARP-EXEC-1.1.zh-CN.md",
+      "implementation/integration-map.json"
+    ],
+    "oracle": "health正常刷新不全局失效；撤权阻断相应新调用",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N15",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q16",
+    "status": "RESOLVED",
+    "decision": "safe import/quarantine/unresolved lock/trial/eval/admit完整，原runner执行",
+    "assets": [
+      "ARP-EXEC-1.1.zh-CN.md",
+      "implementation/INTERFACES.md"
+    ],
+    "oracle": "旧页面已安装仍可管理但未获准不可调用；依赖diamond冲突",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N16",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q17",
+    "status": "RESOLVED",
+    "decision": "管理/模型summary+受权details分页，完整包不塞进单项64KiB",
+    "assets": [
+      "implementation/HOST-DTOS.md",
+      "contracts/runtime-plane.schema.json"
+    ],
+    "oracle": "800文件可分页，模型不披露credentialref/endpoint",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N17",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q18",
+    "status": "RESOLVED",
+    "decision": "统一ErrorCode目录+严格事件body+原eventseq来源，不再任意字符串码",
+    "assets": [
+      "contracts/error-catalogue.json",
+      "contracts/event-catalogue.json"
+    ],
+    "oracle": "未请求/空/部分/不可用组合可表达；未知错误不透传",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N18",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q19",
+    "status": "RESOLVED",
+    "decision": "exec和partition独立迁移；所有连接FK/recursive triggers；精确retention/原roottransfer",
+    "assets": [
+      "sql/MIGRATION-CONTRACT.md",
+      "sql/execution_additive.sql"
+    ],
+    "oracle": "不占用TG25作为exec号；OR REPLACE被拒；正式根不依赖temp不阻删",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N19",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  },
+  {
+    "id": "Q20",
+    "status": "RESOLVED",
+    "decision": "保留60+新增20；MU10/BW05纠正；主体优先、平台/实际资源依赖显式",
+    "assets": [
+      "implementation/TEST-PLAN.md",
+      "implementation/BODY-WIRED.md"
+    ],
+    "oracle": "未来测试未运行不阻纯编码；没有原生/模型证据不填完成",
+    "sdk_status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
+    "new_case": "N20",
+    "reference_status": "see actual reports/validation.json",
+    "local_dependency": null
+  }
+]

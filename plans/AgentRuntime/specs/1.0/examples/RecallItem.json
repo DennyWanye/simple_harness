@@ -1,0 +1,15 @@
+{
+  "chunk_id": "example",
+  "source_group_ids": [],
+  "source_record_refs": [],
+  "view_ref": {
+    "kind": "agent",
+    "id": "example",
+    "revision": 1,
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "budget_charge": 1,
+  "rank_ordinal": 1,
+  "provenance": "USER_INPUT",
+  "source_epoch": 1
+}

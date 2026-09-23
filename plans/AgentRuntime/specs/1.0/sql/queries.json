@@ -1,0 +1,16 @@
+{
+  "current_session": "SELECT * FROM arp_agent_sessions WHERE agent_id=:agent_id AND state!='PURGED';",
+  "request_exact": "SELECT * FROM arp_context_requests WHERE turn_id=:turn_id AND provider_request_ordinal=:ordinal;",
+  "indexed_all_old_groups": "SELECT c.*,g.seq_from,g.seq_to FROM session_chunks c JOIN indexed_groups g USING(group_id) WHERE g.seq_to<:recent_start AND c.rowid>:after_rowid ORDER BY c.rowid LIMIT :page_size;",
+  "vector_page": "SELECT v.*,g.seq_from,g.seq_to,c.rowid FROM session_vectors v JOIN session_chunks c USING(chunk_id) JOIN indexed_groups g USING(group_id) WHERE v.embedding_fingerprint=:embedding AND g.seq_to<:recent_start AND c.rowid>:after_rowid ORDER BY c.rowid LIMIT :page_size;",
+  "fts_words": "SELECT c.chunk_id,bm25(session_words) AS rank FROM session_words JOIN session_chunks c ON c.rowid=session_words.rowid JOIN indexed_groups g USING(group_id) WHERE session_words MATCH :escaped_match AND g.seq_to<:recent_start ORDER BY rank,c.chunk_id LIMIT :limit;",
+  "claim_job": "UPDATE arp_jobs SET state='LEASED',owner_id=:owner,lease_until_ms=:lease,row_version=row_version+1,attempts=attempts+1 WHERE job_id=:job AND state='PENDING' AND row_version=:version AND next_at_ms<=:now AND deadline_ms>:now;",
+  "begin_drain": "UPDATE arp_agent_sessions SET state='DRAINING',generation=generation+1,row_version=row_version+1,destroy_command_id=:command,destroy_command_hash=:hash,updated_at_ms=:now WHERE session_id=:session AND state IN ('CREATING','ACTIVE','QUARANTINED') AND row_version=:version;",
+  "begin_purge": "UPDATE arp_agent_sessions SET state='PURGING',row_version=row_version+1,sealed_highwater=:highwater,delete_proof_ref_json=:proof,updated_at_ms=:now WHERE session_id=:session AND state='DRAINING' AND row_version=:version;",
+  "finish_purge": "UPDATE arp_agent_sessions SET state='PURGED',row_version=row_version+1,updated_at_ms=:now WHERE session_id=:session AND state='PURGING' AND row_version=:version;",
+  "pending_blob_roots": "SELECT * FROM arp_blob_roots WHERE session_id=:session AND state='LIVE';",
+  "catalogue_exact": "SELECT r.*,a.state,a.row_version,a.scope_ref_json FROM arp_catalog_revisions r JOIN arp_catalog_activation a USING(entry_kind,entry_id,revision,content_hash) WHERE r.entry_kind=:kind AND r.entry_id=:id AND r.revision=:rev AND r.content_hash=:hash;",
+  "skill_use_exact": "SELECT * FROM arp_skill_uses WHERE session_id=:session AND use_key=:key;",
+  "read_effective_context_policy": "SELECT * FROM arp_context_policy_adoptions WHERE session_id=:session_id ORDER BY adoption_revision DESC LIMIT 1;",
+  "read_agent_creation_protocol": "SELECT * FROM arp_agent_protocols WHERE agent_id=:agent_id;"
+}
