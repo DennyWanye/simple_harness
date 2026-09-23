@@ -13,7 +13,7 @@
 | RP-C1 统一目录 / 能力解析 / 工具曝光 | 完成 | `534f2ab0` | `03-RP-C1-统一目录-能力解析-工具曝光实施记录.md` |
 | RP-C2 Skill 包导入 / 依赖锁 | 完成 | `77f2f1f0` | `04-RP-C2-Skill包导入-依赖锁实施记录.md` |
 | RP-C3 试用 / 准入 / load / execute | 完成 | `b91d3bda` | `05-RP-C3-试用准入-load-execute实施记录.md` |
-| RP-D1 会话销毁 / 处置证明 / 清理 / 同身份恢复 / 重建门 / 保留许可 | 完成 | （见回填） | `06-RP-D1-会话销毁-清理-恢复实施记录.md` |
+| RP-D1 会话销毁 / 处置证明 / 清理 / 同身份恢复 / 重建门 / 保留许可 | 完成 | `0dcb7bd5` | `06-RP-D1-会话销毁-清理-恢复实施记录.md` |
 | RP-D2 Host verbs typed 服务（`api/runtime_plane.py`） | 未开始 | | |
 | RP-E 统一验收 + Assurance 接入（BW09） | 未开始，等 Assurance 线完成 | | |
 
