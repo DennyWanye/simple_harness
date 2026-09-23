@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections import deque
 from collections.abc import Mapping
 from typing import Any
 
 from .service import OrchestrationRequestError
+
+logger = logging.getLogger(__name__)
 
 ROOT_COMMAND_ID = "host-native-root"
 ASSURANCE_VERBS = ("snapshot", "review", "use_check")
@@ -143,3 +146,69 @@ def read_assurance(service: Any, verb: str, request: Mapping[str, Any]) -> dict[
         raise OrchestrationRequestError(
             "assurance_unavailable" if error.code == "PROFILE_UNBOUND" else error.code, str(error)
         ) from error
+
+
+def project_check_policies(service: Any, mission_id: str | None = None) -> int:
+    """Approve, under the Host's authenticated caller, the lossless check-policy
+    mapping for every frozen completion Scope of an assured Mission that has none.
+
+    The person already confirmed the requirements mapping (the completion Spec);
+    each Scope the plan later freezes needs the SDK's per-Scope check policy before
+    its content review can run (``CHECK_POLICY_UNRESOLVED`` otherwise — Host real
+    model run 2, 2026-09-23). The mapping is the SDK's lossless projection of the
+    original requirements (semantic criteria → SEMANTIC, named checks → the exact
+    registered CheckSpecs); the Host adds nothing and drops nothing. One command
+    per Scope, replay-safe through the SDK's own approval receipt.
+    """
+    orchestrator = service._orchestrator
+    if service._assurance is None or orchestrator is None:
+        return 0
+    from agent_orchestrator.assurance.codec import AssuranceError, fingerprint
+    from agent_orchestrator.orchestrator.assurance_check_policy import lossless_scope_mapping
+    from agent_orchestrator.storage.assurance_store import AssuranceStore
+
+    store = orchestrator.store
+    done: set[str] = service._assurance_policy_scopes
+    sql = "SELECT mission_id, scope_id FROM operation_completion_scopes"
+    args: tuple[Any, ...] = ()
+    if mission_id is not None:
+        sql += " WHERE mission_id=?"
+        args = (mission_id,)
+    rows = store.connection.execute(sql + " ORDER BY created_at_ms, scope_id", args).fetchall()
+    approved = 0
+    for row in rows:
+        mid, scope_id = str(row[0]), str(row[1])
+        if scope_id in done:
+            continue
+        try:
+            if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
+                done.add(scope_id)
+                continue
+        except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
+            done.add(scope_id)
+            continue
+        command_id = f"host-check-policy:{scope_id}"
+        receipt_id = "assurance-check-policy-approval:" + fingerprint({
+            "mission": mid, "tenant": service.tenant_id,
+            "principal": service._principal.principal_id, "command": command_id,
+        })
+        if store.get_receipt(receipt_id) is not None:
+            done.add(scope_id)
+            continue
+        try:
+            requirements_ref, scope_ref, mapping = lossless_scope_mapping(
+                orchestrator.commit, mission_id=mid, scope_id=scope_id)
+            service._call("approve_assurance_check_policy", {
+                "mission_id": mid, "command_id": command_id,
+                "requirements_ref": requirements_ref.to_json(),
+                "completion_scope": scope_ref.to_json(),
+                "candidate_mapping": [policy.to_json() for policy in mapping],
+            })
+        except (AssuranceError, OrchestrationRequestError) as error:
+            # Retried on the next round; a Scope whose projection is not current
+            # yet (or never resolvable) is reported, never guessed.
+            logger.warning("assurance check policy not projected for %s: %s", scope_id, error)
+            continue
+        done.add(scope_id)
+        approved += 1
+    return approved

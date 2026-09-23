@@ -157,6 +157,7 @@ class OrchestrationService:
         # Orchestrator lifetime, and the NOTIFY payloads it delivered (bounded).
         self._assurance: Any = None
         self._assurance_notices: deque[dict[str, Any]] = deque(maxlen=256)
+        self._assurance_policy_scopes: set[str] = set()  # Scopes whose check policy this Host approved
 
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -528,6 +529,7 @@ class OrchestrationService:
                 if self._orchestrator is None:
                     await self._rebuild()
                 await self._orchestrator.run()
+                self._project_assurance_policies()
                 self._failures = 0
                 if self._state == "degraded":
                     self._state, self._reason = "available", None
@@ -588,6 +590,18 @@ class OrchestrationService:
     def _install_assurance(self, orchestrator: Any) -> Any:
         from .assurance import install_assurance
         return install_assurance(self, orchestrator)
+
+    def _project_assurance_policies(self) -> int:
+        """After every loop round: the per-Scope check policies an assured Mission
+        needs before its content reviews (see ``assurance.project_check_policies``)."""
+        if self._assurance is None:
+            return 0
+        from .assurance import project_check_policies
+        try:
+            return project_check_policies(self)
+        except Exception:  # noqa: BLE001 - never stops the loop; retried next round
+            logger.exception("assurance check policy projection failed")
+            return 0
 
     def _install_taskgraph(self, orchestrator: Any) -> Any:
         if self._test_scenario is not None and self._taskgraph_deployment is None:
@@ -669,6 +683,7 @@ class OrchestrationService:
 
         try:
             await asyncio.wait_for(self._orchestrator.run(), timeout=timeout)
+            self._project_assurance_policies()
             return True
         except TimeoutError:
             return False

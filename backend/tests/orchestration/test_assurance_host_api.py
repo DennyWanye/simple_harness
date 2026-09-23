@@ -129,3 +129,24 @@ def test_settings_parse_assurance_profile():
     assert load_settings({"assurance_profile": "off"}).assurance_profile == "off"
     assert load_settings({"assurance_profile": "shadow"}).assurance_profile == "on"
     assert load_settings({"assurance_profile": 1}).assurance_profile == "on"
+
+
+@pytest.mark.asyncio
+async def test_check_policy_projection_is_replay_safe_and_needs_a_frozen_scope(orchestration_root, principal):
+    """Real model run 2 (2026-09-23): content reviews need the per-Scope check
+    policy the Host projects from the confirmed requirements. Before the plan
+    freezes a Scope there is nothing to project; the projection never raises."""
+    from deskpet.orchestration.assurance import project_check_policies
+
+    service = await _service(orchestration_root, principal, assurance_profile="on")
+    try:
+        created = await handle(service, "mission_create", {"request_id": "c1", **notes_request("policy-ws")})
+        assert created["payload"]["ok"] is True, created
+        mission_id = created["payload"]["data"]["mission_id"]
+        assert project_check_policies(service) == 0
+        assert project_check_policies(service, mission_id) == 0
+        assert service._assurance_policy_scopes == set()
+        # The loop hook is the same function and never fails the loop.
+        assert service._project_assurance_policies() == 0
+    finally:
+        await service.close()
