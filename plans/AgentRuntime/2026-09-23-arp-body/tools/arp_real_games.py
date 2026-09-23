@@ -36,7 +36,10 @@ from simple_harness.agents.arp.strict import digest
 from simple_harness.agents.contracts import AgentTurnState
 from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.api.runtime_plane import RuntimePlaneService
+from simple_harness.execution.provider_invocations import provider_request_fingerprint
 from simple_harness.providers import OpenAICompatibleProvider, Secret
+from simple_harness.providers.reconciliation import ProviderReconciliationObservation, ProviderReconciliationState
+from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
 from simple_harness.runtime.ports import AuthorizationResult
 
 from arp_fixture import HASH, trusted_caller
@@ -100,11 +103,61 @@ def game_profile(name: str) -> RuntimeProfile:
                           allow_lexical_degradation=True, context_policy=policy, refs=refs)
 
 
+class TransportGate:
+    """The deployment's own transport record around the real provider: which request ids were
+    physically sent.  ``hold`` parks the next call *before* anything leaves the process (the
+    kernel has already recorded the handoff), so a kill there is the "prepared, handed off,
+    never sent" crash window.  The record outlives a Harness (it is the deployment's, not the
+    process') and is what the reconciliation port answers from."""
+
+    def __init__(self, inner, record: dict) -> None:  # type: ignore[no-untyped-def]
+        self.inner = inner; self.record = record
+        record.setdefault("sent", set()); record.setdefault("held", set()); record.setdefault("hold_next", False)
+        record.setdefault("held_event", asyncio.Event()); record.setdefault("wire_hashes", {})
+
+    @property
+    def target(self):  # type: ignore[no-untyped-def]
+        return self.inner.target
+
+    def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+        return getattr(self.inner, name)
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        key = request.request_id.value
+        if self.record["hold_next"]:
+            self.record["hold_next"] = False; self.record["held"].add(key); self.record["held_event"].set()
+            await asyncio.sleep(3600)  # the process dies before this returns; nothing was sent
+        self.record["sent"].add(key)
+        # What actually goes on the wire, hashed exactly as the composer hashes its plan.
+        self.record["wire_hashes"].setdefault(key, []).append(provider_request_fingerprint(request))
+        return await self.inner.invoke(request, cancel=cancel)
+
+
+class RunnerReconciliation:
+    """``ProviderReconciliationPort`` of this deployment: a request the gate never put on the
+    wire is CONFIRMED_NOT_STARTED (by the gate's own record); anything that left the process
+    towards a stateless gateway is STILL_UNKNOWN — never guessed."""
+
+    def __init__(self, record: dict) -> None:
+        self.record = record; self.observations: list[dict] = []
+
+    async def observe(self, invocation):  # type: ignore[no-untyped-def]
+        key = invocation.request_id.value
+        if key in self.record["held"] and key not in self.record["sent"]:
+            state, evidence = ProviderReconciliationState.CONFIRMED_NOT_STARTED, f"runner-transport:not-sent:{key}"
+        else:
+            state, evidence = ProviderReconciliationState.STILL_UNKNOWN, f"runner-transport:unknown:{key}"
+        self.observations.append({"invocation": invocation.invocation_id[:12], "state": str(state), "evidence": evidence})
+        return ProviderReconciliationObservation(state, evidence)
+
+
 class Harness:
     """One game's runtime on its own directory; can be killed and rebuilt (crash window)."""
 
-    def __init__(self, directory: Path, name: str, *, key: str, acceptance: Any = None, fault: Any = None) -> None:
+    def __init__(self, directory: Path, name: str, *, key: str, acceptance: Any = None, fault: Any = None, transport: dict | None = None, owner: str = "arp-real-games") -> None:
         self.dir = directory; self.name = name; self.key = key; self.acceptance = acceptance; self.fault = fault
+        self.transport = transport if transport is not None else {}; self.owner = owner
+        self.reconciliation = RunnerReconciliation(self.transport)
         self.authorization = GameAuthorization()
         self.failures: list[dict] = []
         self.reader = RunPriorReserve()
@@ -114,11 +167,12 @@ class Harness:
     async def start(self) -> None:
         import httpx
         self.client = httpx.AsyncClient()
-        provider = OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True)
+        provider = TransportGate(OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True), self.transport)
         root = bootstrap_root(self.dir / "root", root_id=f"real-games:{self.name}")
         meter = deepseek_meter_binding(self.counter, input_limit_tokens=LIMIT, max_output_tokens=OUT, prior_reserve=self.reader)
+        policies = ConsumerRuntimePolicies("unpriced_local", False, "fail_closed", provider_reconciliation=self.reconciliation)
         ports = AgentRuntimePorts(provider=provider, authorization=self.authorization, database_path=str(self.dir / "runtime.db"), model=MODEL,
-                                  owner_id="arp-real-games", tokenizer=self.counter, default_max_output_tokens=OUT, max_output_tokens_ceiling=OUT)
+                                  owner_id=self.owner, tokenizer=self.counter, default_max_output_tokens=OUT, max_output_tokens_ceiling=OUT, policies=policies)
         arp = ArpPorts(root_dir=root.directory, profile=game_profile(self.name), activation_receipt={"kind": "deployment_activation", "profile_id": f"real-game-{self.name}", "revision": 1},
                        meter=meter, embedding=None, acceptance=self.acceptance, script_runner=None, fault=self.fault)
         self.runtime = build_arp_runtime(ports, arp)
@@ -170,7 +224,7 @@ class Harness:
         return [dict(r) for r in rows]
 
     def context_rows(self) -> list[dict]:
-        rows = self.conn.execute("SELECT context_id, agent_id, turn_id, provider_request_ordinal, journal_highwater, manifest_hash, planned_request_hash, original_request_key, input_charge, input_budget FROM arp_context_requests ORDER BY created_at_ms").fetchall()
+        rows = self.conn.execute("SELECT context_id, agent_id, turn_id, provider_request_ordinal, journal_highwater, manifest_hash, planned_request_hash, original_request_key, input_charge, input_budget, created_at_ms FROM arp_context_requests ORDER BY created_at_ms").fetchall()
         return [dict(r) for r in rows]
 
     def manifest(self, request_key: str):  # type: ignore[no-untyped-def]
@@ -196,7 +250,7 @@ class Harness:
         import dataclasses
         parts = []
         for rec in self.runtime.uow.read_agent_journal(agent_id):
-            body = dataclasses.asdict(rec) if dataclasses.is_dataclass(rec) else {"repr": repr(rec)}
+            body = {f.name: getattr(rec, f.name) for f in dataclasses.fields(rec)} if dataclasses.is_dataclass(rec) else {"repr": repr(rec)}
             parts.append(json.dumps(body, ensure_ascii=False, default=str))
         return "\n".join(parts)
 
@@ -206,14 +260,17 @@ class Harness:
         inv["provider_calls"] = self.calls(); inv["calls_within_cap"] = inv["provider_calls"] <= MAX_CALLS
         inv["authorization_requests"] = list(self.authorization.requests); inv["authorization_denied"] = list(self.authorization.denied)
         inv["no_misauthorization"] = not self.authorization.denied
-        drift = []
-        by_key = {row["request_id"]: row for row in self.invocations()}
+        # Request-hash drift: every request that reached the transport (the gate's own
+        # record, hashed like the composer's plan) must equal the frozen manifest's planned
+        # hash — including a re-handoff of the same request after recovery.
+        drift = []; sent_requests = 0
+        wire_hashes = self.transport.get("wire_hashes", {})
         for row in self.context_rows():
-            inv_row = by_key.get(row["original_request_key"])
-            manifest = self.manifest(row["original_request_key"])
-            receipt = self.token_receipt(manifest) if manifest is not None else {}
-            if inv_row is not None and receipt.get("request_hash") and inv_row["request_fingerprint"] != receipt["request_hash"]:
-                drift.append({"request": row["original_request_key"], "manifest": receipt["request_hash"], "invocation": inv_row["request_fingerprint"]})
+            for sent in wire_hashes.get(row["original_request_key"], []):
+                sent_requests += 1
+                if sent != row["planned_request_hash"]:
+                    drift.append({"request": row["original_request_key"], "planned": row["planned_request_hash"], "wire": sent})
+        inv["wire_requests_checked"] = sent_requests
         inv["request_hash_drift"] = drift; inv["no_request_hash_drift"] = not drift
         leak = []
         for label, agent_id in agents.items():
@@ -307,37 +364,58 @@ async def lm02(h: Harness, game: dict, *, key: str, rebuild) -> None:  # type: i
     second = h.context_rows()[-1]
     m2 = h.manifest(second["original_request_key"]); adoption_used = int(m2.manifest.get("adoption_revision", -1))
     first_again = next(row for row in h.context_rows() if row["original_request_key"] == first["original_request_key"])
-    # Crash window: submit the third turn, wait until its context request is PREPARED, then kill.
+    # Crash window: the third turn's request is frozen (PREPARED) and handed off, but the
+    # transport gate holds it before anything leaves the process; kill there.  A second
+    # process (new owner id) takes the Run over once the old lease expires, reconciles the
+    # stranded handoff through the deployment's reconciliation port (CONFIRMED_NOT_STARTED
+    # by the gate's own record) and re-hands off the *same* request.
+    h.transport["hold_next"] = True; h.transport["held_event"].clear()
     receipt = await a.submit("最后，把 9 和 10 的平方列出来。", input_id="t3")
     turn3 = receipt.turn_id
-    for _ in range(600):
-        if any(row["turn_id"] == turn3 for row in h.context_rows()):
-            break
-        await asyncio.sleep(0.05)
+    await asyncio.wait_for(h.transport["held_event"].wait(), timeout=120)
     prepared = [row for row in h.context_rows() if row["turn_id"] == turn3]
-    game["kill_point"] = "after PREPARED (context request row present)" if prepared else "before PREPARED"
+    held_state = [i["state"] for i in h.invocations() if i["run_id"] == a.agent_id][-1:]
+    game["kill_point"] = {"context_request_present": bool(prepared), "invocation_state_at_kill": held_state, "transport": "held before send"}
     await h.kill()
-    calls_before_recovery = None
+    # A crashed process cannot release its lease: the next process may only take the Run
+    # over after the lease (30 s) has expired.  Wait for that on the file, like a real restart.
+    waited = 0.0
+    while waited < 90:
+        with sqlite3.connect(str(h.dir / "runtime.db")) as raw:
+            row = raw.execute("SELECT expires_at FROM workflow_leases WHERE run_id=? AND namespace='runtime.kernel'", (a.agent_id,)).fetchone()
+        if row is None or float(row[0]) < time.time():
+            break
+        await asyncio.sleep(1.0); waited += 1.0
+    game["lease_wait_s"] = waited
     h2: Harness = await rebuild()
     calls_before_recovery = h2.calls()
+    recovery_log = []
+    for _ in range(30):
+        states = [i["state"] for i in h2.invocations() if i["run_id"] == a.agent_id]
+        recovery_log.append(states[-1] if states else None)
+        if states and states[-1] != "handed_off":
+            break
+        await h2.runtime.kernel.reconcile()
+        await asyncio.sleep(1.0)
+    game["recovery_states"] = recovery_log[-6:]; game["reconciliation_observations"] = list(h2.reconciliation.observations)
     a2 = await h2.runtime.open(a.agent_id)
     try:
         r3 = await a2.wait_turn(turn3, timeout=600)
-    except Exception:
-        receipt2 = await a2.submit("最后，把 9 和 10 的平方列出来。", input_id="t3")
-        r3 = await a2.wait_turn(receipt2.turn_id, timeout=600)
-    game["turns"].append(("A", "t3", str(r3.state)))
+        r3_error = None if r3.error is None else dict(r3.error)
+    except Exception as error:  # noqa: BLE001 - a turn that never completes is recorded, not retried by a new input
+        r3 = None; r3_error = f"{type(error).__name__}: {error}"[:300]
+    game["turns"].append(("A", "t3", "no result" if r3 is None else str(r3.state))); game["turn3_error"] = r3_error
     rows3 = [row for row in h2.context_rows() if row["turn_id"] == turn3]
     inv3 = [row for row in h2.invocations() if row["run_id"] == a.agent_id and row["request_id"] in {x["original_request_key"] for x in rows3}]
     session_after = store.read_live_session(h2.conn, a.agent_id)
     adoption_rows = h2.conn.execute("SELECT COUNT(*) FROM arp_context_policy_adoptions WHERE session_id=?", (session.session_id,)).fetchone()[0]
     game["settings"] = {"adoption_after_update": adoption_after, "adoption_used_by_turn2": adoption_used, "first_manifest_unchanged": first_again["manifest_hash"] == first_manifest_hash,
                         "adoption_rows": adoption_rows, "session_state_after_recovery": None if session_after is None else session_after.state}
-    game["recovery"] = {"turn3_context_rows": len(rows3), "turn3_invocations": [{"state": i["state"], "fingerprint": i["request_fingerprint"][:16], "rehandoff": i["rehandoff_count"]} for i in inv3],
+    game["recovery"] = {"turn3_context_rows": len(rows3), "turn3_invocations": [{"state": i["state"], "fingerprint": i["request_fingerprint"][:16], "rehandoff": i["rehandoff_count"], "usage": i["usage"]} for i in inv3],
                         "distinct_request_fingerprints": len({i["request_fingerprint"] for i in inv3}), "calls_at_recovery": calls_before_recovery, "calls_final": h2.calls()}
     game["oracle"] = {
-        "turn1_committed": game["turns"][0][2].endswith("COMMITTED"), "turn2_uses_new_adoption": adoption_used == adoption_after and adoption_after == view["adoption_revision"] + 1,
-        "old_manifest_unchanged": first_again["manifest_hash"] == first_manifest_hash, "turn3_committed_after_recovery": r3.state is AgentTurnState.COMMITTED,
+        "turn1_committed": game["turns"][0][2].lower().endswith("committed"), "turn2_uses_new_adoption": adoption_used == adoption_after and adoption_after == view["adoption_revision"] + 1,
+        "old_manifest_unchanged": first_again["manifest_hash"] == first_manifest_hash, "turn3_committed_after_recovery": r3 is not None and r3.state is AgentTurnState.COMMITTED,
         "turn3_single_request_identity": len({i["request_fingerprint"] for i in inv3}) <= 1 and len(rows3) >= 1,
         "no_charge_duplication": sum(1 for i in inv3 if i["state"] == "succeeded") <= 1,
         "session_active_after_recovery": session_after is not None and session_after.state == "ACTIVE",
@@ -458,7 +536,7 @@ async def run_game(name: str, round_: int, out: Path, key: str) -> dict:
         await h.start()
         if name == "LM02":
             async def rebuild() -> Harness:
-                h2 = Harness(directory, f"{name}-r{round_}", key=key); await h2.start(); return h2
+                h2 = Harness(directory, f"{name}-r{round_}", key=key, transport=h.transport, owner="arp-real-games:2"); await h2.start(); return h2
             await asyncio.wait_for(lm02(h, game, key=key, rebuild=rebuild), timeout=WALL_S)
             h = game.pop("_harness", h)
         else:
