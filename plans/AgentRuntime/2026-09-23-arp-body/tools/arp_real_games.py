@@ -40,6 +40,7 @@ from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.api.runtime_plane import RuntimePlaneService
 from simple_harness.execution.provider_invocations import provider_request_fingerprint
 from simple_harness.providers import OpenAICompatibleProvider, Secret
+from simple_harness.providers.errors import ProviderRequestRejectedError
 from simple_harness.providers.reconciliation import ProviderReconciliationObservation, ProviderReconciliationState
 from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
 from simple_harness.runtime.ports import AuthorizationResult
@@ -122,6 +123,7 @@ class TransportGate:
         self.inner = inner; self.record = record
         record.setdefault("sent", set()); record.setdefault("held", set()); record.setdefault("hold_next", False)
         record.setdefault("held_event", asyncio.Event()); record.setdefault("wire_hashes", {})
+        record.setdefault("physical_calls", 0); record.setdefault("cap_refusals", 0)
 
     @property
     def target(self):  # type: ignore[no-untyped-def]
@@ -135,6 +137,13 @@ class TransportGate:
         if self.record["hold_next"]:
             self.record["hold_next"] = False; self.record["held"].add(key); self.record["held_event"].set()
             await asyncio.sleep(3600)  # the process dies before this returns; nothing was sent
+        # Per-game ceiling (TEST-PLAN §5: 24 original Provider calls).  The record is the
+        # deployment's, shared across a crash/rebuild, so a restart never resets it.  The
+        # 25th call is refused before anything leaves the process.
+        if self.record["physical_calls"] >= MAX_CALLS:
+            self.record["cap_refusals"] += 1
+            raise ProviderRequestRejectedError(public_message=f"per-game provider call cap {MAX_CALLS} reached")
+        self.record["physical_calls"] += 1
         self.record["sent"].add(key)
         # What actually goes on the wire, hashed exactly as the composer hashes its plan.
         self.record["wire_hashes"].setdefault(key, []).append(provider_request_fingerprint(request))
@@ -265,7 +274,11 @@ class Harness:
     def invariants(self, agents: dict[str, str]) -> dict:
         """Hard invariants recorded for every game."""
         inv: dict[str, Any] = {}
-        inv["provider_calls"] = self.calls(); inv["calls_within_cap"] = inv["provider_calls"] <= MAX_CALLS
+        # Calls that physically reached the model (the transport's own count, across restarts);
+        # ledger rows also include refused / never-sent claims.
+        inv["provider_calls"] = self.transport.get("physical_calls", 0); inv["ledger_invocations"] = self.calls()
+        inv["cap_refusals"] = self.transport.get("cap_refusals", 0)
+        inv["calls_within_cap"] = inv["provider_calls"] <= MAX_CALLS
         inv["authorization_requests"] = list(self.authorization.requests); inv["authorization_denied"] = list(self.authorization.denied)
         inv["no_misauthorization"] = not self.authorization.denied
         # Request-hash drift: every request that reached the transport (the gate's own
