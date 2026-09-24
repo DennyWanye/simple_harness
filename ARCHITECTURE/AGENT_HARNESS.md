@@ -1,3 +1,10 @@
+2026-09-24 思考模式与不思考模式双支持（SDK `0.13.0.dev20260924+arp.4` / 提交 `ffd62d3d`，Host `860a4445`，记录见 `plans/AgentRuntime/2026-09-23-arp-body/10-RP-E3-原生平面接线实施记录.md` §7.12–§7.13）。
+- 计量口径：DeepSeek 端点无状态，窗口只算线上请求（WIRE_ONLY），不再预留先前输出。记账"可以多算不可以少算"：0 用量视为未结算，但不冻结 Agent。
+- 思考开关：提供方显式 `thinking=enabled|disabled`，写进目标身份、计数负载和延续模式；开思考时用"思考回传"（REASONING_REPLAY）。
+- 思考内容：只存在落盘回复的私有延续里，不进日志、召回或证据。发出前按调用编号补回每条助手消息，取不到就补空串。计数器按同一模式精确计数。
+- 产品后台：共享提供方对 DeepSeek 一律显式关思考；另设独立的思考原生池 `deepseek-native-{256k,512k}-thinking-v1`；配置 `[orchestration] thinking` 默认关，只影响新 Mission。
+- 未核实：真实思考线路上"缺思考必 400""空串可接受"两点。
+
 2026-09-12 Harness SDK 钉版 0.9.11 → **0.10.0**（SDK 源提交 `3eb43fb`，wheel sha256 `9c07fac4…d06c`，`SOURCE_DATE_EPOCH=1789168350`）。P3.2「隔离执行与真实受控交付」：沙箱执行端口与 macOS seatbelt 适配器（8 项能力探针）、`code_execution` 三取值、内容寻址产物库与软链拒绝、一次性执行副本、从登记字节重建验证副本、工作区登记（编排库 schema v7）、先写意图的文件发布连接器、权威查询语义（L2 及以上必须权威）、补偿作为独立业务动作、召回历史改为不可信的 USER 数据框。干净环境验证：844 passed，唯一的红是 0.9.9 起的 execution 迁移既有失败。
 
 2026-09-12 Harness SDK 钉版 0.9.10 → 0.9.11（SDK 源提交 `cfbd88d`，wheel sha256 `7a34e6df…e867`）。

@@ -4072,6 +4072,7 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-09-24 | **ARP 计量口径纠正 + 思考/不思考双模式 🟡** — DeepSeek 只算线上请求（去掉先前输出储备），记账可以多算不可以少算；提供方显式思考开关、私有思考逐条回传、计数按模式精确；Host 独立思考原生池，默认关。SDK arp.4 `ffd62d3d` / Host `860a4445`。真实思考线路上的 400 规则待核实 |
 | 2026-08-30 | **全局多 Skill 安装、恢复与 TokenSeller 普通 Session 真人调用 PASS 🟡** — `plan-test-skill@3a094db…` 以 `simpleharness.pkg2` 保留跨 Skill 资源，失败 verification 释放并 supersede、完整 Manager receipt 恢复、attestation 后全局 activation 幂等收口；三项 binding generation 2 active。真实 `deepseek-v4-flash` Session `ec89714c…` 完成 `/plan-bs` 资源读取、Todo、延迟 Tool 激活并只提出澄清问题。完整安装 release gate 仍待执行。 |
 | 2026-08-29 | **Project-scoped managed Skill 当前故障链 PASS 🟡** — 修复 JSON tuple、授权 decision 恢复、verification attempt 恢复、resolver composition、owner-aware catalog 与 Capability Center Session scope；macOS 隔离 App 真实安装 `plan-test-skill@4d8c803…`，intent succeeded、verification attested，三成员 UI 均健康。完整安装 release gate 仍待执行。 |
 | 2026-08-21 | **Agent Runtime SDK 0.2/0.3 simple_harness 真人消费者回归完成 ✅** — CTX-1～CTX-5 与 Provider/Session/Context/附件/历史重启/停止 critical surface smoke 全部 PASS；补齐消息页文本附件到 consumer-prepared private stage、公开 default-deny Context 摘要和 Provider wire lowering。真人停止发现并修复 budget-only `unknown` 回执毒化投影游标，重启后 cursor 24→27、下一真实 DeepSeek Run 完成并回到空闲。 |
