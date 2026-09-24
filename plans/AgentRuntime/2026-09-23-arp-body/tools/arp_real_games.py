@@ -139,6 +139,7 @@ class TransportGate:
         record.setdefault("sent", set()); record.setdefault("held", set()); record.setdefault("hold_next", False)
         record.setdefault("held_event", asyncio.Event()); record.setdefault("wire_hashes", {})
         record.setdefault("physical_calls", 0); record.setdefault("cap_refusals", 0)
+        record.setdefault("replay", [])
 
     @property
     def target(self):  # type: ignore[no-untyped-def]
@@ -160,6 +161,14 @@ class TransportGate:
             raise ProviderRequestRejectedError(public_message=f"per-game provider call cap {MAX_CALLS} reached")
         self.record["physical_calls"] += 1
         self.record["sent"].add(key)
+        # Thinking mode evidence: what the wire request actually carries for every earlier
+        # assistant message (the replayed private reasoning, key present even when empty).
+        assistants = [m for m in request.messages if getattr(m.role, "value", m.role) == "assistant"]
+        texts = [m.metadata.get("provider_reasoning_content") for m in assistants]
+        self.record["replay"].append({
+            "request": key, "assistants": len(assistants), "with_key": sum(t is not None for t in texts),
+            "nonempty": sum(bool(t) for t in texts), "chars": sum(len(t or "") for t in texts),
+        })
         # What actually goes on the wire, hashed exactly as the composer hashes its plan.
         self.record["wire_hashes"].setdefault(key, []).append(provider_request_fingerprint(request))
         return await self.inner.invoke(request, cancel=cancel)
@@ -345,6 +354,21 @@ class Harness:
             if diff > SAFETY:
                 calibration["undercounts"].append({"request": str(request_key), "reported": reported, "planned": planned})
         inv["usage_calibration"] = calibration; inv["no_undercount"] = not calibration["undercounts"]
+        # Reasoning replay (thinking mode): every assistant message on the wire carries the
+        # reasoning key, and once real reasoning was returned a later request replays it.
+        replay = list(self.transport.get("replay", []))
+        stored = self.conn.execute(
+            "SELECT count(*) FROM provider_invocations WHERE state='succeeded'"
+            " AND length(coalesce(json_extract(response_json,'$.continuation.reasoning_content'),''))>0"
+        ).fetchone()[0]
+        summary = {"requests": len(replay), "stored_nonempty_reasoning": stored,
+                   "requests_missing_key": sum(r["with_key"] < r["assistants"] for r in replay),
+                   "requests_replaying_real_reasoning": sum(r["nonempty"] > 0 for r in replay),
+                   "max_replayed_chars": max((r["chars"] for r in replay), default=0)}
+        inv["reasoning_replay"] = summary
+        inv["reasoning_replay_ok"] = THINKING != "enabled" or (
+            summary["requests_missing_key"] == 0 and (stored == 0 or summary["requests_replaying_real_reasoning"] > 0)
+        )
         inv["turn_failures"] = list(self.failures)
         return inv
 
@@ -628,7 +652,7 @@ async def run_game(name: str, round_: int, out: Path, key: str) -> dict:
         except Exception as error:  # noqa: BLE001
             game["stop_error"] = f"{type(error).__name__}: {error}"[:200]
     inv = game.get("invariants") or {}
-    game["hard_invariants_ok"] = all(inv.get(k) for k in ("calls_within_cap", "no_misauthorization", "no_request_hash_drift", "no_leak", "no_undercount")) if inv else False
+    game["hard_invariants_ok"] = all(inv.get(k) for k in ("calls_within_cap", "no_misauthorization", "no_request_hash_drift", "no_leak", "no_undercount", "reasoning_replay_ok")) if inv else False
     (directory / "game.json").write_text(json.dumps(game, ensure_ascii=False, indent=1, default=str))
     return game
 
