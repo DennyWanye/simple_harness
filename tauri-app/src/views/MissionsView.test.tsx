@@ -1247,3 +1247,25 @@ describe("下一步提示（2026-09-25 真机点击：要人操作的按钮埋�
     expect(screen.getByTestId("mission-next-step").textContent).toMatch(/自动进行|等你审批/);
   });
 });
+
+describe("结束态与产物排序（2026-09-25 真机点击）", () => {
+  it("任务结束后不再显示取消；停止原因与 Task 状态显示中文", () => {
+    openMission({ ...DETAIL, approvals: [], mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "COMPLETED", stop_reason: "verification_passed" },
+      tasks: [{ id: "task-1", goal: "写 NOTES.md", status: "BLOCKED", dependencies: [] }] });
+    expect(screen.queryByRole("button", { name: "取消任务" })).toBeNull();
+    expect(screen.getByTestId("mission-state").textContent).toMatch(/停止原因：验证通过/);
+    expect(document.body.textContent).toMatch(/等待前置步骤/);
+  });
+
+  it("交付物排在前面，系统检查记录默认收起、可展开", () => {
+    openMission({ ...DETAIL, artifacts: [
+      { id: "a-check", path: ".assurance/checks/x/0.json", size_bytes: 10, verification_status: "UNVERIFIED", content_hash: "h1" },
+      { id: "a-notes", path: "NOTES.md", size_bytes: 20, verification_status: "PASS", content_hash: "h2" },
+    ] });
+    const rows = screen.getAllByTestId(/^artifact-/);
+    expect(rows.map((row) => row.getAttribute("data-testid"))).toEqual(["artifact-a-notes", "artifact-a-check"]);
+    expect(screen.getByTestId("artifact-a-check").hidden).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /显示系统检查记录（1 个/ }));
+    expect(screen.getByTestId("artifact-a-check").hidden).toBe(false);
+  });
+});

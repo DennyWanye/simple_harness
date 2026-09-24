@@ -131,6 +131,22 @@ const STATUS_LABEL: Record<string, string> = {
   STOPPED: "已停止",
 };
 
+/** 停止原因与 Task 状态的中文（2026-09-25 真机点击：界面直接显示 verification_passed / BLOCKED）。 */
+const STOP_REASON_LABEL: Record<string, string> = {
+  verification_passed: "验证通过",
+  verification_failed: "验证未通过",
+  budget_exhausted: "预算用完",
+  cancelled: "已取消",
+  user_cancelled: "已取消",
+  planning_failed: "规划失败",
+  max_attempts: "尝试次数用完",
+  timeout: "超时",
+};
+const TASK_STATUS_LABEL: Record<string, string> = {
+  PENDING: "等待", READY: "就绪", ACTIVE: "执行中", RUNNING: "执行中", BLOCKED: "等待前置步骤",
+  VERIFYING: "检查中", DONE: "完成", COMPLETED: "完成", FAILED: "失败", CANCELLED: "已取消", SKIPPED: "跳过",
+};
+
 function stateLabel(uiState: unknown, status: unknown): string {
   const ui = text(uiState);
   const raw = text(status);
@@ -373,6 +389,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const [bases, setBases] = useState<Record<string, string>>({});
   const [reviewPending, setReviewPending] = useState<Record<string, boolean>>({});
   const [comment, setComment] = useState("");
+  const [showInternal, setShowInternal] = useState(false);
   const [artifact, setArtifact] = useState<Json | null>(null);
   const artifactRequest = useRef<{ requestId: string; missionId: string | null; artifactId: string } | null>(null);
   const selectedRef = useRef<string | null>(null);
@@ -765,6 +782,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   );
   const waiting: unknown[] = Array.isArray(detail?.waiting_on) ? (detail.waiting_on as unknown[]) : [];
   const artifacts = list(detail?.artifacts);
+  // 用户要的交付物在前；审阅/检查留下的内部记录（.assurance/…）默认收起（2026-09-25 真机点击）。
+  const internals = artifacts.filter((item) => text(item.path).startsWith(".assurance/"));
+  const deliverables = artifacts.filter((item) => !text(item.path).startsWith(".assurance/"));
   const drift = list(store.policy?.drift);
 
   if (status && !status.available) {
@@ -915,7 +935,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 style={{ color: dark.textMuted }}
               >
                 {`状态：${stateLabel(mission.ui_state, mission.status)}`}
-                {mission.stop_reason ? ` · 停止原因：${text(mission.stop_reason)}` : ""}
+                {mission.stop_reason ? ` · 停止原因：${STOP_REASON_LABEL[text(mission.stop_reason).toLowerCase()] ?? text(mission.stop_reason)}` : ""}
                 {` · 策略版本：${text(record(detail.mission_policy).version_id) || "—"}`}
               </div>
               <div style={muted}>
@@ -937,14 +957,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                   ))}
                 </div>
               ) : null}
-              <button
+              {!TERMINAL.has(text(mission.status)) && <button
                 type="button"
                 style={{ ...button, marginTop: tokens.space.sm }}
-                disabled={TERMINAL.has(text(mission.status))}
                 onClick={() => send("mission_cancel", { mission_id: selectedId })}
               >
                 取消任务
-              </button>
+              </button>}
             </div>
 
             {(() => {
@@ -1072,7 +1091,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 const canTakeOver = !TERMINAL.has(text(mission.status)) && !TASK_ENDED.has(text(task.status)) && !blockedIds.has(taskId);
                 return (
                   <div key={taskId} data-testid={`task-${taskId}`} style={{ marginTop: tokens.space.sm }}>
-                    <ModelText value={task.goal} /> · {text(task.status)}
+                    <ModelText value={task.goal} /> · {TASK_STATUS_LABEL[text(task.status)] ?? text(task.status)}
                     {canTakeOver ? <TakeoverBox taskId={taskId} send={send} /> : null}
                   </div>
                 );
@@ -1136,14 +1155,21 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             {artifacts.length ? (
               <div id="mission-step-artifacts" style={box}>
                 <div style={heading}>产物</div>
-                {artifacts.map((item) => {
+                {internals.length > 0 && <button type="button" style={{ ...button, height: "auto", padding: `2px ${tokens.space.sm}px`, marginTop: tokens.space.xs, color: dark.textMuted }}
+                  onClick={() => setShowInternal((v) => !v)}>
+                  {showInternal ? "收起系统检查记录" : `显示系统检查记录（${internals.length} 个，排查问题时看）`}
+                </button>}
+                {[...deliverables, ...internals].map((item, index) => {
                   const artifactId = text(item.id);
+                  const folded = index >= deliverables.length;
                   const verification = text(item.verification_status);
                   return (
                     <div
                       key={artifactId}
                       data-testid={`artifact-${artifactId}`}
-                      style={{ display: "flex", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm, minWidth: 0 }}
+                      data-internal={folded ? "true" : undefined}
+                      hidden={folded && !showInternal}
+                      style={{ display: folded && !showInternal ? "none" : "flex", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm, minWidth: 0 }}
                     >
                       <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                         {`${text(item.path)} · ${formatBytes(item.size_bytes)} · 验证：${LAYER_LABEL[verification] ?? (verification || "—")} · ${shortHash(item.content_hash)}`}
