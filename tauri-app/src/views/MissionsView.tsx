@@ -824,7 +824,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         {status?.test_scenario ? (
           <div role="status" style={{ ...box, borderColor: tokens.color.warning.bg }}>测试场景：{status.test_scenario}</div>
         ) : null}
-        <button type="button" style={button} onClick={() => { setCreating(true); store.select(null); selectedRef.current = null; setArtifact(null); }}>
+        {/* flexShrink 0: with many rows the column scrolls instead of squashing them (2026-09-25) */}
+        <button type="button" style={{ ...button, flexShrink: 0 }} onClick={() => { setCreating(true); store.select(null); selectedRef.current = null; setArtifact(null); }}>
           新建任务
         </button>
         {store.missions.length === 0 ? (
@@ -839,7 +840,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               data-ui-state={row.ui_state || undefined}
               aria-current={selectedId === row.id ? "true" : undefined}
               onClick={() => open(row.id)}
-              style={{ ...button, height: "auto", padding: tokens.space.sm, textAlign: "left", display: "flex", flexDirection: "column", gap: 2 }}
+              style={{ ...button, height: "auto", flexShrink: 0, padding: tokens.space.sm, textAlign: "left", display: "flex", flexDirection: "column", gap: 2 }}
             >
               <span>{row.goal}</span>
               <span style={muted}>
@@ -850,7 +851,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             </button>
           ))
         )}
-        <div style={{ ...box, marginTop: "auto" }} aria-label="策略状态">
+        <div style={{ ...box, marginTop: "auto", flexShrink: 0 }} aria-label="策略状态">
           <div style={heading}>策略（只读）</div>
           <div style={muted}>当前版本：{text(store.policy?.active_version_id) || "—"}</div>
           {drift.map((item) => (
