@@ -137,3 +137,17 @@ describe("OperationWorkspace", () => {
     expect((confirm.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(false);
   });
 });
+
+describe("全选（2026-09-25 真机点击：8 条要求要逐个勾）", () => {
+  it("一键勾选全部内容类要求并确认；再点全部取消", () => {
+    const channel = new Channel();
+    render(<OperationWorkspace value={confirmation()} channel={channel} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    for (const box of screen.getAllByRole("checkbox")) expect((box as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "确认上述完成要求" }));
+    const sent = channel.sent.filter(message => message.type === "mission_operation_completion_approve");
+    expect((sent[0].payload as Record<string, any>).proposal.content_criterion_ids).toEqual(criteria.map(item => item.id));
+    fireEvent.click(screen.getByRole("button", { name: "全部取消" }));
+    for (const box of screen.getAllByRole("checkbox")) expect((box as HTMLInputElement).checked).toBe(false);
+  });
+});

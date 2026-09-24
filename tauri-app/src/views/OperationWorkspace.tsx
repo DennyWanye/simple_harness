@@ -104,6 +104,13 @@ function Workspace({ workspace: w, channel, onChanged }: {
         <p>勾选只需要交付内容（文件、文字）就算完成的要求，然后点「确认上述完成要求」。需要真实操作的要求（如发送邮件）请放到「必须验证的实际效果」。</p>
         <fieldset disabled={disabled}>
           <legend>仅以内容交付验收的要求</legend>
+          {criteria.length > 1 && (() => {
+            // 全选只选没放进"实际效果"的要求（2026-09-25 真机点击：8 条要求要逐个勾）。
+            const free = criteria.map(c => asText(c.id)).filter(id => !effects.some(e => e.criteria.includes(id)));
+            const all = free.length > 0 && free.every(id => content.includes(id));
+            return <button type="button" style={{ marginBottom: 4 }}
+              onClick={() => setContent(all ? [] : free)}>{all ? "全部取消" : "全选"}</button>;
+          })()}
           {criteria.map(c => <label key={asText(c.id)} style={{ display: "block" }}>
             <input type="checkbox" checked={content.includes(asText(c.id))}
               onChange={event => setContent(ids => event.target.checked ? [...ids, asText(c.id)] : ids.filter(id => id !== c.id))} />
