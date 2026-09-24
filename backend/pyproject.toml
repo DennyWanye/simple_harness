@@ -135,6 +135,11 @@ dependencies = [
     "openpyxl>=3.1",
     "python-docx>=1.1",
     "rapidocr-onnxruntime>=1.3",
+    # 2026-09-24: the ARP vector lane runs BGE-M3 INT8 through ONNX Runtime + the HF
+    # tokenizers library (native_plane.BgeM3EmbeddingPort; no torch / FlagEmbedding).
+    # Declared directly so dropping OCR never silently disables embeddings.
+    "onnxruntime>=1.20",
+    "tokenizers>=0.20",
     # P4-S9: MCP client (Model Context Protocol). Lets DeskPet spawn/talk
     # to stdio MCP servers (filesystem, weather, ...) via the official SDK.
     "mcp>=1.0",
@@ -166,7 +171,7 @@ dependencies = [
     # 2026-08-29: vendored exact Agent Runtime candidate bytes.
     # Wheel identity single source of truth:
     # deskpet/sdk_adapters/sdk_candidate.py
-    "simple-harness-sdk==0.13.0.dev20260924+arp.7",
+    "simple-harness-sdk==0.13.0.dev20260924+arp.8",
     # ARP-EXEC-1.1.1: the pinned official DeepSeek V4.1 counting recipe (the SDK's
     # deepseek-tokenizer extra); the tokenizer bytes live in the user models directory.
     "deepseek-recipe==0.1.1",
@@ -184,7 +189,7 @@ dependencies = [
 # simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
 #
 # Production (vendored immutable candidate):
-simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.7-py3-none-any.whl" }
+simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.8-py3-none-any.whl" }
 simple-harness-service-sdk = { path = "vendor/simple_harness_service_sdk-0.3.13-py3-none-any.whl" }
 
 [tool.uv]
@@ -193,7 +198,7 @@ simple-harness-service-sdk = { path = "vendor/simple_harness_service_sdk-0.3.13-
 # protocol candidate, so normalize the transitive dependency to that exact
 # locally vendored runtime candidate.
 override-dependencies = [
-    "simple-harness-sdk==0.13.0.dev20260924+arp.7",
+    "simple-harness-sdk==0.13.0.dev20260924+arp.8",
 ]
 
 [project.optional-dependencies]

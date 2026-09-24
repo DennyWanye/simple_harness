@@ -1,3 +1,8 @@
+2026-09-24 ARP 向量车道本地可用（SDK `0.13.0.dev20260924+arp.8` / 提交 `5755aa34`，记录 §7.16）。
+- 模型：BGE-M3 INT8（本机从官方 ONNX 动态量化，外部数据格式），放在用户模型目录 `models/bge-m3-int8/`；Host 端口 `native_plane.BgeM3EmbeddingPort` 只依赖 onnxruntime + tokenizers，1024 维归一化，常驻约 1.07 GB。缺文件时端口报出具体原因，向量车道关闭、召回走词法。
+- 后台计算：端口声明 `prefers_background = True` 后，Turn 准备阶段不再同步跑嵌入；后台泵 `tick_async` 在线程里算向量，再走原有的已记录嵌入调用。未声明的端口行为不变。
+- 已知：模型文件目前需要手工放到模型目录（首启自动下载未做）。
+
 2026-09-24 思考模式与不思考模式双支持（SDK `0.13.0.dev20260924+arp.4` / 提交 `ffd62d3d`，Host `860a4445`，记录见 `plans/AgentRuntime/2026-09-23-arp-body/10-RP-E3-原生平面接线实施记录.md` §7.12–§7.13）。
 - 计量口径：DeepSeek 端点无状态，窗口只算线上请求（WIRE_ONLY），不再预留先前输出。记账"可以多算不可以少算"：0 用量视为未结算，但不冻结 Agent。
 - 思考开关：提供方显式 `thinking=enabled|disabled`，写进目标身份、计数负载和延续模式；开思考时用"思考回传"（REASONING_REPLAY）。

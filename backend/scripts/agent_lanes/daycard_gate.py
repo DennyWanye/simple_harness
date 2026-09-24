@@ -12,7 +12,8 @@ for the slots instead:
   waiting dev requests.
 
 Requests and responses are relayed verbatim (responses streamed chunk by chunk, so SSE works).  An
-upstream 429/502/503 is retried here after `retry_after`, invisibly to the client.  Headers and
+upstream 429/502/503 is retried here after `retry_after`, invisibly to the client -- except a 429
+that says the credits are exhausted, which goes straight back (retrying it only holds a slot).  Headers and
 bodies are never logged -- only class, method, path, status, queue wait and latency.
 
 The upstream origin comes from `DEEPSEEKER_BASEURL` in the Host `.env`; the key is whatever the
@@ -142,6 +143,16 @@ def _json_empty(body: bytes) -> bool:
     return not (message.get("content") or message.get("tool_calls") or message.get("reasoning_content"))
 
 
+# Wording of a 429 that means "no credits left" rather than "busy": the relay says
+# 积分不足 / 余额不足, OpenAI-style gateways say insufficient_quota.
+_QUOTA_MARKERS = ("积分不足", "余额不足", "insufficient_quota", "insufficient balance", "insufficient credit")
+
+
+def _exhausted_quota(body: bytes) -> bool:
+    text = body[:65536].decode("utf-8", "replace").lower()
+    return any(marker in text for marker in _QUOTA_MARKERS)
+
+
 def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
     scheme, host, port = origin
     factory = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
@@ -162,13 +173,20 @@ def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
                     conn = factory(host, port, timeout=1800)
                     conn.request(self.command, self.path, body=body, headers=headers)
                     resp = conn.getresponse()
+                    prefix, streaming, exhausted = b"", False, False
                     if resp.status in (429, 502, 503) and attempt < UPSTREAM_RETRIES:
-                        resp.read()
+                        refused = resp.read()
+                        if resp.status == 429 and _exhausted_quota(refused):
+                            # Out of credits is not a busy slot: waiting will not fix it, and
+                            # retrying would hold this slot for ~15 minutes while every other
+                            # request queues behind it.  Hand the refusal to the client now.
+                            prefix, exhausted = refused, True
+                            log(f"{klass} upstream 429 is exhausted quota; not retrying")
+                            break
                         conn.close()
                         time.sleep(5 + random.random() * 3)  # someone outside the gate holds a slot
                         continue
                     # Hold back the first bytes of a 200 until they prove a real completion.
-                    prefix, streaming, exhausted = b"", False, False
                     if resp.status == 200 and self.command == "POST":
                         ctype = (resp.getheader("Content-Type") or "").split(";", 1)[0].strip()
                         streaming = ctype == "text/event-stream"

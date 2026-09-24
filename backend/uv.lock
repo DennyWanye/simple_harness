@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [manifest]
-overrides = [{ name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.7-py3-none-any.whl" }]
+overrides = [{ name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.8-py3-none-any.whl" }]
 
 [[package]]
 name = "accelerate"
@@ -7651,6 +7651,7 @@ dependencies = [
     { name = "mcp" },
     { name = "mss" },
     { name = "ollama" },
+    { name = "onnxruntime" },
     { name = "openai" },
     { name = "openpyxl" },
     { name = "peft" },
@@ -7673,6 +7674,7 @@ dependencies = [
     { name = "simple-harness-service-sdk", extra = ["realtime"] },
     { name = "sqlite-vec" },
     { name = "structlog" },
+    { name = "tokenizers" },
     { name = "tomli" },
     { name = "tomlkit" },
     { name = "torch" },
@@ -7714,6 +7716,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.0" },
     { name = "mss", specifier = ">=9.0" },
     { name = "ollama", specifier = ">=0.4.0" },
+    { name = "onnxruntime", specifier = ">=1.20" },
     { name = "openai", specifier = ">=1.40" },
     { name = "openpyxl", specifier = ">=3.1" },
     { name = "peft", specifier = "<0.15" },
@@ -7736,10 +7739,11 @@ requires-dist = [
     { name = "selectolax", specifier = ">=0.3" },
     { name = "sentence-transformers", specifier = ">=5.7" },
     { name = "silero-vad", specifier = ">=5.1.2,<6" },
-    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.7-py3-none-any.whl" },
+    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.8-py3-none-any.whl" },
     { name = "simple-harness-service-sdk", extras = ["realtime"], path = "vendor/simple_harness_service_sdk-0.3.13-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
+    { name = "tokenizers", specifier = ">=0.20" },
     { name = "tomli", specifier = ">=2.0" },
     { name = "tomlkit", specifier = ">=0.13" },
     { name = "torch", specifier = "==2.7.1" },
@@ -7756,13 +7760,13 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "simple-harness-sdk"
-version = "0.13.0.dev20260924+arp.7"
-source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.7-py3-none-any.whl" }
+version = "0.13.0.dev20260924+arp.8"
+source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260924+arp.8-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
 ]
 wheels = [
-    { filename = "simple_harness_sdk-0.13.0.dev20260924+arp.7-py3-none-any.whl", hash = "sha256:30c65b25c574621d8ca25b39ea994623421b661265fedc6d1cfffbaec5e263db" },
+    { filename = "simple_harness_sdk-0.13.0.dev20260924+arp.8-py3-none-any.whl", hash = "sha256:744a271e660c07126daeb0d708d4b23279554d48497ec8fed4f1e9fcb98c6478" },
 ]
 
 [package.metadata]
