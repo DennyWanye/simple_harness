@@ -260,7 +260,8 @@ def source_runtime_options(
         )
         from simple_harness.agents.context.budget import ContextPolicy
 
-        def register(identifier: str, tokens: int, current: Any, base: Any, *, native_pool: bool, kind: str) -> None:
+        def register(identifier: str, tokens: int, current: Any, base: Any, *, native_pool: bool, kind: str,
+                     default_output: int = 8192) -> None:
             pool_counter = pick(identifier, current, native_pool=native_pool)
             if pool_counter is None:
                 return
@@ -278,7 +279,7 @@ def source_runtime_options(
                 identifier, provider_for(pool_counter, base), config.model, price_table=config.price_table,
                 provider_kind=kind,
                 context_policy=frozen, tokenizer=pool_counter,
-                default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
+                default_max_output_tokens=default_output, max_output_tokens_ceiling=32768,
                 **({"native_plane": native.assembly(identifier, tokens=tokens, counter=pool_counter)} if native_pool else {}),
             )
 
@@ -303,8 +304,13 @@ def source_runtime_options(
             )
             if thinking_counter is not None:
                 for tokens in CONTEXT_INPUT_LIMITS:
+                    # Reasoning shares the output limit: at 8192 a thinking reviewer spent the
+                    # budget thinking and its verdict JSON was cut mid-string, twice (2026-09-25
+                    # desktop run, AssuranceReviewFormatExhausted).  The pool's own ceiling —
+                    # the output reserve it was sized with — is the default here; a larger
+                    # reservation only ever over-counts.
                     register(native_profile_id(tokens, thinking=True), tokens, thinking_counter, thinking_provider,
-                             native_pool=True, kind="env")
+                             native_pool=True, kind="env", default_output=32768)
         options["provider_token_estimators"] = {
             key: pool_counters.get(key, counter) for key in options["profiles"]
         }
