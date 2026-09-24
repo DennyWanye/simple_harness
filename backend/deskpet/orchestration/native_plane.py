@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_orchestrator.runtime.assembly import OWNER_SCOPE
-from agent_orchestrator.runtime.native_plane import NativePlaneAssembly, RunPriorReserve, intent_caller
+from agent_orchestrator.runtime.native_plane import NativePlaneAssembly, intent_caller
 from agent_orchestrator.runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS
 from simple_harness.agents.arp.assurance_acceptance import AssuranceSkillAcceptance
 from simple_harness.agents.arp.errors import ArpError
@@ -173,7 +173,6 @@ class HostNativePlane:
         )
         self._meter_factory = meter_factory
         self._orchestrator: Any = None
-        self.readers: dict[str, RunPriorReserve] = {}
         self.profiles: dict[str, dict[str, Any]] = {}
 
     # ---- late bindings (the Orchestrator exists only after the profiles do) ----------------
@@ -225,13 +224,14 @@ class HostNativePlane:
     # ---- per-pool assembly ----------------------------------------------------------------
 
     def assembly(self, profile_id: str, *, tokens: int, counter: Any, output_tokens: int = NATIVE_OUTPUT_TOKENS) -> NativePlaneAssembly:
-        reader = RunPriorReserve()
-        self.readers[profile_id] = reader
         acceptance = AssuranceSkillAcceptance(store=None, clock_ms=self.clock_ms, root_incarnation=self._root_incarnation)
         if self._orchestrator is not None:
             acceptance.store = self._orchestrator.store
         self.acceptances[profile_id] = acceptance
-        meter = self._meter_factory(counter, input_limit_tokens=tokens, max_output_tokens=output_tokens, prior_reserve=reader)
+        # Wire-only scope (2026-09-24): the DeepSeek endpoint keeps no output beyond the wire,
+        # so no prior-output reserve reader is bound — one would double-charge every earlier
+        # output of the run and shrink the window over a long session.
+        meter = self._meter_factory(counter, input_limit_tokens=tokens, max_output_tokens=output_tokens)
         root_id = f"host:{self.tenant_id}:{profile_id}"
         # The SDK derives the catalogue namespace from the session root and the pool's
         # owner scope; the Host records the same value so control requests can name it.
@@ -263,7 +263,6 @@ class HostNativePlane:
         }
 
         def after_build(runtime: Any) -> None:
-            reader.bind(runtime)
             actual = runtime.arp.catalogue.namespace_id
             if actual != namespace:  # never report a namespace the runtime does not use
                 self.profiles[profile_id]["catalogue_namespace_id"] = actual

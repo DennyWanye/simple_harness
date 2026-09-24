@@ -4,7 +4,7 @@
   cd sdk/simple-harness-sdk && uv run --frozen python ../../plans/AgentRuntime/2026-09-23-arp-body/tools/arp_real_games.py <证据目录> [--games LM01,LM02,LM03,LM04] [--rounds 3]
 
 模型：DeepSeek V4.1 Flash 经本机日卡闸口（127.0.0.1:28181），密钥只在进程内从主副本 .env 读取，不写入输出。
-计量：官方 tokenizer + 官方渲染器的认证 EXACT 计数（`CertifiedDeepSeekCounter`）+ 每 run 先前输出储备（`RunPriorReserve`）。
+计量：官方 tokenizer + 官方渲染器的认证 EXACT 计数（`CertifiedDeepSeekCounter`），只算线上请求（WIRE_ONLY，2026-09-24 起无先前输出储备）；每局记用量校对（回报为正时我们的精确计数不得少于它超过安全余量）。
 嵌入：无（本机 BGE-M3 不可用）→ 检索 LEXICAL_ONLY，凡依赖向量的判据记"环境未验"，不冒充 PASS。
 脚本执行器：无（Host 尚未接沙箱）→ LM03 的 script 部分记"环境缺失"。
 失败全部保留，不挑选成功局；每局上限：提供方调用 24 次、墙钟 30 分钟。
@@ -24,7 +24,6 @@ sys.path.insert(0, str(SDK / "tests/agents"))
 sys.path.insert(0, str(SDK / "tests"))
 
 from agent_orchestrator.runtime.deepseek_meter import CertifiedDeepSeekCounter, deepseek_meter_binding
-from agent_orchestrator.runtime.native_plane import RunPriorReserve
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.errors import ArpError
@@ -53,6 +52,14 @@ GATE = "http://127.0.0.1:28181/v1"
 ENV_FILE = Path(os.environ.get("REAL_ENV_FILE", "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.env"))
 TOKENIZER = Path(os.environ.get("SH_TOKENIZER_PATH") or (Path.home() / "Library/Application Support/deskpet/models/deepseek-v41/tokenizer.json"))
 LIMIT, OUT = 6144, 1024            # a deliberately small window: early facts must come back through recall
+SAFETY = 64                        # the profile's safety reserve; also the usage-calibration tolerance
+# DeepSeek V4.1 thinks by default; the runtime's continuation contract is "reasoning
+# disabled" and thinking would have to be passed back inside tool loops (official guide),
+# which the adapter does not do yet — so every request switches it off explicitly.
+THINKING_OFF = {"thinking": {"type": "disabled"}}
+# The relay echoes the vendor-prefixed spelling; the kernel trusts usage only when the echo
+# equals the bound model name, so the spelling is declared as an alias of it.
+MODEL_ALIASES = ("deepseek-ai/DeepSeek-V4.1-Flash",)
 MAX_CALLS, WALL_S = 24, 1800
 # Round 1 (2026-09-24): without ``tool_names`` no tool reaches the wire at all (LM03: "当前未提供
 # skill.discover / skill.load 工具").  Exposure is per Agent config, by registered tool name.
@@ -94,7 +101,7 @@ class GameAuthorization:
 def game_profile(name: str) -> RuntimeProfile:
     policy = default_policy(f"real-game-{name}")
     policy.update(
-        max_context_tokens=LIMIT, output_reserve_tokens=OUT, safety_reserve_tokens=64, tool_headroom_tokens=256,
+        max_context_tokens=LIMIT, output_reserve_tokens=OUT, safety_reserve_tokens=SAFETY, tool_headroom_tokens=256,
         recent_min_tokens=768, recall_max_tokens=1536, fixed_soft_max_tokens=2048,
         section_soft_caps={"A": 512, "B": 1024, "C": 1024, "D": 1024, "E": 512},
         embedding_chunk_tokens=128, embedding_overlap_tokens=16, max_scan_rows_per_page=8, max_recall_items=16,
@@ -177,23 +184,21 @@ class Harness:
         self.reconciliation = RunnerReconciliation(self.transport)
         self.authorization = GameAuthorization()
         self.failures: list[dict] = []
-        self.reader = RunPriorReserve()
         self.counter = CertifiedDeepSeekCounter(TOKENIZER, model=MODEL)
         self.runtime: Any = None; self.client: Any = None
 
     async def start(self) -> None:
         import httpx
         self.client = httpx.AsyncClient()
-        provider = TransportGate(OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True), self.transport)
+        provider = TransportGate(OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True, extra_body=THINKING_OFF, response_model_aliases=MODEL_ALIASES), self.transport)
         root = bootstrap_root(self.dir / "root", root_id=f"real-games:{self.name}")
-        meter = deepseek_meter_binding(self.counter, input_limit_tokens=LIMIT, max_output_tokens=OUT, prior_reserve=self.reader)
+        meter = deepseek_meter_binding(self.counter, input_limit_tokens=LIMIT, max_output_tokens=OUT)
         policies = ConsumerRuntimePolicies("unpriced_local", False, "fail_closed", provider_reconciliation=self.reconciliation)
         ports = AgentRuntimePorts(provider=provider, authorization=self.authorization, database_path=str(self.dir / "runtime.db"), model=MODEL,
                                   owner_id=self.owner, tokenizer=self.counter, default_max_output_tokens=OUT, max_output_tokens_ceiling=OUT, policies=policies)
         arp = ArpPorts(root_dir=root.directory, profile=game_profile(self.name), activation_receipt={"kind": "deployment_activation", "profile_id": f"real-game-{self.name}", "revision": 1},
                        meter=meter, embedding=None, acceptance=self.acceptance, script_runner=None, fault=self.fault)
         self.runtime = build_arp_runtime(ports, arp)
-        self.reader.bind(self.runtime)
         await self.runtime.__aenter__()
 
     async def stop(self) -> None:
@@ -304,7 +309,30 @@ class Harness:
         for (t,) in self.conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'arp_%'"):
             counts[t] = self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         inv["arp_table_counts"] = counts
-        inv["meter"] = {"count_mode": "EXACT", "tokenizer": self.counter.fingerprint[:40], "input_limit_scope": "WIRE_PLUS_PRIOR"}
+        inv["meter"] = {"count_mode": "EXACT", "tokenizer": self.counter.fingerprint[:40], "input_limit_scope": "WIRE_ONLY"}
+        # Usage calibration (rule 2026-09-24: may overcount, never undercount).  When the
+        # gateway reports a positive prompt count it is the server's truth: our exact wire
+        # count may not fall below it by more than the safety reserve.  A zero or missing
+        # report cannot be calibrated and is only counted.
+        calibration: dict[str, Any] = {"checked": 0, "unreported": 0, "max_reported_minus_planned": None, "undercounts": []}
+        for request_key, usage_json in self.conn.execute("SELECT request_id, usage_json FROM provider_invocations WHERE state IN ('succeeded','failed')"):
+            try:
+                reported = ((json.loads(usage_json) or {}).get("usage") or {}).get("input_tokens")
+            except (TypeError, ValueError):
+                reported = None
+            if type(reported) is not int or reported <= 0:
+                calibration["unreported"] += 1; continue
+            frozen = self.manifest(str(request_key))
+            planned = None if frozen is None else self.token_receipt(frozen).get("wire_input_tokens")
+            if type(planned) is not int:
+                continue
+            calibration["checked"] += 1
+            diff = reported - planned
+            best = calibration["max_reported_minus_planned"]
+            calibration["max_reported_minus_planned"] = diff if best is None else max(best, diff)
+            if diff > SAFETY:
+                calibration["undercounts"].append({"request": str(request_key), "reported": reported, "planned": planned})
+        inv["usage_calibration"] = calibration; inv["no_undercount"] = not calibration["undercounts"]
         inv["turn_failures"] = list(self.failures)
         return inv
 
@@ -588,7 +616,7 @@ async def run_game(name: str, round_: int, out: Path, key: str) -> dict:
         except Exception as error:  # noqa: BLE001
             game["stop_error"] = f"{type(error).__name__}: {error}"[:200]
     inv = game.get("invariants") or {}
-    game["hard_invariants_ok"] = all(inv.get(k) for k in ("calls_within_cap", "no_misauthorization", "no_request_hash_drift", "no_leak")) if inv else False
+    game["hard_invariants_ok"] = all(inv.get(k) for k in ("calls_within_cap", "no_misauthorization", "no_request_hash_drift", "no_leak", "no_undercount")) if inv else False
     (directory / "game.json").write_text(json.dumps(game, ensure_ascii=False, indent=1, default=str))
     return game
 
