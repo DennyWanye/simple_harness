@@ -976,12 +976,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               const step = nextStep(detail, pendingApprovals.length);
               return (
                 <div data-testid="mission-next-step" role="status" style={{ ...box, borderColor: step.target ? tokens.color.accent.border : tokens.color.surface.hairline, display: "flex", flexWrap: "wrap", alignItems: "center", gap: tokens.space.sm }}>
-                  <span style={{ flex: 1 }}>{step.text}</span>
+                  <span style={{ flex: "1 1 240px", minWidth: 0 }}>{step.text}</span>
                   {step.target && <button type="button" style={button} onClick={() => jumpTo(step.target!)}>{step.action}</button>}
                   {/* 授权就在提示条里一键完成（2026-09-25 真机点击：跳转后还要再找按钮） */}
                   {list(detail.planning_authorization_requests).length > 0 && !nextStepBlocksAuthorization(detail) &&
-                    <PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
-                      onChanged={refreshPlanningQuestions} />}
+                    <div style={{ flexBasis: "100%" }}>
+                      <PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
+                        onChanged={refreshPlanningQuestions} />
+                    </div>}
                 </div>
               );
             })()}
