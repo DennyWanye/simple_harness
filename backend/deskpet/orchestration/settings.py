@@ -88,6 +88,10 @@ class OrchestrationSettings:
     # DeepSeek thinking mode for new Missions (user decision 2026-09-24: both modes supported,
     # thinking on by default).  Existing Missions keep their pool; "disabled" is the fallback.
     thinking: str = "enabled"
+    # Model names the configured relay echoes for the requested model (comma separated,
+    # e.g. "deepseek-ai/DeepSeek-V4.1-Flash").  Declared by the deployment, never guessed:
+    # an undeclared echo keeps usage untrusted, which only ever over-counts.
+    response_model_aliases: str = ""
 
 
 def _assurance_profile(value: Any) -> str:
@@ -116,6 +120,16 @@ def _compatible_hosts(value: Any) -> str:
         if isinstance(item, str) and item.strip():
             hosts.append(item.strip().lower())
     return ",".join(dict.fromkeys(hosts))
+
+
+def _aliases(value: Any) -> str:
+    items = value.split(",") if isinstance(value, str) else (value if isinstance(value, list) else [])
+    return ",".join(dict.fromkeys(item.strip() for item in items if isinstance(item, str) and item.strip()))
+
+
+def response_model_aliases(settings: Any) -> tuple[str, ...]:
+    raw = getattr(settings, "response_model_aliases", "") or ""
+    return tuple(a.strip() for a in str(raw).split(",") if a.strip())
 
 
 def compatible_hosts(settings: Any) -> frozenset[str]:
@@ -182,6 +196,7 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         native_plane=_assurance_profile(raw.get("native_plane")),
         deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),
         thinking=_thinking(raw.get("thinking")),
+        response_model_aliases=_aliases(raw.get("response_model_aliases")),
     )
 
 

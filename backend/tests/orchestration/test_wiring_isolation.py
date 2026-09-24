@@ -87,3 +87,41 @@ async def test_a_disabled_section_is_honoured_without_an_error(tmp_path):
         assert errors == []
     finally:
         await deactivate_orchestration(context)
+
+
+class _Registry:
+    def get_chain(self) -> list[dict]:
+        return [{"id": "primary", "base_url": "http://127.0.0.1:28181/v1", "model": "deepseek-v4.1-flash"}]
+
+    def resolve_api_key(self, _provider_id: str) -> str:
+        return "test-key-not-real"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("section", "expected"),
+    [
+        ('response_model_aliases = "deepseek-ai/DeepSeek-V4.1-Flash"\n', ("deepseek-ai/DeepSeek-V4.1-Flash",)),
+        ("", ()),
+    ],
+)
+async def test_the_declared_relay_echo_alias_reaches_the_app_provider(tmp_path, monkeypatch, section, expected):
+    """2026-09-25 native UI run: the app path must carry the relay's declared echo name,
+    or every call's usage stays untrusted; an undeclared alias is never guessed."""
+
+    seen: list = []
+
+    def capture(snapshot, **_kwargs):  # type: ignore[no-untyped-def]
+        seen.append(snapshot)
+        raise wiring.ProviderUnavailable("captured")
+
+    monkeypatch.setattr(wiring, "build_provider", capture)
+    (tmp_path / "config.toml").write_text("[orchestration]\n" + section, encoding="utf-8")
+    errors: list = []
+    context = _Context(provider_registry=_Registry())
+    service = await _activate(context, tmp_path, errors)
+    try:
+        assert errors == [] and len(seen) == 1
+        assert seen[0].response_model_aliases == expected
+    finally:
+        await deactivate_orchestration(context)

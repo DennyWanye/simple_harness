@@ -13,6 +13,7 @@ with SIGKILL).
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import os
 from collections.abc import Callable, Iterable, Mapping
@@ -28,7 +29,7 @@ from .provider import (
 )
 from .pump import MissionChangePump
 from .service import OrchestrationService
-from .settings import load_settings, resolve_test_scenario
+from .settings import load_settings, resolve_test_scenario, response_model_aliases
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,9 @@ async def activate_orchestration(
         if scenario is None:
             try:
                 snapshot = snapshot_from_registry(service_context.get("provider_registry"))
+                aliases = response_model_aliases(settings)
+                if aliases:
+                    snapshot = dataclasses.replace(snapshot, response_model_aliases=aliases)
                 from .runtime_profile import deepseek_thinking
 
                 thinking = deepseek_thinking(snapshot, settings)
