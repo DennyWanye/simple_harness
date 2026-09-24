@@ -85,6 +85,9 @@ class OrchestrationSettings:
     # gateway, a local forwarder), comma separated and lower-cased.  Empty means only
     # api.deepseek.com counts as official.
     deepseek_compatible_hosts: str = ""
+    # DeepSeek thinking mode (user decision 2026-09-24: both modes supported).  Disabled by
+    # default so existing Agents keep their frozen continuation; "enabled" replays reasoning.
+    thinking: str = "disabled"
 
 
 def _assurance_profile(value: Any) -> str:
@@ -92,6 +95,17 @@ def _assurance_profile(value: Any) -> str:
         return "on"
     normalised = value.strip().lower()
     return normalised if normalised in ("on", "off") else "on"
+
+
+def _thinking(value: Any) -> str:
+    """DeepSeek thinking mode for orchestration: ``disabled`` (default) or ``enabled``.
+
+    Frozen into each Agent's binding when it is created; a change applies to new Agents
+    only (an existing Agent keeps the mode it was created with or fails closed)."""
+    if not isinstance(value, str):
+        return "disabled"
+    normalised = value.strip().lower()
+    return normalised if normalised in ("enabled", "disabled") else "disabled"
 
 
 def _compatible_hosts(value: Any) -> str:
@@ -166,6 +180,7 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         assurance_profile=_assurance_profile(raw.get("assurance_profile")),
         native_plane=_assurance_profile(raw.get("native_plane")),
         deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),
+        thinking=_thinking(raw.get("thinking")),
     )
 
 

@@ -40,8 +40,11 @@ BGE_M3_SUBDIR = "bge-m3-int8"
 NATIVE_OUTPUT_TOKENS = 32_768
 
 
-def native_profile_id(tokens: int) -> str:
-    return f"{NATIVE_PROFILE_PREFIX}{tokens // 1024}k-v1"
+def native_profile_id(tokens: int, *, thinking: bool = False) -> str:
+    """A native pool's id.  Thinking-mode pools are separate pools (own id, own execution
+    library, own provider and counter): an Agent's thinking mode is frozen by the pool its
+    Mission was frozen on, so changing the deployment setting never breaks existing Agents."""
+    return f"{NATIVE_PROFILE_PREFIX}{tokens // 1024}k-{'thinking-' if thinking else ''}v1"
 
 
 def is_native_profile(profile_id: str | None) -> bool:

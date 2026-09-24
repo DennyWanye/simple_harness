@@ -315,6 +315,7 @@ class OrchestrationService:
                if self.settings.local_model_profile else {}),
             settings=self.settings, native=self._native,
             native_test_counter=self._native_test_counter,
+            thinking_provider=self._thinking_provider(),
         )
         taskgraph = assurance = None
 
@@ -765,6 +766,7 @@ class OrchestrationService:
                if self.settings.local_model_profile else {}),
             settings=self.settings, native=self._native,
             native_test_counter=self._native_test_counter,
+            thinking_provider=self._thinking_provider(),
         )
         taskgraph = assurance = None
 
@@ -837,7 +839,8 @@ class OrchestrationService:
 
         rows = []
         for tokens in CONTEXT_INPUT_LIMITS:
-            for identifier, native in ((long_context_profile_id(tokens), False), (native_profile_id(tokens), True)):
+            for identifier, native in ((long_context_profile_id(tokens), False), (native_profile_id(tokens), True),
+                                       (native_profile_id(tokens, thinking=True), True)):
                 if identifier not in profiles:
                     continue
                 rows.append({
@@ -851,6 +854,27 @@ class OrchestrationService:
                 })
         return rows
 
+    def _thinking_provider(self) -> Any:
+        """The thinking-mode provider for the separate thinking pools: the same endpoint,
+        model and client as the shared provider, with thinking enabled (reasoning replayed).
+        None unless this deployment talks to a DeepSeek model through a real client."""
+
+        from .runtime_profile import DEEPSEEK_COUNTER_MODELS
+
+        snapshot, client = self._snapshot, self._http_client
+        if snapshot is None or client is None or snapshot.requested_model not in DEEPSEEK_COUNTER_MODELS:
+            return None
+        cached = getattr(self, "_thinking_provider_instance", None)
+        if cached is None:
+            from .provider import provider_on_client
+
+            cached = provider_on_client(
+                client, snapshot, timeout=900.0,
+                allow_private_http=bool(self.settings.local_model_profile), thinking="enabled",
+            )
+            self._thinking_provider_instance = cached
+        return cached
+
     def _context_default(self) -> str | None:
         from .local_profile import LOCAL_PROFILE_ID
 
@@ -860,7 +884,12 @@ class OrchestrationService:
 
         # RP-E3: a new Mission takes the native pool when this deployment assembled one.
         available = {p["profile_id"] for p in self._context_profiles()}
-        for selected in (native_profile_id(self.settings.context_input_tokens), long_context_profile_id(self.settings.context_input_tokens)):
+        # The thinking setting picks the pool of a *new* Mission only; an existing Mission keeps
+        # the pool (and so the thinking mode) it was frozen on.
+        thinking = getattr(self.settings, "thinking", "disabled") == "enabled"
+        for selected in (native_profile_id(self.settings.context_input_tokens, thinking=thinking),
+                         native_profile_id(self.settings.context_input_tokens),
+                         long_context_profile_id(self.settings.context_input_tokens)):
             if selected in available:
                 return selected
         return None

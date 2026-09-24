@@ -46,7 +46,7 @@ def tokenizer_path() -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None) -> Any:
+def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None, *, thinking: str = "disabled") -> Any:
     """The certified official V4.1 counter for an official (or declared-compatible) DeepSeek
     endpoint, or None for any other provider."""
 
@@ -62,7 +62,19 @@ def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None
     path = tokenizer_path()
     if path is None:
         raise RuntimeError("源码 DeepSeek profile 需要绝对路径 DESKPET_ORCH_TOKENIZER_PATH")
-    return CertifiedDeepSeekCounter(path, model=snapshot.requested_model)
+    return CertifiedDeepSeekCounter(path, model=snapshot.requested_model, thinking=thinking)
+
+
+def deepseek_thinking(snapshot: ProviderSnapshot | None, settings: Any = None) -> str | None:
+    """The explicit thinking mode of the Host's shared provider: ``disabled`` for a DeepSeek
+    model (it thinks by default, and a tool loop without replayed reasoning is rejected);
+    None for every other model, whose requests stay unchanged.  Thinking-mode work runs on
+    the separate thinking pools (``native_profile_id(tokens, thinking=True)``)."""
+
+    del settings
+    if snapshot is None or snapshot.requested_model not in DEEPSEEK_COUNTER_MODELS:
+        return None
+    return "disabled"
 
 
 def source_runtime_options(
@@ -73,6 +85,7 @@ def source_runtime_options(
     settings: Any = None,
     native: Any = None,
     native_test_counter: Any = None,
+    thinking_provider: Any = None,
 ) -> dict[str, Any]:
     # The candidate wheel now ships the same context ports as source runs.
     # Resolve the persisted pool identity in both installations; dropping these
@@ -155,7 +168,35 @@ def source_runtime_options(
                     default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
                     native_plane=native.assembly(identifier, tokens=tokens, counter=counter),
                 )
-        options["provider_token_estimators"] = {key: counter for key in options["profiles"]}
+            # Thinking-mode pools (user decision 2026-09-24: both modes supported): a separate
+            # provider (thinking enabled, reasoning replayed) and a counter bound to the same
+            # mode.  Only for a DeepSeek deployment with a certified counter.
+            thinking_counter = (
+                deepseek_counter_for(snapshot, settings, thinking="enabled")
+                if thinking_provider is not None and snapshot is not None else None
+            )
+            if thinking_counter is not None:
+                for tokens in CONTEXT_INPUT_LIMITS:
+                    identifier = native_profile_id(tokens, thinking=True)
+                    wanted = ContextPolicy(
+                        max_input_tokens=tokens, output_reserve=32768,
+                        max_tool_result_tokens=16384, render_slack_tokens=0,
+                    )
+                    frozen = resolve_profile_context_policy(
+                        config, profile_id=identifier, tokenizer=thinking_counter, fresh_policy=wanted,
+                    )
+                    if frozen != wanted:
+                        raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
+                    options["profiles"][identifier] = RuntimeProfile(
+                        identifier, thinking_provider, config.model, price_table=config.price_table,
+                        provider_kind="env", context_policy=frozen, tokenizer=thinking_counter,
+                        default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
+                        native_plane=native.assembly(identifier, tokens=tokens, counter=thinking_counter),
+                    )
+        options["provider_token_estimators"] = {
+            key: (profile.tokenizer if "-thinking-" in key else counter)
+            for key, profile in options["profiles"].items()
+        }
         frozen_admission = profile_has_frozen_admission(config, "default")
         if frozen_admission is False or (frozen_admission is None and policy is None):
             # None preserves the old external admission identity. SDK composition

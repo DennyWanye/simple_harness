@@ -82,7 +82,7 @@ def snapshot_from_registry(registry: Any) -> ProviderSnapshot:
 
 
 def build_provider(snapshot: ProviderSnapshot, *, timeout: float = 180.0,
-                   allow_private_http: bool = False) -> tuple[Any, Any]:
+                   allow_private_http: bool = False, thinking: str | None = None) -> tuple[Any, Any]:
     """``(provider, http_client)`` — the caller closes the client on shutdown."""
 
     import httpx
@@ -91,16 +91,30 @@ def build_provider(snapshot: ProviderSnapshot, *, timeout: float = 180.0,
     from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
 
     client = install_httpx_extra_headers_hook(httpx.AsyncClient())
-    options = {"allow_private_http": True} if allow_private_http else {}
-    # SDKs that implement complete SSE assembly can keep long model calls alive.
-    # Older pinned wheels retain their existing transport until upgraded.
-    import inspect
-    if "stream" in inspect.signature(OpenAICompatibleProvider).parameters:
-        options["stream"] = True
-    provider = OpenAICompatibleProvider(
-        client, snapshot.base_url, snapshot.requested_model, Secret(snapshot.api_key), timeout=timeout, **options
+    provider = provider_on_client(
+        client, snapshot, timeout=timeout, allow_private_http=allow_private_http, thinking=thinking
     )
     return provider, client
+
+
+def provider_on_client(client: Any, snapshot: ProviderSnapshot, *, timeout: float = 180.0,
+                       allow_private_http: bool = False, thinking: str | None = None) -> Any:
+    """An adapter on an existing client (the thinking-mode pools share the Host's client)."""
+
+    import inspect
+
+    from simple_harness.providers import OpenAICompatibleProvider, Secret
+
+    options: dict[str, Any] = {"allow_private_http": True} if allow_private_http else {}
+    # SDKs that implement complete SSE assembly can keep long model calls alive.
+    # Older pinned wheels retain their existing transport until upgraded.
+    if "stream" in inspect.signature(OpenAICompatibleProvider).parameters:
+        options["stream"] = True
+    if thinking is not None:  # DeepSeek only; see runtime_profile.deepseek_thinking
+        options["thinking"] = thinking
+    return OpenAICompatibleProvider(
+        client, snapshot.base_url, snapshot.requested_model, Secret(snapshot.api_key), timeout=timeout, **options
+    )
 
 
 __all__ = (

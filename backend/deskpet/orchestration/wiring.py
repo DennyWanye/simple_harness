@@ -88,8 +88,11 @@ async def activate_orchestration(
         if scenario is None:
             try:
                 snapshot = snapshot_from_registry(service_context.get("provider_registry"))
-                provider, client = (build_provider(snapshot, timeout=900.0, allow_private_http=True)
-                                    if settings.local_model_profile else build_provider(snapshot))
+                from .runtime_profile import deepseek_thinking
+
+                thinking = deepseek_thinking(snapshot, settings)
+                provider, client = (build_provider(snapshot, timeout=900.0, allow_private_http=True, thinking=thinking)
+                                    if settings.local_model_profile else build_provider(snapshot, thinking=thinking))
             except ProviderUnavailable as error:
                 logger.info("orchestration_without_model reason=%s", error)
         service = OrchestrationService(
