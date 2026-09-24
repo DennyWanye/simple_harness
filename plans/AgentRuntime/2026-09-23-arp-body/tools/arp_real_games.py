@@ -23,7 +23,7 @@ sys.path.insert(0, str(SDK / "tests/agents/arp"))
 sys.path.insert(0, str(SDK / "tests/agents"))
 sys.path.insert(0, str(SDK / "tests"))
 
-from agent_orchestrator.runtime.deepseek_meter import CertifiedDeepSeekCounter, deepseek_meter_binding
+from agent_orchestrator.runtime.deepseek_meter import CalibratingProvider, RelayDeepSeekCounter, RelayToolMargin, deepseek_meter_binding
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.errors import ArpError
@@ -57,6 +57,7 @@ LIMIT, OUT = 6144, 1024            # a deliberately small window: early facts mu
 # because the reasoning tokens are part of the completion.  Set by ``--thinking``.
 THINKING = os.environ.get("ARP_GAMES_THINKING", "disabled")
 THINKING_OUT = 2048
+MARGIN: Any = None  # the relay's learned tool-preamble margin, created in main()
 SAFETY = 64                        # the profile's safety reserve; also the usage-calibration tolerance
 # DeepSeek V4.1 thinks by default; the runtime's continuation contract is "reasoning
 # disabled" and thinking would have to be passed back inside tool loops (official guide),
@@ -188,13 +189,16 @@ class Harness:
         self.reconciliation = RunnerReconciliation(self.transport)
         self.authorization = GameAuthorization()
         self.failures: list[dict] = []
-        self.counter = CertifiedDeepSeekCounter(TOKENIZER, model=MODEL, thinking=THINKING)
+        # The gate forwards to a relay, not the official endpoint: an upper-bound counter with
+        # the relay's learned tool-preamble margin (user decision 2026-09-24), shared by every
+        # game of this process and persisted beside the evidence.
+        self.counter = RelayDeepSeekCounter(TOKENIZER, model=MODEL, thinking=THINKING, margin=MARGIN)
         self.runtime: Any = None; self.client: Any = None
 
     async def start(self) -> None:
         import httpx
         self.client = httpx.AsyncClient()
-        provider = TransportGate(OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True, thinking=THINKING, response_model_aliases=MODEL_ALIASES), self.transport)
+        provider = TransportGate(CalibratingProvider(OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True, thinking=THINKING, response_model_aliases=MODEL_ALIASES), self.counter), self.transport)
         root = bootstrap_root(self.dir / "root", root_id=f"real-games:{self.name}")
         meter = deepseek_meter_binding(self.counter, input_limit_tokens=LIMIT, max_output_tokens=OUT)
         policies = ConsumerRuntimePolicies("unpriced_local", False, "fail_closed", provider_reconciliation=self.reconciliation)
@@ -637,6 +641,8 @@ async def main() -> None:
         OUT, LIMIT = THINKING_OUT, LIMIT + (THINKING_OUT - OUT)
     out = Path(args.out).resolve(); assert ".local-test-evidence" in out.parts, "证据目录必须在 .local-test-evidence 下"
     out.mkdir(parents=True, exist_ok=True)
+    global MARGIN
+    MARGIN = RelayToolMargin(state_path=out / "relay-tool-margin.json")
     key = read_key()
     report: dict[str, Any] = {"model": MODEL, "gate": GATE, "tokenizer": str(TOKENIZER), "limit": LIMIT, "output": OUT, "thinking": THINKING, "embedding": "none (LEXICAL_ONLY)", "script_runner": "none", "games": []}
     for name in args.games.split(","):
@@ -644,6 +650,7 @@ async def main() -> None:
             game = await run_game(name.strip(), round_, out, key)
             slim = {k: v for k, v in game.items() if k not in ("traceback",)}
             report["games"].append(slim)
+            report["relay_tool_margin"] = {"value": MARGIN.value, "floor": MARGIN.floor, "max_excess": MARGIN.max_excess, "observations": MARGIN.observations, "alarms": list(MARGIN.alarms)}
             print(f"{name} r{round_}: pass={game.get('pass')} hard={game.get('hard_invariants_ok')} calls={(game.get('invariants') or {}).get('provider_calls')} mech={game.get('mechanism_failure')} provider_fail={game.get('provider_failure')} {game.get('elapsed_s')}s", flush=True)
             (out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1, default=str))
     tally = {"total": len(report["games"]), "pass": sum(1 for g in report["games"] if g.get("pass")), "hard_ok": sum(1 for g in report["games"] if g.get("hard_invariants_ok")),
