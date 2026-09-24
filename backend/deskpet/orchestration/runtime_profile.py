@@ -102,17 +102,24 @@ def _CURRENT_COUNTERS() -> tuple[type, ...]:
     return (CertifiedDeepSeekCounter,)
 
 
-def legacy_counter_for(snapshot: ProviderSnapshot | None) -> Any:
-    """The counter identity released before 2026-09-24, for pools frozen with it."""
+def legacy_counter_for(snapshot: ProviderSnapshot | None, state_dir: Path | None = None) -> Any:
+    """The counter identity released before 2026-09-24, for pools frozen with it; on a relay
+    it also charges that host's learned tool-preamble margin (identity unchanged)."""
 
     if snapshot is None or snapshot.requested_model not in DEEPSEEK_COUNTER_MODELS:
         return None
     try:
+        from agent_orchestrator.runtime.deepseek_meter import LegacyRelayDeepSeekCounter
         from agent_orchestrator.runtime.deepseek_tokens import LegacyPriorOutputDeepSeekCounter
     except ImportError:
         return None
     path = tokenizer_path()
-    return None if path is None else LegacyPriorOutputDeepSeekCounter(path, model=snapshot.requested_model)
+    if path is None:
+        return None
+    host = urlparse(snapshot.base_url).hostname or ""
+    if host in DEEPSEEK_OFFICIAL_HOSTS:
+        return LegacyPriorOutputDeepSeekCounter(path, model=snapshot.requested_model)
+    return LegacyRelayDeepSeekCounter(path, model=snapshot.requested_model, margin=relay_tool_margin(host, state_dir))
 
 
 def frozen_tokenizer_fingerprint(config: Any, profile_id: str) -> str | None:
@@ -155,10 +162,14 @@ def calibrated(provider: Any, counter: Any) -> Any:
     """A relay pool's provider learns the relay margin from every reported prompt count."""
 
     try:
-        from agent_orchestrator.runtime.deepseek_meter import CalibratingProvider, RelayDeepSeekCounter
+        from agent_orchestrator.runtime.deepseek_meter import (
+            CalibratingProvider,
+            LegacyRelayDeepSeekCounter,
+            RelayDeepSeekCounter,
+        )
     except ImportError:
         return provider
-    if provider is None or not isinstance(counter, RelayDeepSeekCounter):
+    if provider is None or not isinstance(counter, (RelayDeepSeekCounter, LegacyRelayDeepSeekCounter)):
         return provider
     return CalibratingProvider(provider, counter)
 
@@ -206,7 +217,7 @@ def source_runtime_options(
     if counter is None and native_test_counter is not None:
         counter = native_test_counter
 
-    legacy_counter = legacy_counter_for(snapshot) if isinstance(counter, _CURRENT_COUNTERS()) else None
+    legacy_counter = legacy_counter_for(snapshot, state_dir) if isinstance(counter, _CURRENT_COUNTERS()) else None
     pool_counters: dict[str, Any] = {}
 
     def pick(identifier: str, current: Any, *, native_pool: bool) -> Any:
@@ -287,6 +298,15 @@ def source_runtime_options(
         options["provider_token_estimators"] = {
             key: pool_counters.get(key, counter) for key in options["profiles"]
         }
+        if (
+            legacy_counter is not None
+            and frozen_tokenizer_fingerprint(config, "default") is None
+            and options["provider_token_estimators"]["default"] is counter
+        ):
+            # A default library without a context identity may still hold intents admitted
+            # with the released counter: offer both; the persisted admission identity picks
+            # (review 2026-09-24).  A fresh pool takes the current counter.
+            options["provider_token_estimators"]["default"] = (counter, legacy_counter)
         frozen_admission = profile_has_frozen_admission(config, "default")
         if frozen_admission is False or (frozen_admission is None and policy is None):
             # None preserves the old external admission identity. SDK composition

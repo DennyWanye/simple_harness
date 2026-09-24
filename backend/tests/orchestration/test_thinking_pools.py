@@ -155,3 +155,24 @@ def test_pools_frozen_with_an_older_counter_identity_keep_it_or_are_retired(tmp_
     assert pick(config, "deepseek-native-256k-v1", current, legacy, native_pool=True) is None  # retired
     freeze("deepseek-native-512k-v1", "deepseek-v41:an-intermediate-identity")
     assert pick(config, "deepseek-native-512k-v1", current, legacy, native_pool=True) is None  # retired
+
+
+def test_the_legacy_counter_on_a_relay_charges_that_hosts_margin(tmp_path) -> None:
+    import pytest
+
+    from deskpet.orchestration import runtime_profile
+
+    try:
+        from agent_orchestrator.runtime.deepseek_meter import LegacyRelayDeepSeekCounter
+        from agent_orchestrator.runtime.deepseek_tokens import LegacyPriorOutputDeepSeekCounter
+    except ImportError:
+        pytest.skip("SDK without the legacy relay counter")
+    if runtime_profile.tokenizer_path() is None:
+        pytest.skip("pinned DeepSeek tokenizer not installed")
+    relay = ProviderSnapshot("relay", "https://legacy-relay.example.test/v1", "deepseek-v4.1-flash", "deepseek-v4.1-flash", "fixture")
+    official = runtime_profile.legacy_counter_for(DEEPSEEK, tmp_path)
+    on_relay = runtime_profile.legacy_counter_for(relay, tmp_path)
+    assert type(official) is LegacyPriorOutputDeepSeekCounter
+    assert isinstance(on_relay, LegacyRelayDeepSeekCounter) and on_relay.fingerprint == official.fingerprint
+    assert on_relay.margin is runtime_profile.relay_tool_margin("legacy-relay.example.test", tmp_path)
+    assert runtime_profile.calibrated(object(), on_relay) is not None
