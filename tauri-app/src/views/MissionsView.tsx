@@ -54,7 +54,7 @@ const UI_STATE_LABEL: Record<string, string> = {
   queued: "排队",
   running: "运行",
   verifying: "待验证",
-  waiting_person: "待人",
+  waiting_person: "等你处理",
   unknown: "UNKNOWN（结果未知）",
   delivered: "正式交付",
   failed: "失败",
@@ -119,9 +119,22 @@ interface Flight {
   gap: boolean;
 }
 
+/** 推送里只带原始 status 时的中文（2026-09-25 真机点击：列表曾直接显示 PLANNING）。 */
+const STATUS_LABEL: Record<string, string> = {
+  CREATED: "请求已接收",
+  PLANNING: "规划中",
+  ACTIVE: "运行",
+  VERIFYING: "待验证",
+  COMPLETED: "正式交付",
+  FAILED: "失败",
+  CANCELLED: "已取消",
+  STOPPED: "已停止",
+};
+
 function stateLabel(uiState: unknown, status: unknown): string {
   const ui = text(uiState);
-  return ui ? UI_STATE_LABEL[ui] ?? ui : text(status);
+  const raw = text(status);
+  return ui ? UI_STATE_LABEL[ui] ?? ui : STATUS_LABEL[raw] ?? raw;
 }
 
 /** 时间戳（秒 / 毫秒 / ISO 字符串）→ 本地 HH:MM:SS；认不出就返回 null。 */
@@ -219,6 +232,31 @@ const ModelText: React.FC<{ value: unknown }> = ({ value }) => (
 /** 验证层 summary：只有 source=model 才标注；source=system 或旧的纯字符串只显示文字。 */
 const LayerSummary: React.FC<{ value: unknown }> = ({ value }) =>
   text(record(value).source) === "model" ? <ModelText value={value} /> : <span>{plain(value)}</span>;
+
+/** 顶部"下一步"提示（2026-09-25 真机点击：要人操作的按钮埋在长页面中间，用户找不到）。
+ *  只读投影：从详情推出当前最该做的一件事，按钮跳到对应区域；不代替那一步本身。 */
+function nextStep(detail: Json, approvals: number): { text: string; target?: string; action?: string } {
+  const mission = record(detail.mission);
+  const status = text(mission.status);
+  const ws = record(detail.operation_workspace);
+  if (text(ws.mission_id) && text(ws.state) && text(ws.state) !== "APPROVED" && ws.editable === true)
+    return { text: "下一步：在「完成要求」里勾选要交付的内容，再点「确认上述完成要求」。", target: "mission-step-requirements", action: "去确认" };
+  if (list(detail.planning_authorization_requests).length)
+    return { text: "下一步：授权本轮规划，任务才会开始执行。", target: "mission-step-authorization", action: "去授权" };
+  if (list(detail.planning_questions).some((q) => text(record(q).state) === "PENDING"))
+    return { text: "下一步：回答任务提出的问题。", target: "mission-step-questions", action: "去回答" };
+  if (approvals > 0)
+    return { text: `下一步：有 ${approvals} 项等你审批或复核。`, target: "mission-step-approvals", action: "去处理" };
+  if (status === "COMPLETED") return { text: "任务已完成，结果在下方「产物」里。", target: "mission-step-artifacts", action: "查看产物" };
+  if (status === "FAILED") return { text: "任务失败了，原因见上方状态和下方「Task 与验证」。" };
+  if (status === "CANCELLED") return { text: "任务已取消。" };
+  return { text: "任务正在自动进行，需要你操作时这里会提示。" };
+}
+
+function jumpTo(id: string): void {
+  const target = typeof document === "undefined" ? null : document.getElementById(id);
+  target?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+}
 
 const ArtifactPanel: React.FC<{ artifact: Json }> = ({ artifact }) => {
   const encoding = text(artifact.encoding);
@@ -761,10 +799,10 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
           <div role="status" style={{ ...box, borderColor: tokens.color.warning.bg }}>测试场景：{status.test_scenario}</div>
         ) : null}
         <button type="button" style={button} onClick={() => { setCreating(true); store.select(null); selectedRef.current = null; setArtifact(null); }}>
-          新建 Mission
+          新建任务
         </button>
         {store.missions.length === 0 ? (
-          <div style={{ color: dark.textMuted }}>还没有 Mission。点「新建 Mission」开始。</div>
+          <div style={{ color: dark.textMuted }}>还没有任务。点「新建任务」开始。</div>
         ) : (
           store.missions.map((row) => (
             <button
@@ -808,13 +846,17 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
 
         {creating ? (
           <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm }}>
-            <label>Mission 领域<select aria-label="Mission 领域" style={{ ...field, minHeight: 36 }} disabled={createPending} value={domain} onChange={(e) => setDomain(e.target.value)}>
+            <label>任务类型<select aria-label="任务类型" style={{ ...field, minHeight: 36 }} disabled={createPending} value={domain} onChange={(e) => setDomain(e.target.value)}>
               <option value="code">代码</option>{canCreateDocument && <option value="doc-research-v1">文档研究</option>}
             </select></label>
-            <label htmlFor="mission-goal">Mission 目标</label>
-            <textarea id="mission-goal" aria-label="Mission 目标" style={field} disabled={createPending} value={goal} onChange={(e) => setGoal(e.target.value)} />
+            <label htmlFor="mission-goal">任务目标</label>
+            <textarea id="mission-goal" aria-label="任务目标" style={field} disabled={createPending} value={goal} onChange={(e) => setGoal(e.target.value)} />
             <label htmlFor="mission-criteria">成功条件（每行一条）</label>
             <textarea id="mission-criteria" aria-label="成功条件" style={field} disabled={createPending} value={criteria} onChange={(e) => setCriteria(e.target.value)} />
+            {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
+            <details data-testid="create-advanced" open={!validReserve || !validSynthesis || undefined}>
+            <summary style={{ cursor: "pointer", color: dark.textMuted }}>高级设置（可选，一般不用改）</summary>
+            <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm, marginTop: tokens.space.sm }}>
             {searchPolicies.length > 0 && <label style={muted}>执行方式
               <select aria-label="执行方式" style={field} value={searchPolicy} disabled={createPending} onChange={(e) => setSearchPolicy(e.target.value)}>
                 <option value="">首个通过即交付</option>
@@ -823,7 +865,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 </option>)}
               </select>
             </label>}
-            {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
             {!!status?.context_profiles?.length && <label style={muted}>输入上下文容量
               <select aria-label="输入上下文容量" style={field} value={selectedContextId} disabled={createPending} onChange={(e) => setContextProfile(e.target.value)}>
                 {status.context_profiles.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{profile.max_total_tokens ? `${profile.max_total_tokens / 1024}K 总窗口` : `${profile.max_input_tokens / 1024}K tokens`}</option>)}
@@ -852,12 +893,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 <input aria-label="最终独立综合 Token 上限" inputMode="numeric" placeholder="Token 上限" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} disabled={createPending} value={synthesisTokens} onChange={(e) => setSynthesisTokens(e.target.value)} />
                 <input aria-label="最终独立综合尝试次数上限" inputMode="numeric" placeholder="尝试次数上限" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} disabled={createPending} value={synthesisAttempts} onChange={(e) => setSynthesisAttempts(e.target.value)} />
               </div>
-              {!validSynthesis && <div role="alert" style={{ color: dark.danger }}>最终独立综合需要目标、成功条件和正整数预算；两项预算不得超过 Mission 上限，且与冲突核对预留之和不得超过 Token 上限。</div>}
+              {!validSynthesis && <div role="alert" style={{ color: dark.danger }}>最终独立综合需要目标、成功条件和正整数预算；两项预算不得超过任务上限，且与冲突核对预留之和不得超过 Token 上限。</div>}
             </div>}
+            </div>
+            </details>
             <button type="button" style={button} disabled={!submittable} onClick={submit}>
-              提交 Mission
+              提交任务
             </button>
-            {createPending && <div role="status">正在创建 Mission…</div>}
+            {createPending && <div role="status">正在创建任务…</div>}
           </div>
         ) : null}
 
@@ -900,9 +943,19 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 disabled={TERMINAL.has(text(mission.status))}
                 onClick={() => send("mission_cancel", { mission_id: selectedId })}
               >
-                取消 Mission
+                取消任务
               </button>
             </div>
+
+            {(() => {
+              const step = nextStep(detail, pendingApprovals.length);
+              return (
+                <div data-testid="mission-next-step" role="status" style={{ ...box, borderColor: step.target ? tokens.color.accent.border : tokens.color.surface.hairline, display: "flex", alignItems: "center", gap: tokens.space.sm }}>
+                  <span style={{ flex: 1 }}>{step.text}</span>
+                  {step.target && <button type="button" style={button} onClick={() => jumpTo(step.target!)}>{step.action}</button>}
+                </div>
+              );
+            })()}
 
             {list(detail.blocked).map((item) => {
               const taskId = text(item.task_id);
@@ -919,12 +972,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               );
             })}
 
-            <OperationWorkspace value={detail.operation_workspace} channel={channel}
-              onChanged={refreshPlanningQuestions} />
-            <PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
-              onChanged={refreshPlanningQuestions} />
-            <PlanningQuestions questions={list(detail.planning_questions)} channel={channel}
-              onAnswered={refreshPlanningQuestions} />
+            <div id="mission-step-requirements"><OperationWorkspace value={detail.operation_workspace} channel={channel}
+              onChanged={refreshPlanningQuestions} /></div>
+            <div id="mission-step-authorization"><PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
+              onChanged={refreshPlanningQuestions} /></div>
+            <div id="mission-step-questions"><PlanningQuestions questions={list(detail.planning_questions)} channel={channel}
+              onAnswered={refreshPlanningQuestions} /></div>
+            <div id="mission-step-approvals" />
             {pendingApprovals.map((approval) => {
               const requestId = text(approval.request_id);
               const reason = reasons[requestId] ?? "";
@@ -1001,11 +1055,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
 
             {detail.document != null && <MissionDocument key={selectedId + ":document"} missionId={selectedId} document={record(detail.document)} channel={channel} onChanged={() => refreshSelected(selectedId)} />}
 
+            <details data-testid="mission-diagnostics-group">
+            <summary style={{ cursor: "pointer", color: dark.textMuted }}>诊断信息（执行图、保证状态等，排查问题时用）</summary>
             <MissionTaskGraph key={selectedId + ":taskgraph"} missionId={selectedId} channel={channel} />
 
             {status?.assurance_available === true && <MissionAssurance key={selectedId + ":assurance"} missionId={selectedId} channel={channel} />}
 
             {status?.diagnostics_available === true && <MissionDiagnostics key={selectedId + ":diagnostics"} missionId={selectedId} channel={channel} />}
+            </details>
 
             <div style={box}>
               <div style={heading}>Task 与验证</div>
@@ -1077,7 +1134,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             </div>
 
             {artifacts.length ? (
-              <div style={box}>
+              <div id="mission-step-artifacts" style={box}>
                 <div style={heading}>产物</div>
                 {artifacts.map((item) => {
                   const artifactId = text(item.id);

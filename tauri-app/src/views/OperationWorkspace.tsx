@@ -101,7 +101,7 @@ function Workspace({ workspace: w, channel, onChanged }: {
           {asText(milestones.find(m => m.id === e.required_milestone)?.label) || asText(e.required_milestone)}
         </p>)}
       </> : <>
-        <p>请逐项确认哪些要求属于内容交付、哪些必须验证实际效果。涉及“生成并发送”等合并要求时，需先澄清并拆分要求，不能把尚未发生的效果确认为内容完成。</p>
+        <p>勾选只需要交付内容（文件、文字）就算完成的要求，然后点「确认上述完成要求」。需要真实操作的要求（如发送邮件）请放到「必须验证的实际效果」。</p>
         <fieldset disabled={disabled}>
           <legend>仅以内容交付验收的要求</legend>
           {criteria.map(c => <label key={asText(c.id)} style={{ display: "block" }}>
@@ -128,8 +128,8 @@ function Workspace({ workspace: w, channel, onChanged }: {
           </div>)}
           <button type="button" disabled={!milestones.length || effects.length >= 64}
             onClick={() => setEffects(rows => [...rows, { key: `effect-${newRequestKey()}`, criteria: [], obligation: "", milestone: "" }])}>添加必须完成的效果</button>
-          {!milestones.length && <p>当前部署没有可确认的效果验证能力。需要外部操作的要求暂不能确认。</p>}
-          <p>确认的是完成标准；具体操作仍需提交、审查和权限检查。</p>
+          {!milestones.length && <p>当前还不能验证真实操作，只能确认交付内容类的要求。</p>}
+          <p>这里确认的是"怎样算完成"，不会立刻执行任何操作。</p>
           <button type="button" disabled={!mappingValid} onClick={confirm}>确认上述完成要求</button>
         </fieldset>
       </>}

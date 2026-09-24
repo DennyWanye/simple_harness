@@ -1006,7 +1006,7 @@ class OrchestrationService:
         goal = body.get("goal")
         criteria = body.get("success_criteria")
         if not isinstance(goal, str) or not goal.strip():
-            raise OrchestrationRequestError("invalid_request", "Mission 目标不能为空")
+            raise OrchestrationRequestError("invalid_request", "任务目标不能为空")
         if (
             not isinstance(criteria, list)
             or not criteria

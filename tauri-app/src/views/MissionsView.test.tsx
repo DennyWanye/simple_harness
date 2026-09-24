@@ -129,7 +129,7 @@ function renderAvailable() {
 }
 
 function fillValidSynthesisForm({ missionBudget = true }: { missionBudget?: boolean } = {}) {
-  fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "完成研究" } });
+  fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "完成研究" } });
   fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
   if (missionBudget) {
     fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "100" } });
@@ -181,9 +181,9 @@ describe("P33 G creation and explicit approval branches", () => {
     const channel = new FakeChannel();
     render(<Workbench channel={channel} />);
     channel.reply("orchestration_status", { ...AVAILABLE, deployment_manifest: null });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     expect(screen.queryByRole("option", { name: "文档研究" })).toBeNull();
-    expect((screen.getByLabelText("Mission 领域") as HTMLSelectElement).value).toBe("code");
+    expect((screen.getByLabelText("任务类型") as HTMLSelectElement).value).toBe("code");
   });
   it("shows the local shared256K window and submits its default profile", () => {
     const channel = renderAvailable();
@@ -193,13 +193,13 @@ describe("P33 G creation and explicit approval branches", () => {
         max_total_tokens: 262144, output_reserve: 32768, safety_margin: 1024,
         default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 4000000 }],
     });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     expect(screen.getByRole("option", { name: "256K 总窗口" })).toBeTruthy();
     expect(screen.getByText(/输入与输出共享 256K 总窗口；输入最多 223K/)).toBeTruthy();
     expect(screen.queryByText(/单次输出另计/)).toBeNull();
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "local model report" } });
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "local model report" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe("local-context-256k-v1");
   });
 
@@ -213,14 +213,14 @@ describe("P33 G creation and explicit approval branches", () => {
         mission_max_tokens: tokens === 262144 ? 4000000 : 8000000,
       })),
     });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     expect((screen.getByLabelText("输入上下文容量") as HTMLSelectElement).value).toBe("deepseek-context-256k-v1");
     expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toContain("4000000");
     fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-context-512k-v1" } });
     expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toContain("8000000");
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "long references" } });
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "long references" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe("deepseek-context-512k-v1");
   });
 
@@ -234,18 +234,18 @@ describe("P33 G creation and explicit approval branches", () => {
         mission_max_tokens: 8000000,
       }));
       channel.reply("orchestration_status", { ...AVAILABLE, context_profiles: profiles, default_context_profile_id: profiles[0].profile_id });
-      fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
-      fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "lost receipt" } });
+      fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+      fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "lost receipt" } });
       fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-      fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+      fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
       const original = channel.last("mission_create")?.payload;
       act(() => { vi.advanceTimersByTime(30001); });
       channel.reply("orchestration_status", { ...AVAILABLE, context_profiles: profiles, default_context_profile_id: profiles[1].profile_id });
       const send = channel.send;
       channel.send = () => false;
-      fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+      fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
       channel.send = send;
-      fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+      fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
       expect(channel.last("mission_create")?.payload).toEqual(original);
     } finally { vi.useRealTimers(); }
   });
@@ -258,12 +258,12 @@ describe("P33 G creation and explicit approval branches", () => {
         default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 8000000,
       }],
     });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-context-512k-v1" } });
     channel.reply("orchestration_status", AVAILABLE);
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "legacy entry" } });
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "legacy entry" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.all("mission_create")).toHaveLength(1);
     expect(channel.last("mission_create")?.payload).not.toHaveProperty("runtime_profile_id");
   });
@@ -276,17 +276,17 @@ describe("P33 G creation and explicit approval branches", () => {
         default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 8000000,
       }],
     });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "never sent" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "never sent" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
     const send = channel.send;
     channel.send = () => false;
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.all("mission_create")).toHaveLength(0);
     channel.send = send;
     channel.reply("orchestration_status", AVAILABLE);
     expect(screen.queryByLabelText("输入上下文容量")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.all("mission_create")).toHaveLength(1);
     expect(channel.last("mission_create")?.payload).not.toHaveProperty("runtime_profile_id");
   });
@@ -296,12 +296,12 @@ describe("P33 G creation and explicit approval branches", () => {
     channel.reply("orchestration_policy_status", { eligible_search_policies: [
       { version_id: "approved-v2", policy: { max_candidates: 2 } },
     ] });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     expect((screen.getByLabelText("执行方式") as HTMLSelectElement).value).toBe("");
     fireEvent.change(screen.getByLabelText("执行方式"), { target: { value: "approved-v2" } });
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "compare" } });
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "compare" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.last("mission_create")?.payload?.search_policy_version_id).toBe("approved-v2");
   });
   it("ignores a duplicate late snapshot/error even for the same selected Mission", () => {
@@ -335,11 +335,11 @@ describe("P33 G creation and explicit approval branches", () => {
 
   it("defaults to code and preserves the existing mission_create request", () => {
     const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
-    expect((screen.getByLabelText("Mission 领域") as HTMLSelectElement).value).toBe("code");
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "write code" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    expect((screen.getByLabelText("任务类型") as HTMLSelectElement).value).toBe("code");
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "write code" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:a.py" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.last("mission_create")?.payload).toEqual({
       goal: "write code", success_criteria: ["file:a.py"], idempotency_key: expect.any(String),
     });
@@ -348,14 +348,14 @@ describe("P33 G creation and explicit approval branches", () => {
 
   it.each(["code", "doc-research-v1"] as const)("在 %s Mission 中用相同的最终独立综合章程提交", (domain) => {
     const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     if (domain === "doc-research-v1") {
-      fireEvent.change(screen.getByLabelText("Mission 领域"), { target: { value: domain } });
+      fireEvent.change(screen.getByLabelText("任务类型"), { target: { value: domain } });
       fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
       fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
       fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "可供综合的资料" } });
     }
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "完成研究" } });
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "完成研究" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
     fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "240000" } });
     fireEvent.change(screen.getByLabelText("尝试次数上限"), { target: { value: "12" } });
@@ -364,7 +364,7 @@ describe("P33 G creation and explicit approval branches", () => {
     fireEvent.change(screen.getByLabelText("最终独立综合成功条件"), { target: { value: "file:FINAL.md\n结论可追溯" } });
     fireEvent.change(screen.getByLabelText("最终独立综合 Token 上限"), { target: { value: "60000" } });
     fireEvent.change(screen.getByLabelText("最终独立综合尝试次数上限"), { target: { value: "2" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
 
     const payload = domain === "code"
       ? channel.last("mission_create")?.payload
@@ -395,10 +395,10 @@ describe("P33 G creation and explicit approval branches", () => {
     ["尝试次数非数字", "最终独立综合尝试次数上限", "NaN"],
   ])("最终独立综合%s时禁止提交", (_case, label, value) => {
     const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     fillValidSynthesisForm();
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
-    const submit = screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement;
+    const submit = screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     expect(screen.getByRole("alert").textContent).toContain("最终独立综合");
     expect(channel.all("mission_create")).toHaveLength(0);
@@ -406,9 +406,9 @@ describe("P33 G creation and explicit approval branches", () => {
 
   it("最终独立综合超过 Mission 上限或系统 Token 预留时禁止提交", () => {
     const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     fillValidSynthesisForm();
-    const submit = screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement;
+    const submit = screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement;
     fireEvent.change(screen.getByLabelText("最终独立综合 Token 上限"), { target: { value: "101" } });
     expect(submit.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("最终独立综合 Token 上限"), { target: { value: "100" } });
@@ -423,23 +423,23 @@ describe("P33 G creation and explicit approval branches", () => {
 
   it("最终独立综合失败时保留同一请求，成功后重置", () => {
     const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     fillValidSynthesisForm();
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     const first = channel.last("mission_create")?.payload as Record<string, unknown>;
     channel.reply("mission_create", {}, false, "invalid_request");
     expect((screen.getByLabelText("最终独立综合") as HTMLInputElement).checked).toBe(true);
     expect((screen.getByLabelText("最终独立综合目标") as HTMLTextAreaElement).value).toBe("独立汇总");
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.last("mission_create")?.payload).toEqual(first);
     channel.reply("mission_create", {}, false, "invalid_request");
     fireEvent.change(screen.getByLabelText("最终独立综合目标"), { target: { value: "修订后的独立汇总" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     const changed = channel.last("mission_create")?.payload as Record<string, unknown>;
     expect(changed.idempotency_key).not.toBe(first.idempotency_key);
     expect((changed.synthesis as Record<string, unknown>).goal).toBe("修订后的独立汇总");
     channel.reply("mission_create", { mission_id: "mission-new" });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     expect((screen.getByLabelText("最终独立综合") as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByLabelText("最终独立综合"));
     expect((screen.getByLabelText("最终独立综合目标") as HTMLTextAreaElement).value).toBe("");
@@ -450,16 +450,16 @@ describe("P33 G creation and explicit approval branches", () => {
 
   it("pastes sources and sends one atomic doc batch; failure preserves the draft", () => {
     const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
-    fireEvent.change(screen.getByLabelText("Mission 领域"), { target: { value: "doc-research-v1" } });
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "比较文档" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    fireEvent.change(screen.getByLabelText("任务类型"), { target: { value: "doc-research-v1" } });
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "比较文档" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "说明否定条件" } });
-    expect((screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
     fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "条件：不支持。\r\n| A | B |" } });
     fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.all("mission_create")).toHaveLength(0);
     expect(channel.all("mission_source_register")).toHaveLength(0);
     const batch = channel.last("mission_create_with_sources")?.payload;
@@ -467,11 +467,11 @@ describe("P33 G creation and explicit approval branches", () => {
       mission: { domain: "doc-research-v1", goal: "比较文档", success_criteria: ["说明否定条件"], conflict_reserve_tokens: 30000, idempotency_key: expect.any(String) },
       sources: [{ path: "sources/a.md", content: "条件：不支持。\n| A | B |", kind: "markdown" }],
     });
-    expect((screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
     channel.reply("mission_create_with_sources", {}, false, "invalid_request");
-    expect((screen.getByLabelText("Mission 目标") as HTMLTextAreaElement).value).toBe("比较文档");
+    expect((screen.getByLabelText("任务目标") as HTMLTextAreaElement).value).toBe("比较文档");
     expect(screen.getByRole("alert")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.last("mission_create_with_sources")?.payload).toEqual(batch);
   });
 
@@ -512,24 +512,24 @@ describe("MissionsView（HA-10）", () => {
     channel.reply("orchestration_status", { ...AVAILABLE, available: false, state: "unavailable", reason: "编排库目录不可写" });
     expect(screen.getByText(/编排服务不可用/)).toBeTruthy();
     expect(screen.getByText(/编排库目录不可写/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "新建 Mission" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "新建任务" })).toBeNull();
   });
 
   it("空态：没有 Mission 时提示新建", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [] });
-    expect(screen.getByText(/还没有 Mission/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "新建 Mission" })).toBeTruthy();
+    expect(screen.getByText(/还没有任务/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "新建任务" })).toBeTruthy();
   });
 
   it("新建表单：目标或成功条件为空时不能提交；提交发出 mission_create", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [] });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
-    const submit = screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement;
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    const submit = screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Mission 目标" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "任务目标" }), {
       target: { value: "写一份 NOTES.md，列出三个要点" },
     });
     expect(submit.disabled).toBe(true);
@@ -549,10 +549,10 @@ describe("MissionsView（HA-10）", () => {
   it("local_tests_disabled 显示中文说明", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [] });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Mission 目标" }), { target: { value: "跑测试" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "任务目标" }), { target: { value: "跑测试" } });
     fireEvent.change(screen.getByRole("textbox", { name: "成功条件" }), { target: { value: "pytest:tests" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     channel.reply("mission_create", null, false, "local_tests_disabled");
     expect(screen.getByText(/本机执行测试代码已关闭/)).toBeTruthy();
   });
@@ -641,9 +641,9 @@ describe("MissionsView（HA-10）", () => {
     expect(screen.getByRole("alert").textContent).toContain("复核请求未发送");
   });
 
-  it("取消 Mission 发出 mission_cancel", () => {
+  it("取消任务 发出 mission_cancel", () => {
     const channel = openMission();
-    fireEvent.click(screen.getByRole("button", { name: "取消 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消任务" }));
     expect(channel.last("mission_cancel")?.payload).toMatchObject({ mission_id: "mission-1" });
   });
 
@@ -668,12 +668,12 @@ describe("ui_state 词汇（P3.1 §3.4）", () => {
       ],
     });
     const wait = screen.getByTestId("mission-row-m-wait");
-    expect(wait.textContent).toMatch(/待人/);
+    expect(wait.textContent).toMatch(/等你处理/);
     expect(wait.getAttribute("data-ui-state")).toBe("waiting_person");
     expect(wait.getAttribute("data-status")).toBe("ACTIVE");
     expect(screen.getByTestId("mission-row-m-unknown").textContent).toMatch(/UNKNOWN（结果未知）/);
     expect(screen.getByTestId("mission-row-m-run").textContent).toMatch(/运行/);
-    expect(screen.getByTestId("mission-row-m-legacy").textContent).toMatch(/ACTIVE/);
+    expect(screen.getByTestId("mission-row-m-legacy").textContent).toMatch(/运行/); // 缺 ui_state：原始 status 译成中文，不再显示英文代码
     expect(screen.getByTestId("mission-row-m-legacy").hasAttribute("data-ui-state")).toBe(false);
     expect(screen.getByTestId("mission-row-m-done").textContent).toMatch(/正式交付/);
     expect(screen.queryByText(/运行中/)).toBeNull();
@@ -1119,12 +1119,12 @@ describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
     render(<Workbench channel={channel} />);
     channel.reply("orchestration_status", { ...AVAILABLE, mission_budget_defaults: { max_tokens: 400000, max_attempts: 12 } });
     channel.reply("mission_list", { missions: [] });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toBe("Token 上限（留空=400000）");
     expect(screen.getByLabelText("尝试次数上限").getAttribute("placeholder")).toBe("尝试次数上限（留空=12）");
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "写 NOTES.md" } });
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "写 NOTES.md" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:NOTES.md" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     const payload = channel.last("mission_create")?.payload as Record<string, unknown>;
     expect(payload.goal).toBe("写 NOTES.md");
     expect("budget" in payload).toBe(false); // the Host decides the defaults, the form never guesses
@@ -1135,9 +1135,9 @@ describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
     render(<Workbench channel={channel} />);
     channel.reply("orchestration_status", { ...AVAILABLE, mission_budget_defaults: { max_tokens: 400000, max_attempts: 12 } });
     channel.reply("mission_list", { missions: [] });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     fillValidSynthesisForm({ missionBudget: false });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     const payload = channel.last("mission_create")?.payload as Record<string, unknown>;
     expect("budget" in payload).toBe(false);
     expect(payload.synthesis).toEqual({
@@ -1149,12 +1149,12 @@ describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
 
   it("从原总预算中显式预留冲突核对额度", () => {
     const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "核对两份资料" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "核对两份资料" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
     fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "240000" } });
     fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.last("mission_create")?.payload).toMatchObject({
       budget: { max_tokens: 240000 }, conflict_reserve_tokens: 30000,
     });
@@ -1162,36 +1162,36 @@ describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
 
   it("成功创建后新表单不继承上一任务的冲突预留", () => {
     const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "核对资料" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "核对资料" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
     fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     channel.reply("mission_create", { mission_id: "mission-new" });
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     expect((screen.getByLabelText("冲突核对预留 Token") as HTMLInputElement).value).toBe("");
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "写新报告" } });
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "写新报告" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:NEW.md" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.all("mission_create")).toHaveLength(2);
     expect(channel.last("mission_create")?.payload).not.toHaveProperty("conflict_reserve_tokens");
   });
 
   it.each(["-1", "1.5", "NaN", "240001"])("拒绝无效冲突预留 %s", (reserve) => {
     const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
-    fireEvent.change(screen.getByLabelText("Mission 目标"), { target: { value: "核对资料" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "核对资料" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
     fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "240000" } });
     fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: reserve } });
-    expect((screen.getByRole("button", { name: "提交 Mission" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("alert").textContent).toContain("冲突核对预留");
     expect(channel.all("mission_create")).toHaveLength(0);
   });
 
   it("没有下发默认值时，占位符仍是「可选」", () => {
     renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toBe("Token 上限（可选）");
   });
 
@@ -1221,5 +1221,29 @@ describe("兜底刷新（2026-09-25 真机点击：等授权时画面不刷新�
       act(() => { vi.advanceTimersByTime(15001); });
       expect(channel.all("mission_get").length).toBe(gets);
     } finally { vi.useRealTimers(); }
+  });
+});
+
+describe("下一步提示（2026-09-25 真机点击：要人操作的按钮埋在长页面中间）", () => {
+  it("等授权时顶部直接提示去授权", () => {
+    openMission({ ...DETAIL, planning_authorization_requests: [{ mission_id: "mission-1", request_id: "r1", intent_id: "i1", state: "AUTHORIZATION_REQUIRED" }] });
+    const banner = screen.getByTestId("mission-next-step");
+    expect(banner.textContent).toMatch(/授权本轮规划/);
+    expect(screen.getByRole("button", { name: "去授权" })).toBeTruthy();
+  });
+
+  it("完成要求可确认时优先提示去确认", () => {
+    openMission({ ...DETAIL, operation_workspace: { mission_id: "mission-1", state: "PROPOSED", editable: true, criteria: [] },
+      planning_authorization_requests: [{ request_id: "r1" }] });
+    expect(screen.getByTestId("mission-next-step").textContent).toMatch(/确认上述完成要求/);
+    expect(screen.getByRole("button", { name: "去确认" })).toBeTruthy();
+  });
+
+  it("任务完成后提示查看产物；运行中只说明会提示", () => {
+    openMission({ ...DETAIL, approvals: [], mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "COMPLETED" } });
+    expect(screen.getByTestId("mission-next-step").textContent).toMatch(/任务已完成/);
+    cleanup();
+    openMission({ ...DETAIL, approvals: [] });
+    expect(screen.getByTestId("mission-next-step").textContent).toMatch(/自动进行|等你审批/);
   });
 });
