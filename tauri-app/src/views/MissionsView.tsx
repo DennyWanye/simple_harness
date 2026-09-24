@@ -258,7 +258,7 @@ function nextStep(detail: Json, approvals: number): { text: string; target?: str
   if (text(ws.mission_id) && text(ws.state) && text(ws.state) !== "APPROVED" && ws.editable === true)
     return { text: "下一步：在「完成要求」里勾选要交付的内容，再点「确认上述完成要求」。", target: "mission-step-requirements", action: "去确认" };
   if (list(detail.planning_authorization_requests).length)
-    return { text: "下一步：授权本轮规划，任务才会开始执行。", target: "mission-step-authorization", action: "去授权" };
+    return { text: "下一步：授权本轮规划，任务才会开始执行。" };
   if (list(detail.planning_questions).some((q) => text(record(q).state) === "PENDING"))
     return { text: "下一步：回答任务提出的问题。", target: "mission-step-questions", action: "去回答" };
   if (approvals > 0)
@@ -267,6 +267,12 @@ function nextStep(detail: Json, approvals: number): { text: string; target?: str
   if (status === "FAILED") return { text: "任务失败了，原因见上方状态和下方「Task 与验证」。" };
   if (status === "CANCELLED") return { text: "任务已取消。" };
   return { text: "任务正在自动进行，需要你操作时这里会提示。" };
+}
+
+/** 完成要求还没确认时，提示条先让人去确认；授权仍留在原位置，不会同时出现两份。 */
+function nextStepBlocksAuthorization(detail: Json): boolean {
+  const ws = record(detail.operation_workspace);
+  return !!(text(ws.mission_id) && text(ws.state) && text(ws.state) !== "APPROVED" && ws.editable === true);
 }
 
 function jumpTo(id: string): void {
@@ -969,9 +975,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             {(() => {
               const step = nextStep(detail, pendingApprovals.length);
               return (
-                <div data-testid="mission-next-step" role="status" style={{ ...box, borderColor: step.target ? tokens.color.accent.border : tokens.color.surface.hairline, display: "flex", alignItems: "center", gap: tokens.space.sm }}>
+                <div data-testid="mission-next-step" role="status" style={{ ...box, borderColor: step.target ? tokens.color.accent.border : tokens.color.surface.hairline, display: "flex", flexWrap: "wrap", alignItems: "center", gap: tokens.space.sm }}>
                   <span style={{ flex: 1 }}>{step.text}</span>
                   {step.target && <button type="button" style={button} onClick={() => jumpTo(step.target!)}>{step.action}</button>}
+                  {/* 授权就在提示条里一键完成（2026-09-25 真机点击：跳转后还要再找按钮） */}
+                  {list(detail.planning_authorization_requests).length > 0 && !nextStepBlocksAuthorization(detail) &&
+                    <PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
+                      onChanged={refreshPlanningQuestions} />}
                 </div>
               );
             })()}
@@ -993,8 +1003,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
 
             <div id="mission-step-requirements"><OperationWorkspace value={detail.operation_workspace} channel={channel}
               onChanged={refreshPlanningQuestions} /></div>
-            <div id="mission-step-authorization"><PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
-              onChanged={refreshPlanningQuestions} /></div>
+            {nextStepBlocksAuthorization(detail) && <PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
+              onChanged={refreshPlanningQuestions} />}
             <div id="mission-step-questions"><PlanningQuestions questions={list(detail.planning_questions)} channel={channel}
               onAnswered={refreshPlanningQuestions} /></div>
             <div id="mission-step-approvals" />

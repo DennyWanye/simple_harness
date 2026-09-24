@@ -1229,7 +1229,9 @@ describe("下一步提示（2026-09-25 真机点击：要人操作的按钮埋�
     openMission({ ...DETAIL, planning_authorization_requests: [{ mission_id: "mission-1", request_id: "r1", intent_id: "i1", state: "AUTHORIZATION_REQUIRED" }] });
     const banner = screen.getByTestId("mission-next-step");
     expect(banner.textContent).toMatch(/授权本轮规划/);
-    expect(screen.getByRole("button", { name: "去授权" })).toBeTruthy();
+    // 授权按钮就在提示条里，页面上只有这一个
+    expect(within(banner).getByRole("button", { name: "授权本轮规划" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "授权本轮规划" })).toHaveLength(1);
   });
 
   it("完成要求可确认时优先提示去确认", () => {

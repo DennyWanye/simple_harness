@@ -63,7 +63,7 @@ function Request({ request, channel, onChanged }: {
     setError("连接不可用，授权结果尚未确认；请重试");
   };
   return <div>
-    <p>此轮规划等待授权。授权允许模型制定或调整计划、读取已许可的证据和提出问题；具体外部操作仍按原有权限执行。</p>
+    <p style={{ margin: "4px 0" }}>授权后任务开始规划；涉及外部操作时仍会按原有权限再问你。</p>
     <button type="button" disabled={pending || !channel} onClick={authorize}>
       {pending ? "正在授权…" : "授权本轮规划"}
     </button>
