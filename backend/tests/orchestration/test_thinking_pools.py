@@ -86,3 +86,31 @@ def test_the_thinking_provider_is_built_only_for_a_deepseek_deployment_with_a_cl
             assert probe(None, client) is None
 
     asyncio.run(exercise())
+
+
+def test_official_endpoint_is_exact_and_a_relay_gets_the_learned_upper_bound(tmp_path, monkeypatch) -> None:
+    import pytest
+
+    from deskpet.orchestration import runtime_profile
+
+    try:
+        from agent_orchestrator.runtime.deepseek_meter import CalibratingProvider, RelayDeepSeekCounter
+    except ImportError:
+        pytest.skip("SDK without the relay counter")
+    tokenizer = runtime_profile.tokenizer_path()
+    if tokenizer is None:
+        pytest.skip("pinned DeepSeek tokenizer not installed")
+    relay = ProviderSnapshot("relay", "https://relay.example.test/v1", "deepseek-v4.1-flash", "deepseek-v4.1-flash", "fixture")
+    settings = OrchestrationSettings(deepseek_compatible_hosts="relay.example.test")
+    official = runtime_profile.deepseek_counter_for(DEEPSEEK, settings, state_dir=tmp_path)
+    assert official.count_mode == "EXACT" and not isinstance(official, RelayDeepSeekCounter)
+    counter = runtime_profile.deepseek_counter_for(relay, settings, state_dir=tmp_path)
+    thinking_counter = runtime_profile.deepseek_counter_for(relay, settings, thinking="enabled", state_dir=tmp_path)
+    assert isinstance(counter, RelayDeepSeekCounter) and counter.count_mode == "CERTIFIED_UPPER_BOUND"
+    assert counter.margin is thinking_counter.margin and counter.margin.value == 160  # one margin per relay host
+    counter.margin.observe(reported=500, counted=200, has_tools=True)
+    assert (tmp_path / "relay-tool-margin" / "relay.example.test.json").is_file()
+    wrapped = runtime_profile.calibrated(object(), counter)
+    assert isinstance(wrapped, CalibratingProvider)
+    raw = object()
+    assert runtime_profile.calibrated(raw, official) is raw  # the official endpoint is not recalibrated

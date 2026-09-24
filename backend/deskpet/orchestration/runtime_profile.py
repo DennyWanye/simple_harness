@@ -46,9 +46,31 @@ def tokenizer_path() -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None, *, thinking: str = "disabled") -> Any:
-    """The certified official V4.1 counter for an official (or declared-compatible) DeepSeek
-    endpoint, or None for any other provider."""
+_RELAY_MARGINS: dict[str, Any] = {}
+
+
+def relay_tool_margin(host: str, state_dir: Path | None) -> Any:
+    """The learned tool-preamble margin of one relay host, shared by every pool and counter
+    of this process and persisted under ``state_dir`` (it only ever grows)."""
+
+    from agent_orchestrator.runtime.deepseek_meter import RelayToolMargin
+
+    key = host.lower()
+    margin = _RELAY_MARGINS.get(key)
+    if margin is None:
+        path = None if state_dir is None else Path(state_dir) / "relay-tool-margin" / f"{key}.json"
+        margin = _RELAY_MARGINS[key] = RelayToolMargin(state_path=path)
+    return margin
+
+
+def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None, *, thinking: str = "disabled",
+                         state_dir: Path | None = None) -> Any:
+    """The certified V4.1 counter for a DeepSeek endpoint, or None for any other provider.
+
+    The official endpoint gets the exact counter.  A declared-compatible host is a relay:
+    measured 2026-09-24, a relay adds its own tool preamble (~110 tokens), so it gets the
+    upper-bound relay counter with that host's learned margin (user decision 2026-09-24:
+    may overcount, never undercount)."""
 
     if snapshot is None or snapshot.requested_model not in DEEPSEEK_COUNTER_MODELS:
         return None
@@ -62,7 +84,25 @@ def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None
     path = tokenizer_path()
     if path is None:
         raise RuntimeError("源码 DeepSeek profile 需要绝对路径 DESKPET_ORCH_TOKENIZER_PATH")
-    return CertifiedDeepSeekCounter(path, model=snapshot.requested_model, thinking=thinking)
+    if host in DEEPSEEK_OFFICIAL_HOSTS:
+        return CertifiedDeepSeekCounter(path, model=snapshot.requested_model, thinking=thinking)
+    from agent_orchestrator.runtime.deepseek_meter import RelayDeepSeekCounter
+
+    return RelayDeepSeekCounter(
+        path, model=snapshot.requested_model, thinking=thinking, margin=relay_tool_margin(str(host), state_dir),
+    )
+
+
+def calibrated(provider: Any, counter: Any) -> Any:
+    """A relay pool's provider learns the relay margin from every reported prompt count."""
+
+    try:
+        from agent_orchestrator.runtime.deepseek_meter import CalibratingProvider, RelayDeepSeekCounter
+    except ImportError:
+        return provider
+    if provider is None or not isinstance(counter, RelayDeepSeekCounter):
+        return provider
+    return CalibratingProvider(provider, counter)
 
 
 def deepseek_thinking(snapshot: ProviderSnapshot | None, settings: Any = None) -> str | None:
@@ -101,7 +141,9 @@ def source_runtime_options(
         from .local_profile import local_runtime_options
         return local_runtime_options(config, provider, snapshot, local_profile_path)
 
-    counter = deepseek_counter_for(snapshot, settings)
+    state_dir = getattr(config, "evidence_root", None)
+    counter = deepseek_counter_for(snapshot, settings, state_dir=state_dir)
+    pool_provider = calibrated(provider, counter)
     # Trusted deployment composition only (tests): a certified fixture counter that
     # stands in for the DeepSeek one so the native pools can be assembled offline.
     if counter is None and native_test_counter is not None:
@@ -112,7 +154,7 @@ def source_runtime_options(
         "profiles": {
             "default": RuntimeProfile(
                 "default",
-                provider,
+                pool_provider,
                 config.model,
                 price_table=config.price_table,
                 provider_kind="env" if snapshot is not None else "fixtures",
@@ -141,7 +183,7 @@ def source_runtime_options(
             if frozen != wanted:
                 raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
             options["profiles"][identifier] = RuntimeProfile(
-                identifier, provider, config.model, price_table=config.price_table,
+                identifier, pool_provider, config.model, price_table=config.price_table,
                 provider_kind="env", context_policy=frozen, tokenizer=counter,
                 default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
             )
@@ -162,7 +204,7 @@ def source_runtime_options(
                 if frozen != wanted:
                     raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
                 options["profiles"][identifier] = RuntimeProfile(
-                    identifier, provider, config.model, price_table=config.price_table,
+                    identifier, pool_provider, config.model, price_table=config.price_table,
                     provider_kind="env" if snapshot is not None else "fixtures",
                     context_policy=frozen, tokenizer=counter,
                     default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
@@ -172,7 +214,7 @@ def source_runtime_options(
             # provider (thinking enabled, reasoning replayed) and a counter bound to the same
             # mode.  Only for a DeepSeek deployment with a certified counter.
             thinking_counter = (
-                deepseek_counter_for(snapshot, settings, thinking="enabled")
+                deepseek_counter_for(snapshot, settings, thinking="enabled", state_dir=state_dir)
                 if thinking_provider is not None and snapshot is not None else None
             )
             if thinking_counter is not None:
@@ -188,7 +230,7 @@ def source_runtime_options(
                     if frozen != wanted:
                         raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
                     options["profiles"][identifier] = RuntimeProfile(
-                        identifier, thinking_provider, config.model, price_table=config.price_table,
+                        identifier, calibrated(thinking_provider, thinking_counter), config.model, price_table=config.price_table,
                         provider_kind="env", context_policy=frozen, tokenizer=thinking_counter,
                         default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
                         native_plane=native.assembly(identifier, tokens=tokens, counter=thinking_counter),
