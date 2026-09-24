@@ -10,6 +10,7 @@ No credentials are consulted here and no resources are downloaded at startup.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,8 @@ def long_context_profile_id(tokens: int) -> str:
         raise ValueError("上下文仅支持 256K 或 512K")
     return f"deepseek-context-{tokens // 1024}k-v1"
 
+
+logger = logging.getLogger(__name__)
 
 DEEPSEEK_COUNTER_MODELS = frozenset({"deepseek-flash", "deepseek-v4.1-flash"})
 
@@ -93,6 +96,61 @@ def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None
     )
 
 
+def _CURRENT_COUNTERS() -> tuple[type, ...]:
+    from agent_orchestrator.runtime.deepseek_meter import CertifiedDeepSeekCounter
+
+    return (CertifiedDeepSeekCounter,)
+
+
+def legacy_counter_for(snapshot: ProviderSnapshot | None) -> Any:
+    """The counter identity released before 2026-09-24, for pools frozen with it."""
+
+    if snapshot is None or snapshot.requested_model not in DEEPSEEK_COUNTER_MODELS:
+        return None
+    try:
+        from agent_orchestrator.runtime.deepseek_tokens import LegacyPriorOutputDeepSeekCounter
+    except ImportError:
+        return None
+    path = tokenizer_path()
+    return None if path is None else LegacyPriorOutputDeepSeekCounter(path, model=snapshot.requested_model)
+
+
+def frozen_tokenizer_fingerprint(config: Any, profile_id: str) -> str | None:
+    """The tokenizer fingerprint a pool's execution library was frozen with, if any."""
+
+    import json
+
+    from agent_orchestrator.runtime.assembly import execution_db_for
+
+    database = execution_db_for(config, profile_id)
+    sidecar = database.with_name(database.name + ".context.json")
+    if not sidecar.is_file():
+        return None
+    try:
+        value = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None  # the SDK's own strict reader reports an unreadable identity
+    fingerprint = value.get("tokenizer_fingerprint") if isinstance(value, dict) else None
+    return fingerprint if isinstance(fingerprint, str) else None
+
+
+def counter_for_pool(config: Any, identifier: str, current: Any, legacy: Any, *, native_pool: bool) -> Any:
+    """The counter a pool's frozen context identity requires (None: do not register it).
+
+    Nothing migrates old requests (SDK principle), so a pool frozen with the counter identity
+    released before 2026-09-24 keeps that exact counter and its semantics; an ARP pool (only
+    ever on the development branch) or an unknown identity is not registered, so its Missions
+    fail closed instead of stopping the whole service."""
+
+    frozen = frozen_tokenizer_fingerprint(config, identifier)
+    if frozen is None or current is None or frozen == current.fingerprint:
+        return current
+    if legacy is not None and frozen == legacy.fingerprint and not native_pool:
+        return legacy
+    logger.warning("execution pool %s retired: frozen counter identity %s is not served", identifier, str(frozen)[:24])
+    return None
+
+
 def calibrated(provider: Any, counter: Any) -> Any:
     """A relay pool's provider learns the relay margin from every reported prompt count."""
 
@@ -143,23 +201,35 @@ def source_runtime_options(
 
     state_dir = getattr(config, "evidence_root", None)
     counter = deepseek_counter_for(snapshot, settings, state_dir=state_dir)
-    pool_provider = calibrated(provider, counter)
     # Trusted deployment composition only (tests): a certified fixture counter that
     # stands in for the DeepSeek one so the native pools can be assembled offline.
     if counter is None and native_test_counter is not None:
         counter = native_test_counter
 
-    policy = resolve_profile_context_policy(config, tokenizer=counter)
+    legacy_counter = legacy_counter_for(snapshot) if isinstance(counter, _CURRENT_COUNTERS()) else None
+    pool_counters: dict[str, Any] = {}
+
+    def pick(identifier: str, current: Any, *, native_pool: bool) -> Any:
+        return counter_for_pool(config, identifier, current, legacy_counter, native_pool=native_pool)
+
+    def provider_for(pool_counter: Any, base: Any) -> Any:
+        return calibrated(base, pool_counter) if pool_counter is not None else base
+
+    default_counter = pick("default", counter, native_pool=False)
+    if default_counter is None:
+        default_counter = counter  # the default pool is required: keep the old strict refusal
+    policy = resolve_profile_context_policy(config, tokenizer=default_counter)
+    pool_counters["default"] = default_counter
     options: dict[str, Any] = {
         "profiles": {
             "default": RuntimeProfile(
                 "default",
-                pool_provider,
+                provider_for(default_counter, provider),
                 config.model,
                 price_table=config.price_table,
                 provider_kind="env" if snapshot is not None else "fixtures",
                 context_policy=policy,
-                tokenizer=counter if policy is not None else None,
+                tokenizer=default_counter if policy is not None else None,
             )
         }
     }
@@ -169,47 +239,40 @@ def source_runtime_options(
         )
         from simple_harness.agents.context.budget import ContextPolicy
 
-        # New named pools coexist with the old default pool. Never reinterpret
-        # a legacy Mission or an already frozen dispatch as a new capacity.
-        for tokens in CONTEXT_INPUT_LIMITS:
-            identifier = long_context_profile_id(tokens)
+        def register(identifier: str, tokens: int, current: Any, base: Any, *, native_pool: bool, kind: str) -> None:
+            pool_counter = pick(identifier, current, native_pool=native_pool)
+            if pool_counter is None:
+                return
             wanted = ContextPolicy(
                 max_input_tokens=tokens, output_reserve=32768,
                 max_tool_result_tokens=16384, render_slack_tokens=0,
             )
             frozen = resolve_profile_context_policy(
-                config, profile_id=identifier, tokenizer=counter, fresh_policy=wanted,
+                config, profile_id=identifier, tokenizer=pool_counter, fresh_policy=wanted,
             )
             if frozen != wanted:
                 raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
+            pool_counters[identifier] = pool_counter
             options["profiles"][identifier] = RuntimeProfile(
-                identifier, pool_provider, config.model, price_table=config.price_table,
-                provider_kind="env", context_policy=frozen, tokenizer=counter,
+                identifier, provider_for(pool_counter, base), config.model, price_table=config.price_table,
+                provider_kind=kind,
+                context_policy=frozen, tokenizer=pool_counter,
                 default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
+                **({"native_plane": native.assembly(identifier, tokens=tokens, counter=pool_counter)} if native_pool else {}),
             )
+
+        # New named pools coexist with the old default pool. Never reinterpret
+        # a legacy Mission or an already frozen dispatch as a new capacity.
+        for tokens in CONTEXT_INPUT_LIMITS:
+            register(long_context_profile_id(tokens), tokens, counter, provider, native_pool=False, kind="env")
         if native is not None and getattr(settings, "native_plane", "on") == "on":
             from .native_plane import native_profile_id
 
             # ARP-EXEC-1.1.1: the native-plane pools, beside (never instead of) the legacy
             # ones.  An existing Mission keeps the pool it was frozen on.
             for tokens in CONTEXT_INPUT_LIMITS:
-                identifier = native_profile_id(tokens)
-                wanted = ContextPolicy(
-                    max_input_tokens=tokens, output_reserve=32768,
-                    max_tool_result_tokens=16384, render_slack_tokens=0,
-                )
-                frozen = resolve_profile_context_policy(
-                    config, profile_id=identifier, tokenizer=counter, fresh_policy=wanted,
-                )
-                if frozen != wanted:
-                    raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
-                options["profiles"][identifier] = RuntimeProfile(
-                    identifier, pool_provider, config.model, price_table=config.price_table,
-                    provider_kind="env" if snapshot is not None else "fixtures",
-                    context_policy=frozen, tokenizer=counter,
-                    default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
-                    native_plane=native.assembly(identifier, tokens=tokens, counter=counter),
-                )
+                register(native_profile_id(tokens), tokens, counter, provider, native_pool=True,
+                         kind="env" if snapshot is not None else "fixtures")
             # Thinking-mode pools (user decision 2026-09-24: both modes supported): a separate
             # provider (thinking enabled, reasoning replayed) and a counter bound to the same
             # mode.  Only for a DeepSeek deployment with a certified counter.
@@ -219,25 +282,10 @@ def source_runtime_options(
             )
             if thinking_counter is not None:
                 for tokens in CONTEXT_INPUT_LIMITS:
-                    identifier = native_profile_id(tokens, thinking=True)
-                    wanted = ContextPolicy(
-                        max_input_tokens=tokens, output_reserve=32768,
-                        max_tool_result_tokens=16384, render_slack_tokens=0,
-                    )
-                    frozen = resolve_profile_context_policy(
-                        config, profile_id=identifier, tokenizer=thinking_counter, fresh_policy=wanted,
-                    )
-                    if frozen != wanted:
-                        raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
-                    options["profiles"][identifier] = RuntimeProfile(
-                        identifier, calibrated(thinking_provider, thinking_counter), config.model, price_table=config.price_table,
-                        provider_kind="env", context_policy=frozen, tokenizer=thinking_counter,
-                        default_max_output_tokens=8192, max_output_tokens_ceiling=32768,
-                        native_plane=native.assembly(identifier, tokens=tokens, counter=thinking_counter),
-                    )
+                    register(native_profile_id(tokens, thinking=True), tokens, thinking_counter, thinking_provider,
+                             native_pool=True, kind="env")
         options["provider_token_estimators"] = {
-            key: (profile.tokenizer if "-thinking-" in key else counter)
-            for key, profile in options["profiles"].items()
+            key: pool_counters.get(key, counter) for key in options["profiles"]
         }
         frozen_admission = profile_has_frozen_admission(config, "default")
         if frozen_admission is False or (frozen_admission is None and policy is None):
