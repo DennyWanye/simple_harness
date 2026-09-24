@@ -1,3 +1,5 @@
+最后更新：2026-09-25 CST（桌面程序真机点击 + 任务编排界面简化）。按用户要求"简洁易懂、逻辑不复杂"改 `views/MissionsView.tsx`：顶部「下一步」提示条（写明现在该做什么；规划授权直接在提示条里一键完成，其余一键跳到对应区域）；"Mission"统一改叫"任务"，状态/停止原因/子任务状态译成中文，列表"等你处理"与详情一致（含等授权、阻塞提问）；新建表单只留目标与成功条件，其余收进「高级设置」（有错时自动展开）；执行图、保证状态、诊断默认折叠；任务结束后隐藏取消；交付物排在前面、系统检查记录默认收起；打开的未结束任务每 5 秒兜底重取；任务多时左栏滚动。`OperationWorkspace.tsx` 完成要求说明改大白话并加「全选 / 全部取消」；`PlanningAuthorization.tsx` 文案缩短。前端 vitest 883 通过。原生点击：调试版应用包（`npx tauri build --debug --bundles app`）+ 独立数据目录，简单题与复杂记账题都点通到正式交付（记录 `plans/AgentRuntime/2026-09-23-arp-body/10-RP-E3-原生平面接线实施记录.md` §7.23）。注意：可访问名称里的"Mission"已改为"任务"，旧原生验收脚本按名定位的需同步。
+
 最后更新：2026-09-23 CST（Assurance 第九段，Host/UI 接线）。MissionsView 在执行图之后新增「保证状态」区块（`views/MissionAssurance.tsx`，按 `status.assurance_available` 挂载）：按需读取当前/历史（事件序号）保证快照，五类条目（准则/审阅/待效果/结案/贡献）分列历史状态与当前可用性，分页与状态变化重来，审阅详情与只诊断的结果可用性核查；所有 DTO 由 `stores/assuranceStore.ts` 按 host-*-v1 合同严格解析，不符合同保留上次画面并报协议错误。同次合入 TaskGraph UI2 overlay 的执行图视图。vitest 875 通过（新 9）。
 
 最后更新：2026-09-15 01:41 CST。当前a30639e源码原生v53冷恢复/产物/回放/支持报告实点通过，5旧调用保持、0新调用；约两分钟启动等待仍保留。新完整v8和本地N2 v4待终态；N1–N8/正式A96B96未关闭、Flash0、无打包。 [证据与范围](../plans/taskSys2/testPhase1-budget-analysis-followup-2026-09-15.md)。
