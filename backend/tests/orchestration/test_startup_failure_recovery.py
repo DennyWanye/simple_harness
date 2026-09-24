@@ -17,7 +17,10 @@ from deskpet.orchestration.service import (
 
 def _service(tmp_path, principal, **kwargs):
     service = OrchestrationService(
-        tmp_path, OrchestrationSettings(backoff_max_seconds=0.001),
+        # These cases pin the candidate retry/close protocol with stubbed Orchestrator
+        # candidates; the native runtime plane (default on since ARP) needs a real
+        # deployment and config, so it is switched off here rather than faked.
+        tmp_path, OrchestrationSettings(backoff_max_seconds=0.001, native_plane="off"),
         principal=principal, **kwargs,
     )
     service._config = object()
@@ -36,7 +39,7 @@ def _wire_candidates(monkeypatch, candidates):
 
     pending = iter(candidates)
     monkeypatch.setattr(event_handler, "Orchestrator", lambda *args, **kwargs: next(pending))
-    monkeypatch.setattr(service_module, "source_runtime_options", lambda *args: {})
+    monkeypatch.setattr(service_module, "source_runtime_options", lambda *args, **kwargs: {})
     monkeypatch.setattr(facade, "MissionControlV1", lambda candidate, **kwargs: ("control", candidate))
     monkeypatch.setattr(policies, "PolicyApi", lambda commit, *args, **kwargs: ("policy", commit))
 

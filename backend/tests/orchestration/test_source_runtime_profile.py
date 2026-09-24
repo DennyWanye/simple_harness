@@ -36,8 +36,13 @@ def source_config(tmp_path, monkeypatch):
     )
 
 
-def test_source_official_profile_requires_pinned_tokenizer(source_config, monkeypatch):
+def test_source_official_profile_requires_pinned_tokenizer(source_config, monkeypatch, tmp_path):
     monkeypatch.delenv("DESKPET_ORCH_TOKENIZER_PATH", raising=False)
+    # ARP: without the variable the deployment's model directory is the fallback; an
+    # empty one means no pinned tokenizer anywhere, which must still be refused.
+    import paths
+
+    monkeypatch.setattr(paths, "user_models_dir", lambda: str(tmp_path / "no-models"))
     snapshot = ProviderSnapshot(
         "deepseek",
         "https://api.deepseek.com",
@@ -126,7 +131,16 @@ def test_genuine_precontext_library_distinguishes_frozen_admission_and_adds_long
             raise AssertionError("Host configuration must never estimate a Provider request")
 
     counter = FixtureCounter()
+    # Import the meter before the estimator is replaced: its counters subclass it.
+    from agent_orchestrator.runtime import deepseek_meter  # noqa: F401
+
     monkeypatch.setattr(deepseek_tokens, "DeepSeekV41TokenEstimator", lambda *a, **kw: counter)
+    # ARP (2026-09-24): pools are metered by the certified / relay counters, and a legacy
+    # identity pool by the legacy counter — every constructor yields the fixture here.
+    from deskpet.orchestration import runtime_profile
+
+    monkeypatch.setattr(runtime_profile, "deepseek_counter_for", lambda *a, **kw: counter)
+    monkeypatch.setattr(runtime_profile, "legacy_counter_for", lambda *a, **kw: counter)
     monkeypatch.setenv("DESKPET_ORCH_TOKENIZER_PATH", str(source_config.evidence_root / "fixture.json"))
 
     async def old_runtime():

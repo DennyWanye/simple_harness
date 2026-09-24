@@ -157,8 +157,10 @@ def counter_for_pool(config: Any, identifier: str, current: Any, legacy: Any, *,
     ever on the development branch) or an unknown identity is not registered, so its Missions
     fail closed instead of stopping the whole service."""
 
+    if current is None:
+        return None  # no DeepSeek counter at all: nothing to pick, the library is not read
     frozen = frozen_tokenizer_fingerprint(config, identifier)
-    if frozen is None or current is None or frozen == current.fingerprint:
+    if frozen is None or frozen == current.fingerprint:
         return current
     if legacy is not None and frozen == legacy.fingerprint and not native_pool:
         return legacy
