@@ -85,9 +85,9 @@ class OrchestrationSettings:
     # gateway, a local forwarder), comma separated and lower-cased.  Empty means only
     # api.deepseek.com counts as official.
     deepseek_compatible_hosts: str = ""
-    # DeepSeek thinking mode (user decision 2026-09-24: both modes supported).  Disabled by
-    # default so existing Agents keep their frozen continuation; "enabled" replays reasoning.
-    thinking: str = "disabled"
+    # DeepSeek thinking mode for new Missions (user decision 2026-09-24: both modes supported,
+    # thinking on by default).  Existing Missions keep their pool; "disabled" is the fallback.
+    thinking: str = "enabled"
 
 
 def _assurance_profile(value: Any) -> str:
@@ -98,14 +98,15 @@ def _assurance_profile(value: Any) -> str:
 
 
 def _thinking(value: Any) -> str:
-    """DeepSeek thinking mode for orchestration: ``disabled`` (default) or ``enabled``.
+    """DeepSeek thinking mode for new Missions: ``enabled`` (default, user decision
+    2026-09-24: DeepSeek is the main model and thinks by default) or ``disabled``.
 
-    Frozen into each Agent's binding when it is created; a change applies to new Agents
-    only (an existing Agent keeps the mode it was created with or fails closed)."""
+    It only picks a new Mission's pool; an existing Mission keeps the pool (and mode) it
+    was frozen on, so switching it back never breaks an Agent."""
     if not isinstance(value, str):
-        return "disabled"
+        return "enabled"
     normalised = value.strip().lower()
-    return normalised if normalised in ("enabled", "disabled") else "disabled"
+    return normalised if normalised in ("enabled", "disabled") else "enabled"
 
 
 def _compatible_hosts(value: Any) -> str:

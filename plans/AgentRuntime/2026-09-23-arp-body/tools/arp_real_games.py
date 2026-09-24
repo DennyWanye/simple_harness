@@ -627,7 +627,7 @@ async def run_game(name: str, round_: int, out: Path, key: str) -> dict:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(); parser.add_argument("out"); parser.add_argument("--games", default="LM01,LM02,LM03,LM04"); parser.add_argument("--rounds", type=int, default=3); parser.add_argument("--round-from", type=int, default=1)
-    parser.add_argument("--thinking", choices=("on", "off"), default="off")
+    parser.add_argument("--thinking", choices=("on", "off"), default="on")  # DeepSeek default (2026-09-24)
     args = parser.parse_args()
     global THINKING, OUT, LIMIT
     THINKING = "enabled" if args.thinking == "on" else "disabled"

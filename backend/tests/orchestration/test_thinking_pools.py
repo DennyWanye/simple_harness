@@ -3,8 +3,8 @@
 - 共享提供方对 DeepSeek 型号一律显式关思考（DeepSeek 默认开思考，而共享提供方不回传思考）；
   其它型号的请求不变。
 - 开思考的工作跑在独立的"思考池"上（独立 id、独立执行库、独立提供方与计数器），
-  配置项 ``[orchestration] thinking`` 只决定新 Mission 的默认池；已有 Mission 留在原池，
-  所以改配置不会让已有 Agent 的冻结绑定失配。
+  配置项 ``[orchestration] thinking`` 默认开，只决定新 Mission 的默认池；已有 Mission 留在
+  原池，所以改配置（包括改回关）不会让已有 Agent 的冻结绑定失配。
 """
 
 from __future__ import annotations
@@ -30,11 +30,12 @@ def test_thinking_pools_have_their_own_ids() -> None:
     assert native_profile_id(524_288, thinking=True) == "deepseek-native-512k-thinking-v1"
 
 
-def test_the_setting_defaults_to_disabled_and_ignores_bad_values() -> None:
-    assert load_settings({}).thinking == "disabled"
-    assert load_settings({"thinking": "Enabled"}).thinking == "enabled"
-    assert load_settings({"thinking": "maybe"}).thinking == "disabled"
-    assert load_settings({"thinking": 1}).thinking == "disabled"
+def test_the_setting_defaults_to_enabled_and_can_be_switched_off() -> None:
+    assert load_settings({}).thinking == "enabled"
+    assert OrchestrationSettings().thinking == "enabled"
+    assert load_settings({"thinking": "Disabled"}).thinking == "disabled"
+    assert load_settings({"thinking": "maybe"}).thinking == "enabled"
+    assert load_settings({"thinking": 1}).thinking == "enabled"
 
 
 def test_only_deepseek_gets_an_explicit_switch_and_the_shared_provider_never_thinks() -> None:
