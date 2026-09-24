@@ -62,7 +62,8 @@ def dump_native(root: Path, summary: dict) -> None:
 
 async def main():
     snapshot = ProviderSnapshot(provider_id="deepseek-daycard-gate", base_url="http://127.0.0.1:28181/v1",
-                                configured_model="deepseek-v4.1-flash", requested_model="deepseek-v4.1-flash", api_key=read_key())
+                                configured_model="deepseek-v4.1-flash", requested_model="deepseek-v4.1-flash", api_key=read_key(),
+                                response_model_aliases=("deepseek-ai/DeepSeek-V4.1-Flash",))
     provider, client = build_provider(snapshot, timeout=900.0, allow_private_http=True)
     root = RUN / "userdata" / "data" / "agent-orchestrator"
     settings = OrchestrationSettings(deepseek_compatible_hosts="127.0.0.1")

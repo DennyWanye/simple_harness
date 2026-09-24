@@ -177,3 +177,24 @@ def test_the_legacy_counter_on_a_relay_charges_that_hosts_margin(tmp_path) -> No
     assert isinstance(on_relay, LegacyRelayDeepSeekCounter) and on_relay.fingerprint == official.fingerprint
     assert on_relay.margin is runtime_profile.relay_tool_margin("legacy-relay.example.test", tmp_path)
     assert runtime_profile.calibrated(object(), on_relay) is not None
+
+
+def test_declared_relay_echo_aliases_reach_every_pool_provider() -> None:
+    """A relay that echoes a vendor-prefixed model name is trusted only when declared."""
+
+    import httpx
+
+    from deskpet.orchestration.provider import provider_on_client
+
+    relay = ProviderSnapshot("relay", "https://relay.example.test/v1", "deepseek-v4.1-flash", "deepseek-v4.1-flash", "fixture",
+                             response_model_aliases=("deepseek-ai/DeepSeek-V4.1-Flash",))
+    client = httpx.AsyncClient()
+    try:
+        for thinking in (None, "enabled", "disabled"):
+            provider = provider_on_client(client, relay, thinking=thinking)
+            assert provider._response_model_aliases == frozenset({"deepseek-ai/DeepSeek-V4.1-Flash"})
+        assert provider_on_client(client, DEEPSEEK)._response_model_aliases == frozenset()
+    finally:
+        import asyncio
+
+        asyncio.run(client.aclose())

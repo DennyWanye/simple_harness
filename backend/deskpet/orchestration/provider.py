@@ -36,6 +36,10 @@ class ProviderSnapshot:
     configured_model: str
     requested_model: str
     api_key: str = field(repr=False)
+    # Spellings under which a relay echoes this very model (e.g. a vendor-prefixed
+    # "deepseek-ai/DeepSeek-V4.1-Flash").  Declared, never guessed: an undeclared echo
+    # keeps usage untrusted, which only ever over-counts (2026-09-24 relay).
+    response_model_aliases: tuple[str, ...] = ()
 
     def public(self) -> dict[str, Any]:
         return {
@@ -115,6 +119,8 @@ def provider_on_client(client: Any, snapshot: ProviderSnapshot, *, timeout: floa
         options["thinking"] = thinking
     if reasoning_effort is not None:
         options["reasoning_effort"] = reasoning_effort
+    if snapshot.response_model_aliases:
+        options["response_model_aliases"] = tuple(snapshot.response_model_aliases)
     return OpenAICompatibleProvider(
         client, snapshot.base_url, snapshot.requested_model, Secret(snapshot.api_key), timeout=timeout, **options
     )
