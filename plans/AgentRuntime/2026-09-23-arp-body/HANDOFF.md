@@ -24,6 +24,7 @@
 | **2026-09-24 下午：思考/不思考双模式 + 中转余量** — 适配器思考开关、私有思考逐条回传、计数按模式精确（arp.4）；新 Mission 默认开思考，产品后台独立思考池；中转带工具多留余量（下限 160、按回报用量学习、只增不减），旧身份池沿用旧计数器，候选估算器按冻结准入身份挑选（arp.5–7）。中转长上下文金丝雀 1/1、完整 3 局 3/3 通过，59 次用量校对无少算。开思考需同时发强度 high（中转只在带强度时思考）；真实思考线路开思考 3 局：2/3 答对（1 局提问回合线路错误），硬性检查 3/3 含思考回传，无少算 | 进行中 | SDK `925c694a` / Host `a20a393f` | §7.13–§7.14 |
 | **2026-09-24 晚：向量模型本地可用** — 用户选 BGE-M3 INT8（本机量化、外部数据格式，常驻约 1.07 GB），Host 端口改用 onnxruntime + tokenizers，不再依赖 torch/FlagEmbedding；SDK 支持嵌入端口声明后台计算，准备阶段不再同步跑真实模型（arp.8） | 完成 | SDK `5755aa34` / Host 钉 arp.8 | §7.16 |
 | **2026-09-24 晚：遗留缺陷清理** — SCRIPT 技能在 Host 沙箱执行（异步等待，不阻塞事件循环）；创建键按所有者区分；技能暂停/恢复/退役崩溃重试按重放处理；转发器积分不足的 429 不再重试占槽（SDK arp.9） | 完成 | SDK `d5d6f5ba` / Host 钉 arp.9 | §7.17 |
+| **2026-09-24 晚：审阅阻断 + Assurance 检查策略 + 不稳定测试** — 沙箱脚本输出不再跟随链接（审阅阻断）；任务派生判据去掉 `critic_review` 后检查策略可投影（金丝雀 4 卡点）；召回分页崩溃测试去竞态（SDK arp.10） | 完成 | SDK `75a916dc` / Host `afacd26b` + 钉 arp.10 | §7.18 |
 
 ## 怎么继续
 
@@ -40,5 +41,6 @@
 
 - Host `tests/sdk_adapters`：34 项（effect gate / hardening / objective events / S5a 验收矩阵 / task_scope_update 等旧适配链）在 arp.7 与 arp.8 上逐条相同地失败（2026-09-24 核对），非本分支近期改动引入。
 
-- `tests/agents`：16 项因本机缺 `tiktoken`。
+- `tests/agents`：16 项因本机缺 `tiktoken`（2026-09-24 已在 SDK venv 补装）。
+- SDK `tests/orchestrator/full_target/assurance_exec/test_a_assurance.py` 2 项：外部脚本导入 `jsonschema` 失败（SDK venv 缺包）。
 - `tests/execution`：以 `4a4e07fd` 同环境结果为准（见 RP-B 记录 §3.1）。
