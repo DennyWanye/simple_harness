@@ -33,6 +33,8 @@ from simple_harness.agents.arp.profile import default_policy
 from simple_harness.agents.arp.strict import digest
 from simple_harness.runtime.ports import AuthorizationResult
 
+from .skill_script_runner import SandboxScriptRunner
+
 logger = logging.getLogger(__name__)
 
 NATIVE_PROFILE_PREFIX = "deepseek-native-"
@@ -204,8 +206,12 @@ class HostNativePlane:
         models_dir: Path | None,
         meter_factory: Callable[..., Any],
         clock_ms: Callable[[], int] = now_ms,
+        script_executor: Any | None = None,
     ) -> None:
         self.tenant_id = tenant_id
+        # The sandbox executor this deployment proved at start (P3.2 probe); None when the
+        # machine has no usable sandbox, and then SCRIPT skills are refused by name.
+        self.script_executor = script_executor
         self.principal_id = principal_id
         self.clock_ms = clock_ms
         self.authorization = DeploymentToolAuthorization(allowed_tools)
@@ -308,7 +314,8 @@ class HostNativePlane:
             "profile_id": profile_id, "max_context_tokens": tokens, "output_tokens": output_tokens,
             "counter": getattr(counter, "fingerprint", None), "count_mode": meter.count_mode,
             "embedding": "bge-m3-int8" if self.embedding is not None else "lexical-only",
-            "embedding_reason": self.embedding_reason, "script_runner": "unavailable",
+            "embedding_reason": self.embedding_reason,
+            "script_runner": "unavailable" if self.script_executor is None else f"sandbox:{self.script_executor.kind}",
             "catalogue_namespace_id": namespace, "owner_mode": "STANDALONE_CHAT",
         }
 
@@ -324,10 +331,11 @@ class HostNativePlane:
                 meter=meter, embedding=self.embedding,
                 embedding_resource_ref=None if self.embedding is None else self.embedding_ref,
                 acceptance=acceptance, artifacts=self.artifacts,
-                # No approved script executor is bound in this slice: SCRIPT skills are
-                # refused by name (RUNNER_UNAVAILABLE); the sandbox executor is async and
-                # a sync adapter is RP-E follow-up work.
-                script_runner=None,
+                # SCRIPT skills run in the sandbox model-written code uses; without a
+                # proven sandbox they are refused by name (RUNNER_UNAVAILABLE).
+                script_runner=None if self.script_executor is None else SandboxScriptRunner(
+                    self.script_executor, execution_db.with_name(execution_db.name + ".skill-runs")
+                ),
             )
 
         return NativePlaneAssembly(arp_ports=arp_ports, authorization=self.authorization, caller_for=self.intent_caller, after_build=after_build)

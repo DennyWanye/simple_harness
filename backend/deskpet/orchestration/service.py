@@ -614,7 +614,7 @@ class OrchestrationService:
         return HostNativePlane(
             tenant_id=self.tenant_id, principal_id=str(self._principal.principal_id),
             allowed_tools=tuple(self._deployment.allowed_tools) if self._deployment is not None else (),
-            models_dir=models_dir, meter_factory=meter_factory,
+            models_dir=models_dir, meter_factory=meter_factory, script_executor=self._executor,
         )
 
     def _native_profile_ids(self) -> list[str]:

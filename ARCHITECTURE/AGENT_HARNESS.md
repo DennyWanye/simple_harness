@@ -1,3 +1,7 @@
+2026-09-24 ARP 遗留缺陷清理（SDK `0.13.0.dev20260924+arp.9` / 提交 `d5d6f5ba`，记录 §7.17）。
+- SCRIPT 技能：Host `skill_script_runner.SandboxScriptRunner` 用启动时探测通过的沙箱执行（只允许 Python，独立工作区，确认不了结束记 UNKNOWN）；SDK 的技能执行工具异步等待执行器。无沙箱时按名拒绝。
+- 创建键按所有者区分；技能暂停/恢复/退役的崩溃重试按重放处理。
+
 2026-09-24 ARP 向量车道本地可用（SDK `0.13.0.dev20260924+arp.8` / 提交 `5755aa34`，记录 §7.16）。
 - 模型：BGE-M3 INT8（本机从官方 ONNX 动态量化，外部数据格式），放在用户模型目录 `models/bge-m3-int8/`；Host 端口 `native_plane.BgeM3EmbeddingPort` 只依赖 onnxruntime + tokenizers，1024 维归一化，常驻约 1.07 GB。缺文件时端口报出具体原因，向量车道关闭、召回走词法。
 - 后台计算：端口声明 `prefers_background = True` 后，Turn 准备阶段不再同步跑嵌入；后台泵 `tick_async` 在线程里算向量，再走原有的已记录嵌入调用。未声明的端口行为不变。
