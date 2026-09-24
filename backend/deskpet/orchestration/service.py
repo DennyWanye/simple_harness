@@ -1213,6 +1213,7 @@ class OrchestrationService:
     # ------------------------------------------------------------ reads
     def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
         rows = []
+        planning_waits = self._planning_waits()
         for mission in self._call("missions", limit=limit):
             mission_id = mission["mission_id"]
             blocked = bool(self._blocked(mission_id))
@@ -1225,7 +1226,8 @@ class OrchestrationService:
                         mission["status"],
                         attempt_statuses=self._attempt_statuses(mission_id),
                         task_statuses=self._task_statuses(mission_id),
-                        waiting=bool(mission.get("pending_approvals")) or self._waiting(mission_id),
+                        waiting=bool(mission.get("pending_approvals")) or self._waiting(mission_id)
+                        or mission_id in planning_waits,
                         blocked=blocked,
                     ),
                 }
@@ -1244,6 +1246,36 @@ class OrchestrationService:
             return [str(a.status) for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id)]
         except Exception:  # noqa: BLE001
             return []
+
+    def _planning_waits(self) -> set[str]:
+        """Missions waiting on a person for planning — an authorization request or a blocking
+        question — counted exactly as the detail snapshot counts them, so the list and the
+        detail show the same state word (2026-09-25 desktop run: the list said "请求已接收"
+        while the detail said "等你处理")."""
+
+        try:
+            from agent_orchestrator.orchestrator.planning_selection import awaits_authority
+            from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+            from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
+
+            store = self._orchestrator.store
+            planning = PlanningDecisionStore(store)
+            waits = {
+                intent.mission_id
+                for intent in store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED")
+                if awaits_authority(store, intent)
+                and planning.get_planning_request_for_intent(intent.intent_id) is not None
+            }
+            humans = PlanningHumanStore(store)
+            for mission_id in {m.id for m in store.list_missions()} - waits:
+                for row in humans.list(mission_id):
+                    request = row.get("request") or {}
+                    if row.get("state") == "PENDING" and (request.get("payload") or {}).get("blocking"):
+                        waits.add(mission_id)
+                        break
+            return waits
+        except Exception:  # noqa: BLE001 - the list must still render
+            return set()
 
     def _waiting(self, mission_id: str) -> bool:
         try:
