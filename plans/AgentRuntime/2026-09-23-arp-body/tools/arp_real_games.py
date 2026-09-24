@@ -52,11 +52,15 @@ GATE = "http://127.0.0.1:28181/v1"
 ENV_FILE = Path(os.environ.get("REAL_ENV_FILE", "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.env"))
 TOKENIZER = Path(os.environ.get("SH_TOKENIZER_PATH") or (Path.home() / "Library/Application Support/deskpet/models/deepseek-v41/tokenizer.json"))
 LIMIT, OUT = 6144, 1024            # a deliberately small window: early facts must come back through recall
+# Thinking mode (user decision 2026-09-24: both modes supported).  "disabled" is the default;
+# "enabled" replays each turn's reasoning inside the run and needs a larger output cap,
+# because the reasoning tokens are part of the completion.  Set by ``--thinking``.
+THINKING = os.environ.get("ARP_GAMES_THINKING", "disabled")
+THINKING_OUT = 2048
 SAFETY = 64                        # the profile's safety reserve; also the usage-calibration tolerance
 # DeepSeek V4.1 thinks by default; the runtime's continuation contract is "reasoning
 # disabled" and thinking would have to be passed back inside tool loops (official guide),
 # which the adapter does not do yet — so every request switches it off explicitly.
-THINKING_OFF = {"thinking": {"type": "disabled"}}
 # The relay echoes the vendor-prefixed spelling; the kernel trusts usage only when the echo
 # equals the bound model name, so the spelling is declared as an alias of it.
 MODEL_ALIASES = ("deepseek-ai/DeepSeek-V4.1-Flash",)
@@ -184,13 +188,13 @@ class Harness:
         self.reconciliation = RunnerReconciliation(self.transport)
         self.authorization = GameAuthorization()
         self.failures: list[dict] = []
-        self.counter = CertifiedDeepSeekCounter(TOKENIZER, model=MODEL)
+        self.counter = CertifiedDeepSeekCounter(TOKENIZER, model=MODEL, thinking=THINKING)
         self.runtime: Any = None; self.client: Any = None
 
     async def start(self) -> None:
         import httpx
         self.client = httpx.AsyncClient()
-        provider = TransportGate(OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True, extra_body=THINKING_OFF, response_model_aliases=MODEL_ALIASES), self.transport)
+        provider = TransportGate(OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True, thinking=THINKING, response_model_aliases=MODEL_ALIASES), self.transport)
         root = bootstrap_root(self.dir / "root", root_id=f"real-games:{self.name}")
         meter = deepseek_meter_binding(self.counter, input_limit_tokens=LIMIT, max_output_tokens=OUT)
         policies = ConsumerRuntimePolicies("unpriced_local", False, "fail_closed", provider_reconciliation=self.reconciliation)
@@ -623,11 +627,18 @@ async def run_game(name: str, round_: int, out: Path, key: str) -> dict:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(); parser.add_argument("out"); parser.add_argument("--games", default="LM01,LM02,LM03,LM04"); parser.add_argument("--rounds", type=int, default=3); parser.add_argument("--round-from", type=int, default=1)
+    parser.add_argument("--thinking", choices=("on", "off"), default="off")
     args = parser.parse_args()
+    global THINKING, OUT, LIMIT
+    THINKING = "enabled" if args.thinking == "on" else "disabled"
+    if THINKING == "enabled":
+        # Reasoning is part of the completion: a larger output reserve, and a window grown by
+        # the same amount so the sixteen fillers still overflow it and force recall.
+        OUT, LIMIT = THINKING_OUT, LIMIT + (THINKING_OUT - OUT)
     out = Path(args.out).resolve(); assert ".local-test-evidence" in out.parts, "证据目录必须在 .local-test-evidence 下"
     out.mkdir(parents=True, exist_ok=True)
     key = read_key()
-    report: dict[str, Any] = {"model": MODEL, "gate": GATE, "tokenizer": str(TOKENIZER), "limit": LIMIT, "output": OUT, "embedding": "none (LEXICAL_ONLY)", "script_runner": "none", "games": []}
+    report: dict[str, Any] = {"model": MODEL, "gate": GATE, "tokenizer": str(TOKENIZER), "limit": LIMIT, "output": OUT, "thinking": THINKING, "embedding": "none (LEXICAL_ONLY)", "script_runner": "none", "games": []}
     for name in args.games.split(","):
         for round_ in range(args.round_from, args.rounds + 1):
             game = await run_game(name.strip(), round_, out, key)
