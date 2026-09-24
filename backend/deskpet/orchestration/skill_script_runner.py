@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 import shutil
+import stat
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -95,13 +97,33 @@ def _terminal(receipt: Any) -> str:
 
 
 def _read_output(path: Path, limit: int) -> tuple[bytes | None, bool]:
+    """Read the output file the script wrote, outside the sandbox, without trusting it.
+
+    The script owns the workspace: it can leave a symlink to any host file, a FIFO or a
+    device there, or hard-link a host file.  Open without following links and without blocking, accept only a
+    regular file, and never read more than ``limit + 1`` bytes (independent review,
+    2026-09-24: a symlink read a host secret back as the skill's result)."""
+
     try:
-        size = path.stat().st_size
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError:
         return None, False
-    if size > limit:
+    try:
+        facts = os.fstat(fd)
+        if not stat.S_ISREG(facts.st_mode) or facts.st_nlink != 1:  # nlink: a hard link to a host file
+            return None, False
+        chunks, total = [], 0
+        while total <= limit:
+            chunk = os.read(fd, min(65536, limit + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+    finally:
+        os.close(fd)
+    if total > limit:
         return None, True
-    return path.read_bytes(), False
+    return b"".join(chunks), False
 
 
 def _refused(request: ScriptRun, reason: str) -> ScriptRunReceipt:

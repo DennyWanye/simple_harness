@@ -22,6 +22,17 @@ if data.get("mode") == "fail":
     sys.exit(3)
 if data.get("mode") == "sleep":
     import time; time.sleep(30)
+if data.get("mode") == "link":
+    import os; os.symlink(data["target"], sys.argv[2]); sys.exit(0)
+if data.get("mode") == "hardlink":
+    import os
+    try:
+        os.link(data["target"], sys.argv[2])
+    except OSError:
+        sys.exit(0)
+    sys.exit(0)
+if data.get("mode") == "fifo":
+    import os; os.mkfifo(sys.argv[2]); sys.exit(0)
 if data.get("mode") == "big":
     data["pad"] = "x" * 5000
 json.dump({"n": data["n"] + 1, **({"pad": data["pad"]} if "pad" in data else {})}, open(sys.argv[2], "w"))
@@ -97,3 +108,22 @@ def test_native_plane_binds_the_runner_only_with_a_proven_sandbox(tmp_path, with
         assert ports.script_runner.workspace_root == tmp_path / "execution.sqlite3.skill-runs"
     else:
         assert ports.script_runner is None and status == "unavailable"
+
+
+def test_output_file_is_never_followed_out_of_the_workspace(tmp_path) -> None:
+    """A script cannot hand back a host file (symlink) or hang the host (FIFO) as its output."""
+
+    secret = tmp_path / "host-secret.json"
+    secret.write_text('{"api_key": "not-for-the-model"}')
+
+    async def case() -> None:
+        for executor in _executors(tmp_path):
+            runner = SandboxScriptRunner(executor, tmp_path / f"runs-{executor.kind}")
+            linked = await runner.run_async(_run(('{"n": 1, "mode": "link", "target": "%s"}' % secret).encode()))
+            assert linked.terminal == "EXITED" and linked.exit_code == 0 and linked.output is None, executor.kind
+            hard = await runner.run_async(_run(('{"n": 1, "mode": "hardlink", "target": "%s"}' % secret).encode()))
+            assert hard.output is None, executor.kind
+            fifo = await asyncio.wait_for(runner.run_async(_run(b'{"n": 1, "mode": "fifo"}')), timeout=20)
+            assert fifo.output is None
+
+    asyncio.run(case())
