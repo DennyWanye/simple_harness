@@ -139,7 +139,13 @@ async def main():
             try: arts.append(service.artifact_read(art["id"]))
             except Exception as e: arts.append({"id": art.get("id"), "read_error": str(e)})
         summary["artifacts"] = arts
-        events = service.events(mid, limit=300)["events"]
+        events, after = [], 0  # the facade pages at most 200 events
+        while True:
+            page = service.events(mid, after_seq=after, limit=200)
+            events += page["events"]
+            if not page["has_more"] or page["through_seq"] is None:
+                break
+            after = page["through_seq"]
         (RUN / "events.json").write_text(json.dumps(events, ensure_ascii=False, indent=1))
         summary["event_types"] = [e["type"] for e in events]
         try:
