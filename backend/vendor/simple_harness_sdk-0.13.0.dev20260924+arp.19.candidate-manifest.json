@@ -1,0 +1,19 @@
+{
+  "artifacts": {
+    "simple_harness_sdk-0.13.0.dev20260924+arp.19-py3-none-any.whl": "d6c2f18a681890d4d5aae39eaeffe1d041ac6c576e5d6406ff9ec0ab919eb39e"
+  },
+  "commit": "ffec10a492d999081edbc523ceefb11da53493da",
+  "development_candidate": true,
+  "planned_tag": null,
+  "provenance": {
+    "release_published": false,
+    "source_commit": "ffec10a492d999081edbc523ceefb11da53493da",
+    "source_input_count": 725,
+    "source_inputs_sha256": "71ad01c0ce62fb5742e11a0833c9a6bcc395fb79c426deb88ded65525f883450",
+    "source_root": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/sdk/simple-harness-sdk",
+    "version_rewrites": [],
+    "working_tree_dirty": false
+  },
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.13.0.dev20260924+arp.19"
+}
