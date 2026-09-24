@@ -606,6 +606,17 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     return () => { off(); offState?.(); if (createTimer.current) clearTimeout(createTimer.current); };
   }, [channel, send, flightOf, fetchDetail, fetchEvents, refreshSelected]);
 
+  // 兜底刷新（2026-09-25 真机点击）：等人操作的状态（如"授权本轮规划"）不一定伴随新事件，
+  // 推送可能察觉不到；打开的任务未结束时每 5 秒取一次详情，界面最多 5 秒跟上。
+  const openStatus = text(record(store.detail?.mission).status);
+  useEffect(() => {
+    if (!channel || !store.selectedId || TERMINAL.has(openStatus)) return undefined;
+    const timer = setInterval(() => {
+      if (selectedRef.current) fetchDetail(selectedRef.current);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [channel, store.selectedId, openStatus, fetchDetail]);
+
   const status = store.status;
   const domains = record(record(record(status?.deployment_manifest).features).domains);
   const canCreateDocument = domains.atomic_source_create === true && list(domains.items).some((item) => item.id === "doc-research-v1");

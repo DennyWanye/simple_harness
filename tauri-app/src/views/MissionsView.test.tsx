@@ -1200,3 +1200,26 @@ describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
     expect(screen.getByTestId("mission-budget").textContent).toBe("预算：Token 上限 400000 · 尝试次数上限 12");
   });
 });
+
+describe("兜底刷新（2026-09-25 真机点击：等授权时画面不刷新）", () => {
+  it("打开的任务未结束时，每 5 秒重取一次详情；没有推送也能跟上", () => {
+    vi.useFakeTimers();
+    try {
+      const channel = openMission();
+      const gets = channel.all("mission_get").length;
+      act(() => { vi.advanceTimersByTime(5001); });
+      expect(channel.all("mission_get").length).toBe(gets + 1);
+      expect(channel.last("mission_get")?.payload).toMatchObject({ mission_id: "mission-1" });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("任务已结束就不再轮询", () => {
+    vi.useFakeTimers();
+    try {
+      const channel = openMission({ ...DETAIL, mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "COMPLETED" } });
+      const gets = channel.all("mission_get").length;
+      act(() => { vi.advanceTimersByTime(15001); });
+      expect(channel.all("mission_get").length).toBe(gets);
+    } finally { vi.useRealTimers(); }
+  });
+});
