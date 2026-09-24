@@ -178,9 +178,13 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
         })
         assert approved["authority"]["kind"] == "USER_CONFIRMED"
         await asyncio.wait_for(loop.run(max_cycles=40), timeout=240)
-        assert loop.store.get_mission(mission_id).status.value == "PLANNING"
         pool = loop.assembled.pool("deepseek-native-256k-v1")
         connection = pool.runtime.uow.database.connection
+        # The scripted provider cannot answer the synthesizer: before 2026-09-24 that turn
+        # froze on an unknowable outcome and the Mission sat in PLANNING; now the turn fails
+        # at once and the Mission ends FAILED (never frozen), its call still UNKNOWN.
+        assert loop.store.get_mission(mission_id).status.value == "FAILED"
+        assert [tuple(r) for r in connection.execute("SELECT state FROM provider_invocations")] == [("unknown",)]
         sessions = connection.execute("SELECT agent_id, state FROM arp_agent_sessions").fetchall()
         assert len(sessions) == 1 and sessions[0][1] == "ACTIVE"
         intents = connection.execute("SELECT state, original_receipt_ref_json FROM arp_creation_intents").fetchall()
