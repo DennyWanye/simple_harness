@@ -98,7 +98,8 @@ def build_provider(snapshot: ProviderSnapshot, *, timeout: float = 180.0,
 
 
 def provider_on_client(client: Any, snapshot: ProviderSnapshot, *, timeout: float = 180.0,
-                       allow_private_http: bool = False, thinking: str | None = None) -> Any:
+                       allow_private_http: bool = False, thinking: str | None = None,
+                       reasoning_effort: str | None = None) -> Any:
     """An adapter on an existing client (the thinking-mode pools share the Host's client)."""
 
     import inspect
@@ -112,6 +113,8 @@ def provider_on_client(client: Any, snapshot: ProviderSnapshot, *, timeout: floa
         options["stream"] = True
     if thinking is not None:  # DeepSeek only; see runtime_profile.deepseek_thinking
         options["thinking"] = thinking
+    if reasoning_effort is not None:
+        options["reasoning_effort"] = reasoning_effort
     return OpenAICompatibleProvider(
         client, snapshot.base_url, snapshot.requested_model, Secret(snapshot.api_key), timeout=timeout, **options
     )

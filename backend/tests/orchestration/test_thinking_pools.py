@@ -80,7 +80,8 @@ def test_the_thinking_provider_is_built_only_for_a_deepseek_deployment_with_a_cl
                 return OrchestrationService._thinking_provider(service)  # type: ignore[arg-type]
 
             built = probe(DEEPSEEK, client)
-            assert built is not None and built.thinking == "enabled"
+            # The switch alone did not make a relay think (2026-09-24); the effort is always sent.
+            assert built is not None and built.thinking == "enabled" and built.reasoning_effort == "high"
             assert probe(OTHER, client) is None
             assert probe(DEEPSEEK, None) is None
             assert probe(None, client) is None

@@ -66,6 +66,12 @@ def relay_tool_margin(host: str, state_dir: Path | None) -> Any:
     return margin
 
 
+# Thinking pools send an explicit effort with the switch.  Measured 2026-09-24 on a relay:
+# the switch alone never produced reasoning (0/6), switch + effort always did (11/11); "high"
+# is DeepSeek's documented default effort, so stating it changes nothing on the official API.
+THINKING_EFFORT = "high"
+
+
 def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None, *, thinking: str = "disabled",
                          state_dir: Path | None = None) -> Any:
     """The certified V4.1 counter for a DeepSeek endpoint, or None for any other provider.
@@ -87,12 +93,14 @@ def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None
     path = tokenizer_path()
     if path is None:
         raise RuntimeError("源码 DeepSeek profile 需要绝对路径 DESKPET_ORCH_TOKENIZER_PATH")
+    effort = THINKING_EFFORT if thinking == "enabled" else None  # the counter renders what is sent
     if host in DEEPSEEK_OFFICIAL_HOSTS:
-        return CertifiedDeepSeekCounter(path, model=snapshot.requested_model, thinking=thinking)
+        return CertifiedDeepSeekCounter(path, model=snapshot.requested_model, thinking=thinking, reasoning_effort=effort)
     from agent_orchestrator.runtime.deepseek_meter import RelayDeepSeekCounter
 
     return RelayDeepSeekCounter(
-        path, model=snapshot.requested_model, thinking=thinking, margin=relay_tool_margin(str(host), state_dir),
+        path, model=snapshot.requested_model, thinking=thinking, reasoning_effort=effort,
+        margin=relay_tool_margin(str(host), state_dir),
     )
 
 

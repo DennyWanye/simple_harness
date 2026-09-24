@@ -868,9 +868,12 @@ class OrchestrationService:
         if cached is None:
             from .provider import provider_on_client
 
+            from .runtime_profile import THINKING_EFFORT
+
             cached = provider_on_client(
                 client, snapshot, timeout=900.0,
                 allow_private_http=bool(self.settings.local_model_profile), thinking="enabled",
+                reasoning_effort=THINKING_EFFORT,
             )
             self._thinking_provider_instance = cached
         return cached

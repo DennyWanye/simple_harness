@@ -57,6 +57,9 @@ LIMIT, OUT = 6144, 1024            # a deliberately small window: early facts mu
 # because the reasoning tokens are part of the completion.  Set by ``--thinking``.
 THINKING = os.environ.get("ARP_GAMES_THINKING", "disabled")
 THINKING_OUT = 2048
+# The relay only thinks when an effort is sent with the switch (measured 2026-09-24: switch
+# alone 0/6, switch + effort 11/11); "high" is DeepSeek's documented default effort.
+THINKING_EFFORT = "high"
 MARGIN: Any = None  # the relay's learned tool-preamble margin, created in main()
 SAFETY = 64                        # the profile's safety reserve; also the usage-calibration tolerance
 # DeepSeek V4.1 thinks by default; the runtime's continuation contract is "reasoning
@@ -192,13 +195,14 @@ class Harness:
         # The gate forwards to a relay, not the official endpoint: an upper-bound counter with
         # the relay's learned tool-preamble margin (user decision 2026-09-24), shared by every
         # game of this process and persisted beside the evidence.
-        self.counter = RelayDeepSeekCounter(TOKENIZER, model=MODEL, thinking=THINKING, margin=MARGIN)
+        effort = THINKING_EFFORT if THINKING == "enabled" else None
+        self.counter = RelayDeepSeekCounter(TOKENIZER, model=MODEL, thinking=THINKING, reasoning_effort=effort, margin=MARGIN)
         self.runtime: Any = None; self.client: Any = None
 
     async def start(self) -> None:
         import httpx
         self.client = httpx.AsyncClient()
-        provider = TransportGate(CalibratingProvider(OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True, thinking=THINKING, response_model_aliases=MODEL_ALIASES), self.counter), self.transport)
+        provider = TransportGate(CalibratingProvider(OpenAICompatibleProvider(self.client, GATE, MODEL, Secret(self.key), timeout=600.0, allow_private_http=True, stream=True, thinking=THINKING, reasoning_effort=(THINKING_EFFORT if THINKING == "enabled" else None), response_model_aliases=MODEL_ALIASES), self.counter), self.transport)
         root = bootstrap_root(self.dir / "root", root_id=f"real-games:{self.name}")
         meter = deepseek_meter_binding(self.counter, input_limit_tokens=LIMIT, max_output_tokens=OUT)
         policies = ConsumerRuntimePolicies("unpriced_local", False, "fail_closed", provider_reconciliation=self.reconciliation)
