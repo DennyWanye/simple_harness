@@ -110,6 +110,12 @@ async def _await(value: Any) -> Any:
 
 def _split_github_tree_url(source_url: str) -> tuple[str, str]:
     """Translate the URL form advertised by Settings into source arguments."""
+    if source_url.startswith("github:"):
+        # The marketplace registry lists ``github:owner/repo[/tree/<ref>/<path>]``.
+        rest = [part for part in source_url[len("github:"):].split("/") if part]
+        if len(rest) >= 2:
+            ref = rest[3] if len(rest) >= 4 and rest[2] == "tree" else "HEAD"
+            return f"https://github.com/{rest[0]}/{rest[1]}", ref
     parsed = urlsplit(source_url)
     parts = [part for part in parsed.path.split("/") if part]
     if (
@@ -245,6 +251,15 @@ class ProjectSkillInstallUIAdapter:
                         for member in members
                     ],
                 })
+        # 2026-09-25 UI 全量点击：安装服务失败时返回"已拒绝"投影而不抛异常，以前被
+        # 原样包成 ok:true，前端只能报"缺字段"，真正原因（如地址不合法）被吞掉。
+        if not intent_id:
+            code = str(projection.get("code") or "skill_install_contract_invalid")
+            raise ProjectSkillInstallUIError(
+                code,
+                str(projection.get("public_message") or "The Skill install was refused."),
+                retryable=bool(projection.get("retryable", False)),
+            )
         return projection
 
 

@@ -334,3 +334,37 @@ async def test_settings_authorizer_binds_global_intent_to_control_connection(tmp
     assert receipt.project_scope_key == owner_key
     assert receipt.principal_id == principal_id
     assert receipt.approved is True
+
+
+@pytest.mark.asyncio
+async def test_refused_stage_is_an_error_not_an_incomplete_success() -> None:
+    # 2026-09-25 UI 全量点击：拒绝结果以前被包成 ok:true，前端只能报"缺字段"。
+    from deskpet.capabilities.skill_install_ui import ProjectSkillInstallUIError
+
+    class _Refusing(_Service):
+        async def stage(self, **kwargs):
+            self.calls.append(("stage", kwargs))
+            return {"code": "github_url_invalid", "public_message": "Only GitHub URLs.",
+                    "retryable": False, "failure_receipt_ref": "r"}
+
+    adapter = ProjectSkillInstallUIAdapter(service=_Refusing(), authorizer=_Authorizer())
+    owner = TrustedGlobalInstallContext(
+        principal_id="session:session-a", global_owner_key="user:v2:" + "9" * 64
+    )
+    with pytest.raises(ProjectSkillInstallUIError) as caught:
+        await adapter.stage(url="https://github.com/o/r", owner=owner, principal_id="session:session-a")
+    assert caught.value.code == "github_url_invalid"
+
+
+@pytest.mark.asyncio
+async def test_stage_accepts_the_marketplace_github_shorthand() -> None:
+    service = _Service()
+    adapter = ProjectSkillInstallUIAdapter(service=service, authorizer=_Authorizer())
+    owner = TrustedGlobalInstallContext(
+        principal_id="session:session-a", global_owner_key="user:v2:" + "9" * 64
+    )
+    await adapter.stage(url="github:anthropics/skills/tree/main/skills/pdf", owner=owner,
+                        principal_id="session:session-a")
+    call = service.calls[0][1]
+    assert call["url"] == "https://github.com/anthropics/skills"
+    assert call["requested_ref"] == "main"

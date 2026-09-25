@@ -14871,7 +14871,7 @@ async def control_channel(ws: WebSocket):
                                 or payload.get("url")
                                 or ""
                             ),
-                            project=_si_project,
+                            owner=_si_project,  # the Settings adapter yields the global owner
                             principal_id=_si_principal,
                         )
                         await ws.send_json({
@@ -15083,13 +15083,16 @@ async def control_channel(ws: WebSocket):
                     CapabilityScope(user_key=_global_scope_key)
                 )
                 for _descriptor in _catalog_snapshot.descriptors:
+                    # 2026-09-25 UI 全量点击：内置 Skill 以前不算"已安装"，列表为空，
+                    # 与能力中心"操作"页的 17 个已装 Skill 对不上。内置的也列出，标 builtin。
                     _binding = next(
                         (
                             item
                             for item in _descriptor.visible_bindings
-                            if item.scope == "user"
-                            and item.scope_key == _global_scope_key
-                            and item.active
+                            if item.active and (
+                                (item.scope == "user" and item.scope_key == _global_scope_key)
+                                or item.scope == "builtin"
+                            )
                         ),
                         None,
                     )
@@ -15108,7 +15111,7 @@ async def control_channel(ws: WebSocket):
                             "name": _skill.id,
                             "description": _manifest.name,
                             "version": _manifest.version,
-                            "scope": "global",
+                            "scope": "builtin" if _binding.scope == "builtin" else "global",
                             "catalog_generation": _catalog_snapshot.stamp.catalog_generation,
                             "allowed_tools": list(_skill.allowed_tools),
                         })

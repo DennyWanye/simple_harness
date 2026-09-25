@@ -216,6 +216,8 @@ export interface ToolUseEvent {
 /** SkillMeta returned by `skill_list_response`. */
 export interface SkillMeta {
   name: string;
+  /** "builtin" 行是程序自带的，不能卸载。 */
+  scope?: "builtin" | "global" | string;
   description: string;
   when_to_use?: string;
   source: SkillSourceTier | string; // can be "plugin:<name>"

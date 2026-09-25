@@ -727,7 +727,9 @@ const InstalledList: React.FC<{
               </div>
             )}
           </div>
-          <button
+          {s.scope === "builtin" ? (
+            <span style={{ fontSize: tokens.text.xs.size, color: tokens.color.text.faint }}>内置</span>
+          ) : <button
             type="button"
             className="bp-btn-secondary"
             onClick={() => onUninstall(s.name)}
@@ -738,7 +740,7 @@ const InstalledList: React.FC<{
             }}
           >
             卸载
-          </button>
+          </button>}
         </div>
       ))}
     </div>
