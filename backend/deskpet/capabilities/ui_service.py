@@ -423,16 +423,18 @@ class CapabilityCenterService:
             binding = await self._uninstall_binding(source_operation)
         if binding is None:
             binding = await self._visible_binding(capability_id, scope)
+        owner_key = getattr(binding, "owner_key", "") or None
         idempotency_key = (
             "capability-center:uninstall:"
             f"{binding.capability_id}:{binding.scope}:{binding.scope_key}:"
-            f"{binding.generation}"
+            f"{binding.generation}:{owner_key or 'default-owner'}"
         )
         operation_id = _operation_id(idempotency_key)
         request = {
             "pack_id": binding.capability_id,
             "scope": binding.scope,
             "scope_key": binding.scope_key,
+            **({"owner_key": owner_key} if owner_key else {}),
         }
         operation = await self.store.create_operation(
             operation_id=operation_id,
@@ -450,6 +452,10 @@ class CapabilityCenterService:
                 scope=binding.scope,
                 scope_key=binding.scope_key,
                 idempotency_key=idempotency_key,
+                # 2026-09-25 UI 全量点击: a user-global install is owned by the global
+                # owner key; without it the manager looked under the default owner and
+                # reported binding_not_found.
+                owner_key=owner_key,
             )
 
         return await self._start_precreated(operation, run)
