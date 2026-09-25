@@ -230,6 +230,7 @@ class HostNativePlane:
         self._meter_factory = meter_factory
         self._orchestrator: Any = None
         self.profiles: dict[str, dict[str, Any]] = {}
+        self._runtimes: dict[str, Any] = {}
 
     # ---- late bindings (the Orchestrator exists only after the profiles do) ----------------
 
@@ -323,6 +324,9 @@ class HostNativePlane:
             actual = runtime.arp.catalogue.namespace_id
             if actual != namespace:  # never report a namespace the runtime does not use
                 self.profiles[profile_id]["catalogue_namespace_id"] = actual
+            # 2026-09-25 主流程优化条目 6: keep the live runtime so status() can report
+            # the health of its background loops (a rebuild re-registers it).
+            self._runtimes[profile_id] = runtime
 
         def arp_ports(execution_db: Path) -> ArpPorts:
             root = bootstrap_root(execution_db.with_name(execution_db.name + ".arp-root"), root_id=root_id)
@@ -340,11 +344,24 @@ class HostNativePlane:
 
         return NativePlaneAssembly(arp_ports=arp_ports, authorization=self.authorization, caller_for=self.intent_caller, after_build=after_build)
 
+    def background_health(self, profile_id: str) -> list[dict[str, Any]]:
+        """The pool's background-loop health rows (empty until the runtime is built)."""
+
+        runtime = self._runtimes.get(profile_id)
+        reader = getattr(runtime, "background_health", None)
+        if reader is None:
+            return []
+        try:
+            return [row.to_json() for row in reader()]
+        except Exception:  # noqa: BLE001 - status must never fail because health did
+            logger.warning("native pool %s: background health unreadable", profile_id, exc_info=True)
+            return []
+
     def status(self) -> dict[str, Any]:
         return {
             "enabled": True,
             "available": bool(self.profiles),
-            "profiles": [dict(v) for v in self.profiles.values()],
+            "profiles": [{**v, "background": self.background_health(k)} for k, v in self.profiles.items()],
             "embedding": "bge-m3-int8" if self.embedding is not None else "lexical-only",
             "embedding_reason": self.embedding_reason,
             "authorization_policy": self.authorization.policy_id,

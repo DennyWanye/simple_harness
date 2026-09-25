@@ -35,6 +35,7 @@ import {
   asList as list,
   asRecord as record,
   asText as text,
+  backgroundTrouble,
   newRequestKey as newKey,
   useMissionsStore,
   type MissionEvent,
@@ -823,6 +824,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       >
         {status?.test_scenario ? (
           <div role="status" style={{ ...box, borderColor: tokens.color.warning.bg }}>测试场景：{status.test_scenario}</div>
+        ) : null}
+        {backgroundTrouble(status) ? (
+          <div role="alert" data-testid="background-trouble" style={{ ...box, borderColor: tokens.color.warning.bg, flexShrink: 0 }}>{backgroundTrouble(status)}</div>
         ) : null}
         {/* flexShrink 0: with many rows the column scrolls instead of squashing them (2026-09-25) */}
         <button type="button" style={{ ...button, flexShrink: 0 }} onClick={() => { setCreating(true); store.select(null); selectedRef.current = null; setArtifact(null); }}>

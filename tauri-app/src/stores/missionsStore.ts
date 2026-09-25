@@ -67,6 +67,26 @@ export interface OrchestrationStatus {
   diagnostics_available?: boolean;
   assurance_available?: boolean;
   deployment_manifest?: Record<string, unknown> | null;
+  /** 原生执行池的后台循环健康（2026-09-25）：连续失败 ≥3 次才在任务页提示一行。 */
+  native_plane?: { profiles?: { profile_id: string; background?: BackgroundHealthRow[] }[] } | null;
+}
+
+export interface BackgroundHealthRow {
+  loop: "index" | "draining" | "recall" | "tool_probe" | "reap" | string;
+  consecutive_failures: number;
+  last_error_code?: string | null;
+  stuck_item?: string | null;
+}
+
+const LOOP_LABEL: Record<string, string> = { index: "建索引", draining: "清理会话", recall: "找回旧内容", tool_probe: "工具检查", reap: "整理会话" };
+
+/** 后台循环连续失败 ≥3 次的一句话提示；没有就返回 null。 */
+export function backgroundTrouble(status: OrchestrationStatus | null | undefined): string | null {
+  const rows = (status?.native_plane?.profiles ?? []).flatMap((p) => p.background ?? []);
+  const worst = rows.filter((r) => (r.consecutive_failures ?? 0) >= 3).sort((a, b) => b.consecutive_failures - a.consecutive_failures)[0];
+  if (!worst) return null;
+  const code = worst.last_error_code ? `（${worst.last_error_code}）` : "";
+  return `后台整理出错：${LOOP_LABEL[worst.loop] ?? worst.loop}，已连续 ${worst.consecutive_failures} 次${code}`;
 }
 
 type Json = Record<string, unknown>;
