@@ -307,7 +307,15 @@ class SkillLoaderCatalogSource:
 
 def _builtin_entries(
     registry: RegistryCatalogSnapshot,
+    exact_fingerprints: Mapping[str, str] | None = None,
 ) -> tuple[CapabilityCatalogEntry, ...]:
+    """Registry-owned tools; the registry is their only source of truth.
+
+    2026-09-25 UI 全量点击: the expected fingerprint used the descriptor hash while
+    the executable check compares the registry's exact spec fingerprint, so every
+    builtin tool read "degraded / not executable" in the Capability Center (and was
+    ranked and described as not executable to the model).  Expect the same exact
+    fingerprint the check reads."""
     entries: list[CapabilityCatalogEntry] = []
     for tool in registry.tools:
         # Capability-pack tools are represented by the store entry that owns
@@ -367,7 +375,7 @@ def _builtin_entries(
             CapabilityCatalogEntry(
                 descriptor,
                 (binding,),
-                (tool.fingerprint,),
+                ((exact_fingerprints or {}).get(tool.provider_name, tool.fingerprint),),
             )
         )
     return tuple(entries)
@@ -661,20 +669,6 @@ class CapabilityHub:
             cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
-            entries = _merge_identical_entries(
-                (
-                    *store_entries,
-                    *skills.entries,
-                    *legacy.entries,
-                    *_builtin_entries(registry),
-                )
-            )
-            by_capability: dict[str, list[CapabilityCatalogEntry]] = {}
-            for entry in entries:
-                by_capability.setdefault(
-                    entry.version.capability_id, []
-                ).append(entry)
-            descriptors: list[CapabilityDescriptor] = []
             exact_fingerprints_reader = getattr(
                 self.registry_source, "exact_fingerprints", None
             )
@@ -683,6 +677,20 @@ class CapabilityHub:
                 if callable(exact_fingerprints_reader)
                 else None
             )
+            entries = _merge_identical_entries(
+                (
+                    *store_entries,
+                    *skills.entries,
+                    *legacy.entries,
+                    *_builtin_entries(registry, exact_registry_fingerprints),
+                )
+            )
+            by_capability: dict[str, list[CapabilityCatalogEntry]] = {}
+            for entry in entries:
+                by_capability.setdefault(
+                    entry.version.capability_id, []
+                ).append(entry)
+            descriptors: list[CapabilityDescriptor] = []
             store_version_keys = {
                 (
                     entry.version.capability_id,

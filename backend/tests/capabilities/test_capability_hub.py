@@ -512,3 +512,32 @@ async def test_registry_source_excludes_tools_without_durable_build_identity() -
     snapshot = await ToolRegistryCatalogSource(registry).snapshot()
 
     assert snapshot.tools == ()
+
+
+@pytest.mark.asyncio
+async def test_registered_builtin_tool_is_executable_through_the_real_registry_source(tmp_path) -> None:
+    # 2026-09-25 UI 全量点击：能力中心 127 个内置工具全部显示"降级"——预期指纹用的是
+    # 描述符哈希，可执行判定比的是注册表的精确指纹，永远对不上。
+    registry = ToolRegistry()
+    build = ExecutionBuildIdentity(
+        provider="fixture",
+        handler_id="fixture.echo.v1",
+        build_digest=_hash("build"),
+        sources_manifest_hash=_hash("sources"),
+        artifacts=(("fixture.py", _hash("fixture.py")),),
+    )
+    registry.register(
+        "fixture_echo",
+        "fixture",
+        {"name": "fixture_echo", "description": "Echo a fixture",
+         "parameters": {"type": "object", "properties": {}}},
+        lambda _args: {"ok": True},
+        permission_category="read_file",
+        stable_handler_id=build.handler_id,
+        execution_build_identity=build,
+    )
+    path = await initialize_capability_database(tmp_path / "workflow.db")
+    hub = CapabilityHub(store=CapabilityStore(path), registry_source=ToolRegistryCatalogSource(registry))
+    descriptor = (await hub.snapshot(CapabilityScope())).get("fixture_echo")
+    assert descriptor is not None and descriptor.executable is True
+    assert descriptor.version.health == "healthy"
