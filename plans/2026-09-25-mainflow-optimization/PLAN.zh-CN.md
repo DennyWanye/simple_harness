@@ -427,3 +427,13 @@ class BackgroundHealth:
 - 条目 7：统计范围只有 `data/agent-orchestrator/`，不含 `data/simple-harness-sdk/`（那是主对话的执行库，用户确认不算）。
 
 合并前全量回归、独立核验、合并、合并后全量回归、真机点击：见下文续记。
+
+### 11.1 独立核验（2026-09-25，opus 只读，只报阻断）
+
+结论"修后可合"，1 条阻断，已修：
+
+| 问题 | 修法 | 提交 |
+|---|---|---|
+| 数据目录里只要有一个未结束、绑在第 7 版及更早包上的任务，一进规划就抛 `ContractError`，`_try_planner_intent` 不兜这类错误 → 整个编排循环每轮失败，5 次后 Host 进入 degraded，新任务也建不了 | 新增 `UnsupportedPlanningPackage(ContractError)`；两处抛错改用它；`_try_planner_intent` 捕获后只停这一个任务（`_stop_planning_round(reason="unsupported_planning_package", PLANNING_FAILED)`）；规划回复路径本来就在 `_collect_plan_hierarchical` 的 ContractError 兜底里；`internal_enablement_keys` 遇到历史拼写 `REPAIR/X` 不再抛 `ValueError` 而是这个错误。测试：绑到第 7 版包的任务 `_try_planner_intent` 返回 False 且任务 FAILED | 见 git log「核验修复」；SDK 升 opt.2 并重钉 |
+
+其余 6 条核验为无阻断（请求包↔准入互逆、修复开关同步清空、标签/版本/提示词单点、重放校验、文档任务不受条目 3 影响、批准参数透传与重放身份、后台健康与 status 容错、存储统计不阻塞事件循环、执行图 request_id 匹配）。
