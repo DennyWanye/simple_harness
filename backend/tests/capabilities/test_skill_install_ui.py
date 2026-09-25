@@ -368,3 +368,4 @@ async def test_stage_accepts_the_marketplace_github_shorthand() -> None:
     call = service.calls[0][1]
     assert call["url"] == "https://github.com/anthropics/skills"
     assert call["requested_ref"] == "main"
+    assert call["requested_subpath"] == "skills/pdf"

@@ -233,10 +233,12 @@ class BoundedGitHubSkillSource:
         repository_url: str,
         *,
         requested_ref: str = "HEAD",
+        subpath: str = "",
         visible_skill_names: Iterable[str] = (),
     ) -> CanonicalSkillBatch:
         normalized_url, owner, repo = normalize_github_repo_url(repository_url)
         ref = self._validate_ref(requested_ref)
+        subpath = self._validate_subpath(subpath)
         if self._client is not None:
             return await self._resolve_with_client(
                 self._client,
@@ -244,6 +246,7 @@ class BoundedGitHubSkillSource:
                 owner=owner,
                 repo=repo,
                 requested_ref=ref,
+                subpath=subpath,
                 visible_skill_names=visible_skill_names,
             )
         timeout = httpx.Timeout(self._limits.timeout_seconds)
@@ -259,6 +262,7 @@ class BoundedGitHubSkillSource:
                 owner=owner,
                 repo=repo,
                 requested_ref=ref,
+                subpath=subpath,
                 visible_skill_names=visible_skill_names,
             )
 
@@ -270,6 +274,7 @@ class BoundedGitHubSkillSource:
         owner: str,
         repo: str,
         requested_ref: str,
+        subpath: str = "",
         visible_skill_names: Iterable[str],
     ) -> CanonicalSkillBatch:
         api_root = f"https://{_API_HOST}/repos/{quote(owner)}/{quote(repo)}"
@@ -310,6 +315,11 @@ class BoundedGitHubSkillSource:
             byte_limit=self._limits.archive_bytes,
             response_kind="archive",
         )
+        downloaded_hash = hashlib.sha256(archive).hexdigest()
+        if subpath:
+            # 2026-09-25 UI 全量点击：市场条目指向仓库里的一个子目录，以前整个仓库
+            # 一起打包，文件数超限（anthropics/skills）。只取子目录，限额只算子目录。
+            archive = self._select_subdirectory(archive, subpath)
         try:
             index = self._source_validator.preflight_zip_index(archive)
         except CapabilityPackageValidationError as exc:
@@ -364,7 +374,7 @@ class BoundedGitHubSkillSource:
             normalized_url=normalized_url,
             requested_ref=requested_ref,
             exact_commit=exact_commit,
-            archive_hash=hashlib.sha256(archive).hexdigest(),
+            archive_hash=downloaded_hash,
             raw_file_set_digest=raw_file_set_digest,
             selected_subdirectories=[item.selected_subdirectory for item in candidates],
         )
@@ -480,6 +490,98 @@ class BoundedGitHubSkillSource:
     @staticmethod
     def _name_key(value: str) -> str:
         return unicodedata.normalize("NFKC", value).casefold()
+
+    @staticmethod
+    def _validate_subpath(subpath: str) -> str:
+        value = str(subpath or "").strip().strip("/")
+        if not value:
+            return ""
+        path = PurePosixPath(value)
+        if (
+            len(value) > 512
+            or "\\" in value
+            or path.is_absolute()
+            or any(part in {"", ".", ".."} for part in path.parts)
+        ):
+            raise CapabilitySourceError(
+                "skill_source_subpath_invalid", "Skill source sub-directory is invalid"
+            )
+        return path.as_posix()
+
+    #: Bound on the full downloaded archive's index before a sub-directory is chosen.
+    _MAX_REPOSITORY_ENTRIES = 50_000
+
+    def _select_subdirectory(self, archive: bytes, subpath: str) -> bytes:
+        """Repack only ``<root>/<subpath>/**`` of a GitHub archive.
+
+        Declared sizes and compression ratios are checked against the source
+        limits *before* any selected member is decompressed; members outside the
+        sub-directory are never read.  The result is stored uncompressed and then
+        goes through the ordinary full preflight, so every package limit applies
+        to exactly the files that will be installed.  Paths keep their repository
+        layout (``<root>/<subpath>/...``).
+        """
+
+        limits = self._limits
+        try:
+            with zipfile.ZipFile(io.BytesIO(archive), "r") as package:
+                infos = package.infolist()
+                if len(infos) > self._MAX_REPOSITORY_ENTRIES:
+                    raise CapabilitySourceError(
+                        "capability_package_limit_exceeded",
+                        "capability_package_limit_exceeded:file_count",
+                    )
+                roots = {PurePosixPath(item.filename).parts[0] for item in infos
+                         if PurePosixPath(item.filename).parts}
+                if len(roots) != 1:
+                    raise CapabilitySourceError(
+                        "github_archive_root_invalid",
+                        "GitHub archive must have exactly one repository root",
+                    )
+                prefix = f"{next(iter(roots))}/{subpath}/"
+                selected = [item for item in infos
+                            if item.filename.startswith(prefix) and not item.is_dir()]
+                if not selected:
+                    raise CapabilitySourceError(
+                        "skill_source_subpath_empty",
+                        f"repository has no files under {subpath}",
+                    )
+                if len(selected) > limits.file_count:
+                    raise CapabilitySourceError(
+                        "capability_package_limit_exceeded",
+                        "capability_package_limit_exceeded:file_count",
+                    )
+                total = 0
+                for item in selected:
+                    ratio = (float("inf") if item.compress_size == 0 and item.file_size > 0
+                             else item.file_size / max(1, item.compress_size))
+                    total += item.file_size
+                    if (item.file_size > limits.max_single_file_bytes
+                            or total > limits.total_uncompressed_bytes
+                            or ratio > limits.max_archive_entry_compression_ratio):
+                        raise CapabilitySourceError(
+                            "capability_package_limit_exceeded",
+                            "capability_package_limit_exceeded:sub_directory_size",
+                        )
+                output = io.BytesIO()
+                with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as out:
+                    for item in selected:
+                        payload = package.read(item)  # CRC-checked
+                        if len(payload) != item.file_size:
+                            raise CapabilitySourceError(
+                                "github_archive_invalid", "GitHub archive member size mismatch"
+                            )
+                        copy = zipfile.ZipInfo(item.filename, date_time=item.date_time)
+                        copy.external_attr = item.external_attr
+                        copy.create_system = item.create_system
+                        out.writestr(copy, payload)
+                return output.getvalue()
+        except CapabilitySourceError:
+            raise
+        except (zipfile.BadZipFile, RuntimeError, EOFError, KeyError, ValueError) as exc:
+            raise CapabilitySourceError(
+                "github_archive_invalid", "GitHub archive cannot be read safely"
+            ) from exc
 
     @staticmethod
     def _read_repository_files(

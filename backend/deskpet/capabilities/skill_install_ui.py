@@ -108,14 +108,15 @@ async def _await(value: Any) -> Any:
     return await value if inspect.isawaitable(value) else value
 
 
-def _split_github_tree_url(source_url: str) -> tuple[str, str]:
-    """Translate the URL form advertised by Settings into source arguments."""
+def _split_github_tree_url(source_url: str) -> tuple[str, str, str]:
+    """Translate a Settings / marketplace URL into (repository, ref, sub-directory)."""
     if source_url.startswith("github:"):
         # The marketplace registry lists ``github:owner/repo[/tree/<ref>/<path>]``.
         rest = [part for part in source_url[len("github:"):].split("/") if part]
         if len(rest) >= 2:
-            ref = rest[3] if len(rest) >= 4 and rest[2] == "tree" else "HEAD"
-            return f"https://github.com/{rest[0]}/{rest[1]}", ref
+            tree = len(rest) >= 4 and rest[2] == "tree"
+            return (f"https://github.com/{rest[0]}/{rest[1]}", rest[3] if tree else "HEAD",
+                    "/".join(rest[4:]) if tree else "")
     parsed = urlsplit(source_url)
     parts = [part for part in parsed.path.split("/") if part]
     if (
@@ -127,8 +128,8 @@ def _split_github_tree_url(source_url: str) -> tuple[str, str]:
         repository_url = urlunsplit(
             ("https", "github.com", f"/{parts[0]}/{parts[1]}", "", "")
         )
-        return repository_url, parts[3]
-    return source_url, "HEAD"
+        return repository_url, parts[3], "/".join(parts[4:])
+    return source_url, "HEAD", ""
 
 
 class ProjectSkillInstallUIAdapter:
@@ -202,10 +203,11 @@ class ProjectSkillInstallUIAdapter:
                 principal_id=principal,
             )
             authority_argument = {"project": authority}
-        repository_url, requested_ref = _split_github_tree_url(source_url)
+        repository_url, requested_ref, requested_subpath = _split_github_tree_url(source_url)
         result = await _await(stage(
             url=repository_url,
             requested_ref=requested_ref,
+            **({"requested_subpath": requested_subpath} if requested_subpath else {}),
             **authority_argument,
             run_id=f"settings:{stable}",
             root_run_id=f"settings:{stable}",

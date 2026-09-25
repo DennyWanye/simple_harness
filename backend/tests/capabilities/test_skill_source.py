@@ -318,3 +318,45 @@ def test_resolved_evidence_cannot_be_forged() -> None:
             evidence_hash="d" * 64,
         )
     assert caught.value.code == "skill_source_evidence_host_only"
+
+
+async def _resolve_subpath(archive: bytes, subpath: str, **kwargs):
+    async with httpx.AsyncClient(
+        transport=_transport(archive), follow_redirects=False
+    ) as client:
+        return await BoundedGitHubSkillSource(client=client, **kwargs).resolve(
+            "https://github.com/owner/repo", subpath=subpath
+        )
+
+
+@pytest.mark.asyncio
+async def test_subpath_installs_only_that_skill_and_limits_count_only_it() -> None:
+    # 2026-09-25 UI 全量点击：市场条目指向 anthropics/skills 的一个子目录，以前整个
+    # 仓库一起打包、文件数超限。只取子目录；目录外的文件再多也不计入限额、不被读取。
+    files = {f"other/f{i}.md": b"x" for i in range(600)}
+    files.update({
+        "skills/pdf/SKILL.md": _skill("pdf"),
+        "skills/pdf/reference.md": b"pdf ref",
+        "skills/docx/SKILL.md": _skill("docx"),
+    })
+    result = await _resolve_subpath(_repo_archive(files), "skills/pdf")
+    assert [item.skill_name for item in result.packs] == ["pdf"]
+    with zipfile.ZipFile(io.BytesIO(result.packs[0].archive_bytes)) as package:
+        names = package.namelist()
+    assert any(name.endswith("reference.md") for name in names)
+    assert not any(name.startswith("other/") or "docx" in name or name.endswith("f0.md") for name in names)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("subpath", ["../etc", "skills/../..", "a\\\\b"])
+async def test_subpath_rejects_traversal(subpath: str) -> None:
+    with pytest.raises(CapabilitySourceError) as caught:
+        await _resolve_subpath(_repo_archive({"skills/pdf/SKILL.md": _skill("pdf")}), subpath)
+    assert caught.value.code == "skill_source_subpath_invalid"
+
+
+@pytest.mark.asyncio
+async def test_subpath_without_files_is_refused() -> None:
+    with pytest.raises(CapabilitySourceError) as caught:
+        await _resolve_subpath(_repo_archive({"skills/pdf/SKILL.md": _skill("pdf")}), "skills/xlsx")
+    assert caught.value.code == "skill_source_subpath_empty"

@@ -522,6 +522,7 @@ class GlobalSkillInstallService:
         effect_id: str,
         channel: Literal["chat", "settings"] = "chat",
         requested_ref: str = "HEAD",
+        requested_subpath: str = "",
         visible_skill_names: Sequence[str] = (),
         retry_failure_receipt_ref: str | None = None,
         retry_attempt_generation: int | None = None,
@@ -548,6 +549,7 @@ class GlobalSkillInstallService:
             "effect_id": effect_id,
             "url": url,
             "requested_ref": requested_ref,
+            **({"requested_subpath": requested_subpath} if requested_subpath else {}),
             (
                 "owner_scope_key" if is_global else "project_scope_key"
             ): owner_scope_key,
@@ -572,10 +574,12 @@ class GlobalSkillInstallService:
                 "owner_scope_key": owner_scope_key,
                 "normalized_url": normalized_url,
                 "requested_ref": str(requested_ref).strip(),
+                **({"requested_subpath": requested_subpath} if requested_subpath else {}),
                 "visible_skill_names": list(normalized_names),
                 "input_digest": fingerprint_json({
                     "normalized_url": normalized_url,
                     "requested_ref": str(requested_ref).strip(),
+                    **({"requested_subpath": requested_subpath} if requested_subpath else {}),
                     "visible_skill_names": list(normalized_names),
                 }),
             }
@@ -640,6 +644,7 @@ class GlobalSkillInstallService:
             batch = await self.source.resolve(
                 url,
                 requested_ref=requested_ref,
+                **({"subpath": requested_subpath} if requested_subpath else {}),
                 visible_skill_names=visible_skill_names,
             )
         except CapabilitySourceError as exc:
