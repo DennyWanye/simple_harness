@@ -107,6 +107,7 @@ async def activate_orchestration(
             provider_snapshot=snapshot,
             http_client=client,
             test_scenario=scenario,
+            permission_mode_reader=_permission_mode_reader(service_context),
         )
         await service.start()
     except Exception as error:
@@ -126,6 +127,18 @@ async def activate_orchestration(
         "orchestration_ready state=%s scenario=%s root=%s", status["state"], scenario, root.name
     )
     return service
+
+
+def _permission_mode_reader(service_context: Any) -> Callable[[], Any]:
+    """The person's current auto / manual permission mode, read fresh each time."""
+
+    async def read() -> str:
+        store = service_context.get("capability_store")
+        if store is None:
+            return "manual"
+        return str((await store.get_policy_state()).mode)
+
+    return read
 
 
 async def deactivate_orchestration(service_context: Any) -> None:

@@ -79,6 +79,8 @@ export function graphErrorMessage(value: unknown): string {
   const retry = oneOf(r.retry_kind, ["NONE", "REQUERY", "RECONCILE", "NEW_PLANNER_REQUEST", "OPERATOR_REPAIR"]);
   const guidance: Record<string, string> = { NONE: "", REQUERY: "请重新读取。", RECONCILE: "等待外部结果核对。",
     NEW_PLANNER_REQUEST: "需要重新规划。", OPERATOR_REPAIR: "需要修复来源后再读取。" };
+  // 2026-09-25 UI 全量点击：普通任务不启用执行图，这是正常状态，不是错误。
+  if (r.code === "NOT_ENABLED") return "这个任务按常规方式执行，没有启用执行图，这里没有图可看。";
   return (r.detail || text(r.code)) + " " + guidance[retry] + "（" + text(r.code) + "）";
 }
 function token(value: unknown): ReadToken {

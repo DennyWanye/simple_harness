@@ -25,7 +25,7 @@ import logging
 import os
 import secrets
 import sys
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Iterator, Mapping
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -108,6 +108,7 @@ class OrchestrationService:
         decision_shadow_provider: Any = None,
         taskgraph_deployment: Any = None,
         native_test_counter: Any = None,
+        permission_mode_reader: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self.root = Path(root)
         self.settings = settings
@@ -168,6 +169,10 @@ class OrchestrationService:
         self._assurance: Any = None
         self._assurance_notices: deque[dict[str, Any]] = deque(maxlen=256)
         self._assurance_policy_scopes: set[str] = set()  # Scopes whose check policy this Host approved
+        # 2026-09-25 UI 全量点击：自动模式下每轮"授权本轮规划"都要人点，不点任务就一直卡着。
+        # 读当前权限模式（每轮现读；读不到按手动处理，照旧等人点）。
+        self._permission_mode_reader = permission_mode_reader
+        self._auto_planning_requests: set[str] = set()  # requests this Host already issued for
 
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -547,6 +552,7 @@ class OrchestrationService:
                     await self._rebuild()
                 await self._orchestrator.run()
                 self._project_assurance_policies()
+                await self._auto_authorize_planning()
                 self._storage.schedule_if_stale()
                 self._failures = 0
                 if self._state == "degraded":
@@ -732,6 +738,48 @@ class OrchestrationService:
             logger.exception("assurance check policy projection failed")
             return 0
 
+    async def _auto_authorize_planning(self) -> int:
+        """Auto permission mode: issue each pending planning authority for the person.
+
+        Planning authority lets the planner plan this round; it approves no effect,
+        review or operation (those keep their own cards).  The grant is recorded as
+        ``HOST_AUTO_PERMISSION`` on the principal's behalf — never as a person's
+        click.  Manual mode, or a mode that cannot be read, leaves the button.
+        """
+        if self._permission_mode_reader is None or self._control is None:
+            return 0
+        try:
+            mode = str(await self._permission_mode_reader())
+        except Exception:  # noqa: BLE001 - unreadable mode means manual
+            logger.warning("permission mode unreadable; planning authority stays manual")
+            return 0
+        if mode != "auto":
+            return 0
+        issued = 0
+        try:
+            pending = self._call("pending_planning_authorizations")
+        except Exception:  # noqa: BLE001 - never stops the loop; retried next round
+            logger.exception("pending planning authority read failed")
+            return 0
+        for row in pending:
+            request_id = str(row["request_id"])
+            if request_id in self._auto_planning_requests:
+                continue
+            try:
+                self._call("planning_authorization", {
+                    "operation": "issue", "mission_id": str(row["mission_id"]),
+                    "request_id": request_id, "command_id": f"host-auto-planning:{request_id}",
+                    "approval_source": "HOST_AUTO_PERMISSION",
+                })
+            except Exception:  # noqa: BLE001 - one refusal must not block the others
+                logger.exception("auto planning authority failed for %s", request_id)
+                continue
+            self._auto_planning_requests.add(request_id)
+            issued += 1
+        if issued:
+            self.wake()
+        return issued
+
     def _install_taskgraph(self, orchestrator: Any) -> Any:
         if self._test_scenario is not None and self._taskgraph_deployment is None:
             return None
@@ -819,6 +867,7 @@ class OrchestrationService:
         try:
             await asyncio.wait_for(self._orchestrator.run(), timeout=timeout)
             self._project_assurance_policies()
+            await self._auto_authorize_planning()
             return True
         except TimeoutError:
             return False
