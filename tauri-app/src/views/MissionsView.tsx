@@ -699,6 +699,10 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   // 2026-09-25 UI 全量点击：Token 上限填 -5 时以前被悄悄忽略、按默认值创建。
   const positiveIntOrBlank = (value: string) => !value.trim() || (Number.isSafeInteger(Number(value)) && Number(value) > 0);
   const validCaps = positiveIntOrBlank(maxTokens) && positiveIntOrBlank(maxAttempts);
+  // 2026-09-25 UI 全量点击："pytest: 至少 6 个测试…" 被当成 pytest 命令参数运行，
+  // 结果 "no tests ran"、任务失败。以 pytest: 开头的行后面只能是测试路径/参数。
+  const badPytestLines = criteria.split("\n").map((line) => line.trim())
+    .filter((line) => line.startsWith("pytest:") && !/^pytest:\s*[\w./\-:=\[\]]+(\s+[\w./\-:=\[\]]+)*$/.test(line));
   const validReserve = !conflictReserve.trim() || (Number.isSafeInteger(reserveTokens) && reserveTokens >= 0 &&
     (missionTokenCap == null || reserveTokens <= missionTokenCap));
   const synthesisTokenCap = Number(synthesisTokens);
@@ -712,7 +716,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     synthesisTokenCap <= effectiveMissionTokenCap && synthesisAttemptCap <= effectiveMissionAttemptCap &&
     reserveTokens + synthesisTokenCap <= effectiveMissionTokenCap
   );
-  const submittable = validCaps && validReserve && validSynthesis && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
+  const submittable = validCaps && badPytestLines.length === 0 && validReserve && validSynthesis && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
     (!selectedContextId || !!selectedContext) &&
     (!searchPolicy || searchPolicies.some((policy) => policy.version_id === searchPolicy)) &&
     (domain === "code" || (canCreateDocument && sources.length > 0 && sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0)));
@@ -887,6 +891,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <textarea id="mission-goal" aria-label="任务目标" style={field} disabled={createPending} value={goal} onChange={(e) => setGoal(e.target.value)} />
             <label htmlFor="mission-criteria">成功条件（每行一条）</label>
             <textarea id="mission-criteria" aria-label="成功条件" style={field} disabled={createPending} value={criteria} onChange={(e) => setCriteria(e.target.value)} />
+            <div style={muted}>普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如 pytest: tests/</div>
+            {badPytestLines.length > 0 && <div role="alert" style={{ color: dark.danger }}>「{badPytestLines[0]}」会被当作测试命令运行，但 pytest: 后面不是测试路径。要写说明就去掉 pytest: 前缀。</div>}
             {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
             <details data-testid="create-advanced" open={!validReserve || !validSynthesis || undefined}>
             <summary style={{ cursor: "pointer", color: dark.textMuted }}>高级设置（可选，一般不用改）</summary>

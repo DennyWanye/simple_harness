@@ -1937,6 +1937,12 @@ def describe_call_zh(tool_name: str, arguments: Mapping[str, Any]) -> str:
         if route == "create_new":
             return f"新建任务「{_clip(args.get('title'), 60)}」，并在工作区里为它新建一个任务目录"
         return _ROUTE_ZH.get(route, "切换对话要处理的任务")
+    if tool_name == "tool_search":
+        return f"在可用工具列表里查找：{_clip(args.get('query'), 60)}"
+    if tool_name == "tool_describe":
+        return "查看一个工具的用法说明"
+    if tool_name == "tool_activate":
+        return "启用一个可用工具，供这次对话使用"
     if tool_name == "task_scope_search":
         return f"搜索以前的任务：{_clip(args.get('query'), 60)}"
     if tool_name == "write_file":
