@@ -305,6 +305,7 @@ class OrchestrationService:
             deployment_policy=self._deployment,
             sandbox_executor=self._executor,  # P3.2 D2: required when sandboxed
             price_table=None,  # unpriced: money is recorded as null, never 0
+            task_max_tokens=self.settings.task_max_tokens,  # fixed per-leaf allowance
             **knobs,
         )
         self._effective_provider = provider  # kept for a rebuild after repeated failures
@@ -833,7 +834,7 @@ class OrchestrationService:
                 "safety_margin": policy.safety_margin,
                 "default_max_output_tokens": profile.default_max_output_tokens,
                 "max_output_tokens_ceiling": profile.max_output_tokens_ceiling,
-                "mission_max_tokens": 4_000_000,
+                "mission_max_tokens": self.settings.default_mission_max_tokens,
             }]
         from .native_plane import native_profile_id
 
@@ -849,7 +850,7 @@ class OrchestrationService:
                     "default_max_output_tokens": 8192,
                     "max_output_tokens_ceiling": 32768,
                     # A bounded multi-turn allowance, not a charge for unused capacity.
-                    "mission_max_tokens": 4_000_000 if tokens == 262_144 else 8_000_000,
+                    "mission_max_tokens": self.settings.default_mission_max_tokens,
                     "native_plane": native,
                 })
         return rows

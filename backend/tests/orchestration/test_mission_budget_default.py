@@ -22,7 +22,7 @@ from deskpet.orchestration.service import (
 
 from ._support import notes_provider, notes_request
 
-DEFAULTS = {"max_tokens": 400_000, "max_attempts": 12}
+DEFAULTS = {"max_tokens": 20_000_000, "max_attempts": 12}
 
 
 def _request(key: str, budget):  # type: ignore[no-untyped-def]
@@ -50,7 +50,7 @@ async def _service(root, principal):  # type: ignore[no-untyped-def]
         ({}, DEFAULTS),
         ({"max_tokens": None, "max_attempts": None}, DEFAULTS),
         ({"max_tokens": 50_000}, {"max_tokens": 50_000, "max_attempts": 12}),
-        ({"max_attempts": 5}, {"max_tokens": 400_000, "max_attempts": 5}),
+        ({"max_attempts": 5}, {"max_tokens": 20_000_000, "max_attempts": 5}),
         ({"max_tokens": 90_000, "max_attempts": 4}, {"max_tokens": 90_000, "max_attempts": 4}),
     ],
     ids=["absent", "empty", "nulls", "tokens-only", "attempts-only", "both-given"],
@@ -100,5 +100,19 @@ async def test_the_defaults_are_announced_in_the_status(orchestration_root, prin
     service = await _service(orchestration_root, principal)
     try:
         assert service.status()["mission_budget_defaults"] == DEFAULTS
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_each_leaf_gets_the_fixed_one_million_allowance(orchestration_root, principal):
+    """2026-09-25 user decision: 20M per Mission by default, and every leaf a fixed 1M
+    instead of an even share of the Mission pool."""
+
+    service = await _service(orchestration_root, principal)
+    try:
+        assert service._config.task_max_tokens == 1_000_000
+        assert service._orchestrator.commit._task_max_tokens == 1_000_000
+        assert service.status()["mission_budget_defaults"]["max_tokens"] == 20_000_000
     finally:
         await service.close()

@@ -83,7 +83,7 @@ async def test_default_and_selected_capacity_persist_and_retry_across_default_ch
         b = first.create_mission(
             request("long-selected", runtime_profile_id="deepseek-context-512k-v1")
         )
-        for receipt, tokens, budget in [(a, 262144, 4000000), (b, 524288, 8000000)]:
+        for receipt, tokens, budget in [(a, 262144, 20_000_000), (b, 524288, 20_000_000)]:
             detail = first.mission_detail(receipt["mission_id"])
             assert detail["runtime_context"]["max_input_tokens"] == tokens
             assert detail["mission"]["budget"]["max_tokens"] == budget

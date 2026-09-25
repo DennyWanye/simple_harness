@@ -63,7 +63,7 @@ def test_shared_window_and_status_default(local_config):
     service._runtime_options = options
     assert service._context_default() == LOCAL_PROFILE_ID
     assert service._context_profiles()[0]["max_total_tokens"] == 262144
-    assert service._mission_token_default() == 4000000
+    assert service._mission_token_default() == 20_000_000
     assert not config.evidence_root.exists()
 
 

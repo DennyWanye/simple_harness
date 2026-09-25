@@ -51,7 +51,11 @@ class OrchestrationSettings:
     # C): a blank budget item takes these.  400000 tokens is the value both HA-11 real runs
     # passed with; 12 attempts because the Mission count covers every Worker Attempt of
     # every Task (3 would fail a three-Task Mission on its first retry).
-    default_mission_max_tokens: int = 400_000
+    # 2026-09-25 user decision: 20M for every Mission (a ceiling, not a charge — the
+    # complex desktop ledger task spent 1.31M), and each leaf gets a fixed 1M of it
+    # instead of an even share of the pool.
+    default_mission_max_tokens: int = 20_000_000
+    task_max_tokens: int = 1_000_000
     default_mission_max_attempts: int = 12
     # Secret-free, pinned local-model profile selected by this deployment.
     local_model_profile: str = ""
