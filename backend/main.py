@@ -14705,8 +14705,11 @@ async def control_channel(ws: WebSocket):
                     "payload": snapshot,
                 })
 
-            elif msg_type.startswith(("mission_", "orchestration_")):
+            elif msg_type.startswith(("mission_", "orchestration_", "taskgraph.")):
                 # Agent 编排视图的控制通道协议（plan §3.4）：纯分发，不会把异常抛进 socket 循环
+                # ``taskgraph.*`` 是任务页执行图面板的四个读接口（handlers.py 已注册），
+                # 2026-09-25 之前没放行，面板只会读取超时。``agent_*`` 有意不放行：
+                # 技能安装走通之前要先统一各档位的技能目录。
                 from deskpet.orchestration.handlers import handle as _orchestration_handle
 
                 # a payload that is not an object is answered with invalid_request inside
