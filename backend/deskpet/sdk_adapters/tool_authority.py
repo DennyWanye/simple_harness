@@ -1912,6 +1912,50 @@ class SdkRuntimeCapabilityBridgeAdapter:
         )
 
 
+_ROUTE_ZH = {
+    "direct_standalone": "直接回答，不进入任务",
+    "continue_active": "继续当前任务",
+    "resume_existing": "恢复之前的任务",
+}
+
+
+def _clip(value: object, limit: int = 120) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def describe_call_zh(tool_name: str, arguments: Mapping[str, Any]) -> str:
+    """One plain-Chinese sentence saying what the person is being asked to allow.
+
+    2026-09-25 UI 全量点击：弹窗以前只写 "Allow context_route for this exact
+    request?"，用户看不出批准的是什么。只取模型提交的参数做展示，不做授权判断。
+    """
+
+    args = arguments if isinstance(arguments, Mapping) else {}
+    if tool_name == "context_route":
+        route = str(args.get("route") or "")
+        if route == "create_new":
+            return f"新建任务「{_clip(args.get('title'), 60)}」，并在工作区里为它新建一个任务目录"
+        return _ROUTE_ZH.get(route, "切换对话要处理的任务")
+    if tool_name == "task_scope_search":
+        return f"搜索以前的任务：{_clip(args.get('query'), 60)}"
+    if tool_name == "write_file":
+        return f"写入文件：{_clip(args.get('path'))}"
+    if tool_name == "edit_file":
+        return f"修改文件：{_clip(args.get('path'))}"
+    if tool_name == "read_file":
+        return f"读取文件：{_clip(args.get('path'))}"
+    if tool_name == "move_file":
+        return f"移动文件：{_clip(args.get('source'))} → {_clip(args.get('destination'))}"
+    if tool_name == "run_shell":
+        return f"运行命令：{_clip(args.get('command'))}"
+    if tool_name == "web_fetch":
+        return f"打开网页：{_clip(args.get('url'))}"
+    if tool_name == "web_search":
+        return f"联网搜索：{_clip(args.get('query'), 60)}"
+    return f"使用工具 {tool_name}"
+
+
 @dataclass(frozen=True, slots=True)
 class _PreparedAuthorizationFacts:
     authority: SdkRunToolAuthorityV1
@@ -2227,9 +2271,9 @@ class SdkPreparedAuthorizationPolicy:
             return AuthorizationResult(
                 AuthorizationDecision.REQUIRE_USER,
                 reason_code="product_policy_user_confirmation",
-                public_message=f"Allow {call.tool_name} for this exact request?",
+                public_message=f"是否允许：{describe_call_zh(call.tool_name, call.final_params)}？",
                 request=AuthorizationRequest(
-                    f"Allow {call.tool_name} for this exact request?",
+                    f"是否允许：{describe_call_zh(call.tool_name, call.final_params)}？",
                     nonce,
                     expires_at=float(self._clock()) + 300.0,
                     metadata={
@@ -2264,7 +2308,7 @@ class SdkPreparedAuthorizationPolicy:
                     decision,
                     reason_code=f"product_policy:{plan.action}",
                     request=AuthorizationRequest(
-                        f"Authorization required for {call.tool_name}.",
+                        f"需要你确认：{describe_call_zh(call.tool_name, call.final_params)}",
                         _canonical_sha256(
                             {"effect_id": prepared.effect_id.value, "action": plan.action}
                         ),
@@ -2299,6 +2343,16 @@ class SdkPreparedAuthorizationPolicy:
                 f"{grant.fingerprint}"
             ),
         )
+
+    def user_confirmed(self, run_id: str, effect_id: str) -> bool:
+        """True only when a person confirmed this exact effect (grant source ``user``).
+
+        A handler runs only after the SDK activated the decision, so a ``user``
+        grant here means the popup for this very call was answered "allow".
+        """
+
+        facts = self._facts.get((run_id, effect_id))
+        return facts is not None and facts.grant.source == "user"
 
     def facts_for(self, prepared: PreparedToolEffect) -> _PreparedAuthorizationFacts:
         facts = self._facts.get((prepared.run_id.value, prepared.effect_id.value))

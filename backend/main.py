@@ -8471,6 +8471,13 @@ async def _build_product_sdk_runtime_stack(
                 _state_db_path, sdk_run_id, task_scope_id
             )
         ),
+        # A person's "allow" on this exact create_new call is also the manual
+        # directory-binding decision (one confirmation, no failing retry loop).
+        user_confirmation_reader=(
+            lambda sdk_run_id, effect_id: authorization_policy.user_confirmed(
+                sdk_run_id, effect_id
+            )
+        ),
     )
 
     async def context_route_handler(arguments, _context):

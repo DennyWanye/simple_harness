@@ -1502,3 +1502,14 @@ def test_primary_tool_authority_rejects_project_effect_inventory():
             workspace_resolution={"kind": "projectless", "effective_root": None, "binding_version": 0},
             catalog=catalog, inventory=inventory,
         )
+
+
+def test_popup_text_says_in_chinese_what_is_being_allowed() -> None:
+    # 2026-09-25 UI 全量点击：弹窗以前是 "Allow context_route for this exact request?"。
+    from deskpet.sdk_adapters.tool_authority import describe_call_zh
+
+    assert describe_call_zh("context_route", {"route": "create_new", "title": "周报"}) == (
+        "新建任务「周报」，并在工作区里为它新建一个任务目录")
+    assert describe_call_zh("write_file", {"path": "a/b.txt", "content": "x"}) == "写入文件：a/b.txt"
+    assert describe_call_zh("run_shell", {"command": "pytest -q"}) == "运行命令：pytest -q"
+    assert describe_call_zh("mystery_tool", {}) == "使用工具 mystery_tool"

@@ -70,6 +70,10 @@ class _FakeService:
     async def create_task_scope(self, request):
         return {"scope_ref": "scope-new-1", "revision": 1, "goal": request.goal}
 
+    async def decide_manual_binding(self, request):
+        return await self.binding_append.decide_manual_binding(
+            challenge_ref=request.challenge_ref, decision=request.decision)
+
     async def append_binding(self, request):
         return await self.binding_append.append_binding(task_scope_id=request.scope_ref,
             root=request.root, idempotency_key=request.idempotency_key)
@@ -96,12 +100,17 @@ class _FakeBindingAppend:
     def __init__(self, *, manual: bool = False) -> None:
         self.manual = manual
         self.calls: list[dict] = []
+        self.decisions: list[dict] = []
 
     async def append_binding(self, **kwargs):
         self.calls.append(kwargs)
         if self.manual:
-            return {"status": "authorization_required"}
+            return {"status": "authorization_required", "challenge_ref": "challenge-1"}
         return {"status": "committed", "binding_set_revision": 1}
+
+    async def decide_manual_binding(self, **kwargs):
+        self.decisions.append(kwargs)
+        return {"status": "bound", "binding_set_revision": 1}
 
 
 class _FakeDisclosureReader:
@@ -131,6 +140,7 @@ def _service(
     binding_append=None,
     context=None,
     disclosure_reader=None,
+    user_confirmed=None,
 ) -> ContextRouteToolService:
     service = _FakeService()
     service.binding_append = binding_append
@@ -142,6 +152,7 @@ def _service(
         ledger=ContextRouteLedgerStore(state_db),
         tool_context_getter=lambda: context or _tool_context(),
         scope_disclosure_reader=disclosure_reader,
+        user_confirmation_reader=user_confirmed,
     )
 
 
@@ -313,7 +324,44 @@ async def test_create_new_manual_authorization_is_stable_rejection(
     assert (
         result["error"]["code"] == "context_route_binding_authorization_required"
     )
+    assert append.decisions == []
     assert _decision_rows(state_db) == []
+
+
+@pytest.mark.asyncio
+async def test_create_new_manual_user_confirmation_is_the_binding_decision(
+    state_db: Path,
+) -> None:
+    # 2026-09-25 UI 全量点击：人已在弹窗里批准这次"新建任务"，同一次确认就是目录
+    # 绑定的人工决定，不再让工具失败后另弹一张绑定卡。
+    binding_store = _FakeBindingStore()
+    binding_store.receipts["scope-new-1"] = SimpleNamespace(
+        binding_set_revision=1, receipt_id="bind-new", receipt_hash="a" * 64
+    )
+    append = _FakeBindingAppend(manual=True)
+    asked: list[tuple[str, str]] = []
+    tool = _service(state_db, binding_store=binding_store, binding_append=append,
+                    user_confirmed=lambda run_id, effect_id: asked.append((run_id, effect_id)) or True)
+    result = await tool.handle_context_route(
+        {"route": "create_new", "title": "Write weekly report"}
+    )
+    receipt = ContextRouteReceipt.from_json(result["context_route_receipt"])
+    assert receipt.task_scope_id == "scope-new-1"
+    assert asked and asked[0][0] == RUN
+    assert append.decisions == [{"challenge_ref": "challenge-1", "decision": "allow"}]
+
+
+@pytest.mark.asyncio
+async def test_create_new_manual_without_user_confirmation_stays_rejected(
+    state_db: Path,
+) -> None:
+    append = _FakeBindingAppend(manual=True)
+    tool = _service(state_db, binding_append=append, user_confirmed=lambda *_: False)
+    result = await tool.handle_context_route(
+        {"route": "create_new", "title": "Write weekly report"}
+    )
+    assert result["error"]["code"] == "context_route_binding_authorization_required"
+    assert append.decisions == []
 
 
 @pytest.mark.asyncio

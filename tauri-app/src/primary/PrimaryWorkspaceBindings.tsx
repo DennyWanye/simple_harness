@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { buttonStyle, cardStyle } from "../theme/components";
+import { tokens } from "../theme/tokens";
 import type { PrimaryPort } from "./controller";
 import { PrimaryRequests, record } from "./requests";
 
@@ -119,14 +121,14 @@ export function PrimaryWorkspaceBindings({ port, primaryRef, ownerKey, ready, re
     {decisionError && <p role="alert">{decisionError}<button onClick={() => actions?.refresh()}>核对决定状态</button></p>}
     {paged && <button disabled={busy !== null} onClick={() => actions?.page()}>返回最新目录授权</button>}
     {nextCursor && <button disabled={busy !== null} onClick={() => actions?.page(nextCursor)}>读取下一页目录授权</button>}
-    {items.map(item => <article key={item.challenge_ref}>
+    {items.map(item => <article key={item.challenge_ref} style={{ ...cardStyle, margin: `${tokens.space.sm}px 0` }}>
       <strong>{labels[item.state] ?? "目录授权状态未确认"}</strong>
       <p>新任务：{item.scope_ref}</p><p>目录：{item.root_path}</p>
       {item.state === "bound" && <p>旧任务不会重新打开。继续编辑时，在新的消息中选择此新任务；实际执行仍需任务路由。</p>}
       {item.can_decide && <>
-        <button disabled={busy !== null} onClick={() => actions?.decide(item, "allow")}>
+        <button style={buttonStyle("primary", "sm", busy !== null)} disabled={busy !== null} onClick={() => actions?.decide(item, "allow")}>
           {item.state === "allow_recorded" ? "重试完成已允许的绑定" : "允许本次绑定"}</button>
-        {item.state === "pending" && <button disabled={busy !== null} onClick={() => actions?.decide(item, "deny")}>拒绝</button>}
+        {item.state === "pending" && <button style={{ ...buttonStyle("secondary", "sm", busy !== null), marginLeft: tokens.space.sm }} disabled={busy !== null} onClick={() => actions?.decide(item, "deny")}>拒绝</button>}
       </>}
     </article>)}
   </section>;

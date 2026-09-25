@@ -696,6 +696,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     ? missionTokenCap : null;
   const effectiveMissionAttemptCap = typeof missionAttemptCap === "number" && Number.isSafeInteger(missionAttemptCap) && missionAttemptCap > 0
     ? missionAttemptCap : null;
+  // 2026-09-25 UI 全量点击：Token 上限填 -5 时以前被悄悄忽略、按默认值创建。
+  const positiveIntOrBlank = (value: string) => !value.trim() || (Number.isSafeInteger(Number(value)) && Number(value) > 0);
+  const validCaps = positiveIntOrBlank(maxTokens) && positiveIntOrBlank(maxAttempts);
   const validReserve = !conflictReserve.trim() || (Number.isSafeInteger(reserveTokens) && reserveTokens >= 0 &&
     (missionTokenCap == null || reserveTokens <= missionTokenCap));
   const synthesisTokenCap = Number(synthesisTokens);
@@ -709,7 +712,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     synthesisTokenCap <= effectiveMissionTokenCap && synthesisAttemptCap <= effectiveMissionAttemptCap &&
     reserveTokens + synthesisTokenCap <= effectiveMissionTokenCap
   );
-  const submittable = validReserve && validSynthesis && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
+  const submittable = validCaps && validReserve && validSynthesis && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
     (!selectedContextId || !!selectedContext) &&
     (!searchPolicy || searchPolicies.some((policy) => policy.version_id === searchPolicy)) &&
     (domain === "code" || (canCreateDocument && sources.length > 0 && sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0)));
@@ -906,9 +909,10 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             </label>}
             {status?.context_unavailable_reason && <div role="status" style={muted}>{status.context_unavailable_reason}</div>}
             <div style={{ display: "flex", gap: tokens.space.sm }}>
-              <input aria-label="Token 上限" placeholder={defaultTokenCap ? `Token 上限（留空=${defaultTokenCap}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
-              <input aria-label="尝试次数上限" placeholder={status?.mission_budget_defaults ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）` : "尝试次数上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
+              <input aria-label="Token 上限" inputMode="numeric" placeholder={defaultTokenCap ? `Token 上限（留空=${defaultTokenCap}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
+              <input aria-label="尝试次数上限" inputMode="numeric" placeholder={status?.mission_budget_defaults ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）` : "尝试次数上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
             </div>
+            {!validCaps && <div role="alert" style={{ color: dark.danger }}>Token 上限和尝试次数上限要填正整数，或者留空用默认值。</div>}
             <input aria-label="冲突核对预留 Token" aria-describedby="conflict-reserve-help" inputMode="numeric" placeholder="冲突核对预留 Token（可选）" style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={conflictReserve} onChange={(e) => setConflictReserve(e.target.value)} />
             <div id="conflict-reserve-help" style={muted}>从总预算中预留，出现冲突时用于独立核对；留空不预留。</div>
             {!validReserve && <div role="alert" style={{ color: dark.danger }}>冲突核对预留必须是非负整数，且不超过总 Token 上限。</div>}

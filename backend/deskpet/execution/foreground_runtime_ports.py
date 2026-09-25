@@ -154,7 +154,8 @@ class TaskScopeForegroundContextPort:
                 history=lambda _session_id: (),
                 persona=lambda: (
                     "You are simple_harness. Continue the bound TaskScope using "
-                    "the supplied audited ResumePackage and the current user turn."
+                    "the supplied audited ResumePackage and the current user turn. "
+                    "Always reply in the language of the user's current message."
                 ),
                 memory=None,
                 skills=None,

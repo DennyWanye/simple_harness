@@ -283,6 +283,7 @@ class ContextRouteToolService:
         typed_use_authority: Any = None,
         current_turn_text_reader: Any = None,
         current_turn_evidence_reader: Any = None,
+        user_confirmation_reader: Any = None,
     ) -> None:
         self._service_factory_getter = service_factory_getter
         self._binding_store_factory = binding_store_factory
@@ -296,6 +297,8 @@ class ContextRouteToolService:
         self._typed_use_authority = typed_use_authority
         self._current_turn_text_reader = current_turn_text_reader
         self._current_turn_evidence_reader = current_turn_evidence_reader
+        # (run_id, effect_id) -> bool: did a person confirm this exact call?
+        self._user_confirmation_reader = user_confirmation_reader
 
     # -- shared -----------------------------------------------------------
 
@@ -826,7 +829,9 @@ class ContextRouteToolService:
                 contested=contested,
             )
         service = self._bind_service(binding_append=self._binding_append_getter())
-        from deskpet.memory.human_memory_service import AppendBindingRequest, CreateTaskScopeRequest
+        from deskpet.memory.human_memory_service import (
+            AppendBindingRequest, CreateTaskScopeRequest, DecideManualBindingRequest,
+        )
 
         continuation = None
         if proposal.get("reuse_workspace_of") is not None:
@@ -880,6 +885,18 @@ class ContextRouteToolService:
             expected_filesystem_identity_hash=(None if continuation is None else
                 continuation.root.filesystem_identity.identity_hash),
         ))
+        if (str(outcome.get("status", "")) == "authorization_required"
+                and self._user_confirmation_reader is not None
+                and self._user_confirmation_reader(run_id, effect_id)):
+            # 2026-09-25 UI 全量点击：manual 模式下这次 context_route 调用本身已由人
+            # 逐次确认（弹窗写明"新建任务并在工作区建任务目录"），这次确认就是目录
+            # 绑定的人工决定。以前让工具先失败、再弹第二张绑定卡：卡片被弹窗遮住，
+            # 模型重试又弹一次，每次多建一个任务目录，最后整次运行失败。
+            outcome = await service.decide_manual_binding(DecideManualBindingRequest(
+                challenge_ref=str(outcome["challenge_ref"]),
+                decision="allow",
+                idempotency_key=f"context-route:{run_id}:{effect_id}",
+            ))
         if str(outcome.get("status", "")) == "authorization_required":
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,

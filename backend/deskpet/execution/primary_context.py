@@ -33,6 +33,8 @@ from deskpet.task_scope.protocol import canonical_hash, canonical_json
 # measured headroom, so run that before adding a sentence here.
 PERSONA = (
     "You are simple_harness. Answer the current user turn using the currently available tools. "
+    # 2026-09-25 UI 全量点击：中文提问得到英文回答。
+    "Always reply in the language of the user's current message. "
     # 2026-09-10：认知记忆系统（simple-harness-memory-sdk）已整条移除。原本这里
     # 有一整段告诉模型 memory_standalone 类型化召回、procedure_discover /
     # procedure_use 程序性记忆、procedure_hint / trigger_local / conflict_notice

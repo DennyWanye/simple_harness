@@ -12,7 +12,7 @@
  * 刷新状态 / 查看更早消息」，状态文本「空闲 · 排队 N」「等待主对话就绪」，
  * 工具折叠条「▸ 工具 · 名称」，`data-testid="primary-message-<role>"`。
  */
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
 import { MarkdownMessage } from "../components/MarkdownMessage";
@@ -72,6 +72,15 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
     window.addEventListener("focus", focus);
     return () => window.removeEventListener("focus", focus);
   }, [controller]);
+  // 2026-09-25 UI 全量点击：新消息出现后列表不跟到底，要手动往下翻。只在用户本来就
+  // 停在底部时跟随；往上翻看历史、加载更早消息（最后一条不变）时都不跳。
+  const historyRef = useRef<HTMLDivElement>(null);
+  const followBottom = useRef(true);
+  const lastMessage = snapshot.messages[snapshot.messages.length - 1]?.message_ref;
+  useEffect(() => {
+    const el = historyRef.current;
+    if (el && followBottom.current) el.scrollTop = el.scrollHeight;
+  }, [lastMessage, snapshot.messages.length]);
   const run = snapshot.state?.current_run;
   const runLabel = run ? runLabels[run.state.toUpperCase()] ?? run.state : "空闲";
   const canSend = snapshot.ready && snapshot.state !== null;
@@ -100,7 +109,10 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
       {snapshot.error && <p role="alert" style={{ ...metaText, margin: `${tokens.space.xs}px 0 0`, color: dark.danger }}>{snapshot.error}</p>}
     </div>
 
-    <div aria-label="主对话历史" style={{
+    <div aria-label="主对话历史" ref={historyRef} onScroll={(event) => {
+      const el = event.currentTarget;
+      followBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    }} style={{
       overflowY: "auto", flex: 1, minHeight: 0,
       padding: `${tokens.space.lg}px ${tokens.space.xl}px 0`,
     }}>
@@ -118,7 +130,8 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
       </div>
     </div>
 
-    {active && snapshot.primaryRef && <div style={{ ...column, padding: `0 ${tokens.space.xl}px` }}>
+    {/* 2026-09-25 UI 全量点击：授权卡以前不限高，多张时把消息区挤没、压在消息上。 */}
+    {active && snapshot.primaryRef && <div style={{ ...column, padding: `0 ${tokens.space.xl}px`, maxHeight: "30%", overflowY: "auto", flexShrink: 0 }}>
       <PrimaryWorkspaceBindings port={primaryPort} primaryRef={snapshot.primaryRef}
         ownerKey={snapshot.verifiedOwnerKey} ready={snapshot.ready} recovery={bindingRecovery} refreshVersion={decisionRefresh + bindingRefresh} />
     </div>}
