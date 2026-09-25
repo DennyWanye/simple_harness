@@ -15112,6 +15112,7 @@ async def control_channel(ws: WebSocket):
                             "description": _manifest.name,
                             "version": _manifest.version,
                             "scope": "builtin" if _binding.scope == "builtin" else "global",
+                            "capability_id": _descriptor.version.capability_id,
                             "catalog_generation": _catalog_snapshot.stamp.catalog_generation,
                             "allowed_tools": list(_skill.allowed_tools),
                         })
@@ -15201,30 +15202,43 @@ async def control_channel(ws: WebSocket):
                     })
 
             elif msg_type == "skill_uninstall":
+                # 2026-09-25 UI 全量点击：以前走旧安装器（旧 userdata/skills 目录），
+                # 受管安装的 Skill 提示"已卸载"却仍在列表里。卸载与安装同一权威：
+                # 能力中心的受管卸载（用户全局作用域），等操作结束再回复。
                 payload = raw.get("payload", {}) or {}
-                name = payload.get("name", "")
-                if skill_installer is None:
+                name = str(payload.get("name") or "")
+                capability_id = str(payload.get("capability_id") or name)
+                center = service_context.get("capability_center")
+                _global_service = service_context.get("project_skill_install_service")
+                if center is None or _global_service is None:
                     await ws.send_json({
                         "type": "skill_uninstall_response",
-                        "payload": {"ok": False, "error": "marketplace not initialized"},
+                        "payload": {"ok": False, "name": name,
+                                    "error": "capability center is unavailable"},
                     })
                     continue
                 try:
-                    skill_installer.uninstall(name)
-                    try:
-                        loader = service_context.get("skill_loader")
-                        if loader is not None and hasattr(loader, "reload"):
-                            loader.reload()
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("skill_loader_reload_failed", error=str(exc))
+                    from deskpet.capabilities.contracts import CapabilityScope
+                    operation = await center.request_uninstall(
+                        capability_id=capability_id,
+                        scope=CapabilityScope(user_key=str(_global_service.global_owner_key)),
+                    )
+                    for _ in range(60):
+                        if operation.status in {"succeeded", "failed", "cancelled", "unknown"}:
+                            break
+                        await asyncio.sleep(0.5)
+                        operation = await center.store.get_operation(operation.operation_id) or operation
+                    ok = operation.status == "succeeded"
                     await ws.send_json({
                         "type": "skill_uninstall_response",
-                        "payload": {"ok": True, "name": name},
+                        "payload": {"ok": ok, "name": name, "status": operation.status,
+                                    **({} if ok else {"error": f"卸载未完成（{operation.status}）"})},
                     })
                 except Exception as exc:  # noqa: BLE001
                     await ws.send_json({
                         "type": "skill_uninstall_response",
-                        "payload": {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                        "payload": {"ok": False, "name": name,
+                                    "error": f"{getattr(exc, 'code', type(exc).__name__)}: {exc}"},
                     })
 
             elif msg_type == "context_usage_request":

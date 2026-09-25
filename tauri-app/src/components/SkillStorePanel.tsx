@@ -311,12 +311,13 @@ export const SkillStorePanel: React.FC<Props> = ({
 
   const [confirmDialog, ask] = useConfirm();
   const uninstall = useCallback(
-    async (name: string) => {
+    async (skill: SkillMeta) => {
       if (!channel) return;
+      const name = skill.name;
       // 2026-09-25：不能用 confirm()——桌面 WebView 里它不弹框、直接当"确认"。
       if (!(await ask({ title: "卸载 Skill", message: `确认卸载 “${name}” 吗？`, confirm_label: "卸载" }))) return;
       setLoading(true);
-      channel.send({ type: "skill_uninstall", payload: { name } });
+      channel.send({ type: "skill_uninstall", payload: { name, capability_id: skill.capability_id ?? name } });
     },
     [channel, ask]
   );
@@ -662,7 +663,7 @@ const LoadingState: React.FC<{ label?: string }> = ({ label = "加载中…" }) 
 const InstalledList: React.FC<{
   skills: SkillMeta[];
   loading: boolean;
-  onUninstall: (name: string) => void;
+  onUninstall: (skill: SkillMeta) => void;
 }> = ({ skills, loading, onUninstall }) => {
   if (loading) return <LoadingState />;
   if (!skills.length)
@@ -732,7 +733,7 @@ const InstalledList: React.FC<{
           ) : <button
             type="button"
             className="bp-btn-secondary"
-            onClick={() => onUninstall(s.name)}
+            onClick={() => onUninstall(s)}
             style={{
               ...buttonStyle("secondary", "sm"),
               color: tokens.color.danger.bg,
