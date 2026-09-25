@@ -11,7 +11,7 @@
  * 状态与列表由 App 层常驻的 useMissionsFeed 负责，这里按 App 的挂法把两者一起挂上。
  */
 import React from "react";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ControlMessage, IncomingMessage } from "../types/messages";
@@ -641,10 +641,13 @@ describe("MissionsView（HA-10）", () => {
     expect(screen.getByRole("alert").textContent).toContain("复核请求未发送");
   });
 
-  it("取消任务 发出 mission_cancel", () => {
+  it("取消任务 先确认，确认后才发出 mission_cancel", async () => {
     const channel = openMission();
     fireEvent.click(screen.getByRole("button", { name: "取消任务" }));
-    expect(channel.last("mission_cancel")?.payload).toMatchObject({ mission_id: "mission-1" });
+    const dialog = await screen.findByRole("dialog");
+    expect(channel.last("mission_cancel")).toBeUndefined();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消任务" }));
+    await waitFor(() => expect(channel.last("mission_cancel")?.payload).toMatchObject({ mission_id: "mission-1" }));
   });
 
   it("mission_changed 推送更新列表里的状态", () => {

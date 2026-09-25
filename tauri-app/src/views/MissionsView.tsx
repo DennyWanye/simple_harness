@@ -31,6 +31,7 @@ import { OperationWorkspace } from "./OperationWorkspace";
 import { MissionDiagnostics } from "./MissionDiagnostics";
 import { MissionTaskGraph } from "./MissionTaskGraph";
 import { MissionAssurance } from "./MissionAssurance";
+import { useConfirm } from "../components/useConfirm";
 import {
   asList as list,
   asRecord as record,
@@ -142,6 +143,8 @@ const STOP_REASON_LABEL: Record<string, string> = {
   planning_failed: "规划失败",
   max_attempts: "尝试次数用完",
   timeout: "超时",
+  human_override: "人工接管后停止",
+  no_dispatchable_work: "没有可继续执行的工作",
 };
 const TASK_STATUS_LABEL: Record<string, string> = {
   PENDING: "等待", READY: "就绪", ACTIVE: "执行中", RUNNING: "执行中", BLOCKED: "等待前置步骤",
@@ -265,6 +268,8 @@ function nextStep(detail: Json, approvals: number): { text: string; target?: str
   if (approvals > 0)
     return { text: `下一步：有 ${approvals} 项等你审批或复核。`, target: "mission-step-approvals", action: "去处理" };
   if (status === "COMPLETED") return { text: "任务已完成，结果在下方「产物」里。", target: "mission-step-artifacts", action: "查看产物" };
+  if (status === "FAILED" && text(mission.stop_reason).toLowerCase() === "human_override")
+    return { text: "任务已按你的接管操作停止。" };
   if (status === "FAILED") return { text: "任务失败了，原因见上方状态和下方「Task 与验证」。" };
   if (status === "CANCELLED") return { text: "任务已取消。" };
   return { text: "任务正在自动进行，需要你操作时这里会提示。" };
@@ -385,6 +390,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const createTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [maxTokens, setMaxTokens] = useState("");
   const [maxAttempts, setMaxAttempts] = useState("");
+  const [confirmDialog, ask] = useConfirm();
   const [allEventsShown, setAllEventsShown] = useState(false);
   const [contextProfile, setContextProfile] = useState<string | null>(null);
   const [conflictReserve, setConflictReserve] = useState("");
@@ -819,6 +825,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       aria-label="任务编排"
       style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", color: dark.text, fontFamily: tokens.font.ui }}
     >
+      {confirmDialog}
       <aside
         style={{
           width: 280,
@@ -983,7 +990,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               {!TERMINAL.has(text(mission.status)) && <button
                 type="button"
                 style={{ ...button, marginTop: tokens.space.sm }}
-                onClick={() => send("mission_cancel", { mission_id: selectedId })}
+                onClick={async () => {
+                  // 2026-09-25 UI 全量点击：取消不可撤销，以前一点就取消。
+                  if (await ask({ title: "取消这个任务？", message: "取消后任务停止，不能恢复。已生成的产物会保留。", confirm_label: "取消任务" }))
+                    send("mission_cancel", { mission_id: selectedId });
+                }}
               >
                 取消任务
               </button>}
