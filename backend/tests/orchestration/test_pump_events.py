@@ -144,13 +144,34 @@ def test_events_after_the_announced_seq_do_not_ride_along(library, monkeypatch) 
     assert _one(pump)["events"][0]["seq"] == 3
 
 
-def test_pump_connection_is_read_only(library) -> None:
+def test_a_failed_event_read_is_retried_next_round(library, monkeypatch) -> None:
     lib, pump = library
-    path = Path(pump._service.root) / "orchestrator.db"
-    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    with pytest.raises(sqlite3.OperationalError):
-        connection.execute("DELETE FROM events")
-    connection.close()
+    lib.mission("m1")
+    pump._changes()
+    lib.events("m1", 2)
+    lib.status("m1", "COMPLETED")
+
+    def broken(*_args, **_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(MissionChangePump, "_events", staticmethod(broken))
+    assert pump._changes() == []
+    monkeypatch.undo()
+    change = _one(pump)
+    assert change["status"] == "COMPLETED" and [e["seq"] for e in change["events"]] == [1, 2]
+
+
+def test_pump_opens_the_library_read_only(library, monkeypatch) -> None:
+    lib, pump = library
+    lib.mission("m1")
+    from deskpet.orchestration import pump as pump_module
+
+    uris: list[str] = []
+    real_connect = sqlite3.connect
+    monkeypatch.setattr(pump_module.sqlite3, "connect",
+                        lambda target, *a, **k: uris.append(str(target)) or real_connect(target, *a, **k))
+    pump._changes()
+    assert uris and all(u.startswith("file:") and u.endswith("?mode=ro") for u in uris)
 
 
 def test_one_round_over_a_hundred_changed_missions_is_fast(library) -> None:

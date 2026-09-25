@@ -106,6 +106,8 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   const shown = useRef<Graph | null>(null);
   const currentSeq = useRef(0);
   const autoCollapsed = useRef<number | null>(null);
+  const [collapseReady, setCollapseReady] = useState<number | null>(null);
+  const placedKey = useRef<string | null>(null);
   const revisionRef = useRef<number | null>(null);
   useEffect(() => { revisionRef.current = revision; shown.current = graph; }, [revision, graph]);
 
@@ -143,7 +145,8 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
     const tick = setInterval(() => setNow(Date.now() / 1000), 30000);
     const reset = () => {
       graphRequest.current = null; decisionRequest.current = null; again.current = false; currentSeq.current = 0;
-      setGraph(null); setPlaced(null); setDecisions(null); setPicked(null); setLoading(false);
+      placedKey.current = null; autoCollapsed.current = null;
+      setGraph(null); setPlaced(null); setCollapseReady(null); setDecisions(null); setPicked(null); setLoading(false);
     };
     const off = channel?.onMessage((raw) => {
       const message = raw as unknown as { type?: string; payload?: unknown };
@@ -205,38 +208,45 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
     };
   }, [channel, missionId, sendGraph]);
 
-  // 节点多时默认折叠：不含运行中/验证中节点的复合任务（每个计划版本只自动做一次）
+  // 节点多时默认折叠：不含运行中/验证中节点的复合任务（每个计划版本只自动做一次）。
+  // 折叠定下来之前不排版（否则会先把整张大图排一遍再作废）。
   useEffect(() => {
     if (!graph || graph.plan_revision === autoCollapsed.current) return;
     autoCollapsed.current = graph.plan_revision;
-    if (graph.nodes.length <= AUTO_COLLAPSE_OVER) return;
-    const busy = new Set<string>();
-    const parentOf = new Map(graph.nodes.map((n) => [n.occurrence_id, n.parent]));
-    for (const node of graph.nodes) {
-      const tone = displayOf(node).tone;
-      if (tone !== "running" && tone !== "verifying") continue;
-      for (let at = node.parent; at; at = parentOf.get(at) ?? null) busy.add(at);
+    if (graph.nodes.length > AUTO_COLLAPSE_OVER) {
+      const busy = new Set<string>();
+      const parentOf = new Map(graph.nodes.map((n) => [n.occurrence_id, n.parent]));
+      for (const node of graph.nodes) {
+        const tone = displayOf(node).tone;
+        if (tone !== "running" && tone !== "verifying") continue;
+        for (let at = node.parent; at; at = parentOf.get(at) ?? null) busy.add(at);
+      }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- once per plan revision, not per render
+      setCollapsed(new Set(graph.nodes.filter((n) => n.form === "compound" && n.parent && !busy.has(n.occurrence_id)).map((n) => n.occurrence_id)));
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- once per plan revision, not per render
-    setCollapsed(new Set(graph.nodes.filter((n) => n.form === "compound" && n.parent && !busy.has(n.occurrence_id)).map((n) => n.occurrence_id)));
+    setCollapseReady(graph.plan_revision);
   }, [graph]);
 
-  // 排版：结构签名不变就复用上次坐标（状态变化只换颜色文字）
+  // 排版只跟结构走：状态更新（每秒可能一次）换的是新对象，但签名不变，不打断正在进行的排版
+  const layoutKey = graph?.source === "htn" && collapseReady === graph.plan_revision
+    ? structureKey(graph, collapsed, showData) : null;
   useEffect(() => {
-    if (!graph || graph.source !== "htn") return;
-    const key = structureKey(graph, collapsed, showData);
-    if (placed?.key === key) return;
+    const current = shown.current;
+    if (layoutKey === null || !current || placedKey.current === layoutKey) return;
     let cancelled = false;
-    const plan = buildElkGraph(graph, collapsed, showData);
+    const plan = buildElkGraph(current, collapsed, showData);
     const slowTimer = setTimeout(() => { if (!cancelled) setSlow(true); }, 1000);
     layoutGraph(plan.elk).then((output) => {
       if (cancelled) return;
-      setPlaced({ key, nodes: flatten(output, plan.groups), edges: plan.edges });
+      placedKey.current = layoutKey;
+      setPlaced({ key: layoutKey, nodes: flatten(output, plan.groups), edges: plan.edges });
     }).catch((caught) => {
       if (!cancelled) setError("排版失败：" + (caught instanceof Error ? caught.message : String(caught)));
     }).finally(() => { clearTimeout(slowTimer); if (!cancelled) setSlow(false); });
     return () => { cancelled = true; clearTimeout(slowTimer); };
-  }, [graph, collapsed, showData, placed?.key]);
+    // collapsed/showData are part of layoutKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey]);
 
   const tasks = useMemo(() => new Map(asList(detail?.tasks).map((t) => [asText(t.id), t])), [detail]);
   const mission = asRecord(detail?.mission);

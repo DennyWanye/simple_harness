@@ -90,12 +90,13 @@ class MissionChangePump:
                 previous = self._seen.get(mission_id)
                 if previous == state:
                     continue
-                self._seen[mission_id] = state
                 change: dict[str, Any] = {"mission_id": mission_id, "status": state[0], "last_seq": state[1]}
                 if previous is None:  # first sight (fresh process): the UI pages what it needs
                     change.update(from_seq=state[1], events=[], truncated=True)
                 else:
                     change.update(self._events(connection, mission_id, previous[1], state[1]))
+                # remembered only once the push is complete: a failed event read retries next round
+                self._seen[mission_id] = state
                 changes.append(change)
         except sqlite3.Error as error:
             logger.debug("mission pump event read skipped: %s", error)
