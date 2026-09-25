@@ -976,7 +976,7 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
     const ch = getChannel();
     if (!ch) return;
     const off = ch.onMessage((raw: IncomingMessage) => {
-      // 编排通道的应答不在 IncomingMessage 联合里（与 MissionTaskGraph 同样宽松读取）
+      // 编排通道的应答不在 IncomingMessage 联合里（同其他编排视图一样宽松读取）
       const msg = raw as unknown as { type?: string; payload?: unknown };
       if (msg.type !== "orchestration_storage_get_response") return;
       const payload = (msg.payload ?? {}) as { ok?: boolean; request_id?: unknown; data?: StorageUsageData; error?: string };

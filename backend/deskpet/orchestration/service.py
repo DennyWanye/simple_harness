@@ -1273,15 +1273,21 @@ class OrchestrationService:
         for mission in self._call("missions", limit=limit):
             mission_id = mission["mission_id"]
             blocked = bool(self._blocked(mission_id))
+            task_statuses = self._task_statuses(mission_id)
             rows.append(
                 {
                     **mission,
                     "id": mission_id,
                     "blocked": blocked,
+                    # 2026-09-26 列表进度条：子任务完成数（含分层任务的根复合任务）
+                    "task_counts": {
+                        "completed": sum(status.endswith("COMPLETED") for status in task_statuses),
+                        "total": len(task_statuses),
+                    },
                     "ui_state": ui_state(
                         mission["status"],
                         attempt_statuses=self._attempt_statuses(mission_id),
-                        task_statuses=self._task_statuses(mission_id),
+                        task_statuses=task_statuses,
                         waiting=bool(mission.get("pending_approvals")) or self._waiting(mission_id)
                         or mission_id in planning_waits,
                         blocked=blocked,

@@ -1310,3 +1310,13 @@ describe("2026-09-26 推送带事件", () => {
     expect(useMissionsStore.getState().events["mission-2"]).toBeUndefined();
   });
 });
+
+describe("2026-09-26 列表进度条", () => {
+  it("行里显示进度段和子任务完成数", () => {
+    const channel = renderAvailable();
+    channel.reply("mission_list", { missions: [{ ...MISSION_ROW, status: "ACTIVE", ui_state: "running", task_counts: { completed: 1, total: 3 } }] });
+    const progress = within(screen.getByTestId("mission-row-mission-1")).getByTestId("mission-progress");
+    expect(progress.getAttribute("aria-label")).toBe("进度：执行");
+    expect(progress.textContent).toContain("1/3");
+  });
+});

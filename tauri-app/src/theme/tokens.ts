@@ -11,7 +11,7 @@
  *  - 主题：深浅两套是同一组令牌的镜像。所有颜色以 CSS 变量下发
  *    （`--sh-*`），TS 侧只持有 `var(--sh-x, <深色兜底>)` 字符串，
  *    因此组件代码零改动即可跟随主题；`palette` 保留字面值，供
- *    cytoscape/canvas 这类无法解析 CSS 变量的场景使用。
+ *    canvas 这类无法解析 CSS 变量的场景使用。
  *  - 版式：8pt 网格，字号阶 12/13/14/16/20/24，行高 1.5–1.6，
  *    标题 600 / 正文 400，数字 tabular-nums。
  *  - 形状：卡片 12、按钮 8、气泡 14；1px 半透明 hairline；阴影只在
@@ -99,7 +99,7 @@ export const easing = {
 
 /**
  * 字面值调色板 —— 唯一允许写死颜色的地方。
- * 供两个用途：① 生成 CSS 变量；② cytoscape/canvas 等无法解析
+ * 供两个用途：① 生成 CSS 变量；② canvas 等无法解析
  * `var()` 的渲染上下文（见 primary/graphStyle.ts）。
  */
 export const palette = {

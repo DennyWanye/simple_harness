@@ -178,3 +178,13 @@ def test_completed_tasks_await_mission_judgment_in_list_and_detail() -> None:
     assert ui_state("ACTIVE", task_statuses=["COMPLETED"], waiting=True) == "waiting_person"
     assert ui_state("ACTIVE", task_statuses=["COMPLETED"], blocked=True) == "unknown"
     assert ui_state("COMPLETED", task_statuses=["COMPLETED"]) == "delivered"
+
+
+def test_list_rows_count_completed_tasks_for_the_progress_bar() -> None:
+    service = _service(heartbeats=[], statuses={"done": "COMPLETED"})
+    service._orchestrator.store.list_tasks = lambda mid: [
+        SimpleNamespace(id="a", status="COMPLETED"), SimpleNamespace(id="b", status="ACTIVE"),
+        SimpleNamespace(id="c", status="TaskStatus.COMPLETED"),
+    ]
+    [row] = service.list_missions()
+    assert row["task_counts"] == {"completed": 2, "total": 3}

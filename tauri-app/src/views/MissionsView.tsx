@@ -29,7 +29,8 @@ import { PlanningQuestions } from "./PlanningQuestions";
 import { PlanningAuthorization } from "./PlanningAuthorization";
 import { OperationWorkspace } from "./OperationWorkspace";
 import { MissionDiagnostics } from "./MissionDiagnostics";
-import { MissionTaskGraph } from "./MissionTaskGraph";
+import { LiveGraph } from "./liveGraph/LiveGraph";
+import { MissionProgress } from "./liveGraph/MissionProgress";
 import { MissionAssurance } from "./MissionAssurance";
 import { useConfirm } from "../components/useConfirm";
 import {
@@ -412,6 +413,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const [artifact, setArtifact] = useState<Json | null>(null);
   const artifactRequest = useRef<{ requestId: string; missionId: string | null; artifactId: string } | null>(null);
   const selectedRef = useRef<string | null>(null);
+  /** 打开过的任务里"可能卡住"的步骤数（执行图算出，列表行显示提示）。 */
+  const [stalled, setStalled] = useState<Record<string, number>>({});
   const flights = useRef<Record<string, Flight>>({});
   /** UI request_id → review approval_id, so only a successful atomic decision clears its input. */
   const reviewDecisionRequests = useRef(new Map<string, string>());
@@ -893,7 +896,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 {stateLabel(row.ui_state, row.status)}
                 {row.pending_approvals ? ` · 待审批：${row.pending_approvals}` : ""}
                 {row.blocked && row.ui_state !== "unknown" ? " · 结果未知" : ""}
+                {stalled[row.id] ? ` · ${stalled[row.id]} 个步骤可能卡住` : ""}
               </span>
+              <MissionProgress status={row.status} uiState={row.ui_state} counts={row.task_counts} />
             </button>
           ))
         )}
@@ -1138,11 +1143,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               );
             })}
 
+            <LiveGraph key={selectedId + ":live-graph"} missionId={selectedId} channel={channel} detail={detail}
+              onLoadMoreEvents={() => fetchEvents(selectedId, true)}
+              onStalled={(count) => setStalled((current) => current[selectedId] === count ? current : { ...current, [selectedId]: count })} />
+
             {detail.document != null && <MissionDocument key={selectedId + ":document"} missionId={selectedId} document={record(detail.document)} channel={channel} onChanged={() => refreshSelected(selectedId)} />}
 
             <details data-testid="mission-diagnostics-group">
-            <summary style={{ cursor: "pointer", color: dark.textMuted }}>诊断信息（执行图、保证状态等，排查问题时用）</summary>
-            <MissionTaskGraph key={selectedId + ":taskgraph"} missionId={selectedId} channel={channel} />
+            <summary style={{ cursor: "pointer", color: dark.textMuted }}>诊断信息（保证状态等，排查问题时用）</summary>
 
             {status?.assurance_available === true && <MissionAssurance key={selectedId + ":assurance"} missionId={selectedId} channel={channel} />}
 

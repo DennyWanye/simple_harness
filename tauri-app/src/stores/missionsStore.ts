@@ -31,6 +31,8 @@ export interface MissionRow {
   blocked?: boolean;
   /** P3.1 §3.4 界面状态词（received/queued/running/…），由后端投影给出。 */
   ui_state?: string;
+  /** 2026-09-26 列表进度条：子任务完成数。 */
+  task_counts?: { completed: number; total: number };
 }
 
 export interface MissionEvent {
@@ -133,6 +135,9 @@ function toRow(value: unknown): MissionRow {
   if (raw.mission_id != null) row.mission_id = asText(raw.mission_id);
   const uiState = asText(raw.ui_state);
   if (uiState) row.ui_state = uiState;
+  const counts = asRecord(raw.task_counts);
+  if (Number.isSafeInteger(counts.completed) && Number.isSafeInteger(counts.total))
+    row.task_counts = { completed: Number(counts.completed), total: Number(counts.total) };
   return row;
 }
 

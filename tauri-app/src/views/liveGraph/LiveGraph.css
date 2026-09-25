@@ -1,0 +1,28 @@
+.live-graph { border: 1px solid var(--sh-hairline, #94a3b855); border-radius: 10px; padding: 14px; margin: 16px 0; font-size: 13px; color: var(--sh-text, inherit); }
+.live-graph h3 { margin: 0; font-size: 15px; }
+.live-graph h4 { margin: 12px 0 4px; font-size: 13px; }
+.live-graph ul { margin: 4px 0; padding-left: 18px; }
+.live-graph button { padding: 4px 10px; border: 1px solid var(--sh-hairline-strong, #94a3b8); border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
+.live-graph select { padding: 3px 6px; border-radius: 5px; background: transparent; color: inherit; border: 1px solid var(--sh-hairline-strong, #94a3b8); }
+.lg-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.lg-muted { color: var(--sh-text-3, #94a3b8); }
+.lg-error { color: var(--sh-danger, #ef4444); }
+.lg-stall { color: var(--sh-danger, #ef4444); font-weight: 600; }
+.lg-canvas { height: 420px; margin-top: 10px; border: 1px solid var(--sh-hairline, #94a3b844); border-radius: 8px; background: #94a3b808; }
+.lg-historical .lg-node { filter: grayscale(1); opacity: .75; }
+.lg-node { box-sizing: border-box; width: 100%; height: 100%; padding: 8px 10px; border: 2px solid; border-radius: 10px; background: var(--sh-card, #1b1f24); color: var(--sh-text, #e5e7eb); font-size: 12px; overflow: hidden; }
+.lg-node.lg-group { background: #94a3b80d; border-radius: 12px; }
+.lg-node.lg-cancelled { border-style: dashed; opacity: .7; }
+.lg-node.lg-fresh { box-shadow: 0 0 0 4px #f59e0b88; }
+.lg-node.lg-running { animation: lg-pulse 1.6s ease-in-out infinite; }
+@keyframes lg-pulse { 50% { box-shadow: 0 0 0 4px #3b82f633; } }
+.lg-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.lg-node .lg-title { flex: 1; min-width: 0; padding: 0; border: 0; text-align: left; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lg-node .lg-fold { padding: 0 6px; line-height: 18px; }
+.lg-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; color: var(--sh-text-2, #cbd5e1); }
+.lg-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.lg-list { margin-top: 10px; }
+.lg-list summary { cursor: pointer; }
+.lg-list li button { border: 0; padding: 0; text-decoration: underline; }
+.lg-panel { margin-top: 12px; padding: 12px; border-left: 3px solid var(--sh-accent, #0d9488); background: #94a3b80a; border-radius: 6px; overflow-wrap: anywhere; }
+.lg-panel .lg-bar strong { flex: 1; min-width: 0; }
