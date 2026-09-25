@@ -760,7 +760,8 @@ export function InputBar({
           selectedIdx={selectedIdx}
           onAccept={acceptCandidate}
         />
-        <label
+        {/* 2026-09-25：主对话的附件发送尚未接通（发送必被拒），按钮先不显示，免得点了没反应。 */}
+        {!primary && <label
           aria-label="附加文本文件"
           title="附加文本文件"
           className={INTERACTIVE_CLASS}
@@ -791,7 +792,7 @@ export function InputBar({
             onChange={(event) => void onAttachmentChange(event)}
             style={{ display: "none" }}
           />
-        </label>
+        </label>}
         <textarea
           ref={taRef}
           value={text}
@@ -894,7 +895,7 @@ export function InputBar({
               whiteSpace: "nowrap",
             }}
           >
-            {primary ? "Enter 发送 · Shift+Enter 换行 · 附件与命令尚待接通" : "Enter 发送 · Shift+Enter 换行 · 文本附件 · / 命令"}
+            {primary ? "Enter 发送 · Shift+Enter 换行" : "Enter 发送 · Shift+Enter 换行 · 文本附件 · / 命令"}
           </span>
         </div>
       </div>
