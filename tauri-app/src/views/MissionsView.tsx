@@ -752,7 +752,12 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         },
       } : {}),
     };
-    const fingerprint = JSON.stringify([domain, spec, domain === "code" ? [] : sources]);
+    // 2026-09-25 UI 全量点击：来源路径写成 notes.md（没有 sources/ 前缀）时后端报"找不到这个对象"。
+    const sourcesOut = sources.map((source) => {
+      const path = source.path.trim().replace(/^\/+/, "");
+      return { ...source, path: path.startsWith("sources/") ? path : `sources/${path}` };
+    });
+    const fingerprint = JSON.stringify([domain, spec, domain === "code" ? [] : sourcesOut]);
     if (createRetry.current?.fingerprint !== fingerprint) createRetry.current = { fingerprint, key: newKey() };
     const missionSpec = { ...spec, idempotency_key: createRetry.current.key };
     const requestId = newKey();
@@ -761,7 +766,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     store.setError(null);
     const accepted = channel?.send({
       type: domain === "code" ? "mission_create" : "mission_create_with_sources", request_id: requestId,
-      payload: domain === "code" ? missionSpec : { mission: { ...missionSpec, domain }, sources },
+      payload: domain === "code" ? missionSpec : { mission: { ...missionSpec, domain }, sources: sourcesOut },
     });
     if (!accepted) {
       // No new request left the client. Preserve an earlier uncertain request, if any.
@@ -900,7 +905,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <textarea id="mission-goal" aria-label="任务目标" style={field} disabled={createPending} value={goal} onChange={(e) => setGoal(e.target.value)} />
             <label htmlFor="mission-criteria">成功条件（每行一条）</label>
             <textarea id="mission-criteria" aria-label="成功条件" style={field} disabled={createPending} value={criteria} onChange={(e) => setCriteria(e.target.value)} />
-            <div style={muted}>普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如 pytest: tests/</div>
+            {domain === "code" && <div style={muted}>普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如 pytest: tests/</div>}
             {badPytestLines.length > 0 && <div role="alert" style={{ color: dark.danger }}>「{badPytestLines[0]}」会被当作测试命令运行，但 pytest: 后面不是测试路径。要写说明就去掉 pytest: 前缀。</div>}
             {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
             <details data-testid="create-advanced" open={!validReserve || !validSynthesis || undefined}>
