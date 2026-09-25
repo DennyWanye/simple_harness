@@ -137,7 +137,7 @@ function Workspace({ workspace: w, channel, onChanged }: {
             onClick={() => setEffects(rows => [...rows, { key: `effect-${newRequestKey()}`, criteria: [], obligation: "", milestone: "" }])}>添加必须完成的效果</button>
           {!milestones.length && <p>当前还不能验证真实操作，只能确认交付内容类的要求。</p>}
           <p>这里确认的是"怎样算完成"，不会立刻执行任何操作。</p>
-          <button type="button" disabled={!mappingValid} onClick={confirm}>确认上述完成要求</button>
+          <button type="button" disabled={!mappingValid} onClick={confirm}>{pending ? "正在确认…" : "确认上述完成要求"}</button>
         </fieldset>
       </>}
       {approved && asList(spec.effects).map(effect => {

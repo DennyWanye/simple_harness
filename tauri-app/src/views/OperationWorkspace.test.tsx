@@ -71,6 +71,8 @@ describe("OperationWorkspace", () => {
 
     const sent = channel.sent.filter(message => message.type === "mission_operation_completion_approve");
     expect(sent).toHaveLength(1);
+    // 2026-09-26 真机：回应要几秒，按钮只变灰看不出在处理，被当成"要点两次"。
+    expect(screen.getByRole("button", { name: "正在确认…" })).toBeTruthy();
     const payload = sent[0].payload as Record<string, any>;
     expect(payload.expected_requirements_ref).toEqual(requirements);
     expect(payload.proposal.effects).toHaveLength(1);
