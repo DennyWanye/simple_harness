@@ -1276,3 +1276,37 @@ describe("结束态与产物排序（2026-09-25 真机点击）", () => {
     expect(screen.getByTestId("artifact-a-check").hidden).toBe(false);
   });
 });
+
+describe("2026-09-26 推送带事件", () => {
+  it("接得上游标：直接追加，不再发 mission_events", () => {
+    const channel = openMission();
+    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 7,
+      from_seq: 5, events: events(6, 7), truncated: false } });
+    expect(channel.all("mission_events")).toHaveLength(1);
+    expect(useMissionsStore.getState().events["mission-1"].map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(useMissionsStore.getState().eventCursor["mission-1"]).toBe(7);
+  });
+
+  it("有缺口或没带全：从本地游标分页补齐", () => {
+    const channel = openMission();
+    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 9,
+      from_seq: 7, events: events(8, 9), truncated: false } });
+    expect(channel.last("mission_events")?.payload).toMatchObject({ after_seq: 5 });
+    channel.reply("mission_events", { mission_id: "mission-1", events: events(6, 9), through_seq: 9, has_more: false });
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 70,
+      from_seq: 9, events: events(10, 59), truncated: true } });
+    expect(channel.last("mission_events")?.payload).toMatchObject({ after_seq: 9 });
+    expect(channel.all("mission_events")).toHaveLength(3);
+  });
+
+  it("别的任务的推送不动当前任务的游标，也不拉事件", () => {
+    const channel = openMission();
+    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-2", status: "ACTIVE", last_seq: 30,
+      from_seq: 20, events: events(21, 30), truncated: false } });
+    expect(channel.all("mission_events")).toHaveLength(1);
+    expect(useMissionsStore.getState().events["mission-2"]).toBeUndefined();
+  });
+});

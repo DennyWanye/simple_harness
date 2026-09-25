@@ -47,6 +47,12 @@ export interface MissionChange {
   mission_id: string;
   status: string;
   last_seq: number;
+  /** 2026-09-26 推送带事件：本次事件的起点（上一次推送的 last_seq）。 */
+  from_seq?: number;
+  /** 投影后的新事件（白名单字段，同 mission_events）。 */
+  events?: MissionEvent[];
+  /** 事件没带全（超过一页，或后端刚启动第一次看到这个任务）：要分页补齐。 */
+  truncated?: boolean;
 }
 
 export interface OrchestrationStatus {
@@ -154,6 +160,8 @@ interface MissionsState {
   setEventsLoading: (missionId: string, loading: boolean) => void;
   clearEventsLoading: () => void;
   applyChange: (change: MissionChange) => void;
+  /** 推送带来的事件：起点正好接上游标才追加并前进游标，返回 true；否则不动，返回 false（调用方去分页补齐）。 */
+  appendPushed: (missionId: string, fromSeq: number, events: MissionEvent[], lastSeq: number) => boolean;
   select: (missionId: string | null) => void;
   setDetail: (detail: Record<string, unknown> | null) => void;
   setPolicy: (policy: Record<string, unknown> | null) => void;
@@ -228,6 +236,13 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
         lastSeq,
       };
     }),
+  appendPushed: (missionId, fromSeq, events, lastSeq) => {
+    const cursor = get().eventCursor[missionId] ?? 0;
+    if (lastSeq <= cursor) return true; // nothing new (a late push, or a status change alone)
+    if (fromSeq !== cursor) return false;
+    get().appendEvents(missionId, events, undefined, lastSeq);
+    return true;
+  },
   select: (missionId) => set({ selectedId: missionId, detail: null, error: null }),
   setDetail: (detail) => set({ detail }),
   setPolicy: (policy) => set({ policy }),

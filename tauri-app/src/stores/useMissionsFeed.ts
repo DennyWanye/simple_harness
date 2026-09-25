@@ -21,6 +21,7 @@ import {
   asText,
   newRequestKey,
   useMissionsStore,
+  type MissionEvent,
   type OrchestrationStatus,
   type MissionsChannel,
 } from "./missionsStore";
@@ -80,6 +81,9 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
             mission_id: missionId,
             status: asText(payload.status),
             last_seq: Number(payload.last_seq) || 0,
+            from_seq: Number(payload.from_seq) || 0,
+            events: asList(payload.events) as unknown as MissionEvent[],
+            truncated: payload.truncated === true,
           });
           refreshList();
           break;

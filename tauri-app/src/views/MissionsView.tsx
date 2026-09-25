@@ -536,8 +536,12 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         const missionId = text(payload.mission_id);
         if (!missionId || missionId !== selectedRef.current) return;
         fetchDetail(missionId);
-        const cursor = state.eventCursor[missionId] ?? 0;
-        if ((Number(payload.last_seq) || 0) > cursor) fetchEvents(missionId, true);
+        // 2026-09-26 推送带事件：接得上就直接追加；有缺口、没带全或分页在途时照旧分页补齐
+        const lastSeq = Number(payload.last_seq) || 0;
+        const events = Array.isArray(payload.events) ? (payload.events as MissionEvent[]) : [];
+        const appended = payload.truncated !== true && !state.eventsLoading[missionId]
+          && state.appendPushed(missionId, Number(payload.from_seq) || 0, events, lastSeq);
+        if (!appended && lastSeq > (state.eventCursor[missionId] ?? 0)) fetchEvents(missionId, true);
         return;
       }
       if (!OWN_RESPONSES.has(type)) return;
