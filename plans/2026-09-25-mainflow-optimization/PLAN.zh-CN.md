@@ -406,3 +406,24 @@ class BackgroundHealth:
 | 11 | 重要 | destroy 内部已会关闭 Agent；caller 需要受信调用方 | 第 3 版取消删除功能，作废 |
 | 12 | 重要 | command_id 带 generation 不幂等；手动清理的结果没地方存 | 第 3 版取消删除功能，作废 |
 | 13 | 重要 | missions 表没有结束时间字段 | 第 3 版取消删除功能，作废 |
+
+## 11. 实施记录（2026-09-25）
+
+分支 `opt-0925`（worktree `simple_harness-opt`），从 main `a2b6af2d`（计划提交）拉出。主代理亲手写代码；按用户要求，主流程完成前只做各条最小定向测试。
+
+| 条目 | 提交 | 定向测试 |
+|---|---|---|
+| 1 执行图消息接通 | `cfec43b3` | Host `test_ws_taskgraph_routing.py` 1 通过 |
+| 2 可选决定列表对齐（第 8 版包 + v11） | `72084941` | SDK 13 个相关文件 257 通过；2 个失败为 `plans/llm-native-htn/H0/prompt-digests.json` 不在仓库（main 同样缺，与本轮无关） |
+| 3 判据要求的测试必须跑到 | `cd1566f0` | SDK `test_code_test_no_tests_collected.py`（新增裸 `pytest:` 用例）+ `test_executor_check_in_gate.py` 10 通过 |
+| 4 自动批准如实记录 / 5 召回超页跳过 | `98a764a9` | SDK `test_check_policy_lossless_mapping.py`（新增 1）+ projector_port 7 通过；`test_arp_index_recall.py` 12 通过；Host `test_assurance_host_api.py` 5 通过 |
+| 6 后台错误可见、逐项隔离 | `bc37ddf2` | SDK `tests/agents/test_background_health.py`（新增 2）+ session_lifecycle + background_embedding 17 通过；前端 `MissionsView.test.tsx` 88 通过 |
+| 7 存储统计与 5 GB 提醒 | `1cd0…`（见 git log「条目7」） | Host `test_storage_usage.py`（新增 2）+ `test_handlers_contract.py` 12 通过；前端 `SettingsPanel.storage.test.tsx`（新增 2） |
+| SDK 版本 / Host 钉版 | `8f7bf477` / `30fb409b` | 钉版后 Host 6 个相关文件 25 通过（含条目 6 的 `background` 断言） |
+
+与计划第 3 版的偏差：
+- 条目 2：历史包版本 4/5/6/7 在 `HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE` 里作为配对数据保留（只是表项，不是运行分支），运行时的历史分支和标签映射已删；`>= 7` 的 H4 判断保留（对第 8 版包仍成立）。
+- 条目 5：没有另写"每页少于 32 项"的构造测试（用户要求主流程前少测试），只跑了现有召回测试；改动只有一处判断。
+- 条目 7：统计范围只有 `data/agent-orchestrator/`，不含 `data/simple-harness-sdk/`（那是主对话的执行库，用户确认不算）。
+
+合并前全量回归、独立核验、合并、合并后全量回归、真机点击：见下文续记。
