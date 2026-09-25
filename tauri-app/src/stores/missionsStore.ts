@@ -82,6 +82,8 @@ const LOOP_LABEL: Record<string, string> = { index: "建索引", draining: "清�
 
 /** 后台循环连续失败 ≥3 次的一句话提示；没有就返回 null。 */
 export function backgroundTrouble(status: OrchestrationStatus | null | undefined): string | null {
+  if (status?.state === "degraded")
+    return `编排后台连续出错，任务可能停在原地：${status.reason ?? "原因未知"}。可在「反馈问题」里打包诊断信息。`;
   const rows = (status?.native_plane?.profiles ?? []).flatMap((p) => p.background ?? []);
   const worst = rows.filter((r) => (r.consecutive_failures ?? 0) >= 3).sort((a, b) => b.consecutive_failures - a.consecutive_failures)[0];
   if (!worst) return null;

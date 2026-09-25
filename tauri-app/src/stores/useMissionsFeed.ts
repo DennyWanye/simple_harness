@@ -91,6 +91,9 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
 
     request("orchestration_status");
     sendList();
+    // 2026-09-25 UI 全量点击：编排后台连续出错时任务停在原地、界面仍显示"正在自动进行"。
+    // 状态以前只在打开/重连时取一次；定时重取，出错能在 15 秒内显示出来。
+    const statusTimer = setInterval(() => request("orchestration_status"), 15000);
     const offState = channel.onStateChange?.((connection) => {
       statusRequest = null;
       useMissionsStore.getState().setListRequest(null);
@@ -99,6 +102,7 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
       if (connection === "connected") { request("orchestration_status"); sendList(); }
     });
     return () => {
+      clearInterval(statusTimer);
       off();
       offState?.();
       if (cooling) clearTimeout(cooling);
