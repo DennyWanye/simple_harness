@@ -437,3 +437,17 @@ class BackgroundHealth:
 | 数据目录里只要有一个未结束、绑在第 7 版及更早包上的任务，一进规划就抛 `ContractError`，`_try_planner_intent` 不兜这类错误 → 整个编排循环每轮失败，5 次后 Host 进入 degraded，新任务也建不了 | 新增 `UnsupportedPlanningPackage(ContractError)`；两处抛错改用它；`_try_planner_intent` 捕获后只停这一个任务（`_stop_planning_round(reason="unsupported_planning_package", PLANNING_FAILED)`）；规划回复路径本来就在 `_collect_plan_hierarchical` 的 ContractError 兜底里；`internal_enablement_keys` 遇到历史拼写 `REPAIR/X` 不再抛 `ValueError` 而是这个错误。测试：绑到第 7 版包的任务 `_try_planner_intent` 返回 False 且任务 FAILED | 见 git log「核验修复」；SDK 升 opt.2 并重钉 |
 
 其余 6 条核验为无阻断（请求包↔准入互逆、修复开关同步清空、标签/版本/提示词单点、重放校验、文档任务不受条目 3 影响、批准参数透传与重放身份、后台健康与 status 容错、存储统计不阻塞事件循环、执行图 request_id 匹配）。
+
+### 11.2 合并前全量回归（2026-09-25 下午，代码 `a987e625` 起，最终含测试改写提交）
+
+证据 `.local-test-evidence/2026-09-25/opt/full-regression-premerge/`（不入库）。基线名单取 main `d5ac7f10` 合并后全量回归（`host-post-fail.txt` 153 条 / `sdk-post-fail.txt` 206 条）。
+
+| 部分 | 结果 | 与基线对照 |
+|---|---|---|
+| 前端 vitest | 885 通过 | — |
+| Host 后端 | 7,574 通过 / 146 失败 / 5 错误（35 分 51 秒；跳过已知卡死用例 `test_delayed_old_heartbeat_cannot_renew_after_other_owner_reclaim`） | **新增 0**；基线里 6 条这次通过（含跳过的那条、`htn_jev_focus` 目录、旧版本降级 3 条） |
+| SDK | 分两段并行：前 515 文件 7,965 通过 / 217 失败 / 19 错误；后 120 文件 876 通过 / 10 失败（跳过 `test_s2_04`、`test_s2_05_crash_after_result`，均为 `step02/test_recovery_matrix.py` 已知顺序干扰卡死） | 名单新增 55 条：**52 条为环境缺包**（`tiktoken`、`jsonschema`、`pyyaml` 等；装上后 57 个用例全部通过，与交接记录"SDK 主虚拟环境缺 jsonschema"一致）；**3 条是本轮有意的行为变化**——两个测试把任务故意绑到历史包 4/6，按"单一当前版本"口径改写/删除（见提交「测试：按单一当前包口径改写历史包用例」） |
+
+过程记录：第一次全量在跑到一半时我改了 SDK 代码并重装了 Host venv（核验修复），结果混了新旧代码，作废重跑；重跑时 SDK 卡在 `test_s2_05`，中断后没有失败名单，只好分两段再跑一次。教训：全量回归期间不改代码、不动 venv；-q 模式要加 `--junit-xml` 以免中断丢名单。
+
+**结论：合并前全量回归无新引入失败。**
