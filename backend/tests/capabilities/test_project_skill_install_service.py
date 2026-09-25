@@ -736,3 +736,31 @@ async def test_global_retry_requires_explicit_generation_and_deduplicates_comman
     )
     assert success_duplicate == ready
     assert source.calls == 3
+
+
+@pytest.mark.asyncio
+async def test_global_stage_after_a_cancelled_install_opens_a_new_confirmation(tmp_path) -> None:
+    # 2026-09-25 UI 全量点击：在确认框点过"取消"后，同一个 Skill 再也装不上
+    # （内容寻址的安装编号永远落回那条已拒绝的记录）。设置页每次点击用同一操作编号。
+    clock = lambda: 100.0
+    source = Source()
+    _database, store, _publisher, service = await _service(tmp_path, source, clock)
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash="9" * 64
+    )
+    ids = dict(run_id="settings:x", root_run_id="settings:x", call_id="settings-call:x",
+               effect_id="settings-effect:x", channel="settings")
+    first = await service.stage(url="https://github.com/acme/skills", owner=owner, **ids)
+    closed = await store.get_skill_install_intent(first.intent_id)
+    pending = await store.cas_skill_install_intent(
+        closed.intent_id, expected_state_version=closed.state_version,
+        status="denied_cleanup_pending", settlement_ref="test-cancel",
+    )
+    await store.cas_skill_install_intent(
+        closed.intent_id, expected_state_version=pending.state_version, status="denied",
+        cleanup_ref="cleanup:test",
+    )
+    again = await service.stage(url="https://github.com/acme/skills", owner=owner, **ids)
+    assert again.intent_id != first.intent_id
+    reopened = await store.get_skill_install_intent(again.intent_id)
+    assert reopened is not None and reopened.status == "awaiting_confirmation"

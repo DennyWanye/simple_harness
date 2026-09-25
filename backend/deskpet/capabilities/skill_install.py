@@ -58,6 +58,10 @@ from deskpet.tools.capabilities import ToolExecutionContext
 logger = logging.getLogger(__name__)
 
 
+
+#: Closed install intents a new request for the same content may reopen.
+_REOPENABLE_INTENT_STATES = frozenset({"stage_failed", "denied", "expired"})
+
 class ProjectSkillInstallError(RuntimeError):
     def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
         super().__init__(message)
@@ -686,15 +690,26 @@ class GlobalSkillInstallService:
                 message=str(exc),
             )
         if is_global:
-            intent_id = "skill-install-global:" + fingerprint_json(
-                {
-                    "schema": "global-skill-install-intent-v2",
-                    "owner_scope_key": owner_scope_key,
-                    "exact_commit": batch.evidence.exact_commit,
-                    "member_set_stamp": batch.batch_digest,
-                }
-            )
-            existing = await self.store.get_skill_install_intent(intent_id)
+            # 2026-09-25 UI 全量点击: the id is content-addressed, so after one
+            # "cancel" (denied) the same Skill could never be installed again — every
+            # new click resolved to the closed intent.  A closed intent is history; a
+            # new request for the same content opens the next generation.
+            content_identity = {
+                "schema": "global-skill-install-intent-v2",
+                "owner_scope_key": owner_scope_key,
+                "exact_commit": batch.evidence.exact_commit,
+                "member_set_stamp": batch.batch_digest,
+            }
+            generation = 0
+            while True:
+                intent_id = "skill-install-global:" + fingerprint_json(
+                    content_identity if generation == 0
+                    else {**content_identity, "reopened_generation": generation}
+                )
+                existing = await self.store.get_skill_install_intent(intent_id)
+                if existing is None or existing.status not in _REOPENABLE_INTENT_STATES:
+                    break
+                generation += 1
             if existing is not None:
                 if retry_claim is not None:
                     await self.store.settle_skill_install_retry(
@@ -713,7 +728,7 @@ class GlobalSkillInstallService:
                 effect_id, call_id
             )
             if prior_effect is not None and prior_effect.intent_id != intent_id:
-                if prior_effect.status != "stage_failed":
+                if prior_effect.status not in _REOPENABLE_INTENT_STATES:
                     raise ProjectSkillInstallError(
                         "skill_install_intent_conflict",
                         "A non-terminal install already owns this request identity",
@@ -768,7 +783,9 @@ class GlobalSkillInstallService:
                     )
                 )
             now = float(self.clock())
-            nonce = fingerprint_json({**identity, "batch_digest": batch.batch_digest})
+            nonce = fingerprint_json({**identity, "batch_digest": batch.batch_digest,
+                                      # a reopened generation needs its own confirmation
+                                      **({"intent_id": intent_id} if is_global else {})})
             intent = CapabilitySkillInstallIntent(
                 intent_id=intent_id,
                 effect_id=effect_id,
