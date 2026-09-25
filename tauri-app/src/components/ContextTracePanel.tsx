@@ -408,7 +408,7 @@ function LegacyContextTrace({ getChannel, active }: { getChannel: () => ControlC
         <label style={legacyLabelStyle}><span>条数</span><input data-testid="trace-limit" type="number" min={1} max={200} value={limit} onChange={(event) => setLimit(Math.max(1, Math.min(200, Number(event.target.value) || 50)))} style={numInputStyle} /></label>
         <label style={legacyLabelStyle}><span>actual context_window</span><input data-testid="trace-ctx-window" aria-label="actual context window" type="number" value={contextWindow} readOnly style={{ ...numInputStyle, width: 86 }} /></label>
       </div>
-      {reason && <div data-testid="trace-reason" style={{ color: dark.textFaint, fontSize: 10 }}>后端提示：{reason}</div>}
+      {reason && <div data-testid="trace-reason" style={{ color: dark.textFaint, fontSize: 10 }}>{reason === "context_assembler_not_registered" ? "当前没有可观察的上下文记录（主对话和任务编排的上下文不经过这里）。" : `后端提示：${reason}`}</div>}
       {latest && (
         <div data-testid="trace-budget" style={{ padding: "9px 11px", border: `1px solid ${warning ? "rgba(249,115,22,0.5)" : dark.border}`, borderRadius: 7, background: warning ? "rgba(249,115,22,0.13)" : dark.card }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11 }}>

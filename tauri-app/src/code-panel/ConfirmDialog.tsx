@@ -13,6 +13,7 @@
  *   ...
  *   {confirm && <ConfirmDialog {...confirm} onCancel={() => setConfirm(null)} />}
  */
+import { useEffect, useRef } from "react";
 import type React from "react";
 
 export interface ConfirmDialogProps {
@@ -40,6 +41,13 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  // 2026-09-25 UI 全量点击：弹框出现时焦点没移进来，Esc/Enter 都到不了它。
+  // 打开即聚焦「取消」（删除类操作默认停在安全按钮上）；Esc 取消；Enter 只触发
+  // 当前焦点所在的按钮（浏览器默认行为），不再无条件等于"确认"。
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    cancelRef.current?.focus();
+  }, []);
   const confirmBg = variant === "danger" ? "#dc2626" : "#2563eb";
   const confirmHover = variant === "danger" ? "#b91c1c" : "#1d4ed8";
   return (
@@ -54,7 +62,6 @@ export function ConfirmDialog({
       }}
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel();
-        if (e.key === "Enter") onConfirm();
       }}
       tabIndex={-1}
       style={{
@@ -100,6 +107,7 @@ export function ConfirmDialog({
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             style={{

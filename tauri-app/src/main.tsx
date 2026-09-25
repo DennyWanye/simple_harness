@@ -10,6 +10,18 @@ import { BACKEND_PORT } from './backendPort'
 applyTheme();
 watchSystemTheme();
 
+// 2026-09-25 UI 全量点击：macOS 的 WebView 会对输入框做自动更正/首字母大写
+// （模型名 "abc" 失焦后变成 "Abc"，判据 "pytest:" 也可能被改）。本程序的输入
+// 大量是标识符、路径、模型名和判据，一律关掉自动更正、自动大写和拼写检查。
+document.addEventListener('focusin', (event) => {
+  const el = event.target;
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    el.setAttribute('autocorrect', 'off');
+    el.setAttribute('autocapitalize', 'off');
+    el.spellcheck = false;
+  }
+}, true);
+
 // WI-T1.7 last-mile: 全局 metric emit sink。
 // ArtifactCard 按钮点击会调 window.__deskpet_metrics_emit；这里 wire 到
 // backend POST /metrics/event，最终落地 <user_data>/metrics.jsonl。

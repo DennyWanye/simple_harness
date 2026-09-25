@@ -37,6 +37,7 @@ import {
   backdropStyle,
 } from "../theme/components";
 import { tokens } from "../theme/tokens";
+import { useConfirm } from "./useConfirm";
 
 type Tab = "installed" | "marketplace" | "add-url";
 
@@ -308,14 +309,16 @@ export const SkillStorePanel: React.FC<Props> = ({
     [channel, staged]
   );
 
+  const [confirmDialog, ask] = useConfirm();
   const uninstall = useCallback(
-    (name: string) => {
+    async (name: string) => {
       if (!channel) return;
-      if (!confirm(`确认卸载 “${name}” 吗？`)) return;
+      // 2026-09-25：不能用 confirm()——桌面 WebView 里它不弹框、直接当"确认"。
+      if (!(await ask({ title: "卸载 Skill", message: `确认卸载 “${name}” 吗？`, confirm_label: "卸载" }))) return;
       setLoading(true);
       channel.send({ type: "skill_uninstall", payload: { name } });
     },
-    [channel]
+    [channel, ask]
   );
 
   const sensitiveBadges = useMemo(() => {
@@ -539,6 +542,7 @@ export const SkillStorePanel: React.FC<Props> = ({
             onCancel={() => confirmInstall(false)}
           />
         )}
+        {confirmDialog}
       </div>
   );
 

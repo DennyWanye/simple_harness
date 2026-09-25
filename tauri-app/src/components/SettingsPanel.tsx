@@ -17,6 +17,7 @@ import type { ChangeEvent } from "react";
 
 import { Icon } from "./Icon";
 import { ModelContextCard } from "./ModelContextCard";
+import { useConfirm } from "./useConfirm";
 import { SettingsProviders } from "./SettingsProviders";
 import { formatUpdaterError } from "./updaterError";
 import { dark, titleText, transition } from "../theme/components";
@@ -793,24 +794,27 @@ export function ChatTurnTimeoutSetting({
 // second opt-in checkbox additionally wipes %LocalAppData%\deskpet\
 // models — that's ~9 GB so we require explicit consent.
 //
-// Two-step confirm via window.confirm keeps the UI trivial while still
+// Two-step confirm via the in-app dialog (useConfirm) keeps the UI trivial while still
 // preventing single-click destruction.
 // ----------------------------------------------------------------------
 function DangerZoneSection() {
   const [includeModels, setIncludeModels] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [confirmDialog, ask] = useConfirm();
 
   const handlePurge = useCallback(async () => {
     setErr(null);
-    const scope = includeModels
-      ? "用户数据 + 本地模型缓存（%LocalAppData%\\deskpet\\models）"
-      : "用户数据（配置 / 数据库 / 日志）";
-    const confirmed = window.confirm(
-      `即将删除：${scope}\n\n` +
-        "这将清除所有聊天历史、云端账号设置、预算记录和日志，无法撤销。\n" +
-        "删除完成后 Simple Harness 将自动退出。\n\n确认继续？",
-    );
+    const scope = includeModels ? "用户数据 + 本地模型缓存" : "用户数据（配置 / 数据库 / 日志）";
+    // 2026-09-25：不能用 window.confirm——桌面 WebView 里它不弹框、直接当"确认"。
+    const confirmed = await ask({
+      title: "完全卸载",
+      message:
+        `即将删除：${scope}\n\n` +
+        "这将清除所有聊天历史、任务记录、配置和日志，无法撤销。\n" +
+        "删除完成后 Simple Harness 将自动退出。",
+      confirm_label: "确认删除",
+    });
     if (!confirmed) return;
 
     setBusy(true);
@@ -822,10 +826,11 @@ function DangerZoneSection() {
       setErr(typeof e === "string" ? e : (e as Error)?.message ?? String(e));
       setBusy(false);
     }
-  }, [includeModels]);
+  }, [includeModels, ask]);
 
   return (
     <section style={{ ...sectionStyle, borderTop: `1px solid ${dark.borderStrong}` }}>
+      {confirmDialog}
       <h3 style={{ ...h3Style, color: dark.danger }}>危险区</h3>
       <p style={hintStyle}>
         "完全卸载" 会清除 Simple Harness 当前解析到的用户数据目录（配置、SQLite、日志）。
@@ -1020,6 +1025,7 @@ function formatMb(bytes: number): string {
 }
 
 function DataDirSection() {
+  const [confirmDialog, ask] = useConfirm();
   const [setting, setSetting] = useState<DataDirSetting | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("");
@@ -1080,13 +1086,16 @@ function DataDirSection() {
       return;
     }
     const sizeStr = formatMb(setting.effective_size_bytes);
-    const confirmed = window.confirm(
-      `即将把数据目录切换为：\n${target}\n\n` +
+    const confirmed = await ask({
+      title: "切换数据目录",
+      message:
+        `即将把数据目录切换为：\n${target}\n\n` +
         (moveData
           ? `并将现有数据（约 ${sizeStr}）从\n${setting.effective}\n复制并删除原位置文件。\n\n`
           : "（不移动现有数据 — 旧目录保留，新目录从空开始）\n\n") +
-        "Simple Harness 需要重启才能完全生效。继续？",
-    );
+        "Simple Harness 需要重启才能完全生效。",
+      confirm_label: "确认切换",
+    });
     if (!confirmed) return;
 
     setBusy(true);
@@ -1118,7 +1127,7 @@ function DataDirSection() {
     } finally {
       setBusy(false);
     }
-  }, [setting, newPath, moveData]);
+  }, [setting, newPath, moveData, ask]);
 
   const handleReset = useCallback(async () => {
     if (!setting) return;
@@ -1128,11 +1137,14 @@ function DataDirSection() {
       );
       return;
     }
-    const confirmed = window.confirm(
-      "将数据目录偏好切回默认路径 " +
-        "（%AppData%\\deskpet）。\n\n" +
-        "注意：现有数据不会被自动搬回去 —— 你需要手动移动，或先在上方填入默认路径并勾选「移动」。\n\n继续？",
-    );
+    const confirmed = await ask({
+      title: "恢复默认数据目录",
+      message:
+        `将数据目录偏好切回默认路径：\n${setting.default ?? "（平台默认）"}\n\n` +
+        "注意：现有数据不会被自动搬回去 —— 你需要手动移动，或先在上方填入默认路径并勾选「移动」。",
+      confirm_label: "确认恢复",
+      variant: "primary",
+    });
     if (!confirmed) return;
     setBusy(true);
     setOpErr(null);
@@ -1156,7 +1168,7 @@ function DataDirSection() {
     } finally {
       setBusy(false);
     }
-  }, [setting]);
+  }, [setting, ask]);
 
   if (loadErr) {
     return (
@@ -1179,6 +1191,7 @@ function DataDirSection() {
 
   return (
     <section id="settings-data-dir" style={sectionStyle}>
+      {confirmDialog}
       <h3 style={h3Style}>数据目录</h3>
       <p style={hintStyle}>
         Simple Harness 的聊天历史、配置、SQLite 数据库和设备 ID 都保存在这里。

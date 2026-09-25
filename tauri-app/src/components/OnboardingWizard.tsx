@@ -254,7 +254,9 @@ function OnboardingWizardImpl({
           {!isLast && (
             <button
               data-testid="onboarding-next-btn"
-              style={primaryBtnStyle}
+              // 2026-09-25：不可用时要看得出来，并说明原因（之前是亮蓝色但点了没反应）
+              style={canAdvance ? primaryBtnStyle : { ...primaryBtnStyle, opacity: 0.45, cursor: "not-allowed", boxShadow: "none" }}
+              title={canAdvance ? undefined : "先点「测试连接」，成功后才能继续"}
               disabled={!canAdvance}
               onClick={() =>
                 setIndex((i) => Math.min(steps.length - 1, i + 1))

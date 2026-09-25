@@ -519,7 +519,7 @@ export function AddProviderModal({
                 </button>
               </div>
               {probeError && (
-                <div style={errStyle}>自动获取失败: {probeError}</div>
+                <div style={errStyle}>自动获取失败：{/all connection attempts failed|connection refused|connecterror/i.test(probeError) ? "连不上这个服务地址，请检查 base_url 是否正确、服务是否在运行。" : probeError}</div>
               )}
             </div>
           )}

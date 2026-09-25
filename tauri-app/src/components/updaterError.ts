@@ -11,6 +11,11 @@ export function formatUpdaterError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err ?? "");
   const lower = raw.toLowerCase();
 
+  // 2026-09-25：发布清单里没有本机平台（如 darwin-aarch64）的安装包。
+  if (lower.includes("fallback platforms") || (lower.includes("platform") && lower.includes("response"))) {
+    return "更新服务器上暂时没有适合这台电脑（当前系统与芯片）的安装包，请稍后再试。";
+  }
+
   // 端点 404 / 无 release / 拉不到 latest.json —— 最常见（发布服务器还没
   // 上架对应版本，或 latest.json 缺失）。给一句人话，别甩英文堆栈。
   if (
