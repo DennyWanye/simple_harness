@@ -35,6 +35,8 @@ def test_message_types_are_the_planned_set():
         "mission_list",
         "mission_get",
         "mission_events",
+        "mission_live_graph",
+        "mission_planning_decisions",
         "mission_cancel",
         "mission_approval_list",
         "mission_approval_decide",

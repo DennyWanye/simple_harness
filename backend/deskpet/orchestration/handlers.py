@@ -37,6 +37,8 @@ MESSAGE_TYPES = (
     "taskgraph.why_not_ready",
     "taskgraph.diff",
     "taskgraph.convergence",
+    "mission_live_graph",
+    "mission_planning_decisions",
     "mission_assurance_snapshot",
     "mission_assurance_review",
     "mission_assurance_use_check",
@@ -241,6 +243,9 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "taskgraph.why_not_ready": lambda service, body: service.taskgraph_read("why_not_ready", body),
     "taskgraph.diff": lambda service, body: service.taskgraph_read("diff", body),
     "taskgraph.convergence": lambda service, body: service.taskgraph_read("convergence", body),
+    # 2026-09-26 实时可视化：直读分层计划表的运行视图（严格执行图对真实任务恒为 NOT_ENABLED）
+    "mission_live_graph": lambda service, body: service.live_graph(body),
+    "mission_planning_decisions": lambda service, body: service.planning_decisions(body),
     "mission_assurance_snapshot": lambda service, body: service.assurance_read("snapshot", body),
     "mission_assurance_review": lambda service, body: service.assurance_read("review", body),
     "mission_assurance_use_check": lambda service, body: service.assurance_read("use_check", body),
