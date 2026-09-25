@@ -64,6 +64,9 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         native = status["native_plane"]
         assert native["available"] is True and {p["profile_id"] for p in native["profiles"]} == {"deepseek-native-256k-v1", "deepseek-native-512k-v1"}
         assert all(p["count_mode"] == "EXACT" for p in native["profiles"])
+        # 2026-09-25 条目 6：每个池带后台循环健康行（建好即为 5 个循环，全部 0 次失败）
+        assert all({row["loop"] for row in p["background"]} == {"index", "draining", "recall", "tool_probe", "reap"} for p in native["profiles"])
+        assert all(row["consecutive_failures"] == 0 for p in native["profiles"] for row in p["background"])
         assert status["default_context_profile_id"] == "deepseek-native-256k-v1"
         rows = {p["profile_id"]: p for p in status["context_profiles"]}
         assert rows["deepseek-native-256k-v1"]["native_plane"] is True and rows["deepseek-context-256k-v1"]["native_plane"] is False

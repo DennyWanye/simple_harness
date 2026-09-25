@@ -204,6 +204,9 @@ def project_check_policies(service: Any, mission_id: str | None = None) -> int:
                 "requirements_ref": requirements_ref.to_json(),
                 "completion_scope": scope_ref.to_json(),
                 "candidate_mapping": [policy.to_json() for policy in mapping],
+                # 2026-09-25: this is the Host approving on the principal's behalf, and
+                # the audit event says so (actor_type=system), not "a human approved".
+                "approval_source": "HOST_LOSSLESS_AUTO",
             }
             if purpose != "CONTENT":
                 command["purpose"] = purpose

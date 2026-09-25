@@ -406,3 +406,48 @@ class BackgroundHealth:
 | 11 | 重要 | destroy 内部已会关闭 Agent；caller 需要受信调用方 | 第 3 版取消删除功能，作废 |
 | 12 | 重要 | command_id 带 generation 不幂等；手动清理的结果没地方存 | 第 3 版取消删除功能，作废 |
 | 13 | 重要 | missions 表没有结束时间字段 | 第 3 版取消删除功能，作废 |
+
+## 11. 实施记录（2026-09-25）
+
+分支 `opt-0925`（worktree `simple_harness-opt`），从 main `a2b6af2d`（计划提交）拉出。主代理亲手写代码；按用户要求，主流程完成前只做各条最小定向测试。
+
+| 条目 | 提交 | 定向测试 |
+|---|---|---|
+| 1 执行图消息接通 | `cfec43b3` | Host `test_ws_taskgraph_routing.py` 1 通过 |
+| 2 可选决定列表对齐（第 8 版包 + v11） | `72084941` | SDK 13 个相关文件 257 通过；2 个失败为 `plans/llm-native-htn/H0/prompt-digests.json` 不在仓库（main 同样缺，与本轮无关） |
+| 3 判据要求的测试必须跑到 | `cd1566f0` | SDK `test_code_test_no_tests_collected.py`（新增裸 `pytest:` 用例）+ `test_executor_check_in_gate.py` 10 通过 |
+| 4 自动批准如实记录 / 5 召回超页跳过 | `98a764a9` | SDK `test_check_policy_lossless_mapping.py`（新增 1）+ projector_port 7 通过；`test_arp_index_recall.py` 12 通过；Host `test_assurance_host_api.py` 5 通过 |
+| 6 后台错误可见、逐项隔离 | `bc37ddf2` | SDK `tests/agents/test_background_health.py`（新增 2）+ session_lifecycle + background_embedding 17 通过；前端 `MissionsView.test.tsx` 88 通过 |
+| 7 存储统计与 5 GB 提醒 | `1cd0…`（见 git log「条目7」） | Host `test_storage_usage.py`（新增 2）+ `test_handlers_contract.py` 12 通过；前端 `SettingsPanel.storage.test.tsx`（新增 2） |
+| SDK 版本 / Host 钉版 | `8f7bf477` / `30fb409b` | 钉版后 Host 6 个相关文件 25 通过（含条目 6 的 `background` 断言） |
+
+与计划第 3 版的偏差：
+- 条目 2：历史包版本 4/5/6/7 在 `HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE` 里作为配对数据保留（只是表项，不是运行分支），运行时的历史分支和标签映射已删；`>= 7` 的 H4 判断保留（对第 8 版包仍成立）。
+- 条目 5：没有另写"每页少于 32 项"的构造测试（用户要求主流程前少测试），只跑了现有召回测试；改动只有一处判断。
+- 条目 7：统计范围只有 `data/agent-orchestrator/`，不含 `data/simple-harness-sdk/`（那是主对话的执行库，用户确认不算）。
+
+合并前全量回归、独立核验、合并、合并后全量回归、真机点击：见下文续记。
+
+### 11.1 独立核验（2026-09-25，opus 只读，只报阻断）
+
+结论"修后可合"，1 条阻断，已修：
+
+| 问题 | 修法 | 提交 |
+|---|---|---|
+| 数据目录里只要有一个未结束、绑在第 7 版及更早包上的任务，一进规划就抛 `ContractError`，`_try_planner_intent` 不兜这类错误 → 整个编排循环每轮失败，5 次后 Host 进入 degraded，新任务也建不了 | 新增 `UnsupportedPlanningPackage(ContractError)`；两处抛错改用它；`_try_planner_intent` 捕获后只停这一个任务（`_stop_planning_round(reason="unsupported_planning_package", PLANNING_FAILED)`）；规划回复路径本来就在 `_collect_plan_hierarchical` 的 ContractError 兜底里；`internal_enablement_keys` 遇到历史拼写 `REPAIR/X` 不再抛 `ValueError` 而是这个错误。测试：绑到第 7 版包的任务 `_try_planner_intent` 返回 False 且任务 FAILED | 见 git log「核验修复」；SDK 升 opt.2 并重钉 |
+
+其余 6 条核验为无阻断（请求包↔准入互逆、修复开关同步清空、标签/版本/提示词单点、重放校验、文档任务不受条目 3 影响、批准参数透传与重放身份、后台健康与 status 容错、存储统计不阻塞事件循环、执行图 request_id 匹配）。
+
+### 11.2 合并前全量回归（2026-09-25 下午，代码 `a987e625` 起，最终含测试改写提交）
+
+证据 `.local-test-evidence/2026-09-25/opt/full-regression-premerge/`（不入库）。基线名单取 main `d5ac7f10` 合并后全量回归（`host-post-fail.txt` 153 条 / `sdk-post-fail.txt` 206 条）。
+
+| 部分 | 结果 | 与基线对照 |
+|---|---|---|
+| 前端 vitest | 885 通过 | — |
+| Host 后端 | 7,574 通过 / 146 失败 / 5 错误（35 分 51 秒；跳过已知卡死用例 `test_delayed_old_heartbeat_cannot_renew_after_other_owner_reclaim`） | **新增 0**；基线里 6 条这次通过（含跳过的那条、`htn_jev_focus` 目录、旧版本降级 3 条） |
+| SDK | 分两段并行：前 515 文件 7,965 通过 / 217 失败 / 19 错误；后 120 文件 876 通过 / 10 失败（跳过 `test_s2_04`、`test_s2_05_crash_after_result`，均为 `step02/test_recovery_matrix.py` 已知顺序干扰卡死） | 名单新增 55 条：**52 条为环境缺包**（`tiktoken`、`jsonschema`、`pyyaml` 等；装上后 57 个用例全部通过，与交接记录"SDK 主虚拟环境缺 jsonschema"一致）；**3 条是本轮有意的行为变化**——两个测试把任务故意绑到历史包 4/6，按"单一当前版本"口径改写/删除（见提交「测试：按单一当前包口径改写历史包用例」） |
+
+过程记录：第一次全量在跑到一半时我改了 SDK 代码并重装了 Host venv（核验修复），结果混了新旧代码，作废重跑；重跑时 SDK 卡在 `test_s2_05`，中断后没有失败名单，只好分两段再跑一次。教训：全量回归期间不改代码、不动 venv；-q 模式要加 `--junit-xml` 以免中断丢名单。
+
+**结论：合并前全量回归无新引入失败。**
