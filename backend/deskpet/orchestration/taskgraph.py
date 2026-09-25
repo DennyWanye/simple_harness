@@ -2,10 +2,14 @@
 """Read-only TaskGraph verbs on the existing authenticated control transport."""
 from __future__ import annotations
 
+import logging
+
 from collections.abc import Mapping
 from typing import Any
 
 from .service import OrchestrationRequestError
+
+logger = logging.getLogger(__name__)
 
 
 class TaskGraphRequestError(OrchestrationRequestError):
@@ -63,6 +67,9 @@ def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> 
         raise TaskGraphRequestError(error.error.to_json()) from error
     except (GraphIntegrityError, ContractError, SourceUnavailable, StoreError) as error:
         code = "GRAPH_INTEGRITY" if isinstance(error, (GraphIntegrityError, ContractError)) else "SOURCE_UNAVAILABLE"
+        # 2026-09-25: the wire hides the cause on purpose (operator repair, not a model
+        # hint), so the cause must at least reach the Host log or nobody can repair it.
+        logger.warning("taskgraph %s read failed for %s: %s: %s", operation, mission_id, type(error).__name__, error)
         wire = TaskGraphErrorV1(origin="SYSTEM", stage="READ", code=code,
             detail="执行图来源不可读，请保留当前画面并重新读取。",
             retry_kind="OPERATOR_REPAIR" if code == "GRAPH_INTEGRITY" else "REQUERY",
