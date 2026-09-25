@@ -846,7 +846,7 @@ describe("P1-5 缺失界面", () => {
     const row = screen.getByTestId("artifact-artifact-1");
     expect(row.textContent).toMatch(/NOTES\.md/);
     expect(row.textContent).toMatch(/2\.0 KB/);
-    expect(row.textContent).toMatch(/VERIFIED/);
+    expect(row.textContent).toMatch(/验证：已验证/);
     expect(row.textContent).toMatch(/0123456789ab/);
     expect(row.textContent).not.toMatch(/0123456789abc/);
 

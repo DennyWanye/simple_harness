@@ -70,6 +70,10 @@ const LAYER_LABEL: Record<string, string> = {
   SKIPPED: "跳过",
   NEEDS_HUMAN: "待人工",
   SUSPENDED: "待人工",
+  // 产物的验证状态（2026-09-26 真机：列表里直接显示英文 VERIFIED）
+  VERIFIED: "已验证",
+  UNVERIFIED: "未验证",
+  REJECTED: "未通过",
 };
 const REJECTION_LABEL: Record<string, string> = {
   stale_source: "来源已失效",
