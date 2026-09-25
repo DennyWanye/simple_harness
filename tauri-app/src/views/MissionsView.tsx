@@ -385,6 +385,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const createTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [maxTokens, setMaxTokens] = useState("");
   const [maxAttempts, setMaxAttempts] = useState("");
+  const [allEventsShown, setAllEventsShown] = useState(false);
   const [contextProfile, setContextProfile] = useState<string | null>(null);
   const [conflictReserve, setConflictReserve] = useState("");
   const [synthesisEnabled, setSynthesisEnabled] = useState(false);
@@ -788,7 +789,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const mission = record(detail?.mission);
   const selectedId = store.selectedId;
   const events = selectedId ? store.events[selectedId] ?? [] : [];
-  const recentEvents = events.slice(-TIMELINE_SIZE);
+  // 2026-09-25 UI 全量点击：以前只显示最近 50 条，更早的已加载也看不到。
+  const recentEvents = allEventsShown ? events : events.slice(-TIMELINE_SIZE);
   const showMore = selectedId ? store.eventsHasMore[selectedId] === true && store.eventsLoading[selectedId] !== true : false;
   const pendingApprovals = useMemo(
     () => list(detail?.approvals).filter((approval) => text(approval.state) === "PENDING"),
@@ -1233,7 +1235,12 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <div style={box}>
               <div style={heading}>事件</div>
               {events.length > TIMELINE_SIZE ? (
-                <div style={muted}>{`共 ${events.length} 条，显示最近 ${TIMELINE_SIZE} 条`}</div>
+                <div style={muted}>
+                  {allEventsShown ? `共 ${events.length} 条` : `共 ${events.length} 条，显示最近 ${TIMELINE_SIZE} 条`}
+                  <button type="button" style={{ ...button, marginLeft: tokens.space.sm }} onClick={() => setAllEventsShown((v) => !v)}>
+                    {allEventsShown ? "只看最近" : "显示全部"}
+                  </button>
+                </div>
               ) : null}
               {recentEvents.map((event) => (
                 <div key={event.seq} data-testid={`event-${event.seq}`} style={muted}>
