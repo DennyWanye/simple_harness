@@ -286,7 +286,7 @@ function jumpTo(id: string): void {
   target?.scrollIntoView?.({ behavior: "smooth", block: "start" });
 }
 
-const ArtifactPanel: React.FC<{ artifact: Json }> = ({ artifact }) => {
+const ArtifactPanel: React.FC<{ artifact: Json; verified?: boolean }> = ({ artifact, verified = false }) => {
   const encoding = text(artifact.encoding);
   const content = typeof artifact.content === "string" ? artifact.content : null;
   const readable = encoding !== "binary" && content !== null;
@@ -299,7 +299,8 @@ const ArtifactPanel: React.FC<{ artifact: Json }> = ({ artifact }) => {
       {readable ? (
         <>
           <div style={muted}>
-            （模型生成，未核实）{artifact.truncated === true ? " · 内容过长，已截断" : ""}
+            {/* 2026-09-26 真机：列表写"已验证"，预览却一律写"未核实"。 */}
+            {verified ? "（已通过核验）" : "（模型生成，未核实）"}{artifact.truncated === true ? " · 内容过长，已截断" : ""}
           </div>
           <pre
             style={{
@@ -1245,7 +1246,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               </div>
             ) : null}
 
-            {artifact ? <div style={{ minWidth: 0 }}>{detail.document != null && <div>分析 / 非结论（正文非结论陈述不做覆盖核对）</div>}<ArtifactPanel artifact={artifact} /></div> : null}
+            {artifact ? <div style={{ minWidth: 0 }}>{detail.document != null && <div>分析 / 非结论（正文非结论陈述不做覆盖核对）</div>}<ArtifactPanel artifact={artifact}
+              verified={[...deliverables, ...internals].some((item) => text(item.id) === text(artifact.artifact_id)
+                && text(item.verification_status).toUpperCase() === "VERIFIED")} /></div> : null}
 
             <div style={box}>
               <div style={heading}>评论</div>

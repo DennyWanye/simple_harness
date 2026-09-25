@@ -865,7 +865,9 @@ describe("P1-5 缺失界面", () => {
     const panel = screen.getByRole("region", { name: "产物内容" });
     expect(panel.querySelector("pre")?.textContent).toBe("- 要点一\n- 要点二");
     expect(panel.textContent).toMatch(/0123456789abcdef0123456789abcdef/);
-    expect(panel.textContent).toMatch(/模型生成，未核实/);
+    // 列表里是 VERIFIED 的产物，预览不能再写"未核实"（2026-09-26 真机）。
+    expect(panel.textContent).toMatch(/已通过核验/);
+    expect(panel.textContent).not.toMatch(/模型生成，未核实/);
     expect(panel.textContent).toMatch(/内容过长，已截断/);
   });
 
