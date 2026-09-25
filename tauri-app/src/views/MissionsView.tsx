@@ -811,7 +811,19 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const artifacts = list(detail?.artifacts);
   // 用户要的交付物在前；审阅/检查留下的内部记录（.assurance/…）默认收起（2026-09-25 真机点击）。
   const internals = artifacts.filter((item) => text(item.path).startsWith(".assurance/"));
-  const deliverables = artifacts.filter((item) => !text(item.path).startsWith(".assurance/"));
+  // 2026-09-25 UI 全量点击：每次尝试都登记一份产物，同一文件在列表里出现多次。
+  // 每个路径只列一份：优先最后一份已验证的，否则最后一份。
+  const deliverables = Array.from(
+    artifacts.filter((item) => !text(item.path).startsWith(".assurance/"))
+      .reduce((byPath, item) => {
+        const path = text(item.path);
+        const kept = byPath.get(path);
+        const verified = (row: Json) => text(row.verification_status).toUpperCase() === "VERIFIED";
+        if (!kept || verified(item) || !verified(kept)) byPath.set(path, item);
+        return byPath;
+      }, new Map<string, Json>())
+      .values(),
+  );
   const drift = list(store.policy?.drift);
 
   if (status && !status.available) {
