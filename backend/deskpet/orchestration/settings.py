@@ -85,6 +85,9 @@ class OrchestrationSettings:
     # ("off", the explicit opt-out).  A native pool needs the certified DeepSeek counter;
     # without one no native pool is assembled and the status says why.
     native_plane: str = "on"
+    # 2026-09-25 user decision: task/session data is kept forever for audit; the Settings
+    # page only reminds the user once ``<user_data>/data/agent-orchestrator`` passes this.
+    storage_warn_bytes: int = 5 * 1024**3
     # Hosts this deployment declares to relay verbatim to official DeepSeek (a day-card
     # gateway, a local forwarder), comma separated and lower-cased.  Empty means only
     # api.deepseek.com counts as official.
@@ -198,6 +201,7 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         decision_shadow_timeout_seconds=_shadow_timeout(raw.get("decision_shadow_timeout_seconds")),
         assurance_profile=_assurance_profile(raw.get("assurance_profile")),
         native_plane=_assurance_profile(raw.get("native_plane")),
+        storage_warn_bytes=_bounded_int(raw.get("storage_warn_bytes"), 5 * 1024**3, 1024**2, 1024**5),
         deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),
         thinking=_thinking(raw.get("thinking")),
         response_model_aliases=_aliases(raw.get("response_model_aliases")),

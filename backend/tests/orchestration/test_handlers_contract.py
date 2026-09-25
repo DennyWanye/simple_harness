@@ -44,6 +44,7 @@ def test_message_types_are_the_planned_set():
         "mission_diagnostics",
         "mission_support_export",
         "orchestration_policy_status",
+        "orchestration_storage_get",
         "taskgraph.snapshot",
         "taskgraph.why_not_ready",
         "taskgraph.diff",

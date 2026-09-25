@@ -50,6 +50,7 @@ MESSAGE_TYPES = (
     "mission_diagnostics",
     "mission_support_export",
     "orchestration_policy_status",
+    "orchestration_storage_get",
     "agent_runtime_request",
     "agent_skill_evaluation_mission",
     "agent_skill_evaluation_dispatch",
@@ -266,6 +267,8 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "mission_diagnostics": _diagnostics,
     "mission_support_export": _support_export,
     "orchestration_policy_status": _policy,
+    # 2026-09-25 条目 7: disk usage of task/session data for the Settings page reminder
+    "orchestration_storage_get": lambda service, body: service.storage_usage(body),
     # ARP-EXEC-1.1.1 (RP-E3): the SDK runtime plane behind one control message, plus the
     # two Host-side links of a Skill evaluation to its original Assurance Mission.
     "agent_runtime_request": lambda service, body: service.runtime_plane(body),

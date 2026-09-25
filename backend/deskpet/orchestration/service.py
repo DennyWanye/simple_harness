@@ -42,6 +42,7 @@ from .projection import (
     ui_state,
 )
 from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
+from .storage_usage import StorageUsage
 from .runtime_profile import (
     CONTEXT_INPUT_LIMITS,
     long_context_profile_id,
@@ -153,6 +154,9 @@ class OrchestrationService:
         self._wake = asyncio.Event()
         self._closing = False
         self._failures = 0
+        # 2026-09-25 条目 7: disk taken by task/session data, measured off the loop; the
+        # Settings page reads it and warns past ``storage_warn_bytes`` — nothing is deleted.
+        self._storage = StorageUsage(self.root, warn_bytes=settings.storage_warn_bytes)
         self._authorization_mode: str | None = None
         # PR-7: the Host's NanoJev decision seam.  Built once from the effective
         # settings, never from the environment; it observes READY_TASK_PRIORITY and
@@ -543,6 +547,7 @@ class OrchestrationService:
                     await self._rebuild()
                 await self._orchestrator.run()
                 self._project_assurance_policies()
+                self._storage.schedule_if_stale()
                 self._failures = 0
                 if self._state == "degraded":
                     self._state, self._reason = "available", None
@@ -936,6 +941,7 @@ class OrchestrationService:
             "assurance_available": self._assurance is not None,
             "assurance_profile": self.settings.assurance_profile,
             "assurance_notices": len(self._assurance_notices),
+            "storage_over_warn": bool(self._storage.over_warn),
             "context_profiles": self._context_profiles(),
             "native_plane": (
                 self._native.status() if self._native is not None
@@ -1408,6 +1414,13 @@ class OrchestrationService:
                 "version": result.get("version_hash"),
                 "citation_id": citation_identity(request["mission_id"], request["result_id"],
                                                  request["receipt_id"], index)}
+
+    async def storage_usage(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``orchestration_storage_get``: cached disk usage of the task/session data,
+        re-measured on ``{"refresh": true}`` (throttled).  Works in every service state."""
+
+        refresh = body.get("refresh") is True
+        return await self._storage.get(refresh=refresh)
 
     def policy_status(self) -> dict[str, Any]:
         self._require()

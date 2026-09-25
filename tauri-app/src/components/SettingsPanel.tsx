@@ -12,7 +12,7 @@
  * through the control WS to the BillingLedger (S8). The DailyBudgetStatus
  * contract (snake_case fields) is frozen in types/messages.ts.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 
 import { Icon } from "./Icon";
@@ -211,6 +211,9 @@ export function SettingsPanel({
 
         {/* ================ 数据目录 (2026-05-21) ================ */}
         <DataDirSection />
+
+        {/* ================ 任务与会话数据 (2026-09-25 条目 7：只统计、只提醒，不删除) ================ */}
+        <StorageUsageSection getChannel={getChannel} />
 
         {/* ================ 关于与更新 (2026-06-05) ================ */}
         <UpdateSection />
@@ -921,6 +924,95 @@ export function isDataDirPreferenceNoop(
   return current.effective === target && current.preference === target;
 }
 
+// ---------------------------------------------------------------------------
+// 任务与会话数据（2026-09-25 主流程优化条目 7）
+//
+// 用户决定：任务里 Agent 的会话数据（聊天记录、检索索引、检查记录）永久保留供审计，
+// 不做自动回收、不做清理按钮。这里只显示占用，超过阈值（默认 5 GB）给一条提醒，
+// 引导用户去「数据目录」迁移到更大的磁盘。数字由后台统计（orchestration_storage_get）。
+// ---------------------------------------------------------------------------
+
+export interface StorageUsageData {
+  bytes: number;
+  measured_at_ms: number | null;
+  warn_bytes: number;
+  over_warn: boolean;
+  measured: boolean;
+  breakdown: { key: string; label: string; bytes: number }[];
+}
+
+export function buildStorageUsageMessage(requestId: string, refresh = false) {
+  return { type: "orchestration_storage_get", request_id: requestId, payload: refresh ? { refresh: true } : {} };
+}
+
+export function formatGb(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  return formatMb(bytes);
+}
+
+export function StorageUsageSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
+  const [data, setData] = useState<StorageUsageData | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pending = useRef<string | null>(null);
+  const counter = useRef(0);
+
+  const request = useCallback((refresh: boolean) => {
+    const ch = getChannel();
+    if (!ch) { setError("连接不可用"); return; }
+    const id = `storage-${Date.now()}-${++counter.current}`;
+    pending.current = id;
+    setBusy(true);
+    setError(null);
+    if (!ch.send(buildStorageUsageMessage(id, refresh))) { setBusy(false); setError("连接不可用，请求未发送"); }
+  }, [getChannel]);
+
+  useEffect(() => {
+    const ch = getChannel();
+    if (!ch) return;
+    const off = ch.onMessage((raw: IncomingMessage) => {
+      // 编排通道的应答不在 IncomingMessage 联合里（与 MissionTaskGraph 同样宽松读取）
+      const msg = raw as unknown as { type?: string; payload?: unknown };
+      if (msg.type !== "orchestration_storage_get_response") return;
+      const payload = (msg.payload ?? {}) as { ok?: boolean; request_id?: unknown; data?: StorageUsageData; error?: string };
+      if (payload.request_id !== pending.current) return;
+      setBusy(false);
+      if (payload.ok === false || !payload.data) { setError(payload.error ?? "读取失败"); return; }
+      setData(payload.data);
+    });
+    request(false);
+    return () => { off(); };
+  }, [getChannel, request]);
+
+  const over = !!data?.over_warn;
+  return (
+    <section style={sectionStyle} data-testid="storage-usage">
+      <h3 style={h3Style}>任务与会话数据</h3>
+      {over && data ? (
+        <div role="alert" data-testid="storage-usage-warning" style={{ ...hintStyle, color: dark.warning, border: `1px solid ${dark.warning}`, borderRadius: 6, padding: "6px 10px" }}>
+          已超过 {formatGb(data.warn_bytes)}。这些数据会一直保留，请到「数据目录」迁移到更大的磁盘。{" "}
+          <button type="button" style={{ ...btnStyle, marginLeft: 6 }} onClick={() => document.getElementById("settings-data-dir")?.scrollIntoView({ behavior: "smooth" })}>去数据目录</button>
+        </div>
+      ) : null}
+      <p style={hintStyle}>
+        {data ? (data.measured ? `任务与会话数据：${formatGb(data.bytes)}` : "任务与会话数据：尚未统计") : (error ?? "读取中…")}
+        （含聊天记录、检索索引和检查记录；用于审计，不会自动删除）
+      </p>
+      {data?.measured ? (
+        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, rowGap: 2, fontSize: 12, color: dark.textMuted }}>
+          {data.breakdown.map((row) => (<Fragment key={row.key}><div>{row.label}</div><div>{formatGb(row.bytes)}</div></Fragment>))}
+        </div>
+      ) : null}
+      <div>
+        <button type="button" data-testid="storage-usage-refresh" style={btnStyle} disabled={busy} onClick={() => request(true)}>
+          {busy ? "统计中…" : "重新统计"}
+        </button>
+        {error && data ? <span style={{ ...hintStyle, marginLeft: 8 }}>{error}</span> : null}
+      </div>
+    </section>
+  );
+}
+
 function formatMb(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
@@ -1086,7 +1178,7 @@ function DataDirSection() {
   }
 
   return (
-    <section style={sectionStyle}>
+    <section id="settings-data-dir" style={sectionStyle}>
       <h3 style={h3Style}>数据目录</h3>
       <p style={hintStyle}>
         Simple Harness 的聊天历史、配置、SQLite 数据库和设备 ID 都保存在这里。
