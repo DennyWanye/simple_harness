@@ -149,16 +149,12 @@ async def download_file(
         return _error("destination_parent_missing", "destination parent does not exist")
     context = legacy_execution_context(args, task_id, execution_context)
     scope = context.write_scope_root or context.workspace
-    if scope:
-        try:
-            scope_root = Path(scope).expanduser().resolve(strict=True)
-        except OSError as exc:
-            return _error("invalid_write_scope", str(exc))
-        if not _within(destination, scope_root):
-            return _error(
-                "path_outside_write_scope",
-                "download destination must be inside the active write scope",
-            )
+    # 2026-09-26：下载目标可以在工作区外；只有受保护的核心文件要用户授权。
+    from agent.write_scope import write_scope_check as _ws_check
+
+    _violation = _ws_check(str(destination), scope_root=scope)
+    if _violation is not None:
+        return _error("protected_path", _violation)
     if destination.exists() and not overwrite:
         return _error("destination_exists", "destination already exists")
 

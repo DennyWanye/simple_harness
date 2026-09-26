@@ -207,30 +207,6 @@ async def test_grep_on_a_directory_path_still_walks_the_tree(tmp_path: Path) -> 
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_a_file_path_outside_every_bound_root_never_reaches_the_handler(
-    tmp_path: Path,
-) -> None:
-    env = await _routed(tmp_path)
-    outside = tmp_path / "elsewhere"
-    outside.mkdir()
-    secret = outside / "secret.md"
-    secret.write_text(f"{ANCHOR}\n", encoding="utf-8")
-
-    rejected = await env.gate.verify(
-        _context("call-out"),
-        "grep",
-        call_id=CallId("call-out"),
-        arguments={"path": str(secret), "pattern": ANCHOR},
-    )
-    assert rejected is not None
-    assert rejected.error_code == READ_OUTSIDE_REASON
-    # 被拒的调用拿不到根：handler 永远跑不起来。
-    with pytest.raises(RuntimeError, match="workspace_read_root_unverified"):
-        async with env.gate.execution_scope(
-            _context("call-out"), "grep", call_id=CallId("call-out")
-        ):
-            pass
 
 
 # --------------------------------------------------------------------------
@@ -367,3 +343,6 @@ def test_the_failure_log_reason_keeps_the_exception_class(tmp_path: Path) -> Non
     reason = product_tools.failure_log_reason(raw)
     assert reason.startswith("re.error")
     assert "/" not in reason.split(":")[0]
+
+
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

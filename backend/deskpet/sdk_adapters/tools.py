@@ -349,6 +349,22 @@ class ProductToolsAdapter(ToolRegistry):
         ):
             raise SdkToolExecutorCatalogUnavailable(name)
 
+    def run_session_and_root(self, run_id: object) -> tuple[str, Any]:
+        """(session id, workspace root Path | None) of a Run, for the protected-path
+        checkpoint.  Unknown Runs get an empty session (grants never match)."""
+
+        from pathlib import Path
+
+        resolve = getattr(self._run_authorities, "resolve", None)
+        try:
+            authority = resolve(run_id) if callable(resolve) else None
+        except Exception:  # noqa: BLE001 - an unknown Run just gets no grants
+            authority = None
+        if authority is None:
+            return "", None
+        root = getattr(getattr(authority, "task_work_context", None), "workspace_root", None)
+        return str(getattr(authority, "session_id", "") or ""), (Path(str(root)) if root else None)
+
     def assert_workspace_current(self, run_id: object) -> None:
         resolve = getattr(self._run_authorities, "resolve", None)
         if not callable(resolve):
@@ -586,9 +602,46 @@ class ProductEffectExecutor(EffectExecutor):
         await ingress.commit_fact(task_scope_id=scope[0], subject=scope[1], fact=fact)
 
     async def execute(self, **kwargs: Any):
+        """Central protected-path checkpoint, then the gated dispatch.
+
+        2026-09-26 user decision (plans/2026-09-26-permission-open-by-default):
+        every path is open except the protected core files.  A call naming one
+        without a grant is refused **at once** (the Run never waits) and a card
+        asks the user in the session window; a granted call dispatches with the
+        path cleared so the per-tool checks agree."""
+
         context = kwargs.get("context")
         if not isinstance(context, ToolContext):
             raise TypeError("ProductEffectExecutor requires ToolContext")
+        call = kwargs.get("call")
+        cleared: list[Any] = []
+        if isinstance(call, ToolCall) and self._is_first_occurrence(kwargs):
+            from deskpet.permissions import protected_paths
+
+            session_id, base = self._registry.run_session_and_root(context.run_id)
+            refusal, cleared = await protected_paths.check_call(
+                session_id,
+                call.name,
+                dict(thaw_json(call.arguments)),
+                base=base,
+                extra_allowed=[base] if base is not None else [],
+            )
+            if refusal is not None:
+                logger.warning(
+                    "tool.denied",
+                    extra={"tool": call.name, "reason": "protected_path_requires_user", "path": "protected_paths"},
+                )
+                return EffectExecution(
+                    effect=None,
+                    result=ToolResult.rejected(call.call_id, "protected_path_requires_user", refusal),
+                )
+        from deskpet.permissions.protected_paths import dispatch_clearance
+
+        with dispatch_clearance(cleared):
+            return await self._execute_gated(**kwargs)
+
+    async def _execute_gated(self, **kwargs: Any):
+        context = kwargs["context"]
         gated = self._is_first_occurrence(kwargs)
         if self._effect_gate is not None and gated:
             # S5b EffectGate: re-verify the TaskExecutionEnvelope against the

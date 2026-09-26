@@ -151,7 +151,10 @@ def resolve_for_read(p: str | os.PathLike[str]) -> Optional[Path]:
     if not p:
         return None
     target = _norm(p)
-    if not is_authorized(target):
+    # 2026-09-26：不再要求用户先用选择框授权；受保护的核心文件（凭证、密钥）除外。
+    from deskpet.permissions.protected_paths import guard
+
+    if guard(target, "read") is not None:
         return None
     if not target.exists():
         return None
@@ -209,35 +212,22 @@ def resolve_for_write(
     if not p:
         return _default_output_path(default_prefix, default_suffix, default_kind)
 
-    target = _norm(p)
-    if is_system_path(target):
-        raise PathError(
-            f"refusing to write into a system directory: {target}"
-        )
+    raw = Path(p).expanduser()
+    if not raw.is_absolute():
+        # 相对路径按工作区解析，不落进后端进程目录（2026-09-26 挑战意见）
+        from agent.write_scope import resolve_workspace_root
 
-    parent = target.parent
-    temp = _temp_dir()
-    in_temp = parent == temp or _is_under(parent, temp)
-    in_app_output = False
-    try:
-        from paths import output_dir  # type: ignore[import-not-found]
+        raw = resolve_workspace_root() / raw
+    target = _norm(raw)
+    # 2026-09-26 用户决定：输出位置不再限定为临时/输出/已授权目录；受保护的核心
+    # 文件（凭证、本应用自身、系统目录）要用户在会话里授权。
+    from deskpet.permissions.protected_paths import guard
 
-        in_app_output = _is_under(parent, output_dir())
-    except Exception:  # noqa: BLE001
-        pass
-    if (
-        in_temp
-        or in_app_output
-        or is_authorized(parent)
-        or is_authorized(target)
-    ):
-        parent.mkdir(parents=True, exist_ok=True)
-        return target
-
-    raise PathError(
-        "output directory is not authorized — ask the user to pick a "
-        f"destination folder via the file picker first: {parent}"
-    )
+    violation = guard(target, "write")
+    if violation is not None:
+        raise PathError(violation)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
 
 
 def _is_under(child: Path, parent: Path) -> bool:

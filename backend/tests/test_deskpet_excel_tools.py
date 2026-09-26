@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import os
+
 import pytest
 
 from deskpet.tools import office_paths as op
@@ -113,6 +115,7 @@ def test_t1_9_no_output_path_goes_to_temp():
     Path(r["path"]).unlink(missing_ok=True)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows system roots")
 def test_t1_10_system_path_refused():
     r = xl.excel_create(
         {"sheets": [{"name": "S", "rows": [["a"]]}]},

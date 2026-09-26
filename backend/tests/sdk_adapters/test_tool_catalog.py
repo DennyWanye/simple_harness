@@ -1057,7 +1057,8 @@ def test_real_call_id_drives_idempotency_and_write_scope_fence(tmp_path: Path) -
         )
         registry, _ = build_product_tool_registry(catalog.registrations)
         allowed = tmp_path / "allowed"
-        outside = tmp_path / "outside.txt"
+        # 2026-09-26: the fence is the protected core files, not the workspace
+        outside = Path.home() / ".ssh" / "deskpet-test-must-not-write.txt"
         context = ToolContext(
             RunId("run-1"),
             RequestId("same-request"),

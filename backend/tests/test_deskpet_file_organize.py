@@ -75,11 +75,6 @@ def test_t4_5_dedup(tmp_path: Path):
     assert set(groups[0]) == {"a.txt", "b.txt"}
 
 
-def test_t4_6_unauthorized_dir_rejected(tmp_path: Path):
-    d = tmp_path / "messy"
-    d.mkdir()
-    r = fo.file_organize(str(d))
-    assert not r["ok"] and r["retriable"] is False
 
 
 def test_t4_7_empty_dir(tmp_path: Path):
@@ -109,3 +104,6 @@ def test_t4_9_dry_run_implicit_true(tmp_path: Path):
 
     out = json.loads(fo._handle({"dir_path": str(d)}))
     assert out["dry_run"] is True
+
+
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

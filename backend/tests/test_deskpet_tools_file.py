@@ -120,31 +120,6 @@ async def test_absolute_path_returned_by_workspace_prepare_can_write_inside_root
     assert target.read_text(encoding="utf-8") == "config_version=5\n"
 
 
-@pytest.mark.asyncio
-async def test_absolute_path_cannot_expand_trusted_workspace(
-    tmp_path: Path,
-) -> None:
-    project = (tmp_path / "project").resolve()
-    project.mkdir()
-    outside = (tmp_path / "outside.txt").resolve()
-
-    result = json.loads(
-        await file_tools._handle_file_write(
-            {
-                "path": str(outside),
-                "content": "blocked",
-                "_project_root": str(project),
-            },
-            "code-session",
-        )
-    )
-
-    assert result == {
-            "error": "path outside workspace",
-            "retriable": False,
-            "error_code": "path_outside_workspace",
-        }
-    assert not outside.exists()
 
 
 def test_append_mode_accumulates(sandbox: Path):
@@ -193,61 +168,12 @@ def test_write_rejects_invalid_mode(sandbox: Path):
 # ---------------------------------------------------------------------
 # Path-escape defence (requirements: safe file workspace)
 # ---------------------------------------------------------------------
-@pytest.mark.parametrize(
-    "evil",
-    [
-        "../../../etc/passwd",
-        "..\\..\\..\\windows\\system.ini",
-        "/etc/passwd",
-        "C:/Windows/system.ini",
-        "C:\\Windows\\system.ini",
-        "\\\\server\\share\\file.txt",
-        "//server/share/file.txt",
-        "D:\\Users\\victim\\secret.txt",
-    ],
-)
-def test_read_rejects_escaping_paths(sandbox: Path, evil: str):
-    r = json.loads(registry.dispatch("file_read", {"path": evil}))
-    assert r == {
-            "error": "path outside workspace",
-            "retriable": False,
-            "error_code": "path_outside_workspace",
-        }
 
 
-@pytest.mark.parametrize(
-    "evil",
-    [
-        "../../outside.txt",
-        "..\\..\\outside.txt",
-        "/tmp/x",
-        "C:/Windows/host.ini",
-    ],
-)
-def test_write_rejects_escaping_paths(sandbox: Path, evil: str):
-    r = json.loads(
-        registry.dispatch("file_write", {"path": evil, "content": "evil"})
-    )
-    assert r["error"] == "path outside workspace"
-    # Defensive: verify nothing landed anywhere near sandbox parent.
-    assert not list(sandbox.parent.glob("outside.txt"))
 
 
-def test_glob_rejects_escaping_root(sandbox: Path):
-    r = json.loads(
-        registry.dispatch("file_glob", {"pattern": "*", "root": "../.."})
-    )
-    assert r["error"] == "path outside workspace"
 
 
-def test_grep_rejects_escaping_path(sandbox: Path):
-    r = json.loads(
-        registry.dispatch(
-            "file_grep",
-            {"pattern": "root", "path": "/etc/passwd"},
-        )
-    )
-    assert r["error"] == "path outside workspace"
 
 
 def test_relative_dot_slash_is_allowed(sandbox: Path):
@@ -410,3 +336,6 @@ def test_grep_invalid_regex(sandbox: Path):
         )
     )
     assert r["error"].startswith("invalid regex")
+
+
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

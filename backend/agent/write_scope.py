@@ -86,6 +86,7 @@ def write_scope_check(
     path: str,
     *,
     scope_root: Optional[Path | str],
+    op: str = "write",
 ) -> Optional[str]:
     """校验单个写盘目标 ``path`` 是否在 ``scope_root`` 内。
 
@@ -99,19 +100,17 @@ def write_scope_check(
     ``scope_root is None`` 是 Strangler-Fig 回退点：chat handler 不注入
     ``_write_scope_root`` 时所有写盘工具读到 None → 永不拦。
     """
-    if scope_root is None or scope_root == "":
-        return None
+    # 2026-09-26 用户决定（plans/2026-09-26-permission-open-by-default）：边界不再是
+    # 工作区，而是受保护核心文件清单。工作区外的普通路径放行；受保护路径返回说明
+    # （中央检查点已放行的除外，见 deskpet.permissions.protected_paths.guard）。
     if not path or not isinstance(path, str):
         # 没有 path 的调用交给工具自身的 path-required 校验，这里不插手。
         return None
-    root = Path(scope_root) if not isinstance(scope_root, Path) else scope_root
-    candidate = Path(path)
-    if not candidate.is_absolute():
-        # 相对路径按 scope_root 解析（companion 默认 cwd 视作 workspace）。
-        candidate = root / candidate
-    if _is_within(candidate, root):
-        return None
-    return _VIOLATION_MSG
+    from deskpet.permissions.protected_paths import guard
+
+    base = Path(scope_root) if scope_root else None
+    return guard(path, "read" if op == "read" else "write", base=base,
+                 extra_allowed=[scope_root] if scope_root else [])
 
 
 # ---------------------------------------------------------------------------
@@ -188,9 +187,12 @@ def shell_write_scope_check(
     只检查命令里**写盘类**操作的目标路径；任何一个越界 → 拒绝整条命令。
     读类命令 / 无写目标 → 放行。``scope_root=None`` → 永不拦（回退）。
     """
-    if scope_root is None or scope_root == "":
-        return None
     for p in _extract_paths_from_command(command or ""):
-        if write_scope_check(p, scope_root=scope_root) is not None:
-            return _VIOLATION_MSG
+        violation = write_scope_check(p, scope_root=scope_root)
+        if violation is not None:
+            return violation
     return None
+
+
+# The central protected-path checkpoint reads a shell command's write targets too.
+extract_shell_write_targets = _extract_paths_from_command

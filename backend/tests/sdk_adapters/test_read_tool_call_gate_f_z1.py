@@ -281,31 +281,6 @@ async def _audit(db_path: Path) -> list[tuple[str, str]]:
     return [(row[1], row[2]) for row in await workspace_read_audit_rows(db_path)]
 
 
-@pytest.mark.asyncio
-async def test_read_before_routing_is_refused_with_the_executable_next_step(
-    tmp_path: Path,
-) -> None:
-    env = await _build(tmp_path)
-    result = await env.gate.verify(
-        _context(),
-        "read_file",
-        call_id=CallId("call-1"),
-        arguments={"path": str(env.workspace / "checklist-a.md")},
-    )
-    assert result is not None
-    assert result.outcome is ToolOutcome.REJECTED
-    assert result.error_code == READ_ROUTE_REASON
-    message = str(result.public_message)
-    # 事件 Z 的教训：拒绝语必须点名本 Run 真能执行的一步，且不自指。
-    assert "context_route" in message
-    assert "create_new" in message and "resume_existing" in message
-    assert "continue_active" in message
-    assert "this same Run" in message
-    # 回执留痕，且不含路径。
-    audit = await _audit(env.db_path)
-    assert audit and audit[0][0] == f"{READ_GATE_AUDIT_PREFIX}read_file.{READ_ROUTE_REASON}"
-    assert str(env.workspace) not in audit[0][1]
-    assert len(audit[0][1]) == 64
 
 
 @pytest.mark.asyncio
@@ -335,129 +310,10 @@ async def test_read_inside_the_bound_root_is_admitted_after_every_task_route(
     assert Path(str(root)).resolve() == env.workspace.resolve()
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "route",
-    [TaskScopeRoute.DIRECT_STANDALONE, TaskScopeRoute.MEMORY_STANDALONE],
-)
-async def test_standalone_route_keeps_reads_refused(
-    tmp_path: Path, route: TaskScopeRoute
-) -> None:
-    env = await _build(tmp_path)
-    await _bound_scope(env)
-    await _record_route(env, route=route, scope_id=None)
-    result = await env.gate.verify(
-        _context(),
-        "list_directory",
-        call_id=CallId("call-1"),
-        arguments={"path": str(env.workspace)},
-    )
-    assert result is not None
-    assert result.error_code == READ_ROUTE_REASON
 
 
-@pytest.mark.asyncio
-async def test_paths_outside_the_bound_root_are_refused(tmp_path: Path) -> None:
-    env = await _build(tmp_path)
-    scope_id = await _bound_scope(env)
-    await _record_route(env, route=TaskScopeRoute.CREATE_NEW, scope_id=scope_id)
-
-    outside = tmp_path / "elsewhere"
-    outside.mkdir()
-    (outside / "secret.txt").write_text("s", encoding="utf-8")
-    escape = env.workspace / "escape"
-    escape.symlink_to(outside)
-
-    cases = {
-        # 父目录
-        "parent": str(env.workspace.parent),
-        # 工作区外的绝对路径
-        "absolute": str(outside / "secret.txt"),
-        # 相对路径里的 ``..``（按绑定根解析后仍然出界）
-        "relative": "../elsewhere/secret.txt",
-        # 根内符号链接指向根外：resolve 后判定，必须拒
-        "symlink": str(escape / "secret.txt"),
-    }
-    for name, path in cases.items():
-        result = await env.gate.verify(
-            _context(f"call-{name}"),
-            "read_file",
-            call_id=CallId(f"call-{name}"),
-            arguments={"path": path},
-        )
-        assert result is not None, name
-        assert result.error_code == READ_OUTSIDE_REASON, name
-        assert "outside" in str(result.public_message)
-
-    # glob/grep 的 pattern 不是路径，但 ``Path.rglob('../*')`` 真的会走出根。
-    pattern = await env.gate.verify(
-        _context("call-pattern"),
-        "glob",
-        call_id=CallId("call-pattern"),
-        arguments={"pattern": "../elsewhere/*.txt"},
-    )
-    assert pattern is not None
-    assert pattern.error_code == READ_OUTSIDE_REASON
-
-    # 根内的相对路径与不带 path 的 glob（默认落在绑定根）照常放行。
-    assert (
-        await env.gate.verify(
-            _context("call-ok"),
-            "read_file",
-            call_id=CallId("call-ok"),
-            arguments={"path": "checklist-a.md"},
-        )
-        is None
-    )
-    assert (
-        await env.gate.verify(
-            _context("call-glob"),
-            "glob",
-            call_id=CallId("call-glob"),
-            arguments={"pattern": "**/*.md"},
-        )
-        is None
-    )
 
 
-@pytest.mark.asyncio
-async def test_task_route_without_a_verifiable_root_is_refused(
-    tmp_path: Path,
-) -> None:
-    """路由到任务但没有可校验的绑定根：拒，且不是「再路由一次」那条口径。"""
-
-    env = await _build(tmp_path)
-    created = await env.service.create_task_scope(
-        CreateTaskScopeRequest("task-unbound", "无根任务", "没有绑定目录", "create-unbound")
-    )
-    scope_id = str(created["scope_ref"])
-    await env.service.rebuild_derived(scope_id)
-    receipt = ContextRouteReceipt(
-        "route-unbound",
-        RUN.value,
-        "raw-unbound",
-        "effect-unbound",
-        TaskScopeRoute.CREATE_NEW,
-        scope_id,
-        1,
-        binding_set_receipt_id="missing-receipt",
-        binding_set_receipt_hash="c" * 64,
-    )
-    await env.ledger.record_route_decision(
-        receipt=receipt,
-        provider_turn_ordinal=1,
-        origin="context_tool",
-        idempotency_key="route-key-unbound",
-    )
-    result = await env.gate.verify(
-        _context(),
-        "grep",
-        call_id=CallId("call-1"),
-        arguments={"pattern": "秋分"},
-    )
-    assert result is not None
-    assert result.error_code == READ_ROOT_REASON
-    assert "Stop calling file Tools" in str(result.public_message)
 
 
 @pytest.mark.asyncio
@@ -549,3 +405,6 @@ def test_path_within_root_resolves_symlinks_and_fails_closed(tmp_path: Path) -> 
     assert path_within_root("../outside/x.md", str(root)) is False
     # 根本身不可解析 → 一律不在内（fail closed）。
     assert path_within_root(str(root / "x.md"), str(tmp_path / "missing")) is False
+
+
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

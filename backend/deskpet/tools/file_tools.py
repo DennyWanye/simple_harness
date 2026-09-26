@@ -173,53 +173,43 @@ def _context_workspace_root(context: ToolExecutionContext) -> Path:
 
 
 def _resolve_within_workspace(
-    path_str: str, workspace: str | Path | None = None
+    path_str: str, workspace: str | Path | None = None, op: str = "write"
 ) -> Path | None:
-    """Resolve ``path_str`` against the workspace. Return a Path inside
-    the workspace on success, or None if the path escapes / is malformed.
+    """Resolve ``path_str`` for a file tool; ``None`` when malformed or protected.
 
-    Keep the resolution conservative: we use ``Path.resolve()`` followed
-    by ``relative_to(root)`` — if it raises ``ValueError``, the resolved
-    absolute path is NOT a descendant of root, so we reject. This
-    handles ``..``, symlinks, and drive-letter escapes uniformly.
+    2026-09-26 user decision (plans/2026-09-26-permission-open-by-default): the
+    boundary is no longer the workspace.  Relative paths still resolve against
+    the workspace; absolute and ``~`` paths anywhere are accepted; only the
+    protected core files (credentials, the app itself, system directories) are
+    refused unless the central checkpoint cleared them for this dispatch.
     """
-    if not isinstance(path_str, str) or not path_str:
-        return None
+    return _resolve_for_tool(path_str, workspace, op)[0]
 
-    # Refuse explicit absolute paths up front — even if they happen to
-    # point inside the workspace, the agent should never be typing raw
-    # absolute disk paths. Catches ``C:\\Windows\\...``, ``/etc/passwd``,
-    # UNC ``\\\\server\\share`` etc.
+
+def _resolve_for_tool(
+    path_str: str, workspace: str | Path | None, op: str
+) -> tuple[Path | None, str | None]:
+    if not isinstance(path_str, str) or not path_str:
+        return None, None
     root = _workspace_root(workspace)
-    # ``workspace_prepare`` intentionally returns an absolute trusted root.
-    # Accept a model joining that root with a filename, but keep the resolved
-    # descendant check below as the authority boundary.  Absolute paths,
-    # traversal and symlinks that escape the trusted root remain rejected.
-    # ``~`` 必须在后代校验之前展开。不展开时 Path("~/x") 不是绝对路径，
-    # 会被当作相对路径拼成 ``<root>/~/x``——既通过了 relative_to(root) 校验，
-    # 又指向一个不存在的文件，模型只会收到 "file not found" 而无从改正。
-    # 实测：同一条指令用 ``~/SimpleHarnessWorkSpace/...`` 表述时 file_read
-    # 连挂 5 次，整轮无副作用而 Run 仍 SETTLED
-    # （.local-test-evidence/real-ui-channel/20260904T001049）。
-    # 展开后它成为绝对路径，下面的 relative_to(root) 依旧是唯一边界权威：
-    # 指向工作区外的 ``~`` 路径仍然被拒，本改动不放宽任何边界。
     try:
         p = Path(path_str).expanduser()
     except RuntimeError:
-        # ``~nosuchuser/...``：退回原串，走下面的后代校验拒绝，不抛异常。
-        p = Path(path_str)
-    if (
-        path_str.startswith(("\\\\", "//"))
-        or re.match(r"^[A-Za-z]:[\\/]", path_str)
-        or ".." in re.split(r"[\\/]+", path_str)
-    ):
-        return None
+        return None, None
     candidate = p.resolve() if p.is_absolute() else (root / p).resolve()
-    try:
-        candidate.relative_to(root)
-    except ValueError:
-        return None
-    return candidate
+    from deskpet.permissions.protected_paths import guard
+
+    violation = guard(candidate, "read" if op == "read" else "write", extra_allowed=[root])
+    if violation is not None:
+        return None, violation
+    return candidate, None
+
+
+def _path_error(path_str: str, workspace: str | Path | None, op: str) -> str:
+    violation = _resolve_for_tool(path_str, workspace, op)[1]
+    if violation:
+        return _err(violation, retriable=False, code="protected_path")
+    return _err("invalid path", retriable=False, code="invalid_path")
 
 
 def _err(msg: str, retriable: bool = False, code: str = "") -> str:
@@ -355,9 +345,9 @@ async def _handle_file_read(
     # 工作记忆（registry dispatch 对 async handler 直接 await）。
     context = legacy_execution_context(args, task_id, execution_context)
     workspace = _context_workspace_root(context)
-    target = _resolve_within_workspace(str(args.get("path", "")), workspace)
+    target = _resolve_within_workspace(str(args.get("path", "")), workspace, "read")
     if target is None:
-        return _err("path outside workspace", retriable=False, code="path_outside_workspace")
+        return _path_error(str(args.get("path", "")), workspace, "read")
     offset = int(args.get("offset", 0) or 0)
     limit = int(args.get("limit", 2000) or 2000)
     if offset < 0 or limit < 0:
@@ -433,9 +423,9 @@ async def _handle_file_write(
     # WI-M1.6: handler 改 async —— 成功写后 await record_action 记工作记忆。
     context = legacy_execution_context(args, task_id, execution_context)
     workspace = _context_workspace_root(context)
-    target = _resolve_within_workspace(str(args.get("path", "")), workspace)
+    target = _resolve_within_workspace(str(args.get("path", "")), workspace, "write")
     if target is None:
-        return _err("path outside workspace", retriable=False, code="path_outside_workspace")
+        return _path_error(str(args.get("path", "")), workspace, "write")
     content = args.get("content", "")
     if not isinstance(content, str):
         return _err("content must be a string", retriable=False)
@@ -504,9 +494,9 @@ def _handle_file_glob(
     root_rel = str(args.get("root", ".") or ".")
     context = legacy_execution_context(args, task_id, execution_context)
     workspace = _context_workspace_root(context)
-    root = _resolve_within_workspace(root_rel, workspace)
+    root = _resolve_within_workspace(root_rel, workspace, "read")
     if root is None:
-        return _err("path outside workspace", retriable=False, code="path_outside_workspace")
+        return _path_error(root_rel, workspace, "read")
     if not root.exists():
         return json.dumps({"matches": [], "count": 0})
     matches: list[str] = []
@@ -579,9 +569,9 @@ def _handle_file_grep(
         return _err("pattern is required", retriable=False)
     context = legacy_execution_context(args, task_id, execution_context)
     workspace = _context_workspace_root(context)
-    target = _resolve_within_workspace(str(args.get("path", "")), workspace)
+    target = _resolve_within_workspace(str(args.get("path", "")), workspace, "read")
     if target is None:
-        return _err("path outside workspace", retriable=False, code="path_outside_workspace")
+        return _path_error(str(args.get("path", "")), workspace, "read")
     max_matches = int(args.get("max_matches", 50) or 50)
     if max_matches <= 0:
         return _err("max_matches must be positive", retriable=False)

@@ -83,6 +83,11 @@ def _iter_files(root: Path, file_glob: str | None) -> tuple[list[Path], int]:
         if not within_root(p, root):
             escaped += 1
             continue
+        # 2026-09-26：读取已放开到任务根之外，遍历时跳过凭证类文件（未经授权）
+        from deskpet.permissions.protected_paths import is_credential
+
+        if is_credential(p):
+            continue
         try:
             if p.stat().st_size > _MAX_FILE_BYTES:
                 continue
@@ -152,7 +157,9 @@ def grep_tool(
     if kind == "file":
         # 单文件目标：这个文件**就是**搜索集，根即它自身，越根无从谈起。
         root = target
-        files = [target] if glob_name_matches(target.name, file_glob) else []
+        from deskpet.permissions.protected_paths import is_credential
+
+        files = [target] if glob_name_matches(target.name, file_glob) and not is_credential(target) else []
         escaped = 0
         truncated_files = False
     else:

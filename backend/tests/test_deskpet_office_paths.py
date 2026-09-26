@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import os
+
 import pytest
 
 from deskpet.tools import office_paths as op
@@ -34,10 +36,6 @@ def test_t0_3_dir_authorization_is_recursive(tmp_path: Path):
     assert op.is_authorized(tmp_path / "sub" / "deep.docx")
 
 
-def test_t0_4_resolve_for_read_unauthorized_none(tmp_path: Path):
-    f = tmp_path / "a.docx"
-    f.write_text("x")
-    assert op.resolve_for_read(f) is None
 
 
 def test_t0_5_resolve_for_read_authorized(tmp_path: Path):
@@ -48,6 +46,7 @@ def test_t0_5_resolve_for_read_authorized(tmp_path: Path):
     assert resolved is not None and resolved.is_absolute()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows system roots")
 def test_t0_6_write_into_system_dir_refused(tmp_path: Path):
     op.authorize_path("C:\\Windows")
     with pytest.raises(op.PathError):
@@ -91,3 +90,6 @@ def test_t0_extra_resolve_write_authorized_dir(tmp_path: Path):
     target = tmp_path / "new" / "out.xlsx"
     resolved = op.resolve_for_write(target, default_prefix="d", default_suffix=".xlsx")
     assert resolved.parent.exists()
+
+
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

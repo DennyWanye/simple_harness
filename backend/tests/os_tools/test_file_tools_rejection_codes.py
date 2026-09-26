@@ -44,9 +44,6 @@ def test_directory_gets_not_a_regular_file_code(ws: Path) -> None:
     assert out["error_code"] == "not_a_regular_file"
 
 
-def test_outside_workspace_gets_path_outside_workspace_code(ws: Path) -> None:
-    out = _read("~/../../etc/passwd")
-    assert out["error_code"] == "path_outside_workspace"
 
 
 def test_negative_offset_gets_invalid_range_code(ws: Path) -> None:
@@ -70,3 +67,6 @@ def test_success_still_returns_content(ws: Path) -> None:
     out = _read("ok.md")
     assert out.get("content") == "hi"
     assert "error_code" not in out
+
+
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

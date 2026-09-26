@@ -3304,6 +3304,10 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
 async def lifespan(app: FastAPI):
     """Preload models on startup (best-effort — failures logged but don't block)."""
     logger.info("preloading models...")
+    # 2026-09-26 受保护核心文件：会话卡片走控制通道全局广播（不依赖面板是否可见）
+    from deskpet.permissions import protected_paths as _protected_paths
+
+    _protected_paths.set_notifier(_broadcast_control)
     from llm.resolution import ProviderRoutingReadiness
 
     global _provider_registry, _session_creation_service
@@ -14564,6 +14568,25 @@ async def control_channel(ws: WebSocket):
                         },
                     }
                 )
+
+            elif msg_type == "protected_path_decision":
+                # 2026-09-26：用户在会话卡片上对受保护核心文件的决定。
+                # 运行从未等待这张卡片；这里只记授权，模型重试时放行。
+                from deskpet.permissions import protected_paths as _protected_paths
+
+                payload = raw.get("payload", {}) or {}
+                decision = str(payload.get("decision") or "")
+                if decision not in {"allow_once", "allow_session", "deny"}:
+                    decision = "deny"
+                applied = _protected_paths.decide(str(payload.get("request_id") or ""), decision)
+                await ws.send_json({
+                    "type": "protected_path_decision_applied",
+                    "payload": {
+                        "request_id": payload.get("request_id"),
+                        "decision": decision,
+                        "found": applied is not None,
+                    },
+                })
 
             elif msg_type == "external_wait_response":
                 payload = raw.get("payload", {}) or {}

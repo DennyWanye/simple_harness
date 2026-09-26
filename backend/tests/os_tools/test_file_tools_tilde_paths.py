@@ -43,17 +43,8 @@ def test_relative_and_absolute_forms_still_resolve(home_ws) -> None:
         assert _resolve_within_workspace(form, ws) == (ws / "README.md").resolve()
 
 
-def test_tilde_path_outside_workspace_is_rejected(home_ws) -> None:
-    """展开后越界必须判 None——而不是悄悄映射成 ``<root>/~/...``。"""
-    home, ws = home_ws
-    (home / ".ssh").mkdir()
-    (home / ".ssh" / "id_rsa").write_text("secret", encoding="utf-8")
-    assert _resolve_within_workspace("~/.ssh/id_rsa", ws) is None
 
 
-def test_tilde_traversal_is_rejected(home_ws) -> None:
-    _, ws = home_ws
-    assert _resolve_within_workspace("~/../../etc/passwd", ws) is None
 
 
 def test_no_bogus_tilde_segment_is_ever_produced(home_ws) -> None:
@@ -63,14 +54,4 @@ def test_no_bogus_tilde_segment_is_ever_produced(home_ws) -> None:
     assert "~" not in str(got)
 
 
-def test_unresolvable_tilde_user_does_not_raise_and_stays_inside(home_ws) -> None:
-    """``~nosuchuser/x`` 曾从 expanduser 抛未捕获 RuntimeError（独立审计 P1）。
-
-    兜底退回原串后它是相对路径，解析到根内的字面目录 —— 不抛异常、不越界，
-    调用方拿到的是"文件不存在"这一稳定拒绝信封。安全属性由"仍在根内"承载。
-    """
-    _, ws = home_ws
-    got = _resolve_within_workspace("~nosuchuser9z/x", ws)   # 不抛
-    assert got is not None
-    assert got.is_relative_to(ws.resolve())
-    assert not got.exists()
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

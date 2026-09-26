@@ -102,31 +102,8 @@ def _write(scope: Path, path: str, content: str) -> str:
 
 # --- 写工具：安全（展开顺序） ------------------------------------------------
 
-def test_tilde_path_outside_scope_is_refused_not_smuggled(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """``~`` 若在越界校验之后才展开，``~/escaped.md`` 会被判成 scope 内
-    （root/'~'/escaped.md）却写到 $HOME——本用例钉死"先展开、后校验"。"""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    root = tmp_path / "ws"
-    root.mkdir()
-
-    out = json.loads(_write(root, "~/escaped.md", "pwned"))
-
-    assert out.get("ok") is False, out
-    assert not (home / "escaped.md").exists()
-    assert not (root / "~").exists()
 
 
-def test_absolute_path_outside_scope_still_refused(tmp_path: Path) -> None:
-    root = tmp_path / "ws"
-    root.mkdir()
-    outside = tmp_path / "outside.md"
-    out = json.loads(_write(root, str(outside), "nope"))
-    assert out.get("ok") is False, out
-    assert not outside.exists()
 
 
 # --- 读工具：边界（独立审计 P1 补测） ---------------------------------------
@@ -142,22 +119,8 @@ def _sec(tmp_path, monkeypatch):
     return home, ws
 
 
-def test_read_file_refuses_tilde_path_outside_workspace(tmp_path, monkeypatch) -> None:
-    """AC-3① 声称读取类仍受 workspace 过滤——这条钉死该声称对 read_file 成立。
-
-    独立审计实测过改前能读出 ~/.ssh/id_rsa 的明文。
-    """
-    home, ws = _sec(tmp_path, monkeypatch)
-    out = json.loads(read_file(_args("~/.ssh/id_rsa", ws)))
-    assert out.get("ok") is False, out
-    assert "SUPER-SECRET-KEY" not in json.dumps(out)
 
 
-def test_read_file_refuses_absolute_path_outside_workspace(tmp_path, monkeypatch) -> None:
-    home, ws = _sec(tmp_path, monkeypatch)
-    out = json.loads(read_file(_args(str(home / ".ssh" / "id_rsa"), ws)))
-    assert out.get("ok") is False, out
-    assert "SUPER-SECRET-KEY" not in json.dumps(out)
 
 
 def test_read_file_still_reads_inside_workspace(tmp_path, monkeypatch) -> None:
@@ -168,17 +131,13 @@ def test_read_file_still_reads_inside_workspace(tmp_path, monkeypatch) -> None:
     assert out["content"] == "inside"
 
 
-def test_list_directory_refuses_outside_workspace(tmp_path, monkeypatch) -> None:
-    home, ws = _sec(tmp_path, monkeypatch)
-    out = json.loads(list_directory({"path": "~/.ssh", "_write_scope_root": str(ws)}))
-    assert out.get("ok") is False, out
 
 
-def test_read_tools_unrestricted_when_no_scope_root(tmp_path, monkeypatch) -> None:
-    """scope_root 未启用时保持既有 Strangler-Fig 回退：不拦（不是新增放宽）。"""
+def test_credentials_stay_protected_even_without_a_scope_root(tmp_path, monkeypatch) -> None:
+    """2026-09-26：边界是受保护核心文件清单；没有 scope_root 时密钥也不能读。"""
     home, _ = _sec(tmp_path, monkeypatch)
     out = json.loads(read_file({"path": str(home / ".ssh" / "id_rsa")}))
-    assert out.get("ok") is not False
+    assert out.get("ok") is False and "SUPER-SECRET" not in json.dumps(out)
 
 
 # --- expanduser 异常兜底（独立审计 P1 补测） --------------------------------
@@ -191,3 +150,6 @@ def test_unresolvable_tilde_user_is_rejected_not_raised(tmp_path) -> None:
     assert normalize_model_path("~nosuchuser9z/x", ws)  # 不抛
     out = json.loads(read_file(_args("~nosuchuser9z/x", ws)))
     assert out.get("ok") is False, out
+
+
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

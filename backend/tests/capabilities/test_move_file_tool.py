@@ -75,21 +75,4 @@ def test_move_file_rejects_changed_source_and_collision(tmp_path: Path) -> None:
     assert destination.read_text(encoding="utf-8") == "existing"
 
 
-def test_move_file_enforces_both_sides_of_write_scope(
-    tmp_path: Path, tmp_path_factory
-) -> None:
-    source = tmp_path / "source.txt"
-    source.write_text("data", encoding="utf-8")
-    outside = tmp_path_factory.mktemp("outside") / "outside.txt"
-    result = json.loads(
-        move_file(
-            {
-                "source": str(source),
-                "destination": str(outside),
-                "expected_source_hash": hashlib.sha256(b"data").hexdigest(),
-            },
-            execution_context=_context(tmp_path),
-        )
-    )
-    assert result["error"]["code"] == "path_outside_write_scope"
-    assert source.exists()
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

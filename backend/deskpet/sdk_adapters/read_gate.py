@@ -695,18 +695,21 @@ class WorkspaceReadGate:
         bound, code = await self.bound_context(run_id.value)
         projected: str | None = None
         proposal_ref: str | None = None
+        # 2026-09-26 user decision (plans/2026-09-26-permission-open-by-default):
+        # reads are open outside the task's roots and without a route; only the
+        # protected core files ask, and that is the central checkpoint's job
+        # (deskpet.permissions.protected_paths.check_call).  The projected root
+        # is only the base for relative paths: the bound root when there is
+        # one, else the configured workspace.
         if code is None and bound is not None:
             projected, violation = read_target_violation(payload, bound.roots)
             if violation is not None:
-                kind, value = violation
-                if kind == "pattern":
-                    # A ``..`` glob/grep pattern names no directory, so it can
-                    # never become a binding candidate: refused as in F-Z1.
-                    code = READ_OUTSIDE_REASON
-                else:
-                    code, proposal_ref = await self._propose_binding(
-                        context, reject_call_id, tool_name, bound, value
-                    )
+                projected = bound.primary_root
+        else:
+            from agent.write_scope import resolve_workspace_root
+
+            code = None
+            projected = str(resolve_workspace_root())
         await self._audit(
             run_id.value,
             code or READ_GATE_ADMITTED_REASON,

@@ -456,29 +456,6 @@ def test_run_shell_normalizes_formatting_whitespace_around_trusted_cwd(
     assert captured["cwd"] == str(tmp_path.resolve())
 
 
-def test_run_shell_whitespace_normalization_does_not_expand_write_scope(
-    tmp_path: Path,
-) -> None:
-    from deskpet.tools.os_tools.run_shell import resolve_run_shell_cwd
-
-    workspace = tmp_path / "workspace"
-    outside = tmp_path / "outside"
-    workspace.mkdir()
-    outside.mkdir()
-    context = ToolExecutionContext(
-        scope_id="scope",
-        session_id="session",
-        request_id="request",
-        workspace=str(workspace),
-        write_scope_root=str(workspace),
-    )
-
-    with pytest.raises(ValueError, match="outside the trusted write scope"):
-        resolve_run_shell_cwd(
-            {"cwd": f"\n{outside}\n"},
-            context,
-            required=True,
-        )
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows process-tree regression")
@@ -679,3 +656,6 @@ def test_desktop_create_file_utf8(tmp_dir: Path, monkeypatch) -> None:
     p = Path(out["path"])
     assert p.read_text(encoding="utf-8") == "吃饭买菜"
     assert p.name == "购物.txt"
+
+
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

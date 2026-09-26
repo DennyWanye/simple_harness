@@ -141,12 +141,6 @@ def test_t2_9_edit_preserves_style(tmp_path: Path):
     assert "Heading 1" in heading.style.name
 
 
-def test_t2_10_edit_unauthorized_path_rejected(tmp_path: Path):
-    path = _make_doc(tmp_path, [{"type": "paragraph", "text": "x"}])
-    op.clear_authorizations()  # revoke
-    r = dt.doc_edit(path, [{"op": "replace", "find": "x", "replace": "y"}])
-    assert not r["ok"] and r["retriable"] is False
-    assert "office_pick_file" in r["error"]
 
 
 def test_t2_11_read_missing_file():
@@ -328,3 +322,6 @@ def test_t2_21_default_path_under_output_doc(tmp_path: Path, monkeypatch):
     assert p.parent.name == "Doc"
     assert p.parent.parent.name == "OutPut"
     p.unlink(missing_ok=True)
+
+
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

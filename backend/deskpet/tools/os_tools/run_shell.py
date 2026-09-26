@@ -455,15 +455,15 @@ def resolve_run_shell_cwd(
             path = Path(workspace).expanduser() / path
     resolved = path.resolve(strict=False)
 
-    if context.write_scope_root:
-        from agent.write_scope import write_scope_check as _write_scope_check
+    from agent.write_scope import write_scope_check as _write_scope_check
 
-        violation = _write_scope_check(
-            str(resolved),
-            scope_root=context.write_scope_root,
-        )
-        if violation is not None:
-            raise ValueError("run_shell cwd is outside the trusted write scope")
+    violation = _write_scope_check(
+        str(resolved),
+        scope_root=context.write_scope_root,
+        op="read",
+    )
+    if violation is not None:
+        raise ValueError(violation)
     return str(resolved)
 
 
@@ -643,10 +643,17 @@ def run_shell(
             ],
         )
     _scope_root = context.write_scope_root
-    if _scope_root:
+    if True:  # 2026-09-26: protected paths only, workspace or not
         from agent.write_scope import shell_write_scope_check as _shell_ws_check
 
         _violation = _shell_ws_check(command, scope_root=_scope_root)
+        if _violation is None:
+            from deskpet.permissions.protected_paths import credential_reads_in_command, guard
+
+            for _secret in credential_reads_in_command(command, Path(_scope_root) if _scope_root else None):
+                _violation = guard(_secret, "read")
+                if _violation is not None:
+                    break
         if _violation is not None:
             return _err(
                 _violation,

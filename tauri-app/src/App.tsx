@@ -23,6 +23,8 @@ import { useExternalWaitRequests } from "./hooks/useExternalWaitRequests";
 import { useClarificationRequests } from "./hooks/useClarificationRequests";
 import { useMissionsFeed } from "./stores/useMissionsFeed";
 import { ExternalWaitDialog } from "./components/ExternalWaitDialog";
+import { ProtectedPathCard } from "./components/ProtectedPathCard";
+import { useProtectedPathRequests } from "./hooks/useProtectedPathRequests";
 import { ApprovalCenterPanel } from "./components/ApprovalCenterPanel";
 import { ClarificationDialog } from "./components/ClarificationDialog";
 // WI-01/02 (beta-100): first-run onboarding wizard + in-app feedback.
@@ -613,6 +615,9 @@ function App() {
     useExternalWaitRequests(permissionChannel);
   const { current: clarificationCurrent, resolve: resolveClarification } =
     useClarificationRequests(permissionChannel);
+  // 2026-09-26 受保护核心文件的会话内申请：不挡操作的浮动卡片，运行从不等它。
+  const { queue: protectedPathQueue, decide: decideProtectedPath } =
+    useProtectedPathRequests(permissionChannel);
   // 任务编排常驻订阅（代码评审 P2-5）：侧栏角标与列表状态不依赖编排视图是否打开。
   useMissionsFeed(permissionChannel);
 
@@ -917,6 +922,7 @@ function App() {
         request={externalWaitCurrent}
         onComplete={completeExternalWait}
       />
+      <ProtectedPathCard queue={protectedPathQueue} onDecide={decideProtectedPath} />
       {/* WI-TG-2 — 审批聚合视图。BC：默认 enabled={false} → 不渲染，
           现有单弹窗路径不受影响。要开聚合 UX 把 prop 翻成 true。 */}
       <ApprovalCenterPanel channel={permissionChannel} enabled={false} />

@@ -60,9 +60,4 @@ def test_t5_4_non_image_rejected(tmp_path: Path):
     assert not r["ok"] and r["retriable"] is False
 
 
-def test_t5_5_unauthorized_rejected(tmp_path: Path):
-    img = tmp_path / "x.png"
-    _make_text_image(img, "TEST")
-    # not authorized
-    r = ocr.image_ocr(str(img))
-    assert not r["ok"] and r["retriable"] is False
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.

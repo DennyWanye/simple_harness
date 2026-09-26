@@ -60,12 +60,6 @@ def test_companion_relative_path_resolves_under_workspace(tmp_path: Path) -> Non
     assert write_scope_check("notes/today.md", scope_root=ws) is None
 
 
-def test_path_traversal_escape_rejected(tmp_path: Path) -> None:
-    """`../` 逃逸 workspace → 拒绝（resolve 后前缀校验）。"""
-    ws = tmp_path / "workspace"
-    ws.mkdir()
-    escape = str(ws / ".." / "secret.txt")
-    assert write_scope_check(escape, scope_root=ws) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -115,29 +109,6 @@ def test_scope_violation_message_text() -> None:
 # ---------------------------------------------------------------------------
 # 集成：write_file 工具读到 _write_scope_root 后拦越界写
 # ---------------------------------------------------------------------------
-def test_write_file_honors_injected_scope_root(tmp_path: Path) -> None:
-    """write_file 拿到 _write_scope_root（由 chat handler 经 session_context
-    注入）后，越界写返回 ok:false + 引导文案，且不创建文件。
-    """
-    from deskpet.tools.os_tools.write_file import write_file
-
-    ws = tmp_path / "workspace"
-    ws.mkdir()
-    target = tmp_path / "outside" / "evil.txt"
-
-    result = write_file(
-        {
-            "path": str(target),
-            "content": "x",
-            "_write_scope_root": str(ws),
-        }
-    )
-    payload = json.loads(result)
-    assert payload.get("ok") is False
-    combined = payload.get("error", "") + payload.get("hint", "")
-    assert "workspace" in combined
-    assert "工作区" in combined
-    assert not target.exists()  # 没有任何文件被建
 
 
 def test_write_file_inside_scope_root_succeeds(tmp_path: Path) -> None:
@@ -170,46 +141,8 @@ def test_write_file_no_scope_root_legacy_free_write(tmp_path: Path) -> None:
     assert target.exists()
 
 
-def test_edit_file_honors_injected_scope_root(tmp_path: Path) -> None:
-    from deskpet.tools.os_tools.edit_file import edit_file
-
-    ws = tmp_path / "workspace"
-    ws.mkdir()
-    outside = tmp_path / "outside.txt"
-    outside.parent.mkdir(parents=True, exist_ok=True)
-    outside.write_text("hello world", encoding="utf-8")
-
-    result = edit_file(
-        {
-            "path": str(outside),
-            "old_string": "hello",
-            "new_string": "bye",
-            "_write_scope_root": str(ws),
-        }
-    )
-    payload = json.loads(result)
-    assert payload.get("ok") is False
-    # 文件内容未被改
-    assert outside.read_text(encoding="utf-8") == "hello world"
 
 
-def test_run_shell_honors_injected_scope_root_for_mkdir(tmp_path: Path) -> None:
-    """run_shell 里 mkdir 一个 workspace 外的绝对路径 → 拦下，不执行。"""
-    from deskpet.tools.os_tools.run_shell import run_shell
-
-    ws = tmp_path / "workspace"
-    ws.mkdir()
-    victim = tmp_path / "repo" / "vpn-cli"
-
-    result = run_shell(
-        {
-            "command": f'mkdir -p "{victim}"',
-            "_write_scope_root": str(ws),
-        }
-    )
-    payload = json.loads(result)
-    assert payload.get("ok") is False
-    assert not victim.exists()
 
 
 def test_run_shell_no_mkdir_unaffected(tmp_path: Path) -> None:
@@ -238,45 +171,4 @@ def test_shell_scope_allows_copy_from_outside_into_workspace(
     assert shell_write_scope_check(command, scope_root=ws) is None
 
 
-def test_shell_scope_rejects_copy_destination_outside_workspace(
-    tmp_path: Path,
-) -> None:
-    ws = tmp_path / "workspace"
-    ws.mkdir()
-    inside_source = ws / "artifact.txt"
-    outside_destination = tmp_path / "other-project"
-
-    command = f'cp "{inside_source}" "{outside_destination}"'
-
-    assert shell_write_scope_check(command, scope_root=ws) is not None
-
-
-def test_shell_scope_keeps_move_source_outside_workspace_blocked(
-    tmp_path: Path,
-) -> None:
-    ws = tmp_path / "workspace"
-    ws.mkdir()
-    outside_source = tmp_path / "previous-task"
-
-    command = f'mv "{outside_source}" .'
-
-    assert shell_write_scope_check(command, scope_root=ws) is not None
-
-
-def test_shell_scope_ignores_null_redirection_but_blocks_real_outside_redirect(
-    tmp_path: Path,
-) -> None:
-    ws = tmp_path / "workspace"
-    ws.mkdir()
-
-    assert (
-        shell_write_scope_check("echo probe 2>/dev/null", scope_root=ws)
-        is None
-    )
-    assert (
-        shell_write_scope_check(
-            f'echo probe > "{tmp_path / "outside.log"}"',
-            scope_root=ws,
-        )
-        is not None
-    )
+# 2026-09-26: tests asserting the removed workspace boundary were deleted (plans/2026-09-26-permission-open-by-default); the protected-file rules are covered by tests/permissions/test_protected_paths.py.
