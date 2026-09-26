@@ -739,6 +739,16 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     (!selectedContextId || !!selectedContext) &&
     (!searchPolicy || searchPolicies.some((policy) => policy.version_id === searchPolicy)) &&
     (domain === "code" || (canCreateDocument && sources.length > 0 && sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0)));
+  // 2026-09-26 真机点击：按钮变灰却不说原因，用户以为"点了没反应"。
+  const submitBlocker = createPending || submittable ? ""
+    : !channel ? "还没连上后台，请稍候"
+    : !goal.trim() ? "请填写任务目标"
+    : !criteria.split("\n").some((line) => line.trim()) ? "请至少写一条成功条件"
+    : sourceImporting ? "正在导入来源资料…"
+    : domain !== "code" && sources.length === 0 ? "严格引用模式需要至少一份资料：点「添加来源」粘贴正文，或「导入来源文件」；不需要就在高级设置里取消勾选"
+    : domain !== "code" && !sources.every((source) => source.path.trim() && source.path !== "sources/" && source.content.length > 0)
+      ? "每份来源资料都要填写路径（如 sources/笔记.md）和正文"
+    : "请检查上面标红的设置";
 
   const submit = () => {
     if (!submittable) return;
@@ -924,9 +934,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
 
         {creating ? (
           <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm }}>
-            <label>任务类型<select aria-label="任务类型" style={{ ...field, minHeight: 36 }} disabled={createPending} value={domain} onChange={(e) => setDomain(e.target.value)}>
-              <option value="code">代码</option>{canCreateDocument && <option value="doc-research-v1">文档研究</option>}
-            </select></label>
             <label htmlFor="mission-goal">任务目标</label>
             <textarea id="mission-goal" aria-label="任务目标" style={field} disabled={createPending} value={goal} onChange={(e) => setGoal(e.target.value)} />
             <label htmlFor="mission-criteria">成功条件（每行一条）</label>
@@ -934,9 +941,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             {domain === "code" && <div style={muted}>普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如 pytest: tests/</div>}
             {badPytestLines.length > 0 && <div role="alert" style={{ color: dark.danger }}>「{badPytestLines[0]}」会被当作测试命令运行，但 pytest: 后面不是测试路径。要写说明就去掉 pytest: 前缀。</div>}
             {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
-            <details data-testid="create-advanced" open={!validReserve || !validSynthesis || undefined}>
+            <details data-testid="create-advanced" open={!validReserve || !validSynthesis || domain !== "code" || undefined}>
             <summary style={{ cursor: "pointer", color: dark.textMuted }}>高级设置（可选，一般不用改）</summary>
             <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm, marginTop: tokens.space.sm }}>
+            {canCreateDocument && <label style={{ display: "flex", alignItems: "flex-start", gap: tokens.space.xs }}>
+              <input aria-label="严格引用模式" type="checkbox" checked={domain === "doc-research-v1"} disabled={createPending}
+                onChange={(e) => setDomain(e.target.checked ? "doc-research-v1" : "code")} />
+              <span>严格引用模式：只根据我提供的资料作答，每个结论都要逐字引用原文，系统逐条核对引用（需要至少一份资料）</span>
+            </label>}
             {searchPolicies.length > 0 && <label style={muted}>执行方式
               <select aria-label="执行方式" style={field} value={searchPolicy} disabled={createPending} onChange={(e) => setSearchPolicy(e.target.value)}>
                 <option value="">首个通过即交付</option>
@@ -981,6 +993,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <button type="button" style={button} disabled={!submittable} onClick={submit}>
               提交任务
             </button>
+            {submitBlocker && <div role="status" data-testid="submit-blocker" style={muted}>还不能提交：{submitBlocker}</div>}
             {createPending && <div role="status">正在创建任务…</div>}
           </div>
         ) : null}

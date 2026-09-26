@@ -182,8 +182,8 @@ describe("P33 G creation and explicit approval branches", () => {
     render(<Workbench channel={channel} />);
     channel.reply("orchestration_status", { ...AVAILABLE, deployment_manifest: null });
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    expect(screen.queryByRole("option", { name: "文档研究" })).toBeNull();
-    expect((screen.getByLabelText("任务类型") as HTMLSelectElement).value).toBe("code");
+    expect(screen.queryByLabelText("严格引用模式")).toBeNull();
+    expect(screen.queryByLabelText("任务类型")).toBeNull();
   });
   it("shows the local shared256K window and submits its default profile", () => {
     const channel = renderAvailable();
@@ -336,7 +336,9 @@ describe("P33 G creation and explicit approval branches", () => {
   it("defaults to code and preserves the existing mission_create request", () => {
     const channel = renderAvailable();
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    expect((screen.getByLabelText("任务类型") as HTMLSelectElement).value).toBe("code");
+    // 2026-09-26：一个通用任务，没有类型下拉框；严格引用模式默认不勾
+    expect(screen.queryByLabelText("任务类型")).toBeNull();
+    expect((screen.getByLabelText("严格引用模式") as HTMLInputElement).checked).toBe(false);
     fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "write code" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:a.py" } });
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
@@ -350,7 +352,7 @@ describe("P33 G creation and explicit approval branches", () => {
     const channel = renderAvailable();
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     if (domain === "doc-research-v1") {
-      fireEvent.change(screen.getByLabelText("任务类型"), { target: { value: domain } });
+      fireEvent.click(screen.getByLabelText("严格引用模式"));
       fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
       fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
       fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "可供综合的资料" } });
@@ -451,14 +453,18 @@ describe("P33 G creation and explicit approval branches", () => {
   it("pastes sources and sends one atomic doc batch; failure preserves the draft", () => {
     const channel = renderAvailable();
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fireEvent.change(screen.getByLabelText("任务类型"), { target: { value: "doc-research-v1" } });
+    fireEvent.click(screen.getByLabelText("严格引用模式"));
     fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "比较文档" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "说明否定条件" } });
     expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
+    // 2026-09-26：按钮变灰时说出还差什么，不再"点了没反应"
+    expect(screen.getByTestId("submit-blocker").textContent).toContain("严格引用模式需要至少一份资料");
     fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
+    expect(screen.getByTestId("submit-blocker").textContent).toContain("每份来源资料都要填写路径");
     fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "条件：不支持。\r\n| A | B |" } });
     fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
+    expect(screen.queryByTestId("submit-blocker")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.all("mission_create")).toHaveLength(0);
     expect(channel.all("mission_source_register")).toHaveLength(0);
