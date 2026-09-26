@@ -735,10 +735,15 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     synthesisTokenCap <= effectiveMissionTokenCap && synthesisAttemptCap <= effectiveMissionAttemptCap &&
     reserveTokens + synthesisTokenCap <= effectiveMissionTokenCap
   );
+  // 附资料建任务需要后台支持原子批次（与严格引用模式同一接口）
+  const canAttachSources = domains.atomic_source_create === true;
+  const sourcesComplete = sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0);
   const submittable = validCaps && badPytestLines.length === 0 && validReserve && validSynthesis && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
     (!selectedContextId || !!selectedContext) &&
     (!searchPolicy || searchPolicies.some((policy) => policy.version_id === searchPolicy)) &&
-    (domain === "code" || (canCreateDocument && sources.length > 0 && sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0)));
+    // 2026-09-26：通用任务可以附带参考资料（可选）；严格引用模式必须至少一份。
+    (domain === "code" ? (sources.length === 0 || (canAttachSources && sourcesComplete))
+      : canCreateDocument && sources.length > 0 && sourcesComplete);
   // 2026-09-26 真机点击：按钮变灰却不说原因，用户以为"点了没反应"。
   const submitBlocker = createPending || submittable ? ""
     : !channel ? "还没连上后台，请稍候"
@@ -746,7 +751,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     : !criteria.split("\n").some((line) => line.trim()) ? "请至少写一条成功条件"
     : sourceImporting ? "正在导入来源资料…"
     : domain !== "code" && sources.length === 0 ? "严格引用模式需要至少一份资料：点「添加来源」粘贴正文，或「导入来源文件」；不需要就在高级设置里取消勾选"
-    : domain !== "code" && !sources.every((source) => source.path.trim() && source.path !== "sources/" && source.content.length > 0)
+    : !sourcesComplete
       ? "每份来源资料都要填写路径（如 sources/笔记.md）和正文"
     : "请检查上面标红的设置";
 
@@ -779,7 +784,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       const path = source.path.trim().replace(/^\/+/, "");
       return { ...source, path: path.startsWith("sources/") ? path : `sources/${path}` };
     });
-    const fingerprint = JSON.stringify([domain, spec, domain === "code" ? [] : sourcesOut]);
+    const withSources = domain !== "code" || sourcesOut.length > 0;
+    const fingerprint = JSON.stringify([domain, spec, withSources ? sourcesOut : []]);
     if (createRetry.current?.fingerprint !== fingerprint) createRetry.current = { fingerprint, key: newKey() };
     const missionSpec = { ...spec, idempotency_key: createRetry.current.key };
     const requestId = newKey();
@@ -787,8 +793,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     setCreatePending(true);
     store.setError(null);
     const accepted = channel?.send({
-      type: domain === "code" ? "mission_create" : "mission_create_with_sources", request_id: requestId,
-      payload: domain === "code" ? missionSpec : { mission: { ...missionSpec, domain }, sources: sourcesOut },
+      type: withSources ? "mission_create_with_sources" : "mission_create", request_id: requestId,
+      payload: !withSources ? missionSpec
+        : { mission: domain === "code" ? missionSpec : { ...missionSpec, domain }, sources: sourcesOut },
     });
     if (!accepted) {
       // No new request left the client. Preserve an earlier uncertain request, if any.
@@ -941,6 +948,10 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             {domain === "code" && <div style={muted}>普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如 pytest: tests/</div>}
             {badPytestLines.length > 0 && <div role="alert" style={{ color: dark.danger }}>「{badPytestLines[0]}」会被当作测试命令运行，但 pytest: 后面不是测试路径。要写说明就去掉 pytest: 前缀。</div>}
             {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
+            {domain === "code" && canAttachSources && <details data-testid="create-sources" open={sources.length > 0 || undefined}>
+              <summary style={{ cursor: "pointer", color: dark.textMuted }}>参考资料（可选）：给任务附上会议纪要、需求文档等，执行时可以读取</summary>
+              <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />
+            </details>}
             <details data-testid="create-advanced" open={!validReserve || !validSynthesis || domain !== "code" || undefined}>
             <summary style={{ cursor: "pointer", color: dark.textMuted }}>高级设置（可选，一般不用改）</summary>
             <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm, marginTop: tokens.space.sm }}>

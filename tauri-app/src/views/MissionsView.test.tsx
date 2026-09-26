@@ -348,6 +348,24 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(channel.all("mission_create_with_sources")).toHaveLength(0);
   });
 
+  it("a general task may attach reference material and sends one atomic batch without a domain", () => {
+    // 2026-09-26（用户决定）：一个通用任务，可选附资料，不强制逐字引用
+    const channel = renderAvailable();
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "根据纪要整理待办" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:待办.md" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
+    expect(screen.getByTestId("submit-blocker").textContent).toContain("每份来源资料都要填写路径");
+    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "纪要.md" } });
+    fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "1. 登录页改版" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
+    expect(channel.all("mission_create")).toHaveLength(0);
+    expect(channel.last("mission_create_with_sources")?.payload).toEqual({
+      mission: { goal: "根据纪要整理待办", success_criteria: ["file:待办.md"], idempotency_key: expect.any(String) },
+      sources: [{ path: "sources/纪要.md", content: "1. 登录页改版", kind: "markdown" }],
+    });
+  });
+
   it.each(["code", "doc-research-v1"] as const)("在 %s Mission 中用相同的最终独立综合章程提交", (domain) => {
     const channel = renderAvailable();
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
