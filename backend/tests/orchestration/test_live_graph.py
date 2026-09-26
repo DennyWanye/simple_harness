@@ -69,11 +69,22 @@ def library(tmp_path: Path) -> Path:
     Store.open(tmp_path / "orchestrator.db").close()
     db = sqlite3.connect(tmp_path / "orchestrator.db", isolation_level=None)
     db.execute("PRAGMA foreign_keys = OFF")
+    db.create_function("assurance_change_receipt", -1, lambda *args: None)  # SDK trigger hook
     _insert(db, "missions", mission_id=M)
     for revision, state in ((1, "RETIRED"), (2, "ACTIVE")):
         _insert(db, "plan_revisions", mission_id=M, revision=revision, state=state, base_revision=None)
     _insert(db, "method_instances", mission_id=M, instance_id="inst-1", goal_task_id="task-root",
             goal_occurrence_id=ROOT, method_id="synth-a", method_version=1, plan_revision=1, state="ADOPTED")
+    contract = {"composition": {"criterion_links": [
+        {"child_step": "positioning", "evidence_requirement": "positioning 步骤产出 01-定位.md"},
+        {"child_step": "menu", "evidence_requirement": "menu 步骤产出 02-菜单.md"},
+        {"child_step": "menu", "evidence_requirement": "menu 步骤给出至少 8 个饮品"}]}}
+    _insert(db, "method_contracts", method_id="synth-a", method_version=1, registry_status="TRIAL_ADMITTED", author="system", trial_scope_mission=M,
+            contract_json=json.dumps(contract, ensure_ascii=False))
+    for kid, slot in (("occ-a", "positioning"), ("occ-b", "menu")):
+        _insert(db, "method_child_occurrences", instance_id="inst-1", slot_key=slot, mission_id=M,
+                occurrence_id=kid, obligation_id="o", goal_occurrence_id=kid, requiredness="required",
+                reuse_policy="new_work")
     children = {1: ["occ-a", "occ-b"], 2: ["occ-a", "occ-b", "occ-c"]}
     for revision, kids in children.items():
         _insert(db, "plan_memberships", mission_id=M, revision=revision, occurrence_id=ROOT, task_id="task-root",
@@ -124,7 +135,10 @@ def test_current_revision_structure_status_and_phase(library: Path) -> None:
     assert (nodes[ROOT]["phase"], nodes[ROOT]["readiness_reason"]) == ("waiting_children", "WAITING_ORDER")
     assert nodes["occ-b"] == {"occurrence_id": "occ-b", "task_id": "task-b", "form": "primitive", "parent": ROOT,
                               "method": "synth-a@1", "task_status": "ACTIVE", "phase": None,
-                              "readiness_reason": None, "attempt_count": 2, "last_event_at": 200.0}
+                              "readiness_reason": None, "attempt_count": 2, "last_event_at": 200.0,
+                              "step": {"key": "menu", "evidence": ["menu 步骤产出 02-菜单.md", "menu 步骤给出至少 8 个饮品"]}}
+    assert nodes["occ-a"]["step"] == {"key": "positioning", "evidence": ["positioning 步骤产出 01-定位.md"]}
+    assert nodes["occ-c"]["step"] is None and nodes[ROOT]["step"] is None
     assert nodes["occ-a"]["last_event_at"] == 150.0 and nodes["occ-c"]["attempt_count"] == 0
     assert view["edges"] == [{"kind": "order", "source": "occ-a", "target": "occ-b"},
                              {"kind": "order", "source": "occ-b", "target": "occ-c"},

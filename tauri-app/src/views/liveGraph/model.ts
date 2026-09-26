@@ -9,6 +9,8 @@ export type LiveNode = {
   occurrence_id: string; task_id: string; form: "compound" | "primitive"; parent: string | null;
   method: string | null; task_status: string | null; phase: string | null; readiness_reason: string | null;
   attempt_count: number; last_event_at: number | null;
+  /** 方法里这一步的名字和职责（它要交付的验收要求原文）；根任务与平铺任务为 null。 */
+  step?: { key: string; evidence: string[] } | null;
 };
 export type LiveEdge = { kind: "order" | "data"; source: string; target: string };
 export type LiveGraph = {
@@ -27,6 +29,14 @@ function int(value: unknown): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : fail();
 }
 
+function parseStep(value: unknown): LiveNode["step"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Obj;
+  if (typeof raw.key !== "string" || !raw.key) return null;
+  const evidence = Array.isArray(raw.evidence) ? raw.evidence.filter((e): e is string => typeof e === "string" && !!e) : [];
+  return { key: raw.key, evidence };
+}
+
 /** 必需字段缺失就报错；多出的字段忽略（后端加字段不应让前端崩）。 */
 export function parseLiveGraph(data: unknown, missionId: string): LiveGraph {
   const raw = obj(data);
@@ -40,6 +50,7 @@ export function parseLiveGraph(data: unknown, missionId: string): LiveGraph {
       parent: maybeStr(n.parent), method: maybeStr(n.method), task_status: maybeStr(n.task_status),
       phase: maybeStr(n.phase), readiness_reason: maybeStr(n.readiness_reason), attempt_count: int(n.attempt_count),
       last_event_at: typeof n.last_event_at === "number" ? n.last_event_at : null,
+      step: parseStep(n.step),
     };
   });
   const edges = (Array.isArray(raw.edges) ? raw.edges : fail()).map((item): LiveEdge => {
@@ -121,3 +132,27 @@ export const DECISION_STATUS: Record<string, string> = {
   UNREADABLE: "无法解析", DECODED: "已解析", REJECTED: "被拒绝", ADMITTED: "已接纳", COMPILED: "已编译",
   COMMIT_REJECTED: "提交被拒", COMMITTED: "已提交", NO_STATE_CHANGE: "无变化",
 };
+
+const STEP_LABEL: Record<string, string> = {
+  prepare: "准备", deliver: "交付", continue: "接续", summary: "汇总", summarize: "汇总", review: "复核",
+  verify: "验证", draft: "起草", write: "撰写", research: "调研", analyze: "分析", analysis: "分析",
+  plan: "规划", design: "设计", implement: "实现", test: "测试", fix: "修复", finalize: "定稿",
+};
+const FILE_NAME = /[\w\u4e00-\u9fa5.-]+\.(?:md|txt|py|ts|tsx|js|json|csv|xlsx|docx|pptx|pdf|html|yaml|yml|toml|sql)\b/gi;
+
+/** 步骤的中文名：常见英文步骤名翻译，其余保留原名（模型起的名字）。 */
+export function stepLabel(key: string): string {
+  const base = key.toLowerCase().replace(/[-_]?\d+$/, "");
+  return STEP_LABEL[base] ?? key;
+}
+
+/** 节点标题：有方法步骤信息时写"步骤名：产出哪些文件"，否则用任务目标（接续步骤去掉英文前缀）。 */
+export function stepTitle(step: LiveNode["step"], goal: string): string {
+  if (step) {
+    const files = [...new Set(step.evidence.join(" ").match(FILE_NAME) ?? [])];
+    if (files.length) return `${stepLabel(step.key)}：产出 ${files.join("、")}`;
+    const first = (step.evidence[0] ?? "").replace(new RegExp(`^${step.key}\\s*步骤\\s*`), "");
+    return first ? `${stepLabel(step.key)}：${first}` : stepLabel(step.key);
+  }
+  return goal.replace(/^Continue from an accepted upstream delivery:\s*/, "接续上一步交付：");
+}

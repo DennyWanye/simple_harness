@@ -109,6 +109,7 @@ def _read(db: sqlite3.Connection, mission_id: str, revision: int | None) -> dict
         " AND json_extract(payload_json,'$.plan_revision')<=? GROUP BY 1", (mission_id, revision))
         if row[0] is not None}
 
+    steps = _step_duties(db, mission_id, [(r[0], r[4], r[5]) for r in rows])
     nodes = []
     for occurrence, task_id, form, parent, method_id, method_version in rows:
         if parent is not None and str(parent) not in members:
@@ -125,6 +126,7 @@ def _read(db: sqlite3.Connection, mission_id: str, revision: int | None) -> dict
             "readiness_reason": None if reason is None else str(reason),
             "attempt_count": int(attempts.get(task_id, 0)),
             "last_event_at": active_at.get(task_id),
+            "step": steps.get(str(occurrence)),
         })
     edges = [{"kind": "order", "source": str(a), "target": str(b)} for a, b in db.execute(
         "SELECT before_occurrence, after_occurrence FROM order_constraints"
@@ -135,6 +137,38 @@ def _read(db: sqlite3.Connection, mission_id: str, revision: int | None) -> dict
     body.update(source="htn", plan_revision=revision, nodes=nodes,
                 edges=[e for e in edges if e["source"] in members and e["target"] in members])
     return body
+
+
+def _step_duties(db: sqlite3.Connection, mission_id: str,
+                 nodes: list[tuple[Any, Any, Any]]) -> dict[str, dict[str, Any]]:
+    """What each method step is answerable for (2026-09-26 真机：every child's task goal
+    is the whole Mission goal, so the graph could not say what a step does).
+
+    The step's name is its method ``local_id`` (``method_child_occurrences.slot_key``);
+    its duty is the ``evidence_requirement`` of every ``criterion_links`` entry the
+    method contract ties to that step — the same text the Worker is told it owes."""
+
+    slots = {str(occ): str(slot) for occ, slot in db.execute(
+        "SELECT occurrence_id, slot_key FROM method_child_occurrences WHERE mission_id=?", (mission_id,))}
+    contracts: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    duties: dict[str, dict[str, Any]] = {}
+    for occurrence, method_id, method_version in nodes:
+        slot = slots.get(str(occurrence))
+        if slot is None or method_id is None:
+            continue
+        key = (str(method_id), int(method_version))
+        if key not in contracts:
+            row = db.execute("SELECT contract_json FROM method_contracts WHERE method_id=? AND method_version=?",
+                             key).fetchone()
+            try:
+                links = json.loads(row[0]).get("composition", {}).get("criterion_links", []) if row else []
+            except (ValueError, AttributeError):
+                links = []
+            contracts[key] = [link for link in links if isinstance(link, dict)]
+        evidence = [str(link.get("evidence_requirement") or "")[:600] for link in contracts[key]
+                    if link.get("child_step") == slot and link.get("evidence_requirement")]
+        duties[str(occurrence)] = {"key": slot[:80], "evidence": evidence[:12]}
+    return duties
 
 
 def read_planning_decisions(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:

@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { asList, asRecord, asText, newRequestKey, useMissionsStore, type MissionEvent, type MissionsChannel } from "../../stores/missionsStore";
-import { DECISION_STATUS, DECISION_TYPE, TONE_COLOR, displayOf, isStalled, parseLiveGraph, readinessLabel,
+import { DECISION_STATUS, DECISION_TYPE, TONE_COLOR, displayOf, stepTitle, isStalled, parseLiveGraph, readinessLabel,
   type LiveGraph as Graph, type LiveNode } from "./model";
 import { AUTO_COLLAPSE_OVER, buildElkGraph, flatten, structureKey, type Placed } from "./layoutModel";
 import { layoutGraph } from "./layout";
@@ -261,7 +261,9 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   const titleOf = useCallback((node: LiveNode, index: number): { full: string; model: boolean } => {
     const goal = asRecord(tasks.get(node.task_id)?.goal);
     const text = asText(goal.text ?? tasks.get(node.task_id)?.goal);
-    if (text) return { full: text, model: goal.source === "model" };
+    // 2026-09-26 真机：每个子步骤的任务目标都是整个任务目标，看不出这一步做什么——优先用方法步骤的职责
+    if (node.step) return { full: stepTitle(node.step, text), model: true };
+    if (text) return { full: stepTitle(null, text), model: goal.source === "model" };
     if (!node.parent) {
       const missionGoal = asText(asRecord(mission.goal).text ?? mission.goal);
       if (missionGoal) return { full: missionGoal, model: false };
@@ -402,6 +404,10 @@ function NodePanel({ node, title, detail, events, hasMoreEvents, onLoadMoreEvent
         {reason && <span className="lg-muted">{" · " + reason}</span>}
         {node.method && <span className="lg-muted">{" · 拆分方法 " + node.method}</span>}
       </p>
+      {node.step && node.step.evidence.length > 0 && <>
+        <h4>这一步要交付</h4>
+        <ul>{node.step.evidence.map((text, index) => <li key={index}>{text}</li>)}</ul>
+      </>}
       <h4>{"尝试（" + attempts.length + "）"}</h4>
       {attempts.length === 0 ? <p className="lg-muted">还没有尝试。</p> : (
         <ul>{attempts.map((a) => <li key={asText(a.id)}>

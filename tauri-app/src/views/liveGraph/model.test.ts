@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 import { describe, expect, it, vi } from "vitest";
 import { buildElkGraph, flatten, structureKey, type ElkOutput } from "./layoutModel";
-import { displayOf, isStalled, parseLiveGraph, type LiveGraph, type LiveNode } from "./model";
+import { displayOf, isStalled, parseLiveGraph, stepTitle, type LiveGraph, type LiveNode } from "./model";
 import { progressOf } from "./progress";
 
 function node(id: string, extra: Partial<LiveNode> = {}): LiveNode {
@@ -140,5 +140,21 @@ describe("progressOf：列表进度条", () => {
     ["CANCELLED", "cancelled", 2, { stage: 2, ended: "cancelled" }],
   ])("%s / %s / %d 个子任务", (status, ui, total, expected) => {
     expect(progressOf(status as string, ui as string | undefined, total as number)).toEqual(expected);
+  });
+});
+
+describe("stepTitle：步骤标题说清这一步做什么", () => {
+  it("有产出文件时列出文件", () => {
+    expect(stepTitle({ key: "prepare", evidence: ["prepare 步骤在工作区产出 01-定位.md，文件内容…", "prepare 步骤在工作区产出 02-菜单.md，至少…"] }, "整个任务目标"))
+      .toBe("准备：产出 01-定位.md、02-菜单.md");
+    expect(stepTitle({ key: "positioning", evidence: ["positioning 步骤产出 01-定位.md"] }, "")).toBe("positioning：产出 01-定位.md");
+  });
+  it("没有文件名时用职责原文，去掉重复的步骤名", () => {
+    expect(stepTitle({ key: "deliver", evidence: ["deliver 步骤给出最终结论"] }, "")).toBe("交付：给出最终结论");
+    expect(stepTitle({ key: "review_2", evidence: [] }, "")).toBe("复核");
+  });
+  it("没有步骤信息时用任务目标，接续步骤的英文前缀换成中文", () => {
+    expect(stepTitle(null, "Continue from an accepted upstream delivery: 写报告")).toBe("接续上一步交付：写报告");
+    expect(stepTitle(null, "写报告")).toBe("写报告");
   });
 });
