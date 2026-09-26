@@ -1,6 +1,8 @@
 最后更新：2026-09-26 CST（真机点击反馈修复 + 复杂编排跑通）。
 
-**当前版本**：SDK `0.13.0.dev20260925+opt.23`（源码 `d55398de`），Host 钉版提交 `ed89a4c4`。本地领先远端约 40 个提交，等用户点击测试通过后再推送。
+**纯内容完成要求自动确认**（用户决定 2026-09-26，SDK opt.24）：auto 权限模式下，`OrchestrationService._auto_confirm_content_completion` 每轮循环检查状态为 CREATED 的任务；成功条件里没有 `action:` 且完成要求仍待确认时，按页面同样的“全部必需判据归为内容”映射提交，`approval_source=HOST_AUTO_PERMISSION`，事件记为系统（`host:auto-permission-completion`，写明代谁确认），回执不变；SDK 拒绝 Host 自动确认任何带操作效果的映射。有操作要求或 manual 模式仍保留“确认上述完成要求”按钮。测试：SDK `operation_completion/test_completion_spec_approval.py` 新增 3 个，Host `tests/orchestration/test_auto_confirm_content_completion.py`。真机：重启后停在“已创建”的任务数秒内自动确认并进入规划。
+
+**当前版本**：SDK `0.13.0.dev20260925+opt.24`，Host 钉版提交 `88230aba`。本地领先远端约 40 个提交，等用户点击测试通过后再推送。
 
 **用户点击测试中提出、已修复的问题：**
 1. **执行图一直停在“正在排版”**：改用官方排版 Worker，加超时回退。

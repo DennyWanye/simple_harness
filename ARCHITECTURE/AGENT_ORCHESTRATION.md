@@ -1,6 +1,8 @@
 最后更新：2026-09-26 CST（复杂编排跑通）。
 
-当前 SDK `0.13.0.dev20260925+opt.23`（源码 `d55398de`），Host 钉版提交 `ed89a4c4`。
+**纯内容完成要求自动确认**（用户决定 2026-09-26，SDK opt.24）：auto 权限模式下，`OrchestrationService._auto_confirm_content_completion` 每轮循环检查状态为 CREATED 的任务；成功条件里没有 `action:` 且完成要求仍待确认时，按页面同样的“全部必需判据归为内容”映射提交，`approval_source=HOST_AUTO_PERMISSION`，事件记为系统（`host:auto-permission-completion`，写明代谁确认），回执不变；SDK 拒绝 Host 自动确认任何带操作效果的映射。有操作要求或 manual 模式仍保留“确认上述完成要求”按钮。测试：SDK `operation_completion/test_completion_spec_approval.py` 新增 3 个，Host `tests/orchestration/test_auto_confirm_content_completion.py`。真机：重启后停在“已创建”的任务数秒内自动确认并进入规划。
+
+当前 SDK `0.13.0.dev20260925+opt.24`，Host 钉版提交 `88230aba`。
 
 **结果**：真机用 7 步的“读书会首期筹备方案”任务（6 个交付文件，带依赖）做验证。前七趟各暴露一个新缺陷，逐个修复后，第八趟从规划走到 `MissionCompleted`（`verification_passed`）：
 - 用时约 31 分钟，花费约 230 万 token；
