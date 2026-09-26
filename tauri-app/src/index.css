@@ -12,12 +12,10 @@ html, body, #root {
   overflow: hidden;
   width: 100%;
   height: 100%;
-  /* Block accidental text selection on the application shell.
-     Without this, double-clicking the empty area selects every absolute-
-     positioned child within the click radius. Inputs/textareas/code panels
-     re-enable selection via the rule below. */
-  user-select: none;
-  -webkit-user-select: none;
+  /* 2026-09-26 用户要求：界面里的文字都要能选中、方便复制（此前整个外壳禁止选择）。
+     按钮自身仍不可选（theme/components.ts 的按钮样式），避免点按钮时误选。 */
+  user-select: text;
+  -webkit-user-select: text;
   /* 字体栈：系统原生优先，中文 PingFang */
   font-family:
     -apple-system,
