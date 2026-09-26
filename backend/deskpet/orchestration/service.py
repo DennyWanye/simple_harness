@@ -26,6 +26,7 @@ import os
 import secrets
 import sys
 from collections.abc import Awaitable, Callable, Iterator, Mapping
+from hashlib import sha256
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -172,6 +173,7 @@ class OrchestrationService:
         # 2026-09-25 UI 全量点击：自动模式下每轮"授权本轮规划"都要人点，不点任务就一直卡着。
         # 读当前权限模式（每轮现读；读不到按手动处理，照旧等人点）。
         self._permission_mode_reader = permission_mode_reader
+        self._auto_completion_done: set[str] = set()  # requirements this Host confirmed (or must not)
         self._auto_planning_requests: set[str] = set()  # requests this Host already issued for
 
     # ------------------------------------------------------------ lifecycle
@@ -553,6 +555,7 @@ class OrchestrationService:
                 await self._orchestrator.run()
                 self._project_assurance_policies()
                 await self._auto_authorize_planning()
+                await self._auto_confirm_content_completion()
                 self._storage.schedule_if_stale()
                 self._failures = 0
                 if self._state == "degraded":
@@ -738,6 +741,71 @@ class OrchestrationService:
             logger.exception("assurance check policy projection failed")
             return 0
 
+    async def _auto_confirm_content_completion(self) -> int:
+        """Auto permission mode: confirm content-only completion requirements.
+
+        User decision 2026-09-26: a new Mission waited in CREATED for the person to
+        confirm its completion requirements and looked stuck.  When every criterion
+        is content (no ``action:`` criterion, so no operation effect) the Host
+        confirms the exact mapping the page would send — every required criterion
+        as content — recorded as ``HOST_AUTO_PERMISSION`` on the principal's
+        behalf, never as a person's click.  Anything with an operation, manual
+        mode, or an unreadable mode keeps the button.
+        """
+        if self._permission_mode_reader is None or self._control is None or self._orchestrator is None:
+            return 0
+        try:
+            mode = str(await self._permission_mode_reader())
+        except Exception:  # noqa: BLE001 - unreadable mode means manual
+            return 0
+        if mode != "auto":
+            return 0
+        store = self._orchestrator.store
+        confirmed = 0
+        rows = store.connection.execute(
+            "SELECT mission_id FROM missions WHERE status='CREATED' ORDER BY created_at LIMIT 50"
+        ).fetchall()
+        for (mission_id,) in rows:
+            mission = store.get_mission(str(mission_id))
+            if mission is None or any(
+                str(c).strip().startswith("action:") for c in mission.success_criteria
+            ):
+                continue
+            try:
+                workspace = (self._call("snapshot", mission.id)["snapshot"] or {}).get("operation_workspace")
+            except Exception:  # noqa: BLE001 - retried next round
+                continue
+            if not isinstance(workspace, Mapping) or workspace.get("state") != "CONFIRMATION_REQUIRED" \
+                    or workspace.get("editable") is not True or not workspace.get("requirements_ref"):
+                continue
+            ref = dict(workspace["requirements_ref"])
+            key = f"{mission.id}:{ref.get('revision')}:{ref.get('content_hash')}"
+            if key in self._auto_completion_done:
+                continue
+            content = [str(c["id"]) for c in workspace.get("criteria") or () if c.get("required") is True]
+            if not content:
+                self._auto_completion_done.add(key)
+                continue
+            try:
+                self._call("approve_operation_completion_spec", {
+                    "mission_id": mission.id,
+                    "command_id": "host-auto-completion-" + sha256(key.encode()).hexdigest()[:32],
+                    "expected_requirements_ref": ref,
+                    "proposal": {"schema_version": 1, "mission_id": mission.id,
+                                 "requirements_ref": {"id": ref["id"], "revision": ref["revision"],
+                                                      "content_hash": ref["content_hash"]},
+                                 "mode": "CONTENT_ONLY", "content_criterion_ids": content, "effects": []},
+                    "approval_source": "HOST_AUTO_PERMISSION",
+                })
+            except Exception:  # noqa: BLE001 - one refusal must not block the others
+                logger.exception("auto completion confirmation failed for %s", mission.id)
+                continue
+            self._auto_completion_done.add(key)
+            confirmed += 1
+        if confirmed:
+            self.wake()
+        return confirmed
+
     async def _auto_authorize_planning(self) -> int:
         """Auto permission mode: issue each pending planning authority for the person.
 
@@ -868,6 +936,7 @@ class OrchestrationService:
             await asyncio.wait_for(self._orchestrator.run(), timeout=timeout)
             self._project_assurance_policies()
             await self._auto_authorize_planning()
+            await self._auto_confirm_content_completion()
             return True
         except TimeoutError:
             return False
