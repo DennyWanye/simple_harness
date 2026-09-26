@@ -1,3 +1,55 @@
+最后更新：2026-09-26 CST（权限改造：默认放行 + 核心文件会话内申请 + 永不卡住）。
+
+用户 2026-09-26 的要求：
+- 主对话和编排除少数核心文件外都能用。
+- 核心文件在会话窗口里申请，同意后可用。
+- **不能因为权限卡住**。
+
+**判定**
+
+`backend/deskpet/permissions/protected_paths.py` 里只有一个判定函数 `classify(path, op)`，结果是 allow 或 ask，按以下顺序判断：
+1. **凭证类，无论在哪、读写都要申请。**
+   - 目录：`~/.ssh`、`~/.aws`、`~/.gnupg`、`~/.kube`、`~/.grok`、`~/.config/gcloud`、钥匙串。
+   - 文件：`~/.docker/config.json`、`~/.netrc`，以及名为 `.env*`、`llm_runtime*.json`、`id_rsa*` 的文件和 Cookie 库。
+2. **放行**：工作区、应用输出目录、临时目录、任务已绑定的根。
+3. **写入要申请、读取放行**：本应用自身（源码仓库、安装目录、SimpleHarness.app、`config.toml`、`data/`）和系统目录。
+4. **其余一律放行。**
+
+路径处理规则：
+- 路径先展开 `~` 再 `resolve()`，macOS 和 Windows 上按不区分大小写比较。
+- shell 命令里的环境变量（如 `$HOME/.ssh/key`）先展开再判定。
+- 相对路径一律按工作区解析，不按后端进程目录。
+
+**中央检查点**
+
+`deskpet/sdk_adapters/tools.py` 的 `ProductEffectExecutor.execute`：每次工具调用第一次执行前，从参数里取出路径（`path`、`destination`、`output_path`、`cwd` 等，以及 shell 命令里的读写目标），逐个判定。
+- **未授权**：立即返回 `protected_path_requires_user`，同时推送 `protected_path_request` 卡片。不等待、不阻塞，模型可以换一个路径，或告诉用户需要授权。
+- **已授权**：通过上下文变量把放行传给各工具自己的检查。
+
+各工具原来各自的边界检查，全部换成这一个判定：
+- `agent/write_scope.write_scope_check(op=)`；
+- os_tools 的 `read_file`、`list_directory`、`run_shell`、`move_file`、`download_file`；
+- `file_tools`；
+- `office_paths`：相对输出路径按工作区解析；
+- `grep`：跳过凭证文件；
+- `read_gate`：不再要求先路由或绑定。
+
+**卡片与授权**
+
+`main.py` 启动时调用 `set_notifier(_broadcast_control)`，并处理 `protected_path_decision`，取值为 `allow_once`、`allow_session`、`deny`。请求被拒后如果再次触发，会用同一个编号重新推送卡片。
+
+**测试与核验**
+- 新增测试：`tests/permissions/test_protected_paths.py`（23 个）、`test_open_paths_tools.py`（7 个），前端 `ProtectedPathCard.test.tsx`。
+- 删除 43 个断言旧“工作区边界”的测试。
+- 两轮独立核验，修复了大小写绕过、shell 命令读取、搜索遍历、卡片不重推、环境变量路径五类问题。
+
+**未做**
+- 编排侧的读取放开（需要改 SDK 工具网关）。
+- `effect_gate` 在未路由时的提示文案。
+- 在配置里追加受保护清单。
+
+方案与记录：`plans/2026-09-26-permission-open-by-default/PLAN.md`。
+
 最后更新：2026-09-25 CST（主流程优化条目 5/6/7，SDK `0.13.0.dev20260925+opt.1`）。原生运行层：召回结果页达 16 页上限时 `RECALL_AGGREGATE_LIMIT` 跳过而非整条请求失败；后台泵/清理/召回/工具探测错误全部记入 `BackgroundHealthBook`（限频日志 `simple_harness.agents.background`）并逐项隔离，`AgentRuntime.background_health()` 对外，Host `HostNativePlane` 在 `after_build` 登记各池 runtime、`status().profiles[i].background` 上报。存储：`deskpet/orchestration/storage_usage.py`（只统计 `data/agent-orchestrator/`，线程池遍历，缓存/节流），`OrchestrationService.storage_usage()` ↔ 消息 `orchestration_storage_get`，`status().storage_over_warn`；设置 `[orchestration] storage_warn_bytes`（默认 5 GiB）。会话数据不自动回收、无清理接口（用户决定 2026-09-25）。
 
 2026-09-25 真机点击后补丁（SDK `0.13.0.dev20260924+arp.22` / 源 `e1cd2792`，Host 钉版 `51aea226`）：保证审阅证据固定按对象唯一（迁移 27，同内容的不同对象可各自固定）；按版本读审阅元数据时生命周期部分不再带正文；历史整段请求清单/曝光记录读取用 8MB 单条上限（其余仍 256KB）；修复轮规划被拒后仍欠修复时按被拒次数开下一轮、用完判规划失败，只在等重试决定的叶子不算在跑；思考线路默认输出上限 32768；验证摘要读审阅者发现的 description。Host：`[orchestration] response_model_aliases` 可声明中转回报的模型名；列表把等规划授权/阻塞提问算作等待。

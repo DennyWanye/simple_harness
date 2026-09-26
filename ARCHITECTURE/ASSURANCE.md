@@ -1,3 +1,23 @@
+最后更新：2026-09-26 CST（SDK opt.18～opt.22，复杂编排真机跑通时修的保证审阅四处；详情见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md) 同日条目 6～9）
+
+1. **审阅导入读审阅员输入清单改用记录上限**
+   - `assurance_review_import.py` 读取审阅员自己的输入清单时，上限从 256KB 改为 `MAX_RECORD_BYTES`（8MB）。
+   - 原因：清单包含审阅员读证据的全部对话，长审阅会超过 256KB，每次导入都失败，32 次复核后转“需人工处理”。读取侧早已按 8MB 放行，导入侧漏改了。
+2. **空 code_test 的说明文字**
+   - `executor_checks.py`、`deterministic_checks.py` 里，没人点名、也收集不到测试的全目录运行（退出码 5），说明改为“不适用、视为满足、不作为无法下结论的理由”。
+   - 判定逻辑不变：点名的目标或裸 `pytest:` 收集不到测试，仍判失败。
+   - 这是把 2026-09-24 用户的决定落实到审阅员能看到的文字上。
+3. **卡死检查不抢在审阅工作前面**
+   - 审阅队列里还有未完成的工作，或审阅结果类事件还没被 REVIEW 读进度读到时，编排不判“无可派发工作”。
+   - 已转“需人工处理”的工作仍按卡死处理。
+4. **可解析但导入失败的审阅回复重问一次**
+   - 适用错误码：`UNEXPOSED_EVIDENCE`、`DUPLICATE_CRITERION`、`FINDING_SCOPE`、`MANDATORY_CRITERIA_INVALID`。
+   - 处理：第一次调用出现上述错误时，写 `AssuranceReviewInterpretationRejected` 回执，走格式修复同一通道（`reason=FORMAT_REPAIR`，第二次调用），请求里的 `format_feedback` 写明具体改法。
+   - 第二次仍错就最终拒绝（`AssuranceReviewImportRejected`）；`POLICY_CATALOGUE_MISMATCH` 直接终拒。
+   - 校验：`_require_format_repair` 接受新分类 `INTERPRETATION_INVALID`，要求对应的轮次已提交；第一次调用必须先结算。
+
+独立子代理复核：无阻断级问题。审阅员回复本身的解析**仍然严格**：多余字段、JSON 前多写文字都判格式错误（用户 2026-09-24、2026-09-26 决定）。
+
 最后更新：2026-09-25 CST（主流程优化条目 3/4，SDK `0.13.0.dev20260925+opt.1`）。条目 3：`verification/deterministic_checks.code_test` 区分"判据要求的运行"（`pytest:<path>` 与裸 `pytest:`）和"无人要求的顺带全量运行"，只有后者在退出码 5 时记 `no_tests_collected` 走"无可证明内容"路径（文档类任务规则不变）；判据要求的运行一个测试都没收集到即 FAIL，`assurance/executor_checks.py` 无需改动。条目 4：`orchestrator/assurance_check_policy.approve_check_policy(..., approval_source="HUMAN"|"HOST_LOSSLESS_AUTO")`，Host `project_check_policies()` 传 `HOST_LOSSLESS_AUTO`，事件 `AssuranceCheckPolicyApproved` 记 `actor_type="system"`、`actor_id="host:assurance-check-policy-projector"`，payload 增 `approval_source`、`on_behalf_of_principal_id`；`approval_source` 不进回执正文，同命令重放身份不变；对外入口 `approve_assurance_check_policy` 放行可选字段 `approval_source`。测试 `assurance_exec/test_check_policy_lossless_mapping.py::test_host_auto_approval_is_recorded_as_system_not_human`、`tests/orchestrator/test_code_test_no_tests_collected.py`。核对结论与护栏：证书签发即被判 SOURCE_CHANGED 只写观察记录，不会让正常任务失败或释放资金（23 个真实跑局库无一例）；**以后绝不能把证书失效接到 `goal_resolutions.validity` 列**，否则经 `event_handler._assured_root_grades` → `commit_service` 直接判失败并释放预算；要做"完成前复查依据"须先把读集粒度缩到证书真正依赖的 73 项。
 
 # Assurance 当前生产边界

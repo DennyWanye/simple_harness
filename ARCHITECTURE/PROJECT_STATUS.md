@@ -1,3 +1,28 @@
+最后更新：2026-09-26 CST（真机点击反馈修复 + 复杂编排跑通）。
+
+**当前版本**：SDK `0.13.0.dev20260925+opt.23`（源码 `d55398de`），Host 钉版提交 `ed89a4c4`。本地领先远端约 40 个提交，等用户点击测试通过后再推送。
+
+**用户点击测试中提出、已修复的问题：**
+1. **执行图一直停在“正在排版”**：改用官方排版 Worker，加超时回退。
+2. **主对话卡在权限**：改为除凭证和核心文件外默认放行，核心文件在会话里弹卡片申请，永不阻塞。详见 [AGENT_HARNESS.md](AGENT_HARNESS.md)。
+3. **文字不能选取复制**：改为全站可选。
+4. **新任务的执行图是空的，后台 CPU 满载、会话反复断连**：编排循环空转，已修。
+5. **执行图看不出流程**：方法合成提示词 v8，按交付物拆步；步骤标题改为可读的职责说明。详见 [UI.md](UI.md)。
+
+**复杂编排跑通**：7 步的读书会任务，前七趟各暴露一个编排内核缺陷，逐个修复。
+- 缺陷包括：规划次数整任务累计、工具参数 JSON 坏了不重发、审阅清单超过大小上限、空 code_test 被读成“无法下结论”、卡死检查抢跑（两处）、审阅引用违规后无补救、单步额度不够、规划回复多写字段。
+- 第八趟从规划到 `MissionCompleted` 用时 31 分钟，6 个交付物齐全。
+- 明细见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md) 同日条目。
+
+**本日用户决定：**
+- 编排单步额度 300 万 token（原 100 万），任务总上限 2000 万不变。
+- 规划器、方法合成器回复里的多余字段直接丢弃；审阅员仍然严格。
+
+**已知遗留：**
+- Host `tests/orchestration` 有 26 个原有失败，SDK 有约 11 个原有失败。
+- 三个治本项待定：文档步骤不该安排 code_test；审阅成本高；缺少“多步任务 + 故障注入”的快速端到端测试。
+- 权限改造未做：编排侧读取放开、配置追加受保护清单。
+
 最后更新：2026-09-26 CST（编排实时可视化）。任务页执行图改为**运行视图**：新只读动词 `mission_live_graph`（直读分层计划表 + `tasks.status` + 最新 `CompoundPhaseChanged`，真实库每次 6～11ms）与 `mission_planning_decisions`；旧的严格执行图读取对真实任务恒为 `NOT_ENABLED`（执行图内核在产品路径从未开启），前端不再调用，`MissionTaskGraph.tsx`/`taskgraphStore.ts` 删除。`mission_changed` 推送改为带新事件（`from_seq/events/truncated`，白名单同 `project_event`），前端接得上就追加、有缺口才分页。执行图用 elkjs（Worker）+ @xyflow/react：复合任务是可折叠框，800ms 防抖随推送刷新，版本不变不重排，新版本高亮新步骤，超 10 分钟无动静标"可能卡住"，点步骤看尝试/验证/事件/规划决定，可切历史版本看结构；任务列表加 5 段进度条与子任务完成数。删除未用的 cytoscape。方案与记录：`plans/2026-09-25-orchestration-live-view/`。验证：后端定向测试通过、前端全量 vitest 通过、生产构建与调试应用包通过；独立核验 2 个阻断问题已修；真机鼠标点击待用户授权。
 
 最后更新：2026-09-25 CST（主流程优化 7 条，分支 `opt-0925`，SDK `0.13.0.dev20260925+opt.1`（源 `8f7bf477`）/ Host 钉版见提交「Host 钉 SDK opt.1」）。用户 2026-09-25 两条总原则：**开发阶段不考虑旧数据兼容**（单一当前契约，历史版本明确报错不回落）；**会话数据永久保留供审计**（只统计只提醒，不删除）。做的 7 条：① 任务页执行图 `taskgraph.*` 消息放行到编排 handler（此前到不了后台，面板只会读取超时）；② 规划请求包分列合法 `enabled_decision_types`（9 个 `PlanningDecisionType`）与 `enabled_repair_kinds`，内部启用键 `REPAIR/<子类>` 不再暴露给模型（9-23 有 7 局真实模型照抄成 decision_type 被判 `DECISION_TYPE_UNKNOWN`）；第 8 版包（标签 `planner-package-hierarchical-v10`）+ 提示词 v11，历史包/提示词分支与标签映射删除，绑定到旧包的任务派发时 `ContractError`；③ 判据要求的 pytest 运行（含裸 `pytest:`）一个测试都没收集到即 FAIL，只有无人要求的顺带运行可记无可证明内容；④ Host 自动批准检查策略的事件如实记 `actor_type=system`（`approval_source=HOST_LOSSLESS_AUTO`，`on_behalf_of_principal_id`），不再写成 human；⑤ 召回结果页到 16 页上限时以 `RECALL_AGGREGATE_LIMIT` SKIPPED/PARTIAL 停下，不再整条模型请求失败；⑥ Agent 后台循环（索引泵/清理/召回续跑/工具探测）错误写日志（同码 60 秒限频）并计入 `AgentRuntime.background_health()`，逐项隔离不再一项出错整轮中止，Host `native_plane.profiles[i].background` 上报，任务页连续失败 ≥3 次提示一行；⑦ 任务与会话数据只统计：Host `orchestration_storage_get`（线程池遍历 `data/agent-orchestrator/`，缓存 10 分钟、后台 30 分钟重算、强制刷新 10 秒节流），配置 `[orchestration] storage_warn_bytes` 默认 5 GiB，设置页新增「任务与会话数据」一节，超阈值提醒去数据目录迁移，无任何删除入口。核对后不做的与护栏（尤其"证书签发即判 SOURCE_CHANGED 绝不能接到 `goal_resolutions.validity` 列上"）见计划附录 A。计划、子代理挑战记录与实施记录：`plans/2026-09-25-mainflow-optimization/PLAN.zh-CN.md`。验证：各条定向测试通过；合并前/后全量回归无新引入失败；真机点击（电脑控制工具模拟鼠标，新数据目录，DeepSeek 开思考）一局完成到正式交付，5 个检查点通过；顺带暴露旧缺口：执行图面板对正常任务读不到图（执行图合同从未在产品路径开启，`taskgraph_revision_records` 为空），记计划附录 A-14。详见该计划第 11 节。

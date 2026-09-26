@@ -1,3 +1,69 @@
+最后更新：2026-09-26 CST（复杂编排跑通）。
+
+当前 SDK `0.13.0.dev20260925+opt.23`（源码 `d55398de`），Host 钉版提交 `ed89a4c4`。
+
+**结果**：真机用 7 步的“读书会首期筹备方案”任务（6 个交付文件，带依赖）做验证。前七趟各暴露一个新缺陷，逐个修复后，第八趟从规划走到 `MissionCompleted`（`verification_passed`）：
+- 用时约 31 分钟，花费约 230 万 token；
+- 6 步都一次做成，审阅员格式错误 5 次，全部在重试后恢复。
+
+记录在 `.local-test-evidence/2026-09-26/live-view/bookclub*-watch.log`。
+
+**今天的修复（SDK opt.16～opt.23，每处都带“修前失败、修后通过”的测试）**
+
+1. **编排循环空转**（opt.16/opt.17）
+   - 现象：任务在等人确认完成要求时，`_start_planning` 什么也没做却报“有进展”，循环不休眠，后台 CPU 100%，每秒写 18 条时钟回执，启动要 2 分钟。
+   - 修法：该函数如实返回是否真的开始了规划。另加 `commit_receipts(kind)` 索引（迁移 28）。
+   - 测试：`test_idle_cycle_does_not_spin.py`。
+2. **方法合成提示词 v8**（opt.17）
+   - 多个独立交付物各成一步，步骤名可读，写明依赖顺序，汇总放最后；简单目标仍拆 1～2 步。
+   - v7 保留注册。
+3. **规划次数按每个问题单独计数**（opt.18）
+   - 修法：`event_handler._planning_attempts` 只数上一次提交决定之后被拒的次数，原先是整个任务累计，默认只有 2 次。
+   - 兜底：任务额度、整体终审修复上限、卡死检查。
+   - 测试：`test_planning_bound_per_round.py`。
+4. **规划器回复的枚举值不区分大小写**（opt.18）
+   - 修法：`planning_decisions.py` 里的本地 `enum_of`，`"high"` 按 `HIGH` 接收，规范化哈希不变。
+5. **工具参数 JSON 坏了自动重发**（opt.18）
+   - 触发条件：`finish_reason=tool_calls`，但工具参数不是合法 JSON（DeepSeek 约每 100 次工具调用出现 1 次）。
+   - 修法：`simple_harness/agents/execution.py` 用同样的输出上限原样重发，与截断重试共用 `empty_response_retries`，默认 2 次。
+   - 保证：每次调用都结算记账，坏掉的调用绝不执行。
+   - 测试：`test_tool_output_length_recovery.py`、`test_protocol_failure_usage.py`。
+6. **审阅员输入清单的解码上限**（opt.18）
+   - 修法：`assurance_review_import.py` 两处改用 `MAX_RECORD_BYTES`（8MB）。
+   - 原因：280KB 的审阅员对话撞上 256KB 的 JSON 上限，32 次复核后被转成“需人工处理”。
+   - 测试：`test_review_import_large_manifest.py`。
+7. **空 code_test 的说明文字**（opt.19）
+   - 修法：没人点名、也收集不到测试的全目录运行，检查结果写“不适用、视为满足、不作为无法下结论的理由”；判定逻辑不变。
+   - 原因：审阅员把原来的“无可证明内容”读成“必过检查什么也没证明”，两次判无法下结论，把一步额度烧光。
+8. **卡死检查豁免排队中的审阅工作**（opt.20/opt.22）
+   - `_has_pending_assurance_work` 在以下两种情况下，不判“无可派发工作”：
+     - 保证审阅队列里还有未完成的工作（已转“需人工处理”的除外）；
+     - 审阅结果类事件（`AssuranceReviewClassified`/`FormatRejected`）已经出现，但 REVIEW 读进度还没读到。
+   - 周期性的保证事件不算进去，所以真卡死的任务最多约 300 秒后照常判定。
+   - 测试：`test_stall_waits_for_assurance_work.py`。
+9. **审阅回复可解析但无法导入时重问一次**（opt.21）
+   - 适用错误：`UNEXPOSED_EVIDENCE`、`DUPLICATE_CRITERION`、`FINDING_SCOPE`、`MANDATORY_CRITERIA_INVALID`，只限第一次调用。
+   - 修法：写 `AssuranceReviewInterpretationRejected` 回执（`classification=INTERPRETATION_INVALID`），走格式修复同一通道发起第二次调用，并在请求里附上具体改法（例如“只引用 complete=true 读过的标签”）。
+   - 第二次仍错才终拒；`POLICY_CATALOGUE_MISMATCH` 仍直接终拒。
+   - 场景脚本：`scripts/assurance_seams/evidence-tools-seam.py` 的“再错即终拒 / 改正即通过”两种情况。
+10. **规划类回复丢弃多余字段**（opt.23，用户决定）
+    - 修法：新文件 `planning/unknown_fields.py` 的 `decode_dropping_unknown`，按拒绝信息点名的位置删掉多余字段后重新解码，最多 16 次；位置不明时只删唯一的持有者，否则照旧拒绝。
+    - 接入位置：`parse_planning_decision`（包括顶层未知键）、`parse_method_proposal`、`planning_method_proposal.prepare_method`。
+    - 不变的部分：系统字段和越权声明仍先在原始回复上拒绝；审阅员回复与执行者声明不走这里，仍严格。冻结的编解码源码（`semantic_base.py`、`contracts/htn.py` 在编解码清单 v2～v5 里登记了哈希）未改动。
+    - 测试：`test_planning_replies_drop_unknown_fields.py`；`test_planning_decision_codec.py` 里两条旧断言按新决定改写。
+
+**Host 侧**
+- 单步固定额度 `OrchestrationSettings.task_max_tokens` 从 100 万提到 **300 万**（用户决定），任务总上限 2000 万不变。原因：一次保证审阅要 13～27 万 token，再加 29.5 万的审阅预留。
+
+**核验**
+- 独立子代理复核第 3～9 项：无阻断级问题。
+- 各项定向回归与“不带改动的版本”逐条对比，没有新增失败。已知原有失败：SDK 规划/存储类约 11 个，Host `tests/orchestration` 26 个，退回 opt.17 同样失败。
+
+**遗留（治本项，待用户决定）**
+- 规划器不该给文档步骤安排 code_test，或者空检查不该进必过清单。
+- 审阅成本高：每读一次证据都重发全部上下文。
+- 需要一个“7 步任务 + 故障注入”的快速端到端测试，代替逐趟真机试错。
+
 最后更新：2026-09-25 CST（主流程优化条目 2，SDK `0.13.0.dev20260925+opt.1`）。**规划请求包与解码器对齐**：`orchestrator/planner_views.py` 现在通过 `contracts/planning_decisions.exposed_enablement()` 把内部启用矩阵翻成两个字段——`planning_protocol.enabled_decision_types`（只含 9 个 `PlanningDecisionType` 值）与 `planning_protocol.enabled_repair_kinds`（`RepairKind` 值）；准入侧 `event_handler.py` 用逆函数 `internal_enablement_keys()` 还原成 `REPAIR/<kind>` 内部键，授权行 `planning_lane_grants`、`taskgraph_policy_sources` 等仍用内部键不变。当前包版本单一：`PLANNING_DECISION_PACKAGE_VERSION = 8`、标签 `PLANNING_DECISION_PACKAGE_LABEL = "planner-package-hierarchical-v10"`、提示词由配对表推导 `PLANNING_DECISION_PROMPT_VERSION = planner-hierarchical-v11`（v10 + 一条"decision_type 不含斜杠，子类写 payload.repair_kind"硬规则）；`_planning_decision_package_version` 只认当前标签，`_hierarchical_planner_template` 只剩"当前包→v11 / 无绑定或旧协议→旧提示词"，绑定到 4–7 版包的任务派发时抛 `ContractError("unsupported planning package version")`（用户决定：开发期不兼容旧数据）。修复开关关闭时同时去掉 `REPAIR` 并清空 `enabled_repair_kinds`；格式重问提醒补一句斜杠纠正。测试 `tests/orchestrator/full_target/test_planning_decision_enablement_contract.py`。同批：条目 5 `simple_harness/agents/arp/context/recall.py` 结果页达 `MAX_RESULT_PAGES` 且游标未空时 `_skipped(RECALL_AGGREGATE_LIMIT)`；条目 6 `simple_harness/agents/background_health.py`（`BackgroundHealthBook`，循环 index/draining/recall/tool_probe/reap）接入 `AgentRuntime._index_pump`、`ArpRuntime._tick_after`（三段逐项隔离）、`SessionLifecycleService.drive_draining(on_error=)`，对外 `AgentRuntime.background_health()`。
 
 最后更新：2026-09-24 CST（Assurance 第十段：默认开启 + 主流程跑通）。**保证机制默认开启**：SDK 单一默认选择点 `default_assurance_profile_for_new_mission()` 返回 `AssurancePolicy()`，Host `OrchestrationSettings.assurance_profile` 默认 `"on"`，`"off"` 为显式退出。新增生产环节：Host 以自身已认证 caller，在每轮编排循环后、以及 SDK 审阅准备前（部署端口 `AssuranceDeploymentPorts.check_policy_projector`），为每个冻结完成范围批准由原需求无损推导的检查策略（SDK `lossless_scope_mapping`：语义判据→SEMANTIC、具名检查→精确注册 CheckSpec，推不出就 `CHECK_POLICY_UNRESOLVED`，不猜），并为根范围批准最终审阅用途的策略（`mission_final_scope_id` + 对外接口可选 `purpose`）。保证通道下任务整体判定复述已采纳根决议上的认证等级，不另请未认证评判；根节点完成判断读根决议判据而非旧格式审阅记录。**验证**：Host 生产装配 + 真实模型（Grok Build 通道 `grok-4.6`；DeepSeek 日卡上游当晚只回空占位）run-21 从创建走到 MissionCompleted（verification_passed），收尾 FINALIZED/USABLE；途中 14 个接线缺陷逐局修复（授权键粒度、复核比较有效期、审阅预算编号、披露排序、审阅调用上限等），明细见 SDK `plans/assurance-1.1/BODY-WORK-IN-PROGRESS.md` 第十段、[HANDOFF](../HANDOFF-2026-09-23.md) §5。钉版 `0.13.0.dev20260923+assurance.14`（源 1903fbaf）。**边界**：只跑通 1 局 1 题 1 提供方；12 局真实模型、独立审阅、原生点击、Host 26 个既有失败迁移、证书签发即判 SOURCE_CHANGED 的读集粒度未做。
