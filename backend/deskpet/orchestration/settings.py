@@ -54,8 +54,11 @@ class OrchestrationSettings:
     # 2026-09-25 user decision: 20M for every Mission (a ceiling, not a charge — the
     # complex desktop ledger task spent 1.31M), and each leaf gets a fixed 1M of it
     # instead of an even share of the pool.
+    # 2026-09-26 user decision: 3M per leaf.  A seven-step desktop Mission died twice on
+    # a 1M leaf: one Assurance review costs 130k–270k tokens (every evidence read re-sends
+    # the whole context, counted at full price) plus a 295k review reserve.
     default_mission_max_tokens: int = 20_000_000
-    task_max_tokens: int = 1_000_000
+    task_max_tokens: int = 3_000_000
     default_mission_max_attempts: int = 12
     # Secret-free, pinned local-model profile selected by this deployment.
     local_model_profile: str = ""

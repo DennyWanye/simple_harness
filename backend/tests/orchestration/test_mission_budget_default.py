@@ -105,14 +105,14 @@ async def test_the_defaults_are_announced_in_the_status(orchestration_root, prin
 
 
 @pytest.mark.asyncio
-async def test_each_leaf_gets_the_fixed_one_million_allowance(orchestration_root, principal):
+async def test_each_leaf_gets_the_fixed_three_million_allowance(orchestration_root, principal):
     """2026-09-25 user decision: 20M per Mission by default, and every leaf a fixed 1M
     instead of an even share of the Mission pool."""
 
     service = await _service(orchestration_root, principal)
     try:
-        assert service._config.task_max_tokens == 1_000_000
-        assert service._orchestrator.commit._task_max_tokens == 1_000_000
+        assert service._config.task_max_tokens == 3_000_000
+        assert service._orchestrator.commit._task_max_tokens == 3_000_000
         assert service.status()["mission_budget_defaults"]["max_tokens"] == 20_000_000
     finally:
         await service.close()
