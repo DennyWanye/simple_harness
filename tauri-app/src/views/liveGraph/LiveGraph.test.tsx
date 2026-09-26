@@ -114,7 +114,7 @@ describe("LiveGraph", () => {
   it("还没有计划时显示正在规划", () => {
     const channel = mount();
     channel.reply("mission_live_graph", { ...graph(), source: "planning", plan_revision: null, nodes: [], edges: [], revisions: [] });
-    expect(screen.getByText("正在规划，计划生成后这里会出现执行图。")).toBeTruthy();
+    expect(screen.getByText("正在规划，计划生成后这里会自动出现执行图。")).toBeTruthy();
   });
 
   it("读取失败显示原因", () => {
@@ -168,5 +168,23 @@ describe("LiveGraph", () => {
     (stuck.nodes[2] as Record<string, unknown>).last_event_at = 2_000_000 - 700;
     channel.reply("mission_live_graph", stuck);
     expect(screen.getByText("1 个步骤可能卡住")).toBeTruthy();
+  });
+});
+
+describe("还没有执行图时说清楚原因", () => {
+  it("任务刚创建、等确认完成要求：不等回复就说明要先确认", () => {
+    const channel = new FakeChannel();
+    render(<LiveGraph missionId={M} channel={channel} detail={{ ...DETAIL, mission: { ...DETAIL.mission, status: "CREATED" } }} />);
+    expect(screen.getByText(/还没开始规划：请先按上面「下一步」的提示确认完成要求/)).toBeTruthy();
+  });
+
+  it("读取超过 8 秒没回复：提示并可重试", () => {
+    vi.useFakeTimers();
+    const channel = mount();
+    act(() => { vi.advanceTimersByTime(8000); });
+    fireEvent.click(screen.getByText("重试"));
+    expect(channel.all("mission_live_graph")).toHaveLength(2);
+    channel.reply("mission_live_graph", graph());
+    expect(screen.queryByText("重试")).toBeNull();
   });
 });

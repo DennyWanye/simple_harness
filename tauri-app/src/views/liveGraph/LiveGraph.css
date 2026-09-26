@@ -26,3 +26,5 @@
 .lg-list li button { border: 0; padding: 0; text-decoration: underline; }
 .lg-panel { margin-top: 12px; padding: 12px; border-left: 3px solid var(--sh-accent, #0d9488); background: #94a3b80a; border-radius: 6px; overflow-wrap: anywhere; }
 .lg-panel .lg-bar strong { flex: 1; min-width: 0; }
+.live-graph .react-flow__handle { opacity: 0; pointer-events: none; }
+.lg-slow button { margin-left: 8px; }

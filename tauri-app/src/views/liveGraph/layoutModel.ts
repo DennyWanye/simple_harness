@@ -9,7 +9,7 @@ import type { LiveEdge, LiveGraph } from "./model";
 
 export const LEAF_W = 220;
 export const LEAF_H = 64;
-export const HEADER_H = 40;
+export const HEADER_H = 64; // group title row + status row (2026-09-26 真机：40 时子步骤压住标题)
 
 export type ElkInput = {
   id: string; width?: number; height?: number; layoutOptions?: Record<string, string>;

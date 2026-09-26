@@ -98,6 +98,7 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   const [picked, setPicked] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Record<string, unknown>[] | null>(null);
   const [now, setNow] = useState(() => Date.now() / 1000);
+  const [slowRead, setSlowRead] = useState(false);
   const graphRequest = useRef<Pending | null>(null);
   const decisionRequest = useRef<string | null>(null);
   const again = useRef(false);
@@ -298,6 +299,17 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
     markerEnd: { type: MarkerType.ArrowClosed, color: e.kind === "order" ? "#8b5cf6" : "#0284c7" },
   })), [placed]);
 
+  // 读取超过 8 秒没回：提示并给「重试」，不让人对着"更新中…"干等
+  useEffect(() => {
+    if (!loading) return undefined;
+    const timer = setTimeout(() => setSlowRead(true), 8000);
+    return () => { clearTimeout(timer); setSlowRead(false); };
+  }, [loading]);
+  const retry = useCallback(() => {
+    graphRequest.current = null; again.current = false; setLoading(false);
+    sendGraph(revisionRef.current);
+  }, [sendGraph]);
+
   const historical = revision !== null;
   const pickedNode = picked ? byId.get(picked) ?? null : null;
   const stalledCount = (graph?.nodes ?? []).filter((n) => isStalled(n, now, missionTerminal)).length;
@@ -325,7 +337,8 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
       </div>
       {historical && <p className="lg-muted" role="status">历史版本，仅看结构；状态以当前为准。</p>}
       {error && <p role="alert" className="lg-error">{error}</p>}
-      {graph?.source === "planning" && <p className="lg-muted" role="status">正在规划，计划生成后这里会出现执行图。</p>}
+      {slowRead && <p className="lg-muted lg-slow" role="status">读取较慢，可能后台正忙。<button type="button" onClick={retry}>重试</button></p>}
+      {(!graph || graph.source === "planning") && !error && <p className="lg-muted" role="status">{notPlannedText(asText(mission.status), graph !== null)}</p>}
       {slow && <p className="lg-muted" role="status">正在排版…</p>}
       {graph?.source === "htn" && (
         <div className={"lg-canvas" + (historical ? " lg-historical" : "")}>
@@ -356,6 +369,14 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
       )}
     </section>
   );
+}
+
+/** 还没有执行图时说清楚为什么：按任务状态直接给出，不等后台回复。 */
+function notPlannedText(status: string, answered: boolean): string {
+  if (status === "CREATED") return "还没开始规划：请先按上面「下一步」的提示确认完成要求，确认后系统开始拆分任务，执行图会自动出现在这里。";
+  if (status === "PLANNING" || status === "ACTIVE") return "正在规划，计划生成后这里会自动出现执行图。";
+  if (status === "COMPLETED" || status === "FAILED" || status === "CANCELLED") return answered ? "这个任务没有生成拆分计划，所以没有执行图。" : "正在读取执行图…";
+  return "正在读取执行图…";
 }
 
 function NodePanel({ node, title, detail, events, hasMoreEvents, onLoadMoreEvents, decisions, historical, onClose }: {
