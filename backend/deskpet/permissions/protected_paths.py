@@ -215,6 +215,7 @@ def shell_tokens(command: str) -> list[str]:
         words = command.split()
     out: list[str] = []
     for word in words:
+        word = os.path.expandvars(word)  # ``cat $HOME/.ssh/key`` names the same file
         for part in re.split(r"[=<>|;&]+", word):
             part = part.strip("\"'")
             if part and ("/" in part or "\\" in part or part.startswith(("~", ".")) or _CREDENTIAL_NAME.match(Path(part).name)):

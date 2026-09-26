@@ -120,7 +120,9 @@ def test_shell_reads_of_credentials_ask(home) -> None:
     from deskpet.tools.os_tools.run_shell import run_shell
 
     root, ws = home
-    for command in ("cat ~/.ssh/id_rsa", f"cp {root}/.ssh/id_rsa /tmp/k", "base64 < ~/.ssh/id_rsa"):
+    (root / ".ssh" / "work_key").write_text("SUPER-SECRET-KEY", encoding="utf-8")
+    for command in ("cat ~/.ssh/id_rsa", f"cp {root}/.ssh/id_rsa /tmp/k", "base64 < ~/.ssh/id_rsa",
+                    "cat $HOME/.ssh/work_key", 'cat "${HOME}/.ssh/work_key"'):
         out = json.loads(run_shell({"command": command, "_write_scope_root": str(ws)}))
         assert out.get("ok") is False and "SUPER-SECRET" not in json.dumps(out), command
         refusal, _ = asyncio.run(pp.check_call("s", "run_shell", {"command": command}, base=ws))
