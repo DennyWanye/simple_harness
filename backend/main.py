@@ -3303,6 +3303,14 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Preload models on startup (best-effort — failures logged but don't block)."""
+    # 2026-09-26 诊断：`kill -USR1 <pid>` 把所有线程的调用栈打到 stderr（排查 CPU 占满/卡住）
+    try:
+        import faulthandler as _faulthandler
+        import signal as _signal
+
+        _faulthandler.register(_signal.SIGUSR1, all_threads=True)
+    except Exception:  # noqa: BLE001 - diagnostics only (not on Windows)
+        pass
     logger.info("preloading models...")
     # 2026-09-26 受保护核心文件：会话卡片走控制通道全局广播（不依赖面板是否可见）
     from deskpet.permissions import protected_paths as _protected_paths
