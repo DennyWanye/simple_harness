@@ -1,10 +1,20 @@
-最后更新：2026-09-26 CST（复杂编排跑通）。
+最后更新：2026-09-27 CST（保温杯任务真机跑通；收尾按上限计入、拆步打回；复杂编排跑通）。
+
+**收尾与拆步两项用户决定（2026-09-26～27，SDK opt.26～opt.32）**：
+- **审阅也只看这一步负责的要求**（opt.32）：只改执行侧后，第一步只写了自己的文件，但审阅仍按 5 份文件审——桌面步骤类型声明“覆盖全部根要求”，编译每步完成范围时把这份声明并进了审阅清单，其余 4 份判“未知”，结论永远是“无法判定”，同一步验证失败 6 次任务失败。现在被方法链接到要求的步骤只按链接审（`planning/htn/completion_scopes.py`），5 条根要求留在顶层总任务上最后统一审。测试 `operation_completion/test_completion_scope_compiler.py` 新增 1 个。
+- **重启后遗留名额释放**（opt.31）：退出时仍在线路上的请求，重启后所属运行已不在当前进程，却一直占着唯一的模型名额，新任务第一个请求排队到超时、任务直接失败。恢复检查里把这种请求标为“线路已断”：释放名额，费用仍按未知保留（`runtime/provider_budget_guard.py` 的 `_owner_gone`）。测试 `p35/test_provider_budget_guard.py` 新增 1 个。
+- **方法合成回合没拿到回复时重问一次**（opt.31）：以前请求失败/超时当场判任务失败；现在与“回复读不懂”一样重问一次。测试 `test_synthesis_rejection_reask.py` 新增 1 个。线路在 01:14～01:40 间歇故障时两次都失败，排查中曾误判为思考模式所致，用户追问后对照实验证实同一请求开思考也能成功。
+- **真机结果**：保温杯任务（1 份参考资料、5 份交付物）26 分钟完成，5 步各一次通过、无验证失败，每步只写自己的文件；一笔未知用量按上限计入后收尾完成（`MissionCompleted`、`AssuranceMissionFinalized`），结算约 162 万 token；预算按渠道与按周合计均为 8 万元，与资料一致。编排回归 5483 通过，74 个失败在改动前版本同样失败。
+- **每一步只带自己的要求**（opt.30）：真机保温杯任务拆成 5 步，但每一步的任务都带着全部 5 个 file: 检查和整个任务目标，第 1 步只好把 5 份文件全写了（拆步形同虚设，后面每步还得重写一遍）。现在生成步骤时读取方法里“哪条要求由哪一步负责”（`accepted_outputs.owned_criteria`，与审阅用的对应关系同源），被链接到要求的步骤只带自己的要求和文件检查，目标开头写明“本步骤只负责：…；其他文件由其他步骤负责，不要创建或改写”，整个任务目标放在后面供理解上下文（`occurrence_tasks.scoped_goal`）；没有链接任何要求的步骤保持原样。测试 `test_leaf_owns_linked_criteria.py`；编排回归 5479 通过，75 个失败在改动前版本上同样失败。
+- **未知用量按上限计入，任务能收尾**（opt.28/29）：内容全部通过、只剩已终止尝试的“用量未知”预留时，收尾判定（`AssuranceCloseoutConsumer._upper_bound_plan`）不再永远停在“清算中”，而是由 `BudgetLedger.settle_at_upper_bound` 按“预留额与已知用量取较大者”结清（只多算不少算，用量事实本身仍记为未知），逐笔记 `ReservationCountedAtUpperBound` 后再写最终状态。任务在新代码下恢复时（`PolicyInterpreterDrift`）会重算一次收尾，旧版本留下的卡住任务也能结束。真机：保温杯任务卡在清算中的 57,024 token 按上限计入后 `MissionCompleted`。测试 `tests/orchestrator/full_target/test_unknown_usage_upper_bound.py`。
+- **拆分过粗打回一次**（opt.27/28）：方法合成提示词 v9（`METHOD_SYNTHESIZER_VERSION`，v8 保留）写明“依赖只表示先后，不是合并理由；每个 file: 条件只由一个步骤产出”。仍有一步承担 3 个及以上 file: 条件时，第一次回复被打回并写明原因（`hierarchical_dispatch._coarse_file_steps`）；每轮最多问两次，所以只在第一次回复检查，第二次原样接受，绝不因此让任务失败。测试 `test_synthesis_granularity.py`。真机：保温杯任务（5 份文件）拆成 5 步。
+- **已下发尝试的结果未知时有上限**（opt.26）：保证通道里一次执行尝试卡在“服务商结果未知”超过 180 秒，就把尝试记为丢失、预留保持占用（交给上面的按上限计入），释放后重新派发，不再无限等待。测试 `assurance_exec/test_assured_planner_unknown_bounded.py`。
 
 **一个通用任务 + 可选参考资料**（用户决定 2026-09-26，SDK opt.25，后续由主 Agent 调用）：通用任务配置升到 code-v1 第 5 版（`governance/domains.py` 的 `CODE_PROFILE`），开放 `sources/` 资料目录并允许 `source` 证据；资料走与文档研究相同的机制（`_active_source_binding` 按尝试冻结版本 → `_source_files` 挂进执行者工作区 → `_protected_files` 禁止改写），但不带文档研究的严格引用检查。第 1～4 版原样保留（已有任务冻结的配置不变），无人机仿真配置改派生自第 4 版。调用入口：`mission_create_with_sources`，`mission` 里不写 `domain` 即通用任务，写 `doc-research-v1` 即严格引用模式。资料目录开放后，发布目录与证据存储重叠的安全检查对通用任务同样生效。测试 `tests/orchestrator/p33/test_general_mission_sources.py`；真机：附一份周会纪要的通用任务约 3 分钟完成，待办表与纪要逐条一致。
 
 **纯内容完成要求自动确认**（用户决定 2026-09-26，SDK opt.24）：auto 权限模式下，`OrchestrationService._auto_confirm_content_completion` 每轮循环检查状态为 CREATED 的任务；成功条件里没有 `action:` 且完成要求仍待确认时，按页面同样的“全部必需判据归为内容”映射提交，`approval_source=HOST_AUTO_PERMISSION`，事件记为系统（`host:auto-permission-completion`，写明代谁确认），回执不变；SDK 拒绝 Host 自动确认任何带操作效果的映射。有操作要求或 manual 模式仍保留“确认上述完成要求”按钮。测试：SDK `operation_completion/test_completion_spec_approval.py` 新增 3 个，Host `tests/orchestration/test_auto_confirm_content_completion.py`。真机：重启后停在“已创建”的任务数秒内自动确认并进入规划。
 
-当前 SDK `0.13.0.dev20260925+opt.25`，Host 钉版提交 `e520e486`。
+当前 SDK `0.13.0.dev20260925+opt.32`，Host 钉版提交 `5faa739f`。
 
 **结果**：真机用 7 步的“读书会首期筹备方案”任务（6 个交付文件，带依赖）做验证。前七趟各暴露一个新缺陷，逐个修复后，第八趟从规划走到 `MissionCompleted`（`verification_passed`）：
 - 用时约 31 分钟，花费约 230 万 token；

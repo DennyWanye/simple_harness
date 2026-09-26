@@ -1,5 +1,7 @@
 最后更新：2026-09-26 CST（SDK opt.18～opt.22，复杂编排真机跑通时修的保证审阅四处；详情见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md) 同日条目 6～9）
 
+**收尾按上限计入**（用户决定 2026-09-26，SDK opt.28/29）：DRAINING 只剩“用量未知”的预留且内容已通过时，按预留额与已知用量较大者结清并记 `ReservationCountedAtUpperBound`，随后 READY→FINALIZED；详情见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md) 顶部条目。
+
 1. **审阅导入读审阅员输入清单改用记录上限**
    - `assurance_review_import.py` 读取审阅员自己的输入清单时，上限从 256KB 改为 `MAX_RECORD_BYTES`（8MB）。
    - 原因：清单包含审阅员读证据的全部对话，长审阅会超过 256KB，每次导入都失败，32 次复核后转“需人工处理”。读取侧早已按 8MB 放行，导入侧漏改了。
