@@ -744,6 +744,10 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     // 2026-09-26：通用任务可以附带参考资料（可选）；严格引用模式必须至少一份。
     (domain === "code" ? (sources.length === 0 || (canAttachSources && sourcesComplete))
       : canCreateDocument && sources.length > 0 && sourcesComplete);
+  // 2026-09-26 真机测试：目标写了"根据参考资料《新品需求说明》…"却没附资料，执行者找不到只好编数字。
+  const mentionsMaterial = /参考资料|附件|资料里|资料中|根据资料|《[^》]+》/.test(goal);
+  const missingMaterialHint = mentionsMaterial && sources.length === 0
+    ? "目标里提到了参考资料，但还没有附上任何资料；需要的话请在上面「参考资料」里添加" : "";
   // 2026-09-26 真机点击：按钮变灰却不说原因，用户以为"点了没反应"。
   const submitBlocker = createPending || submittable ? ""
     : !channel ? "还没连上后台，请稍候"
@@ -948,10 +952,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             {domain === "code" && <div style={muted}>普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如 pytest: tests/</div>}
             {badPytestLines.length > 0 && <div role="alert" style={{ color: dark.danger }}>「{badPytestLines[0]}」会被当作测试命令运行，但 pytest: 后面不是测试路径。要写说明就去掉 pytest: 前缀。</div>}
             {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}
-            {domain === "code" && canAttachSources && <details data-testid="create-sources" open={sources.length > 0 || undefined}>
-              <summary style={{ cursor: "pointer", color: dark.textMuted }}>参考资料（可选）：给任务附上会议纪要、需求文档等，执行时可以读取</summary>
+            {domain === "code" && canAttachSources && <div data-testid="create-sources" style={{ display: "flex", flexDirection: "column", gap: tokens.space.xs }}>
+              <div style={{ fontWeight: tokens.weight.semibold }}>参考资料（可选）</div>
+              <div style={muted}>给任务附上会议纪要、需求文档等，执行时可以读取。目标里提到的资料要在这里附上，系统不会自己去找。</div>
               <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />
-            </details>}
+            </div>}
             <details data-testid="create-advanced" open={!validReserve || !validSynthesis || domain !== "code" || undefined}>
             <summary style={{ cursor: "pointer", color: dark.textMuted }}>高级设置（可选，一般不用改）</summary>
             <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm, marginTop: tokens.space.sm }}>
@@ -1005,6 +1010,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               提交任务
             </button>
             {submitBlocker && <div role="status" data-testid="submit-blocker" style={muted}>还不能提交：{submitBlocker}</div>}
+            {!submitBlocker && missingMaterialHint && <div role="status" data-testid="material-hint" style={{ color: dark.warning }}>{missingMaterialHint}</div>}
             {createPending && <div role="status">正在创建任务…</div>}
           </div>
         ) : null}

@@ -348,6 +348,21 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(channel.all("mission_create_with_sources")).toHaveLength(0);
   });
 
+  it("warns when the goal names reference material that is not attached", () => {
+    // 2026-09-26 真机测试：目标写"根据参考资料《新品需求说明》"却没附资料，执行者只好编数字
+    renderAvailable();
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    expect(screen.getByTestId("create-sources")).toBeTruthy();  // 不折叠，直接可见
+    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "根据参考资料《新品需求说明》写推广方案" } });
+    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:a.md" } });
+    expect(screen.getByTestId("material-hint").textContent).toContain("还没有附上任何资料");
+    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(false);  // 只提醒不拦截
+    fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
+    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "新品需求说明.md" } });
+    fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "售价 299 元" } });
+    expect(screen.queryByTestId("material-hint")).toBeNull();
+  });
+
   it("a general task may attach reference material and sends one atomic batch without a domain", () => {
     // 2026-09-26（用户决定）：一个通用任务，可选附资料，不强制逐字引用
     const channel = renderAvailable();
