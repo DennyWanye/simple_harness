@@ -72,3 +72,32 @@ async def test_host_duties_are_bound_to_run_between_loop_cycles(tmp_path):
     await bound["duty"]()
     assert [c["request_id"] for c in control.issued] == ["r1"]
     service._bind_host_duties(object())  # an SDK without the hook is left alone
+
+
+def test_a_round_that_changed_nothing_waits_the_long_tick(tmp_path):
+    """Real run 2026-09-28: two stuck Missions kept the 2 s tick and a core at 100%."""
+
+    service = _service(tmp_path, "auto", _Control([]))
+    marks = iter([(1,), (1,), (2,)])
+
+    class _Store:
+        def list_missions(self):
+            from types import SimpleNamespace
+            return [SimpleNamespace(id="m1", status="ACTIVE")]
+
+        def waiting_on(self, mission_id):
+            return []
+
+    class _Loop:
+        store = _Store()
+
+        def durable_watermark(self):
+            return next(marks)
+
+    service._orchestrator = _Loop()
+    service._note_quiet_round()
+    assert service._tick() == service.settings.tick_active_seconds  # first round: busy
+    service._note_quiet_round()
+    assert service._tick() == service.settings.tick_waiting_seconds  # nothing changed
+    service._note_quiet_round()
+    assert service._tick() == service.settings.tick_active_seconds  # a write: busy again

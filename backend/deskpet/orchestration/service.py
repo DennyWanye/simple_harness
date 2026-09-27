@@ -165,6 +165,8 @@ class OrchestrationService:
         self._manifest: dict[str, Any] | None = None
         self._driver: asyncio.Task[None] | None = None
         self._wake = asyncio.Event()
+        self._quiet_round = False
+        self._last_watermark: Any = None
         self._closing = False
         self._failures = 0
         # 2026-09-25 条目 7: disk taken by task/session data, measured off the loop; the
@@ -558,7 +560,26 @@ class OrchestrationService:
             return self.settings.tick_idle_seconds
         if all(store.waiting_on(m.id) for m in active):
             return self.settings.tick_waiting_seconds  # only people are awaited
+        if self._quiet_round:
+            # NEXT-TG-1.0 2B (real run 2026-09-28): two old Missions waiting on
+            # nothing the loop can do kept the 2 s tick, and every tick re-ran the
+            # whole recovery: a core at 100% with nothing written. A round that left
+            # no durable change waits like a person-only wait; a write wakes us.
+            return self.settings.tick_waiting_seconds
         return self.settings.tick_active_seconds
+
+    def _note_quiet_round(self) -> None:
+        reader = getattr(self._orchestrator, "durable_watermark", None)
+        if reader is None:
+            self._quiet_round = False
+            return
+        try:
+            mark = reader()
+        except Exception:  # noqa: BLE001 - unreadable means "assume busy"
+            self._quiet_round, self._last_watermark = False, None
+            return
+        self._quiet_round = mark == self._last_watermark
+        self._last_watermark = mark
 
     async def _host_duties(self) -> None:
         """The Host's own per-round work: policies, grants, TaskGraph enables, confirmations."""
@@ -587,6 +608,7 @@ class OrchestrationService:
                     await self._rebuild()
                 await self._orchestrator.run()
                 await self._host_duties()
+                self._note_quiet_round()
                 self._storage.schedule_if_stale()
                 self._failures = 0
                 if self._state == "degraded":
