@@ -64,3 +64,24 @@ def test_an_operation_manual_mode_or_an_approved_spec_keeps_the_button():
     for fake, _ in (_service(criteria=("file:a.md", "action:file_publish.x")), _service(mode="manual"),
                     _service(state="APPROVED")):
         assert _run(fake) == 0
+
+
+def test_a_plain_words_publish_criterion_keeps_the_button():
+    # 2026-09-27 真机：「NOTES.md 已发布到授权的发布目录」被当成内容自动确认，发布被静默丢掉。
+    for criteria in (("写 NOTES.md", "NOTES.md 已发布到授权的发布目录"), ("upload report.pdf to the share",),
+                     ("Deploy the site",)):
+        fake, calls = _service(criteria=criteria)
+        assert _run(fake) == 0
+        assert not [c for c in calls if c[0] == "approve_operation_completion_spec"]
+    # the workspace's own statements are checked too, not only the mission's raw lines
+    fake, calls = _service()
+    original = fake._call
+
+    def call(method, *args):
+        result = original(method, *args)
+        if method == "snapshot":
+            result["snapshot"]["operation_workspace"]["criteria"][1]["statement"] = "把结果推送到群里"
+        return result
+
+    fake._call = call
+    assert _run(fake) == 0
