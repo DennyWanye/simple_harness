@@ -154,6 +154,9 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         # S5b Task 3: semantic closure must be reachable every provider turn
         # (a hidden Tool call is a whole-Run fault in the frozen SDK).
         "task_scope_update",
+        # NEXT-TG-1.0 §9: starting a background Mission from chat must never be a
+        # hidden-tool Run fault; its schema is two fields.
+        "mission_start",
         "skill_invoke",
         # Project Skill installation is a core product control surface, not a
         # generic deferred capability. Its one-field schema is cheap to expose
@@ -1945,6 +1948,8 @@ def describe_call_zh(tool_name: str, arguments: Mapping[str, Any]) -> str:
         return "启用一个可用工具，供这次对话使用"
     if tool_name == "task_scope_search":
         return f"搜索以前的任务：{_clip(args.get('query'), 60)}"
+    if tool_name == "mission_start":
+        return f"在任务编排里新建后台任务「{_clip(args.get('goal'), 60)}」"
     if tool_name == "write_file":
         return f"写入文件：{_clip(args.get('path'))}"
     if tool_name == "edit_file":

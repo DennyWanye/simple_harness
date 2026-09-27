@@ -8607,6 +8607,46 @@ async def _build_product_sdk_runtime_stack(
             },
         ),
     )
+    # NEXT-TG-1.0 §9：主 Agent 在聊天里发起后台任务——与任务页同一个 create_mission。
+    from deskpet.orchestration.chat_tool import (
+        MISSION_START_DESCRIPTION,
+        MISSION_START_SCHEMA,
+        MISSION_START_TOOL_NAME,
+        MissionStartRefused,
+        start_mission,
+    )
+
+    async def mission_start_handler(arguments, _context):
+        from simple_harness.tools import ToolResult
+
+        try:
+            value = start_mission(
+                lambda: service_context.get("orchestration"),
+                arguments,
+                run_id=str(_context.run_id),
+                call_id=str(_context.call_id or _context.request_id),
+            )
+        except MissionStartRefused as refused:
+            return ToolResult.failed(_context.call_id, refused.code, str(refused), retryable=refused.retryable)
+        return ToolResult.succeeded(_context.call_id, value)
+
+    projected_registrations = (
+        *projected_registrations,
+        ProductToolRegistration(
+            name=MISSION_START_TOOL_NAME,
+            description=MISSION_START_DESCRIPTION,
+            input_schema=MISSION_START_SCHEMA,
+            handler=mission_start_handler,
+            dispatch_kind="async",
+            permission_category="mission_start",
+            projectless_admission="safe",
+            metadata={
+                "source": "product-mission-start",
+                "version": "1",
+                "stable_handler_id": "core.mission_start.v1",
+            },
+        ),
+    )
     tools_adapter, tool_inventory = build_product_tool_registry(projected_registrations)
     from deskpet.tools import registry as live_tool_registry
 
