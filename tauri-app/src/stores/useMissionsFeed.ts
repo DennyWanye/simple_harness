@@ -28,6 +28,8 @@ import {
 
 /** 推送触发的列表重拉最短间隔。 */
 const LIST_REFRESH_INTERVAL_MS = 1000;
+/** 推送没改变任何任务状态时，列表重拉的最短间隔。 */
+const QUIET_LIST_REFRESH_MS = 5000;
 
 export function useMissionsFeed(channel: MissionsChannel | null): void {
   useEffect(() => {
@@ -44,17 +46,27 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
     // collapse into one trailing refresh so the last change is never missed
     let cooling: ReturnType<typeof setTimeout> | null = null;
     let pending = false;
+    let lastSent = 0;
     const sendList = () => {
       pending = false;
+      lastSent = Date.now();
       request("mission_list");
       cooling = setTimeout(() => {
         cooling = null;
         if (pending) sendList();
       }, LIST_REFRESH_INTERVAL_MS);
     };
-    const refreshList = () => {
-      if (cooling) pending = true;
-      else sendList();
+    // NEXT-TG-1.0 §9 (2026-09-28): a running Mission pushes every second or two and each
+    // list costs the backend a pass over every row.  A push that moved no status (or named
+    // a Mission the list does not have) refreshes within 1 s; otherwise at most every 5 s.
+    const refreshList = (urgent: boolean) => {
+      if (cooling) { pending = true; return; }
+      if (urgent || Date.now() - lastSent >= QUIET_LIST_REFRESH_MS) sendList();
+      else {
+        pending = true;
+        cooling = setTimeout(() => { cooling = null; if (pending) sendList(); },
+          QUIET_LIST_REFRESH_MS - (Date.now() - lastSent));
+      }
     };
 
     const off = channel.onMessage((incoming: IncomingMessage) => {
@@ -77,6 +89,8 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
         case "mission_changed": {
           const missionId = asText(payload.mission_id);
           if (!missionId) break;
+          const row = state.missions.find((item) => item.id === missionId);
+          const urgent = !row || row.status !== asText(payload.status);
           state.applyChange({
             mission_id: missionId,
             status: asText(payload.status),
@@ -85,7 +99,7 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
             events: asList(payload.events) as unknown as MissionEvent[],
             truncated: payload.truncated === true,
           });
-          refreshList();
+          refreshList(urgent);
           break;
         }
         default:

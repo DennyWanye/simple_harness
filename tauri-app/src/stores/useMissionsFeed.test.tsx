@@ -127,6 +127,25 @@ describe("useMissionsFeed（P2-5）", () => {
     expect(channel.count("mission_list")).toBe(3); // quiet for > 1 s: sent at once
   });
 
+  it("推送没改任何任务状态时，列表最多每 5 秒重拉一次；状态变了照旧 1 秒内", () => {
+    const channel = new FakeChannel();
+    render(<Feed channel={channel} />);
+    channel.reply("mission_list", { missions: [ROW] });
+    act(() => vi.advanceTimersByTime(1500));
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 5 } });
+    expect(channel.count("mission_list")).toBe(1); // same status: waits for the quiet interval
+    act(() => vi.advanceTimersByTime(3000));
+    expect(channel.count("mission_list")).toBe(1);
+    act(() => vi.advanceTimersByTime(600));
+    expect(channel.count("mission_list")).toBe(2); // 5 s after the previous list
+    act(() => vi.advanceTimersByTime(1500));
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 6 } });
+    expect(channel.count("mission_list")).toBe(3); // a status change is urgent
+    act(() => vi.advanceTimersByTime(1500));
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-2", status: "CREATED", last_seq: 1 } });
+    expect(channel.count("mission_list")).toBe(4); // a Mission the list does not have yet
+  });
+
   it("channel 为 null 时什么都不发；连上后再发", () => {
     const { rerender } = render(<Feed channel={null} />);
     const channel = new FakeChannel();
