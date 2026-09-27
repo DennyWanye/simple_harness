@@ -1,0 +1,134 @@
+{
+  "accepted_notes_sha256": "7c0a978d8818cd4c9fa3330e1c399b12644a8cc0ba9d7734f90c0a70df05f692",
+  "actions": [
+    {
+      "action_id": "action-17e6a387fe6d29a7",
+      "state": "SUCCEEDED"
+    }
+  ],
+  "attempts": {
+    "COMPLETED": 2,
+    "RETRY_WAIT": 1
+  },
+  "dispatch_intents": [
+    {
+      "kind": "attempt",
+      "n": 3,
+      "state": "SETTLED"
+    },
+    {
+      "kind": "critic",
+      "n": 4,
+      "state": "SETTLED"
+    },
+    {
+      "kind": "plan",
+      "n": 6,
+      "state": "SETTLED"
+    }
+  ],
+  "events": {
+    "by_type": {
+      "AcceptanceCommitted": 3,
+      "ActionHandedOff": 1,
+      "ActionProposed": 1,
+      "ActionSucceeded": 1,
+      "AgentCreated": 12,
+      "AllocationDecided": 3,
+      "ApprovalGranted": 1,
+      "ApprovalRequested": 1,
+      "ArtifactMergeNotApplicableUnderHierarchical": 1,
+      "AttemptClaimed": 3,
+      "AttemptCreated": 3,
+      "AttemptStarted": 3,
+      "BudgetReleased": 14,
+      "BudgetReserved": 13,
+      "CompoundPhaseChanged": 3,
+      "GoalResolutionCommitted": 1,
+      "HeartbeatReceived": 24,
+      "HierarchicalDispatchWithheld": 4,
+      "HierarchicalRootReviewCut": 1,
+      "InputSubmitted": 9,
+      "IntentSettled": 13,
+      "MethodApplicabilityAssessed": 2,
+      "MethodSynthesisRoundRecorded": 1,
+      "MissionCompleted": 1,
+      "MissionCreated": 1,
+      "MissionCriteriaJudged": 1,
+      "MissionPlanning": 1,
+      "MissionSuccessJudged": 1,
+      "ModelRouted": 3,
+      "NativePlanningDecisionPrepared": 1,
+      "ObligationDemandAdmitted": 1,
+      "ObligationDemandWithdrawn": 1,
+      "OperationCompletionSpecApproved": 1,
+      "OperationIntentSubmitted": 1,
+      "OperationMaterialized": 1,
+      "OperationOutcomeAccepted": 1,
+      "OperationOutcomeReviewPrepared": 1,
+      "OperationProposalReviewed": 1,
+      "PlanOccurrencesMaterialised": 1,
+      "PlanRevisionCommitted": 1,
+      "PlannerRoundSkippedForSynthesis": 2,
+      "PlanningDecisionEvaluated": 2,
+      "PlanningDeploymentBound": 1,
+      "PlanningRepairAddressed": 1,
+      "PlanningRepairRequested": 1,
+      "PlanningRetryAuthorized": 1,
+      "PlanningServiceResumed": 1,
+      "PolicyInterpreterDrift": 1,
+      "ResultSubmitted": 3,
+      "TaskCommitted": 3,
+      "TaskCompleted": 2,
+      "TaskUnblocked": 1,
+      "VerificationFailed": 1,
+      "VerificationLayerRecorded": 18,
+      "VerificationPassed": 2,
+      "VerificationStarted": 3
+    },
+    "chain": {
+      "ActionHandedOff": 1,
+      "ActionSucceeded": 1,
+      "ApprovalGranted": 1,
+      "GoalResolutionCommitted": 1,
+      "MissionCompleted": 1,
+      "OperationIntentSubmitted": 1,
+      "OperationOutcomeAccepted": 1
+    },
+    "count": 180,
+    "human_actor_events": 1,
+    "last_seq": 34683
+  },
+  "mission_id": "mission-a22c9fc39b8abed8",
+  "operation_intents": [
+    "operation-intent-5cb56e9027c342bea8ae681cbef43d2b"
+  ],
+  "provider_calls": {
+    "count": 30,
+    "execution_rows": {
+      "found": 30,
+      "settled_with_usage": 30
+    },
+    "tokens": 232106,
+    "unknown_usage": []
+  },
+  "published": {
+    "NOTES.0c0ac4dd7d6f.v1.md": {
+      "bytes": 1442,
+      "sha256": "6e726021b82a90b64f86ef596787e7c9398bc433fa389aff6090348bf9d356af"
+    },
+    "NOTES.638371dc4c39.v1.md": {
+      "bytes": 1656,
+      "sha256": "7c0a978d8818cd4c9fa3330e1c399b12644a8cc0ba9d7734f90c0a70df05f692"
+    }
+  },
+  "published_matching_accepted": [
+    "NOTES.638371dc4c39.v1.md"
+  ],
+  "schema": "next-tg-2a-upstream-mission-receipt-v1",
+  "sdk_source_commit": "9f3dc6a81d41d4f89028bdb72d7ba8e4790496f4",
+  "sdk_version": "0.13.0.dev20260925+opt.39",
+  "sdk_wheel_sha256": "58c7307a294f020ba71d9301c3915f1567dc1f9bcbe8b14765ee4870ff17414a",
+  "spec_hash": "ffddc41f1ef7717725348bea2adf08ee57531f469d9351280ceab2f5258e6f51",
+  "status": "COMPLETED"
+}

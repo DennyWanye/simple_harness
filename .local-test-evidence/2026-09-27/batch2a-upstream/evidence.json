@@ -1,0 +1,7 @@
+{
+  "mission_id": "mission-a22c9fc39b8abed8",
+  "wheel": "simple_harness_sdk-0.13.0.dev20260925+opt.39-py3-none-any.whl",
+  "candidate_manifest": "simple_harness_sdk-0.13.0.dev20260925+opt.39.candidate-manifest.json",
+  "mission_receipt": "mission-receipt.json",
+  "cold_replay_receipt": "cold-replay-receipt.json"
+}

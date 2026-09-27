@@ -1,0 +1,9 @@
+{
+  "method": "应用退出（8100 端口与后台进程均消失）→ 冷启动（orchestration_ready）→ 同一只读脚本重算任务回执 → 逐字节比较",
+  "mission_id": "mission-a22c9fc39b8abed8",
+  "mission_receipt_sha256": "69edb8614ceaa08c12f1056fd99e2dd8430afa049c93a76644067f46a2966fa0",
+  "recomputed_receipt_sha256": "69edb8614ceaa08c12f1056fd99e2dd8430afa049c93a76644067f46a2966fa0",
+  "schema": "next-tg-2a-cold-replay-receipt-v1",
+  "sdk_version_after_restart": "0.13.0.dev20260925+opt.39",
+  "unchanged": true
+}

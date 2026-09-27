@@ -1,0 +1,176 @@
+{
+  "convergence": {
+    "data": {
+      "complete": true,
+      "jobs": [],
+      "mission_id": "mission-8cb840d96b04beba",
+      "schema_version": 1,
+      "through_seq": 35333
+    },
+    "ok": true,
+    "request_id": "c"
+  },
+  "detail.taskgraph": "unknown message 'mission_detail'",
+  "diff": {
+    "error": "执行图来源不可读，请保留当前画面并重新读取。",
+    "error_code": "GRAPH_INTEGRITY",
+    "ok": false,
+    "request_id": "f",
+    "taskgraph_error": {
+      "code": "GRAPH_INTEGRITY",
+      "detail": "执行图来源不可读，请保留当前画面并重新读取。",
+      "origin": "SYSTEM",
+      "retry_kind": "OPERATOR_REPAIR",
+      "schema_version": 1,
+      "source_identity": null,
+      "stage": "READ"
+    }
+  },
+  "snapshot": {
+    "data": {
+      "complete": true,
+      "edges": [
+        {
+          "identity": "5f4cdbb9a6a2ec034dd930ef07a461f52c8f00fa06b7ec5f84c26fa5683d81ea",
+          "kind": "refinement",
+          "source": "desktop-root-mission-8cb840d96b04beba",
+          "target": "occ-4310b839e478f458678318666686c1cb"
+        }
+      ],
+      "execution_frontier": [],
+      "mission_id": "mission-8cb840d96b04beba",
+      "next_cursor": null,
+      "nodes": [
+        {
+          "contract_revision": 1,
+          "dispatch_generation": 0,
+          "form": "compound",
+          "obligation_id": "desktop-duty-mission-8cb840d96b04beba",
+          "occurrence_id": "desktop-root-mission-8cb840d96b04beba",
+          "phase": "COMPLETED",
+          "readiness": "NEEDS_REFINEMENT",
+          "reason_codes": [
+            "form_compound"
+          ],
+          "task_id": "desktop-root-mission-8cb840d96b04beba"
+        },
+        {
+          "contract_revision": 1,
+          "dispatch_generation": 0,
+          "form": "primitive",
+          "obligation_id": "desktop-duty-mission-8cb840d96b04beba",
+          "occurrence_id": "occ-4310b839e478f458678318666686c1cb",
+          "phase": "COMPLETED",
+          "readiness": "NOT_SELECTED",
+          "reason_codes": [
+            "mission_does_not_admit_work"
+          ],
+          "task_id": "task-dfb903caf14bbc8b6d4375bcddbb8446"
+        }
+      ],
+      "planning_frontier": [
+        "desktop-root-mission-8cb840d96b04beba"
+      ],
+      "read_token": {
+        "manifest_hash": "8ba3c4cd6bd294c0cafbff5a26fcc8f623666309cc3c263bedc09c48578064ec",
+        "plan_revision": 1,
+        "snapshot_hash": "214a5065468c8db8e593d4a4b752ccbb2fe280d36bc69b147f710ec1f31e4d6a",
+        "through_seq": 35333,
+        "validity_epochs": [
+          {
+            "epoch": 87,
+            "scope_id": "assurance:mission"
+          },
+          {
+            "epoch": 0,
+            "scope_id": "mission"
+          }
+        ]
+      },
+      "root_resolution_refs": [
+        {
+          "content_hash": "6edcb75d7558149ec28d36dfc1a9c149d76a20526bafc79a9dc885e240ea139f",
+          "id": "res-desktop-root-mission-8cb840d96b04beba",
+          "kind": "resolution",
+          "revision": 1
+        }
+      ],
+      "schema_version": 1,
+      "view_mode": "CURRENT"
+    },
+    "ok": true,
+    "request_id": "s"
+  },
+  "why_not_ready": {
+    "data": {
+      "details": [
+        "phase=COMPLETED",
+        "内容验收：已通过",
+        "效果验收：已通过"
+      ],
+      "mission_id": "mission-8cb840d96b04beba",
+      "occurrence_id": "desktop-root-mission-8cb840d96b04beba",
+      "read_token": {
+        "manifest_hash": "8ba3c4cd6bd294c0cafbff5a26fcc8f623666309cc3c263bedc09c48578064ec",
+        "plan_revision": 1,
+        "snapshot_hash": "214a5065468c8db8e593d4a4b752ccbb2fe280d36bc69b147f710ec1f31e4d6a",
+        "through_seq": 35333,
+        "validity_epochs": [
+          {
+            "epoch": 87,
+            "scope_id": "assurance:mission"
+          },
+          {
+            "epoch": 0,
+            "scope_id": "mission"
+          }
+        ]
+      },
+      "readiness": "NEEDS_REFINEMENT",
+      "reason_codes": [
+        "form_compound"
+      ],
+      "schema_version": 1,
+      "source_refs": [
+        {
+          "content_hash": "8ba3c4cd6bd294c0cafbff5a26fcc8f623666309cc3c263bedc09c48578064ec",
+          "id": "mission-8cb840d96b04beba",
+          "kind": "network_document",
+          "revision": 1
+        },
+        {
+          "content_hash": "f0ea800ad2f6091472b6349852a89ad657face7821ed791436fdd23717b5c3b4",
+          "id": "desktop-root-mission-8cb840d96b04beba",
+          "kind": "task",
+          "revision": 1
+        },
+        {
+          "content_hash": "93f3073d062f9c00d885641d9b4915d64b12a5755c61a7037e1ccbb6918495cc",
+          "id": "desktop-root-mission-8cb840d96b04beba#dispatch_generation",
+          "kind": "task",
+          "revision": 0
+        },
+        {
+          "content_hash": "7868e76d6eb6105e3d66cc66244157a5b939760f443f729df11233d407a8960a",
+          "id": "desktop-root-mission-8cb840d96b04beba#input_binding_revision",
+          "kind": "task",
+          "revision": 0
+        },
+        {
+          "content_hash": "66a0d003d80223e5ac59708da7e26221adc2362476d7dd00955bd362d51778fc",
+          "id": "desktop-duty-mission-8cb840d96b04beba",
+          "kind": "obligation",
+          "revision": 0
+        },
+        {
+          "content_hash": "8a8038fbeb39a9e9702484c6a800a9ef14803ad3350d9b72467c229302c609fe",
+          "id": "desktop-root-mission-8cb840d96b04beba",
+          "kind": "authority",
+          "revision": 0
+        }
+      ]
+    },
+    "ok": true,
+    "request_id": "w"
+  }
+}
