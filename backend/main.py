@@ -5286,6 +5286,13 @@ async def lifespan(app: FastAPI):
         except Exception as _exc:  # noqa: BLE001
             logger.warning("p5s2_circuit_breaker_wire_failed err=%s", _exc)
 
+    # 会话活动记录：自动续跑按会话计次（上限 max_auto_resume_attempts）、
+    # 监工看门狗读会话状态都靠它；监工开关与它无关，总是注册。
+    if service_context.get("session_activity") is None:
+        from agent.session_activity import default_store as _sa_default_store
+
+        service_context.register("session_activity", _sa_default_store())
+
     # P5-S1/S2: supervisor watchdog + LLM agent. Starts after the rest of
     # startup is done so the 30s grace can run while normal startup races
     # finish. Disabled when [supervisor].enabled = false; in that case we

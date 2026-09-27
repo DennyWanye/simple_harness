@@ -59,12 +59,25 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
     // NEXT-TG-1.0 §9 (2026-09-28): a running Mission pushes every second or two and each
     // list costs the backend a pass over every row.  A push that moved no status (or named
     // a Mission the list does not have) refreshes within 1 s; otherwise at most every 5 s.
+    let quietWait = false; // the pending timer is the slow 5 s one
     const refreshList = (urgent: boolean) => {
+      if (cooling && urgent && quietWait) {
+        // a status change must not wait out the slow timer: fall back to the 1 s pace
+        clearTimeout(cooling);
+        cooling = null;
+        quietWait = false;
+        const wait = LIST_REFRESH_INTERVAL_MS - (Date.now() - lastSent);
+        if (wait <= 0) { sendList(); return; }
+        pending = true;
+        cooling = setTimeout(() => { cooling = null; if (pending) sendList(); }, wait);
+        return;
+      }
       if (cooling) { pending = true; return; }
       if (urgent || Date.now() - lastSent >= QUIET_LIST_REFRESH_MS) sendList();
       else {
         pending = true;
-        cooling = setTimeout(() => { cooling = null; if (pending) sendList(); },
+        quietWait = true;
+        cooling = setTimeout(() => { cooling = null; quietWait = false; if (pending) sendList(); },
           QUIET_LIST_REFRESH_MS - (Date.now() - lastSent));
       }
     };

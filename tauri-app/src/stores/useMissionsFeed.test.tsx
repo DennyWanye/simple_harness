@@ -146,6 +146,19 @@ describe("useMissionsFeed（P2-5）", () => {
     expect(channel.count("mission_list")).toBe(4); // a Mission the list does not have yet
   });
 
+  it("慢定时器等待中来了状态变化：不等 5 秒，按 1 秒节奏立刻重拉", () => {
+    const channel = new FakeChannel();
+    render(<Feed channel={channel} />);
+    channel.reply("mission_list", { missions: [ROW] });
+    act(() => vi.advanceTimersByTime(1500));
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 5 } });
+    expect(channel.count("mission_list")).toBe(1); // quiet push: slow timer armed
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 6 } });
+    expect(channel.count("mission_list")).toBe(2); // status moved: sent now, not at 5 s
+    act(() => vi.advanceTimersByTime(5000));
+    expect(channel.count("mission_list")).toBe(2); // the slow timer was replaced, nothing extra
+  });
+
   it("channel 为 null 时什么都不发；连上后再发", () => {
     const { rerender } = render(<Feed channel={null} />);
     const channel = new FakeChannel();
