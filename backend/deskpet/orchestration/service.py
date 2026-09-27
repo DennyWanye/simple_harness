@@ -359,6 +359,7 @@ class OrchestrationService:
         )
         await self._orchestrator.__aenter__()
         self._install_native_verifier_pressure(self._orchestrator)
+        self._bind_host_duties(self._orchestrator)
         self._taskgraph = taskgraph
         self._assurance = assurance
         self._control = MissionControlV1(
@@ -559,16 +560,33 @@ class OrchestrationService:
             return self.settings.tick_waiting_seconds  # only people are awaited
         return self.settings.tick_active_seconds
 
+    async def _host_duties(self) -> None:
+        """The Host's own per-round work: policies, grants, TaskGraph enables, confirmations."""
+        self._project_assurance_policies()
+        await self._auto_authorize_planning()
+        self._enable_required_taskgraphs()
+        await self._auto_confirm_content_completion()
+
+    def _bind_host_duties(self, orchestrator: Any) -> None:
+        """Run the Host duties between loop cycles too, not only after ``run()`` returns.
+
+        NEXT-TG-1.0 2A.1g (2026-09-27): ``run()`` stays in its waiting branch while any
+        turn anywhere is in flight, so one Mission's long model turn held every other
+        Mission's planning grant; the new Mission sat in planning for eleven minutes
+        with nothing written. The SDK now calls these duties between cycles.
+        """
+        if hasattr(orchestrator, "set_between_cycles"):
+            orchestrator.set_between_cycles(
+                self._host_duties, every_seconds=self.settings.tick_active_seconds
+            )
+
     async def _drive(self) -> None:
         while not self._closing:
             try:
                 if self._orchestrator is None:
                     await self._rebuild()
                 await self._orchestrator.run()
-                self._project_assurance_policies()
-                await self._auto_authorize_planning()
-                self._enable_required_taskgraphs()
-                await self._auto_confirm_content_completion()
+                await self._host_duties()
                 self._storage.schedule_if_stale()
                 self._failures = 0
                 if self._state == "degraded":
@@ -991,6 +1009,7 @@ class OrchestrationService:
         # Publish only after enter and facade construction succeeded. A failed
         # candidate leaves no runnable object; the existing driver retries rebuild.
         self._orchestrator = candidate
+        self._bind_host_duties(candidate)
         self._control = control
         self._diagnostics_available = self._detect_diagnostics()
         self._policy = policy
@@ -1003,10 +1022,7 @@ class OrchestrationService:
 
         try:
             await asyncio.wait_for(self._orchestrator.run(), timeout=timeout)
-            self._project_assurance_policies()
-            await self._auto_authorize_planning()
-            self._enable_required_taskgraphs()
-            await self._auto_confirm_content_completion()
+            await self._host_duties()
             return True
         except TimeoutError:
             return False

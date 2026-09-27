@@ -51,3 +51,24 @@ async def test_manual_or_unreadable_mode_leaves_the_button(tmp_path, mode):
     service = _service(tmp_path, mode, control)
     assert await service._auto_authorize_planning() == 0
     assert control.issued == []
+
+
+@pytest.mark.asyncio
+async def test_host_duties_are_bound_to_run_between_loop_cycles(tmp_path):
+    """NEXT-TG-1.0 2A.1g: one Mission's long turn kept ``run()`` from returning and
+    held a new Mission's planning grant for eleven minutes; the Host duties now run
+    between the loop's cycles too."""
+
+    control = _Control(PENDING)
+    service = _service(tmp_path, "auto", control)
+    bound = {}
+
+    class _Loop:
+        def set_between_cycles(self, duty, *, every_seconds):
+            bound["duty"], bound["every"] = duty, every_seconds
+
+    service._bind_host_duties(_Loop())
+    assert bound["every"] == service.settings.tick_active_seconds
+    await bound["duty"]()
+    assert [c["request_id"] for c in control.issued] == ["r1"]
+    service._bind_host_duties(object())  # an SDK without the hook is left alone
