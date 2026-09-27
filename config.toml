@@ -76,7 +76,6 @@ tauri_artifact_ops = true
 # <user_data>/artifacts/<YYYY-MM-DD>/<tool_name>/<slug>-<hash>.<ext>
 default_artifact_dir = ""
 # D9 outline 预览 — 默认 false，让 LLM 自由决定（用户体验更顺畅）
-outline_preview_default = false
 # 产物保留天数（启动期自动清理）
 artifact_dir_retention_days = 30
 
@@ -87,7 +86,6 @@ emit_receipts = true
 # 验证 fake_completion_caught_rate ≥ 95% 后再升 "strict"（真拦截）
 verify_gate_mode = "strict"
 # 小 LLM fallback（regex 漏抓时兜底）
-extractor_fallback_enabled = true
 # 第 3 次失败救援用的 ephemeral subagent 模型
 ephemeral_subagent_model = "haiku"
 # D7 outcome verifier — 用户机不一定有 npm/pytest，默认 false
@@ -106,9 +104,7 @@ context_os_v1 = true
 slash_commands = true            # / 命令解析
 goal_mode = true                 # /goal 长期目标 + 末轮 goal_checker
 agent_parallel = true            # agent_parallel 多子代理工具
-plan_confirm_gate = true         # plan 确认门
 preference_memory = true         # BGE-M3 语义偏好记忆（plan 自动确认）
-subagent_driver = true           # 子代理并发驱动总开关
 agent_team = true                # spawn_team 工具 + TeamStore
 subagent_nonblocking = true      # 非阻塞 spawn/await + completion queue
 ctx_observability = true         # 压缩可观测（toast）
@@ -206,6 +202,12 @@ tts_cooldown_ms = 300
 # the watchdog tick rate; stuck_threshold_seconds is the inactivity
 # trigger; max_hints_per_session caps queued supervisor hints to prevent
 # context bloat.
+# NEXT-TG-1.0 §9：工具熔断与自动续跑独立于监工 Agent（监工关着它们也工作）。
+# 监工关闭时，自动续跑按失败原因给固定提示，不调模型；阈值与次数仍可写在 [supervisor]。
+[self_healing]
+circuit_breaker_enabled = true
+auto_resume_enabled = true
+
 [supervisor]
 enabled = false
 scan_interval_seconds = 60
@@ -432,7 +434,6 @@ max_wall_seconds = 600
 # are set live from the code panel picker.
 code_model = "gpt-5.5"
 context_window_tokens = 800000
-interrupt_enabled = true
 tts_pre_narration = true
 
 # Phase 1.1（2026-05-15 context-1m-rearch）— ContextManager per-model 化。
@@ -675,7 +676,7 @@ serp_hardening = false
 # deep-research 抓取/检索增强开关(真实默认在代码 research_tools._research_raw(),此处为文档)。
 [research]
 # DeepResearch fan-out: plan 拆出至少 2 个子问题时，交给 research lane 有界并发执行，
-# 再由主线程统一综合和重排引用。依赖 [features].subagent_driver=true。
+# 再由主线程统一综合和重排引用。
 subagent_fanout = true
 fanout_min_subquestions = 2
 fanout_max_subquestions = 6

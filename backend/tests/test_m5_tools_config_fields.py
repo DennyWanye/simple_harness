@@ -191,13 +191,6 @@ def test_tools_config_has_all_5_v3_fields():
     assert cfg.disabled_toolsets_schema_only == []
     assert cfg.dangerous_tools_allowlist == []
     assert cfg.default_timeout_seconds == 60.0
-    assert cfg.strict_unknown_toolset is False  # PRD §3.5 默认 False
+    assert not hasattr(cfg, "strict_unknown_toolset")  # 2026-09-28 无读取方，已删
 
 
-def test_tools_config_strict_unknown_toolset_field_exists():
-    """字段类型正确（bool 而非 str）"""
-    from config import ToolsConfig
-    import dataclasses
-    fields_map = {f.name: f for f in dataclasses.fields(ToolsConfig)}
-    assert "strict_unknown_toolset" in fields_map
-    assert fields_map["strict_unknown_toolset"].type in (bool, "bool")

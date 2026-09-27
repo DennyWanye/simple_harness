@@ -529,32 +529,12 @@ async def test_real_compressor_injects_goal_anchor():
 # config.py: compaction_enabled flag exists
 # ---------------------------------------------------------------------------
 
-def test_config_has_compaction_enabled_flag():
-    """AppConfig (or FeaturesConfig) exposes a compaction_enabled flag."""
+def test_config_has_no_dead_compaction_flag():
+    """NEXT-TG-1.0 §9（2026-09-28）：``compaction_enabled`` 没有任何读取方（压缩总是开），
+    写着"开"却不生效的假开关已删除。"""
     from config import AppConfig
     cfg = AppConfig()
-    # Must have compaction_enabled accessible (either direct or via raw)
-    # Per spec: FeaturesConfig.compaction_enabled or similar
-    # Check it exists and defaults to False (prod default off)
-    has_flag = (
-        hasattr(cfg.features, "compaction_enabled")
-        or hasattr(cfg, "compaction_enabled")
-    )
-    assert has_flag, (
-        "AppConfig/FeaturesConfig missing compaction_enabled flag. "
-        "Add compaction_enabled: bool = False to FeaturesConfig."
-    )
-
-
-def test_config_compaction_enabled_default_true():
-    """WI-6 (compaction-bestpractice-upgrade): compaction_enabled 默认翻 True
-    (gate: P-B 修复 + 单测全绿 + 真机 case ② 任务连续性通过)。"""
-    from config import AppConfig
-    cfg = AppConfig()
-    flag = getattr(cfg.features, "compaction_enabled", None)
-    if flag is None:
-        flag = getattr(cfg, "compaction_enabled", None)
-    assert flag is True, f"compaction_enabled must default to True after WI-6, got {flag!r}"
+    assert not hasattr(cfg.features, "compaction_enabled")
 
 
 # ---------------------------------------------------------------------------

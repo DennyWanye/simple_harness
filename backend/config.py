@@ -332,7 +332,6 @@ class ToolsLastMileConfig:
     frontend_artifact_card: bool = True     # D2 前端新卡片
     tauri_artifact_ops: bool = True         # D3 Tauri shell 桥
     default_artifact_dir: str = ""          # D4 空 = 走旧 tempdir
-    outline_preview_default: bool = False   # D9 PPT outline 预览
     artifact_dir_retention_days: int = 30
 
 
@@ -355,7 +354,6 @@ class ToolsVerifierConfig:
     # 升 strict——verify 真守门拦截虚报完成→reflection 重试。若后续某档误阻塞可退 shadow。
     emit_receipts: bool = True
     verify_gate_mode: str = "strict"               # off | shadow | strict
-    extractor_fallback_enabled: bool = True        # D6 二级 LLM fallback
     ephemeral_subagent_model: str = "haiku"        # D6 第 3 次失败救援模型
     run_build: bool = False                        # D7 build verifier
     run_tests: bool = False                        # D7 test verifier
@@ -395,8 +393,6 @@ class ToolsConfig:
       工具会出现在 schemas（默认空 = 沿用 UI 确认 popup 流程）。
     * ``default_timeout_seconds`` — ToolSpec.timeout_seconds 未指定时的兜底
       （ToolSpec 默认 60，但 execute_tool 读 cfg 兜底防忘配）。
-    * ``strict_unknown_toolset`` — True → ``disabled_toolsets`` 含 typo
-      (registry 未知 toolset 名) 时启动 fail-fast；False 仅 warn。
     """
     last_mile: ToolsLastMileConfig = field(default_factory=ToolsLastMileConfig)
     verifier: ToolsVerifierConfig = field(default_factory=ToolsVerifierConfig)
@@ -405,7 +401,6 @@ class ToolsConfig:
     disabled_toolsets_schema_only: list[str] = field(default_factory=list)
     dangerous_tools_allowlist: list[str] = field(default_factory=list)
     default_timeout_seconds: float = 60.0
-    strict_unknown_toolset: bool = False
 
 
 @dataclass(frozen=True)
@@ -521,9 +516,6 @@ class FeaturesConfig:
       check + 未达成自动 continue（WI-B 系列）。OFF 时 SessionGoalStore 不构造。
     * ``agent_parallel`` — 启 ``agent_parallel`` 工具暴露给 LLM（WI-C 系列）。
       OFF 时工具不出现在 schemas，子代理并发能力不可用。
-    * ``plan_confirm_gate`` — 非平凡任务先出 plan，并**等用户点[执行]确认再跑 ReAct**（硬门）。
-      OFF（默认）时 plan 仍展示但 auto-confirm（现状字节级一致）。前端需配合
-      渲染 [执行]/[取消] 按钮（chat_v2_plan.awaiting_confirm + plan_confirm WS）。
     * ``preference_memory`` — superpowers Layer 1B：BGE-M3 语义偏好记忆。计划记忆
       让 plan-confirm 硬门对"语义相似且以往批准过"的任务**自动确认**（决策2 的
       "记下来后续直接做"）。OFF（默认）时不构造 PreferenceMemory，门每次都等确认。
@@ -532,12 +524,10 @@ class FeaturesConfig:
       permission_category（write_file/desktop_write/shell/skill_install）的工具
       返回「规划期只读」deny，**不执行**；只读工具（read_file/network 等）照常放行。
       用户点[执行]→解禁。OFF（默认）= 规划期不切只读、写类工具照常（字节级 BC）。
-      注：需 plan_confirm_gate 一并 ON 才有挂起窗口可锁。
     """
     slash_commands: bool = True            # 测试阶段出厂点亮
     goal_mode: bool = True                 # 测试阶段出厂点亮
     agent_parallel: bool = True            # 测试阶段出厂点亮
-    plan_confirm_gate: bool = True         # 测试阶段出厂点亮
     preference_memory: bool = True         # 测试阶段出厂点亮
     plan_read_only: bool = False           # B 表：归 WI-1.2 自治档统一处理（开了 plan 期禁写，与效率优先冲突）
     # Context OS V1 master rollback. Kept OFF until every wave and E2E gate
@@ -545,10 +535,8 @@ class FeaturesConfig:
     context_os_v1: bool = True
     # --- 子代理并发驱动（plans/2026-06-21-subagent-concurrency-driver/）---------
     # 全默认 OFF；OFF 时新代码 short-circuit，agent_parallel 退回扁平 gather（字节级 BC）。
-    #   subagent_driver       — 总开关：事务分型(task_kinds)路由 + 有界调度(scheduler)接入
     #   agent_team            — 暴露 spawn_team LLM 工具 + 构造 TeamStore/TaskGraphStore
     #   subagent_nonblocking  — 非阻塞 spawn_subagents/await_subagents + completion queue 回灌
-    subagent_driver: bool = True           # 测试阶段出厂点亮
     agent_team: bool = True                # 测试阶段出厂点亮
     subagent_nonblocking: bool = True      # 测试阶段出厂点亮
     # WI-4.0 compaction: wire ContextCompressor into AgentLoop.
@@ -556,10 +544,9 @@ class FeaturesConfig:
     # gate 已满足: P-B 修复(窗口按有效出站模型解析) + 第1/2期单测全绿 + 小窗口长
     # 会话真机 case ② 通过(24×microcompact+2×完整摘要后桌宠仍记得任务,任务连续性
     # 保住)。compaction 级联(microcompact→结构化摘要→截断兜底)对长 agentic 任务
-    # 平滑续跑、防 BLOCK gate 中断。可设 [features] compaction_enabled = false 关闭。
+    # 平滑续跑、防 BLOCK gate 中断。没有关闭开关（2026-09-28 删掉了无人读取的 compaction_enabled）。
     # 已知 caveat: haiku 摘要层偶发反射(把元指令当任务,issue #46602 式),microcompact
     # (最高频、不调模型层)无此问题;后续可继续强化防反射。
-    compaction_enabled: bool = True
     # WI-1B-2 压缩可观测 (plans/.../ ctx-observability):
     # 默认 OFF = 字节级 BC。OFF 时压缩成功路径不 emit metrics、不 yield
     # ContextCompactedEvent、不发 ws context_compacted；现有 logger.info
@@ -843,7 +830,6 @@ def _load_tools(raw_tools: dict) -> ToolsConfig:
         disabled_toolsets_schema_only=list(raw.get("disabled_toolsets_schema_only", []) or []),
         dangerous_tools_allowlist=list(raw.get("dangerous_tools_allowlist", []) or []),
         default_timeout_seconds=float(raw.get("default_timeout_seconds", 60.0) or 60.0),
-        strict_unknown_toolset=bool(raw.get("strict_unknown_toolset", False)),
     )
 
 

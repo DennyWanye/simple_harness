@@ -5248,6 +5248,29 @@ async def lifespan(app: FastAPI):
 
     # P4-S20-D 启动时后台总结老对话任务已随旧记忆系统移除（等待 SDK）。
 
+    # NEXT-TG-1.0 §9：工具熔断与自动续跑不再挂在监工开关下（用户关了监工 Agent，
+    # 但这两项是确定性的自我修复，应当照常工作）。开关在 [self_healing]，默认开；
+    # 阈值等旧参数仍从 [supervisor] 读，写在 [self_healing] 的优先。
+    _sup_cfg_all = (config.raw.get("supervisor") if hasattr(config, "raw") else None) or {}
+    _heal_cfg = {**_sup_cfg_all, **((config.raw.get("self_healing") if hasattr(config, "raw") else None) or {})}
+    if bool(_heal_cfg.get("circuit_breaker_enabled", True)):
+        try:
+            from agent.circuit_breaker import ToolCircuitBreaker as _ToolBreaker
+            if deskpet_tool_registry_v2 is not None:
+                _breaker = _ToolBreaker(
+                    threshold=int(_heal_cfg.get("circuit_breaker_threshold", 3)),
+                    cooldown_seconds=float(_heal_cfg.get("circuit_breaker_cooldown_seconds", 60)),
+                )
+                deskpet_tool_registry_v2.set_circuit_breaker(_breaker)
+                service_context.register("tool_circuit_breaker", _breaker)
+                logger.info(
+                    "p5s2_circuit_breaker_wired threshold=%d cooldown=%.0fs",
+                    int(_heal_cfg.get("circuit_breaker_threshold", 3)),
+                    float(_heal_cfg.get("circuit_breaker_cooldown_seconds", 60)),
+                )
+        except Exception as _exc:  # noqa: BLE001
+            logger.warning("p5s2_circuit_breaker_wire_failed err=%s", _exc)
+
     # P5-S1/S2: supervisor watchdog + LLM agent. Starts after the rest of
     # startup is done so the 30s grace can run while normal startup races
     # finish. Disabled when [supervisor].enabled = false; in that case we
@@ -5261,31 +5284,6 @@ async def lifespan(app: FastAPI):
                 build_supervisor_hook as _build_sup_hook,
             )
             from agent.snapshot import build_snapshot as _build_snap_func
-
-            # P5-S2 Phase 6: wire per-(sid, tool) circuit breaker into
-            # the v2 tool registry. The registry checks ``can_call``
-            # before every dispatch and ``record_call`` after, so the
-            # breaker doesn't need to be reachable from chat handlers
-            # directly. Knobs come from [supervisor] so they live next
-            # to the rest of the self-healing config.
-            try:
-                from agent.circuit_breaker import ToolCircuitBreaker as _ToolBreaker
-                if deskpet_tool_registry_v2 is not None:
-                    _breaker = _ToolBreaker(
-                        threshold=int(_sup_cfg.get("circuit_breaker_threshold", 3)),
-                        cooldown_seconds=float(
-                            _sup_cfg.get("circuit_breaker_cooldown_seconds", 60)
-                        ),
-                    )
-                    deskpet_tool_registry_v2.set_circuit_breaker(_breaker)
-                    service_context.register("tool_circuit_breaker", _breaker)
-                    logger.info(
-                        "p5s2_circuit_breaker_wired threshold=%d cooldown=%.0fs",
-                        int(_sup_cfg.get("circuit_breaker_threshold", 3)),
-                        float(_sup_cfg.get("circuit_breaker_cooldown_seconds", 60)),
-                    )
-            except Exception as _exc:  # noqa: BLE001
-                logger.warning("p5s2_circuit_breaker_wire_failed err=%s", _exc)
 
             # Snapshot builder closure — pulls services lazily so each
             # tick reads fresh state.
@@ -5555,96 +5553,100 @@ async def lifespan(app: FastAPI):
             service_context.register("watchdog", _watchdog)
             logger.info("p5_supervisor_watchdog_started")
 
-            # P5-S2 Phase 4: AutoResumeOrchestrator — closes the
-            # supervisor → main-agent loop. When the chat handler hits
-            # max_iterations / circuit_open / permanent_tool_error /
-            # hallucination, it forwards to ``orchestrator.handle_failure``;
-            # the orchestrator asks supervisor for a hint and (if action
-            # is ``nudge``) automatically spawns a fresh chat task on the
-            # same sid via the per-sid re-dispatcher closure populated
-            # by the chat handler itself.
-            try:
-                from agent.auto_resume import AutoResumeOrchestrator as _AROrch
-
-                # Dispatcher closure: orchestrator passes (sid, msgs)
-                # where ``msgs`` ends in a system msg with the supervisor
-                # hint. Production trampoline:
-                #   1. Extract hint text from the injected system msg.
-                #   2. Push it to nudge_queue (pop_all picks it up at the
-                #      top of the next chat task — uniform with P5-S1
-                #      injection path).
-                #   3. Call the per-sid re-dispatcher (registered by chat
-                #      handler each user turn) with the synthetic trigger
-                #      ``<<auto_resume>>`` so a fresh AgentLoop runs.
-                async def _resume_through_harness(_sid: str, _msgs: list[dict]) -> None:
-                    await _enqueue_auto_resume_hint(_sid, _msgs)
-                    _ws_for_sid = _control_connections.get(_sid) or _control_connections.get("default")
-                    if _ws_for_sid is None:
-                        logger.warning("auto_resume_no_transport sid=%s", _sid)
-                        return
-                    try:
-                        _launch_product_harness_chat(_ws_for_sid, "<<auto_resume>>", _sid)
-                    except Exception as _ex:  # noqa: BLE001
-                        logger.warning("auto_resume_redispatch_failed sid=%s err=%s", _sid, _ex)
-
-                # ws emitter — broadcast auto_resume_* events to all control conns.
-                async def _auto_resume_emit(_typ: str, _payload: dict) -> None:
-                    if not _control_connections:
-                        return
-                    _msg = {"type": _typ, "payload": _payload}
-                    for _sid_key, _ws_obj in list(_control_connections.items()):
-                        try:
-                            await _ws_obj.send_json(_msg)
-                        except Exception as _bex:
-                            logger.debug("auto_resume_emit_failed sid=%s err=%s", _sid_key, _bex)
-
-                # Audit writer — bridge to SessionDB.append_supervisor_hint.
-                async def _auto_resume_audit(_record: dict) -> None:
-                    _sdb = service_context.get("session_db")
-                    if _sdb is None:
-                        return
-                    try:
-                        await _sdb.append_supervisor_hint(
-                            session_id=_record.get("session_id", ""),
-                            alert_id=_record.get("alert_id", ""),
-                            hint_text=_record.get("hint_text", ""),
-                            action=_record.get("action", "auto_resumed"),
-                            severity=_record.get("severity", "yellow"),
-                            diagnosis=_record.get("diagnosis", ""),
-                        )
-                    except Exception as _ex:  # noqa: BLE001
-                        logger.debug("auto_resume_audit_failed err=%s", _ex)
-
-                # WI-1.5：resume 注入原 goal_text（窄版）。从 service_context
-                # 取活跃 goal store（goal_mode OFF → None → getter 返 None → BC）。
-                def _goal_text_getter_for_resume(_sid: str):
-                    _gs = service_context.get("session_goal_store")
-                    try:
-                        return _gs.get_goal_text(_sid) if _gs is not None else None
-                    except Exception:  # noqa: BLE001 — safe-fail, 不阻 resume
-                        return None
-
-                _orch = _AROrch(
-                    supervisor=_supervisor_agent,
-                    chat_dispatcher=_resume_through_harness,
-                    activity_store=service_context.get("session_activity"),
-                    max_attempts=int(_sup_cfg.get("max_auto_resume_attempts", 2)),
-                    enabled=bool(_sup_cfg.get("auto_resume_enabled", True)),
-                    ws_emitter=_auto_resume_emit,
-                    audit_writer=_auto_resume_audit,
-                    goal_text_getter=_goal_text_getter_for_resume,
-                )
-                service_context.register("auto_resume", _orch)
-                logger.info(
-                    "p5s2_auto_resume_started enabled=%s max_attempts=%d",
-                    _orch._enabled, _orch.max_attempts,
-                )
-            except Exception as _exc:  # noqa: BLE001
-                logger.warning("p5s2_auto_resume_start_failed err=%s", _exc)
         else:
             logger.info("p5_supervisor_disabled_via_config")
     except Exception as exc:  # noqa: BLE001
         logger.warning("p5_supervisor_watchdog_start_failed", error=str(exc))
+
+    # P5-S2 Phase 4: AutoResumeOrchestrator — closes the
+    # supervisor → main-agent loop. When the chat handler hits
+    # max_iterations / circuit_open / permanent_tool_error /
+    # hallucination, it forwards to ``orchestrator.handle_failure``;
+    # the orchestrator asks supervisor for a hint and (if action
+    # is ``nudge``) automatically spawns a fresh chat task on the
+    # same sid via the per-sid re-dispatcher closure populated
+    # by the chat handler itself.
+    try:
+        from agent.auto_resume import AutoResumeOrchestrator as _AROrch
+
+        # Dispatcher closure: orchestrator passes (sid, msgs)
+        # where ``msgs`` ends in a system msg with the supervisor
+        # hint. Production trampoline:
+        #   1. Extract hint text from the injected system msg.
+        #   2. Push it to nudge_queue (pop_all picks it up at the
+        #      top of the next chat task — uniform with P5-S1
+        #      injection path).
+        #   3. Call the per-sid re-dispatcher (registered by chat
+        #      handler each user turn) with the synthetic trigger
+        #      ``<<auto_resume>>`` so a fresh AgentLoop runs.
+        async def _resume_through_harness(_sid: str, _msgs: list[dict]) -> None:
+            await _enqueue_auto_resume_hint(_sid, _msgs)
+            _ws_for_sid = _control_connections.get(_sid) or _control_connections.get("default")
+            if _ws_for_sid is None:
+                logger.warning("auto_resume_no_transport sid=%s", _sid)
+                return
+            try:
+                _launch_product_harness_chat(_ws_for_sid, "<<auto_resume>>", _sid)
+            except Exception as _ex:  # noqa: BLE001
+                logger.warning("auto_resume_redispatch_failed sid=%s err=%s", _sid, _ex)
+
+        # ws emitter — broadcast auto_resume_* events to all control conns.
+        async def _auto_resume_emit(_typ: str, _payload: dict) -> None:
+            if not _control_connections:
+                return
+            _msg = {"type": _typ, "payload": _payload}
+            for _sid_key, _ws_obj in list(_control_connections.items()):
+                try:
+                    await _ws_obj.send_json(_msg)
+                except Exception as _bex:
+                    logger.debug("auto_resume_emit_failed sid=%s err=%s", _sid_key, _bex)
+
+        # Audit writer — bridge to SessionDB.append_supervisor_hint.
+        async def _auto_resume_audit(_record: dict) -> None:
+            _sdb = service_context.get("session_db")
+            if _sdb is None:
+                return
+            try:
+                await _sdb.append_supervisor_hint(
+                    session_id=_record.get("session_id", ""),
+                    alert_id=_record.get("alert_id", ""),
+                    hint_text=_record.get("hint_text", ""),
+                    action=_record.get("action", "auto_resumed"),
+                    severity=_record.get("severity", "yellow"),
+                    diagnosis=_record.get("diagnosis", ""),
+                )
+            except Exception as _ex:  # noqa: BLE001
+                logger.debug("auto_resume_audit_failed err=%s", _ex)
+
+        # WI-1.5：resume 注入原 goal_text（窄版）。从 service_context
+        # 取活跃 goal store（goal_mode OFF → None → getter 返 None → BC）。
+        def _goal_text_getter_for_resume(_sid: str):
+            _gs = service_context.get("session_goal_store")
+            try:
+                return _gs.get_goal_text(_sid) if _gs is not None else None
+            except Exception:  # noqa: BLE001 — safe-fail, 不阻 resume
+                return None
+
+        # 监工开着就让监工模型给提示；关着用按失败原因的固定提示（不调模型）
+        from agent.auto_resume import DeterministicResumePolicy as _DetPolicy
+        _resume_policy = service_context.get("supervisor") or _DetPolicy()
+        _orch = _AROrch(
+            supervisor=_resume_policy,
+            chat_dispatcher=_resume_through_harness,
+            activity_store=service_context.get("session_activity"),
+            max_attempts=int(_heal_cfg.get("max_auto_resume_attempts", 2)),
+            enabled=bool(_heal_cfg.get("auto_resume_enabled", True)),
+            ws_emitter=_auto_resume_emit,
+            audit_writer=_auto_resume_audit,
+            goal_text_getter=_goal_text_getter_for_resume,
+        )
+        service_context.register("auto_resume", _orch)
+        logger.info(
+            "p5s2_auto_resume_started enabled=%s max_attempts=%d policy=%s",
+            _orch._enabled, _orch.max_attempts, type(_resume_policy).__name__,
+        )
+    except Exception as _exc:  # noqa: BLE001
+        logger.warning("p5s2_auto_resume_start_failed err=%s", _exc)
 
     # Phase 1.1.5 — 启动落一行 model_context_resolved，让用户/日志一眼
     # 看到当前默认模型解析出的有效窗口 + 来源链。每次 chat 会话另会按

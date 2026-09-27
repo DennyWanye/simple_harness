@@ -108,6 +108,44 @@ def is_auto_resume_trigger(reason: str) -> bool:
     return (reason or "").strip() in _AUTO_RESUME_TRIGGER_REASONS
 
 
+# ─────────────── deterministic policy (NEXT-TG-1.0 §9) ───────────────
+
+#: Fixed hints per failure reason.  Used when the supervisor Agent is switched
+#: off (the user's choice): self-healing must not depend on that switch, and it
+#: must not call a model to decide.  The hint only steers the next run; tool
+#: permissions and effect approvals apply unchanged, and an action whose outcome
+#: is unknown is never re-sent by this path (it only starts a new agent turn).
+_DETERMINISTIC_HINTS: dict[str, str] = {
+    "max_iterations": "上一轮因为步数用完停下了。先根据已有结果确认哪些已经完成，不要重复已做过的工具调用，"
+                      "直接推进剩下的部分；做不完就如实说明卡在哪里。",
+    "circuit_open": "某个工具连续失败已被暂时停用。不要再调用同一个工具和同样的参数，换一种办法完成，"
+                    "或者如实说明需要用户处理的地方。",
+    "permanent_tool_error": "上一个工具调用返回了不可重试的错误。不要原样重试，检查参数或换一种办法；"
+                            "如果需要用户提供信息或权限，直接说明。",
+    "hallucination": "上一轮提到了没有真实工具结果支持的内容。只依据真实的工具结果陈述已完成的事情，"
+                     "缺的就去做或如实说明。",
+    "verify_exhausted": "上一轮的自检多次没有通过。先读取失败原因，针对原因修改，再验证一次。",
+    "evaluator_revise": "外部评估认为结果质量不够。按评估意见补足，再交付。",
+}
+
+
+class DeterministicResumePolicy:
+    """Stands in for ``SupervisorAgent.diagnose`` without a model call."""
+
+    async def diagnose(self, sid: str, snapshot: dict[str, Any]) -> Any:
+        from agent.supervisor import SupervisorAction
+
+        reason = str((snapshot or {}).get("reason") or "").strip()
+        hint = _DETERMINISTIC_HINTS.get(reason)
+        if hint is None:
+            return SupervisorAction(action="ask_user", severity="yellow",
+                                    diagnosis=f"no deterministic resume for {reason or 'unknown'}",
+                                    raw_action="ask_user")
+        return SupervisorAction(action="nudge", severity="yellow", diagnosis=f"deterministic:{reason}",
+                                hint_for_main_agent=hint, alert_id=f"auto-resume:{reason}",
+                                raw_action="nudge")
+
+
 # ─────────────── orchestrator ───────────────
 
 
@@ -121,7 +159,7 @@ class AutoResumeOrchestrator:
     def __init__(
         self,
         *,
-        supervisor: "SupervisorAgent",
+        supervisor: "SupervisorAgent | DeterministicResumePolicy",
         chat_dispatcher: ChatDispatcher,
         activity_store: "SessionActivityStore",
         max_attempts: int = 2,

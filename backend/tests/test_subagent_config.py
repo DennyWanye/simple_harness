@@ -8,7 +8,7 @@ from config import AppConfig, get_subagent_concurrency
 
 def test_default_flags_on():  # 0.3.1 — 2026-06-27 测试阶段点亮
     f = AppConfig().features
-    assert f.subagent_driver is True
+    assert not hasattr(f, "subagent_driver")  # 2026-09-28 无读取方，已删
     assert f.agent_team is True
     assert f.subagent_nonblocking is True
 
