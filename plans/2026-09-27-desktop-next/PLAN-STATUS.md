@@ -12,7 +12,7 @@
 | 1 | 缺陷修复：收集拒绝隔离、输入清单同源、CI 哈希 | **完成并已推送**（de8a5bcc / 491ff0ad / 6d20b7f0，SDK opt.33）；CI 前端、后端测试通过；「开源卫生检查」失败在推送前的 4a1678ae 就已存在，未处理 | 2026-09-27 |
 | 2A | 合法重建来源清单 + 新任务默认严格 TaskGraph | **完成并已推送**：上游核心链真实跑通（opt.39，任务完成 + 冷重放一致）→ 部署清单合法重建；新任务默认严格执行图接入 Host；真机小验收（opt.41，保障层开）任务完成、四个执行图只读入口有回复 | 2026-09-27 |
 | 2B | 推进规则（FAST/WAIT/SLOW/STOP）接入原循环 | 完成（2026-09-28，SDK opt.53–55，待推送） | 见下文「第二批 2B」 |
-| 3 | SDK 正式执行过程只读接口 + 默认执行图 | 未开始 | — |
+| 3 | SDK 正式执行过程只读接口 + 默认执行图 | 完成（2026-09-28，SDK opt.56–57，待推送）；界面点击未运行（桌面操控未获授权） | 见下文「第三批」 |
 | 4 | 产品入口与已完成能力接通 | 未开始 | — |
 | 5A | ARP MISSION 精确来源 | 未开始 | — |
 | 5B | 统一能力目录与 Skill 入口 | 未开始 | — |
@@ -348,3 +348,18 @@ SDK 前缀 `sdk/simple-harness-sdk/src/agent_orchestrator/orchestrator/`，Host 
 - 2B.9 决定不改：方法合成不需要规划授权——合成不提交计划、不受严格执行图约束；新任务第一步常是合成，那时还没有可授权的规划请求，加授权门会互锁。
 - 2B.10 验收测试（子代理 opus 补写，只加测试）：计划 §7.3 第 1 条（链式三步含一条数据依赖一条顺序依赖，完成后不再请求规划器、计划版本不变）、第 3 条（同一结构缺口重复收集/重复敲入口/冷重开都只有一条请求一轮规划）、第 4 条（C 等数据或待细化时 D 照常派发）、第 6 条（未知费用按上限结清后未知动作状态不变、不重发、预算守恒）共 7 个用例全过，未发现产品缺陷。第 2 条（同合同返工）与第 7 条（各中断点恢复）沿用已有测试（旧路径与执行图恢复测试，后者部分在改动前失败名单里）。第 5 条由 2B.3 的空闲判定与空转测试覆盖。
 - 第二批 B 结论：推进规则以"纯函数空闲判定 + 宿主周期职责 + 持久水位"三件落地，没有另建规则引擎；`_decide` 的按范围推进经第 4 条测试证实本就不被其他分支阻断，未重写。遗留：运行时阻断来回唤醒、过期重试修复请求无单独上限（受规划次数上限兜底）。
+
+
+## 第三批：SDK 正式执行过程只读接口 + 默认执行图（2026-09-28）
+
+| 项 | 做了什么 | 证据 |
+|---|---|---|
+| SDK 接口 | `api/taskgraph.py` 新增 `execution_snapshot`（严格执行图 + 执行过程，同一个 `Store.read_view`；键集分页，游标绑定任务/调用者/计划版本/清单哈希/执行内容哈希，变了报 `SNAPSHOT_CHANGED`，心跳不影响）与 `execution_detail`（按执行意图绑定的执行池、精确 agent 读回合记录；白名单：模型可见原话、工具名与整形后的工具事实、提交摘要、审阅结论理由；不输出 instructions / user_input / feedback / metadata / 思考块，全部过密钥脱敏）。投影模块 `orchestrator/taskgraph_execution_view.py`：节点 attempt / check / review / planning / repair_request / plan_revision / operation，边 attempt_of / rework_of / review_of / reviews / repair_requested / decision_for / retry_authorized / committed_as / supersedes / operation_of，全部用记录下来的身份连接（意图配置、尝试行、结果行、提交回执、修补事件），不进调度图。另返回每个步骤的方法步骤名与职责（`occurrence_labels`） | SDK 测试 `taskgraph_exec/test_execution_view.py`（真实编排：启用、规划提交、执行、审阅；同一令牌、边、详情、分页、篡改游标、只读无副作用）、`test_execution_view_edges.py`（返工回路的因果边、白名单）；变异：去掉思考过滤、去掉返工边各红一次 |
+| 遗留一并修 | 已要求严格执行图但尚未启用的任务读图报 `ACTIVATION_PENDING`；`diff` 请求不存在的修订报 `REVISION_NOT_FOUND`（原为 GRAPH_INTEGRITY，2A.4） | 同上 |
+| Host | 控制通道新增 `taskgraph.execution_snapshot` / `taskgraph.execution_detail`（只校验请求、查归属、原样映射 SDK 拒绝码）；删除直读 SDK 表的 `live_graph.py` 与 `mission_live_graph` / `mission_planning_decisions` 动词 | `test_taskgraph_execution_reads.py` 8 条、路由与动词清单测试 |
+| 前端 | `liveGraph/` 重写：复合步骤为框，每个步骤框里是"执行、审阅、修补请求、规划、再执行"链，再执行画成红色箭头；步骤卡片"状态 + 一句话进展"；「时间线」标签按时间列同一份执行过程；点节点读回合详情；未启用/启用中如实说明；读不到保留旧画面并标"可能已过期"；执行过程与状态都没变不换画面、节点集合不变不重新排版 | vitest 18 条；提交态（临时工作树）任务页 + 执行图 112 条通过 |
+| 独立审阅（opus，1 轮） | 阻断 1 项：回合详情会输出兜底类 `feedback` 记录（SDK 强制上下文控制消息带指令原文），opt.57 去掉该类，并去掉大工具结果的预览副本重复 | 非阻断备注：断线后前端停在"正在读取"没有断线提示（记第 4 批界面） |
+| 真实控制通道 | 隔离应用 opt.57 开发模式启动一次，只读读取 4 个真实任务：返工三次的 ABS 任务 18 个执行节点（4 次执行、4 次审阅、3 个修补请求、6 次规划）19 条边；带发布的 MIN 任务含 3 个审查与 1 个发布操作；卡住的 ZIP 任务 11 节点；未启用的旧任务返回 NOT_ENABLED。回合详情 9 次读取全部 COMPLETE；输出扫描无系统提示词、思考、密钥、内部绝对路径。读完已按正常模式重启 | `.local-test-evidence/2026-09-28/batch3/execution-reads.json`、`read_execution_graph.py` |
+| 真机点击 | **未运行**：请求桌面应用操控权限被拒绝，需用户授权后补一次（打开任务、执行图、时间线、点节点看详情） | — |
+| 本机任务过程视图 | 未提交文件保持未提交；因 `live_graph.py` 删除，把它的三个读取助手搬进本机 `story.py`、测试助手搬进 `test_mission_story.py`，本机任务页默认标签改为「执行图」（「任务过程」为第二个标签）。改前备份 `.local-test-evidence/2026-09-28/batch3/dirty-backup/` | 本机任务页与任务过程测试 108 条通过 |
+| 提交 | SDK b53fd1d5（opt.56；该提交的暂存区里顺带带上了 Host 的 live_graph.py 删除）、Host 55b8db2d、SDK 4e0c32bf（opt.57）、Host dd3581fa | 未推送 |
