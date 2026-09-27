@@ -30,6 +30,7 @@ def _service(*, heartbeats: list[SimpleNamespace], statuses: dict[str, str]) -> 
         list_tasks=lambda mission_id: [SimpleNamespace(id=a.task_id) for a in attempts.values()],
         list_attempts=lambda task_id: [a for a in attempts.values() if a.task_id == task_id],
         waiting_on=lambda mission_id: [],
+        has_table=lambda name: False,  # no strict-TaskGraph requirement table in this fake
     )
     control = SimpleNamespace(
         missions=lambda *, limit: [
@@ -188,3 +189,18 @@ def test_list_rows_count_completed_tasks_for_the_progress_bar() -> None:
     ]
     [row] = service.list_missions()
     assert row["task_counts"] == {"completed": 2, "total": 3}
+
+
+def test_a_finished_mission_row_reads_no_event_log() -> None:
+    """NEXT-TG-1.0 §9: every push while anything runs re-sends mission_list; a finished
+    Mission's row must not re-read its whole event log for blocked/waiting."""
+    service = _service(heartbeats=[], statuses={"a1": "COMPLETED"})
+
+    def forbidden(_mission_id):
+        raise AssertionError("a finished Mission's event log was read for the list")
+
+    service._orchestrator.store.list_events = forbidden
+    service._control.missions = lambda *, limit: [
+        {"mission_id": "mission-1", "status": "COMPLETED", "pending_approvals": 0}]
+    [row] = service.list_missions()
+    assert row["ui_state"] == "delivered" and row["blocked"] is False
