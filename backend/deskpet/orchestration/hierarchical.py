@@ -33,7 +33,10 @@ def planning_world(loop: Any, mission: Any) -> Any:
     continuation = GoalSignature("desktop.continue-delivery", 1, params, outputs,
         "Continue from an accepted upstream delivery: " + mission.goal, content_criteria)
     ports = (PortSpec("delivery", outputs),)
-    preparation_ports = ports + ((PortSpec("action_candidate", outputs),)
+    # The SDK's operation candidate port: declaring it is what brings the candidate
+    # contract (and its actions/ file) into the Worker's package (2A.1e).
+    from agent_orchestrator.runtime.action_schema import OPERATION_CANDIDATE_PORT
+    preparation_ports = ports + ((PortSpec(OPERATION_CANDIDATE_PORT, outputs),)
         if any(c.startswith("action:") for c in mission.success_criteria) else ())
     # These are actual workspace operations available to this deployment. External
     # effects still require an OperationIntent, review and the original connector.

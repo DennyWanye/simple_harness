@@ -134,6 +134,8 @@ class OrchestrationService:
         # input. None selects the package-owned production deployment reader.
         self._taskgraph_deployment = taskgraph_deployment
         self._taskgraph: Any = None
+        #: Mission id → the last enable refusal that was not "no grant yet".
+        self._taskgraph_faults: dict[str, str] = {}
         # ARP-EXEC-1.1.1 (RP-E3): the Host's native runtime plane composition, built per
         # Orchestrator lifetime; ``native_test_counter`` is trusted test composition only
         # (a certified fixture counter standing in for the DeepSeek one).
@@ -564,6 +566,7 @@ class OrchestrationService:
                 await self._orchestrator.run()
                 self._project_assurance_policies()
                 await self._auto_authorize_planning()
+                self._enable_required_taskgraphs()
                 await self._auto_confirm_content_completion()
                 self._storage.schedule_if_stale()
                 self._failures = 0
@@ -866,6 +869,53 @@ class OrchestrationService:
             self.wake()
         return issued
 
+    def _require_strict_taskgraph(self, receipt: Mapping[str, Any]) -> None:
+        """NEXT-TG-1.0 §6.4: a Mission this deployment creates runs on the strict TaskGraph.
+
+        Written in the creation transaction, from this deployment's own setting — not
+        from the page, the model or an environment variable.  An idempotent replay of
+        an existing Mission (``created`` false) is never converted.
+        """
+        if (not self.settings.strict_taskgraph or self._taskgraph is None
+                or receipt.get("created") is not True):
+            return
+        from agent_orchestrator.orchestrator.taskgraph_requirement import require_taskgraph
+        require_taskgraph(self._orchestrator.store, str(receipt["mission_id"]))
+
+    def _enable_required_taskgraphs(self) -> int:
+        """Bind every required Mission whose planning grant is now in place.
+
+        Runs after the auto grant, after a manual grant, and every loop round (so a
+        restart retries the same command).  The command id is derived from the
+        Mission, so two tries yield one binding.  "No grant yet" is the normal wait;
+        any other refusal is a deployment fault that is logged once per reason and
+        keeps the Mission waiting — it never falls back to an unbound plan.
+        """
+        if self._taskgraph is None or self._orchestrator is None:
+            return 0
+        from agent_orchestrator.orchestrator.taskgraph_requirement import (
+            enable_command_id,
+            missions_awaiting_taskgraph,
+        )
+        enabled = 0
+        for mission_id in missions_awaiting_taskgraph(self._orchestrator.store):
+            try:
+                self._taskgraph.policy.enable_taskgraph_contract(mission_id, enable_command_id(mission_id))
+            except Exception as error:  # noqa: BLE001 - one Mission's refusal must not stop others
+                reason = f"{type(error).__name__}: {error}"[:300]
+                if "PLANNING_AUTHORIZATION_REQUIRED" in reason:
+                    self._taskgraph_faults.pop(mission_id, None)
+                    continue
+                if self._taskgraph_faults.get(mission_id) != reason:
+                    self._taskgraph_faults[mission_id] = reason
+                    logger.warning("taskgraph enable refused mission=%s: %s", mission_id, reason)
+                continue
+            self._taskgraph_faults.pop(mission_id, None)
+            enabled += 1
+        if enabled:
+            self.wake()
+        return enabled
+
     def _install_taskgraph(self, orchestrator: Any) -> Any:
         if self._test_scenario is not None and self._taskgraph_deployment is None:
             return None
@@ -954,6 +1004,7 @@ class OrchestrationService:
             await asyncio.wait_for(self._orchestrator.run(), timeout=timeout)
             self._project_assurance_policies()
             await self._auto_authorize_planning()
+            self._enable_required_taskgraphs()
             await self._auto_confirm_content_completion()
             return True
         except TimeoutError:
@@ -1262,6 +1313,7 @@ class OrchestrationService:
         with self._orchestrator.store.transaction():
             receipt = self._call("create", self._door(request))
             self._initialize_hierarchical_root(receipt["mission_id"])
+            self._require_strict_taskgraph(receipt)
         self.wake()
         return {"mission_id": receipt["mission_id"], "created": receipt["created"], "spec_hash": receipt["spec_hash"]}
 
@@ -1278,6 +1330,7 @@ class OrchestrationService:
                 "mission": self._door(request["mission"]), "sources": request["sources"],
             })
             self._initialize_hierarchical_root(receipt["mission_id"])
+            self._require_strict_taskgraph(receipt)
         self.wake()
         return dict(receipt)
 
@@ -1288,6 +1341,8 @@ class OrchestrationService:
         # Enabling the kernel remains an explicit authenticated internal command;
         # do not turn every active planning grant into a durable policy binding.
         receipt = self._call("planning_authorization", dict(request))
+        # NEXT-TG-1.0 §6.4: the same coordinator as the auto grant, right after it.
+        self._enable_required_taskgraphs()
         self.wake()
         return dict(receipt)
 
@@ -1459,7 +1514,24 @@ class OrchestrationService:
                        if profile.context_policy.max_total_tokens is not None else {}),
                     "fingerprint": profile.context_snapshot()["fingerprint"],
                 }
+            detail["taskgraph"] = self._taskgraph_state(mission_id)
             return detail
+
+    def _taskgraph_state(self, mission_id: str) -> dict[str, Any]:
+        """NEXT-TG-1.0 §6.4: is this Mission waiting for its strict TaskGraph, and why.
+
+        ``waiting`` with no ``fault`` is the normal wait for a planning grant; a
+        ``fault`` is the enable refusal the coordinator logged (a deployment problem).
+        """
+        from agent_orchestrator.orchestrator.taskgraph_requirement import (
+            awaiting_taskgraph,
+            taskgraph_required,
+        )
+        store = self._orchestrator.store
+        required = taskgraph_required(store, mission_id)
+        waiting = required and awaiting_taskgraph(store, mission_id)
+        return {"required": required, "waiting": waiting,
+                "fault": self._taskgraph_faults.get(mission_id) if waiting else None}
 
     def taskgraph_read(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
         from .taskgraph import read_taskgraph

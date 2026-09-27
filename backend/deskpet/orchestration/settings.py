@@ -68,6 +68,10 @@ class OrchestrationSettings:
     # Empty means no directory is authorised, and then nothing can be published at all —
     # the connector is not even enabled, so a Mission may not carry a publish criterion.
     publish_dir: str = ""
+    # NEXT-TG-1.0 §6.4 (user 2026-09-27: finished features stay on): every new
+    # Mission runs on the strict TaskGraph.  ``strict_taskgraph = false`` in
+    # ``[orchestration]`` is the only way to create unbound Missions again.
+    strict_taskgraph: bool = True
     # NanoJev decision rollout (NanoJevAdd.md §57 PR-7).  The Host owns this key and
     # passes an explicit typed policy to the SDK; the SDK reads no configuration.
     # Only "existing" and "shadow" are valid, and anything unrecognised — including
@@ -200,6 +204,7 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         # a path only; whether it exists and can carry a hard link is decided at start-up,
         # and a directory that cannot is never authorised (P3.2 review round 2 P2-5)
         publish_dir=str(publish_dir).strip() if isinstance(publish_dir, str) else "",
+        strict_taskgraph=raw.get("strict_taskgraph", True) is not False,
         decision_mode=_decision_mode(raw.get("decision_mode")),
         decision_shadow_timeout_seconds=_shadow_timeout(raw.get("decision_shadow_timeout_seconds")),
         assurance_profile=_assurance_profile(raw.get("assurance_profile")),
