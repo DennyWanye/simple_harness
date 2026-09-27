@@ -32,6 +32,7 @@ import { MissionDiagnostics } from "./MissionDiagnostics";
 import { LiveGraph } from "./liveGraph/LiveGraph";
 import { MissionProgress } from "./liveGraph/MissionProgress";
 import { MissionAssurance } from "./MissionAssurance";
+import { PublishCriterionHelper } from "./PublishCriterionHelper";
 import { useConfirm } from "../components/useConfirm";
 import {
   asList as list,
@@ -949,6 +950,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <textarea id="mission-goal" aria-label="任务目标" style={field} disabled={createPending} value={goal} onChange={(e) => setGoal(e.target.value)} />
             <label htmlFor="mission-criteria">成功条件（每行一条）</label>
             <textarea id="mission-criteria" aria-label="成功条件" style={field} disabled={createPending} value={criteria} onChange={(e) => setCriteria(e.target.value)} />
+            <PublishCriterionHelper criteria={criteria} onChange={setCriteria} disabled={createPending} publish={store.status?.publish} />
             {domain === "code" && <div style={muted}>普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如 pytest: tests/</div>}
             {badPytestLines.length > 0 && <div role="alert" style={{ color: dark.danger }}>「{badPytestLines[0]}」会被当作测试命令运行，但 pytest: 后面不是测试路径。要写说明就去掉 pytest: 前缀。</div>}
             {domain === "doc-research-v1" && <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />}

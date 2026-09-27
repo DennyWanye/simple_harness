@@ -77,6 +77,8 @@ export interface OrchestrationStatus {
   deployment_manifest?: Record<string, unknown> | null;
   /** 原生执行池的后台循环健康（2026-09-25）：连续失败 ≥3 次才在任务页提示一行。 */
   native_plane?: { profiles?: { profile_id: string; background?: BackgroundHealthRow[] }[] } | null;
+  /** 发布目录授权状态（设置页「任务发布目录」）。 */
+  publish?: { enabled?: boolean; root?: string; reason?: string } | null;
 }
 
 export interface BackgroundHealthRow {
