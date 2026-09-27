@@ -1,0 +1,37 @@
+...............................................F.....s.................. [ 96%]
+...                                                                      [100%]
+=================================== FAILURES ===================================
+______________ test_s8_07_every_configuration_field_is_classified ______________
+
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-4166/test_s8_07_every_configuration0')
+
+    def test_s8_07_every_configuration_field_is_classified(tmp_path):
+        names = {f.name for f in dataclasses.fields(OrchestratorConfig)}
+        assert names == set(SNAPSHOT_FIELDS), sorted(names ^ set(SNAPSHOT_FIELDS))
+        snapshot = policy_snapshot(_config(tmp_path))
+        assert set(snapshot["config"]) == {
+            *(n for n, c in SNAPSHOT_FIELDS.items() if c == "include"),
+            "appworld_execute",
+        }
+        # A callback itself is not serializable, but its presence changes admission.
+        assert snapshot["config"]["appworld_execute"] is False
+        # P3.2 (plan D4): workspace housekeeping is left out on purpose — it never changes how a
+        # Mission is planned, run or verified
+>       assert set(snapshot["excluded"]) == {
+            "evidence_root",
+            "owner_id",
+            "workspace_retention_seconds",
+            "sandbox_executor",  # P3.2 (plan D2): a runtime object, digest in every receipt
+            "appworld_execute",  # capability availability is the serialized config value above
+        }
+E       AssertionError: assert {'appworld_ex...xecutor', ...} == {'appworld_ex...tion_seconds'}
+E         
+E         Extra items in the left set:
+E         'planning_backend'
+E         'domain_tools'
+E         Use -v to get more diff
+
+tests/orchestrator/step08/test_policy_snapshot.py:39: AssertionError
+=========================== short test summary info ============================
+FAILED tests/orchestrator/step08/test_policy_snapshot.py::test_s8_07_every_configuration_field_is_classified
+1 failed, 73 passed, 1 skipped in 135.07s (0:02:15)

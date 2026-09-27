@@ -1,0 +1,17 @@
+full_target	exit=1	304s	47 failed, 4347 passed, 8 skipped, 1 error in 303.45s (0:05:03)
+host_support	exit=0	13s	89 passed in 12.27s
+lc2	exit=0	10s	23 passed in 10.13s
+p32	exit=1	38s	7 failed, 139 passed in 37.04s
+p33	exit=1	56s	3 failed, 969 passed, 3 skipped in 56.21s
+p34	exit=0	49s	155 passed, 9 skipped in 49.26s
+p35	exit=1	93s	8 failed, 208 passed in 92.95s (0:01:32)
+p36	exit=0	1s	1 passed in 0.63s
+step02	exit=0	33s	42 passed, 1 skipped in 32.93s
+step03	exit=0	36s	23 passed, 1 skipped in 35.65s
+step04	exit=0	23s	44 passed, 1 skipped in 23.31s
+step05	exit=0	20s	46 passed, 1 skipped in 20.34s
+step06	exit=0	22s	48 passed, 1 skipped in 21.92s
+step07	exit=0	20s	64 passed, 1 skipped in 20.35s
+step08	exit=1	135s	1 failed, 73 passed, 1 skipped in 135.07s (0:02:15)
+step09	exit=1	85s	2 failed, 40 passed, 1 skipped in 85.24s (0:01:25)
+root	exit=0	4s	15 passed in 4.13s

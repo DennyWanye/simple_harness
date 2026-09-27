@@ -1,0 +1,339 @@
+......F..............................................FF...FFF.F......... [ 49%]
+........................................................................ [ 98%]
+..                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_planner_wire_receives_source_destination_and_approval_semantics[False-True] _
+
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-4155/test_planner_wire_receives_sou1')
+has_action = False, enabled = True
+
+    @pytest.mark.parametrize("has_action,enabled", [(True, True), (False, True), (True, False)])
+    def test_planner_wire_receives_source_destination_and_approval_semantics(
+        tmp_path, has_action, enabled,
+    ):
+        async def case():
+            provider = RoleScriptedProvider({"planner": [graph_proposal_step([node("A")])]})
+            publisher = _connector(tmp_path)
+            config = OrchestratorConfig(
+                evidence_root=tmp_path / "evidence",
+                deployment_policy=ENABLED if enabled else DeploymentPolicy(),
+            )
+            async with Orchestrator(config, provider, connectors={"file_publish": publisher}) as orch:
+                mission_spec = spec(
+                    key="planner-action-wire", goal="Publish report.md to weekly/report.md",
+                    success_criteria=("file:report.md", ACTION) if has_action else ("file:report.md",),
+                )
+                if has_action and not enabled:
+                    with pytest.raises(ContractError, match="connector_not_enabled"):
+                        await orch.submit_mission(mission_spec)
+                    assert provider.calls == 0
+                    return
+                mission = await orch.submit_mission(mission_spec)
+                orch.commit.begin_planning(mission.id)
+                intent = await orch._create_planner_intent(mission.id, ordinal=1)
+                assert await orch._dispatch(intent)
+                intent = orch.store.get_intent(intent.intent_id)
+    
+                async def completed():
+                    while await orch.bridge_for(intent).result(
+                        agent_id=intent.agent_id, turn_id=intent.expected_turn_id,
+                    ) is None:
+                        await asyncio.sleep(0.01)
+    
+                await asyncio.wait_for(completed(), timeout=5)
+                assert provider.calls == 1
+                request = provider.requests[0]
+                package = package_of(request)
+                if not (has_action and enabled):
+                    assert "action_candidate_contract" not in package
+                    # Generic lifetime-budget semantics now reach code Planners too.
+                    # Preserve the original SDK9f70e00 baseline after removing only
+                    # that deliberate new section; action projection remains absent.
+                    assert package["budget_allocation_semantics"]["kind"] == (
+                        "permitted_ceiling_not_expected_spend"
+                    )
+                    historical_message = dict(intent.config["message"])
+                    historical_message["content"] = re.sub(
+                        r"\n\n## budget_allocation_semantics\n.*?(?=\n\n## |\Z)",
+                        "", historical_message["content"], flags=re.DOTALL,
+                    )
+                    assert hashlib.sha256(canonical_json(historical_message).encode()).hexdigest() == (
+                        "3c9ec1513b5cf20e4f73bb09484cfd08a9c00e2018fd053f73bf72e820955c54"
+                    )
+                    message_hash = hashlib.sha256(
+                        canonical_json(intent.config["message"]).encode()
+                    ).hexdigest()
+                    assert message_hash == (
+                        "c5017c6420bf3677a1fbd52d45a49378e32a22b21e618b7df3f61eceacc202f5"
+                    )
+                    assert intent.config["context_version"] == "ctx-c4042b6c85b13dbd"
+                    return
+                contract = package["action_candidate_contract"]
+                assert contract["version"] == "action-candidate-context-v2"
+                assert contract["candidate_output_pattern"] == "actions/*.json"
+                assert "output_files" not in contract  # Planner must choose actual Task outputs.
+                assert contract["operations"][0]["target"] == "weekly/report.md"
+                assert contract["operations"][0]["required_model_params"] == ["artifact_path"]
+                assert contract["operations"][0]["required_approvals"] == 1
+                assert "target is an external destination" in contract["planning_notice"]
+                assert "after Result acceptance" in contract["planning_notice"]
+                assert "not the candidate JSON" in contract["notice"]
+                assert str(publisher.root) not in str(contract)
+                assert str(publisher.ledger_path) not in str(contract)
+                assert all("action_candidate_contract" not in str(m.content)
+                           for m in request.messages if m.role is MessageRole.SYSTEM)
+                assert intent.config["message"]  # Actual frozen request, not a synthetic helper call.
+    
+>       asyncio.run(case())
+
+tests/orchestrator/p32/test_p32_action_schema_context.py:214: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/taiwan/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/lib/python3.14/asyncio/runners.py:205: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/taiwan/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/lib/python3.14/asyncio/runners.py:128: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/taiwan/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/lib/python3.14/asyncio/base_events.py:720: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def case():
+        provider = RoleScriptedProvider({"planner": [graph_proposal_step([node("A")])]})
+        publisher = _connector(tmp_path)
+        config = OrchestratorConfig(
+            evidence_root=tmp_path / "evidence",
+            deployment_policy=ENABLED if enabled else DeploymentPolicy(),
+        )
+        async with Orchestrator(config, provider, connectors={"file_publish": publisher}) as orch:
+            mission_spec = spec(
+                key="planner-action-wire", goal="Publish report.md to weekly/report.md",
+                success_criteria=("file:report.md", ACTION) if has_action else ("file:report.md",),
+            )
+            if has_action and not enabled:
+                with pytest.raises(ContractError, match="connector_not_enabled"):
+                    await orch.submit_mission(mission_spec)
+                assert provider.calls == 0
+                return
+            mission = await orch.submit_mission(mission_spec)
+            orch.commit.begin_planning(mission.id)
+            intent = await orch._create_planner_intent(mission.id, ordinal=1)
+            assert await orch._dispatch(intent)
+            intent = orch.store.get_intent(intent.intent_id)
+    
+            async def completed():
+                while await orch.bridge_for(intent).result(
+                    agent_id=intent.agent_id, turn_id=intent.expected_turn_id,
+                ) is None:
+                    await asyncio.sleep(0.01)
+    
+            await asyncio.wait_for(completed(), timeout=5)
+            assert provider.calls == 1
+            request = provider.requests[0]
+            package = package_of(request)
+            if not (has_action and enabled):
+                assert "action_candidate_contract" not in package
+                # Generic lifetime-budget semantics now reach code Planners too.
+                # Preserve the original SDK9f70e00 baseline after removing only
+                # that deliberate new section; action projection remains absent.
+                assert package["budget_allocation_semantics"]["kind"] == (
+                    "permitted_ceiling_not_expected_spend"
+                )
+                historical_message = dict(intent.config["message"])
+                historical_message["content"] = re.sub(
+                    r"\n\n## budget_allocation_semantics\n.*?(?=\n\n## |\Z)",
+                    "", historical_message["content"], flags=re.DOTALL,
+                )
+>               assert hashlib.sha256(canonical_json(historical_message).encode()).hexdigest() == (
+                    "3c9ec1513b5cf20e4f73bb09484cfd08a9c00e2018fd053f73bf72e820955c54"
+                )
+E               AssertionError: assert '43757e8902de...578ae8391c615' == '3c9ec1513b5c...f72e820955c54'
+E                 
+E                 - 3c9ec1513b5cf20e4f73bb09484cfd08a9c00e2018fd053f73bf72e820955c54
+E                 + 43757e8902de2103288ea006d9c5d536f751aecaa44e1a981b7578ae8391c615
+
+tests/orchestrator/p32/test_p32_action_schema_context.py:187: AssertionError
+______________ test_the_facade_binds_the_artifact_identity_itself ______________
+
+    def test_the_facade_binds_the_artifact_identity_itself():
+        control, commit = _control()
+>       proposed = control.propose_compensation(
+            "action-1:v1", operation="publish", artifact_id="artifact-1", reason="上一版内容错了"
+        )
+
+tests/orchestrator/p32/test_p32_compensation_facade.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/agent_orchestrator/api/facade.py:700: in propose_compensation
+    mission = self._mission(action.get("mission_id"))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/agent_orchestrator/api/facade.py:238: in _mission
+    self._require_native_root()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <agent_orchestrator.api.facade.MissionControlV1 object at 0x1096a97f0>
+
+    def _require_native_root(self) -> None:
+        from ..assurance.codec import AssuranceError
+    
+>       gate = self._orchestrator.commit._assurance_root_gate
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Commit' object has no attribute '_assurance_root_gate'
+
+src/agent_orchestrator/api/facade.py:135: AttributeError
+___________________ test_a_caller_may_not_state_the_identity ___________________
+
+    def test_a_caller_may_not_state_the_identity():
+        control, commit = _control()
+        with pytest.raises(FacadeError) as refused:
+>           control.propose_compensation(
+                "action-1:v1",
+                operation="publish",
+                artifact_id="artifact-1",
+                reason="试图自己写 hash",
+                params={"content_hash": "0" * 64},
+            )
+
+tests/orchestrator/p32/test_p32_compensation_facade.py:137: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/agent_orchestrator/api/facade.py:700: in propose_compensation
+    mission = self._mission(action.get("mission_id"))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/agent_orchestrator/api/facade.py:238: in _mission
+    self._require_native_root()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <agent_orchestrator.api.facade.MissionControlV1 object at 0x109853890>
+
+    def _require_native_root(self) -> None:
+        from ..assurance.codec import AssuranceError
+    
+>       gate = self._orchestrator.commit._assurance_root_gate
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Commit' object has no attribute '_assurance_root_gate'
+
+src/agent_orchestrator/api/facade.py:135: AttributeError
+_____________________ test_a_foreign_mission_is_not_found ______________________
+
+    def test_a_foreign_mission_is_not_found():
+        control, commit = _control(tenant="someone-else")
+        with pytest.raises(FacadeError) as refused:
+>           control.propose_compensation(
+                "action-1:v1", operation="publish", artifact_id="artifact-1", reason="别人的任务"
+            )
+
+tests/orchestrator/p32/test_p32_compensation_facade.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/agent_orchestrator/api/facade.py:700: in propose_compensation
+    mission = self._mission(action.get("mission_id"))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/agent_orchestrator/api/facade.py:238: in _mission
+    self._require_native_root()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <agent_orchestrator.api.facade.MissionControlV1 object at 0x1098bc4d0>
+
+    def _require_native_root(self) -> None:
+        from ..assurance.codec import AssuranceError
+    
+>       gate = self._orchestrator.commit._assurance_root_gate
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Commit' object has no attribute '_assurance_root_gate'
+
+src/agent_orchestrator/api/facade.py:135: AttributeError
+_______________ test_an_unknown_action_or_artifact_is_not_found ________________
+
+    def test_an_unknown_action_or_artifact_is_not_found():
+        control, commit = _control()
+        for action_key, artifact_id in (("action-9:v1", "artifact-1"), ("action-1:v1", "artifact-9")):
+            with pytest.raises(FacadeError) as refused:
+>               control.propose_compensation(
+                    action_key, operation="publish", artifact_id=artifact_id, reason="找不到"
+                )
+
+tests/orchestrator/p32/test_p32_compensation_facade.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/agent_orchestrator/api/facade.py:700: in propose_compensation
+    mission = self._mission(action.get("mission_id"))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/agent_orchestrator/api/facade.py:238: in _mission
+    self._require_native_root()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <agent_orchestrator.api.facade.MissionControlV1 object at 0x109907350>
+
+    def _require_native_root(self) -> None:
+        from ..assurance.codec import AssuranceError
+    
+>       gate = self._orchestrator.commit._assurance_root_gate
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Commit' object has no attribute '_assurance_root_gate'
+
+src/agent_orchestrator/api/facade.py:135: AttributeError
+_______________ test_an_artifact_of_another_mission_is_not_found _______________
+
+    def test_an_artifact_of_another_mission_is_not_found():
+        control, commit = _control(artifact=_artifact(mission_id="mission-2"))
+        with pytest.raises(FacadeError) as refused:
+>           control.propose_compensation(
+                "action-1:v1", operation="publish", artifact_id="artifact-1", reason="别的任务的产物"
+            )
+
+tests/orchestrator/p32/test_p32_compensation_facade.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/agent_orchestrator/api/facade.py:700: in propose_compensation
+    mission = self._mission(action.get("mission_id"))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/agent_orchestrator/api/facade.py:238: in _mission
+    self._require_native_root()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <agent_orchestrator.api.facade.MissionControlV1 object at 0x109906360>
+
+    def _require_native_root(self) -> None:
+        from ..assurance.codec import AssuranceError
+    
+>       gate = self._orchestrator.commit._assurance_root_gate
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Commit' object has no attribute '_assurance_root_gate'
+
+src/agent_orchestrator/api/facade.py:135: AttributeError
+______________ test_a_refusal_from_the_ledger_reaches_the_caller _______________
+
+    def test_a_refusal_from_the_ledger_reaches_the_caller():
+        control, _commit = _control(
+            outcome=ActionCommitError("only a SUCCEEDED action can be compensated")
+        )
+        with pytest.raises(FacadeError) as refused:
+>           control.propose_compensation(
+                "action-1:v1", operation="publish", artifact_id="artifact-1", reason="还没执行"
+            )
+
+tests/orchestrator/p32/test_p32_compensation_facade.py:211: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/agent_orchestrator/api/facade.py:700: in propose_compensation
+    mission = self._mission(action.get("mission_id"))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/agent_orchestrator/api/facade.py:238: in _mission
+    self._require_native_root()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <agent_orchestrator.api.facade.MissionControlV1 object at 0x1098a3d50>
+
+    def _require_native_root(self) -> None:
+        from ..assurance.codec import AssuranceError
+    
+>       gate = self._orchestrator.commit._assurance_root_gate
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Commit' object has no attribute '_assurance_root_gate'
+
+src/agent_orchestrator/api/facade.py:135: AttributeError
+=========================== short test summary info ============================
+FAILED tests/orchestrator/p32/test_p32_action_schema_context.py::test_planner_wire_receives_source_destination_and_approval_semantics[False-True]
+FAILED tests/orchestrator/p32/test_p32_compensation_facade.py::test_the_facade_binds_the_artifact_identity_itself
+FAILED tests/orchestrator/p32/test_p32_compensation_facade.py::test_a_caller_may_not_state_the_identity
+FAILED tests/orchestrator/p32/test_p32_compensation_facade.py::test_a_foreign_mission_is_not_found
+FAILED tests/orchestrator/p32/test_p32_compensation_facade.py::test_an_unknown_action_or_artifact_is_not_found
+FAILED tests/orchestrator/p32/test_p32_compensation_facade.py::test_an_artifact_of_another_mission_is_not_found
+FAILED tests/orchestrator/p32/test_p32_compensation_facade.py::test_a_refusal_from_the_ledger_reaches_the_caller
+7 failed, 139 passed in 37.04s

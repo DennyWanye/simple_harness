@@ -270,6 +270,11 @@ SDK 前缀 `sdk/simple-harness-sdk/src/agent_orchestrator/orchestrator/`，Host 
 - 根因：保障层把自己的证据纪元（`assurance:mission`）存在同一张纪元表里，写入规划授权/请求授权绑定时会推进它；执行图模式读取纪元时读全表，于是把它算进规划请求的范围摘要。Host 是在请求绑定**之后**才发授权的，所以每次回复都判过期（上游复验时保障层关、也没走执行图，所以没暴露）。
 - 修复：`taskgraph_epochs.planning_scope_digest`：请求绑定与判定两处共用，摘要不计 `assurance:mission`（它是保障层自己检查新鲜度的信号，不改变计划含义）；其它纬度照旧。测试 `test_planning_scope_digest.py` 3 条；规划判定/执行图/保障层相关测试对照基线无新增失败。
 
+### 2A.5 本批全量回归（推送前一次）
+
+- SDK（按目录分进程，opt.41）：失败 69 个，**全部在改动前基线内，无新增**；基线 87 个中 18 个转绿。结果 `.local-test-evidence/2026-09-27/batch2a-full-opt41/`。
+- Host 编排目录：对照基线无新增失败（2 条旧失败转绿）。
+
 ### 2A.4 遗留（不阻断本批，已排入后续批）
 
 - 根结论提交后、保障层收尾期间误报一次"卡住"（`HierarchicalMissionStalled`）→ 第 2B 批推进规则一并处理。

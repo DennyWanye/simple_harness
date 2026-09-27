@@ -1,0 +1,110 @@
+.....FF...................................s                              [100%]
+=================================== FAILURES ===================================
+___ test_a_resumed_mission_says_when_the_code_that_reads_its_policy_changed ____
+
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-4167/test_a_resumed_mission_says_wh0')
+
+    def test_a_resumed_mission_says_when_the_code_that_reads_its_policy_changed(tmp_path):
+        config = _config(tmp_path)
+    
+        async def case():
+            async with Orchestrator(config, _provider()) as orch:
+                mission = await orch.submit_mission(_spec("drift"))
+                bound = orch.store.get_mission_policy(mission.id)["version_id"]
+            connection = sqlite3.connect(
+                config.orchestrator_db
+            )  # an older build recorded another allocator
+            row = connection.execute(
+                "SELECT json FROM policy_versions WHERE version_id = ?", (bound,)
+            ).fetchone()
+            record = json.loads(row[0])
+            record["interpreter_versions"]["allocator"] = "allocator-v0"
+            connection.execute(
+                "UPDATE policy_versions SET json = ? WHERE version_id = ?", (json.dumps(record), bound)
+            )
+            connection.commit()
+            connection.close()
+            async with Orchestrator(config, _provider()) as orch:
+                await orch.run()
+                drift = [
+                    e for e in orch.store.iter_events(mission.id) if e.type == "PolicyInterpreterDrift"
+                ]
+                assert len(drift) == 1
+                assert drift[0].payload["differences"] == [
+                    {"key": "allocator", "bound": "allocator-v0", "running": "allocator-v1"}
+                ]
+                assert orch.store.get_mission(mission.id).status is MissionStatus.COMPLETED
+    
+>       asyncio.run(case())
+
+tests/orchestrator/step09/test_policy_binding.py:301: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/taiwan/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/lib/python3.14/asyncio/runners.py:205: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/taiwan/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/lib/python3.14/asyncio/runners.py:128: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/taiwan/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/lib/python3.14/asyncio/base_events.py:720: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def case():
+        async with Orchestrator(config, _provider()) as orch:
+            mission = await orch.submit_mission(_spec("drift"))
+            bound = orch.store.get_mission_policy(mission.id)["version_id"]
+        connection = sqlite3.connect(
+            config.orchestrator_db
+        )  # an older build recorded another allocator
+        row = connection.execute(
+            "SELECT json FROM policy_versions WHERE version_id = ?", (bound,)
+        ).fetchone()
+        record = json.loads(row[0])
+        record["interpreter_versions"]["allocator"] = "allocator-v0"
+>       connection.execute(
+            "UPDATE policy_versions SET json = ? WHERE version_id = ?", (json.dumps(record), bound)
+        )
+E       sqlite3.OperationalError: no such function: assurance_change_receipt
+
+tests/orchestrator/step09/test_policy_binding.py:285: OperationalError
+_ test_review_p1_1_a_mission_older_than_policy_binding_still_replays_completely _
+
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-4167/test_review_p1_1_a_mission_old0')
+
+    def test_review_p1_1_a_mission_older_than_policy_binding_still_replays_completely(tmp_path):
+        """A Mission migrated to ``policy-legacy`` has no ``policy_version_id`` in its
+        ``MissionCreated``: the field is not formal state its events decide, so replay
+        coverage stays 100 % after the upgrade."""
+    
+        config = _config(tmp_path)
+    
+        async def case():
+            async with Orchestrator(config, _provider()) as orch:
+                mission = await orch.submit_mission(_spec("pre-binding"))
+                await orch.run()
+                return mission.id
+    
+        mission_id = asyncio.run(case())
+        connection = sqlite3.connect(config.orchestrator_db)  # make it look like a v5 Mission, migrated
+>       connection.execute(
+            "INSERT INTO policy_versions(version_id,params_hash,source,status,json,created_at,updated_at)"
+            " VALUES ('policy-legacy','legacy','legacy','LEGACY',?,1.0,1.0)",
+            (
+                json.dumps(
+                    {
+                        "version_id": "policy-legacy",
+                        "params": None,
+                        "source": "legacy",
+                        "status": "LEGACY",
+                    }
+                ),
+            ),
+        )
+E       sqlite3.OperationalError: no such function: assurance_change_receipt
+
+tests/orchestrator/step09/test_policy_binding.py:320: OperationalError
+=========================== short test summary info ============================
+FAILED tests/orchestrator/step09/test_policy_binding.py::test_a_resumed_mission_says_when_the_code_that_reads_its_policy_changed
+FAILED tests/orchestrator/step09/test_policy_binding.py::test_review_p1_1_a_mission_older_than_policy_binding_still_replays_completely
+2 failed, 40 passed, 1 skipped in 85.24s (0:01:25)
