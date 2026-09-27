@@ -36,7 +36,7 @@ jobs:
       # webcrypto 按原型严格判断而拒收，Node 22 能识别跨 realm 的 ArrayBuffer。真实
       # WebView 只有一个 realm，不受影响。测试仍计算真实 SHA-256，不打桩。
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: tauri-app/.nvmrc
           cache: 'npm'
