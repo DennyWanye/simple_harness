@@ -1576,14 +1576,6 @@ class OrchestrationService:
         from .taskgraph import read_taskgraph
         return read_taskgraph(self, operation, request)
 
-    def live_graph(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        from .live_graph import read_live_graph
-        return read_live_graph(self, request)
-
-    def planning_decisions(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        from .live_graph import read_planning_decisions
-        return read_planning_decisions(self, request)
-
     def assurance_read(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
         from .assurance import read_assurance
         return read_assurance(self, verb, request)

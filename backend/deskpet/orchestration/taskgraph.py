@@ -24,19 +24,24 @@ def _invalid() -> None:
 
 def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
     required = {"snapshot": {"mission_id"}, "why_not_ready": {"mission_id", "occurrence_id"},
-                "diff": {"mission_id", "from_revision", "to_revision"}, "convergence": {"mission_id"}}
+                "diff": {"mission_id", "from_revision", "to_revision"}, "convergence": {"mission_id"},
+                "execution_snapshot": {"mission_id"}, "execution_detail": {"mission_id", "node_id"}}
+    optional = {"snapshot": {"revision"}, "execution_snapshot": {"cursor", "limit"},
+                "execution_detail": {"through_journal_seq"}}
     if operation not in required:
         _invalid()
-    allowed = required[operation] | ({"revision"} if operation == "snapshot" else set())
+    allowed = required[operation] | optional.get(operation, set())
     if not required[operation] <= set(request) or set(request) - allowed:
         _invalid()
     for key, value in request.items():
-        if key in ("revision", "from_revision", "to_revision"):
-            if key == "revision" and value is None:
+        if key in ("revision", "from_revision", "to_revision", "limit", "through_journal_seq"):
+            if key in ("revision", "through_journal_seq", "limit") and value is None:
                 continue
             if type(value) is not int or not 0 <= value <= 2**53 - 1:
                 _invalid()
-        elif not isinstance(value, str) or not value.strip() or len(value) > 512:
+        elif key == "cursor" and value is None:
+            continue
+        elif not isinstance(value, str) or not value.strip() or len(value) > (4096 if key == "cursor" else 512):
             _invalid()
     mission_id = request["mission_id"]
     # Ownership is checked before optional SDK capability detection. Tenant and
@@ -62,6 +67,13 @@ def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> 
             return api.why_not_ready(mission_id, request["occurrence_id"])
         if operation == "diff":
             return api.diff(mission_id, request["from_revision"], request["to_revision"])
+        if operation == "execution_snapshot":
+            limit = request.get("limit")
+            return api.execution_snapshot(mission_id, cursor=request.get("cursor"),
+                                          **({} if limit is None else {"limit": limit}))
+        if operation == "execution_detail":
+            return api.execution_detail(mission_id, request["node_id"],
+                                        through_journal_seq=request.get("through_journal_seq"))
         return api.convergence(mission_id)
     except TaskGraphReadError as error:
         raise TaskGraphRequestError(error.error.to_json()) from error

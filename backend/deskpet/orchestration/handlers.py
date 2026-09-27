@@ -37,8 +37,8 @@ MESSAGE_TYPES = (
     "taskgraph.why_not_ready",
     "taskgraph.diff",
     "taskgraph.convergence",
-    "mission_live_graph",
-    "mission_planning_decisions",
+    "taskgraph.execution_snapshot",
+    "taskgraph.execution_detail",
     "mission_assurance_snapshot",
     "mission_assurance_review",
     "mission_assurance_use_check",
@@ -243,9 +243,9 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "taskgraph.why_not_ready": lambda service, body: service.taskgraph_read("why_not_ready", body),
     "taskgraph.diff": lambda service, body: service.taskgraph_read("diff", body),
     "taskgraph.convergence": lambda service, body: service.taskgraph_read("convergence", body),
-    # 2026-09-26 实时可视化：直读分层计划表的运行视图（严格执行图对真实任务恒为 NOT_ENABLED）
-    "mission_live_graph": lambda service, body: service.live_graph(body),
-    "mission_planning_decisions": lambda service, body: service.planning_decisions(body),
+    # NEXT-TG-1.0 §8：执行过程（尝试/审阅/修补/规划/操作）走 SDK 正式接口，Host 不再直读 SDK 表
+    "taskgraph.execution_snapshot": lambda service, body: service.taskgraph_read("execution_snapshot", body),
+    "taskgraph.execution_detail": lambda service, body: service.taskgraph_read("execution_detail", body),
     "mission_assurance_snapshot": lambda service, body: service.assurance_read("snapshot", body),
     "mission_assurance_review": lambda service, body: service.assurance_read("review", body),
     "mission_assurance_use_check": lambda service, body: service.assurance_read("use_check", body),

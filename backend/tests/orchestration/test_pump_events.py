@@ -10,13 +10,23 @@ import sqlite3
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from agent_orchestrator.storage.store import Store
 
 from deskpet.orchestration.pump import EVENTS_PER_PUSH, MissionChangePump
 
-from .test_live_graph import _insert
+
+def _insert(db: sqlite3.Connection, table: str, **values: Any) -> None:
+    for _, name, kind, notnull, default, _pk in db.execute(f"PRAGMA table_info({table})"):
+        if name in values or not notnull or default is not None:
+            continue
+        values[name] = {"INTEGER": 1, "REAL": 1.0}.get(kind.upper(), "a" * 64)
+    columns = ",".join(values)
+    db.execute(f"INSERT INTO {table}({columns}) VALUES ({','.join('?' * len(values))})", tuple(values.values()))
+
+
 
 TENANT = "tenant-a"
 

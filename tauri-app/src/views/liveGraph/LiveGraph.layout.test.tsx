@@ -5,11 +5,14 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ControlMessage, IncomingMessage } from "../../types/messages";
 import { useMissionsStore } from "../../stores/missionsStore";
 import { LiveGraph } from "./LiveGraph";
+import { M, snapshot } from "./fixture";
 
 const layoutCalls: { resolve: (value: unknown) => void; graph: unknown }[] = [];
 vi.mock("./layout", () => ({
   layoutGraph: (graph: unknown) => new Promise((resolve) => { layoutCalls.push({ resolve, graph }); }),
 }));
+
+const SNAP = "taskgraph.execution_snapshot";
 
 class FakeChannel {
   readonly sent: ControlMessage[] = [];
@@ -22,10 +25,9 @@ class FakeChannel {
   emit(message: unknown) {
     act(() => { for (const listener of [...this.listeners]) listener(message as IncomingMessage); });
   }
-  all(type: string): ControlMessage[] { return this.sent.filter((m) => m.type === type); }
-  reply(type: string, data: unknown, ok = true) {
-    const request = [...this.sent].reverse().find((m) => m.type === type);
-    this.emit({ type: `${type}_response`, payload: { request_id: request?.request_id, ok, data, error: ok ? undefined : "读不到" } });
+  reply(data: unknown) {
+    const request = [...this.sent].reverse().find((m) => m.type === SNAP);
+    this.emit({ type: `${SNAP}_response`, payload: { request_id: request?.request_id, ok: true, data } });
   }
 }
 
@@ -34,62 +36,54 @@ beforeAll(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); useMissionsStore.getState().reset(); layoutCalls.length = 0; });
 
-const M = "mission-1";
-function graph(extra: Record<string, unknown> = {}) {
-  return {
-    schema_version: 1, mission_id: M, source: "htn", plan_revision: 1, through_seq: 10, revisions: [1],
-    nodes: [
-      { occurrence_id: "root", task_id: "task-root", form: "compound", parent: null, method: null, task_status: "ACTIVE",
-        phase: "waiting_children", readiness_reason: "WAITING_ORDER", attempt_count: 0, last_event_at: null },
-      { occurrence_id: "a", task_id: "task-a", form: "primitive", parent: "root", method: "synth@1", task_status: "COMPLETED",
-        phase: null, readiness_reason: null, attempt_count: 1, last_event_at: 5 },
-      { occurrence_id: "b", task_id: "task-b", form: "primitive", parent: "root", method: "synth@1", task_status: "ACTIVE",
-        phase: null, readiness_reason: null, attempt_count: 2, last_event_at: 9 },
-    ],
-    edges: [{ kind: "order", source: "a", target: "b" }],
-    ...extra,
-  };
-}
-const DETAIL = {
-  mission: { id: M, goal: { text: "写一份调研报告", source: "human" }, status: "ACTIVE" },
-  tasks: [{ id: "task-a", goal: { text: "收集资料", source: "model" } }, { id: "task-b", goal: { text: "写第一章", source: "model" } }],
-  attempts: [{ id: "att-1", task_id: "task-b", status: "RUNNING", model: "deepseek-flash", ordinal: 0 }],
-  results: [{ task_id: "task-b", attempt_id: "att-1", verification_layers: [{ layer: "format_check", status: "PASS", summary: { text: "格式正确" } }] }],
-};
-
-function mount(detail: Record<string, unknown> = DETAIL) {
+function mount() {
   const channel = new FakeChannel();
-  render(<LiveGraph missionId={M} channel={channel} detail={detail} />);
+  render(<LiveGraph missionId={M} channel={channel} detail={{ mission: { id: M, goal: "g", status: "ACTIVE" } }} />);
   return channel;
 }
 
-describe("排版不被状态更新打断", () => {
-  it("排版进行中再收到一次重读（同一版本），不重新排版，结果照样用上", async () => {
+function reread(channel: FakeChannel, data: unknown) {
+  channel.emit({ type: "mission_changed", payload: { mission_id: M, status: "ACTIVE", last_seq: 11 } });
+  act(() => { vi.advanceTimersByTime(800); });
+  channel.reply(data);
+}
+
+describe("排版只跟结构走", () => {
+  it("只有状态变了（同样的节点）：不重新排版，文字照样更新", async () => {
     vi.useFakeTimers();
     const channel = mount();
-    channel.reply("mission_live_graph", graph());
+    channel.reply(snapshot());
     expect(layoutCalls).toHaveLength(1);
-    channel.emit({ type: "mission_changed", payload: { mission_id: M, status: "ACTIVE", last_seq: 11 } });
-    act(() => { vi.advanceTimersByTime(800); });
-    const newer = graph({ through_seq: 11 });
-    (newer.nodes[2] as Record<string, unknown>).task_status = "VERIFYING";
-    channel.reply("mission_live_graph", newer);
+    reread(channel, snapshot({ execution_cut: { execution_hash: "h1", coverage: "COMPLETE" } }, { phases: { b: "VERIFYING" } }));
     expect(layoutCalls).toHaveLength(1);
     vi.useRealTimers(); // elk schedules its own work
     const { default: ELK } = await import("elkjs/lib/elk.bundled.js");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const output = await new ELK().layout(layoutCalls[0].graph as any);
     await act(async () => { layoutCalls[0].resolve(output); });
-    expect(screen.getByTestId("lg-node-b").textContent).toContain("验证中");
+    expect(screen.getByTestId("lg-node-b").textContent).toContain("验收中");
   });
 
-  it("新版本才重新排版", () => {
+  it("执行过程多了一个节点才重新排版", () => {
     vi.useFakeTimers();
     const channel = mount();
-    channel.reply("mission_live_graph", graph());
-    channel.emit({ type: "mission_changed", payload: { mission_id: M, status: "ACTIVE", last_seq: 11 } });
-    act(() => { vi.advanceTimersByTime(800); });
-    channel.reply("mission_live_graph", graph({ through_seq: 11, plan_revision: 2, revisions: [1, 2] }));
+    channel.reply(snapshot());
+    const base = snapshot();
+    const nodes = [...(base.execution_nodes as Record<string, unknown>[]),
+      { node_id: "check:r-b2", kind: "check", at_ms: 5000, result_id: "r-b2", attempt_id: "b2", verdict: null, layers: [], turn: null, summary: null }];
+    const edges = [...(base.execution_edges as Record<string, unknown>[]),
+      { kind: "review_of", source: "check:r-b2", target: "attempt:b2", target_layer: "execution" }];
+    reread(channel, snapshot({ execution_cut: { execution_hash: "h2", coverage: "COMPLETE" } }, { nodes, edges }));
     expect(layoutCalls).toHaveLength(2);
+  });
+
+  it("执行过程与步骤状态都没变：连画面都不换", () => {
+    vi.useFakeTimers();
+    const channel = mount();
+    channel.reply(snapshot());
+    const before = screen.getByText("全部步骤（3）");
+    reread(channel, snapshot({ read_token: { plan_revision: 1, through_seq: 99, validity_epochs: [], snapshot_hash: "x", manifest_hash: "m" } }));
+    expect(screen.getByText("全部步骤（3）")).toBe(before);
+    expect(layoutCalls).toHaveLength(1);
   });
 });

@@ -28,3 +28,18 @@
 .lg-panel .lg-bar strong { flex: 1; min-width: 0; }
 .live-graph .react-flow__handle { opacity: 0; pointer-events: none; }
 .lg-slow button { margin-left: 8px; }
+.lg-tabs { display: flex; gap: 4px; }
+.live-graph .lg-tabs button[aria-selected="true"] { border-color: var(--sh-accent, #0d9488); font-weight: 600; }
+.lg-exec { box-sizing: border-box; width: 100%; height: 100%; padding: 6px 8px; border: 1.5px solid; border-radius: 8px; background: var(--sh-card, #1b1f24); color: var(--sh-text, #e5e7eb); font-size: 11px; overflow: hidden; }
+.lg-exec.lg-picked { box-shadow: 0 0 0 3px #0d948866; }
+.lg-exec .lg-title { display: block; width: 100%; padding: 0; border: 0; text-align: left; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lg-exec-status { font-weight: 400; }
+.lg-line { margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--sh-text-2, #cbd5e1); font-size: 11px; }
+.lg-timeline { list-style: none; margin: 10px 0 0; padding: 0; }
+.lg-timeline > li { border-bottom: 1px solid var(--sh-hairline, #94a3b822); padding: 4px 0; }
+.live-graph .lg-tl-row { display: block; width: 100%; border: 0; padding: 4px 2px; text-align: left; }
+.lg-tl-row .lg-line { white-space: normal; }
+.lg-detail { margin: 6px 0 6px 12px; overflow-wrap: anywhere; }
+.lg-items { padding-left: 18px; }
+.lg-items li { margin: 3px 0; }
+.live-graph .lg-link { border: 0; padding: 0; text-decoration: underline; }
