@@ -175,17 +175,21 @@ def project_check_policies(service: Any, mission_id: str | None = None) -> int:
 
     store = orchestrator.store
     done: set[str] = service._assurance_policy_scopes
-    sql = "SELECT mission_id, scope_id FROM operation_completion_scopes"
+    sql = "SELECT mission_id, scope_id, document_json FROM operation_completion_scopes"
     args: tuple[Any, ...] = ()
     if mission_id is not None:
         sql += " WHERE mission_id=?"
         args = (mission_id,)
     rows = store.connection.execute(sql + " ORDER BY created_at_ms, scope_id", args).fetchall()
-    def approve(mid: str, scope_id: str, purpose: str) -> bool:
-        # One command per (Scope, purpose); the SDK approval receipt makes replays
-        # free. MISSION_FINAL is the root review's own domain (root Scope + the
-        # whole root requirements) — Host real model run 15, 2026-09-23.
-        key = scope_id if purpose == "CONTENT" else f"mission-final:{scope_id}"
+    def approve(mid: str, scope_id: str, purpose: str, effect_key: str | None = None) -> bool:
+        # One command per (Scope, purpose[, effect]); the SDK approval receipt makes
+        # replays free. MISSION_FINAL is the root review's own domain (root Scope + the
+        # whole root requirements) — Host real model run 15, 2026-09-23. The two
+        # operation reviews live on the effect owner's Scope (NEXT-TG-1.0, 2026-09-27:
+        # an assured publish was refused CHECK_POLICY_UNRESOLVED at submission).
+        key = {"CONTENT": scope_id, "MISSION_FINAL": f"mission-final:{scope_id}",
+               "ACTION_PROPOSAL": f"action-proposal:{scope_id}",
+               "OPERATION_OUTCOME": f"operation-outcome:{scope_id}:{effect_key}"}[purpose]
         if key in done:
             return False
         command_id = f"host-check-policy:{key}"
@@ -198,7 +202,8 @@ def project_check_policies(service: Any, mission_id: str | None = None) -> int:
             return False
         try:
             requirements_ref, scope_ref, mapping = lossless_scope_mapping(
-                orchestrator.commit, mission_id=mid, scope_id=scope_id, purpose=purpose)
+                orchestrator.commit, mission_id=mid, scope_id=scope_id, purpose=purpose,
+                effect_key=effect_key)
             command = {
                 "mission_id": mid, "command_id": command_id,
                 "requirements_ref": requirements_ref.to_json(),
@@ -210,31 +215,47 @@ def project_check_policies(service: Any, mission_id: str | None = None) -> int:
             }
             if purpose != "CONTENT":
                 command["purpose"] = purpose
+            if effect_key is not None:
+                command["effect_key"] = effect_key
             service._call("approve_assurance_check_policy", command)
-        except (AssuranceError, OrchestrationRequestError) as error:
+        except Exception as error:  # noqa: BLE001 - one Scope must never stop the round
             # Retried on the next round; a Scope whose projection is not current
-            # yet (or never resolvable) is reported, never guessed.
-            logger.warning("assurance %s check policy not projected for %s: %s", purpose, scope_id, error)
+            # yet (or never resolvable) is reported, never guessed. 2026-09-27: an old
+            # Mission's stale plan raised OperationCompletionError here and the whole
+            # round stopped, so a new Mission got no policy at all.
+            logger.warning("assurance %s check policy not projected for %s: %s: %s",
+                           purpose, scope_id, type(error).__name__, error)
             return False
         done.add(key)
         return True
 
     approved = 0
     assured: set[str] = set()
+    unassured: set[str] = service._assurance_unassured_missions
     for row in rows:
         mid, scope_id = str(row[0]), str(row[1])
-        if scope_id in done:
-            assured.add(mid)
+        if mid in unassured:
             continue
-        try:
-            if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
-                done.add(scope_id)
+        if mid not in assured:
+            mission = store.get_mission(mid)
+            if mission is None or str(getattr(mission.status, "value", mission.status)) in {
+                    "COMPLETED", "FAILED", "CANCELLED"}:
+                unassured.add(mid)  # a finished Mission needs no new policy
                 continue
-        except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
-            done.add(scope_id)
-            continue
-        assured.add(mid)
+            try:
+                if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
+                    unassured.add(mid)
+                    continue
+            except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
+                unassured.add(mid)
+                continue
+            assured.add(mid)
         approved += approve(mid, scope_id, "CONTENT")
+        owned = tuple(json.loads(row[2]).get("owned_effect_keys") or ())
+        if owned:
+            approved += approve(mid, scope_id, "ACTION_PROPOSAL")
+            for effect_key in owned:
+                approved += approve(mid, scope_id, "OPERATION_OUTCOME", str(effect_key))
     for mid in sorted(assured):
         try:
             if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
