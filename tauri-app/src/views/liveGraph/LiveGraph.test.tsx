@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ControlMessage, IncomingMessage } from "../../types/messages";
+import type { ConnectionState } from "../../ws/ControlChannel";
 import { useMissionsStore } from "../../stores/missionsStore";
 import { LiveGraph } from "./LiveGraph";
 import { M, snapshot } from "./fixture";
@@ -12,6 +13,9 @@ const DETAIL = "taskgraph.execution_detail";
 
 class FakeChannel {
   readonly sent: ControlMessage[] = [];
+  private readonly stateListeners = new Set<(state: ConnectionState) => void>();
+  onStateChange = (listener: (state: ConnectionState) => void) => { this.stateListeners.add(listener); return () => { this.stateListeners.delete(listener); }; };
+  setState(state: ConnectionState) { act(() => { for (const l of [...this.stateListeners]) l(state); }); }
   private readonly listeners = new Set<(message: IncomingMessage) => void>();
   send = (message: ControlMessage) => { this.sent.push(message); return true; };
   onMessage = (listener: (message: IncomingMessage) => void) => {
@@ -135,5 +139,18 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     expect(panel.textContent).toContain("把 NOTES.md 发布到授权目录");
     expect(panel.textContent).toContain("执行过程（5）");
     expect(panel.textContent).toContain("修补请求");
+  });
+
+  it("断线时保留画面并提示；重连后自动重读；执行图启用故障直接显示原因", () => {
+    const channel = new FakeChannel();
+    render(<LiveGraph missionId={M} channel={channel}
+      detail={{ ...MISSION_DETAIL, taskgraph: { required: true, waiting: true, fault: "TASKGRAPH_DEPLOYMENT_SOURCE_INVALID" } }} />);
+    channel.reply(SNAP, snapshot());
+    expect(screen.getAllByRole("alert")[0].textContent).toContain("执行图启用失败：TASKGRAPH_DEPLOYMENT_SOURCE_INVALID");
+    channel.setState("disconnected");
+    expect(screen.getByText(/连接断开了/)).toBeTruthy();
+    expect(screen.getByText("全部步骤（3）")).toBeTruthy();
+    channel.setState("connected");
+    expect(channel.all(SNAP)).toHaveLength(2);
   });
 });

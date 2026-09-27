@@ -65,8 +65,11 @@ describe("OperationWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "添加必须完成的效果" }));
     const effect = screen.getByRole("group", { name: "这一次效果覆盖的要求（可多选）" });
     for (const item of criteria) fireEvent.click(within(effect).getByText(item.statement));
-    fireEvent.change(screen.getByLabelText("效果所属目标"), { target: { value: "obligation-1" } });
-    fireEvent.change(screen.getByLabelText("效果完成标准"), { target: { value: milestone.id } });
+    // NEXT-TG-1.0 §9: only one choice each → already selected, no dropdown to operate
+    const obligationGroup = screen.getByRole("radiogroup", { name: "效果所属目标" });
+    const milestoneGroup = screen.getByRole("radiogroup", { name: "效果完成标准" });
+    expect((within(obligationGroup).getByRole("radio") as HTMLInputElement).checked).toBe(true);
+    expect((within(milestoneGroup).getByRole("radio") as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "确认上述完成要求" }));
 
     const sent = channel.sent.filter(message => message.type === "mission_operation_completion_approve");
@@ -100,7 +103,9 @@ describe("OperationWorkspace", () => {
     const predecessor = { intent_id: "intent-1", effect_key: "publish-report", spec_hash: "d".repeat(64),
       state: "PROPOSED", current: true, can_replace: true };
     const view = render(<OperationWorkspace value={approved([predecessor])} channel={channel} onChanged={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("选择已接受的操作准备产物"), { target: { value: "artifact-1" } });
+    const choices = screen.getByRole("radiogroup", { name: "选择已接受的操作准备产物" });
+    expect(choices.textContent).toContain("候选 1：file_publish → REPORT.md（deliver）");
+    fireEvent.click(within(choices).getByRole("radio"));
     fireEvent.click(screen.getByRole("button", { name: "提交修订版并替代原请求" }));
     const request = channel.sent.find(message => message.type === "mission_operation_intent_submit")!;
     expect(request.payload!.supersedes_intent_id).toBe("intent-1");

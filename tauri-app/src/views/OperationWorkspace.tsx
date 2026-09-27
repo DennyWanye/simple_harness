@@ -125,16 +125,25 @@ function Workspace({ workspace: w, channel, onChanged }: {
                     ? [...e.criteria, asText(c.id)] : e.criteria.filter(id => id !== c.id))} />{asText(c.statement)}
               </label>)}
             </fieldset>
-            <select aria-label="效果所属目标" value={e.obligation} onChange={event => patch(e.key, "obligation", event.target.value)}>
-              <option value="">选择所属目标</option>{obligations.map(o => <option key={asText(o.id)} value={asText(o.id)}>{asText(o.label)} · {asText(o.id)}</option>)}
-            </select>
-            <select aria-label="效果完成标准" value={e.milestone} onChange={event => patch(e.key, "milestone", event.target.value)}>
-              <option value="">选择完成标准</option>{milestones.map(m => <option key={asText(m.id)} value={asText(m.id)}>{asText(m.label)}</option>)}
-            </select>
+            {/* NEXT-TG-1.0 §9：单选按钮代替下拉框（键盘 Tab/方向键即可选；只有一个选项时已自动选好） */}
+            <fieldset role="radiogroup" aria-label="效果所属目标"><legend>所属目标</legend>
+              {obligations.map(o => <label key={asText(o.id)} style={{ display: "block" }}>
+                <input type="radio" name={`obligation-${e.key}`} value={asText(o.id)} checked={e.obligation === asText(o.id)}
+                  onChange={() => patch(e.key, "obligation", asText(o.id))} />{asText(o.label) || asText(o.id)}
+              </label>)}
+            </fieldset>
+            <fieldset role="radiogroup" aria-label="效果完成标准"><legend>完成标准</legend>
+              {milestones.map(m => <label key={asText(m.id)} style={{ display: "block" }}>
+                <input type="radio" name={`milestone-${e.key}`} value={asText(m.id)} checked={e.milestone === asText(m.id)}
+                  onChange={() => patch(e.key, "milestone", asText(m.id))} />{asText(m.label)}
+              </label>)}
+            </fieldset>
             <button type="button" onClick={() => setEffects(rows => rows.filter(row => row.key !== e.key))}>移除此效果</button>
           </div>)}
           <button type="button" disabled={!milestones.length || effects.length >= 64}
-            onClick={() => setEffects(rows => [...rows, { key: `effect-${newRequestKey()}`, criteria: [], obligation: "", milestone: "" }])}>添加必须完成的效果</button>
+            onClick={() => setEffects(rows => [...rows, { key: `effect-${newRequestKey()}`, criteria: [],
+              obligation: obligations.length === 1 ? asText(obligations[0].id) : "",
+              milestone: milestones.length === 1 ? asText(milestones[0].id) : "" }])}>添加必须完成的效果</button>
           {!milestones.length && <p>当前还不能验证真实操作，只能确认交付内容类的要求。</p>}
           <p>这里确认的是"怎样算完成"，不会立刻执行任何操作。</p>
           <button type="button" disabled={!mappingValid} onClick={confirm}>{pending ? "正在确认…" : "确认上述完成要求"}</button>
@@ -152,11 +161,21 @@ function Workspace({ workspace: w, channel, onChanged }: {
           <p>操作要求：{criteria.filter(c => (effect.criterion_ids as string[])?.includes(asText(c.id))).map(c => asText(c.statement)).join("；")}</p>
           {previous.map(i => <p key={asText(i.intent_id)}>请求状态：{asText(i.state)}{i.current === true ? "（当前）" : "（已被修订替代）"}</p>)}
           {!canSubmit ? <p>已有操作进入执行链，需等待审查或核对结果，不能重复提交。</p> : <>
-            <select aria-label="选择已接受的操作准备产物" disabled={disabled} value={selection[key] || ""}
-              onChange={event => setSelection(values => ({ ...values, [key]: event.target.value }))}>
-              <option value="">选择已接受的准备产物</option>
-              {candidates.map(c => <option key={asText(asRecord(c.candidate_artifact_ref).id)} value={asText(asRecord(c.candidate_artifact_ref).id)}>{asText(c.artifact_path)}</option>)}
-            </select>
+            {/* 单选列表：每条写明"操作 → 目标"和它自己的理由（两步各写一个同名候选时也分得清） */}
+            <fieldset role="radiogroup" aria-label="选择已接受的操作准备产物" disabled={disabled}>
+              <legend>选择要提交的操作</legend>
+              {candidates.length === 0 && <p>还没有审核通过的操作准备产物。</p>}
+              {candidates.map((c, index) => {
+                const id = asText(asRecord(c.candidate_artifact_ref).id);
+                const cand = asRecord(c.candidate);
+                return <label key={id} style={{ display: "block" }}>
+                  <input type="radio" name={`candidate-${key}`} value={id} checked={selection[key] === id}
+                    onChange={() => setSelection(values => ({ ...values, [key]: id }))} />
+                  {`候选 ${index + 1}：${asText(cand.operation)} → ${asText(cand.target)}`}
+                  {asText(cand.reason) && <span style={{ opacity: .75 }}>{"（" + asText(cand.reason).slice(0, 80) + "）"}</span>}
+                </label>;
+              })}
+            </fieldset>
             {selected && <div>
               <p>{asText(asRecord(selected.candidate).operation)} → {asText(asRecord(selected.candidate).target)}</p>
               <p>{asText(asRecord(selected.candidate).reason)}</p>

@@ -219,7 +219,12 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
       }
       if (again.current) { again.current = false; refresh(); }
     });
-    const offState = channel?.onStateChange?.((state) => { reset(); if (state === "connected") refresh(); });
+    const offState = channel?.onStateChange?.((state) => {
+      request.current = null; again.current = false; setLoading(false);
+      if (state === "connected") { refresh(); return; }
+      // 断线：保留上次画面并说清楚（以前清空画面后一直显示"正在读取"）
+      setError({ code: "offline", text: "与后台的连接断开了，重新连上后会自动刷新" });
+    });
     return () => {
       off?.(); offState?.(); clearInterval(tick);
       if (debounce.current) clearTimeout(debounce.current);
@@ -342,6 +347,7 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   }, [view, events, now]);
   useEffect(() => { onStalled?.(stalledCount); }, [onStalled, stalledCount]);
 
+  const taskgraphFault = asText(asRecord(detail?.taskgraph).fault);
   const pickedStep = picked ? structureById.get(picked) ?? null : null;
   const pickedExec = picked ? execById.get(picked) ?? null : null;
   const stale = error !== null && view !== null;
@@ -363,6 +369,7 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
         {view?.coverage === "PENDING_IMPORT" && <span className="lg-muted">有模型回合正在进行</span>}
         {stalledCount > 0 && <span className="lg-stall">{stalledCount} 次执行可能卡住</span>}
       </div>
+      {taskgraphFault && <p role="alert" className="lg-error">{"执行图启用失败：" + taskgraphFault + "（系统每轮会重试；这不是正常等待）"}</p>}
       {error && <p role="alert" className={error.code === "ACTIVATION_PENDING" || error.code === "NOT_ENABLED" ? "lg-muted" : "lg-error"}>
         {error.text}{stale ? "（下面是上次读到的画面，可能已过期）" : ""}</p>}
       {slowRead && <p className="lg-muted lg-slow" role="status">读取较慢，可能后台正忙。<button type="button" onClick={retry}>重试</button></p>}

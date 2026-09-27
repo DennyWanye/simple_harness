@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PublishCriterionHelper, plainPublishMention, publishCriterion } from "./PublishCriterionHelper";
+import { PublishCriterionHelper } from "./PublishCriterionHelper";
+import { plainPublishMention, publishCriterion } from "./publishCriterion";
 
 afterEach(cleanup);
 
