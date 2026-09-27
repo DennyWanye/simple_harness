@@ -129,12 +129,8 @@ async def test_p34_public_ui_shape_through_real_host_service_defaults(
     monkeypatch.setenv("DESKPET_ORCH_UI_FIXTURE_DIR", str(root))
     monkeypatch.setenv("DESKPET_ORCH_UI_FIXTURE_CASE", CASE)
     library = root / "library"
-    # NEXT-TG-1.0 §9: the product default is now two concurrent Missions/model calls.  This
-    # legacy flat (non-hierarchical) scenario relies on the Manager replacing A after two
-    # failures; with a second slot free, A's third retry is allocated before the Manager
-    # round lands (recorded in PLAN-STATUS as a legacy-path race).  Run it serially.
     service = OrchestrationService(
-        library, OrchestrationSettings(max_concurrency=1, max_concurrent_model_calls=1), principal=principal,
+        library, OrchestrationSettings(), principal=principal,
         test_scenario="document-ui", drive=False,
     )
     await asyncio.wait_for(service.start(), 20)

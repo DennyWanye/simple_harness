@@ -38,11 +38,8 @@ SHADOW_TIMEOUT_CEILING_SECONDS = 60.0
 @dataclass(frozen=True)
 class OrchestrationSettings:
     enabled: bool = True  # CLAUDE.md: capabilities that passed testing ship on
-    # NEXT-TG-1.0 §9 (2026-09-28): two Missions/model calls at a time by default (the SDK
-    # default), so one long model turn no longer holds every other Mission; the chat still
-    # shares the provider quota, and [orchestration] max_concurrency = 1 goes back to serial.
-    max_concurrency: int = 2
-    max_concurrent_model_calls: int = 2
+    max_concurrency: int = 1  # the chat shares the provider quota
+    max_concurrent_model_calls: int = 1
     tick_active_seconds: float = 2.0  # work or a turn in flight
     tick_waiting_seconds: float = 20.0  # only a person is awaited (plan review P2)
     tick_idle_seconds: float = 30.0
@@ -198,8 +195,8 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
     publish_dir = raw.get("publish_dir")
     return OrchestrationSettings(
         enabled=enabled if isinstance(enabled, bool) else True,
-        max_concurrency=_bounded_int(raw.get("max_concurrency"), 2, 1, 4),
-        max_concurrent_model_calls=_bounded_int(raw.get("max_concurrent_model_calls"), 2, 1, 4),
+        max_concurrency=_bounded_int(raw.get("max_concurrency"), 1, 1, 4),
+        max_concurrent_model_calls=_bounded_int(raw.get("max_concurrent_model_calls"), 1, 1, 4),
         local_model_profile=(str(raw.get("local_model_profile", "")).strip()
                              if isinstance(raw.get("local_model_profile", ""), str) else ""),
         context_input_tokens=(524_288 if type(raw.get("context_input_tokens")) is int
