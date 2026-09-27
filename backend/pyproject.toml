@@ -171,7 +171,7 @@ dependencies = [
     # 2026-08-29: vendored exact Agent Runtime candidate bytes.
     # Wheel identity single source of truth:
     # deskpet/sdk_adapters/sdk_candidate.py
-    "simple-harness-sdk==0.13.0.dev20260925+opt.47",
+    "simple-harness-sdk==0.13.0.dev20260925+opt.48",
     # ARP-EXEC-1.1.1: the pinned official DeepSeek V4.1 counting recipe (the SDK's
     # deepseek-tokenizer extra); the tokenizer bytes live in the user models directory.
     "deepseek-recipe==0.1.1",
@@ -189,7 +189,7 @@ dependencies = [
 # simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
 #
 # Production (vendored immutable candidate):
-simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.47-py3-none-any.whl" }
+simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.48-py3-none-any.whl" }
 simple-harness-service-sdk = { path = "vendor/simple_harness_service_sdk-0.3.13-py3-none-any.whl" }
 
 [tool.uv]
@@ -198,7 +198,7 @@ simple-harness-service-sdk = { path = "vendor/simple_harness_service_sdk-0.3.13-
 # protocol candidate, so normalize the transitive dependency to that exact
 # locally vendored runtime candidate.
 override-dependencies = [
-    "simple-harness-sdk==0.13.0.dev20260925+opt.47",
+    "simple-harness-sdk==0.13.0.dev20260925+opt.48",
 ]
 
 [project.optional-dependencies]
