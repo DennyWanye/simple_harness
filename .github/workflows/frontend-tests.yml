@@ -28,7 +28,7 @@ jobs:
       run:
         working-directory: tauri-app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # 2026-09-27：统一 Node 22（版本只在 tauri-app/.nvmrc 定义，本机开发同一版本）。
       # Node 20 下 3 个身份哈希测试失败的原因：vitest 的 jsdom 环境里全局 ArrayBuffer
