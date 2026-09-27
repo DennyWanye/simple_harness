@@ -130,6 +130,12 @@ function App() {
   // exe，dev 走 DESKPET_DEV_ROOT。前端 invoke 无参。
   useEffect(() => {
     (async () => {
+      // Dev browser preview with `?secret=`: the backend is already running and there is
+      // no Tauri shell to start it (the module imports fine but has no IPC bridge).
+      if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("secret")) {
+        setBootState("ready");
+        return;
+      }
       const core = await import("@tauri-apps/api/core").catch(() => null);
       if (!core) {
         // Not inside Tauri (e.g. vite dev browser preview) — skip boot

@@ -325,7 +325,9 @@ async function open_socket() {
   set_control_state("connecting");
   let secret = "";
   try {
-    secret = await invoke<string>("get_shared_secret");
+    // Dev browser preview (`?secret=`, same hatch as App.tsx): no Tauri IPC bridge.
+    const devSecret = import.meta.env.DEV ? new URLSearchParams(window.location.search).get("secret") : null;
+    secret = devSecret || await invoke<string>("get_shared_secret");
   } catch (e) {
     console.warn("[session-control] get_shared_secret failed:", e);
     set_control_state("disconnected");
