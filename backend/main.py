@@ -7740,9 +7740,14 @@ def _freeze_sdk_catalog(
     from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
     from simple_harness import thaw_json
 
+    from deskpet.tools.code_tools.spawn_subagents_tool import UNWIRED_DELEGATION_TOOL_NAMES
+
     specs: list[dict[str, Any]] = []
     schema_fingerprints: dict[str, str] = {}
     for spec in tools_adapter.specs:
+        if str(spec.name) in UNWIRED_DELEGATION_TOOL_NAMES:
+            logger.info("sdk_tool_excluded_from_catalog name=%s reason=delegation_not_wired", spec.name)
+            continue
         live_spec = (
             visibility_registry.get(str(spec.name))
             if visibility_registry is not None

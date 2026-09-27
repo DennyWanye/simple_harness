@@ -13,6 +13,11 @@ from ..capabilities import ToolExecutionContext
 _MAX = 8
 _KIND_ENUM = ["general", "research", "code", "fileops", "doc", "web"]
 _FORBIDDEN = {"agent", "agent_parallel", "spawn_team", "spawn_subagents", "await_subagents"}
+#: NEXT-TG-1.0 §9（2026-09-28）：前台 Run 里委派没有接通（执行入口
+#: ``build_subagent_batch_delegate`` 无调用方，四个委派工具只会回 delegation_unavailable，
+#: await_subagents 也就等不到任何子运行）。"模型看得见但必定不可用"不算开启：先不放进
+#: 模型可见目录，具名记为欠项；要交给后台做的事走 ``mission_start``（正式任务链）。
+UNWIRED_DELEGATION_TOOL_NAMES = frozenset(_FORBIDDEN)
 
 _SPAWN_SCHEMA: dict[str, Any] = {
     "name": "spawn_subagents",
