@@ -186,6 +186,21 @@ service_context.register("harness_public_read_service", None)
 service_context.register("sdk_runtime_ready", None)
 
 
+async def _restart_orchestration() -> None:
+    """Stop and start the orchestration service with the current config (Settings changes)."""
+    from deskpet.orchestration.wiring import activate_orchestration, deactivate_orchestration
+    from paths import user_data_dir as _orchestration_user_data_dir
+
+    await deactivate_orchestration(service_context)
+    await activate_orchestration(
+        service_context,
+        config_path=_CONFIG_PATH,
+        user_data=_orchestration_user_data_dir(),
+        broadcast_targets=lambda: list(_control_connections.values()),
+        record_startup_error=startup_errors.record,
+    )
+
+
 def _persist_supervisor_enabled(enabled: bool) -> bool:
     """Persist the runtime supervisor toggle into config.toml."""
     try:
@@ -14744,6 +14759,33 @@ async def control_channel(ws: WebSocket):
                     "request_id": raw.get("request_id"),
                     "payload": snapshot,
                 })
+
+            elif msg_type in ("orchestration_publish_dir_get", "orchestration_publish_dir_set"):
+                # NEXT-TG-1.0 §9：设置页的发布目录入口。校验后写回 config.toml，并重启编排服务
+                # （连接器只在启动时按这个值装配）；空路径 = 撤销授权。
+                from deskpet.orchestration import publish_settings as _publish_settings
+                from deskpet.orchestration.wiring import read_section as _read_orch_section
+                from paths import user_data_dir as _publish_user_data_dir
+
+                _rid = raw.get("request_id")
+                _body = raw.get("payload") if isinstance(raw.get("payload"), dict) else {}
+                _reply: dict = {"request_id": _rid, "ok": True}
+                try:
+                    if msg_type == "orchestration_publish_dir_set":
+                        await _publish_settings.set_publish_dir(
+                            _body.get("path"),
+                            config_path=Path(_CONFIG_PATH),
+                            protected=[_publish_user_data_dir()],
+                            restart=_restart_orchestration,
+                        )
+                    _configured = str(_read_orch_section(_CONFIG_PATH).get("publish_dir") or "")
+                    _reply["data"] = _publish_settings.current(service_context.get("orchestration"), _configured)
+                except _publish_settings.PublishDirRefused as _refused:
+                    _reply.update(ok=False, error_code=_refused.code, error=str(_refused))
+                except Exception as _exc:  # noqa: BLE001
+                    logger.warning("orchestration_publish_dir_failed err=%s", _exc)
+                    _reply.update(ok=False, error_code="internal", error="发布目录设置失败，请查看日志")
+                await ws.send_json({"type": msg_type + "_response", "payload": _reply})
 
             elif msg_type.startswith(("mission_", "orchestration_", "taskgraph.")):
                 # Agent 编排视图的控制通道协议（plan §3.4）：纯分发，不会把异常抛进 socket 循环

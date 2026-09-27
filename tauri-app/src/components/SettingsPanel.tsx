@@ -216,6 +216,9 @@ export function SettingsPanel({
         {/* ================ 任务与会话数据 (2026-09-25 条目 7：只统计、只提醒，不删除) ================ */}
         <StorageUsageSection getChannel={getChannel} />
 
+        {/* ================ 任务发布目录 (NEXT-TG-1.0 §9) ================ */}
+        <PublishDirSection getChannel={getChannel} />
+
         {/* ================ 关于与更新 (2026-06-05) ================ */}
         <UpdateSection />
 
@@ -1014,6 +1017,124 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
         </button>
         {error && data ? <span style={{ ...hintStyle, marginLeft: 8 }}>{error}</span> : null}
       </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 任务发布目录（NEXT-TG-1.0 §9）：带"发布"要求的任务只能把验收过的文件发布到这里。
+// 后台校验目录存在、能硬链接、不与应用自己的数据目录重叠；保存后编排服务会重启一次
+// （进行中的任务暂停几秒后自动接着做）。清空 = 撤销授权，已经发布的文件不动。
+// ---------------------------------------------------------------------------
+
+export type PublishDirData = {
+  configured: string;
+  publish: { enabled?: boolean; root?: string; reason?: string };
+  active_missions: number;
+};
+
+// eslint-disable-next-line react-refresh/only-export-components -- message builder shared with its test
+export function buildPublishDirMessage(requestId: string, path?: string) {
+  return path === undefined
+    ? { type: "orchestration_publish_dir_get", request_id: requestId, payload: {} }
+    : { type: "orchestration_publish_dir_set", request_id: requestId, payload: { path } };
+}
+
+export function PublishDirSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
+  const [confirmDialog, ask] = useConfirm();
+  const [data, setData] = useState<PublishDirData | null>(null);
+  const [path, setPath] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const pending = useRef<string | null>(null);
+  const counter = useRef(0);
+  const filled = useRef(false);
+
+  const send = useCallback((next?: string) => {
+    const ch = getChannel();
+    if (!ch) { setError("连接不可用"); return; }
+    const id = `publish-dir-${Date.now()}-${++counter.current}`;
+    pending.current = id;
+    setBusy(true);
+    setError(null);
+    if (!ch.send(buildPublishDirMessage(id, next))) { setBusy(false); setError("连接不可用，请求未发送"); }
+  }, [getChannel]);
+
+  useEffect(() => {
+    const ch = getChannel();
+    if (!ch) return;
+    const off = ch.onMessage((raw: IncomingMessage) => {
+      const msg = raw as unknown as { type?: string; payload?: unknown };
+      if (msg.type !== "orchestration_publish_dir_get_response" && msg.type !== "orchestration_publish_dir_set_response") return;
+      const payload = (msg.payload ?? {}) as { ok?: boolean; request_id?: unknown; data?: PublishDirData; error?: string };
+      if (payload.request_id !== pending.current) return;
+      pending.current = null;
+      setBusy(false);
+      if (payload.ok !== true || !payload.data) { setError(payload.error ?? "读取失败"); return; }
+      setData(payload.data);
+      if (!filled.current) { filled.current = true; setPath(payload.data.configured); }
+      if (msg.type === "orchestration_publish_dir_set_response") {
+        setPath(payload.data.configured);
+        setDone(payload.data.configured ? "已授权，新建带发布的任务可以用了" : "已撤销授权");
+      }
+    });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the first read starts on mount (sets "读取中…")
+    send();
+    return () => { off(); };
+  }, [getChannel, send]);
+
+  const pick = useCallback(async () => {
+    try {
+      const core = await import("@tauri-apps/api/core");
+      const picked = await core.invoke<string | null>("open_directory_dialog");
+      if (picked) setPath(picked);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  const save = useCallback(async (next: string) => {
+    setDone(null);
+    const running = data?.active_missions ?? 0;
+    const ok = await ask({
+      title: next ? "授权这个发布目录？" : "撤销发布目录授权？",
+      message: (next ? `带"发布"要求的任务会把验收过的文件发布到：${next}。` : "之后带发布要求的任务将无法发布；已经发布的文件不会被改动。")
+        + (running > 0 ? `保存后任务服务会重启一次，正在进行的 ${running} 个任务会暂停几秒后自动接着做。` : "保存后任务服务会重启一次。"),
+      confirm_label: next ? "授权" : "撤销", variant: next ? "primary" : "danger",
+    });
+    if (ok) send(next);
+  }, [ask, data, send]);
+
+  const publish = data?.publish ?? {};
+  return (
+    <section style={sectionStyle} data-testid="publish-dir">
+      {confirmDialog}
+      <h3 style={h3Style}>任务发布目录</h3>
+      <p style={hintStyle}>任务里要求"发布到…"时，系统只会把审核通过的文件发布到这个目录（每次发布都要你批准）。</p>
+      <div role="status" data-testid="publish-dir-status" style={{ ...statusStyle, color: publish.enabled ? dark.text : dark.textMuted }}>
+        {data === null ? (error ?? "读取中…")
+          : publish.enabled ? `已授权：${publish.root}`
+          : data.configured ? `未生效：${publish.reason ?? "原因未知"}（${data.configured}）`
+          : "未授权：带发布要求的任务无法发布"}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input type="text" aria-label="发布目录路径" value={path} disabled={busy}
+          onChange={(e) => setPath(e.target.value)} placeholder="/Users/你/Documents/发布"
+          style={{ flex: 1, padding: "5px 8px", borderRadius: 4, border: `1px solid ${dark.border}`, background: dark.card, color: dark.text, fontSize: 12, fontFamily: "monospace" }} />
+        <button type="button" style={btnStyle} disabled={busy} onClick={pick}>选择目录…</button>
+      </div>
+      <div style={btnRowStyle}>
+        <button type="button" data-testid="publish-dir-save" style={primaryBtnStyle}
+          disabled={busy || !path.trim() || path.trim() === (data?.configured ?? "")} onClick={() => save(path.trim())}>
+          {busy ? "处理中…" : "保存并授权"}
+        </button>
+        {data?.configured ? (
+          <button type="button" data-testid="publish-dir-revoke" style={btnStyle} disabled={busy} onClick={() => save("")}>撤销授权</button>
+        ) : null}
+      </div>
+      {error && data ? <p role="alert" style={{ ...hintStyle, color: dark.danger }}>{error}</p> : null}
+      {done ? <p style={hintStyle}>{done}</p> : null}
     </section>
   );
 }
