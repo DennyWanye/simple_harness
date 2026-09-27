@@ -30,10 +30,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 2026-09-27：统一 Node 22（版本只在 tauri-app/.nvmrc 定义，本机开发同一版本）。
+      # Node 20 下 3 个身份哈希测试失败的原因：vitest 的 jsdom 环境里全局 ArrayBuffer
+      # 是 jsdom 那一套，与测试注入的 node:crypto webcrypto 不同 realm；Node 20 的
+      # webcrypto 按原型严格判断而拒收，Node 22 能识别跨 realm 的 ArrayBuffer。真实
+      # WebView 只有一个 realm，不受影响。测试仍计算真实 SHA-256，不打桩。
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: tauri-app/.nvmrc
           cache: 'npm'
           cache-dependency-path: tauri-app/package-lock.json
 

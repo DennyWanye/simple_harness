@@ -55,7 +55,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version-file: tauri-app/.nvmrc  # 2026-09-27 统一 Node 22，见 frontend-tests.yml
 
       - name: Setup Rust (stable, MSVC)
         uses: dtolnay/rust-toolchain@stable
