@@ -98,42 +98,25 @@ describe("OperationWorkspace", () => {
     expect(requests[0].payload!.proposal).toEqual(requests[1].payload!.proposal);
   });
 
-  it("sends an explicit successor and hides replacement once materialized", () => {
-    const channel = new Channel();
-    const predecessor = { intent_id: "intent-1", effect_key: "publish-report", spec_hash: "d".repeat(64),
-      state: "PROPOSED", current: true, can_replace: true };
-    const view = render(<OperationWorkspace value={approved([predecessor])} channel={channel} onChanged={vi.fn()} />);
-    const choices = screen.getByRole("radiogroup", { name: "选择已接受的操作准备产物" });
-    expect(choices.textContent).toContain("候选 1：file_publish → REPORT.md（deliver）");
-    fireEvent.click(within(choices).getByRole("radio"));
-    fireEvent.click(screen.getByRole("button", { name: "提交修订版并替代原请求" }));
-    const request = channel.sent.find(message => message.type === "mission_operation_intent_submit")!;
-    expect(request.payload!.supersedes_intent_id).toBe("intent-1");
-
-    view.rerender(<OperationWorkspace value={approved([{ ...predecessor, state: "MATERIALIZED", can_replace: false }])}
-      channel={channel} onChanged={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: "提交修订版并替代原请求" })).toBeNull();
-    expect(screen.getByText(/不能重复提交/)).toBeTruthy();
-  });
-
-  it("要求写明目标文件时只列目标对得上的候选", () => {
+  it("发布申请由系统准备：不再挑候选、点提交，只显示进度（2026-09-29）", () => {
     const publishReadme = { id: "criterion-readme", statement: "action:file_publish.publish:README.md", required: true };
-    const other = { artifact_path: "actions/b.json",
-      candidate: { operation: "publish", target: "wordfreq.py", reason: "code", params: { path: "wordfreq.py" } },
-      candidate_artifact_ref: { kind: "artifact", id: "artifact-2", revision: 1, content_hash: "1".repeat(64) },
-      prepared_acceptance_refs: [] };
-    const readme = { ...other, candidate: { ...other.candidate, target: "docs/README.md", reason: "doc" },
-      candidate_artifact_ref: { ...other.candidate_artifact_ref, id: "artifact-3" } };
     const base = approved();
-    const value = { ...base, criteria: [publishReadme], candidates: [other, readme],
+    const value = { ...base, criteria: [publishReadme],
       spec: { ...base.spec, effects: [{ ...base.spec.effects[0], criterion_ids: [publishReadme.id] }] } };
-    const view = render(<OperationWorkspace value={value} channel={new Channel()} onChanged={vi.fn()} />);
-    const choices = screen.getByRole("radiogroup", { name: "选择已接受的操作准备产物" });
-    expect(within(choices).getAllByRole("radio")).toHaveLength(1);
-    expect(choices.textContent).toContain("publish → docs/README.md");
-    expect(choices.textContent).not.toContain("wordfreq.py");
-    view.rerender(<OperationWorkspace value={{ ...value, candidates: [other] }} channel={new Channel()} onChanged={vi.fn()} />);
-    expect(screen.getByText("还没有审核通过的 README.md 操作准备产物。")).toBeTruthy();
+    const channel = new Channel();
+    const view = render(<OperationWorkspace value={value} channel={channel} onChanged={vi.fn()} />);
+    expect(screen.getByText(/系统会自动准备发布 README.md 的申请/)).toBeTruthy();
+    expect(screen.queryByRole("radiogroup", { name: "选择已接受的操作准备产物" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /提交/ })).toBeNull();
+
+    const intent = { intent_id: "intent-1", effect_key: "publish-report", spec_hash: "d".repeat(64),
+      state: "AWAITING_APPROVAL", current: true, can_replace: false };
+    view.rerender(<OperationWorkspace value={{ ...value, intents: [intent] }} channel={channel} onChanged={vi.fn()} />);
+    expect(screen.getByText("进度：等你批准（请在批准卡片上点「批准」）")).toBeTruthy();
+    view.rerender(<OperationWorkspace value={{ ...value, intents: [{ ...intent, current: false }] }}
+      channel={channel} onChanged={vi.fn()} />);
+    expect(screen.getByText(/系统会自动准备/)).toBeTruthy();  // 被替代的旧申请不算当前进度
+    expect(channel.sent.filter(message => message.type === "mission_operation_intent_submit")).toEqual([]);
   });
 
   it("recovers a lost reply without changing the command and ignores a late response", () => {

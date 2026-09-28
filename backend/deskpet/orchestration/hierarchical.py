@@ -25,19 +25,20 @@ def planning_world(loop: Any, mission: Any) -> Any:
     outputs = VersionedRef("desktop.workspace-outputs", 1, content_hash_of({"fields": []}))
     world.schemas.register(ObjectSchema(params, (SchemaField("goal", "string"),)))
     world.schemas.register(ObjectSchema(outputs))
-    signature = GoalSignature("desktop.user-goal", 1, params, outputs, mission.goal, criteria)
     content_criteria = tuple(key for key, statement in zip(criteria, mission.success_criteria, strict=True)
                              if not statement.startswith("action:"))
+    # 2026-09-29（plans/2026-09-28-system-operations）：发布等操作由系统在任务层面准备，
+    # 规划器只安排内容。根任务要求规划器覆盖的只有内容要求；根的完整要求清单
+    # （initialize_root 的 requirement_refs）仍含全部要求，义务与已批准效果照旧挂接。
+    signature = GoalSignature("desktop.user-goal", 1, params, outputs, mission.goal,
+                              content_criteria or criteria)
     preparation = GoalSignature("desktop.prepare-delivery", 1, params, outputs,
         mission.goal, content_criteria)
     continuation = GoalSignature("desktop.continue-delivery", 1, params, outputs,
         "Continue from an accepted upstream delivery: " + mission.goal, content_criteria)
     ports = (PortSpec("delivery", outputs),)
-    # The SDK's operation candidate port: declaring it is what brings the candidate
-    # contract (and its actions/ file) into the Worker's package (2A.1e).
-    from agent_orchestrator.runtime.action_schema import OPERATION_CANDIDATE_PORT
-    preparation_ports = ports + ((PortSpec(OPERATION_CANDIDATE_PORT, outputs),)
-        if any(c.startswith("action:") for c in mission.success_criteria) else ())
+    # 内容步骤不再有申请单端口：申请单由系统按已批准效果生成（2026-09-29）。
+    preparation_ports = ports
     # These are actual workspace operations available to this deployment. External
     # effects still require an OperationIntent, review and the original connector.
     for name, form in (("desktop.user-goal", TaskForm.COMPOUND),
@@ -124,7 +125,8 @@ def initialize_root(loop: Any, mission: Any, principal: Any) -> None:
         contract_hash=content_hash_of({"task_type": definition.to_json(), "parameters": parameters}),
         form=definition.form, goal_signature=definition.goal_signature, typed_parameters=parameters,
         output_ports=definition.output_ports,
-        requirement_refs=definition.goal_signature.coverage_criteria, semantic_scope="mission",
+        requirement_refs=tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria))),
+        semantic_scope="mission",
     )
     # Root requirements are reviewed over accepted contributions. Concrete
     # file/pytest statements are projected to leaf checks by the materializer;

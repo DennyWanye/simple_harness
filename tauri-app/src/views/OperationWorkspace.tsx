@@ -18,6 +18,25 @@ function actionTargets(statements: string[]): Set<string> {
 
 function fileName(path: string): string { return path.split("/").pop() ?? path; }
 
+/** 系统准备的发布申请走到了哪一步（operation_intent_status 的 state）。 */
+const INTENT_STATE: Record<string, string> = {
+  AWAITING_REVIEW: "系统已准备好申请，审阅员检查中",
+  REVIEW_FAILED: "审阅没能完成",
+  ACCEPT: "审阅通过，正在生成批准请求",
+  REWORK: "审阅员要求修改这份申请",
+  INCONCLUSIVE: "审阅员无法判断这份申请",
+  REJECTED: "没有通过（被拒绝）",
+  PROPOSED: "正在生成批准请求",
+  AWAITING_APPROVAL: "等你批准（请在批准卡片上点「批准」）",
+  APPROVED: "已批准，正在发布",
+  HANDED_OFF: "正在发布",
+  UNKNOWN: "发布结果待核对",
+  SUCCEEDED: "已发布，正在核对",
+  FAILED: "发布失败",
+  REFUSED: "被拒绝执行",
+  REVOKED: "已撤回", EXPIRED: "已过期", CANCELLED: "已取消", SUPERSEDED: "已被新申请替代",
+};
+
 export function OperationWorkspace({ value, channel, onChanged }: {
   value: unknown; channel: MissionsChannel | null; onChanged: () => void;
 }) {
@@ -32,7 +51,6 @@ function Workspace({ workspace: w, channel, onChanged }: {
 }) {
   const [content, setContent] = useState<string[]>([]);
   const [effects, setEffects] = useState<Effect[]>([]);
-  const [selection, setSelection] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const flight = useRef<{ id: string; type: string } | null>(null);
@@ -162,47 +180,17 @@ function Workspace({ workspace: w, channel, onChanged }: {
         </fieldset>
       </>}
       {approved && asList(spec.effects).map(effect => {
+        // 2026-09-29：发布申请由系统按这里确认的效果自动准备（不再挑候选、点提交），
+        // 这里只显示每个效果走到了哪一步；批准仍在批准卡片上点。
         const key = asText(effect.effect_key);
-        const previous = asList(w.intents).filter(i => i.effect_key === key && i.spec_hash === w.spec_hash);
-        const heads = previous.filter(i => i.current === true);
-        const predecessor = heads.length === 1 ? heads[0] : null;
-        const canSubmit = !previous.length || (predecessor?.can_replace === true);
+        const heads = asList(w.intents).filter(i => i.effect_key === key && i.spec_hash === w.spec_hash && i.current === true);
         const statements = criteria.filter(c => (effect.criterion_ids as string[])?.includes(asText(c.id))).map(c => asText(c.statement));
-        const targets = actionTargets(statements);
-        // 要求里写明了目标文件就只列对得上的候选（真机：README.md 的要求下列出了 wordfreq.py 的候选）
-        const candidates = asList(w.candidates).filter(c => !targets.size || targets.has(fileName(asText(asRecord(c.candidate).target))));
-        const selected = candidates.find(c => asRecord(c.candidate_artifact_ref).id === selection[key]);
+        const targets = [...actionTargets(statements)];
+        const state = heads.length ? asText(heads[heads.length - 1].state) : "";
         return <div key={key} style={{ marginTop: 12 }}>
           <p>操作要求：{statements.join("；")}</p>
-          {previous.map(i => <p key={asText(i.intent_id)}>请求状态：{asText(i.state)}{i.current === true ? "（当前）" : "（已被修订替代）"}</p>)}
-          {!canSubmit ? <p>已有操作进入执行链，需等待审查或核对结果，不能重复提交。</p> : <>
-            {/* 单选列表：每条写明"操作 → 目标"和它自己的理由（两步各写一个同名候选时也分得清） */}
-            <fieldset role="radiogroup" aria-label="选择已接受的操作准备产物" disabled={disabled}>
-              <legend>选择要提交的操作</legend>
-              {candidates.length === 0 && <p>{targets.size ? `还没有审核通过的 ${[...targets].join("、")} 操作准备产物。` : "还没有审核通过的操作准备产物。"}</p>}
-              {candidates.map((c, index) => {
-                const id = asText(asRecord(c.candidate_artifact_ref).id);
-                const cand = asRecord(c.candidate);
-                return <label key={id} style={{ display: "block" }}>
-                  <input type="radio" name={`candidate-${key}`} value={id} checked={selection[key] === id}
-                    onChange={() => setSelection(values => ({ ...values, [key]: id }))} />
-                  {`候选 ${index + 1}：${asText(cand.operation)} → ${asText(cand.target)}`}
-                  {asText(cand.reason) && <span style={{ opacity: .75 }}>{"（" + asText(cand.reason).slice(0, 80) + "）"}</span>}
-                </label>;
-              })}
-            </fieldset>
-            {selected && <div>
-              <p>{asText(asRecord(selected.candidate).operation)} → {asText(asRecord(selected.candidate).target)}</p>
-              <p>{asText(asRecord(selected.candidate).reason)}</p>
-              <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(asRecord(selected.candidate).params, null, 2)}</pre>
-            </div>}
-            <button type="button" disabled={disabled || !selected} onClick={() => selected && send("mission_operation_intent_submit", {
-              schema_version: 2, mission_id: w.mission_id, intent_source: { kind: "USER_COMMAND" },
-              supersedes_intent_id: predecessor?.intent_id ?? null, candidate_artifact_ref: selected.candidate_artifact_ref,
-              prepared_acceptance_refs: selected.prepared_acceptance_refs,
-              completion_slot: { spec_hash: w.spec_hash, effect_key: key },
-            }, "idempotency_key")}>{predecessor ? "提交修订版并替代原请求" : "提交此操作供审查"}</button>
-          </>}
+          <p>{state ? `进度：${INTENT_STATE[state] ?? state}`
+            : `进度：等内容全部通过后，系统会自动准备${targets.length ? "发布 " + targets.join("、") + " 的" : ""}申请，审阅后请你批准。`}</p>
         </div>;
       })}
     </>}
