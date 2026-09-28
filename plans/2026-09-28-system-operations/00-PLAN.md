@@ -102,7 +102,8 @@
 ### B. 发布交给系统（第 2 批）
 
 1. **根任务只要求内容**：Host 根类型 `desktop.user-goal`（`hierarchical.py:28`）的覆盖要求改为只含内容要求（和步骤类型的 `content_criteria` 一致）。这一处改动同时让 registry、compiler、validation、`projection_validation._check_root_coverage`（`:773-800`）四处覆盖检查不再要求给操作要求安排步骤，**不改任何模板文字**（已发布模板按字节冻结，规划提示版本钉在每个任务的绑定里）。
-   - 效果仍由已批准规格和根的完成条件把关（`completion_status` 的效果就绪），根审阅和收尾不受影响。实现时核对 `initialize_root` 的 `requirement_refs` 与效果 `obligation_id` 的来源，确认改覆盖要求不会让效果找不到所属义务。
+   - 已核对（2026-09-29）：只改"要求规划器安排的覆盖要求"，**根的完整要求清单不变**。`initialize_root` 把根绑定的 `requirement_refs` 显式设为全部 `c-user-*`（原来取自覆盖要求），根义务和已批准效果都按全部要求挂接。规格批准的 `_coverage` 只检查"每条要求都有归属、义务存在"，与覆盖要求无关（`operation_completion.py:119-140`）。
+   - 根的最终审阅按覆盖要求出题（`root_review.root_criteria`），以后只审内容，不再让审阅员去判"发布"这种它判不了的要求。发布由效果就绪把关，且效果就绪先于根审阅（`hierarchical_dispatch.py:2254`）。
 2. **步骤不再承担操作要求**：`occurrence_tasks.occurrence_criteria`（约 L289–305）里过滤掉操作要求 id（已批准效果覆盖的，或原文以 `action:` 开头的）。**不在准入时剔除链接**：剔掉后"只链接了操作要求"的步骤会变成"未链接"，从而回退到全部内容要求，被要求写出所有文件（`completion_scopes.py:316-322`、`occurrence_tasks.py:296`），又回到 09-26 的老问题。
    - 有了第 1 条，合成器不再需要为操作安排步骤。万一方法里仍出现"只链接操作要求"的步骤，就在方法准入时用 `schema_feedback` 退回让合成器改（代价是一次合成重问，不是步骤尝试）。
 3. **Host 不再声明申请单端口**：`backend/deskpet/orchestration/hierarchical.py` L38–40 去掉 `action_candidate` 端口。任务类型身份随任务变化，只影响新任务。
