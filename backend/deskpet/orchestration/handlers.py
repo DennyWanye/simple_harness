@@ -56,6 +56,10 @@ MESSAGE_TYPES = (
     "agent_runtime_request",
     "agent_skill_evaluation_mission",
     "agent_skill_evaluation_dispatch",
+    "agent_skill_request",
+    "orchestration_skill_catalogue",
+    "orchestration_skill_install_file",
+    "orchestration_skill_lifecycle",
 )
 
 
@@ -279,6 +283,11 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "agent_runtime_request": lambda service, body: service.runtime_plane(body),
     "agent_skill_evaluation_mission": lambda service, body: service.skill_evaluation_mission(body),
     "agent_skill_evaluation_dispatch": lambda service, body: service.skill_evaluation_dispatch(body),
+    # NEXT-TG-1.0 §11: the shared Skill catalogue (one authority for every native pool)
+    "agent_skill_request": lambda service, body: service.skill_request(body),
+    "orchestration_skill_catalogue": lambda service, body: service.skill_catalogue(body),
+    "orchestration_skill_install_file": lambda service, body: service.skill_install_file(body),
+    "orchestration_skill_lifecycle": lambda service, body: service.skill_lifecycle(body),
 }
 
 __all__ = ("MESSAGE_TYPES", "handle")

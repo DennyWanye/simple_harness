@@ -57,6 +57,10 @@ def test_message_types_are_the_planned_set():
         "agent_runtime_request",
         "agent_skill_evaluation_mission",
         "agent_skill_evaluation_dispatch",
+        "agent_skill_request",
+        "orchestration_skill_catalogue",
+        "orchestration_skill_install_file",
+        "orchestration_skill_lifecycle",
     }
 
 

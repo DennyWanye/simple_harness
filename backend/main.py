@@ -14839,11 +14839,14 @@ async def control_channel(ws: WebSocket):
                     _reply.update(ok=False, error_code="internal", error="发布目录设置失败，请查看日志")
                 await ws.send_json({"type": msg_type + "_response", "payload": _reply})
 
-            elif msg_type.startswith(("mission_", "orchestration_", "taskgraph.")):
+            elif msg_type.startswith(("mission_", "orchestration_", "taskgraph.")) or msg_type in (
+                "agent_skill_request", "agent_skill_evaluation_mission", "agent_skill_evaluation_dispatch",
+            ):
                 # Agent 编排视图的控制通道协议（plan §3.4）：纯分发，不会把异常抛进 socket 循环
                 # ``taskgraph.*`` 是任务页执行图面板的四个读接口（handlers.py 已注册），
-                # 2026-09-25 之前没放行，面板只会读取超时。``agent_*`` 有意不放行：
-                # 技能安装走通之前要先统一各档位的技能目录。
+                # 2026-09-25 之前没放行，面板只会读取超时。``agent_*`` 只放行上面明确列出的
+                # 三个技能目录动词（NEXT-TG-1.0 §11：各档位已统一到一个技能目录权威）；
+                # 会话销毁等其它 ``agent_*`` 仍不放行。
                 from deskpet.orchestration.handlers import handle as _orchestration_handle
 
                 # a payload that is not an object is answered with invalid_request inside

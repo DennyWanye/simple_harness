@@ -711,12 +711,63 @@ class OrchestrationService:
         if profile_id is not None and not isinstance(profile_id, str):
             raise OrchestrationRequestError("invalid_request", "profile_id 必须是字符串")
         self._refuse_secrets(body)
+        from simple_harness.agents.arp.shared_catalogue import SKILL_READ_VERBS, SKILL_WRITE_VERBS
+
+        if body.get("verb") in SKILL_READ_VERBS | SKILL_WRITE_VERBS:
+            # NEXT-TG-1.0 §11: Skills have one authority for every pool; no per-pool install
+            return await self.skill_request(body)
         pool = self._native_pool(profile_id)
         from simple_harness.api.runtime_plane import RuntimePlaneService
 
         response = await RuntimePlaneService(pool.runtime).handle(body, caller=self._native.control_caller(body))
         self.wake()
         return response
+
+    # ---- the shared Skill catalogue (NEXT-TG-1.0 §11; logic in skill_catalogue.py / the SDK) ----
+
+    async def _skill_call(self, call: Any) -> dict[str, Any]:
+        from simple_harness.agents.arp.errors import ArpError
+
+        from .skill_catalogue import SkillCatalogueRefused
+
+        self._require()
+        try:
+            result = call()
+            return await result if hasattr(result, "__await__") else result
+        except SkillCatalogueRefused as error:
+            raise OrchestrationRequestError(error.code, str(error)) from error
+        except ArpError as error:
+            raise OrchestrationRequestError("refused", f"{error.code}: {error}") from error
+
+    async def skill_catalogue(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        from .skill_catalogue import overview
+
+        del request
+        return await self._skill_call(lambda: overview(self))
+
+    async def skill_install_file(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        from .skill_catalogue import install_file
+
+        if not isinstance(request, Mapping):
+            raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
+        return await self._skill_call(lambda: install_file(self, request))
+
+    async def skill_lifecycle(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        from .skill_catalogue import lifecycle
+
+        if not isinstance(request, Mapping):
+            raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
+        return await self._skill_call(lambda: lifecycle(self, request))
+
+    async def skill_request(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        from .skill_catalogue import request as skill_request
+
+        if not isinstance(request, Mapping):
+            raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
+        body = dict(request)
+        body.pop("profile_id", None)
+        self._refuse_secrets(body)
+        return await self._skill_call(lambda: skill_request(self, body))
 
     @staticmethod
     def _evaluation_pin(request: Mapping[str, Any]) -> Any:
@@ -765,7 +816,8 @@ class OrchestrationService:
         task = self._orchestrator.store.get_task(task_id)
         if task is None or task.mission_id != mission_id:
             raise OrchestrationRequestError("not_found", "任务不属于这个 Mission")
-        pool = self._native_pool(request.get("profile_id") if isinstance(request.get("profile_id"), str) else None)
+        # the evaluation belongs to the shared catalogue's owner (the only pool that admits)
+        pool = self._native_pool(self._native.catalogue_owner_id)
         caller = self._native.control_caller({"command_id": command_id, "evaluation_ref": pin.to_json(), "mission_id": mission_id, "task_id": task_id})
         body = pool.runtime.arp.lifecycle.record_evaluation_dispatch(pin, mission_id=mission_id, task_id=task_id, caller=caller, command_id=command_id)
         self.wake()

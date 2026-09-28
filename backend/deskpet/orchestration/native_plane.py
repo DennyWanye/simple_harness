@@ -22,6 +22,7 @@ from typing import Any
 
 from agent_orchestrator.runtime.assembly import OWNER_SCOPE
 from agent_orchestrator.runtime.mission_sources import MissionSourceReader
+from simple_harness.agents.arp.shared_catalogue import SharedSkillCatalogue, mirror_caller
 from agent_orchestrator.runtime.native_plane import NativePlaneAssembly, intent_caller
 from agent_orchestrator.runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS
 from simple_harness.agents.arp.assurance_acceptance import AssuranceSkillAcceptance
@@ -41,6 +42,15 @@ logger = logging.getLogger(__name__)
 NATIVE_PROFILE_PREFIX = "deepseek-native-"
 BGE_M3_SUBDIR = "bge-m3-int8"
 NATIVE_OUTPUT_TOKENS = 32_768
+
+
+#: NEXT-TG-1.0 §11: the one pool whose catalogue is the deployment's Skill authority; every
+#: other native pool mirrors it.  Fixed (the first native pool), so it never moves between
+#: restarts.
+def catalogue_owner_profile_id() -> str:
+    from .runtime_profile import CONTEXT_INPUT_LIMITS
+
+    return native_profile_id(CONTEXT_INPUT_LIMITS[0])
 
 
 def native_profile_id(tokens: int, *, thinking: bool = False) -> str:
@@ -233,6 +243,9 @@ class HostNativePlane:
         # The SDK's own Mission source reader over this Orchestrator's records (bound late:
         # pools are assembled before the Orchestrator exists).  The Host adds nothing to it.
         self.mission_sources = MissionSourceReader(lambda: self._orchestrator)
+        # One Skill catalogue authority for all native pools (the owner pool's catalogue).
+        self.catalogue_owner_id = catalogue_owner_profile_id()
+        self.shared_catalogue = SharedSkillCatalogue(caller=mirror_caller(f"host:{tenant_id}"))
         self.profiles: dict[str, dict[str, Any]] = {}
         self._runtimes: dict[str, Any] = {}
 
@@ -242,6 +255,23 @@ class HostNativePlane:
         self._orchestrator = orchestrator
         for acceptance in self.acceptances.values():
             acceptance.store = orchestrator.store
+        self.sync_catalogue(reason="startup")
+
+    def sync_catalogue(self, *, reason: str) -> dict[str, Any] | None:
+        """Mirror the owner's Skills into every member pool (idempotent); a failure is
+        logged and changes nothing — each use still asks the owner first."""
+        if self.shared_catalogue.owner_id is None:
+            return None
+        try:
+            report = self.shared_catalogue.sync()
+        except Exception:  # noqa: BLE001 - never block the orchestrator on a mirror pass
+            logger.warning("shared skill catalogue sync failed (%s)", reason, exc_info=True)
+            return None
+        failed = [(pool, row) for pool, body in report["members"].items() for row in body.get("skills", []) if not row.get("mirrored")]
+        if failed:
+            logger.info("shared skill catalogue (%s): %d skill(s) not usable in some pools: %s", reason, len(failed),
+                        [(pool, row.get("skill_ref", {}).get("id"), row.get("error")) for pool, row in failed][:8])
+        return report
 
     def _root_incarnation(self) -> Any:
         gate = getattr(self._orchestrator, "_assurance_root_gate", None)
@@ -294,6 +324,7 @@ class HostNativePlane:
         # output of the run and shrink the window over a long session.
         meter = self._meter_factory(counter, input_limit_tokens=tokens, max_output_tokens=output_tokens)
         root_id = f"host:{self.tenant_id}:{profile_id}"
+        owner = profile_id == self.catalogue_owner_id
         # The SDK derives the catalogue namespace from the session root and the pool's
         # owner scope; the Host records the same value so control requests can name it.
         namespace = f"{root_id}/{OWNER_SCOPE}/-"
@@ -323,6 +354,7 @@ class HostNativePlane:
             "embedding_reason": self.embedding_reason,
             "script_runner": "unavailable" if self.script_executor is None else f"sandbox:{self.script_executor.kind}",
             "catalogue_namespace_id": namespace, "owner_mode": "MISSION",
+            "catalogue_role": "owner" if owner else "member",
         }
 
         def after_build(runtime: Any) -> None:
@@ -332,6 +364,10 @@ class HostNativePlane:
             # 2026-09-25 主流程优化条目 6: keep the live runtime so status() can report
             # the health of its background loops (a rebuild re-registers it).
             self._runtimes[profile_id] = runtime
+            if owner:
+                self.shared_catalogue.bind_owner(profile_id, runtime)
+            else:
+                self.shared_catalogue.bind_member(profile_id, runtime)
 
         def arp_ports(execution_db: Path) -> ArpPorts:
             root = bootstrap_root(execution_db.with_name(execution_db.name + ".arp-root"), root_id=root_id)
@@ -341,6 +377,7 @@ class HostNativePlane:
                 embedding_resource_ref=None if self.embedding is None else self.embedding_ref,
                 acceptance=acceptance, artifacts=self.artifacts,
                 mission_sources=self.mission_sources,
+                catalogue_authority=None if owner else self.shared_catalogue,
                 # SCRIPT skills run in the sandbox model-written code uses; without a
                 # proven sandbox they are refused by name (RUNNER_UNAVAILABLE).
                 script_runner=None if self.script_executor is None else SandboxScriptRunner(
@@ -371,6 +408,7 @@ class HostNativePlane:
             "embedding": "bge-m3-int8" if self.embedding is not None else "lexical-only",
             "embedding_reason": self.embedding_reason,
             "authorization_policy": self.authorization.policy_id,
+            "skill_catalogue_owner": self.shared_catalogue.owner_id,
         }
 
 
