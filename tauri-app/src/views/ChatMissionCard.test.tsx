@@ -22,7 +22,9 @@ function fakeChannel() {
 
 const DETAIL = {
   mission: { id: "m-1", status: "ACTIVE", goal: "写词频模块并发布 README.md" },
-  tasks: [{ status: "COMPLETED", kind: "work" }, { status: "RUNNING", kind: "work" }],
+  // 根任务（desktop-root-…）是整体汇总，不是步骤，不计入（真机第十四局卡片显示 2 / 3）
+  tasks: [{ id: "desktop-root-mission-1", status: "BLOCKED", kind: "work" },
+    { status: "COMPLETED", kind: "work" }, { status: "RUNNING", kind: "work" }],
   approvals: [{ request_id: "approval-1", state: "PENDING", kind: "action", summary: {
     connector: "file_publish", operation: "publish", target: "README.md",
     params: { artifact_path: "README.md" }, reason: "用户在确认页批准的操作", reason_source: "system" } }],

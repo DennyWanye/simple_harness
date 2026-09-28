@@ -129,7 +129,9 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
   };
 
   const mission = record(detail?.mission);
-  const work = list(detail?.tasks).filter((task) => [undefined, null, "", "work"].includes(record(task).kind as string));
+  // 根任务（desktop-root-…）是整体汇总，不是步骤
+  const work = list(detail?.tasks).filter((task) => [undefined, null, "", "work"].includes(record(task).kind as string)
+    && !text(record(task).id).startsWith("desktop-root-"));
   const done = work.filter((task) => DONE_TASKS.has(text(record(task).status))).length;
   const approvals = list(detail?.approvals).map(record).filter((a) => text(a.state) === "PENDING");
   const published = list(detail?.actions).map(record)
