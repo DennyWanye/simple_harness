@@ -120,3 +120,15 @@ it("renders user / assistant / tool with distinct roles and a collapsible tool r
   expect(screen.getByText("工具正文内容")).toBeTruthy();
   expect(screen.getByRole("button", { name: /工具 · read_file/ }).getAttribute("aria-expanded")).toBe("true");
 });
+
+// 2026-09-29：主 Agent 用 mission_start 发起后台任务后，对话里常驻显示任务卡片（折叠也看得见）。
+it("shows a task card under a mission_start tool record", async () => {
+  const h = fixture([
+    { message_ref: "a1", role: "assistant", text: "已交给后台任务", has_more: false, total_chars: 7 },
+    { message_ref: "t1", role: "tool", text: '{"call_id":"c1","name":"mission_start"}\n{"mission_id":"mission-7","created":true}', has_more: false, total_chars: 60 },
+  ]);
+  render(<PrimaryChatView channel={h.channel} />);
+  await screen.findByText("已交给后台任务");
+  expect(screen.getByTestId("chat-mission-mission-7")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /工具 · mission_start/ }).getAttribute("aria-expanded")).toBe("false");
+});

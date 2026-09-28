@@ -13,6 +13,8 @@
  * 工具折叠条「▸ 工具 · 名称」，`data-testid="primary-message-<role>"`。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { ChatMissionCard } from "./ChatMissionCard";
+import { missionIdFromToolResult } from "./chatMission";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
 import { MarkdownMessage } from "../components/MarkdownMessage";
@@ -200,6 +202,8 @@ function PrimaryMessageRow({ message, controller }: { message: PrimaryMessage; c
   const isAssistant = message.role === "assistant";
   const tool = isTool ? toolHeadline(message.text) : null;
   const label = isTool ? `工具 · ${tool!.name || "未命名"}` : roleLabels[message.role];
+  // 2026-09-29：主 Agent 发起的后台任务在对话里常驻显示任务卡片（进度 + 人亲手点的确认/批准）
+  const missionId = isTool && tool!.name === "mission_start" ? missionIdFromToolResult(tool!.body) : "";
   const body = <>
     {message.has_more && <button className={INTERACTIVE_CLASS} style={{ ...textLinkStyle(busy), marginTop: tokens.space.sm, paddingLeft: 0 }} disabled={busy}
       onClick={() => void load(0)}>读取完整消息（{message.total_chars} 字符）</button>}
@@ -247,6 +251,9 @@ function PrimaryMessageRow({ message, controller }: { message: PrimaryMessage; c
           : <div style={{ ...metaText, color: skin.accent, fontWeight: tokens.weight.semibold, marginBottom: tokens.space.xs }}>{label}</div>}
       {/* 气泡整体右对齐，但气泡内正文始终左对齐 —— 右对齐的多行中文
           会出现锯齿状左边缘，正是"难看"的来源。 */}
+      {missionId && <div style={{ marginTop: tokens.space.xs, marginBottom: tokens.space.xs, fontFamily: tokens.font.ui }}>
+        <ChatMissionCard missionId={missionId} />
+      </div>}
       {(!isTool || toolOpen) && <div style={{ textAlign: "left" }}>
         <MarkdownMessage>{isTool ? tool!.body : message.text}</MarkdownMessage>
         {body}
