@@ -1,0 +1,5 @@
+time 14:26:54 1790576814.422459
+intent intent-plan-mission-84eb0957ac666b28:planner:5 SUBMITTED agent-e65961a747c37e0b026bf56a69d29cef
+lease execution-deepseek-native-256k-thinking-v1.db ('deskpet-orchestrator-50800-158c4903', 1790576841.008544) expires_in 26.6
+# 14:27:08 新进程（opt.62）就绪，旧租约 14:27:21 过期
+# 14:27:22 TAKEN OVER by deskpet-orchestrator-50940-de7b455d epoch 2（修复前同一情形永久挂住，见 14:05 那次）

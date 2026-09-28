@@ -1,0 +1,846 @@
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/json/encoder.py", line 258 in iterencode
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/json/encoder.py", line 200 in encode
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/json/__init__.py", line 238 in dumps
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/contracts/json.py", line 58 in canonical_json
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/models.py", line 154 in sha256_hex
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/semantic_base.py", line 491 in content_hash_of
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/resolution.py", line 519 in content_hash
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/operation_completion.py", line 147 in _require_current
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/operation_completion.py", line 311 in read_requirements
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/operation_completion.py", line 363 in read_scope
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/completion_status.py", line 586 in read_occurrence_completion
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 1986 in accepted_outputs
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 1216 in read
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 2244 in root_review_ready
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 12289 in _decide
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3603 in _cycle_inner
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3470 in _cycle
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 2464 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 609 in _drive
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+INFO:     127.0.0.1:62654 - "WebSocket /ws/control?secret=dev&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+INFO:     connection open
+INFO:     connection closed
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+INFO:     127.0.0.1:62669 - "WebSocket /ws/control?secret=dev&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+INFO:     connection open
+INFO:     connection closed
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 174 in _manifest
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 237 in __post_init__
+  File "<string>", line 11 in __init__
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 513 in decode
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 969 in _read_network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 936 in network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 3134 in rejected_refinements
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3662 in _request_method_synthesis
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3516 in _cycle_inner
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3470 in _cycle
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 2464 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 609 in _drive
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 174 in _manifest
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 237 in __post_init__
+  File "<string>", line 11 in __init__
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 513 in decode
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_store.py", line 299 in _read_one_revision
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_store.py", line 276 in read_revision
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 969 in _read_network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 936 in network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 12404 in _decide
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3603 in _cycle_inner
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3470 in _cycle
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 2464 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 609 in _drive
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+INFO:     127.0.0.1:62672 - "WebSocket /ws/control?secret=dev&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+INFO:     connection open
+INFO:     connection closed
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/pathlib.py", line 721 in __truediv__
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 174 in _manifest
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 423 in decode
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 969 in _read_network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 936 in network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 3692 in run_evidence_round
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3625 in _gather_evidence
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3514 in _cycle_inner
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3470 in _cycle
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 2464 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 609 in _drive
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/resolution.py", line 382 in parse_success_expression
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/resolution.py", line 388 in <lambda>
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/semantic_base.py", line 189 in <genexpr>
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/semantic_base.py", line 189 in sequence_of
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/resolution.py", line 385 in parse_success_expression
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/resolution.py", line 546 in from_json
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/htn_store.py", line 927 in latest_requirements_revision
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/operation_completion.py", line 143 in _require_current
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/operation_completion.py", line 311 in read_requirements
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/completion_status.py", line 587 in read_occurrence_completion
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 1409 in <genexpr>
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 1408 in resolved_occurrences
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 1214 in read
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 2813 in admissions
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 12418 in _decide
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3603 in _cycle_inner
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3470 in _cycle
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 2464 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 609 in _drive
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+INFO:     127.0.0.1:62677 - "WebSocket /ws/control?secret=dev&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+INFO:     connection open
+INFO:     connection closed
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+INFO:     127.0.0.1:62685 - "WebSocket /ws/control?secret=dev&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+INFO:     connection open
+INFO:     connection closed
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/semantic_base.py", line 240 in fields_of
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/htn.py", line 2796 in from_json
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 286 in _decode
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 466 in decode
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_store.py", line 299 in _read_one_revision
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_store.py", line 276 in read_revision
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 969 in _read_network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 936 in network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 3194 in rejected_method_refs
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 3789 in goals_needing_method
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3656 in _request_method_synthesis
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3516 in _cycle_inner
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3470 in _cycle
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 2464 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 609 in _drive
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/execution/sqlite/base_agent/indexes.py", line 291 in journal_rows_missing_fts
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/execution/sqlite/uow.py", line 1748 in agent_journal_rows_missing_fts
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/agents/memory/index_jobs.py", line 100 in _run_once_locked
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/agents/memory/index_jobs.py", line 92 in run_once
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/agents/runtime.py", line 503 in _index_pump
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+INFO:     127.0.0.1:62688 - "WebSocket /ws/control?secret=dev&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+INFO:     connection open
+INFO:     connection closed
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "<frozen abc>", line 119 in __instancecheck__
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/semantic_base.py", line 187 in sequence_of
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/semantic_base.py", line 198 in identifiers
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/htn.py", line 1193 in __post_init__
+  File "<string>", line 9 in __init__
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/htn.py", line 1220 in from_json
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/contracts/htn.py", line 2165 in from_json
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 288 in _decode
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 351 in _validated_object
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 205 in __post_init__
+  File "<string>", line 7 in __init__
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 476 in decode
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_history_sources.py", line 53 in validate_revision_sources
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_store.py", line 358 in _read_one_revision
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_store.py", line 276 in read_revision
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 969 in _read_network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 936 in network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/assurance_check_policy.py", line 444 in mission_final_scope_id
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/assurance.py", line 265 in project_check_policies
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 844 in _project_assurance_policies
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 586 in _host_duties
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 1463 in _run_between_cycles
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 2463 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 609 in _drive
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+Thread 0x0000000177727000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001750ff000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00000001740f3000 (most recent call first):
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/aiosqlite/core.py", line 59 in _connection_worker_thread
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000172fcf000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000171fc3000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x0000000170fb7000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000000016ffab000 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 359 in wait
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/queue.py", line 180 in get
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/observability/runtime.py", line 116 in _run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1012 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Current thread 0x00000001f9f55ec0 (most recent call first):
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/pathlib.py", line 1162 in __init__
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/pathlib.py", line 385 in with_segments
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/pathlib.py", line 717 in joinpath
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/pathlib.py", line 721 in __truediv__
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 174 in _manifest
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 237 in __post_init__
+  File "<string>", line 11 in __init__
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/graph/network_codec.py", line 513 in decode
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_history_sources.py", line 53 in validate_revision_sources
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_store.py", line 358 in _read_one_revision
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/storage/taskgraph_store.py", line 276 in read_revision
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 969 in _read_network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 936 in network
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 3293 in method_applicability
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/hierarchical_dispatch.py", line 3791 in goals_needing_method
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3656 in _request_method_synthesis
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3516 in _cycle_inner
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 3470 in _cycle
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/agent_orchestrator/orchestrator/event_handler.py", line 2464 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/orchestration/service.py", line 609 in _drive
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 75 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 606 in run
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17371 in main
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py", line 17375 in <module>
+INFO:     127.0.0.1:62693 - "WebSocket /ws/control?secret=dev&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     127.0.0.1:62700 - "WebSocket /ws/control?secret=dev&session_id=message-panel-main&requested_window_label=main&requested_scope=companion_action" [accepted]
+INFO:     connection open
+INFO:     connection closed

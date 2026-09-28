@@ -1,0 +1,21 @@
+time 14:01:58
+mission ('ACTIVE',)
+max_seq (42021,)
+task desktop-root-mission-84eb0957ac666b28 BLOCKED
+task task-46d5b1c9895c1de068d40bbd6fa1201d ACTIVE
+task task-659fd0796d1520f7e8b6802a63d97a5c COMPLETED
+task task-3c0917abb9058666838539bc88aaeb7e READY
+task task-44ded35bfe6e77ec9afa7f5c5df051bd COMPLETED
+intent intent-plan-mission-84eb0957ac666b28:synthesizer:desktop-root-mission-84eb0957ac666b28:1 plan SETTLED
+intent intent-plan-mission-84eb0957ac666b28:planner:1 plan SETTLED
+intent intent-attempt-task-44ded35bfe6e77ec9afa7f5c5df051bd:attempt-1 attempt SETTLED
+intent intent-critic-mission-84eb0957ac666b28:assurance:assurance-content:3630c9a40e8f8d7f568d529ec54611d3221bf59bb7d63c6f16eb431b2eee9c69:1 critic SETTLED
+intent intent-attempt-task-46d5b1c9895c1de068d40bbd6fa1201d:attempt-1 attempt SETTLED
+intent intent-attempt-task-659fd0796d1520f7e8b6802a63d97a5c:attempt-1 attempt SETTLED
+intent intent-plan-mission-84eb0957ac666b28:planner:2 plan SETTLED
+intent intent-critic-mission-84eb0957ac666b28:assurance:assurance-content:d6449f69323cfe5a2b8f7120a414f24fb59cb5925d7cd6c8a2adac32afd452f1:1 critic SETTLED
+intent intent-attempt-task-46d5b1c9895c1de068d40bbd6fa1201d:attempt-2 attempt FAILED
+intent intent-plan-mission-84eb0957ac666b28:planner:3 plan SETTLED
+intent intent-attempt-task-46d5b1c9895c1de068d40bbd6fa1201d:attempt-3 attempt SUBMITTED
+attempts_by_task [('task-44ded35bfe6e77ec9afa7f5c5df051bd', 1), ('task-46d5b1c9895c1de068d40bbd6fa1201d', 3), ('task-659fd0796d1520f7e8b6802a63d97a5c', 1)]
+agents_created (10,)
