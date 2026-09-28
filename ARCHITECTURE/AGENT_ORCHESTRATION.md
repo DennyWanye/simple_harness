@@ -1,3 +1,10 @@
+最后更新：2026-09-28 CST（NEXT-TG-1.0 第三～五批，SDK opt.56–59）。
+- **执行过程只读接口**（第三批）：SDK `api/taskgraph.py` 新增 `execution_snapshot`（严格执行图 + 执行过程同一读取时点；键集分页，游标绑定任务/调用者/计划版本/清单哈希/执行内容哈希，变了报 `SNAPSHOT_CHANGED`）与 `execution_detail`（按执行意图所在执行池精确读回合记录；白名单只出模型可见原话、整形后的工具事实、提交摘要、审阅结论理由，全部脱敏）。投影 `orchestrator/taskgraph_execution_view.py`：尝试/检查/审阅/规划/修补请求/计划修订/操作节点与 attempt_of、rework_of、review_of 等因果边，全用记录下来的身份连接，不进调度图。Host 控制通道 `taskgraph.execution_snapshot/detail`；直读 SDK 表的 `live_graph.py` 与 `mission_live_graph`/`mission_planning_decisions` 已删除。
+- **产品入口**（第四批）：工具熔断与自动续跑与监工开关解耦（`[self_healing]`，监工关时用按失败原因的固定提示，会话活动记录总是注册）；删 7 个无人读取的配置；设置页「任务发布目录」（`orchestration_publish_dir_get/set`，校验后写回 config.toml 并重启编排服务）；主 Agent 工具 `mission_start`（同任务页的创建路径，幂等键由对话回合+调用派生）；前台运行没有执行入口的委派工具不再放进模型可见目录。并发上限、模型路由、多候选/冲突仲裁保持默认，原因与欠项见进度文件。
+- **任务模式 Agent**（第五批 A）：编排执行池的 ARP 配置改为 MISSION（配置修订 2；修订 1 行原样保留，旧会话照常）。每个 Agent 由派发意图的按角色来源集创建（SDK `runtime/mission_sources.py` 只读编排器记录：执行者的冻结输入清单身份、审阅包、终判视图、规划/方法合成写明没有执行尝试），缺失或不符具名拒绝；来源哈希进创建命令哈希；每次新请求冻结前复核并钉进上下文清单；创建被拒只停该意图，不打断编排循环。
+- **统一技能目录**（第五批 B）：SDK `arp/shared_catalogue.py`，256K 非思考池为唯一权威，其余原生池镜像（同一技能/版本/哈希/正式验收），成员池拒绝直接写，每次使用先问所有者（一次暂停所有池下一次使用即生效），缺工具的池该技能不可用；Host `skill_catalogue.py` 提供总览/本地安装/暂停恢复退役，控制通道只放行 `agent_skill_request` 与两条评估动词。欠项：准入评估未接界面；任务执行者工具集尚不含技能工具。
+- 进度、证据与欠项：`plans/2026-09-27-desktop-next/PLAN-STATUS.md`。
+
 最后更新：2026-09-28 CST（NEXT-TG-1.0 第二批 B：推进规则，SDK opt.53–55）。
 - `orchestrator/progress.py`（纯函数）：`idle_verdict(IdleFacts)` 把空闲任务判成带具名唤醒来源的等待（收尾中、根目标已解决待判定、在跑、动作结果核对中、待人批准、操作结果待定、保障层待办、修复续接等待、规划等待、执行图来源等待）或"卡住候选"；归不了类的一律"等待 + 需系统诊断"。卡住记录与卡住确认共用它（确认仍只读一次计划）。
 - 主循环 `run()`：`set_between_cycles(duty, every_seconds)` 让宿主职责在轮与轮之间按间隔执行（Host 注册自动授权/策略批准/执行图启用/自动确认，间隔 2 秒）；`durable_watermark()`（非观察类事件序号 + 意图/尝试/结果行）识别"声称有进展但无持久变化"的轮次——仍计入轮次上限，但必须睡；等待分支无写入时从轮询间隔翻倍退避到 1 秒。Host 两轮水位相同则用 20 秒长节拍。
