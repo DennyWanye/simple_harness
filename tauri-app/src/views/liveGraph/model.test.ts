@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 import { describe, expect, it } from "vitest";
-import { cleanText, execDisplay, mergePages, parseExecutionPage, stepProgress, stepTitle } from "./model";
+import { cleanText, execDisplay, mergePages, parseExecutionPage, stepDisplay, stepProgress, stepTitle } from "./model";
 import { buildElkGraph, homesOf, processEdges } from "./layoutModel";
 import { M, snapshot } from "./fixture";
 
@@ -51,19 +51,24 @@ describe("显示", () => {
     const v = view();
     const b = v.structure.find((n) => n.occurrence_id === "b")!;
     expect(stepTitle(b.step, "")).toBe("发布：产出 NOTES.md");
-    expect(stepProgress(b, v.nodes.filter((n) => n.kind === "attempt" && n.raw.occurrence_id === "b"))).toBe("执行中");
+    expect(stepProgress(b, v.nodes.filter((n) => n.kind === "attempt" && n.raw.occurrence_id === "b"))).toBe("");
     const a = v.structure.find((n) => n.occurrence_id === "a")!;
     expect(stepProgress(a, v.nodes.filter((n) => n.node_id === "attempt:a1"))).toBe("写好了 NOTES.md");
     expect(cleanText("见 (ev-0123456789ab) 与 task-0123456789abcdef0123 完成")).toBe("见 与 完成");
   });
 
-  it("审阅层英文原因换成大白话；已完成的步骤不再显示「等待拆分」这类就绪原因", () => {
+  it("系统英文原因换成大白话；进展行不写就绪原因；在等的「可调度」步骤写「等待」", () => {
     expect(cleanText("critic verdict unusable: Assurance review awaits original-call reconciliation"))
       .toBe("审阅调用被打断，要等核对原调用结果，这次审阅作废");
     expect(cleanText("critic verdict unusable: bad json")).toBe("审阅结论无法使用：bad json");
     const root = (phase: string) => ({ ...view().structure.find((n) => n.occurrence_id === "root")!, phase, readiness: "NEEDS_REFINEMENT" });
+    expect(cleanText("The frozen applicability snapshot and deployment policy selected this method deterministically."))
+      .toBe("系统按适用条件和部署策略直接选定了方法");
     expect(stepProgress(root("resolution_committed"), [])).toBe("");
-    expect(stepProgress(root("planning_ready"), [])).toBe("等待拆分");
+    expect(stepProgress(root("waiting_children"), [])).toBe("");
+    const b = view().structure.find((n) => n.occurrence_id === "b")!;
+    expect(stepDisplay({ ...b, phase: "READY", readiness: "WAITING_ORDER" })).toEqual({ label: "等待", tone: "idle" });
+    expect(stepDisplay({ ...b, phase: "READY", readiness: "READY_CANDIDATE" }).label).toBe("可调度");
   });
 });
 

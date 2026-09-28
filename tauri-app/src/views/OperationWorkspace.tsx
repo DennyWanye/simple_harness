@@ -6,6 +6,18 @@ type Json = Record<string, unknown>;
 type Effect = { key: string; criteria: string[]; obligation: string; milestone: string };
 
 /** Explicit user confirmation; all authority and stale checks stay in the SDK. */
+/** 完成要求里 `action:<操作>:<文件>` 行的目标文件名。 */
+function actionTargets(statements: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const line of statements) {
+    const match = /^action:\S+:([^:\s]+)$/.exec(line.trim());
+    if (match) out.add(fileName(match[1]));
+  }
+  return out;
+}
+
+function fileName(path: string): string { return path.split("/").pop() ?? path; }
+
 export function OperationWorkspace({ value, channel, onChanged }: {
   value: unknown; channel: MissionsChannel | null; onChanged: () => void;
 }) {
@@ -155,16 +167,19 @@ function Workspace({ workspace: w, channel, onChanged }: {
         const heads = previous.filter(i => i.current === true);
         const predecessor = heads.length === 1 ? heads[0] : null;
         const canSubmit = !previous.length || (predecessor?.can_replace === true);
-        const candidates = asList(w.candidates);
+        const statements = criteria.filter(c => (effect.criterion_ids as string[])?.includes(asText(c.id))).map(c => asText(c.statement));
+        const targets = actionTargets(statements);
+        // 要求里写明了目标文件就只列对得上的候选（真机：README.md 的要求下列出了 wordfreq.py 的候选）
+        const candidates = asList(w.candidates).filter(c => !targets.size || targets.has(fileName(asText(asRecord(c.candidate).target))));
         const selected = candidates.find(c => asRecord(c.candidate_artifact_ref).id === selection[key]);
         return <div key={key} style={{ marginTop: 12 }}>
-          <p>操作要求：{criteria.filter(c => (effect.criterion_ids as string[])?.includes(asText(c.id))).map(c => asText(c.statement)).join("；")}</p>
+          <p>操作要求：{statements.join("；")}</p>
           {previous.map(i => <p key={asText(i.intent_id)}>请求状态：{asText(i.state)}{i.current === true ? "（当前）" : "（已被修订替代）"}</p>)}
           {!canSubmit ? <p>已有操作进入执行链，需等待审查或核对结果，不能重复提交。</p> : <>
             {/* 单选列表：每条写明"操作 → 目标"和它自己的理由（两步各写一个同名候选时也分得清） */}
             <fieldset role="radiogroup" aria-label="选择已接受的操作准备产物" disabled={disabled}>
               <legend>选择要提交的操作</legend>
-              {candidates.length === 0 && <p>还没有审核通过的操作准备产物。</p>}
+              {candidates.length === 0 && <p>{targets.size ? `还没有审核通过的 ${[...targets].join("、")} 操作准备产物。` : "还没有审核通过的操作准备产物。"}</p>}
               {candidates.map((c, index) => {
                 const id = asText(asRecord(c.candidate_artifact_ref).id);
                 const cand = asRecord(c.candidate);

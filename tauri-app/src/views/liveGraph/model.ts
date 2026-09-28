@@ -265,6 +265,7 @@ export function stepTitle(step: StepDuty | null | undefined, goal: string): stri
 const ENGLISH_REASONS: [RegExp, string][] = [
   [/critic verdict unusable:\s*Assurance review awaits original-call reconciliation\.?/gi, "审阅调用被打断，要等核对原调用结果，这次审阅作废"],
   [/critic verdict unusable:\s*/gi, "审阅结论无法使用："],
+  [/The frozen applicability snapshot and deployment policy selected this method deterministically\.?/gi, "系统按适用条件和部署策略直接选定了方法"],
 ];
 
 export function cleanText(value: string): string {
@@ -278,14 +279,16 @@ export function cleanText(value: string): string {
 
 export const STALL_SECONDS = 10 * 60;
 
-/** 一个步骤的"一句话进展"：最近一次执行交的说明，或等待原因。 */
-export function stepProgress(step: StructureNode, attempts: ExecNode[]): string {
+/** 一个步骤的"一句话进展"：最近一次执行交的说明。等待原因写在状态行里，这里不重复；
+ *  就绪原因在步骤开始后不再更新，执行中/已结束的步骤写它会自相矛盾（真机见过"子步骤进行中 · 等待拆分"）。 */
+export function stepProgress(_step: StructureNode, attempts: ExecNode[]): string {
   const latest = attempts[attempts.length - 1];
-  if (latest?.summary) return cleanText(latest.summary.text);
-  if (latest) return execDisplay(latest).status.label;
-  // 已结束的步骤不再写"为什么还没开始"（就绪原因在步骤结束后不会更新）
-  const tone = phaseDisplay(step.phase).tone;
-  if (tone === "done" || tone === "failed" || tone === "cancelled") return "";
-  const reason = readinessLabel(step.readiness);
-  return reason && step.readiness !== "READY_CANDIDATE" ? reason : "";
+  return latest?.summary ? cleanText(latest.summary.text) : "";
+}
+
+/** 步骤状态：阶段是"可调度"但还在等（上一步、数据、批准……）时写"等待"，不写"可调度"。 */
+export function stepDisplay(step: StructureNode): Display {
+  const display = phaseDisplay(step.phase);
+  return step.phase === "READY" && step.readiness && step.readiness !== "READY_CANDIDATE"
+    ? { label: "等待", tone: "idle" } : display;
 }

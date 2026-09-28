@@ -18,7 +18,7 @@ import "@xyflow/react/dist/style.css";
 import { asList, asRecord, asText, newRequestKey, useMissionsStore, type MissionsChannel } from "../../stores/missionsStore";
 import {
   DECISION_STATUS, DECISION_TYPE, STALL_SECONDS, TONE_COLOR, cleanText, execDisplay, mergePages, parseExecutionPage,
-  phaseDisplay, readinessLabel, stepProgress, stepTitle,
+  phaseDisplay, readinessLabel, stepDisplay, stepProgress, stepTitle,
   type ExecNode, type ExecutionPage, type ExecutionView, type StructureNode,
 } from "./model";
 import { AUTO_COLLAPSE_OVER, buildElkGraph, flatten, homesOf, structureKey, type DrawEdge, type Placed } from "./layoutModel";
@@ -62,7 +62,7 @@ type ExecData = { node: ExecNode; onPick: (id: string) => void; picked: boolean 
 
 function StepCard({ data }: NodeProps<Node<StepData>>) {
   const { step, title, progress, attempts, collapsed, childCount, group, foldable } = data;
-  const display = phaseDisplay(step.phase);
+  const display = stepDisplay(step);
   const color = TONE_COLOR[display.tone];
   const reason = readinessLabel(step.readiness);
   const waiting = display.tone === "idle" || display.tone === "ready" || display.tone === "person";
@@ -390,7 +390,7 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
           <ul>{view.structure.map((node) => (
             <li key={node.occurrence_id}>
               <button type="button" onClick={() => pick(node.occurrence_id)}>{short(titleOf(node))}</button>
-              {" · " + phaseDisplay(node.phase).label}
+              {" · " + stepDisplay(node).label}
             </li>
           ))}</ul>
         </details>
@@ -436,7 +436,7 @@ function StepPanel({ step, title, execs, onPick, onClose, onLoadMoreEvents }: {
   step: StructureNode; title: string; execs: ExecNode[]; onPick: (id: string) => void; onClose: () => void;
   onLoadMoreEvents?: () => void;
 }) {
-  const display = phaseDisplay(step.phase);
+  const display = stepDisplay(step);
   const ended = display.tone === "done" || display.tone === "failed" || display.tone === "cancelled";
   const reason = ended ? null : readinessLabel(step.readiness);
   return (

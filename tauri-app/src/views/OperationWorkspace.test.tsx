@@ -116,6 +116,26 @@ describe("OperationWorkspace", () => {
     expect(screen.getByText(/不能重复提交/)).toBeTruthy();
   });
 
+  it("要求写明目标文件时只列目标对得上的候选", () => {
+    const publishReadme = { id: "criterion-readme", statement: "action:file_publish.publish:README.md", required: true };
+    const other = { artifact_path: "actions/b.json",
+      candidate: { operation: "publish", target: "wordfreq.py", reason: "code", params: { path: "wordfreq.py" } },
+      candidate_artifact_ref: { kind: "artifact", id: "artifact-2", revision: 1, content_hash: "1".repeat(64) },
+      prepared_acceptance_refs: [] };
+    const readme = { ...other, candidate: { ...other.candidate, target: "docs/README.md", reason: "doc" },
+      candidate_artifact_ref: { ...other.candidate_artifact_ref, id: "artifact-3" } };
+    const base = approved();
+    const value = { ...base, criteria: [publishReadme], candidates: [other, readme],
+      spec: { ...base.spec, effects: [{ ...base.spec.effects[0], criterion_ids: [publishReadme.id] }] } };
+    const view = render(<OperationWorkspace value={value} channel={new Channel()} onChanged={vi.fn()} />);
+    const choices = screen.getByRole("radiogroup", { name: "选择已接受的操作准备产物" });
+    expect(within(choices).getAllByRole("radio")).toHaveLength(1);
+    expect(choices.textContent).toContain("publish → docs/README.md");
+    expect(choices.textContent).not.toContain("wordfreq.py");
+    view.rerender(<OperationWorkspace value={{ ...value, candidates: [other] }} channel={new Channel()} onChanged={vi.fn()} />);
+    expect(screen.getByText("还没有审核通过的 README.md 操作准备产物。")).toBeTruthy();
+  });
+
   it("recovers a lost reply without changing the command and ignores a late response", () => {
     vi.useFakeTimers();
     const channel = new Channel();
