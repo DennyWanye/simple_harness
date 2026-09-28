@@ -33,6 +33,7 @@ import { LiveGraph } from "./liveGraph/LiveGraph";
 import { MissionProgress } from "./liveGraph/MissionProgress";
 import { MissionAssurance } from "./MissionAssurance";
 import { PublishCriterionHelper } from "./PublishCriterionHelper";
+import { ActionApprovalSummary } from "./ActionApprovalSummary";
 import { useConfirm } from "../components/useConfirm";
 import {
   asList as list,
@@ -1108,10 +1109,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               const action = record(approval.action);
               return (
                 <div key={requestId} style={{ ...box, minWidth: 0, overflowWrap: "anywhere", borderColor: tokens.color.accent.border }} data-testid={`approval-${requestId}`}>
-                  <div style={heading}>
-                    {WAIT_LABEL[kind] ?? `未知审批类型（${kind || "未提供"}）`}：<ModelText value={approval.summary} />
-                  </div>
-                  {action.reason ? <div>理由：<ModelText value={action.reason} /></div> : null}
+                  {kind === "action" ? <ActionApprovalSummary summary={approval.summary} action={action} /> : (
+                    <div style={heading}>
+                      {WAIT_LABEL[kind] ?? `未知审批类型（${kind || "未提供"}）`}：<ModelText value={approval.summary} />
+                    </div>
+                  )}
                   {kind === "action" ? <ActionOutcome action={action} /> : null}
                   {kind === "source_change" ? <pre style={{ minWidth: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>{JSON.stringify(record(approval.source_change), null, 2)}</pre> : null}
                   {kind === "arbitration" && approval.arbitration != null ? <pre style={{ minWidth: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>{JSON.stringify(approval.arbitration, null, 2)}</pre> : null}

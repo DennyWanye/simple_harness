@@ -89,6 +89,30 @@ def backoff_delay(failures: int, maximum: float) -> float:
     return min(maximum, 2.0 ** min(max(failures, 0), 16))
 
 
+PUBLISH_PREFIX = "action:file_publish.publish:"
+
+
+def _with_publish_sources(criteria: list[str]) -> list[str]:
+    """2026-09-29（第 5 批）：每个要发布的文件先得有一步写出它。
+
+    每条 ``action:file_publish.publish:X`` 前补一条 ``file:X``（已有就不补）：它是普通
+    内容要求，规划时必须链接到恰好一个步骤（那一步就是 X 的声明产出者），核对时检查文件
+    存在，系统发布时只从那一步取。界面和主 Agent 都经这里，确认页上用户看得到这一条。
+    """
+
+    present = {str(item).strip() for item in criteria}
+    result: list[str] = []
+    for item in criteria:
+        text = str(item).strip()
+        if text.startswith(PUBLISH_PREFIX):
+            source = "file:" + text[len(PUBLISH_PREFIX):].strip()
+            if source != "file:" and source not in present:
+                result.append(source)
+                present.add(source)
+        result.append(item)
+    return result
+
+
 def _strings(value: Any) -> Iterator[str]:
     """Every string inside a request value (keys included), for the secret check."""
 
@@ -1328,6 +1352,7 @@ class OrchestrationService:
                     "action_criteria_disabled",
                     f"连接器 {connector} 未启用" + (f"：{reason}" if reason else ""),
                 )
+        body["success_criteria"] = _with_publish_sources(criteria)
         # No Mission without bounds (native run 2026-09-12, adjudication C): with a null
         # budget a real Planner invents Task budgets far below one model turn and the
         # Mission cannot succeed.  A blank item takes the deployment default; an item the

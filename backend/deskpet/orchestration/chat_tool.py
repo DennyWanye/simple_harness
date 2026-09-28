@@ -29,7 +29,12 @@ MISSION_START_DESCRIPTION = (
     "'放到任务编排里做'); do not use it for work you can finish in this chat. goal is what the task "
     "must achieve; success_criteria are checkable completion conditions, one per item. The result "
     "gives the mission_id; progress, approvals and results are on the task orchestration page. "
-    "Publishing or other external actions still wait for the user's confirmation there."
+    "Publishing or other external actions still wait for the user's confirmation there. "
+    "To have a produced file published into the user's authorized publish directory, add one criterion "
+    "'action:file_publish.publish:<file name>' per file (for example 'action:file_publish.publish:README.md'); "
+    "the system then requires a step that writes that file and publishes it after the user approves. "
+    "A task card appears in this chat; the user confirms and approves there. Use mission_status to read "
+    "progress and results."
 )
 
 MISSION_START_SCHEMA: dict[str, Any] = {
@@ -97,5 +102,81 @@ def start_mission(service_getter: Callable[[], Any], arguments: Mapping[str, Any
     }
 
 
+# ------------------------------------------------------------------ mission_status
+# 2026-09-29：编排的最终使用者是主 Agent——它要能在对话里告诉用户任务走到哪、等谁、结果在哪。
+# 只读：确认完成要求、批准发布都必须由人亲手点（对话里的任务卡片或任务编排页），模型不能代批。
+
+MISSION_STATUS_TOOL_NAME = "mission_status"
+
+MISSION_STATUS_DESCRIPTION = (
+    "Read the current state of a background task (Mission) started with mission_start: its status, "
+    "what it is waiting for (for example the user confirming completion requirements or approving "
+    "a publish), how many steps are done, and which files were published. Read-only: you cannot "
+    "confirm or approve anything with it — the user does that themselves on the task card in this "
+    "chat or on the task orchestration page."
+)
+
+MISSION_STATUS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"mission_id": {"type": "string"}},
+    "required": ["mission_id"],
+    "additionalProperties": False,
+}
+
+_STATUS_ZH = {"CREATED": "已创建，等确认", "ACTIVE": "进行中", "COMPLETED": "已完成",
+              "FAILED": "未完成（已停止）", "CANCELLED": "已取消"}
+_DONE_TASKS = frozenset({"COMPLETED", "SUCCEEDED", "ACCEPTED"})
+
+
+def _approval_line(approval: Mapping[str, Any]) -> str:
+    summary = approval.get("summary") if isinstance(approval.get("summary"), Mapping) else {}
+    action = approval.get("action") if isinstance(approval.get("action"), Mapping) else {}
+    target = str(summary.get("target") or action.get("target") or "")
+    if (summary.get("connector") or action.get("connector")) == "file_publish":
+        return f"等用户批准发布 {target}"
+    return f"等用户处理审批（{approval.get('kind') or '未知'}{'：' + target if target else ''}）"
+
+
+def mission_status(service_getter: Callable[[], Any], arguments: Mapping[str, Any]) -> dict[str, Any]:
+    mission_id = arguments.get("mission_id")
+    if set(arguments) - {"mission_id"} or not isinstance(mission_id, str) or not mission_id.strip():
+        raise MissionStartRefused("invalid_arguments", "只接受 mission_id（mission_start 返回的那个）")
+    service = service_getter()
+    if service is None:
+        raise MissionStartRefused("orchestration_unavailable", "任务编排服务没有启动", retryable=True)
+    from .service import OrchestrationRequestError
+
+    try:
+        detail = service.mission_detail(mission_id.strip())
+    except OrchestrationRequestError as error:
+        raise MissionStartRefused(str(error.code), str(error)) from error
+    mission = detail.get("mission") or {}
+    status = str(mission.get("status") or "")
+    waiting: list[str] = []
+    workspace = detail.get("operation_workspace")
+    if isinstance(workspace, Mapping) and workspace.get("state") == "CONFIRMATION_REQUIRED":
+        waiting.append("等用户确认完成要求")
+    waiting += [_approval_line(a) for a in detail.get("approvals") or () if a.get("state") == "PENDING"]
+    waiting += [f"等用户回答规划问题：{q.get('question')}" for q in detail.get("planning_questions") or ()
+                if q.get("state") == "PENDING" and q.get("question")]
+    work = [t for t in detail.get("tasks") or () if t.get("kind") in (None, "work")]
+    published = [{"target": a.get("target"), "published_path": a.get("published_path")}
+                 for a in detail.get("actions") or ()
+                 if a.get("state") == "SUCCEEDED" and a.get("published_path")]
+    return {
+        "mission_id": mission_id.strip(),
+        "status": status,
+        "status_zh": _STATUS_ZH.get(status, status or "未知"),
+        "goal": mission.get("goal"),
+        "waiting_for": waiting,
+        "steps": {"total": len(work), "done": sum(1 for t in work if t.get("status") in _DONE_TASKS)},
+        "published": published,
+        "stop_reason": mission.get("stop_reason") if status in {"FAILED", "CANCELLED"} else None,
+        "note": ("需要用户亲手确认/批准的事项在对话里的任务卡片和任务编排页上；你不能代为确认或批准。"
+                 if waiting else "目前不需要用户操作。"),
+    }
+
+
 __all__ = ("MISSION_START_DESCRIPTION", "MISSION_START_SCHEMA", "MISSION_START_TOOL_NAME",
-           "MissionStartRefused", "start_mission")
+           "MISSION_STATUS_DESCRIPTION", "MISSION_STATUS_SCHEMA", "MISSION_STATUS_TOOL_NAME",
+           "MissionStartRefused", "mission_status", "start_mission")

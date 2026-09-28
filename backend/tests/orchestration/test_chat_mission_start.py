@@ -81,3 +81,38 @@ def test_the_tool_is_registered_visible_and_described():
     assert "mission_start" in SDK_DIRECT_TOOL_KERNEL
     assert describe_call_zh("mission_start", {"goal": "写 ZIP.md"}) == "在任务编排里新建后台任务「写 ZIP.md」"
     assert 'name=MISSION_START_TOOL_NAME' in MAIN.read_text(encoding="utf-8")
+
+
+def test_mission_status_reads_progress_and_what_waits_for_the_person():
+    """2026-09-29：主 Agent 能在对话里说清任务走到哪、等谁；确认与批准只能由人点，工具只读。"""
+    from deskpet.orchestration.chat_tool import mission_status
+
+    class _Detail(_Service):
+        def mission_detail(self, mission_id):
+            return {
+                "mission": {"id": mission_id, "status": "ACTIVE", "goal": "写词频模块并发布"},
+                "operation_workspace": {"state": "CONFIRMED"},
+                "approvals": [{"state": "PENDING", "kind": "action", "summary": {
+                    "connector": "file_publish", "operation": "publish", "target": "README.md"}}],
+                "tasks": [{"status": "COMPLETED", "kind": "work"}, {"status": "RUNNING", "kind": "work"}],
+                "actions": [{"state": "SUCCEEDED", "target": "wordfreq.py",
+                             "published_path": "/pub/wordfreq.342d.v1.py"}],
+            }
+
+    status = mission_status(lambda: _Detail(), {"mission_id": "mission-1"})
+    assert status["status_zh"] == "进行中"
+    assert status["waiting_for"] == ["等用户批准发布 README.md"]
+    assert status["steps"] == {"total": 2, "done": 1}
+    assert status["published"] == [{"target": "wordfreq.py", "published_path": "/pub/wordfreq.342d.v1.py"}]
+    assert "不能代为确认或批准" in status["note"]
+    with pytest.raises(MissionStartRefused):
+        mission_status(lambda: _Detail(), {"mission_id": "m", "approve": True})
+
+
+def test_mission_status_is_registered_read_only_and_described():
+    assert "mission_status" in PRODUCT_TOOL_NAMES and "mission_status" in HOST_COMPOSED_TOOL_NAMES
+    assert "mission_status" in SDK_DIRECT_TOOL_KERNEL
+    assert describe_call_zh("mission_status", {"mission_id": "m"}) == "查看后台任务的进度"
+    assert 'name=MISSION_STATUS_TOOL_NAME' in MAIN.read_text(encoding="utf-8")
+    from deskpet.orchestration.chat_tool import MISSION_STATUS_SCHEMA
+    assert set(MISSION_STATUS_SCHEMA["properties"]) == {"mission_id"}  # 没有任何能改状态的参数

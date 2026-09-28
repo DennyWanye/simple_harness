@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { MissionsChannelContext } from "./views/chatMission";
 import { V2_CLIENT_VERSION } from "./ws/ControlChannel";
 void V2_CLIENT_VERSION; // silence unused import (re-exported for diagnostics later)
 import { ModelDownloadBanner } from "./components/ModelDownloadBanner";
@@ -840,6 +841,7 @@ function App() {
       {/* T6 — 工作台壳：Sidebar 240px + 内容区。view state 在 App 层
           （D2），视图 props 走显式合同（见 WorkbenchShell 文件头）。
           petError 横幅插槽由 banner prop 承接（T4 搬迁落位）。 */}
+      <MissionsChannelContext.Provider value={permissionChannel}>
       <WorkbenchShell
         view={view}
         onViewChange={setView}
@@ -923,6 +925,7 @@ function App() {
           },
         }}
       />
+      </MissionsChannelContext.Provider>
 
       <ExternalWaitDialog
         request={externalWaitCurrent}

@@ -70,6 +70,9 @@ async def test_a_directory_the_user_authorised_enables_publishing(
             notes_request("k-publish-ok", success_criteria=["file:NOTES.md", PUBLISH_CRITERION])
         )
         assert created["mission_id"]
+        stored = service._orchestrator.store.get_mission(created["mission_id"])
+        assert list(stored.success_criteria) == [  # 第 5 批：入口补上"写出要发布的文件"
+            "file:NOTES.md", "file:reports/weekly.md", PUBLISH_CRITERION]
         manifest = json.loads((orchestration_root / MANIFEST_NAME).read_text(encoding="utf-8"))
         assert manifest["features"]["publish"] == {"enabled": True, "root": str(published)}
         assert "file_publish" in manifest["features"]["deployment_policy"]["enabled_connectors"]
@@ -94,3 +97,17 @@ async def test_a_directory_that_does_not_exist_is_not_authorised(
         assert refused.value.code == "action_criteria_disabled"
     finally:
         await service.close()
+
+
+def test_each_published_file_gets_a_content_requirement_to_write_it():
+    """2026-09-29 第 5 批：发布 X 之前先得有一步写出 X；已有 file:X 不重复补。"""
+    from deskpet.orchestration.service import _with_publish_sources
+
+    assert _with_publish_sources(["写一个模块", PUBLISH_CRITERION]) == [
+        "写一个模块", "file:reports/weekly.md", PUBLISH_CRITERION]
+    already = ["file:reports/weekly.md", "写一个模块", PUBLISH_CRITERION]
+    assert _with_publish_sources(already) == already
+    two = [PUBLISH_CRITERION, "action:file_publish.publish:README.md", PUBLISH_CRITERION]
+    assert _with_publish_sources(two) == [
+        "file:reports/weekly.md", PUBLISH_CRITERION, "file:README.md",
+        "action:file_publish.publish:README.md", PUBLISH_CRITERION]

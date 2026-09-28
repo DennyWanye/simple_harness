@@ -8659,6 +8659,40 @@ async def _build_product_sdk_runtime_stack(
             },
         ),
     )
+    # 2026-09-29：主 Agent 读后台任务进度（只读；确认与批准只能由人在卡片/任务页上点）。
+    from deskpet.orchestration.chat_tool import (
+        MISSION_STATUS_DESCRIPTION,
+        MISSION_STATUS_SCHEMA,
+        MISSION_STATUS_TOOL_NAME,
+        mission_status,
+    )
+
+    async def mission_status_handler(arguments, _context):
+        from simple_harness.tools import ToolResult
+
+        try:
+            value = mission_status(lambda: service_context.get("orchestration"), arguments)
+        except MissionStartRefused as refused:
+            return ToolResult.failed(_context.call_id, refused.code, str(refused), retryable=refused.retryable)
+        return ToolResult.succeeded(_context.call_id, value)
+
+    projected_registrations = (
+        *projected_registrations,
+        ProductToolRegistration(
+            name=MISSION_STATUS_TOOL_NAME,
+            description=MISSION_STATUS_DESCRIPTION,
+            input_schema=MISSION_STATUS_SCHEMA,
+            handler=mission_status_handler,
+            dispatch_kind="async",
+            permission_category="mission_status",
+            projectless_admission="safe",
+            metadata={
+                "source": "product-mission-status",
+                "version": "1",
+                "stable_handler_id": "core.mission_status.v1",
+            },
+        ),
+    )
     tools_adapter, tool_inventory = build_product_tool_registry(projected_registrations)
     from deskpet.tools import registry as live_tool_registry
 

@@ -24,6 +24,8 @@
  *     the handle (or any toolbar button) re-expands.
  *   鈥?A fresh red error auto-expands the panel + switches to "閿欒".
  */
+import { ChatMissionCard } from "../views/ChatMissionCard";
+import { missionIdFromToolResult } from "../views/chatMission";
 import {
   useEffect,
   useLayoutEffect,
@@ -756,6 +758,17 @@ function ChatRow({
             name={msg.toolName || "(工具)"}
             args={msg.toolArgs}
           />
+        </div>
+      );
+    }
+    // 2026-09-29：主 Agent 发起的后台任务在对话里显示成任务卡片（进度 + 人亲手点的确认/批准）
+    const missionId = msg.toolName === "mission_start" && msg.toolOk !== false
+      ? missionIdFromToolResult(msg.toolResultRaw)
+      : "";
+    if (missionId) {
+      return (
+        <div data-role="tool" style={{ alignSelf: "flex-start", width: "96%", maxWidth: "96%" }}>
+          <ChatMissionCard missionId={missionId} />
         </div>
       );
     }
