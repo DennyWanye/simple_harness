@@ -18,6 +18,24 @@ function actionTargets(statements: string[]): Set<string> {
 
 function fileName(path: string): string { return path.split("/").pop() ?? path; }
 
+function isAction(criterion: Json): boolean { return asText(criterion.statement).trim().startsWith("action:"); }
+
+function defaultContent(w: Json): string[] {
+  if (w.editable !== true) return [];
+  return asList(w.criteria).filter(c => !isAction(c)).map(c => asText(c.id));
+}
+
+function defaultEffects(w: Json): Effect[] {
+  const milestones = asList(w.milestones), obligations = asList(w.obligations);
+  if (w.editable !== true || !milestones.length) return [];
+  const hash = milestones.find(m => asText(m.label).includes("哈希")) ?? (milestones.length === 1 ? milestones[0] : undefined);
+  return asList(w.criteria).filter(isAction).map(c => ({
+    key: `effect-${newRequestKey()}`, criteria: [asText(c.id)],
+    obligation: obligations.length === 1 ? asText(obligations[0].id) : "",
+    milestone: hash ? asText(hash.id) : "",
+  }));
+}
+
 /** 系统准备的发布申请走到了哪一步（operation_intent_status 的 state）。 */
 const INTENT_STATE: Record<string, string> = {
   AWAITING_REVIEW: "系统已准备好申请，审阅员检查中",
@@ -49,8 +67,11 @@ export function OperationWorkspace({ value, channel, onChanged }: {
 function Workspace({ workspace: w, channel, onChanged }: {
   workspace: Json; channel: MissionsChannel | null; onChanged: () => void;
 }) {
-  const [content, setContent] = useState<string[]>([]);
-  const [effects, setEffects] = useState<Effect[]>([]);
+  // 2026-09-29 真机（对话任务卡片）：原来要逐条勾选、逐个加效果，确认一次点十几下。改为默认预填：
+  // 普通要求默认算"内容交付"，每条 action: 要求默认各配一个效果（唯一的目标自动选上，完成标准
+  // 默认"内容哈希一致"）；人看一眼点确认即可，仍可改。
+  const [content, setContent] = useState<string[]>(() => defaultContent(w));
+  const [effects, setEffects] = useState<Effect[]>(() => defaultEffects(w));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const flight = useRef<{ id: string; type: string } | null>(null);

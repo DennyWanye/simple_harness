@@ -62,6 +62,7 @@ describe("OperationWorkspace", () => {
   it("maps multiple criteria to one effect and sends one CAS-bound approval", () => {
     const channel = new Channel();
     render(<OperationWorkspace value={confirmation()} channel={channel} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "全部取消" }));  // 默认预填了内容要求，这里改成全放进效果
     fireEvent.click(screen.getByRole("button", { name: "添加必须完成的效果" }));
     const effect = screen.getByRole("group", { name: "这一次效果覆盖的要求（可多选）" });
     for (const item of criteria) fireEvent.click(within(effect).getByText(item.statement));
@@ -85,8 +86,7 @@ describe("OperationWorkspace", () => {
   it("retries an unchanged requirements body with the same command identity", () => {
     const channel = new Channel();
     render(<OperationWorkspace value={confirmation()} channel={channel} onChanged={vi.fn()} />);
-    fireEvent.click(screen.getByLabelText("生成报告（必需）"));
-    fireEvent.click(screen.getByLabelText("发送报告（必需）"));
+    // 2026-09-29：普通要求默认已勾成内容交付，直接确认
     const confirm = screen.getByRole("button", { name: "确认上述完成要求" });
     fireEvent.click(confirm);
     channel.reply("mission_operation_completion_approve", false);
@@ -124,8 +124,7 @@ describe("OperationWorkspace", () => {
     const channel = new Channel();
     const changed = vi.fn();
     const view = render(<OperationWorkspace value={confirmation()} channel={channel} onChanged={vi.fn()} />);
-    fireEvent.click(screen.getByLabelText("生成报告（必需）"));
-    fireEvent.click(screen.getByLabelText("发送报告（必需）"));
+    // 2026-09-29：普通要求默认已勾成内容交付，直接确认
     const confirm = screen.getByRole("button", { name: "确认上述完成要求" });
     fireEvent.click(confirm);
     const first = channel.sent[0];
@@ -148,16 +147,36 @@ describe("OperationWorkspace", () => {
   });
 });
 
-describe("全选（2026-09-25 真机点击：8 条要求要逐个勾）", () => {
-  it("一键勾选全部内容类要求并确认；再点全部取消", () => {
+describe("默认预填（2026-09-29 真机：对话卡片里确认要点十几下）", () => {
+  it("普通要求默认算内容交付；全部取消后可再全选", () => {
     const channel = new Channel();
     render(<OperationWorkspace value={confirmation()} channel={channel} onChanged={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "全选" }));
     for (const box of screen.getAllByRole("checkbox")) expect((box as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "全部取消" }));
+    for (const box of screen.getAllByRole("checkbox")) expect((box as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
     fireEvent.click(screen.getByRole("button", { name: "确认上述完成要求" }));
     const sent = channel.sent.filter(message => message.type === "mission_operation_completion_approve");
     expect((sent[0].payload as Record<string, any>).proposal.content_criterion_ids).toEqual(criteria.map(item => item.id));
-    fireEvent.click(screen.getByRole("button", { name: "全部取消" }));
-    for (const box of screen.getAllByRole("checkbox")) expect((box as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("每条发布要求默认各配一个效果（目标唯一时自动选好、完成标准默认哈希一致），一次点确认", () => {
+    const withPublish = [
+      { id: "c-1", statement: "写 README", required: true },
+      { id: "c-2", statement: "file:README.md", required: true },
+      { id: "c-3", statement: "action:file_publish.publish:README.md", required: true },
+      { id: "c-4", statement: "action:file_publish.publish:wordfreq.py", required: true },
+    ];
+    const hash = { ...milestone, id: "PUBLISHED_HASH_MATCHES", label: "已发布文件的内容哈希与批准产物一致" };
+    const value = { ...confirmation(), criteria: withPublish, milestones: [milestone, hash] };
+    const channel = new Channel();
+    render(<OperationWorkspace value={value} channel={channel} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "确认上述完成要求" }));
+    const proposal = (channel.sent[0].payload as Record<string, any>).proposal;
+    expect(proposal.mode).toBe("REQUIRED_EFFECTS");
+    expect(proposal.content_criterion_ids).toEqual(["c-1", "c-2"]);
+    expect(proposal.effects.map((e: Record<string, any>) => e.criterion_ids)).toEqual([["c-3"], ["c-4"]]);
+    expect(proposal.effects.every((e: Record<string, any>) =>
+      e.required_milestone === "PUBLISHED_HASH_MATCHES" && e.obligation_id === "obligation-1")).toBe(true);
   });
 });
