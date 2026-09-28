@@ -175,7 +175,7 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
         <div key={text(action.action_key)}>已发布：{text(action.target)} → {text(action.published_path)}</div>
       ))}
       {status === "FAILED" && text(mission.stop_reason) ? <div style={muted}>停止原因：{text(mission.stop_reason)}</div> : null}
-      {error ? <div role="alert" style={{ color: tokens.color.danger?.text ?? dark.text }}>{error}</div> : null}
+      {error ? <div role="alert" style={{ color: tokens.color.danger.fg }}>{error}</div> : null}
       <div style={muted}>完整过程在「任务编排」页。</div>
     </section>
   );
