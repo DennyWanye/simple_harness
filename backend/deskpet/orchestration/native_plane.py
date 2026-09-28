@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_orchestrator.runtime.assembly import OWNER_SCOPE
+from agent_orchestrator.runtime.mission_sources import MissionSourceReader
 from agent_orchestrator.runtime.native_plane import NativePlaneAssembly, intent_caller
 from agent_orchestrator.runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS
 from simple_harness.agents.arp.assurance_acceptance import AssuranceSkillAcceptance
@@ -229,6 +230,9 @@ class HostNativePlane:
         )
         self._meter_factory = meter_factory
         self._orchestrator: Any = None
+        # The SDK's own Mission source reader over this Orchestrator's records (bound late:
+        # pools are assembled before the Orchestrator exists).  The Host adds nothing to it.
+        self.mission_sources = MissionSourceReader(lambda: self._orchestrator)
         self.profiles: dict[str, dict[str, Any]] = {}
         self._runtimes: dict[str, Any] = {}
 
@@ -303,12 +307,13 @@ class HostNativePlane:
             embedding_deployment_ref=self.embedding_ref,
             catalogue_namespace_id=namespace,
         )
-        # STANDALONE_CHAT: the orchestrator creates every Agent from a frozen dispatch
-        # intent (config + input hash) and needs no Mission-mode source set; MISSION owner
-        # mode requires the exact TaskGraph / InputManifest / Assurance sources, which the
-        # SDK refuses by name until they exist (creation.py §2) — a recorded follow-up.
+        # MISSION (NEXT-TG-1.0 §10): every Agent of an orchestrator pool is created from
+        # the exact role-typed sources the SDK's own Mission source reader derives from the
+        # claimed dispatch intent, and each new request re-checks them.  Revision 2: the
+        # revision-1 STANDALONE_CHAT profile row stays in existing libraries and its old
+        # Sessions keep running under it; a profile row is never rewritten in place.
         profile = ArpRuntimeProfile(
-            profile_id=profile_id, profile_revision=1, owner_mode="STANDALONE_CHAT",
+            profile_id=profile_id, profile_revision=2, owner_mode="MISSION",
             allow_lexical_degradation=True, context_policy=policy, refs=refs,
         )
         self.profiles[profile_id] = {
@@ -317,7 +322,7 @@ class HostNativePlane:
             "embedding": "bge-m3-int8" if self.embedding is not None else "lexical-only",
             "embedding_reason": self.embedding_reason,
             "script_runner": "unavailable" if self.script_executor is None else f"sandbox:{self.script_executor.kind}",
-            "catalogue_namespace_id": namespace, "owner_mode": "STANDALONE_CHAT",
+            "catalogue_namespace_id": namespace, "owner_mode": "MISSION",
         }
 
         def after_build(runtime: Any) -> None:
@@ -335,6 +340,7 @@ class HostNativePlane:
                 meter=meter, embedding=self.embedding,
                 embedding_resource_ref=None if self.embedding is None else self.embedding_ref,
                 acceptance=acceptance, artifacts=self.artifacts,
+                mission_sources=self.mission_sources,
                 # SCRIPT skills run in the sandbox model-written code uses; without a
                 # proven sandbox they are refused by name (RUNNER_UNAVAILABLE).
                 script_runner=None if self.script_executor is None else SandboxScriptRunner(

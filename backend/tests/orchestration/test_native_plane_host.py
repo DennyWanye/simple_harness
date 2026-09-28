@@ -72,6 +72,11 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         assert rows["deepseek-native-256k-v1"]["native_plane"] is True and rows["deepseek-context-256k-v1"]["native_plane"] is False
         pool = service._orchestrator.assembled.pool("deepseek-native-256k-v1")
         assert pool.runtime.arp.protocol == "ARP_V1_1_1" and pool.bridge.native_plane is True
+        # NEXT-TG-1.0 §10: orchestrator pools create Agents in MISSION owner mode from the
+        # SDK's own Mission source reader (profile revision 2; revision 1 rows stay as they are).
+        assert pool.runtime.arp.profile.body["owner_mode"] == "MISSION" and pool.runtime.arp.profile.revision == 2
+        assert pool.runtime.arp.ports.mission_sources is service._native.mission_sources
+        assert all(p["owner_mode"] == "MISSION" for p in native["profiles"])
         assert service._orchestrator.assembled.pool("default").bridge.native_plane is False
         # Each pool has its own Assurance acceptance reader, bound to that pool's own Skill
         # lifecycle and to the orchestrator store (review finding: a shared reader answered
@@ -190,6 +195,18 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
         assert len(intents) == 1 and intents[0][0] == "BOUND" and "dispatch-intent:intent-plan-" in intents[0][1]
         metered = connection.execute("SELECT input_charge, input_budget FROM arp_context_requests").fetchall()
         assert len(metered) == 1 and 0 < metered[0][0] < metered[0][1]
+        # MISSION mode (NEXT-TG-1.0 §10): the method synthesizer's Session was created from the exact
+        # sources the SDK reader derived from its dispatch intent, and the frozen request
+        # was re-checked and carries them.
+        from simple_harness.agents.arp import mission_sources, store as arp_store
+        session = arp_store.read_live_session(connection, sessions[0][0])
+        record = mission_sources.read_record(connection, session.session_id)
+        assert record["sources"]["source_kind"] == "method_synthesizer" and record["sources"]["mission_id"] == mission_id
+        assert record["sources"]["input_manifest"] == {"not_applicable": "method_synthesizer_has_no_worker_attempt"}
+        [frozen] = [arp_store.read_context_by_request_key(connection, str(r[0])).manifest
+                    for r in connection.execute("SELECT original_request_key FROM arp_context_requests")]
+        assert mission_sources.record_pin(session.session_id, record).to_json() in frozen["authority_refs"]
+        assert frozen["owner_contract_ref"]["id"].endswith("owner-mode:MISSION")
         assert loop.assembled.pool("default").runtime.uow.database.connection.execute("SELECT COUNT(*) FROM provider_invocations").fetchone()[0] == 0
         tasks = loop.store.list_tasks(mission_id)
         assert tasks == []  # the fixture provider has no synthesizer script (see above)
