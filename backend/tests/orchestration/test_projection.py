@@ -287,3 +287,19 @@ def test_approval_text_is_marked_and_action_params_are_bounded():
     assert item["action"]["reason"] == {"text": "因为要改配置", "source": "model"}
     small = project_approval({**raw, "action": {"params": {"key": "feature_flags.new_ui"}}})
     assert small["action"]["params"] == {"key": "feature_flags.new_ui"}
+
+
+def test_an_action_approval_keeps_its_fields_and_the_reason_source():
+    """2026-09-29 真机：动作审批摘要整个转成文字后卡片只能显示原始字典；系统写的理由被标成模型写的。"""
+    from deskpet.orchestration.projection import project_approval
+
+    summary = {"connector": "file_publish", "operation": "publish", "target": "README.md",
+               "params": {"artifact_path": "README.md", "content_hash": "c9" * 32, "storage_uri": "/secret/path"},
+               "reason": "用户在确认页批准的操作：发布 README.md 到 README.md", "reason_source": "system"}
+    shown = project_approval({"request_id": "a-1", "kind": "action", "summary": summary})["summary"]
+    assert shown == {"connector": "file_publish", "operation": "publish", "target": "README.md",
+                     "params": {"artifact_path": "README.md"},
+                     "reason": "用户在确认页批准的操作：发布 README.md 到 README.md", "reason_source": "system"}
+    forged = project_approval({"request_id": "a-2", "kind": "action",
+                               "summary": {**summary, "reason_source": "model (untrusted)"}})["summary"]
+    assert forged["reason_source"] == "model"

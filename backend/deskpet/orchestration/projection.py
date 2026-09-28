@@ -498,10 +498,24 @@ def _comments(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _approval_summary(value: Any) -> dict[str, str]:
+def _approval_summary(value: Any) -> dict[str, Any]:
     """A review request carries the verification layers; an action request a sentence.
-    Either may hold model-written text, so the whole summary is marked as the model's."""
+    Either may hold model-written text, so the whole summary is marked as the model's.
 
+    2026-09-29 真机：动作审批的摘要是结构化的（连接器/操作/目标/参数/理由），整个转成一段
+    文字后卡片只能显示原始字典。保留要显示的字段；理由按记录的来源标注（系统按已批准效果
+    写的是 system，其余一律当模型写的）。"""
+
+    if isinstance(value, Mapping) and value.get("connector") and value.get("operation"):
+        params = value.get("params") if isinstance(value.get("params"), Mapping) else {}
+        return {
+            "connector": _short(value.get("connector"), 80),
+            "operation": _short(value.get("operation"), 80),
+            "target": _short(value.get("target"), PARAMS_LIMIT),
+            "params": {"artifact_path": _short(params.get("artifact_path"), PARAMS_LIMIT)},
+            "reason": _short(value.get("reason"), 600),
+            "reason_source": "system" if value.get("reason_source") == "system" else "model",
+        }
     if isinstance(value, Mapping) and isinstance(value.get("layers"), Sequence):
         parts = []
         for layer in value["layers"]:
