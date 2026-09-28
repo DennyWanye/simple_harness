@@ -437,7 +437,8 @@ function StepPanel({ step, title, execs, onPick, onClose, onLoadMoreEvents }: {
   onLoadMoreEvents?: () => void;
 }) {
   const display = phaseDisplay(step.phase);
-  const reason = readinessLabel(step.readiness);
+  const ended = display.tone === "done" || display.tone === "failed" || display.tone === "cancelled";
+  const reason = ended ? null : readinessLabel(step.readiness);
   return (
     <aside className="lg-panel" aria-label="步骤详情" data-testid="lg-panel">
       <div className="lg-bar">

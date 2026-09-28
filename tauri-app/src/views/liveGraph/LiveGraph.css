@@ -17,6 +17,8 @@
 .lg-node.lg-running { animation: lg-pulse 1.6s ease-in-out infinite; }
 @keyframes lg-pulse { 50% { box-shadow: 0 0 0 4px #3b82f633; } }
 .lg-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* 节点不可选、不可拖时 React Flow 给节点外层设 pointer-events:none，节点里的按钮要单独打开，否则点标题没反应（真机发现） */
+.react-flow__node button { pointer-events: all; }
 .lg-node .lg-title { flex: 1; min-width: 0; padding: 0; border: 0; text-align: left; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lg-node .lg-fold { padding: 0 6px; line-height: 18px; }
 .lg-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; color: var(--sh-text-2, #cbd5e1); }

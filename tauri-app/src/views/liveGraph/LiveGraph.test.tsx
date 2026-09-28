@@ -141,6 +141,16 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     expect(panel.textContent).toContain("修补请求");
   });
 
+  it("已完成的步骤详情不再显示「还没开始」的原因", () => {
+    const channel = mount();
+    channel.reply(SNAP, snapshot());
+    const list = screen.getByText("全部步骤（3）").closest("details")!;
+    fireEvent.click(within(list).getAllByRole("button")[1]);
+    const panel = screen.getByTestId("lg-panel");
+    expect(panel.textContent).toContain("完成");
+    expect(panel.textContent).not.toContain("未选入执行");
+  });
+
   it("断线时保留画面并提示；重连后自动重读；执行图启用故障直接显示原因", () => {
     const channel = new FakeChannel();
     render(<LiveGraph missionId={M} channel={channel}
