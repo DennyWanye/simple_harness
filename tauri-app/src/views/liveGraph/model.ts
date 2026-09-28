@@ -261,8 +261,14 @@ export function stepTitle(step: StepDuty | null | undefined, goal: string): stri
 }
 
 /** 模型原文给人看：去掉证据编号和内部 id（一串哈希没人看得懂）。 */
+/** 后台审阅层的英文原因 → 大白话（其余原样保留）。 */
+const ENGLISH_REASONS: [RegExp, string][] = [
+  [/critic verdict unusable:\s*Assurance review awaits original-call reconciliation\.?/gi, "审阅调用被打断，要等核对原调用结果，这次审阅作废"],
+  [/critic verdict unusable:\s*/gi, "审阅结论无法使用："],
+];
+
 export function cleanText(value: string): string {
-  return value
+  return ENGLISH_REASONS.reduce((text, [pattern, plain]) => text.replace(pattern, plain), value)
     .replace(/[（(]\s*(?:ev-[0-9a-f]+…?[、，,\s]*)+[)）]/g, "")
     .replace(/\bev-[0-9a-f]{6,}…?/g, "证据")
     .replace(/\b(?:occ|task|mi|agent|result|acc|pd|synth|artifact|mission|intent|subject|event|pkg)-[0-9a-f]{12,}(?::attempt-\d+)?(?:\s+v\d+)?\b/g, "")
@@ -277,6 +283,9 @@ export function stepProgress(step: StructureNode, attempts: ExecNode[]): string 
   const latest = attempts[attempts.length - 1];
   if (latest?.summary) return cleanText(latest.summary.text);
   if (latest) return execDisplay(latest).status.label;
+  // 已结束的步骤不再写"为什么还没开始"（就绪原因在步骤结束后不会更新）
+  const tone = phaseDisplay(step.phase).tone;
+  if (tone === "done" || tone === "failed" || tone === "cancelled") return "";
   const reason = readinessLabel(step.readiness);
   return reason && step.readiness !== "READY_CANDIDATE" ? reason : "";
 }

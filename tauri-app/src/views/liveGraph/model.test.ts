@@ -56,6 +56,15 @@ describe("显示", () => {
     expect(stepProgress(a, v.nodes.filter((n) => n.node_id === "attempt:a1"))).toBe("写好了 NOTES.md");
     expect(cleanText("见 (ev-0123456789ab) 与 task-0123456789abcdef0123 完成")).toBe("见 与 完成");
   });
+
+  it("审阅层英文原因换成大白话；已完成的步骤不再显示「等待拆分」这类就绪原因", () => {
+    expect(cleanText("critic verdict unusable: Assurance review awaits original-call reconciliation"))
+      .toBe("审阅调用被打断，要等核对原调用结果，这次审阅作废");
+    expect(cleanText("critic verdict unusable: bad json")).toBe("审阅结论无法使用：bad json");
+    const root = (phase: string) => ({ ...view().structure.find((n) => n.occurrence_id === "root")!, phase, readiness: "NEEDS_REFINEMENT" });
+    expect(stepProgress(root("resolution_committed"), [])).toBe("");
+    expect(stepProgress(root("planning_ready"), [])).toBe("等待拆分");
+  });
 });
 
 describe("执行过程放在哪、怎么连", () => {
