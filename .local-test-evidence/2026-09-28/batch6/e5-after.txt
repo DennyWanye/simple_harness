@@ -1,0 +1,13 @@
+mission mission-e8a294d104b20b8f COMPLETED
+intents with agents: 8
+AgentCreated events: 8
+artifacts: (11, 7)
+upper-bound: 9209faf34daa8e2176264cfe2ce1:1 294912
+deepseek-native-256k-thinking-v1 plan ssion-e8a294d104b20b8f:1 sessions 1 source_receipts 1 method_synthesizer
+deepseek-native-256k-thinking-v1 attempt 56d8c588a05a90:attempt-1 sessions 1 source_receipts 1 worker
+deepseek-native-256k-thinking-v1 critic f34daa8e2176264cfe2ce1:1 sessions 1 source_receipts 1 reviewer
+deepseek-native-256k-thinking-v1 plan a294d104b20b8f:planner:2 sessions 1 source_receipts 1 planner
+deepseek-native-256k-thinking-v1 attempt 56d8c588a05a90:attempt-2 sessions 1 source_receipts 1 worker
+deepseek-native-256k-thinking-v1 critic e70e192f16cb95b7be6813:1 sessions 1 source_receipts 1 reviewer
+deepseek-native-256k-thinking-v1 critic e70e192f16cb95b7be6813:2 sessions 1 source_receipts 1 reviewer
+deepseek-native-256k-thinking-v1 plan e15b5646d0576a6e60be09:1 sessions 1 source_receipts 1 reviewer

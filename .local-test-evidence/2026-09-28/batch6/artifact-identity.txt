@@ -1,0 +1,8 @@
+SDK 版本: 0.13.0.dev20260925+opt.61
+wheel 声明 SHA-256: 990cbf3fb4fb5cebdfd6576ab7656fa661ea83450d0bbae5dc12d8bda544fa66
+wheel 实际 SHA-256: 990cbf3fb4fb5cebdfd6576ab7656fa661ea83450d0bbae5dc12d8bda544fa66
+候选清单声明 SHA-256: 5ddbcd69cf223efe491fab4713e72425f89b88cfcd0d3be9be611e487c68c5a0
+SDK 源提交: da122cb6c66f167ea52dc51e8c88aef19b43efca
+Host HEAD: ecd1606415a75deba03e67c903c7cd1df962e8b8
+已安装包与内嵌源码逐文件比对：733 个文件，差异 0 个 []
+隔离环境 config.toml SHA-256: ee54693d96db5b381b2f9ff997e1502b9f8b800810dff66774613f1370add35d

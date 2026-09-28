@@ -1,0 +1,485 @@
+{
+ "mission_id": "mission-e8a294d104b20b8f",
+ "timeline": [
+  {
+   "t": 0,
+   "status": "ACTIVE",
+   "ui_state": "verifying"
+  }
+ ],
+ "final": {
+  "request_id": "c8c41757-d0de-41eb-9f90-f8733e937ee3",
+  "ok": true,
+  "data": {
+   "mission": {
+    "id": "mission-e8a294d104b20b8f",
+    "goal": "写一份三条的周会要点清单，保存为 notes.md：每条一句话，内容围绕'下周读书会的准备事项'。",
+    "success_criteria": [
+     "notes.md 存在，恰好三条要点",
+     "每条要点都与读书会准备有关"
+    ],
+    "status": "ACTIVE",
+    "stop_reason": null,
+    "created_at": 1790556739.1254551,
+    "version": 4,
+    "budget": {
+     "max_tokens": 20000000,
+     "max_cost_micros": null,
+     "max_attempts": 12,
+     "max_runtime_seconds": null,
+     "max_concurrency": null,
+     "max_tool_calls": null
+    },
+    "allowed_tools": [
+     "workspace_read_file",
+     "workspace_write_file",
+     "workspace_list",
+     "knowledge_list",
+     "knowledge_read",
+     "run_tests"
+    ],
+    "graph_version": 0,
+    "untrusted_sources": [],
+    "ui_state": "queued"
+   },
+   "tasks": [
+    {
+     "id": "desktop-root-mission-e8a294d104b20b8f",
+     "goal": {
+      "text": "写一份三条的周会要点清单，保存为 notes.md：每条一句话，内容围绕'下周读书会的准备事项'。",
+      "source": "model"
+     },
+     "status": "READY",
+     "kind": "work",
+     "dependency_ids": [],
+     "verification_policy": [
+      "format_check",
+      "rule_check",
+      "code_test"
+     ],
+     "attempt_count": 0,
+     "failure_reason": null,
+     "paused": false
+    },
+    {
+     "id": "task-287e33e0baf681380b56d8c588a05a90",
+     "goal": {
+      "text": "本步骤只负责：下列要求\n- notes 步骤的 delivery 输出证明 notes.md 文件已写入工作区，内容为三条周会要点清单\n- notes.md 中每条要点均为一句围绕'下周读书会的准备事项'的话，共三条\n整个任务的其他文件由计划中的其他步骤负责，本步骤不要创建或改写它们。\n整个任务（供理解上下文）：写一份三条的周会要点清单，保存为 notes.md：每条一句话，内容围绕'下周读书会的准备事项'。",
+      "source": "model"
+     },
+     "status": "COMPLETED",
+     "kind": "work",
+     "dependency_ids": [],
+     "verification_policy": [
+      "format_check",
+      "rule_check",
+      "code_test",
+      "critic_review"
+     ],
+     "attempt_count": 2,
+     "failure_reason": null,
+     "paused": false
+    }
+   ],
+   "attempts": [
+    {
+     "id": "task-287e33e0baf681380b56d8c588a05a90:attempt-1",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "status": "RETRY_WAIT",
+     "role": "worker",
+     "model": "deepseek-v4.1-flash",
+     "ordinal": 1,
+     "created_at": 1790556791.828599,
+     "reserved_tokens": 20000,
+     "failure": "{'failures': [{'detail': {}, 'layer': 'critic_review', 'status': 'ERROR', 'summary': 'critic verdict unusable: Assurance review awaits original-call reconciliation'}], 'reason': 'verification_failed'}"
+    },
+    {
+     "id": "task-287e33e0baf681380b56d8c588a05a90:attempt-2",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "status": "COMPLETED",
+     "role": "worker",
+     "model": "deepseek-v4.1-flash",
+     "ordinal": 2,
+     "created_at": 1790556911.6493068,
+     "reserved_tokens": 20000,
+     "failure": null
+    }
+   ],
+   "results": [
+    {
+     "result_id": "result-3149fe02db73ec4e",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-1",
+     "outcome": "candidate",
+     "summary": {
+      "text": "在工作区新建 notes.md，写入以「下周读书会准备事项」为主题的周会要点清单：标题行 + 恰好三条无序列表要点，每条为一句话，分别覆盖选书与阅读计划、场地与设备预定、讨论提纲与预习问题。写入后回读文件确认内容与行数与预期一致。本步骤仅创建 notes.md，未创建或改写其他文件；无适用 pytest 测试可运行（工作区不含测试文件）。",
+      "source": "model"
+     },
+     "claims": [
+      {
+       "text": "工作区中存在 notes.md，文件内容为三条周会要点清单（标题行 + 恰好三条列表项）。",
+       "source": "model"
+      },
+      {
+       "text": "notes.md 中恰好三条要点，且每条要点均为一句围绕「下周读书会的准备事项」的话。",
+       "source": "model"
+      }
+     ],
+     "verdict": "FAIL",
+     "verification_state": "DONE",
+     "final_rejection": null,
+     "verification_layers": [
+      {
+       "layer": "format_check",
+       "status": "PASS",
+       "summary": {
+        "text": "Result Envelope conforms to §26.4",
+        "source": "system"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "rule_check",
+       "status": "PASS",
+       "summary": {
+        "text": "artifacts, hashes, claims and file criteria consistent",
+        "source": "system"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "critic_review",
+       "status": "ERROR",
+       "summary": {
+        "text": "critic verdict unusable: Assurance review awaits original-call reconciliation",
+        "source": "model"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "code_test",
+       "status": "PASS",
+       "summary": {
+        "text": "not applicable, counts as satisfied: no pytest target was named and the workspace has no tests (exit 5)",
+        "source": "system"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "formal_check",
+       "status": "NOT_REQUIRED",
+       "summary": {
+        "text": "short-circuited",
+        "source": "system"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "human_review",
+       "status": "NOT_REQUIRED",
+       "summary": {
+        "text": "short-circuited",
+        "source": "system"
+       },
+       "undeployed": false
+      }
+     ]
+    },
+    {
+     "result_id": "result-c1206a3ad028cb61",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-2",
+     "outcome": "candidate",
+     "summary": {
+      "text": "在本步骤中确认并重写了工作区中的 notes.md（delivery 端口产物），文件为标题加恰好三条 Markdown 无序列表要点，每条均为一句围绕「下周读书会的准备事项」的话（分别涉及选定书目与发阅读计划、预定会议室与投影设备、整理讨论提纲与预习问题）。未创建或改写其他文件；工作区中不存在 pytest 测试，故无测试证据可引用。",
+      "source": "model"
+     },
+     "claims": [
+      {
+       "text": "notes.md 已写入工作区，内容为三条周会要点清单（标题 + 恰好 3 个无序列表项）。",
+       "source": "model"
+      },
+      {
+       "text": "notes.md 中恰好三条要点，每条均为一句关于下周读书会准备事项的话（选书目/发阅读计划、定会议室与设备、整理讨论提纲与预习问题）。",
+       "source": "model"
+      }
+     ],
+     "verdict": "PASS",
+     "verification_state": "DONE",
+     "final_rejection": null,
+     "verification_layers": [
+      {
+       "layer": "format_check",
+       "status": "PASS",
+       "summary": {
+        "text": "Result Envelope conforms to §26.4",
+        "source": "system"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "rule_check",
+       "status": "PASS",
+       "summary": {
+        "text": "artifacts, hashes, claims and file criteria consistent",
+        "source": "system"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "critic_review",
+       "status": "PASS",
+       "summary": {
+        "text": "critic found no blocker",
+        "source": "model"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "code_test",
+       "status": "PASS",
+       "summary": {
+        "text": "not applicable, counts as satisfied: no pytest target was named and the workspace has no tests (exit 5)",
+        "source": "system"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "formal_check",
+       "status": "NOT_REQUIRED",
+       "summary": {
+        "text": "not in the Task verification policy",
+        "source": "system"
+       },
+       "undeployed": false
+      },
+      {
+       "layer": "human_review",
+       "status": "NOT_REQUIRED",
+       "summary": {
+        "text": "not in the Task verification policy",
+        "source": "system"
+       },
+       "undeployed": false
+      }
+     ]
+    }
+   ],
+   "artifacts": [
+    {
+     "id": "assurance-check-output:2100079d27a0b8573443626c7106e3296326ac2b53e01807cdfeabd1b263c81a:0",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-1",
+     "path": ".assurance/checks/2100079d27a0b8573443626c7106e3296326ac2b53e01807cdfeabd1b263c81a/0.json",
+     "content_hash": "6101e91e736f9dfae2b1947e62797373dc20c4c19313b066bbad004f78f7b325",
+     "size_bytes": 163,
+     "verification_status": "UNVERIFIED"
+    },
+    {
+     "id": "assurance-check-output:3cada8ac40c8c1dd324978e17f1e3a803b37246ef4a0565a9e163c52c20bd656:0",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-1",
+     "path": ".assurance/checks/3cada8ac40c8c1dd324978e17f1e3a803b37246ef4a0565a9e163c52c20bd656/0.json",
+     "content_hash": "ddaa415c4cf201e18215170d2f4b4307e9d8ddb8a1bad09ea4781f9ab0482049",
+     "size_bytes": 182,
+     "verification_status": "UNVERIFIED"
+    },
+    {
+     "id": "assurance-check-output:48d1f39b476d80a906a12cde9fd553e30bddd9acd84ce6b2bed329b1fc2b4402:0",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-1",
+     "path": ".assurance/checks/48d1f39b476d80a906a12cde9fd553e30bddd9acd84ce6b2bed329b1fc2b4402/0.json",
+     "content_hash": "6101e91e736f9dfae2b1947e62797373dc20c4c19313b066bbad004f78f7b325",
+     "size_bytes": 163,
+     "verification_status": "UNVERIFIED"
+    },
+    {
+     "id": "assurance-check-output:64782a28e9e9953873143db483d6eb188f6290f6df7078fcf443112220a50717:0",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-1",
+     "path": ".assurance/checks/64782a28e9e9953873143db483d6eb188f6290f6df7078fcf443112220a50717/0.json",
+     "content_hash": "ddaa415c4cf201e18215170d2f4b4307e9d8ddb8a1bad09ea4781f9ab0482049",
+     "size_bytes": 182,
+     "verification_status": "UNVERIFIED"
+    },
+    {
+     "id": "assurance-executor-check-output:32ebd4036cd7061722eaba127c5d3c6b6fdc1c9babffef5de060c4214d2c9ed5:0",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-1",
+     "path": ".assurance/executor-checks/32ebd4036cd7061722eaba127c5d3c6b6fdc1c9babffef5de060c4214d2c9ed5/0.json",
+     "content_hash": "c8081dea9f978c100aa9b0337ce7467e6fd8253a4d4a23a391fb90044d7de271",
+     "size_bytes": 3697,
+     "verification_status": "UNVERIFIED"
+    },
+    {
+     "id": "assurance-executor-check-output:35c8f04d0c7d95d19b7b351f6075a40fede41f088066e89a409b0e0a052dc682:0",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-1",
+     "path": ".assurance/executor-checks/35c8f04d0c7d95d19b7b351f6075a40fede41f088066e89a409b0e0a052dc682/0.json",
+     "content_hash": "e85454ffd7d00ff45f990c0324031bd50f0755da51d2a5be81cfdabf1b5b69ab",
+     "size_bytes": 3697,
+     "verification_status": "UNVERIFIED"
+    },
+    {
+     "id": "artifact-7d00aa57730a9619",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-1",
+     "path": "notes.md",
+     "content_hash": "0eadc61d71c05b936658d661b8ac4fb8d82ac044884b8538ed6591eedbda1ee8",
+     "size_bytes": 404,
+     "verification_status": "REJECTED"
+    },
+    {
+     "id": "assurance-check-output:b007e1339e8f9d528fd3ac67815a42eb2fa3d97ac97e5ee0982b97151de7fe03:0",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-2",
+     "path": ".assurance/checks/b007e1339e8f9d528fd3ac67815a42eb2fa3d97ac97e5ee0982b97151de7fe03/0.json",
+     "content_hash": "3ca7fc3a42eff8e7c8cb3028d15f71aeb789405cfb7f960350117674513674e1",
+     "size_bytes": 182,
+     "verification_status": "UNVERIFIED"
+    },
+    {
+     "id": "assurance-check-output:f69201a4a0cf6a96f6321e34c2c2f381839aef10ea4b6e04bda4d5a5ce86186e:0",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-2",
+     "path": ".assurance/checks/f69201a4a0cf6a96f6321e34c2c2f381839aef10ea4b6e04bda4d5a5ce86186e/0.json",
+     "content_hash": "6101e91e736f9dfae2b1947e62797373dc20c4c19313b066bbad004f78f7b325",
+     "size_bytes": 163,
+     "verification_status": "UNVERIFIED"
+    },
+    {
+     "id": "assurance-executor-check-output:409dfdb731cda704eb7adfe2ad3a6e38544a6d64490057c87528357115587f0f:0",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-2",
+     "path": ".assurance/executor-checks/409dfdb731cda704eb7adfe2ad3a6e38544a6d64490057c87528357115587f0f/0.json",
+     "content_hash": "8973d2619844038eea5844aecc95cec40ec703f9094e4ae4cec51806256954c1",
+     "size_bytes": 3697,
+     "verification_status": "UNVERIFIED"
+    },
+    {
+     "id": "artifact-0271fa723999d85a",
+     "task_id": "task-287e33e0baf681380b56d8c588a05a90",
+     "attempt_id": "task-287e33e0baf681380b56d8c588a05a90:attempt-2",
+     "path": "notes.md",
+     "content_hash": "0eadc61d71c05b936658d661b8ac4fb8d82ac044884b8538ed6591eedbda1ee8",
+     "size_bytes": 404,
+     "verification_status": "VERIFIED"
+    }
+   ],
+   "actions": [],
+   "approvals": [],
+   "planning_questions": [],
+   "planning_authorization_requests": [],
+   "operation_workspace": {
+    "mission_id": "mission-e8a294d104b20b8f",
+    "state": "APPROVED",
+    "editable": true,
+    "requirements_ref": {
+     "kind": "requirements",
+     "id": "req-mission-e8a294d104b20b8f-1",
+     "revision": 1,
+     "content_hash": "86f1b779f74f0360334312c2fa734a33a016490e5c38f7136411a6ef1e1d6457"
+    },
+    "criteria": [
+     {
+      "id": "c-user-1",
+      "statement": "notes.md 存在，恰好三条要点",
+      "required": true
+     },
+     {
+      "id": "c-user-2",
+      "statement": "每条要点都与读书会准备有关",
+      "required": true
+     }
+    ],
+    "obligations": [],
+    "milestones": [
+     {
+      "id": "FILE_PUBLISHED",
+      "label": "文件已发布，并已读取核对内容",
+      "milestone_policy_ref": {
+       "id": "file-publish-milestone-policy-v1",
+       "revision": 1,
+       "content_hash": "1310d8d2c13965ffeb7e81dba69df1ce55621265f03a53eb24e7bed359fe4e31"
+      },
+      "evidence_policy_ref": {
+       "id": "file-publish-evidence-policy-v1",
+       "revision": 1,
+       "content_hash": "c0733efbc872299799cd56d2cdab5ff583ad741585ccf9c7a39362bd3b9fb72f"
+      }
+     },
+     {
+      "id": "CONTENT_HASH_VERIFIED",
+      "label": "已发布文件的内容哈希与批准产物一致",
+      "milestone_policy_ref": {
+       "id": "file-publish-milestone-policy-v1",
+       "revision": 1,
+       "content_hash": "1310d8d2c13965ffeb7e81dba69df1ce55621265f03a53eb24e7bed359fe4e31"
+      },
+      "evidence_policy_ref": {
+       "id": "file-publish-evidence-policy-v1",
+       "revision": 1,
+       "content_hash": "c0733efbc872299799cd56d2cdab5ff583ad741585ccf9c7a39362bd3b9fb72f"
+      }
+     }
+    ],
+    "spec": {
+     "schema_version": 1,
+     "mission_id": "mission-e8a294d104b20b8f",
+     "requirements_ref": {
+      "id": "req-mission-e8a294d104b20b8f-1",
+      "revision": 1,
+      "content_hash": "86f1b779f74f0360334312c2fa734a33a016490e5c38f7136411a6ef1e1d6457"
+     },
+     "mode": "CONTENT_ONLY",
+     "content_criterion_ids": [
+      "c-user-1",
+      "c-user-2"
+     ],
+     "effects": []
+    },
+    "spec_hash": "fd90a3a3f42f46d4130c40e01f3db652acd38a37a383eafbea39adf2c8d3b7e5",
+    "candidates": [],
+    "intents": []
+   },
+   "waiting_on": [],
+   "blocked": [],
+   "graph_changes": 0,
+   "conflicts": [],
+   "mission_policy": {
+    "version_id": "policy-f7a09cd555c83a12",
+    "source": "active"
+   },
+   "usage": {
+    "attempts": 2,
+    "reserved_tokens": 294912,
+    "settled_tokens": 272108,
+    "ledger_version": 38,
+    "amount_micros": null,
+    "priced": false
+   },
+   "event_count": 368,
+   "through_seq": 41084,
+   "search": {
+    "mode": "FIRST_VERIFIED",
+    "policy_version_id": null,
+    "rounds": [],
+    "candidates": [],
+    "decisions": [],
+    "graph_changes": [],
+    "fragments": []
+   },
+   "runtime_context": {
+    "profile_id": "deepseek-native-256k-thinking-v1",
+    "max_input_tokens": 262144,
+    "fingerprint": "612222617200a69de4c36a6fe2a31fceb9aac466404b33c28c21a8cf8063149c"
+   },
+   "taskgraph": {
+    "required": true,
+    "waiting": false,
+    "fault": null
+   }
+  }
+ },
+ "stalled": true
+}

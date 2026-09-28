@@ -1,0 +1,888 @@
+{
+ "status": {
+  "enabled": true,
+  "available": true,
+  "profiles": [
+   {
+    "profile_id": "deepseek-native-256k-v1",
+    "max_context_tokens": 262144,
+    "output_tokens": 32768,
+    "counter": "deepseek-v41:deb97fbaf8b2bdcd24d8dc222bd55fba2a6464a4b7f9f85de3da1e9d7e2eefb5:relay-tool-margin-floor-160",
+    "count_mode": "CERTIFIED_UPPER_BOUND",
+    "embedding": "bge-m3-int8",
+    "embedding_reason": null,
+    "script_runner": "sandbox:seatbelt",
+    "catalogue_namespace_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+    "owner_mode": "MISSION",
+    "catalogue_role": "owner",
+    "background": [
+     {
+      "loop": "index",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "draining",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "recall",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "tool_probe",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": 1790556401944,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "reap",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     }
+    ]
+   },
+   {
+    "profile_id": "deepseek-native-512k-v1",
+    "max_context_tokens": 524288,
+    "output_tokens": 32768,
+    "counter": "deepseek-v41:deb97fbaf8b2bdcd24d8dc222bd55fba2a6464a4b7f9f85de3da1e9d7e2eefb5:relay-tool-margin-floor-160",
+    "count_mode": "CERTIFIED_UPPER_BOUND",
+    "embedding": "bge-m3-int8",
+    "embedding_reason": null,
+    "script_runner": "sandbox:seatbelt",
+    "catalogue_namespace_id": "host:local-desktop:deepseek-native-512k-v1/agent-orchestrator/-",
+    "owner_mode": "MISSION",
+    "catalogue_role": "member",
+    "background": [
+     {
+      "loop": "index",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "draining",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "recall",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "tool_probe",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": 1790556401944,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "reap",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     }
+    ]
+   },
+   {
+    "profile_id": "deepseek-native-256k-thinking-v1",
+    "max_context_tokens": 262144,
+    "output_tokens": 32768,
+    "counter": "deepseek-v41:de2abaa3a931af4e6a0a1ce373d7e902585fdde2779163946f007b294e9beda4:relay-tool-margin-floor-160",
+    "count_mode": "CERTIFIED_UPPER_BOUND",
+    "embedding": "bge-m3-int8",
+    "embedding_reason": null,
+    "script_runner": "sandbox:seatbelt",
+    "catalogue_namespace_id": "host:local-desktop:deepseek-native-256k-thinking-v1/agent-orchestrator/-",
+    "owner_mode": "MISSION",
+    "catalogue_role": "member",
+    "background": [
+     {
+      "loop": "index",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "draining",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "recall",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "tool_probe",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": 1790556401927,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "reap",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     }
+    ]
+   },
+   {
+    "profile_id": "deepseek-native-512k-thinking-v1",
+    "max_context_tokens": 524288,
+    "output_tokens": 32768,
+    "counter": "deepseek-v41:de2abaa3a931af4e6a0a1ce373d7e902585fdde2779163946f007b294e9beda4:relay-tool-margin-floor-160",
+    "count_mode": "CERTIFIED_UPPER_BOUND",
+    "embedding": "bge-m3-int8",
+    "embedding_reason": null,
+    "script_runner": "sandbox:seatbelt",
+    "catalogue_namespace_id": "host:local-desktop:deepseek-native-512k-thinking-v1/agent-orchestrator/-",
+    "owner_mode": "MISSION",
+    "catalogue_role": "member",
+    "background": [
+     {
+      "loop": "index",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "draining",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "recall",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "tool_probe",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": 1790556401945,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     },
+     {
+      "loop": "reap",
+      "consecutive_failures": 0,
+      "last_ok_at_ms": null,
+      "last_error_at_ms": null,
+      "last_error_code": null,
+      "stuck_item": null
+     }
+    ]
+   }
+  ],
+  "embedding": "bge-m3-int8",
+  "embedding_reason": null,
+  "authorization_policy": "host-deployment-policy:06dfe71094db5fff",
+  "skill_catalogue_owner": "deepseek-native-256k-v1"
+ },
+ "before": {
+  "request_id": "a3371543-21ad-444d-aacc-621b7fb97006",
+  "ok": true,
+  "data": {
+   "owner": "deepseek-native-256k-v1",
+   "members": [
+    "deepseek-native-256k-thinking-v1",
+    "deepseek-native-512k-thinking-v1",
+    "deepseek-native-512k-v1"
+   ],
+   "namespace_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+   "registry_epoch": 3470,
+   "skills": []
+  }
+ },
+ "install": {
+  "request_id": "74a2f1b8-fd3e-4674-a18d-001e158b338a",
+  "ok": true,
+  "data": {
+   "response": {
+    "schema_version": 1,
+    "request_verb": "agent_skill_install",
+    "subject_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+    "view_revision": 1,
+    "as_of_context_id": null,
+    "items": [
+     {
+      "kind": "SKILL",
+      "definition_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "name": "meeting-notes",
+      "description": "把会议记录整理成要点清单。",
+      "state": "QUARANTINED",
+      "state_revision": 1,
+      "current_usable": false,
+      "reason_codes": [
+       "STATE_QUARANTINED"
+      ],
+      "registry_epoch": 3471,
+      "file_count": 1,
+      "total_payload_bytes": 159,
+      "detail_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "access_view": "MANAGEMENT"
+     }
+    ],
+    "next_cursor": null,
+    "error": null,
+    "command_receipt": {
+     "schema_version": 1,
+     "command_id": "skill-install:d86389a94fb917dc1e625bc411d52fa0",
+     "command_hash": "4417a9b4fee92437bb1f0b3b11c39f74b9a23791374e2a654f697c12d2384f9e",
+     "receipt_ref": {
+      "kind": "receipt",
+      "id": "host_command:skill-install:d86389a94fb917dc1e625bc411d52fa0",
+      "revision": 0,
+      "content_hash": "de8e5961aa8196757b55e843ec140b54ebe7e3754820d6a99630a05fb81a524d"
+     },
+     "subject_agent_id": null,
+     "subject_session_id": null,
+     "outcome": "APPLIED",
+     "result_ref": {
+      "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef",
+      "id": "meeting-notes",
+      "kind": "skill",
+      "revision": 1
+     },
+     "result_revision": 1,
+     "observed_at_ms": 1790556402200
+    },
+    "mirror": {
+     "owner": "deepseek-native-256k-v1",
+     "members": {
+      "deepseek-native-256k-thinking-v1": {
+       "skills": [
+        {
+         "skill_ref": {
+          "kind": "skill",
+          "id": "meeting-notes",
+          "revision": 1,
+          "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+         },
+         "mirrored": true,
+         "state": "QUARANTINED",
+         "owner_state": "QUARANTINED"
+        }
+       ]
+      },
+      "deepseek-native-512k-thinking-v1": {
+       "skills": [
+        {
+         "skill_ref": {
+          "kind": "skill",
+          "id": "meeting-notes",
+          "revision": 1,
+          "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+         },
+         "mirrored": true,
+         "state": "QUARANTINED",
+         "owner_state": "QUARANTINED"
+        }
+       ]
+      },
+      "deepseek-native-512k-v1": {
+       "skills": [
+        {
+         "skill_ref": {
+          "kind": "skill",
+          "id": "meeting-notes",
+          "revision": 1,
+          "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+         },
+         "mirrored": true,
+         "state": "QUARANTINED",
+         "owner_state": "QUARANTINED"
+        }
+       ]
+      }
+     }
+    }
+   },
+   "catalogue": {
+    "owner": "deepseek-native-256k-v1",
+    "members": [
+     "deepseek-native-256k-thinking-v1",
+     "deepseek-native-512k-thinking-v1",
+     "deepseek-native-512k-v1"
+    ],
+    "namespace_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+    "registry_epoch": 3471,
+    "skills": [
+     {
+      "skill_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "skill_id": "meeting-notes",
+      "version": 1,
+      "name": "meeting-notes",
+      "description": "把会议记录整理成要点清单。",
+      "state": "QUARANTINED",
+      "pools": {
+       "deepseek-native-256k-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED"
+        ]
+       },
+       "deepseek-native-256k-thinking-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED",
+         "SHARED_STATE_QUARANTINED"
+        ]
+       },
+       "deepseek-native-512k-thinking-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED",
+         "SHARED_STATE_QUARANTINED"
+        ]
+       },
+       "deepseek-native-512k-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED",
+         "SHARED_STATE_QUARANTINED"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ "install_again": {
+  "request_id": "b7f648fc-5a53-4ad8-8a93-891410ee9e52",
+  "ok": true,
+  "data": {
+   "response": {
+    "error": null,
+    "items": [
+     {
+      "kind": "SKILL",
+      "definition_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "name": "meeting-notes",
+      "description": "把会议记录整理成要点清单。",
+      "state": "QUARANTINED",
+      "state_revision": 1,
+      "current_usable": false,
+      "reason_codes": [
+       "STATE_QUARANTINED"
+      ],
+      "registry_epoch": 3471,
+      "file_count": 1,
+      "total_payload_bytes": 159,
+      "detail_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "access_view": "MANAGEMENT"
+     }
+    ],
+    "replayed": true,
+    "mirror": {
+     "owner": "deepseek-native-256k-v1",
+     "members": {
+      "deepseek-native-256k-thinking-v1": {
+       "skills": [
+        {
+         "skill_ref": {
+          "kind": "skill",
+          "id": "meeting-notes",
+          "revision": 1,
+          "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+         },
+         "mirrored": true,
+         "state": "QUARANTINED",
+         "owner_state": "QUARANTINED"
+        }
+       ]
+      },
+      "deepseek-native-512k-thinking-v1": {
+       "skills": [
+        {
+         "skill_ref": {
+          "kind": "skill",
+          "id": "meeting-notes",
+          "revision": 1,
+          "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+         },
+         "mirrored": true,
+         "state": "QUARANTINED",
+         "owner_state": "QUARANTINED"
+        }
+       ]
+      },
+      "deepseek-native-512k-v1": {
+       "skills": [
+        {
+         "skill_ref": {
+          "kind": "skill",
+          "id": "meeting-notes",
+          "revision": 1,
+          "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+         },
+         "mirrored": true,
+         "state": "QUARANTINED",
+         "owner_state": "QUARANTINED"
+        }
+       ]
+      }
+     }
+    }
+   },
+   "catalogue": {
+    "owner": "deepseek-native-256k-v1",
+    "members": [
+     "deepseek-native-256k-thinking-v1",
+     "deepseek-native-512k-thinking-v1",
+     "deepseek-native-512k-v1"
+    ],
+    "namespace_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+    "registry_epoch": 3471,
+    "skills": [
+     {
+      "skill_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "skill_id": "meeting-notes",
+      "version": 1,
+      "name": "meeting-notes",
+      "description": "把会议记录整理成要点清单。",
+      "state": "QUARANTINED",
+      "pools": {
+       "deepseek-native-256k-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED"
+        ]
+       },
+       "deepseek-native-256k-thinking-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED",
+         "SHARED_STATE_QUARANTINED"
+        ]
+       },
+       "deepseek-native-512k-thinking-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED",
+         "SHARED_STATE_QUARANTINED"
+        ]
+       },
+       "deepseek-native-512k-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED",
+         "SHARED_STATE_QUARANTINED"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ "suspend_refused": {
+  "request_id": "b1534229-ed04-4c11-9700-c2b5656d55e7",
+  "ok": true,
+  "data": {
+   "response": {
+    "schema_version": 1,
+    "request_verb": "agent_skill_suspend",
+    "subject_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+    "view_revision": 0,
+    "as_of_context_id": null,
+    "items": [],
+    "next_cursor": null,
+    "error": {
+     "schema_version": 1,
+     "code": "STATE_COMBINATION_INVALID",
+     "stage": "CONTRACT",
+     "retry": "NEVER",
+     "field_path": null,
+     "message": "STATE_COMBINATION_INVALID",
+     "source_refs": []
+    },
+    "command_receipt": null
+   },
+   "catalogue": {
+    "owner": "deepseek-native-256k-v1",
+    "members": [
+     "deepseek-native-256k-thinking-v1",
+     "deepseek-native-512k-thinking-v1",
+     "deepseek-native-512k-v1"
+    ],
+    "namespace_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+    "registry_epoch": 3471,
+    "skills": [
+     {
+      "skill_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "skill_id": "meeting-notes",
+      "version": 1,
+      "name": "meeting-notes",
+      "description": "把会议记录整理成要点清单。",
+      "state": "QUARANTINED",
+      "pools": {
+       "deepseek-native-256k-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED"
+        ]
+       },
+       "deepseek-native-256k-thinking-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED",
+         "SHARED_STATE_QUARANTINED"
+        ]
+       },
+       "deepseek-native-512k-thinking-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED",
+         "SHARED_STATE_QUARANTINED"
+        ]
+       },
+       "deepseek-native-512k-v1": {
+        "state": "QUARANTINED",
+        "usable": false,
+        "reasons": [
+         "STATE_QUARANTINED",
+         "SHARED_STATE_QUARANTINED"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ "retire": {
+  "request_id": "f2214574-9717-4865-a965-6a9b0e8d8b7e",
+  "ok": true,
+  "data": {
+   "response": {
+    "schema_version": 1,
+    "request_verb": "agent_skill_retire",
+    "subject_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+    "view_revision": 2,
+    "as_of_context_id": null,
+    "items": [
+     {
+      "kind": "SKILL",
+      "definition_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "name": "meeting-notes",
+      "description": "把会议记录整理成要点清单。",
+      "state": "RETIRED",
+      "state_revision": 2,
+      "current_usable": false,
+      "reason_codes": [
+       "STATE_RETIRED"
+      ],
+      "registry_epoch": 3472,
+      "file_count": 1,
+      "total_payload_bytes": 159,
+      "detail_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "access_view": "MANAGEMENT"
+     }
+    ],
+    "next_cursor": null,
+    "error": null,
+    "command_receipt": {
+     "schema_version": 1,
+     "command_id": "probe-r1",
+     "command_hash": "dfb2e9ac44f54d683b1df4bc8530ecf239baebbc0f3ce7e965b7ef444acd1e3a",
+     "receipt_ref": {
+      "kind": "receipt",
+      "id": "host_command:probe-r1",
+      "revision": 0,
+      "content_hash": "dfc4b11df822e5f86211f8ede776f62b14a9fcedcf883494cc164d73a0979a6b"
+     },
+     "subject_agent_id": null,
+     "subject_session_id": null,
+     "outcome": "APPLIED",
+     "result_ref": {
+      "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef",
+      "id": "meeting-notes",
+      "kind": "skill",
+      "revision": 1
+     },
+     "result_revision": 2,
+     "observed_at_ms": 1790556402816
+    },
+    "mirror": {
+     "owner": "deepseek-native-256k-v1",
+     "members": {
+      "deepseek-native-256k-thinking-v1": {
+       "skills": [
+        {
+         "skill_ref": {
+          "kind": "skill",
+          "id": "meeting-notes",
+          "revision": 1,
+          "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+         },
+         "mirrored": true,
+         "state": "RETIRED",
+         "owner_state": "RETIRED"
+        }
+       ]
+      },
+      "deepseek-native-512k-thinking-v1": {
+       "skills": [
+        {
+         "skill_ref": {
+          "kind": "skill",
+          "id": "meeting-notes",
+          "revision": 1,
+          "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+         },
+         "mirrored": true,
+         "state": "RETIRED",
+         "owner_state": "RETIRED"
+        }
+       ]
+      },
+      "deepseek-native-512k-v1": {
+       "skills": [
+        {
+         "skill_ref": {
+          "kind": "skill",
+          "id": "meeting-notes",
+          "revision": 1,
+          "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+         },
+         "mirrored": true,
+         "state": "RETIRED",
+         "owner_state": "RETIRED"
+        }
+       ]
+      }
+     }
+    }
+   },
+   "catalogue": {
+    "owner": "deepseek-native-256k-v1",
+    "members": [
+     "deepseek-native-256k-thinking-v1",
+     "deepseek-native-512k-thinking-v1",
+     "deepseek-native-512k-v1"
+    ],
+    "namespace_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+    "registry_epoch": 3472,
+    "skills": [
+     {
+      "skill_ref": {
+       "kind": "skill",
+       "id": "meeting-notes",
+       "revision": 1,
+       "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+      },
+      "skill_id": "meeting-notes",
+      "version": 1,
+      "name": "meeting-notes",
+      "description": "把会议记录整理成要点清单。",
+      "state": "RETIRED",
+      "pools": {
+       "deepseek-native-256k-v1": {
+        "state": "RETIRED",
+        "usable": false,
+        "reasons": [
+         "STATE_RETIRED"
+        ]
+       },
+       "deepseek-native-256k-thinking-v1": {
+        "state": "RETIRED",
+        "usable": false,
+        "reasons": [
+         "STATE_RETIRED",
+         "SHARED_STATE_RETIRED"
+        ]
+       },
+       "deepseek-native-512k-thinking-v1": {
+        "state": "RETIRED",
+        "usable": false,
+        "reasons": [
+         "STATE_RETIRED",
+         "SHARED_STATE_RETIRED"
+        ]
+       },
+       "deepseek-native-512k-v1": {
+        "state": "RETIRED",
+        "usable": false,
+        "reasons": [
+         "STATE_RETIRED",
+         "SHARED_STATE_RETIRED"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ "closed_verb": "no_response (not routed on the control channel)",
+ "after": {
+  "request_id": "eaa5fe02-9245-4f51-98bc-ed8d00cb675c",
+  "ok": true,
+  "data": {
+   "owner": "deepseek-native-256k-v1",
+   "members": [
+    "deepseek-native-256k-thinking-v1",
+    "deepseek-native-512k-thinking-v1",
+    "deepseek-native-512k-v1"
+   ],
+   "namespace_id": "host:local-desktop:deepseek-native-256k-v1/agent-orchestrator/-",
+   "registry_epoch": 3472,
+   "skills": [
+    {
+     "skill_ref": {
+      "kind": "skill",
+      "id": "meeting-notes",
+      "revision": 1,
+      "content_hash": "979aa8de5824dddb8e5123774548f319f1a0d18878aea2880dd95e8ef418e5ef"
+     },
+     "skill_id": "meeting-notes",
+     "version": 1,
+     "name": "meeting-notes",
+     "description": "把会议记录整理成要点清单。",
+     "state": "RETIRED",
+     "pools": {
+      "deepseek-native-256k-v1": {
+       "state": "RETIRED",
+       "usable": false,
+       "reasons": [
+        "STATE_RETIRED"
+       ]
+      },
+      "deepseek-native-256k-thinking-v1": {
+       "state": "RETIRED",
+       "usable": false,
+       "reasons": [
+        "STATE_RETIRED",
+        "SHARED_STATE_RETIRED"
+       ]
+      },
+      "deepseek-native-512k-thinking-v1": {
+       "state": "RETIRED",
+       "usable": false,
+       "reasons": [
+        "STATE_RETIRED",
+        "SHARED_STATE_RETIRED"
+       ]
+      },
+      "deepseek-native-512k-v1": {
+       "state": "RETIRED",
+       "usable": false,
+       "reasons": [
+        "STATE_RETIRED",
+        "SHARED_STATE_RETIRED"
+       ]
+      }
+     }
+    }
+   ]
+  }
+ }
+}
