@@ -1,4 +1,4 @@
-最后更新：2026-09-29 CST（发布交给系统 + 按谁的错扣次数，SDK opt.66–80；方案 `plans/2026-09-28-system-operations/00-PLAN.md`）。
+最后更新：2026-09-29 CST（发布交给系统 + 按谁的错扣次数，SDK opt.66–81；方案 `plans/2026-09-28-system-operations/00-PLAN.md`）。
 - **按谁的错扣次数**（第 1 批）：`orchestrator/failure_classes.py` 把尝试失败分成 模型做错 / 格式没写对 / 服务出错 / 被打断 四类；只有模型做错扣任务次数，其余在失败时退还（账本链与 `attempt_count` 同步退，按 `AttemptChargeReleased:<尝试>` 幂等）；同一步非模型失败合计 6 次停下（`non_model_failures_exhausted`）。
 - **发布交给系统**（第 2、3 批）：确认页批准的发布效果由系统按 `AUTHORIZED_SLOT` 自动准备申请单（`orchestrator/system_operations.py`），模型不写候选；申请单引用审过的真实文件，理由标 `reason_source=system`，人仍在批准卡片上逐个批准；找不到源文件时先请规划器补步骤（最多 2 次）再明确停下。
 - **后台只处理有变化的任务**（第 4 批）：主循环按"本轮开始时的全局非心跳事件游标"判断，只处理有新事件 / 满 10 秒 / 刚创建 / 总时限已到的任务；空闲返回前全量看一遍。真机采样：剩余 CPU 尖峰主要是会话向量索引（onnxruntime），编排主循环约占一核 14%。
@@ -10,7 +10,9 @@
 - **接力步骤交出全部文件**（opt.78）：输入与输出端口相同的续写步骤（如 `desktop.continue-delivery`）把通过核验的全部文件交给下一步（`overlay_attempt_inputs`，操作申请单除外）；此前只交端口文件 + 原工作区文件 + 测试文件，一步写三个文件时新写的模块被丢。
 - **端口规则只有一条**（opt.79）：完成协议下"这一步有哪些输出端口"，接受侧（`read_review_origin` → `declared_output_ports(own_ports=True)`）与核对侧（`output_ports_in_revision`）都算上这一步自己声明的端口；此前没下游、没被链接的最后一步两边算法不同，验收永远被拒。
 - **真机验收**：带重启的完整走通 = 第九局（任务页）；从主对话发起、对话里一次点击确认、卡片两次点击批准到完成 = 第十四局（两份发布逐字节一致，两步各一次通过）。第六～十三局各暴露并修掉一处缺陷，记录见方案 G 节。
-- 已知后续：被重启打断的审阅调用仍占用该审阅的一次重试机会；一步如实报告"卡住"（缺上游文件）时整局直接失败，不回规划器重排；规划器向人提问时的措辞可能把"系统发布"误说成步骤在发布。
+- **卡住交给规划器**（opt.81）：步骤如实报告卡住 / 失败 / 没进展（`OutcomeRecorded`）与结果被拒、验证失败一样生成规划修补请求（`planning_repair_requests.collect_triggers`，带步骤原话），由规划器决定重排、补步骤或重试；此前没人问规划器，几秒后判"没有可派发的工作"整局失败。
+- **被打断的审阅补一次机会**（opt.81）：审阅协议每个审阅只准调用 2 次。采集时若这次调用没提交、且错误码属于"被打断"，另记 `AssuranceReviewTurnInterrupted`（`failure_classes.record_review_interruption`，不改已有回执）。用完且第 2 次是被打断的：整局最终审查把 `REVIEW_INTERRUPTED` 作为包过期原因重切新包（新审阅，仍受每版切包上限）；发布结果审阅准备一次重审（清单加 `review_retake`，新审阅包与审阅编号，同一份回执；`outcome_retake_due` 只允许一次，重审再用完才停，`outcome_exhaustion_is_final`）。独立审阅无阻断项。
+- 已知后续：规划器向人提问时的措辞可能把"系统发布"误说成步骤在发布；重审的准备工作若每轮都失败会一直算合法等待（与首次准备失败同一既有行为）。
 
 最后更新：2026-09-28 CST（NEXT-TG-1.0 第三～五批，SDK opt.56–59）。
 - **执行过程只读接口**（第三批）：SDK `api/taskgraph.py` 新增 `execution_snapshot`（严格执行图 + 执行过程同一读取时点；键集分页，游标绑定任务/调用者/计划版本/清单哈希/执行内容哈希，变了报 `SNAPSHOT_CHANGED`）与 `execution_detail`（按执行意图所在执行池精确读回合记录；白名单只出模型可见原话、整形后的工具事实、提交摘要、审阅结论理由，全部脱敏）。投影 `orchestrator/taskgraph_execution_view.py`：尝试/检查/审阅/规划/修补请求/计划修订/操作节点与 attempt_of、rework_of、review_of 等因果边，全用记录下来的身份连接，不进调度图。Host 控制通道 `taskgraph.execution_snapshot/detail`；直读 SDK 表的 `live_graph.py` 与 `mission_live_graph`/`mission_planning_decisions` 已删除。
