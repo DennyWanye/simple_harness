@@ -1,0 +1,22 @@
+full_target 47 failed, 4454 passed, 8 skipped, 1 error in 357.87s (0:05:57)
+host_support 89 passed in 13.05s
+p32 7 failed, 141 passed in 37.40s
+p33 3 failed, 969 passed, 3 skipped in 56.03s
+p35 8 failed, 210 passed in 93.93s (0:01:33)
+step08 1 failed, 73 passed, 1 skipped in 149.97s (0:02:29)
+step09 2 failed, 40 passed, 1 skipped in 92.52s (0:01:32)
+lc2 23 passed in 10.17s
+p34 155 passed, 9 skipped in 49.70s
+step02 49 passed, 1 skipped in 35.80s
+step03 23 passed, 1 skipped in 40.79s
+step04 44 passed, 1 skipped in 27.03s
+step05 46 passed, 1 skipped in 22.48s
+step06 49 passed, 1 skipped in 44.70s
+step07 64 passed, 1 skipped in 21.25s
+gap_phase1 1 failed, 170 passed, 27 skipped, 14 errors in 13.90s
+p36 1 passed in 0.63s
+orch_root 15 passed in 4.26s
+non_orch 70 failed, 2560 passed, 14 skipped, 14 warnings, 19 errors in 99.56s (0:01:39)
+host 71 failed, 1145 passed, 20 skipped, 5 deselected in 662.20s (0:11:02)
+frontend       Tests  950 passed (950)
+ALL-DONE

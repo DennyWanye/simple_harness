@@ -1,0 +1,22 @@
+frontend: 相同 0，新增 0，消失 0 | 本次 Tests  950 passed (950) | 基线 Tests  947 passed (947)
+full_target: 相同 48，新增 0，消失 0 | 本次 47 failed, 4454 passed, 8 skipped, 1 error in 357.87s (0:05:57) | 基线 47 failed, 4437 passed, 8 skipped, 1 error in 339.68s (0:05:39)
+gap_phase1: 相同 15，新增 0，消失 0 | 本次 1 failed, 170 passed, 27 skipped, 14 errors in 13.90s | 基线 1 failed, 170 passed, 27 skipped, 14 errors in 13.87s
+host: 相同 70，新增 1，消失 0 | 本次 71 failed, 1145 passed, 20 skipped, 5 deselected in 662.20s (0:11:02) | 基线 70 failed, 1120 passed, 20 skipped, 5 deselected in 616.40s (0:10:16)
+   + FAILED tests/orchestration/test_native_search_fixture.py::test_p34_fragment_crossbranch_public_orchestrator
+host_support: 相同 0，新增 0，消失 0 | 本次 89 passed in 13.05s | 基线 89 passed in 13.04s
+lc2: 相同 0，新增 0，消失 0 | 本次 23 passed in 10.17s | 基线 23 passed in 10.16s
+non_orch: 相同 89，新增 0，消失 0 | 本次 70 failed, 2560 passed, 14 skipped, 14 warnings, 19 errors in 99.56s (0:01:39) | 基线 70 failed, 2555 passed, 14 skipped, 14 warnings, 19 errors in 96.62s (0:01:36)
+orch_root: 相同 0，新增 0，消失 0 | 本次 15 passed in 4.26s | 基线 15 passed in 4.43s
+p32: 相同 7，新增 0，消失 0 | 本次 7 failed, 141 passed in 37.40s | 基线 7 failed, 141 passed in 37.27s
+p33: 相同 3，新增 0，消失 0 | 本次 3 failed, 969 passed, 3 skipped in 56.03s | 基线 3 failed, 969 passed, 3 skipped in 61.60s (0:01:01)
+p34: 相同 0，新增 0，消失 0 | 本次 155 passed, 9 skipped in 49.70s | 基线 155 passed, 9 skipped in 50.84s
+p35: 相同 8，新增 0，消失 0 | 本次 8 failed, 210 passed in 93.93s (0:01:33) | 基线 8 failed, 208 passed in 94.07s (0:01:34)
+p36: 相同 0，新增 0，消失 0 | 本次 1 passed in 0.63s | 基线 1 passed in 0.66s
+step02: 相同 0，新增 0，消失 0 | 本次 49 passed, 1 skipped in 35.80s | 基线 49 passed, 1 skipped in 35.95s
+step03: 相同 0，新增 0，消失 0 | 本次 23 passed, 1 skipped in 40.79s | 基线 23 passed, 1 skipped in 40.86s
+step04: 相同 0，新增 0，消失 0 | 本次 44 passed, 1 skipped in 27.03s | 基线 44 passed, 1 skipped in 26.78s
+step05: 相同 0，新增 0，消失 0 | 本次 46 passed, 1 skipped in 22.48s | 基线 46 passed, 1 skipped in 22.54s
+step06: 相同 0，新增 0，消失 0 | 本次 49 passed, 1 skipped in 44.70s | 基线 49 passed, 1 skipped in 44.55s
+step07: 相同 0，新增 0，消失 0 | 本次 64 passed, 1 skipped in 21.25s | 基线 64 passed, 1 skipped in 21.11s
+step08: 相同 1，新增 0，消失 0 | 本次 1 failed, 73 passed, 1 skipped in 149.97s (0:02:29) | 基线 1 failed, 73 passed, 1 skipped in 150.22s (0:02:30)
+step09: 相同 2，新增 0，消失 0 | 本次 2 failed, 40 passed, 1 skipped in 92.52s (0:01:32) | 基线 2 failed, 40 passed, 1 skipped in 92.92s (0:01:32)

@@ -1,0 +1,6 @@
+收口后全量回归（只跑这一次），SDK opt.90 / Host 0d41b20e，2026-09-29 夜，与 final-opt80 逐条对比（compare.py → compare.txt）：
+SDK 19 组：新增失败 0、消失 0。既有失败原样保留（full_target 47+1 错误、p32 7、p33 3、p35 8、step08 1、step09 2、gap_phase1 1+14 错误、non_orch 70+19 错误）；通过数增加来自收口新增测试（full_target +17、p35 +2、non_orch +5）。
+Host tests/orchestration + tests/sdk_adapters：71 失败，其中 70 条与基线相同；新增 1 条 test_native_search_fixture.py::test_p34_fragment_crossbranch_public_orchestrator：
+  全量里编排运行超时被取消（该夹具租约 0.3 秒，对机器负载敏感）；单独跑通过（3.4 秒），整文件连跑 3 遍均 2 passed → 判为负载下的计时抖动，不是新缺陷。
+前端 vitest：950 全部通过（基线 947，新增 3 条为收口新增测试）。
+跑之前核对：部署清单按 opt.90 源码重新生成无差异；隔离应用已关闭。
