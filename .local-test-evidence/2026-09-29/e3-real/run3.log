@@ -1,0 +1,22 @@
+created {"ok": true, "mission_id": "mission-20e304f76319a0ff", "error": null}
+confirm {"ok": true, "error": null, "content": ["c-user-1", "c-user-2", "c-user-3", "c-user-4"], "effects": []}
+mission ["CREATED", "received", "CONFIRMATION_REQUIRED"]
+event {"seq": 60261, "type": "MissionPlanning"}
+mission ["PLANNING", "received", "APPROVED"]
+planning_authorization_request {"mission_id": "mission-20e304f76319a0ff", "request_id": "intent-plan-mission-20e304f76319a0ff:planner:1", "intent_id": "intent-plan-mission-20e304f76319a0ff:planner:1", "state": "AUTHORIZATION_REQUIRED"}
+event {"seq": 60351, "type": "PlanningDeploymentBound"}
+mission ["PLANNING", "waiting_person", "APPROVED"]
+event {"seq": 60422, "type": "NativePlanningDecisionPrepared"}
+event {"seq": 60439, "type": "PlanRevisionCommitted"}
+event {"seq": 60444, "type": "PlanningDecisionEvaluated"}
+mission ["ACTIVE", "running", "APPROVED"]
+mission ["ACTIVE", "verifying", "APPROVED"]
+event {"seq": 60749, "type": "TaskCompleted"}
+mission ["ACTIVE", "queued", "APPROVED"]
+mission ["ACTIVE", "running", "APPROVED"]
+event {"seq": 60801, "type": "PlanningRepairRequested"}
+event {"seq": 60804, "type": "PlanningServiceResumed"}
+mission ["ACTIVE", "queued", "APPROVED"]
+event {"seq": 60815, "type": "PlanningDecisionEvaluated"}
+event {"seq": 60821, "type": "TaskCancelled"}
+mission ["FAILED", "failed", "APPROVED"]

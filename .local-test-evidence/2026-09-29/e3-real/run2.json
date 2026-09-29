@@ -1,0 +1,208 @@
+{
+ "task": {
+  "goal": "完成两件互不相关的事：(1) 把下面的团队值班规则整理成 oncall.md：每周一 10 点交接；值班人手机 24 小时开机；P1 故障 15 分钟内响应；交接时写清未关闭事项。(2) 读取工作区里的 data/sales.csv，按地区汇总三个月的销售额，写成 sales_report.md。",
+  "success_criteria": [
+   "file:oncall.md",
+   "oncall.md 完整列出上面 4 条值班规则",
+   "file:sales_report.md",
+   "sales_report.md 含按地区汇总的表格，数字与 data/sales.csv 一致"
+  ]
+ },
+ "steps": [
+  {
+   "t": 0,
+   "created": {
+    "ok": true,
+    "mission_id": "mission-efbffe05f6a5f6a2",
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "confirm": {
+    "ok": true,
+    "error": null,
+    "content": [
+     "c-user-1",
+     "c-user-2",
+     "c-user-3",
+     "c-user-4"
+    ],
+    "effects": []
+   }
+  },
+  {
+   "t": 0,
+   "mission": [
+    "CREATED",
+    "received",
+    "CONFIRMATION_REQUIRED"
+   ]
+  },
+  {
+   "t": 15,
+   "event": {
+    "seq": 59673,
+    "type": "MissionPlanning"
+   }
+  },
+  {
+   "t": 15,
+   "mission": [
+    "PLANNING",
+    "received",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 30,
+   "planning_authorization_request": {
+    "mission_id": "mission-efbffe05f6a5f6a2",
+    "request_id": "intent-plan-mission-efbffe05f6a5f6a2:planner:1",
+    "intent_id": "intent-plan-mission-efbffe05f6a5f6a2:planner:1",
+    "state": "AUTHORIZATION_REQUIRED"
+   }
+  },
+  {
+   "t": 30,
+   "event": {
+    "seq": 59762,
+    "type": "PlanningDeploymentBound"
+   }
+  },
+  {
+   "t": 30,
+   "mission": [
+    "PLANNING",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 45,
+   "event": {
+    "seq": 59810,
+    "type": "NativePlanningDecisionPrepared"
+   }
+  },
+  {
+   "t": 45,
+   "event": {
+    "seq": 59827,
+    "type": "PlanRevisionCommitted"
+   }
+  },
+  {
+   "t": 45,
+   "event": {
+    "seq": 59832,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 45,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 76,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 107,
+   "event": {
+    "seq": 60159,
+    "type": "TaskCompleted"
+   }
+  },
+  {
+   "t": 107,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 122,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 198,
+   "event": {
+    "seq": 60208,
+    "type": "PlanningRepairRequested"
+   }
+  },
+  {
+   "t": 198,
+   "event": {
+    "seq": 60211,
+    "type": "PlanningServiceResumed"
+   }
+  },
+  {
+   "t": 198,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 228,
+   "event": {
+    "seq": 60222,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 228,
+   "event": {
+    "seq": 60225,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 273,
+   "event": {
+    "seq": 60234,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 273,
+   "event": {
+    "seq": 60237,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 273,
+   "event": {
+    "seq": 60238,
+    "type": "TaskCancelled"
+   }
+  },
+  {
+   "t": 273,
+   "mission": [
+    "FAILED",
+    "failed",
+    "APPROVED"
+   ]
+  }
+ ],
+ "mission_id": "mission-efbffe05f6a5f6a2"
+}

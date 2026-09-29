@@ -1,0 +1,130 @@
+{
+ "task": {
+  "goal": "把下面这周的工作记录整理成一份周报正文，保存为 draft/report.md（只写这一个文件）。定稿后要把它发布为 weekly.md。工作记录：周一修复登录超时；周二评审支付模块设计；周三上线搜索分页；周四排查内存泄漏；周五编写下周计划。",
+  "success_criteria": [
+   "file:draft/report.md",
+   "draft/report.md 至少三节：本周完成、问题与风险、下周计划",
+   "action:file_publish.publish:weekly.md"
+  ]
+ },
+ "steps": [
+  {
+   "t": 0,
+   "attached": {
+    "mission_id": "mission-4e7e626691f5744d"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 58863,
+    "type": "OperationCompletionSpecApproved"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 58864,
+    "type": "MissionPlanning"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 58952,
+    "type": "PlanningDeploymentBound"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 59023,
+    "type": "NativePlanningDecisionPrepared"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 59040,
+    "type": "PlanRevisionCommitted"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 59045,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 0,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 15,
+   "event": {
+    "seq": 59491,
+    "type": "OperationIntentSubmitted"
+   }
+  },
+  {
+   "t": 91,
+   "approve": {
+    "approval_id": "approval-action-01bed7feca2ea7b1:v1",
+    "kind": "action",
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 91,
+   "event": {
+    "seq": 59536,
+    "type": "OperationMaterialized"
+   }
+  },
+  {
+   "t": 91,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 106,
+   "event": {
+    "seq": 59557,
+    "type": "OperationOutcomeReviewPrepared"
+   }
+  },
+  {
+   "t": 106,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 138,
+   "event": {
+    "seq": 59596,
+    "type": "OperationOutcomeAccepted"
+   }
+  },
+  {
+   "t": 230,
+   "mission": [
+    "COMPLETED",
+    "delivered",
+    "APPROVED"
+   ]
+  }
+ ],
+ "mission_id": "mission-4e7e626691f5744d"
+}

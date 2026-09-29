@@ -1,0 +1,16 @@
+created {"ok": true, "mission_id": "mission-4e7e626691f5744d", "error": null}
+confirm {"ok": true, "error": null, "content": ["c-user-1", "c-user-2", "c-user-3"], "effects": [["c-user-4"]]}
+event {"seq": 58863, "type": "OperationCompletionSpecApproved"}
+mission ["CREATED", "received", "CONFIRMATION_REQUIRED"]
+event {"seq": 58864, "type": "MissionPlanning"}
+mission ["PLANNING", "received", "APPROVED"]
+event {"seq": 58952, "type": "PlanningDeploymentBound"}
+event {"seq": 59023, "type": "NativePlanningDecisionPrepared"}
+event {"seq": 59040, "type": "PlanRevisionCommitted"}
+event {"seq": 59045, "type": "PlanningDecisionEvaluated"}
+mission ["ACTIVE", "running", "APPROVED"]
+mission ["ACTIVE", "verifying", "APPROVED"]
+mission ["ACTIVE", "running", "APPROVED"]
+mission ["ACTIVE", "verifying", "APPROVED"]
+mission ["ACTIVE", "queued", "APPROVED"]
+watchdog "stalled_or_timeout"

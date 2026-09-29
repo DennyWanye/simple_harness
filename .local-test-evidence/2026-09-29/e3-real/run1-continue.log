@@ -1,0 +1,16 @@
+attached {"mission_id": "mission-4e7e626691f5744d"}
+event {"seq": 58863, "type": "OperationCompletionSpecApproved"}
+event {"seq": 58864, "type": "MissionPlanning"}
+event {"seq": 58952, "type": "PlanningDeploymentBound"}
+event {"seq": 59023, "type": "NativePlanningDecisionPrepared"}
+event {"seq": 59040, "type": "PlanRevisionCommitted"}
+event {"seq": 59045, "type": "PlanningDecisionEvaluated"}
+mission ["ACTIVE", "queued", "APPROVED"]
+event {"seq": 59491, "type": "OperationIntentSubmitted"}
+approve {"approval_id": "approval-action-01bed7feca2ea7b1:v1", "kind": "action", "ok": true, "error": null}
+event {"seq": 59536, "type": "OperationMaterialized"}
+mission ["ACTIVE", "waiting_person", "APPROVED"]
+event {"seq": 59557, "type": "OperationOutcomeReviewPrepared"}
+mission ["ACTIVE", "queued", "APPROVED"]
+event {"seq": 59596, "type": "OperationOutcomeAccepted"}
+mission ["COMPLETED", "delivered", "APPROVED"]
