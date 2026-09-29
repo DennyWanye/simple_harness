@@ -1,0 +1,16 @@
+created {"ok": true, "mission_id": "mission-c34feea2d36770ce", "error": null, "data": {"created": true, "spec_hash": "b3f8e61ff7b4337dadc0b0bfbb33f59fbd19cd16cb5fc73296726e4f0c6188c4", "status": "CREATED", "command_id": "mission-source-batch-c34feea2d36770cec427f14e9d4e0164f1aa1412e61f8b364fb3978936c764d2", "batch_hash": "b9c2f0a7a680961db4eed69d0446a7b0a377b9db50f6aafae12f3f151a604353", "source_versions": {"sources/sales.csv": "9805d425257d63cec80adfe207e3ac14d0ed2b7975dcb4b361a569e3d65d245c"}, "sources": [{"command_id": "source-0cb144a6c2f7fd5f7782ee13c1041545128aebeb2c76774187955d3ff26c7afd", "body_hash": "699946380b889b0557f322b2247c1b08233587d8bac4f7f6ff10956a5a17a5ed", "mission_id": "mission-c
+confirm {"ok": true, "error": null}
+mission ["CREATED", "received", "CONFIRMATION_REQUIRED"]
+mission ["PLANNING", "received", "APPROVED"]
+supersede {"ok": true, "error": null, "data": {"command_id": "source-ac902feef5df39d74c37d112b623bcb8b4518aec262b9ead7b989e8231a99cae", "body_hash": "ae1c071c67a1b80a6698c91b67d1c52252e85a783630300ff5edc06a4da2f098", "mission_id": "mission-c34feea2d36770ce", "path": "sources/sales.csv", "version_hash": "1ac4b6b465769092f9270aca5f3a761e31099f5740546ff506684014870b1b05", "state": "PENDING", "request_id": "approval-source-ac902feef5df39d74c37d112b623bcb8b4518aec262b9ead7b989e8231a99cae", "binding_hash": "70703f45b7434c521419d19026579e313ec5b83f688ee44294a36015a9f79a37"}}
+approve {"approval_id": "approval-source-ac902feef5df39d74c37d112b623bcb8b4518aec262b9ead7b989e8231a99cae", "kind": "source_change", "ok": true, "error": null}
+mission ["ACTIVE", "running", "APPROVED"]
+mission ["ACTIVE", "verifying", "APPROVED"]
+mission ["ACTIVE", "queued", "APPROVED"]
+mission ["ACTIVE", "running", "APPROVED"]
+mission ["ACTIVE", "verifying", "APPROVED"]
+mission ["ACTIVE", "queued", "APPROVED"]
+mission ["ACTIVE", "running", "APPROVED"]
+mission ["ACTIVE", "verifying", "APPROVED"]
+mission ["ACTIVE", "queued", "APPROVED"]
+mission ["COMPLETED", "delivered", "APPROVED"]
