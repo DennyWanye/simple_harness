@@ -31,8 +31,9 @@ def test_service_name_is_registered():
 def test_settings_default_on_and_conservative():
     settings = OrchestrationSettings()
     assert settings.enabled is True  # CLAUDE.md: tested capabilities ship on
-    assert settings.max_concurrency == 1
-    assert settings.max_concurrent_model_calls == 1
+    # NEXT-TG-1.0 §9: two Missions progress at once by default (the SDK's defaults)
+    assert settings.max_concurrency == 2
+    assert settings.max_concurrent_model_calls == 2
     # plan v3 (P3.1 §3.1): no switch for running model-written code on this machine
     assert not hasattr(settings, "allow_local_tests")
 

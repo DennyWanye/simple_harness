@@ -129,8 +129,13 @@ async def test_p34_public_ui_shape_through_real_host_service_defaults(
     monkeypatch.setenv("DESKPET_ORCH_UI_FIXTURE_DIR", str(root))
     monkeypatch.setenv("DESKPET_ORCH_UI_FIXTURE_CASE", CASE)
     library = root / "library"
+    # NEXT-TG-1.0 §9 (2026-09-29): the Host default is now two slots.  This scripted
+    # legacy flat-path oracle counts exactly two failed attempts before the Manager; with
+    # two slots the old flat path can dispatch a third retry while the second one's
+    # review is still running (a named follow-up in PLAN-STATUS; the hierarchical path
+    # the product uses is not affected).  The oracle keeps its serial settings.
     service = OrchestrationService(
-        library, OrchestrationSettings(), principal=principal,
+        library, OrchestrationSettings(max_concurrency=1, max_concurrent_model_calls=1), principal=principal,
         test_scenario="document-ui", drive=False,
     )
     await asyncio.wait_for(service.start(), 20)

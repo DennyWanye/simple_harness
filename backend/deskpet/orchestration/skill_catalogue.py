@@ -135,9 +135,11 @@ def _goal(revision: Any) -> tuple[str, list[str]]:
     description = str(body.get("description") or "")[:600]
     goal = (
         f"试用评估技能「{name}」（第 {revision.revision} 版）{('：' + description) if description else ''}。"
-        f"先用 skill_discover 找到这个技能，按它的用途设计一个小而具体的示例，用 skill_load 或 skill_execute 实际调用它，"
+        f"先查看技能目录找到这个技能，按它的用途设计一个小而具体的示例，实际调用它一次（装载它的说明或执行它），"
         f"把调用方式、技能返回的要点和试用结论写进 {EVALUATION_REPORT}。"
     )
+    # 2026-09-29 真机：目标里直接写工具名，没有工具的方法合成器也试着调用，两次都以
+    # 服务商"工具调用解析失败"结束。只写做什么；三件技能工具只有执行者有。
     criteria = [
         f"file:{EVALUATION_REPORT}",
         f"{EVALUATION_REPORT} 写明实际调用了技能「{name}」的哪种方式（装载说明或执行），并摘录技能返回的要点",

@@ -55,6 +55,8 @@ async def test_evaluate_starts_the_trial_mission_and_link_and_admission_waits_fo
         assert mission.idempotency_key == evaluation_mission_key(Pin.from_json(binding["evaluation_ref"]))
         assert "notes-skill" in mission.goal and "skill-trial.md" in mission.goal
         assert "file:skill-trial.md" in mission.success_criteria
+        # no tool name in the words every planning role reads (only the Worker has them)
+        assert not any(name in mission.goal + "".join(mission.success_criteria) for name in ("skill_discover", "skill_load", "skill_execute"))
         # linked at once to the root task, so its Worker may use the Skill in TRIAL
         dispatch = owner.arp.lifecycle.dispatch_for(Pin.from_json(binding["evaluation_ref"]))
         assert dispatch["mission_id"] == mission_id and dispatch["task_id"] == "desktop-root-" + mission_id
