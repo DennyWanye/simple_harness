@@ -1,6 +1,6 @@
 # NEXT-TG-1.0 进度（plan-status）
 
-后续 Agent 先读 [HANDOFF-2026-09-28.md](HANDOFF-2026-09-28.md)（最新交接：基线、剩余批次、规则、操作配方），再读本文件与 [NEXT-TG-1.0-计划.md](NEXT-TG-1.0-计划.md)（PlanAgent 方案，已获用户同意执行）；[HANDOFF.md](HANDOFF.md) 是 09-27 开工前背景。每完成一步就更新本文件：做了什么、证据在哪、还剩什么。
+**2026-09-29 最新交接：[HANDOFF-2026-09-29.md](HANDOFF-2026-09-29.md)（阶段完成标准剩余缺口与接手顺序）。** 后续 Agent 先读它，再读 [HANDOFF-2026-09-28.md](HANDOFF-2026-09-28.md)（最新交接：基线、剩余批次、规则、操作配方），再读本文件与 [NEXT-TG-1.0-计划.md](NEXT-TG-1.0-计划.md)（PlanAgent 方案，已获用户同意执行）；[HANDOFF.md](HANDOFF.md) 是 09-27 开工前背景。每完成一步就更新本文件：做了什么、证据在哪、还剩什么。
 
 ## 总览
 
