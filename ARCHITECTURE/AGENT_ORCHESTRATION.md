@@ -1,4 +1,4 @@
-最后更新：2026-09-29 CST（发布交给系统 + 按谁的错扣次数，SDK opt.66–81；方案 `plans/2026-09-28-system-operations/00-PLAN.md`）。
+最后更新：2026-09-29 CST（发布交给系统 + 按谁的错扣次数，SDK opt.66–82；方案 `plans/2026-09-28-system-operations/00-PLAN.md`）。
 - **按谁的错扣次数**（第 1 批）：`orchestrator/failure_classes.py` 把尝试失败分成 模型做错 / 格式没写对 / 服务出错 / 被打断 四类；只有模型做错扣任务次数，其余在失败时退还（账本链与 `attempt_count` 同步退，按 `AttemptChargeReleased:<尝试>` 幂等）；同一步非模型失败合计 6 次停下（`non_model_failures_exhausted`）。
 - **发布交给系统**（第 2、3 批）：确认页批准的发布效果由系统按 `AUTHORIZED_SLOT` 自动准备申请单（`orchestrator/system_operations.py`），模型不写候选；申请单引用审过的真实文件，理由标 `reason_source=system`，人仍在批准卡片上逐个批准；找不到源文件时先请规划器补步骤（最多 2 次）再明确停下。
 - **后台只处理有变化的任务**（第 4 批）：主循环按"本轮开始时的全局非心跳事件游标"判断，只处理有新事件 / 满 10 秒 / 刚创建 / 总时限已到的任务；空闲返回前全量看一遍。真机采样：剩余 CPU 尖峰主要是会话向量索引（onnxruntime），编排主循环约占一核 14%。
@@ -11,7 +11,7 @@
 - **端口规则只有一条**（opt.79）：完成协议下"这一步有哪些输出端口"，接受侧（`read_review_origin` → `declared_output_ports(own_ports=True)`）与核对侧（`output_ports_in_revision`）都算上这一步自己声明的端口；此前没下游、没被链接的最后一步两边算法不同，验收永远被拒。
 - **真机验收**：带重启的完整走通 = 第九局（任务页）；从主对话发起、对话里一次点击确认、卡片两次点击批准到完成 = 第十四局（两份发布逐字节一致，两步各一次通过）。第六～十三局各暴露并修掉一处缺陷，记录见方案 G 节。
 - **卡住交给规划器**（opt.81）：步骤如实报告卡住 / 失败 / 没进展（`OutcomeRecorded`）与结果被拒、验证失败一样生成规划修补请求（`planning_repair_requests.collect_triggers`，带步骤原话），由规划器决定重排、补步骤或重试；此前没人问规划器，几秒后判"没有可派发的工作"整局失败。
-- **被打断的审阅补一次机会**（opt.81）：审阅协议每个审阅只准调用 2 次。采集时若这次调用没提交、且错误码属于"被打断"，另记 `AssuranceReviewTurnInterrupted`（`failure_classes.record_review_interruption`，不改已有回执）。用完且第 2 次是被打断的：整局最终审查把 `REVIEW_INTERRUPTED` 作为包过期原因重切新包（新审阅，仍受每版切包上限）；发布结果审阅准备一次重审（清单加 `review_retake`，新审阅包与审阅编号，同一份回执；`outcome_retake_due` 只允许一次，重审再用完才停，`outcome_exhaustion_is_final`）。独立审阅无阻断项。
+- **被打断的审阅补一次机会**（opt.81）：审阅协议每个审阅只准调用 2 次。采集时若这次调用没提交、且原因不是审阅员的错（被打断：重启/墙钟超时；服务出错：`provider_*`、工具调用解析失败——opt.82，与执行尝试扣次规则一致），另记 `AssuranceReviewTurnInterrupted`（`failure_classes.record_review_interruption`，不改已有回执）。用完且第 2 次是被打断的：整局最终审查把 `REVIEW_INTERRUPTED` 作为包过期原因重切新包（新审阅，仍受每版切包上限）；发布结果审阅准备一次重审（清单加 `review_retake`，新审阅包与审阅编号，同一份回执；`outcome_retake_due` 只允许一次，重审再用完才停，`outcome_exhaustion_is_final`）。独立审阅无阻断项。
 - 已知后续：规划器向人提问时的措辞可能把"系统发布"误说成步骤在发布；重审的准备工作若每轮都失败会一直算合法等待（与首次准备失败同一既有行为）。
 
 最后更新：2026-09-28 CST（NEXT-TG-1.0 第三～五批，SDK opt.56–59）。
