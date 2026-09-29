@@ -87,6 +87,39 @@
      "running"
     ]
    }
+  },
+  {
+   "t": 76,
+   "missions": {
+    "mission-33d8916ba4f070b8": [
+     "ACTIVE",
+     "verifying"
+    ]
+   }
+  },
+  {
+   "t": 203,
+   "missions": {
+    "mission-33d8916ba4f070b8": [
+     "ACTIVE",
+     "queued"
+    ]
+   }
+  },
+  {
+   "t": 340,
+   "missions": {
+    "mission-33d8916ba4f070b8": [
+     "COMPLETED",
+     "delivered"
+    ]
+   }
   }
- ]
+ ],
+ "phase2": {
+  "mission-33d8916ba4f070b8": [
+   "COMPLETED",
+   "delivered"
+  ]
+ }
 }

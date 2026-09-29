@@ -1,0 +1,12 @@
+before {"state": "TRIAL", "evaluation": {"mission_id": "mission-ca430334ee233edb", "mission_status": "COMPLETED", "passed": true, "expired": false, "expires_at_ms": 1790749451978}}
+admit {"ok": true, "error": null}
+admitted {"state": "ADMITTED", "pools": {"deepseek-native-256k-v1": ["ADMITTED", true], "deepseek-native-256k-thinking-v1": ["ADMITTED", true], "deepseek-native-512k-thinking-v1": ["ADMITTED", true], "deepseek-native-512k-v1": ["ADMITTED", true]}}
+table_created {"ok": true, "mission_id": "mission-33d8916ba4f070b8", "error": null}
+missions {"mission-33d8916ba4f070b8": ["CREATED", "received"]}
+missions {"mission-33d8916ba4f070b8": ["PLANNING", "received"]}
+missions {"mission-33d8916ba4f070b8": ["PLANNING", "waiting_person"]}
+missions {"mission-33d8916ba4f070b8": ["ACTIVE", "running"]}
+missions {"mission-33d8916ba4f070b8": ["ACTIVE", "verifying"]}
+missions {"mission-33d8916ba4f070b8": ["ACTIVE", "queued"]}
+missions {"mission-33d8916ba4f070b8": ["COMPLETED", "delivered"]}
+EXIT 0
