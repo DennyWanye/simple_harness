@@ -1,0 +1,378 @@
+{
+ "task": {
+  "goal": "完成两件互不相关的事：(1) 把下面的团队值班规则整理成 oncall.md：每周一 10 点交接；值班人手机 24 小时开机；P1 故障 15 分钟内响应；交接时写清未关闭事项。(2) 读取工作区里的 data/sales.csv，按地区汇总三个月的销售额，写成 sales_report.md。",
+  "success_criteria": [
+   "file:oncall.md",
+   "oncall.md 完整列出上面 4 条值班规则",
+   "file:sales_report.md",
+   "sales_report.md 含按地区汇总的表格，数字与 data/sales.csv 一致"
+  ]
+ },
+ "steps": [
+  {
+   "t": 0,
+   "created": {
+    "ok": true,
+    "mission_id": "mission-206bf9d8fbbf7a7c",
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "confirm": {
+    "ok": true,
+    "error": null,
+    "content": [
+     "c-user-1",
+     "c-user-2",
+     "c-user-3",
+     "c-user-4"
+    ],
+    "effects": []
+   }
+  },
+  {
+   "t": 0,
+   "mission": [
+    "CREATED",
+    "received",
+    "CONFIRMATION_REQUIRED"
+   ]
+  },
+  {
+   "t": 15,
+   "event": {
+    "seq": 60839,
+    "type": "MissionPlanning"
+   }
+  },
+  {
+   "t": 15,
+   "mission": [
+    "PLANNING",
+    "received",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 46,
+   "event": {
+    "seq": 60930,
+    "type": "PlanningDeploymentBound"
+   }
+  },
+  {
+   "t": 46,
+   "event": {
+    "seq": 61016,
+    "type": "NativePlanningDecisionPrepared"
+   }
+  },
+  {
+   "t": 46,
+   "event": {
+    "seq": 61033,
+    "type": "PlanRevisionCommitted"
+   }
+  },
+  {
+   "t": 46,
+   "event": {
+    "seq": 61038,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 46,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 106,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 167,
+   "event": {
+    "seq": 61328,
+    "type": "TaskCompleted"
+   }
+  },
+  {
+   "t": 167,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 244,
+   "planning_authorization_request": {
+    "mission_id": "mission-206bf9d8fbbf7a7c",
+    "request_id": "intent-plan-mission-206bf9d8fbbf7a7c:planner:2",
+    "intent_id": "intent-plan-mission-206bf9d8fbbf7a7c:planner:2",
+    "state": "AUTHORIZATION_REQUIRED"
+   }
+  },
+  {
+   "t": 244,
+   "event": {
+    "seq": 61372,
+    "type": "PlanningRepairRequested"
+   }
+  },
+  {
+   "t": 244,
+   "event": {
+    "seq": 61375,
+    "type": "PlanningServiceResumed"
+   }
+  },
+  {
+   "t": 244,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 259,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 274,
+   "planning_answer": {
+    "question": "生成 sales_report.md 所需的输入文件缺失，需要你提供或决定。缺什么：工作区中不存在任务指定的 data/sales.csv（三个月的按地区销售数据）。执行者已经找过哪里：workspace_list 仅返回 oncall.md；读取 data/sales.csv 与 sales.csv 都返回 no such file；run_tests 显示无测试树。为不编造数字，sales_report.md 目前只记录了该缺口。请你选择其一：(a) 把 data/sales.csv 放入工作区（请说明确切路径，若与 data/sales.csv 不同请一并给出）；(b) 提供销售数据的其",
+    "options": [],
+    "answer": "工作区里没有 data/sales.csv，别处也没有。请先新增一步，按下面的数据生成 data/sales.csv（表头 month,region,amount）：2026-07,华东,120；2026-07,华北,90；2026-08,",
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 274,
+   "event": {
+    "seq": 61386,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 274,
+   "event": {
+    "seq": 61387,
+    "type": "PlanningHumanRequested"
+   }
+  },
+  {
+   "t": 274,
+   "event": {
+    "seq": 61394,
+    "type": "PlanningHumanAnswered"
+   }
+  },
+  {
+   "t": 274,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 289,
+   "event": {
+    "seq": 61396,
+    "type": "PlanningServiceResumed"
+   }
+  },
+  {
+   "t": 289,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 364,
+   "event": {
+    "seq": 61407,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 364,
+   "event": {
+    "seq": 61410,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 424,
+   "event": {
+    "seq": 61421,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 472,
+   "event": {
+    "seq": 61435,
+    "type": "PlanningRetryAuthorized"
+   }
+  },
+  {
+   "t": 472,
+   "event": {
+    "seq": 61436,
+    "type": "PlanningRepairAddressed"
+   }
+  },
+  {
+   "t": 472,
+   "event": {
+    "seq": 61437,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 472,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 535,
+   "planning_authorization_request": {
+    "mission_id": "mission-206bf9d8fbbf7a7c",
+    "request_id": "intent-plan-mission-206bf9d8fbbf7a7c:planner:6",
+    "intent_id": "intent-plan-mission-206bf9d8fbbf7a7c:planner:6",
+    "state": "AUTHORIZATION_REQUIRED"
+   }
+  },
+  {
+   "t": 535,
+   "event": {
+    "seq": 61476,
+    "type": "PlanningRepairRequested"
+   }
+  },
+  {
+   "t": 535,
+   "event": {
+    "seq": 61478,
+    "type": "PlanningServiceResumed"
+   }
+  },
+  {
+   "t": 535,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 550,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 640,
+   "event": {
+    "seq": 61489,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 640,
+   "event": {
+    "seq": 61492,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 716,
+   "event": {
+    "seq": 61501,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 716,
+   "event": {
+    "seq": 61504,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 761,
+   "event": {
+    "seq": 61518,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 761,
+   "event": {
+    "seq": 61521,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 821,
+   "event": {
+    "seq": 61530,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 821,
+   "event": {
+    "seq": 61533,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 821,
+   "event": {
+    "seq": 61534,
+    "type": "TaskCancelled"
+   }
+  },
+  {
+   "t": 821,
+   "event": {
+    "seq": 61536,
+    "type": "TaskCancelled"
+   }
+  },
+  {
+   "t": 821,
+   "mission": [
+    "FAILED",
+    "failed",
+    "APPROVED"
+   ]
+  }
+ ],
+ "mission_id": "mission-206bf9d8fbbf7a7c"
+}
