@@ -84,6 +84,10 @@ _foreign_pre_chain = [
     structlog.stdlib.add_logger_name,
     structlog.stdlib.add_log_level,
     structlog.stdlib.PositionalArgumentsFormatter(),
+    # 编排器的进度备注（``orchestrator.progress``）只把内容放在 stdlib ``extra={"detail": …}``；
+    # 不带出来，"系统发布没提交成功"这类原因在日志里只剩一个空事件名。只放行这一个字段，
+    # 且在脱敏之前加入，照样经过脱敏。
+    structlog.stdlib.ExtraAdder(allow=("detail",)),
     add_safe_exception_summary,
     redact_log_event,
     structlog.processors.TimeStamper(fmt="iso"),
