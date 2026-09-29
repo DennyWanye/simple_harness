@@ -266,11 +266,13 @@ function nextStep(detail: Json, approvals: number): { text: string; target?: str
   const mission = record(detail.mission);
   const status = text(mission.status);
   const ws = record(detail.operation_workspace);
-  if (text(ws.mission_id) && text(ws.state) && text(ws.state) !== "APPROVED" && ws.editable === true)
+  // 已结束的任务：留下的提问、授权请求都不再需要人处理（2026-09-29 取消后仍提示"去回答"）。
+  const ended = ["COMPLETED", "FAILED", "CANCELLED"].includes(status);
+  if (!ended && text(ws.mission_id) && text(ws.state) && text(ws.state) !== "APPROVED" && ws.editable === true)
     return { text: "下一步：在「完成要求」里勾选要交付的内容，再点「确认上述完成要求」。", target: "mission-step-requirements", action: "去确认" };
-  if (list(detail.planning_authorization_requests).length)
+  if (!ended && list(detail.planning_authorization_requests).length)
     return { text: "下一步：授权本轮规划，任务才会开始执行。" };
-  if (list(detail.planning_questions).some((q) => text(record(q).state) === "PENDING"))
+  if (!ended && list(detail.planning_questions).some((q) => text(record(q).state) === "PENDING"))
     return { text: "下一步：回答任务提出的问题。", target: "mission-step-questions", action: "去回答" };
   if (approvals > 0)
     return { text: `下一步：有 ${approvals} 项等你审批或复核。`, target: "mission-step-approvals", action: "去处理" };

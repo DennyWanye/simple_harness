@@ -1292,6 +1292,15 @@ describe("下一步提示（2026-09-25 真机点击：要人操作的按钮埋�
     openMission({ ...DETAIL, approvals: [] });
     expect(screen.getByTestId("mission-next-step").textContent).toMatch(/自动进行|等你审批/);
   });
+
+  it("已结束的任务不再提示回答问题或授权（2026-09-29 取消第十二、十三局后仍提示去回答）", () => {
+    openMission({ ...DETAIL, approvals: [],
+      mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "CANCELLED" },
+      planning_questions: [{ question_id: "q1", state: "PENDING" }],
+      planning_authorization_requests: [{ request_id: "r1" }] });
+    expect(screen.getByTestId("mission-next-step").textContent).toMatch(/任务已取消/);
+    expect(screen.queryByRole("button", { name: "去回答" })).toBeNull();
+  });
 });
 
 describe("结束态与产物排序（2026-09-25 真机点击）", () => {
