@@ -8297,6 +8297,30 @@ async def _build_product_sdk_runtime_stack(
         route_state_memo=_ensure_run_route_state_memo(),
     )
 
+    # NEXT-TG-1.0 §9 收口第 4 项：五个委派工具跑在真实 SDK 子运行上（DETACHED，
+    # 授权 = 父目录只读子集，每个子运行一个监视器负责收尾与取消）。执行账本在
+    # ports_factory 里才拿得到，这里先放一个占位。
+    from deskpet.sdk_adapters.delegation import (
+        ProductDelegationService,
+        is_delegated_child_start,
+        waiting_runs_blocked_on_delegation,
+    )
+
+    delegation_uow: dict[str, Any] = {}
+    delegation_service = ProductDelegationService(
+        uow_getter=lambda: delegation_uow.get("uow"),
+        runtime_getter=lambda: (
+            _sdk_ingress.require_ready().runtime if _sdk_ingress is not None else None
+        ),
+        tool_authorities=tool_authorities,
+        binding_resolver=provider_binding_resolver,
+        context_port_getter=lambda: _sdk_context_port,
+        on_parent_woken=lambda run_id: _ensure_sdk_recovery_watcher(run_id),
+        # 同步等待不能拖过父运行自己的墙钟上限。
+        wait_seconds=min(900.0, float(_max_wall_seconds) * 0.8),
+        clock=clock,
+    )
+
     dependencies = ToolCatalogDependencies(
         todo_session_db=todo_session_db,
         workflow_service_provider=lambda: workflow_service,
@@ -8304,6 +8328,7 @@ async def _build_product_sdk_runtime_stack(
         execution_context_getter=execution_context_getter,
         capability_bridge_service=capability_bridge,
         search_gateway=search_gateway,
+        delegation_service_provider=lambda: delegation_service,
     )
 
     # Authorization state must exist before the Skill install registration is
@@ -8755,7 +8780,23 @@ async def _build_product_sdk_runtime_stack(
     )
 
     # Build reconciliation adapter
-    reconciliation_adapter = ProductReconciliationAdapter(repository)
+    async def _delegation_observer(effect: Any, _saga: Any) -> Any:
+        from simple_harness.tools.reconciliation import (
+            ReconciliationObservation,
+            ReconciliationState,
+        )
+
+        observed = await delegation_service.observe(effect)
+        if observed is not None:
+            return observed
+        return ReconciliationObservation(
+            ReconciliationState.STILL_UNKNOWN,
+            f"product-saga:unknown:{effect.effect_id.value}",
+        )
+
+    reconciliation_adapter = ProductReconciliationAdapter(
+        repository, observer=_delegation_observer
+    )
 
     # Build delivery sink: ProductDeliveryAdapter is per-run (needs session/request/run
     # presentation context), so the stack-level delivery port routes through the global
@@ -8850,6 +8891,7 @@ async def _build_product_sdk_runtime_stack(
         global _sdk_context_port
         context = SqliteContextPort(database, clock=clock)
         _sdk_context_port = context
+        delegation_uow["uow"] = uow
         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
         from deskpet.sdk_adapters.reconciliation import waiting_runs_blocked_on_provider
 
@@ -8867,6 +8909,14 @@ async def _build_product_sdk_runtime_stack(
                 str(record.run_id) for record in recoverable
             }),
         )
+        # 收口第 4 项：停在委派调用上的等待运行也要先恢复绑定与授权（启动后会被唤醒）。
+        recoverable = (
+            *recoverable,
+            *waiting_runs_blocked_on_delegation(uow, exclude={
+                str(record.run_id) for record in recoverable
+            }),
+        )
+        delegated_children: list[tuple[str, str]] = []
         for record in recoverable:
             start = uow.read_start_snapshot(str(record.run_id))
             start_input = start.get("input") if isinstance(start, Mapping) else None
@@ -8889,7 +8939,14 @@ async def _build_product_sdk_runtime_stack(
                 ).lower()
                 if record_state == "waiting":
                     provider_binding_resolver.mark_waiting(restored.run_id)
-                if not _restore_sdk_delivery_route(record, start, session_db):
+                if is_delegated_child_start(start):
+                    # 委派子运行不是主对话运行：不建界面投递、不占根映射、不挂
+                    # 恢复监视器（否则子运行回答会写进主会话、"停止"会取消到它）。
+                    # 授权照常按历史恢复（下面），由委派服务重新接管监视。
+                    delegated_children.append(
+                        (str(record.run_id), str(metadata.get("parent_run_id") or ""))
+                    )
+                elif not _restore_sdk_delivery_route(record, start, session_db):
                     logger.warning(
                         "sdk_recovery_delivery_route_missing",
                         sdk_run_id=str(record.run_id),
@@ -8965,6 +9022,11 @@ async def _build_product_sdk_runtime_stack(
                     tool_authorities=tool_authorities,
                     error=exc,
                 )
+        for child_run_id, parent_run_id in delegated_children:
+            if parent_run_id:
+                delegation_service.adopt_recovered(child_run_id, parent_run_id)
+        # 重启前停在委派调用上的父运行：运行时就绪后写对账结论并唤醒。
+        delegation_service.start_recovery()
         provider_port = ProductProviderInvocationCoordinator(
             uow=uow,
             resolver=provider_binding_resolver,

@@ -796,13 +796,15 @@ def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> No
             workspace="/workspace", write_scope_root="/workspace",
         ),
     )
+    # 收口第 4 项：await_subagents 的收回端口 = Host 委派服务。
     dependencies = type(dependencies)(
         dependencies.todo_session_db,
-        lambda: JoinPort(),
+        dependencies.workflow_service_provider,
         dependencies.context_page_store,
         dependencies.execution_context_getter,
         dependencies.capability_bridge_service,
         dependencies.search_gateway,
+        delegation_service_provider=lambda: JoinPort(),
     )
     registry, _ = build_product_tool_registry(
         build_explicit_product_tool_catalog(dependencies).registrations

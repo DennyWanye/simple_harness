@@ -101,6 +101,8 @@ class ToolCatalogDependencies:
     execution_context_getter: Callable[[], Any]
     capability_bridge_service: Any
     search_gateway: Any
+    #: 收口第 4 项：五个委派工具的执行方（``deskpet.sdk_adapters.delegation``）。
+    delegation_service_provider: Callable[[], Any] | None = None
 
     def __post_init__(self) -> None:
         required = {
@@ -264,10 +266,9 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
     from deskpet.tools.tool_search import register_capability_bridge_tools
     from deskpet.tools.code_tools.web_search_tool import build_web_search_handler
 
-    delegates = product_delegation_tool_catalog()
-    await_handler, _ = build_sdk_await_subagents_tool(
-        deps.workflow_service_provider
-    )
+    delegation_provider = deps.delegation_service_provider or (lambda: None)
+    delegates = product_delegation_tool_catalog(delegation_provider)
+    await_handler, _ = build_sdk_await_subagents_tool(delegation_provider)
     sync_todo_handler, _ = build_todo_write_tool(deps.todo_session_db)
 
     async def todo_handler(
@@ -302,7 +303,7 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
     capture = Capture()
     register_capability_bridge_tools(capture, deps.capability_bridge_service)
     dynamic = {
-        name: (handler_schema[0], "standard")
+        name: (handler_schema[0], "keyword_context")
         for name, handler_schema in delegates.items()
     }
     dynamic.update(

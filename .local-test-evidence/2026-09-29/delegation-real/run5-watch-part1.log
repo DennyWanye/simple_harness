@@ -1,0 +1,4 @@
+{'delegate-8f0ce2e335515ee416b4159fc9927e74': 'running', 'product-sdk-fe002b552095547bd0d20f0ca37caa8704e7887377c269cec69eed3a8a8a9da4': 'running'}
+{'delegate-8f0ce2e335515ee416b4159fc9927e74': 'running', 'product-sdk-fe002b552095547bd0d20f0ca37caa8704e7887377c269cec69eed3a8a8a9da4': 'waiting'}
+{'delegate-8f0ce2e335515ee416b4159fc9927e74': 'waiting', 'product-sdk-fe002b552095547bd0d20f0ca37caa8704e7887377c269cec69eed3a8a8a9da4': 'waiting'}
+[{"role": "assistant", "content": "我正在执行下一步工具操作，完成后会整理结果。"}, {"role": "assistant", "content": ""}]

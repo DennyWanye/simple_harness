@@ -1,0 +1,4 @@
+{'delegate-b5c8453af316ce2e13d20a1dd1c85b96': 'running', 'product-sdk-66262072da336734f251b71d1a73b60d6938ce63fae0afaa0cdd32f65dd7cdc9': 'waiting'}
+{'delegate-b5c8453af316ce2e13d20a1dd1c85b96': 'completed', 'product-sdk-66262072da336734f251b71d1a73b60d6938ce63fae0afaa0cdd32f65dd7cdc9': 'waiting'}
+{'delegate-b5c8453af316ce2e13d20a1dd1c85b96': 'completed', 'product-sdk-66262072da336734f251b71d1a73b60d6938ce63fae0afaa0cdd32f65dd7cdc9': 'failed'}
+[{"role": "assistant", "content": "我正在执行下一步工具操作，完成后会整理结果。"}, {"role": "assistant", "content": ""}]

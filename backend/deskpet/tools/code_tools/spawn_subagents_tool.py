@@ -13,11 +13,10 @@ from ..capabilities import ToolExecutionContext
 _MAX = 8
 _KIND_ENUM = ["general", "research", "code", "fileops", "doc", "web"]
 _FORBIDDEN = {"agent", "agent_parallel", "spawn_team", "spawn_subagents", "await_subagents"}
-#: NEXT-TG-1.0 §9（2026-09-28）：前台 Run 里委派没有接通（执行入口
-#: ``build_subagent_batch_delegate`` 无调用方，四个委派工具只会回 delegation_unavailable，
-#: await_subagents 也就等不到任何子运行）。"模型看得见但必定不可用"不算开启：先不放进
-#: 模型可见目录，具名记为欠项；要交给后台做的事走 ``mission_start``（正式任务链）。
-UNWIRED_DELEGATION_TOOL_NAMES = frozenset(_FORBIDDEN)
+#: NEXT-TG-1.0 §9 收口第 4 项（2026-09-29）：五个委派工具已接到真实 SDK 子运行
+#: （``deskpet.sdk_adapters.delegation``），全部回到模型可见目录。名单保留为"接线未完成
+#: 就不给模型看"的开关位：以后新增的委派工具没接通前放进来。
+UNWIRED_DELEGATION_TOOL_NAMES: frozenset[str] = frozenset()
 
 _SPAWN_SCHEMA: dict[str, Any] = {
     "name": "spawn_subagents",
@@ -65,50 +64,48 @@ _AWAIT_SCHEMA: dict[str, Any] = {
 }
 
 
-def product_delegation_tool_catalog() -> dict[str, tuple[Any, dict[str, Any]]]:
-    """Keep public schemas in the tool layer while Harness owns execution."""
+_UNAVAILABLE = json.dumps(
+    {
+        "error": "delegation_unavailable",
+        "error_code": "delegation_unavailable",
+        "public_message": (
+            "Delegation is not available in this Run: child-run execution is not "
+            "wired here. Do not retry any of agent / agent_parallel / spawn_team / "
+            "spawn_subagents. Do the work yourself with the tools already exposed "
+            "to you (for example file_read / file_grep / edit_file / write_file)."
+        ),
+        "retriable": False,
+        "replan_required": True,
+        "next_action": "Complete the task directly with your own tool calls instead of delegating.",
+    },
+    ensure_ascii=False,
+)
+
+
+def product_delegation_tool_catalog(
+    delegation_service_provider=None,
+) -> dict[str, tuple[Any, dict[str, Any]]]:
+    """Keep public schemas in the tool layer; the Host delegation service runs them."""
     from .agent_parallel_tool import _SCHEMA as parallel
     from .agent_tool import _SCHEMA as agent
     from .spawn_team_tool import _SCHEMA as team
 
-    async def boundary_only(*_args: Any, **_kwargs: Any) -> str:
-        """委派未接线时的 fail-closed 出口——但拒绝必须让模型看得懂。
+    def handler_for(name: str):
+        async def delegate(args, _operation_key="", *, execution_context=None) -> str:
+            service = delegation_service_provider() if delegation_service_provider else None
+            if service is None:
+                # S5B-UI-F3：没接上执行方时 fail-closed，但必须回稳定码与替代路径，
+                # 不能抛异常（冻结 SDK 会把异常统一成看不懂的 tool_handler_failed）。
+                return _UNAVAILABLE
+            if execution_context is None:
+                raise RuntimeError(f"{name} requires SDK execution context")
+            result = await service.delegate(name, dict(args), execution_context=execution_context)
+            return json.dumps(result, ensure_ascii=False)
 
-        S5B-UI-F3（S5b 真实桌面 UI 验收抓到）：``agent`` / ``agent_parallel`` /
-        ``spawn_team`` / ``spawn_subagents`` 在每个前台 Run 的直出目录里都可见，
-        而真正的执行入口 ``build_subagent_batch_delegate`` **全仓零调用者**——
-        SDK 前台路径上这四个工具必然落到本占位符。原先它 ``raise``，冻结 SDK 按
-        契约把任何 handler 异常统一回成 ``tool_handler_failed`` /
-        "Tool execution failed."（异常原文只进 Host 日志，且因含空格被收敛成
-        ``unclassified``），模型因此完全无法判断"这条路在本 Run 走不通"，
-        只能反复重试直到 ``react_max_turns_exceeded`` 打光整轮——实测两次。
+        delegate.__name__ = f"{name}_delegate"
+        return delegate
 
-        改为**返回**稳定错误载荷：语义仍是 fail-closed（什么都没执行），但模型
-        拿得到稳定码与一条可执行的替代路径，能立刻改走自己直接调用工具的方案。
-        """
-
-        return json.dumps(
-            {
-                "error": "delegation_unavailable",
-                "error_code": "delegation_unavailable",
-                "public_message": (
-                    "Delegation is not available in this Run: child-run "
-                    "execution is not wired here. Do not retry any of agent / "
-                    "agent_parallel / spawn_team / spawn_subagents. Do the work "
-                    "yourself with the tools already exposed to you (for "
-                    "example file_read / file_grep / edit_file / write_file)."
-                ),
-                "retriable": False,
-                "replan_required": True,
-                "next_action": (
-                    "Complete the task directly with your own tool calls "
-                    "instead of delegating."
-                ),
-            },
-            ensure_ascii=False,
-        )
-
-    return {name: (boundary_only, dict(schema)) for name, schema in (
+    return {name: (handler_for(name), dict(schema)) for name, schema in (
         ("agent", agent), ("agent_parallel", parallel),
         ("spawn_team", team), ("spawn_subagents", _SPAWN_SCHEMA),
     )}

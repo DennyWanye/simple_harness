@@ -78,6 +78,13 @@ PROJECTLESS_SAFE_TOOL_NAMES = frozenset(
         "web_fetch",
         "web_read_sitemap",
         "web_search",
+        # 收口第 4 项：委派本身不碰工作区；子运行继承父运行的（无）项目绑定，
+        # 只拿父目录里的只读工具，所以无项目的对话也能委派（查资料、并行搜索）。
+        "agent",
+        "agent_parallel",
+        "spawn_team",
+        "spawn_subagents",
+        "await_subagents",
     }
 )
 
