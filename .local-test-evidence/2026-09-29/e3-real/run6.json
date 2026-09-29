@@ -1,0 +1,315 @@
+{
+ "task": {
+  "goal": "完成两件互不相关的事：(1) 把下面的团队值班规则整理成 oncall.md：每周一 10 点交接；值班人手机 24 小时开机；P1 故障 15 分钟内响应；交接时写清未关闭事项。(2) 读取工作区里的 data/sales.csv，按地区汇总三个月的销售额，写成 sales_report.md。",
+  "success_criteria": [
+   "file:oncall.md",
+   "oncall.md 完整列出上面 4 条值班规则",
+   "file:sales_report.md",
+   "sales_report.md 含按地区汇总的表格，数字与 data/sales.csv 一致"
+  ]
+ },
+ "steps": [
+  {
+   "t": 0,
+   "created": {
+    "ok": true,
+    "mission_id": "mission-6659c7315bcf4299",
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "confirm": {
+    "ok": true,
+    "error": null,
+    "content": [
+     "c-user-1",
+     "c-user-2",
+     "c-user-3",
+     "c-user-4"
+    ],
+    "effects": []
+   }
+  },
+  {
+   "t": 0,
+   "mission": [
+    "CREATED",
+    "received",
+    "CONFIRMATION_REQUIRED"
+   ]
+  },
+  {
+   "t": 15,
+   "event": {
+    "seq": 63518,
+    "type": "MissionPlanning"
+   }
+  },
+  {
+   "t": 15,
+   "mission": [
+    "PLANNING",
+    "received",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 31,
+   "event": {
+    "seq": 63613,
+    "type": "PlanningDeploymentBound"
+   }
+  },
+  {
+   "t": 31,
+   "event": {
+    "seq": 63660,
+    "type": "NativePlanningDecisionPrepared"
+   }
+  },
+  {
+   "t": 31,
+   "event": {
+    "seq": 63677,
+    "type": "PlanRevisionCommitted"
+   }
+  },
+  {
+   "t": 31,
+   "event": {
+    "seq": 63682,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 31,
+   "event": {
+    "seq": 63718,
+    "type": "AttemptStarted"
+   }
+  },
+  {
+   "t": 31,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 122,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 182,
+   "event": {
+    "seq": 64025,
+    "type": "TaskCompleted"
+   }
+  },
+  {
+   "t": 182,
+   "event": {
+    "seq": 64027,
+    "type": "TaskGraphSourceChanged"
+   }
+  },
+  {
+   "t": 182,
+   "event": {
+    "seq": 64042,
+    "type": "AttemptStarted"
+   }
+  },
+  {
+   "t": 182,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 319,
+   "event": {
+    "seq": 64084,
+    "type": "PlanningRepairRequested"
+   }
+  },
+  {
+   "t": 319,
+   "event": {
+    "seq": 64087,
+    "type": "PlanningServiceResumed"
+   }
+  },
+  {
+   "t": 319,
+   "event": {
+    "seq": 64090,
+    "type": "TaskGraphSourceChanged"
+   }
+  },
+  {
+   "t": 319,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 334,
+   "planning_answer": {
+    "question": "执行 sales 步骤时找不到唯一数据源 data/sales.csv，无法按地区汇总三个月销售额，需要你提供数据或给出指示。执行者已核查的情况：workspace_list 只返回 oncall.md，工作区中没有 data 目录；随后按不同候选路径读取 data/sales.csv、sources/data/sales.csv、sales.csv、inputs/sales.csv、fixtures/sales.csv、sales_data.csv 均返回 no such file；run_tests 显示没有测试。为避免编造与源数据不一致的数字，未生成汇总表，只在 sales_report",
+    "options": [],
+    "answer": "工作区里确实没有 data/sales.csv。销售数据如下，这份回答已作为资料附在任务里，请直接读取这份资料，按它汇总（它就是 data/sales.csv 的内容）：\n\nmonth,region,amount\n2026-07,华东,12",
+    "attach": true,
+    "ok": true,
+    "error": null,
+    "source": {
+     "path": "sources/answers/pd-ec81b16c2153482fbb9689be.md",
+     "version_hash": "8f5e3380d4102382778e5160f98e2b658d6f4f53cfafacb61605aeec2daa6328"
+    }
+   }
+  },
+  {
+   "t": 334,
+   "event": {
+    "seq": 64098,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 334,
+   "event": {
+    "seq": 64099,
+    "type": "PlanningHumanRequested"
+   }
+  },
+  {
+   "t": 334,
+   "event": {
+    "seq": 64106,
+    "type": "PlanningHumanAnswered"
+   }
+  },
+  {
+   "t": 334,
+   "event": {
+    "seq": 64109,
+    "type": "SourceRegistered"
+   }
+  },
+  {
+   "t": 334,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 349,
+   "event": {
+    "seq": 64111,
+    "type": "PlanningServiceResumed"
+   }
+  },
+  {
+   "t": 349,
+   "event": {
+    "seq": 64115,
+    "type": "TaskGraphSourceChanged"
+   }
+  },
+  {
+   "t": 349,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 365,
+   "event": {
+    "seq": 64122,
+    "type": "PlanningRetryAuthorized"
+   }
+  },
+  {
+   "t": 365,
+   "event": {
+    "seq": 64123,
+    "type": "PlanningRepairAddressed"
+   }
+  },
+  {
+   "t": 365,
+   "event": {
+    "seq": 64124,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 365,
+   "event": {
+    "seq": 64138,
+    "type": "AttemptStarted"
+   }
+  },
+  {
+   "t": 365,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 411,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 639,
+   "event": {
+    "seq": 64266,
+    "type": "TaskCompleted"
+   }
+  },
+  {
+   "t": 639,
+   "event": {
+    "seq": 64274,
+    "type": "TaskGraphSourceChanged"
+   }
+  },
+  {
+   "t": 639,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 747,
+   "mission": [
+    "COMPLETED",
+    "delivered",
+    "APPROVED"
+   ]
+  }
+ ],
+ "mission_id": "mission-6659c7315bcf4299"
+}
