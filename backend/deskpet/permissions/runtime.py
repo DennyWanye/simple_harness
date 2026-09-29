@@ -312,6 +312,10 @@ class PreparedAuthorizationRuntime:
             version=next_version,
         )
 
+    async def policy_state(self) -> AuthorizationPolicyState:
+        """The durable policy state (mode + generation) without planning anything."""
+        return await self._store.get_policy_state()
+
     def build_exact_request(
         self,
         *,

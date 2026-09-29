@@ -73,12 +73,17 @@ class ProductAuthorizationAdapter:
         self._terminal_lifecycle = terminal_lifecycle
 
     async def prepare(self, prepared: PreparedToolEffect) -> AuthorizationResult:
+        replay = await self._replay_of_durable_authorization(prepared)
+        if isinstance(replay, AuthorizationResult) and replay.decision is AuthorizationDecision.DENY:
+            return replay
         # Product policies expose the Host authorization port as
         # ``decide(prepared, request=...)``.  Older unit fixtures supplied a
         # plain callable, so keep that form as a compatibility path while
         # honoring the real object contract used by the SDK runtime.
         decide = getattr(self._policy, "decide", None)
-        if callable(decide):
+        if replay is not None:
+            result = replay
+        elif callable(decide):
             result = decide(prepared, request=None)
         elif callable(self._policy):
             result = self._policy(prepared)
@@ -164,6 +169,80 @@ class ProductAuthorizationAdapter:
                 policy_generation=identity.policy_generation,
                 now=now,
             )
+        return result
+
+    _REPLAYABLE = frozenset({
+        AuthorizationSagaState.PREPARED,
+        AuthorizationSagaState.DECISION_BOUND,
+        AuthorizationSagaState.EFFECT_BOUND,
+    })
+
+    async def _replay_of_durable_authorization(
+        self, prepared: PreparedToolEffect
+    ) -> AuthorizationResult | None:
+        """2026-09-30（架构方案 A）：同一次工具调用重启后重放，沿用原授权或具名拒绝。
+
+        授权记录按"效果 + 调用"已有一条时，这就是重放：终态记录（取消/过期/撤销/隔离/已
+        结清/已交出）具名拒绝；策略代数变了具名拒绝；票据过期则记录作废、具名拒绝；其余
+        情况让策略用记录里那张票据恢复冻结事实，身份哈希与首次相同，下面的准备走幂等路径。
+        返回 None = 不是重放（或手动票据还在等人，照常再问一次）。
+        """
+
+        record = self._repository.read_for_effect(
+            prepared.effect_id.value, prepared.call.call_id.value
+        )
+        if record is None:
+            return None
+        identity = record.identity
+        if (
+            identity.run_id != prepared.run_id.value
+            or identity.tool_name != prepared.call.name
+            or _hash(identity.arguments) != _hash(thaw_json(prepared.call.arguments))
+        ):
+            return None  # another call under the same ids: the durable identity refuses it below
+        if record.state not in self._REPLAYABLE:
+            return AuthorizationResult(
+                AuthorizationDecision.DENY,
+                reason_code=f"authorization_replay_refused:{record.state.value}",
+            )
+        generation = self._grant_authority.current_policy_generation()
+        if generation is not None and identity.policy_generation != generation:
+            return AuthorizationResult(
+                AuthorizationDecision.DENY, reason_code="policy_generation_moved"
+            )
+        durable = self._grant_authority.read(identity.grant_id)
+        if durable is None:
+            # The record was written but the process died before the grant was: this is the
+            # second half of the same prepare, not a replay of an authorized call.  The normal
+            # path recomputes the grant and the durable identity checks it as before.
+            return None
+        grant = durable.grant
+        now = self._clock()
+        if grant.expires_at is not None and grant.expires_at <= now:
+            self._repository.abort(
+                identity.authorization_id,
+                expected_version=record.version,
+                reason_hash=_hash({"reason_code": "grant_expired"}),
+                now=now,
+            )
+            if durable.status in {"prepared", "active"}:
+                self._grant_authority.expire(
+                    identity.grant_id,
+                    version=identity.grant_version,
+                    policy_generation=identity.policy_generation,
+                    now=now,
+                )
+            return AuthorizationResult(AuthorizationDecision.DENY, reason_code="grant_expired")
+        if grant.source == "user" and record.state is AuthorizationSagaState.PREPARED:
+            return None  # a manual grant still waiting for the person: ask again as before
+        restore = getattr(self._policy, "restore_frozen_authorization", None)
+        if not callable(restore):
+            return None
+        result = restore(prepared, grant=grant)
+        if inspect.isawaitable(result):
+            result = await result
+        if not isinstance(result, AuthorizationResult):
+            raise TypeError("restore_frozen_authorization must return AuthorizationResult")
         return result
 
     async def bind_decision(

@@ -206,6 +206,17 @@ class DurableTaskGrantAuthority:
                 raise TaskGrantConflict("TaskGrant terminal CAS conflict")
         return self._read(task_grant_id)
 
+    def read(self, task_grant_id: str) -> DurableTaskGrant | None:
+        """The durable grant as frozen at issue time (or None), for replay after a restart."""
+        try:
+            return self._read(task_grant_id)
+        except TaskGrantConflict:
+            return None
+
+    def current_policy_generation(self) -> int | None:
+        provider = self._policy_generation_provider
+        return None if provider is None else provider()
+
     def _read(self, task_grant_id: str) -> DurableTaskGrant:
         row = self.database.connection.execute(
             "SELECT grant_json,status FROM task_grants WHERE task_grant_id=?",

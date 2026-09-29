@@ -2334,6 +2334,56 @@ class SdkPreparedAuthorizationPolicy:
         self._facts[(authority.run_id, prepared.effect_id.value)] = (
             _PreparedAuthorizationFacts(authority, call, plan, grant)
         )
+        return await self._allow_after_preflight(
+            prepared, context=context, call=call, authority=authority, grant=grant
+        )
+
+    async def restore_frozen_authorization(
+        self, prepared: PreparedToolEffect, *, grant: TaskGrant
+    ) -> AuthorizationResult:
+        """Replay after a restart: reuse the grant frozen for this very call, no policy IO.
+
+        2026-09-30（架构方案 A）：重放会重新签发票据，票据编号确定不变、只有过期时间
+        变了，指纹一变授权记录就按"同一调用、不同授权"判冲突。这里用授权记录里那张票据
+        原样恢复冻结事实，身份哈希自然相同；过期与策略代数由适配器在调用前判定。
+        """
+
+        authority = self._authorities.resolve(prepared.run_id)
+        authority.assert_workspace_current()
+        call = self._prepared_call(prepared, authority)
+        context = authority.execution_context(
+            call_id=prepared.call.call_id.value,
+            effect_id=prepared.effect_id.value,
+        )
+        state = await self._runtime.policy_state()
+        plan = PreparedAuthorizationPlan(
+            action="allow",
+            reason="replay of the frozen authorization",
+            policy_state=state,
+            exact_request=self._runtime.build_exact_request(
+                call=call,
+                context=context,
+                permission_category=authority.permission_categories[call.tool_name],
+                now=float(self._clock()),
+            ),
+            current_task_grant=grant,
+            proposed_task_grant=None,
+            policy_decision=None,
+        )
+        self.restore_facts(prepared, authority=authority, call=call, plan=plan, grant=grant)
+        return await self._allow_after_preflight(
+            prepared, context=context, call=call, authority=authority, grant=grant
+        )
+
+    async def _allow_after_preflight(
+        self,
+        prepared: PreparedToolEffect,
+        *,
+        context: ToolExecutionContext,
+        call: PreparedToolCall,
+        authority: SdkRunToolAuthorityV1,
+        grant: TaskGrant,
+    ) -> AuthorizationResult:
         preflight_outcome = await self._stage_skill_preflight(
             prepared=prepared, context=context, call=call, authority=authority
         )
