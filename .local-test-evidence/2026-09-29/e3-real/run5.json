@@ -1,0 +1,235 @@
+{
+ "task": {
+  "goal": "完成两件互不相关的事：(1) 把下面的团队值班规则整理成 oncall.md：每周一 10 点交接；值班人手机 24 小时开机；P1 故障 15 分钟内响应；交接时写清未关闭事项。(2) 读取工作区里的 data/sales.csv，按地区汇总三个月的销售额，写成 sales_report.md。",
+  "success_criteria": [
+   "file:oncall.md",
+   "oncall.md 完整列出上面 4 条值班规则",
+   "file:sales_report.md",
+   "sales_report.md 含按地区汇总的表格，数字与 data/sales.csv 一致"
+  ]
+ },
+ "steps": [
+  {
+   "t": 0,
+   "created": {
+    "ok": true,
+    "mission_id": "mission-74822d0fe8b82cde",
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "confirm": {
+    "ok": true,
+    "error": null,
+    "content": [
+     "c-user-1",
+     "c-user-2",
+     "c-user-3",
+     "c-user-4"
+    ],
+    "effects": []
+   }
+  },
+  {
+   "t": 0,
+   "mission": [
+    "CREATED",
+    "received",
+    "CONFIRMATION_REQUIRED"
+   ]
+  },
+  {
+   "t": 15,
+   "event": {
+    "seq": 61558,
+    "type": "MissionPlanning"
+   }
+  },
+  {
+   "t": 15,
+   "mission": [
+    "PLANNING",
+    "received",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 78,
+   "event": {
+    "seq": 61649,
+    "type": "PlanningDeploymentBound"
+   }
+  },
+  {
+   "t": 78,
+   "event": {
+    "seq": 61724,
+    "type": "NativePlanningDecisionPrepared"
+   }
+  },
+  {
+   "t": 78,
+   "event": {
+    "seq": 61746,
+    "type": "PlanRevisionCommitted"
+   }
+  },
+  {
+   "t": 78,
+   "event": {
+    "seq": 61752,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 78,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 155,
+   "event": {
+    "seq": 61990,
+    "type": "PlanningRepairRequested"
+   }
+  },
+  {
+   "t": 155,
+   "event": {
+    "seq": 61993,
+    "type": "PlanningServiceResumed"
+   }
+  },
+  {
+   "t": 155,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 185,
+   "planning_answer": {
+    "question": "sales_report.md 这一步做不下去：任务要求读取工作区里的 data/sales.csv，并按原始行汇总各地区三个月的销售额，但工作区目前是空的。执行者已经确认：workspace_list 返回 files=[]；读取 data/sales.csv、sources/data/sales.csv、./data/sales.csv、sales.csv 以及 data 目录都返回 no such file；工作区内也没有测试或其它可解析的销售数据来源。为避免编造与 data/sales.csv 不一致的金额，没有创建 sales_report.md，也没有改动任何文件。请提供 data",
+    "options": [],
+    "answer": "工作区里没有 data/sales.csv，别处也没有。请先新增一步，按下面的数据生成 data/sales.csv（表头 month,region,amount）：2026-07,华东,120；2026-07,华北,90；2026-08,",
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 185,
+   "event": {
+    "seq": 62003,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 185,
+   "event": {
+    "seq": 62004,
+    "type": "PlanningHumanRequested"
+   }
+  },
+  {
+   "t": 185,
+   "event": {
+    "seq": 62011,
+    "type": "PlanningHumanAnswered"
+   }
+  },
+  {
+   "t": 185,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 200,
+   "event": {
+    "seq": 62014,
+    "type": "PlanningServiceResumed"
+   }
+  },
+  {
+   "t": 200,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 275,
+   "event": {
+    "seq": 62024,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 275,
+   "event": {
+    "seq": 62027,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 320,
+   "event": {
+    "seq": 62036,
+    "type": "PlanningDecisionEvaluated"
+   }
+  },
+  {
+   "t": 320,
+   "event": {
+    "seq": 62039,
+    "type": "PlanningRejected"
+   }
+  },
+  {
+   "t": 320,
+   "event": {
+    "seq": 62040,
+    "type": "TaskCancelled"
+   }
+  },
+  {
+   "t": 320,
+   "event": {
+    "seq": 62042,
+    "type": "TaskCancelled"
+   }
+  },
+  {
+   "t": 320,
+   "event": {
+    "seq": 62044,
+    "type": "TaskCancelled"
+   }
+  },
+  {
+   "t": 320,
+   "event": {
+    "seq": 62046,
+    "type": "TaskCancelled"
+   }
+  },
+  {
+   "t": 320,
+   "mission": [
+    "FAILED",
+    "failed",
+    "APPROVED"
+   ]
+  }
+ ],
+ "mission_id": "mission-74822d0fe8b82cde"
+}
