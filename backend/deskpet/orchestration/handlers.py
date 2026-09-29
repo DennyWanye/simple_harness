@@ -60,6 +60,8 @@ MESSAGE_TYPES = (
     "orchestration_skill_catalogue",
     "orchestration_skill_install_file",
     "orchestration_skill_lifecycle",
+    "orchestration_skill_evaluate",
+    "orchestration_skill_admit",
 )
 
 
@@ -288,6 +290,9 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "orchestration_skill_catalogue": lambda service, body: service.skill_catalogue(body),
     "orchestration_skill_install_file": lambda service, body: service.skill_install_file(body),
     "orchestration_skill_lifecycle": lambda service, body: service.skill_lifecycle(body),
+    # NEXT-TG-1.0 §11：设置页走完"试用评估 → 准入"
+    "orchestration_skill_evaluate": lambda service, body: service.skill_evaluate(body),
+    "orchestration_skill_admit": lambda service, body: service.skill_admit(body),
 }
 
 __all__ = ("MESSAGE_TYPES", "handle")

@@ -1144,12 +1144,14 @@ export function PublishDirSection({ getChannel }: { getChannel: () => ControlCha
 
 // ================ 任务技能目录 (NEXT-TG-1.0 §11) ================
 // 所有任务执行档位共用一个技能目录：在这里安装一次，各档位看到同一版本；暂停/退役一次，
-// 各档位下一次使用就生效。准入要先经过评估（评估入口尚未接到界面，安装后显示"待评估"）。
+// 各档位下一次使用就生效。准入要先经过评估：「开始评估」建一个试用任务，由执行者真实调用
+// 这个技能，独立审阅通过后点「准入」（系统核对审阅证书，不自签通过）。
 
 export type SkillPoolView = { state: string | null; usable: boolean; reasons: string[] };
+export type SkillEvaluation = { mission_id: string | null; mission_status: string | null; passed: boolean; expired: boolean };
 export type SkillCatalogueRow = {
   skill_ref: Record<string, unknown>; skill_id: string; version: number; name: string; description: string;
-  state: string | null; pools: Record<string, SkillPoolView>;
+  state: string | null; pools: Record<string, SkillPoolView>; evaluation?: SkillEvaluation | null;
 };
 export type SkillCatalogueData = { owner: string | null; members: string[]; skills: SkillCatalogueRow[] };
 
@@ -1171,7 +1173,24 @@ export function poolStatus(view: SkillPoolView): string {
   return `不可用（${SKILL_STATE[view.state ?? ""] ?? "未知状态"}）`;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- shared with its test
+export function evaluationStatus(state: string | null, evaluation: SkillEvaluation | null | undefined): { text: string | null; action: "evaluate" | "admit" | null } {
+  if (state === "QUARANTINED") return { text: "待评估", action: "evaluate" };
+  if (state !== "TRIAL") return { text: null, action: null };
+  if (!evaluation || !evaluation.mission_id) return { text: "评估未开始", action: "evaluate" };
+  if (evaluation.passed) return { text: "评估已通过，可以准入", action: "admit" };
+  if (evaluation.expired) return { text: "评估未通过（试用期已过）", action: "evaluate" };
+  if (evaluation.mission_status === "FAILED") return { text: "评估未通过（试用任务失败）", action: "evaluate" };
+  if (evaluation.mission_status === "CANCELLED") return { text: "评估未通过（试用任务已取消）", action: "evaluate" };
+  return { text: "评估中（试用任务在任务编排页运行）", action: null };
+}
+
 type SkillReply = { ok?: boolean; request_id?: unknown; data?: unknown; error?: string };
+const SKILL_DONE: Record<string, string> = {
+  orchestration_skill_install_file_response: "已安装，各档位同步为同一版本（需评估准入后才能使用）",
+  orchestration_skill_evaluate_response: "已开始评估：试用任务会在任务编排页运行，审阅通过后回到这里点「准入」",
+  orchestration_skill_admit_response: "已准入，各档位下一次使用即生效",
+};
 
 export function SkillCatalogueSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
   const [confirmDialog, ask] = useConfirm();
@@ -1196,7 +1215,8 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
   useEffect(() => {
     const ch = getChannel();
     if (!ch) return;
-    const types = ["orchestration_skill_catalogue_response", "orchestration_skill_install_file_response", "orchestration_skill_lifecycle_response"];
+    const types = ["orchestration_skill_catalogue_response", "orchestration_skill_install_file_response", "orchestration_skill_lifecycle_response",
+      "orchestration_skill_evaluate_response", "orchestration_skill_admit_response"];
     const off = ch.onMessage((raw: IncomingMessage) => {
       const msg = raw as unknown as { type?: string; payload?: SkillReply };
       if (!msg.type || !types.includes(msg.type)) return;
@@ -1210,7 +1230,7 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
       if (body.catalogue) setData(body.catalogue);
       const refused = body.response?.error?.code;
       if (refused) { setError(`操作被拒：${refused}`); return; }
-      setDone(msg.type === "orchestration_skill_install_file_response" ? "已安装，各档位同步为同一版本（需评估准入后才能使用）" : "已完成，各档位同步生效");
+      setDone(SKILL_DONE[msg.type] ?? "已完成，各档位同步生效");
     });
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the first read starts on mount (sets "读取中…")
     send("orchestration_skill_catalogue", {});
@@ -1226,15 +1246,21 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
     send("orchestration_skill_lifecycle", { skill_ref: row.skill_ref, action, command_id: `skill-${action.toLowerCase()}-${row.skill_id}-${row.version}-${Date.now()}` });
   }, [ask, send]);
 
+  const step = useCallback((row: SkillCatalogueRow, action: "evaluate" | "admit") => {
+    setDone(null);
+    send(`orchestration_skill_${action}`, { skill_ref: row.skill_ref, command_id: `skill-${action}-${row.skill_id}-${row.version}-${Date.now()}` });
+  }, [send]);
+
   return (
     <section style={sectionStyle} data-testid="skill-catalogue">
       {confirmDialog}
       <h3 style={h3Style}>任务技能目录</h3>
-      <p style={hintStyle}>所有任务执行档位共用这一个技能目录：安装一次，各档位看到同一版本；暂停或退役一次，各档位下一次使用即生效。</p>
+      <p style={hintStyle}>所有任务执行档位共用这一个技能目录：安装一次，各档位看到同一版本；暂停或退役一次，各档位下一次使用即生效。新装的技能要先评估：系统建一个试用任务，由执行者真实调用它，独立审阅通过后才能准入。</p>
       <div role="status" data-testid="skill-catalogue-status" style={statusStyle}>
         {data === null ? (error ?? "读取中…") : data.skills.length === 0 ? "还没有技能" : `共 ${data.skills.length} 个技能版本`}
+        {" "}<button type="button" style={btnStyle} disabled={busy} onClick={() => { setDone(null); send("orchestration_skill_catalogue", {}); }}>刷新</button>
       </div>
-      {data?.skills.map((row) => (
+      {data?.skills.map((row) => { const evaluation = evaluationStatus(row.state, row.evaluation); return (
         <div key={`${row.skill_id}@${row.version}`} data-testid="skill-row" style={{ borderTop: `1px solid ${dark.border}`, padding: "6px 0" }}>
           <div style={{ fontSize: 13, color: dark.text }}>
             {row.name} <span style={{ color: dark.textMuted }}>第 {row.version} 版 · {SKILL_STATE[row.state ?? ""] ?? "未知"}</span>
@@ -1245,13 +1271,16 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
               <li key={pool}>{poolLabel(pool)}：{poolStatus(view)}</li>
             ))}
           </ul>
+          {evaluation.text && row.state === "TRIAL" ? <div data-testid="skill-evaluation" style={{ ...hintStyle, marginTop: 2 }}>{evaluation.text}</div> : null}
           <div style={btnRowStyle}>
+            {evaluation.action === "evaluate" ? <button type="button" style={primaryBtnStyle} disabled={busy} onClick={() => step(row, "evaluate")}>{row.state === "TRIAL" ? "重新评估" : "开始评估"}</button> : null}
+            {evaluation.action === "admit" ? <button type="button" style={primaryBtnStyle} disabled={busy} onClick={() => step(row, "admit")}>准入</button> : null}
             {row.state === "ADMITTED" ? <button type="button" style={btnStyle} disabled={busy} onClick={() => act(row, "SUSPEND")}>暂停</button> : null}
             {row.state === "SUSPENDED" ? <button type="button" style={btnStyle} disabled={busy} onClick={() => act(row, "RESUME")}>恢复</button> : null}
             {row.state !== "RETIRED" ? <button type="button" style={btnStyle} disabled={busy} onClick={() => act(row, "RETIRE")}>退役</button> : null}
           </div>
         </div>
-      ))}
+      ); })}
       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
         <input type="text" aria-label="技能包路径" value={path} disabled={busy}
           onChange={(e) => setPath(e.target.value)} placeholder="/Users/你/Downloads/某技能.zip"

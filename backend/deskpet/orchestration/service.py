@@ -796,6 +796,20 @@ class OrchestrationService:
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
         return await self._skill_call(lambda: lifecycle(self, request))
 
+    async def skill_evaluate(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        from .skill_catalogue import evaluate
+
+        if not isinstance(request, Mapping):
+            raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
+        return await self._skill_call(lambda: evaluate(self, request))
+
+    async def skill_admit(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        from .skill_catalogue import admit
+
+        if not isinstance(request, Mapping):
+            raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
+        return await self._skill_call(lambda: admit(self, request))
+
     async def skill_request(self, request: Mapping[str, Any]) -> dict[str, Any]:
         from .skill_catalogue import request as skill_request
 

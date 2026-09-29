@@ -61,6 +61,8 @@ def test_message_types_are_the_planned_set():
         "orchestration_skill_catalogue",
         "orchestration_skill_install_file",
         "orchestration_skill_lifecycle",
+        "orchestration_skill_evaluate",
+        "orchestration_skill_admit",
     }
 
 
