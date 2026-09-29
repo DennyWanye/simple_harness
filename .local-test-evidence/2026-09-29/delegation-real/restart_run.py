@@ -4,7 +4,7 @@ send  <out.json>：发一条要求委派的消息，看到新的子运行启动�
 watch <out.json>：重启后只读跟随主运行与子运行，直到都结束（最长 20 分钟）。
 执行库只读打开；主会话消息从副本读取。
 """
-import asyncio, json, shutil, sqlite3, sys, time, uuid
+import asyncio, json, os, shutil, sqlite3, sys, time, uuid
 from pathlib import Path
 
 import websockets
@@ -16,6 +16,7 @@ PROMPT = (
     "请直接调用 agent 工具，把这个任务委派给子助手："
     "“列出二分查找的三个常见错误，每个一句话”。拿到子助手结果后原样告诉我，并注明来自子助手。"
 )
+PROMPT = os.environ.get("DELEGATION_PROMPT") or PROMPT
 
 
 def rows(sql, args=()):
@@ -35,7 +36,7 @@ def save(out):
 
 
 async def send():
-    session = f"{int(time.time())}-delegation-restart"
+    session = f"{uuid.uuid4().hex[:12]}-delegation-restart"
     before = {r[0] for r in rows("SELECT run_id FROM runs WHERE run_id LIKE 'delegate-%'")}
     out = {"session": session, "prompt": PROMPT, "sent_at": time.time()}
     save(out)

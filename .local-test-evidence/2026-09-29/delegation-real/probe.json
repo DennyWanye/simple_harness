@@ -1,0 +1,131 @@
+{
+ "session": "1790675411-delegation-real",
+ "prompt": "只回复两个字：好的",
+ "events": [
+  {
+   "t": 0.1,
+   "chat_v2_run_reserved": {}
+  },
+  {
+   "t": 0.2,
+   "chat_v2_run_started": {}
+  },
+  {
+   "t": 2.7,
+   "chat_v2_final": {
+    "text": "好的"
+   }
+  },
+  {
+   "t": 2.7,
+   "children": [
+    {
+     "run_id": "delegate-8f0ce2e335515ee416b4159fc9927e74",
+     "parent_run_id": "product-sdk-fe002b552095547bd0d20f0ca37caa8704e7887377c269cec69eed3a8a8a9da4",
+     "state": "cancelled",
+     "created_at": 1790668870.653203
+    },
+    {
+     "run_id": "delegate-bf8c4e28cf69babaccada500f9899985",
+     "parent_run_id": "product-sdk-cd7e7fffea7af6ac1883793830c145ae4af8a961675bb4373f3aead8322e0b69",
+     "state": "completed",
+     "created_at": 1790667894.372743
+    },
+    {
+     "run_id": "delegate-d6f525b4336f78ef31086ed219f230b9",
+     "parent_run_id": "product-sdk-a6e02911622721fd6d5cc1409aa2c0434d6bf09a56aab6a181bb97813568217b",
+     "state": "cancelled",
+     "created_at": 1790667064.288353
+    },
+    {
+     "run_id": "delegate-7f0c26d2d8a037b99d1e331b90f0954b",
+     "parent_run_id": "product-sdk-cd4d275dedffad147d89d3914e2c56278f159e56bc6a4d88a141f5f3ea78808c",
+     "state": "completed",
+     "created_at": 1790666994.831396
+    },
+    {
+     "run_id": "delegate-b5c8453af316ce2e13d20a1dd1c85b96",
+     "parent_run_id": "product-sdk-66262072da336734f251b71d1a73b60d6938ce63fae0afaa0cdd32f65dd7cdc9",
+     "state": "completed",
+     "created_at": 1790666572.411624
+    }
+   ]
+  }
+ ],
+ "children_before": [
+  {
+   "run_id": "delegate-8f0ce2e335515ee416b4159fc9927e74",
+   "parent_run_id": "product-sdk-fe002b552095547bd0d20f0ca37caa8704e7887377c269cec69eed3a8a8a9da4",
+   "state": "cancelled",
+   "created_at": 1790668870.653203
+  },
+  {
+   "run_id": "delegate-bf8c4e28cf69babaccada500f9899985",
+   "parent_run_id": "product-sdk-cd7e7fffea7af6ac1883793830c145ae4af8a961675bb4373f3aead8322e0b69",
+   "state": "completed",
+   "created_at": 1790667894.372743
+  },
+  {
+   "run_id": "delegate-d6f525b4336f78ef31086ed219f230b9",
+   "parent_run_id": "product-sdk-a6e02911622721fd6d5cc1409aa2c0434d6bf09a56aab6a181bb97813568217b",
+   "state": "cancelled",
+   "created_at": 1790667064.288353
+  },
+  {
+   "run_id": "delegate-7f0c26d2d8a037b99d1e331b90f0954b",
+   "parent_run_id": "product-sdk-cd4d275dedffad147d89d3914e2c56278f159e56bc6a4d88a141f5f3ea78808c",
+   "state": "completed",
+   "created_at": 1790666994.831396
+  },
+  {
+   "run_id": "delegate-b5c8453af316ce2e13d20a1dd1c85b96",
+   "parent_run_id": "product-sdk-66262072da336734f251b71d1a73b60d6938ce63fae0afaa0cdd32f65dd7cdc9",
+   "state": "completed",
+   "created_at": 1790666572.411624
+  },
+  {
+   "run_id": "delegate-9f34926abdb406a145a24ff39582e052",
+   "parent_run_id": "product-sdk-7ebb02a01e4fee84ab23c62aee691dd1b6b7aa26f510209f96c03cdf41f33854",
+   "state": "completed",
+   "created_at": 1790665824.428148
+  }
+ ],
+ "children_after": [
+  {
+   "run_id": "delegate-8f0ce2e335515ee416b4159fc9927e74",
+   "parent_run_id": "product-sdk-fe002b552095547bd0d20f0ca37caa8704e7887377c269cec69eed3a8a8a9da4",
+   "state": "cancelled",
+   "created_at": 1790668870.653203
+  },
+  {
+   "run_id": "delegate-bf8c4e28cf69babaccada500f9899985",
+   "parent_run_id": "product-sdk-cd7e7fffea7af6ac1883793830c145ae4af8a961675bb4373f3aead8322e0b69",
+   "state": "completed",
+   "created_at": 1790667894.372743
+  },
+  {
+   "run_id": "delegate-d6f525b4336f78ef31086ed219f230b9",
+   "parent_run_id": "product-sdk-a6e02911622721fd6d5cc1409aa2c0434d6bf09a56aab6a181bb97813568217b",
+   "state": "cancelled",
+   "created_at": 1790667064.288353
+  },
+  {
+   "run_id": "delegate-7f0c26d2d8a037b99d1e331b90f0954b",
+   "parent_run_id": "product-sdk-cd4d275dedffad147d89d3914e2c56278f159e56bc6a4d88a141f5f3ea78808c",
+   "state": "completed",
+   "created_at": 1790666994.831396
+  },
+  {
+   "run_id": "delegate-b5c8453af316ce2e13d20a1dd1c85b96",
+   "parent_run_id": "product-sdk-66262072da336734f251b71d1a73b60d6938ce63fae0afaa0cdd32f65dd7cdc9",
+   "state": "completed",
+   "created_at": 1790666572.411624
+  },
+  {
+   "run_id": "delegate-9f34926abdb406a145a24ff39582e052",
+   "parent_run_id": "product-sdk-7ebb02a01e4fee84ab23c62aee691dd1b6b7aa26f510209f96c03cdf41f33854",
+   "state": "completed",
+   "created_at": 1790665824.428148
+  }
+ ]
+}

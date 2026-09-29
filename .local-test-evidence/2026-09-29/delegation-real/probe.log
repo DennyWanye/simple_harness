@@ -1,0 +1,4 @@
+chat_v2_run_reserved {}
+chat_v2_run_started {}
+chat_v2_final {"text": "好的"}
+children [{"run_id": "delegate-8f0ce2e335515ee416b4159fc9927e74", "parent_run_id": "product-sdk-fe002b552095547bd0d20f0ca37caa8704e7887377c269cec69eed3a8a8a9da4", "state": "cancelled", "created_at": 1790668870.653203}, {"run_id": "delegate-bf8c4e28cf69babaccada500f9899985", "parent_run_id": "product-sdk-cd7e7fffea7af6ac1883793830c145ae4af8a961675bb4373f3aead8322e0b69", "state": "completed", "created_at": 1790667894.372743}, {"run_id": "delegate-d6f525b4336f78ef31086ed219f230b9", "parent_run_id": "product-sdk-a6e02911622721fd6d5cc1409aa2c0434d6bf09a56aab6a181bb97813568217b", "state": "cancelled", "creat

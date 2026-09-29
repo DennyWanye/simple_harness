@@ -14,7 +14,7 @@ PROMPT = sys.argv[2] if len(sys.argv) > 2 else (
 )
 DB = ("/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-09-25/opt/ui-full/"
       "userdata/data/simple-harness-sdk/execution-v6.sqlite3")
-SESSION = f"delegation-real-{int(time.time())}"
+SESSION = f"{int(time.time())}-delegation-real"
 
 
 def children():
