@@ -1,0 +1,121 @@
+[
+ {
+  "t": 5,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "verifying",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "ACTIVE",
+    "queued",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ },
+ {
+  "t": 29,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "queued",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "ACTIVE",
+    "queued",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ },
+ {
+  "t": 50,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "running",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "ACTIVE",
+    "queued",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ },
+ {
+  "t": 111,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "verifying",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "ACTIVE",
+    "queued",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ },
+ {
+  "t": 131,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "verifying",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "COMPLETED",
+    "delivered",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ },
+ {
+  "t": 191,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "queued",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "COMPLETED",
+    "delivered",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ },
+ {
+  "t": 396,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "COMPLETED",
+    "delivered",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "COMPLETED",
+    "delivered",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ }
+]

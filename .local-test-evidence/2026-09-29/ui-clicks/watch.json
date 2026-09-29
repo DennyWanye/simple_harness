@@ -1,0 +1,70 @@
+[
+ {
+  "t": 3,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "running",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "ACTIVE",
+    "verifying",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ },
+ {
+  "t": 47,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "running",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "ACTIVE",
+    "queued",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ },
+ {
+  "t": 87,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "verifying",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "ACTIVE",
+    "queued",
+    0,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ },
+ {
+  "t": 171,
+  "state": {
+   "mission-85b59c24e624269f": [
+    "ACTIVE",
+    "verifying",
+    0,
+    "试用评估技能「weekly-bullets」（第 1 版）："
+   ],
+   "mission-cafccef83ebc8a48": [
+    "ACTIVE",
+    "waiting_person",
+    1,
+    "写一份 notes.md，列出本周三条要点：周一修复登录超时"
+   ]
+  }
+ }
+]
