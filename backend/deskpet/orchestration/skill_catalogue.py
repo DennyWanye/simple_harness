@@ -73,14 +73,22 @@ def _revision(runtime: Any, pin: Any) -> tuple[Any, Any]:
 
 
 def _certificate(service: Any, mission_id: str, task_id: str) -> Any:
-    """The newest USABLE ``ACCEPT`` use certificate of the task's current acceptance, as the
-    acceptance pin the SDK verifies (None while the evaluation has not passed)."""
+    """The newest USABLE ``ACCEPT`` use certificate of the task's current pass, as the
+    acceptance pin the SDK verifies (None while the evaluation has not passed): the
+    adopted root resolution of a content-only evaluation Mission (2026-09-29: such a
+    Mission writes no acceptance row for its root task), else the task's acceptance."""
     import json
 
     from simple_harness.agents.arp.pins import Pin
 
     with service._orchestrator.store.read_view() as connection:
         rows = connection.execute(
+            "SELECT c.certificate_id, c.certificate_hash, c.certificate_json FROM assurance_use_certificates c "
+            "JOIN goal_resolutions r ON r.resolution_id = c.consumer_id AND r.mission_id = c.mission_id "
+            "WHERE c.mission_id=? AND r.goal_task_id=? AND r.validity='CURRENT' AND r.adopted AND r.verdict='ACCEPT' "
+            "AND c.purpose='ACCEPT' AND c.consumer_kind='ROOT_RESOLUTION' ORDER BY c.issued_at_ms DESC",
+            (mission_id, task_id),
+        ).fetchall() + connection.execute(
             "SELECT c.certificate_id, c.certificate_hash, c.certificate_json FROM assurance_use_certificates c "
             "JOIN acceptances a ON a.acceptance_id = c.consumer_id AND a.mission_id = c.mission_id "
             "WHERE c.mission_id=? AND a.task_id=? AND a.validity='CURRENT' AND c.purpose='ACCEPT' "
