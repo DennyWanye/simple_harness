@@ -1,0 +1,92 @@
+{
+ "steps": [
+  {
+   "t": 0,
+   "before": {
+    "state": "TRIAL",
+    "evaluation": {
+     "mission_id": "mission-ca430334ee233edb",
+     "mission_status": "COMPLETED",
+     "passed": true,
+     "expired": false,
+     "expires_at_ms": 1790749451978
+    }
+   }
+  },
+  {
+   "t": 0,
+   "admit": {
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "admitted": {
+    "state": "ADMITTED",
+    "pools": {
+     "deepseek-native-256k-v1": [
+      "ADMITTED",
+      true
+     ],
+     "deepseek-native-256k-thinking-v1": [
+      "ADMITTED",
+      true
+     ],
+     "deepseek-native-512k-thinking-v1": [
+      "ADMITTED",
+      true
+     ],
+     "deepseek-native-512k-v1": [
+      "ADMITTED",
+      true
+     ]
+    }
+   }
+  },
+  {
+   "t": 0,
+   "table_created": {
+    "ok": true,
+    "mission_id": "mission-33d8916ba4f070b8",
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "missions": {
+    "mission-33d8916ba4f070b8": [
+     "CREATED",
+     "received"
+    ]
+   }
+  },
+  {
+   "t": 15,
+   "missions": {
+    "mission-33d8916ba4f070b8": [
+     "PLANNING",
+     "received"
+    ]
+   }
+  },
+  {
+   "t": 30,
+   "missions": {
+    "mission-33d8916ba4f070b8": [
+     "PLANNING",
+     "waiting_person"
+    ]
+   }
+  },
+  {
+   "t": 45,
+   "missions": {
+    "mission-33d8916ba4f070b8": [
+     "ACTIVE",
+     "running"
+    ]
+   }
+  }
+ ]
+}

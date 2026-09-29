@@ -1,0 +1,214 @@
+{
+ "steps": [
+  {
+   "t": 0,
+   "before": {
+    "state": "TRIAL",
+    "evaluation": {
+     "mission_id": "mission-7eced23b63bfaf1b",
+     "mission_status": "FAILED",
+     "passed": false,
+     "expired": false,
+     "expires_at_ms": 1790747288059
+    }
+   }
+  },
+  {
+   "t": 0,
+   "evaluation_started": {
+    "mission_id": "mission-ca430334ee233edb",
+    "mission_status": "CREATED",
+    "passed": false,
+    "expired": false,
+    "expires_at_ms": 1790749451978
+   }
+  },
+  {
+   "t": 0,
+   "parallel_created": {
+    "ok": true,
+    "mission_id": "mission-48f3b0ccc4c2b04c",
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "CREATED",
+     "received"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "CREATED",
+     "received"
+    ]
+   }
+  },
+  {
+   "t": 15,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "PLANNING",
+     "received"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "PLANNING",
+     "received"
+    ]
+   }
+  },
+  {
+   "t": 257,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "PLANNING",
+     "received"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "ACTIVE",
+     "running"
+    ]
+   }
+  },
+  {
+   "t": 349,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "PLANNING",
+     "received"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "ACTIVE",
+     "verifying"
+    ]
+   }
+  },
+  {
+   "t": 365,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "ACTIVE",
+     "running"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "ACTIVE",
+     "verifying"
+    ]
+   }
+  },
+  {
+   "t": 442,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "ACTIVE",
+     "running"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "ACTIVE",
+     "queued"
+    ]
+   }
+  },
+  {
+   "t": 474,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "ACTIVE",
+     "verifying"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "ACTIVE",
+     "queued"
+    ]
+   }
+  },
+  {
+   "t": 504,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "ACTIVE",
+     "verifying"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "COMPLETED",
+     "delivered"
+    ]
+   }
+  },
+  {
+   "t": 534,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "ACTIVE",
+     "running"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "COMPLETED",
+     "delivered"
+    ]
+   }
+  },
+  {
+   "t": 579,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "ACTIVE",
+     "verifying"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "COMPLETED",
+     "delivered"
+    ]
+   }
+  },
+  {
+   "t": 627,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "ACTIVE",
+     "queued"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "COMPLETED",
+     "delivered"
+    ]
+   }
+  },
+  {
+   "t": 718,
+   "missions": {
+    "mission-ca430334ee233edb": [
+     "COMPLETED",
+     "delivered"
+    ],
+    "mission-48f3b0ccc4c2b04c": [
+     "COMPLETED",
+     "delivered"
+    ]
+   }
+  },
+  {
+   "t": 718,
+   "after_evaluation": {
+    "state": "TRIAL",
+    "evaluation": {
+     "mission_id": "mission-ca430334ee233edb",
+     "mission_status": "COMPLETED",
+     "passed": false,
+     "expired": false,
+     "expires_at_ms": 1790749451978
+    }
+   }
+  }
+ ],
+ "phase1": {
+  "mission-ca430334ee233edb": [
+   "COMPLETED",
+   "delivered"
+  ],
+  "mission-48f3b0ccc4c2b04c": [
+   "COMPLETED",
+   "delivered"
+  ]
+ }
+}

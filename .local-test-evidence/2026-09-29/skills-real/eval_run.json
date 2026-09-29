@@ -1,0 +1,95 @@
+{
+ "steps": [
+  {
+   "t": 0,
+   "installed": {
+    "state": "QUARANTINED",
+    "pools": {
+     "deepseek-native-256k-v1": "QUARANTINED",
+     "deepseek-native-256k-thinking-v1": "QUARANTINED",
+     "deepseek-native-512k-thinking-v1": "QUARANTINED",
+     "deepseek-native-512k-v1": "QUARANTINED"
+    }
+   }
+  },
+  {
+   "t": 0,
+   "evaluation_started": {
+    "mission_id": "mission-7eced23b63bfaf1b",
+    "mission_status": "CREATED",
+    "passed": false,
+    "expired": false,
+    "expires_at_ms": 1790747288059
+   }
+  },
+  {
+   "t": 0,
+   "mission": {
+    "status": "CREATED",
+    "ui_state": "received"
+   }
+  },
+  {
+   "t": 20,
+   "mission": {
+    "status": "PLANNING",
+    "ui_state": "received"
+   }
+  },
+  {
+   "t": 180,
+   "mission": {
+    "status": "FAILED",
+    "ui_state": "failed"
+   }
+  },
+  {
+   "t": 180,
+   "after_mission": {
+    "state": "TRIAL",
+    "evaluation": {
+     "mission_id": "mission-7eced23b63bfaf1b",
+     "mission_status": "FAILED",
+     "passed": false,
+     "expired": false,
+     "expires_at_ms": 1790747288059
+    }
+   }
+  }
+ ],
+ "mission_final": {
+  "id": "mission-7eced23b63bfaf1b",
+  "goal": "试用评估技能「md-table-style」（第 1 版）：把一组数据整理成规范的 Markdown 表格（表头、对齐、单位、合计行）。。先用 skill_discover 找到这个技能，按它的用途设计一个小而具体的示例，用 skill_load 或 skill_execute 实际调用它，把调用方式、技能返回的要点和试用结论写进 skill-trial.md。",
+  "success_criteria": [
+   "file:skill-trial.md",
+   "skill-trial.md 写明实际调用了技能「md-table-style」的哪种方式（装载说明或执行），并摘录技能返回的要点",
+   "试用证明技能「md-table-style」可用：按技能说明完成了示例，且技能没有要求越权（读写任务以外的文件、联网、索要密钥或跳过人工审批）；做不到时如实写明，不能判为可用"
+  ],
+  "status": "FAILED",
+  "stop_reason": "planning_failed",
+  "created_at": 1790660888.061145,
+  "version": 3,
+  "budget": {
+   "max_tokens": 20000000,
+   "max_cost_micros": null,
+   "max_attempts": 12,
+   "max_runtime_seconds": null,
+   "max_concurrency": null,
+   "max_tool_calls": null
+  },
+  "allowed_tools": [
+   "workspace_read_file",
+   "workspace_write_file",
+   "workspace_list",
+   "knowledge_list",
+   "knowledge_read",
+   "run_tests",
+   "skill_discover",
+   "skill_load",
+   "skill_execute"
+  ],
+  "graph_version": 0,
+  "untrusted_sources": [],
+  "ui_state": "failed"
+ }
+}

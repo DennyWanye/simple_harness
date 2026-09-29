@@ -1,0 +1,17 @@
+before {"state": "TRIAL", "evaluation": {"mission_id": "mission-7eced23b63bfaf1b", "mission_status": "FAILED", "passed": false, "expired": false, "expires_at_ms": 1790747288059}}
+evaluation_started {"mission_id": "mission-ca430334ee233edb", "mission_status": "CREATED", "passed": false, "expired": false, "expires_at_ms": 1790749451978}
+parallel_created {"ok": true, "mission_id": "mission-48f3b0ccc4c2b04c", "error": null}
+missions {"mission-ca430334ee233edb": ["CREATED", "received"], "mission-48f3b0ccc4c2b04c": ["CREATED", "received"]}
+missions {"mission-ca430334ee233edb": ["PLANNING", "received"], "mission-48f3b0ccc4c2b04c": ["PLANNING", "received"]}
+missions {"mission-ca430334ee233edb": ["PLANNING", "received"], "mission-48f3b0ccc4c2b04c": ["ACTIVE", "running"]}
+missions {"mission-ca430334ee233edb": ["PLANNING", "received"], "mission-48f3b0ccc4c2b04c": ["ACTIVE", "verifying"]}
+missions {"mission-ca430334ee233edb": ["ACTIVE", "running"], "mission-48f3b0ccc4c2b04c": ["ACTIVE", "verifying"]}
+missions {"mission-ca430334ee233edb": ["ACTIVE", "running"], "mission-48f3b0ccc4c2b04c": ["ACTIVE", "queued"]}
+missions {"mission-ca430334ee233edb": ["ACTIVE", "verifying"], "mission-48f3b0ccc4c2b04c": ["ACTIVE", "queued"]}
+missions {"mission-ca430334ee233edb": ["ACTIVE", "verifying"], "mission-48f3b0ccc4c2b04c": ["COMPLETED", "delivered"]}
+missions {"mission-ca430334ee233edb": ["ACTIVE", "running"], "mission-48f3b0ccc4c2b04c": ["COMPLETED", "delivered"]}
+missions {"mission-ca430334ee233edb": ["ACTIVE", "verifying"], "mission-48f3b0ccc4c2b04c": ["COMPLETED", "delivered"]}
+missions {"mission-ca430334ee233edb": ["ACTIVE", "queued"], "mission-48f3b0ccc4c2b04c": ["COMPLETED", "delivered"]}
+missions {"mission-ca430334ee233edb": ["COMPLETED", "delivered"], "mission-48f3b0ccc4c2b04c": ["COMPLETED", "delivered"]}
+after_evaluation {"state": "TRIAL", "evaluation": {"mission_id": "mission-ca430334ee233edb", "mission_status": "COMPLETED", "passed": false, "expired": false, "expires_at_ms": 1790749451978}}
+EXIT 0

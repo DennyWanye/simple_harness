@@ -1,0 +1,7 @@
+installed {"state": "QUARANTINED", "pools": {"deepseek-native-256k-v1": "QUARANTINED", "deepseek-native-256k-thinking-v1": "QUARANTINED", "deepseek-native-512k-thinking-v1": "QUARANTINED", "deepseek-native-512k-v1": "QUARANTINED"}}
+evaluation_started {"mission_id": "mission-7eced23b63bfaf1b", "mission_status": "CREATED", "passed": false, "expired": false, "expires_at_ms": 1790747288059}
+mission {"status": "CREATED", "ui_state": "received"}
+mission {"status": "PLANNING", "ui_state": "received"}
+mission {"status": "FAILED", "ui_state": "failed"}
+after_mission {"state": "TRIAL", "evaluation": {"mission_id": "mission-7eced23b63bfaf1b", "mission_status": "FAILED", "passed": false, "expired": false, "expires_at_ms": 1790747288059}}
+EXIT 0
