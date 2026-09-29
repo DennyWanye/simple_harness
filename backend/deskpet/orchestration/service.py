@@ -333,9 +333,14 @@ class OrchestrationService:
         # a failure is not fatal — the deployment simply runs nothing model-written.
         self._sandbox = await self._probe_sandbox()
         sandboxed = bool(self._sandbox.get("ok"))
+        # NEXT-TG-1.0 §11: native-plane pools serve the shared Skill catalogue's three
+        # model-side tools; a Mission's Worker gets them through the original four-way
+        # intersection (the SDK never freezes them into a request on a legacy pool).
+        skill_tools = self._native_skill_tools()
+        base_tools = (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "run_tests") if sandboxed else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS)
         self._deployment = DeploymentPolicy(
-            allowed_tools=(*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "run_tests")
-            if sandboxed else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS),
+            allowed_tools=(*base_tools, *skill_tools),
+            skill_tools=skill_tools,
             code_execution="sandboxed" if sandboxed else "off",
             enabled_connectors=enabled_connectors,
             max_action_level="L2",  # one person: L3's two distinct people cannot be met
@@ -685,6 +690,14 @@ class OrchestrationService:
         )
 
     # ------------------------------------------------------------ native plane (RP-E3)
+    def _native_skill_tools(self) -> tuple[str, ...]:
+        """The Skill tools this deployment's native pools serve (none without them)."""
+        if self.settings.native_plane != "on" or self._test_scenario is not None:
+            return ()
+        from agent_orchestrator.governance.policies import SKILL_TOOL_NAMES
+
+        return tuple(SKILL_TOOL_NAMES)
+
     def _build_native(self) -> Any:
         """The Host's native-plane composition, or None when this deployment keeps the
         legacy pools (explicit opt-out, or a fixture lane)."""

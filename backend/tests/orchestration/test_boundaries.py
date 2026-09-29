@@ -42,7 +42,9 @@ async def test_default_deployment_offers_workspace_and_scoped_knowledge_tools(or
         # only way model-written code may run at all
         status = service.status()
         sandboxed = bool(status["sandbox"].get("ok"))
-        expected = sorted([*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, *(["run_tests"] if sandboxed else [])])
+        # NEXT-TG-1.0 §11: the native plane (default on) also serves the three Skill tools
+        skills = ["skill_discover", "skill_load", "skill_execute"] if status["native_plane"]["enabled"] else []
+        expected = sorted([*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, *(["run_tests"] if sandboxed else []), *skills])
         assert sorted(status["allowed_tools"]) == expected
         assert status["code_execution"] == ("sandboxed" if sandboxed else "off")
         created = service.create_mission(notes_request("k-tools"))
@@ -174,10 +176,12 @@ async def test_no_host_tool_reaches_the_orchestration_runtime(orchestration_root
         # Nothing of the Host's own chat surface reaches the orchestration runtime: the set
         # is exactly workspace tools and Mission-scoped knowledge reads, plus ``run_tests``
         # when the sandbox proved itself
-        # here (P3.2 plan D9).  Anything else would be a leak (review P2-10).
+        # here (P3.2 plan D9).  Anything else would be a leak (review P2-10).  The three
+        # Skill tools are the SDK runtime's own catalogue tools on native pools (NEXT-TG-1.0
+        # §11), not Host chat tools.
         offered = set(service.runtime_tool_names())
         sandboxed = bool(service.status()["sandbox"].get("ok"))
-        assert offered - set(WORKSPACE_TOOLS) <= {*KNOWLEDGE_TOOLS, "run_tests"}
+        assert offered - set(WORKSPACE_TOOLS) <= {*KNOWLEDGE_TOOLS, "run_tests", "skill_discover", "skill_load", "skill_execute"}
         assert ("run_tests" in offered) is sandboxed
         assert set(WORKSPACE_TOOLS) <= offered
         assert set(KNOWLEDGE_TOOLS) <= offered
