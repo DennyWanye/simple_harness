@@ -117,4 +117,20 @@ def retry_decision_required(store: Any, mission_id: str, task_id: str) -> bool:
     attempts = store.list_attempts(task_id)
     latest = max(attempts, key=lambda a: a.ordinal, default=None)
     return bool(latest is not None and latest.status in TERMINAL_ATTEMPT and latest.failure
-                and str(latest.status) not in {"CANCELLED", "SUPERSEDED"})
+                and str(latest.status) not in {"CANCELLED", "SUPERSEDED"}
+                and not _failed_in_an_older_generation(store, mission_id, task_id, latest))
+
+
+def _failed_in_an_older_generation(store: Any, mission_id: str, task_id: str, attempt: Any) -> bool:
+    """2026-09-30（结构修复真机第 5 局）：结构修复把步骤换了代（派发代号 +1，输入常常也变了），
+    旧一代的失败不是"原样重试"要批准的对象——新一代直接开工；新一代自己失败时照旧要批准。
+    代号按尝试开始时已写入的最后一版语义记录算（时间在前的版本）。"""
+    rows = store.connection.execute(
+        "SELECT dispatch_generation, created_at FROM task_semantics WHERE mission_id=? AND task_id=?"
+        " ORDER BY binding_revision", (mission_id, task_id)).fetchall()
+    if not rows:
+        return False
+    current = int(rows[-1][0])
+    at_attempt = max((int(generation) for generation, created in rows
+                      if float(created) <= float(attempt.created_at)), default=int(rows[0][0]))
+    return current > at_attempt

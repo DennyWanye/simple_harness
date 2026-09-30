@@ -870,7 +870,7 @@ def test_an_output_of_an_occurrence_the_plan_dropped_is_not_offered(world: World
 
 
 def test_migration_seventeen_is_additive_and_eighteen_is_still_present() -> None:
-    assert schema.SCHEMA_VERSION == 29  # 迁移 25～29 已追加在后
+    assert schema.SCHEMA_VERSION == 30  # 迁移 25～30 已追加在后
     assert schema.MIGRATIONS[16].ddl is acceptance_receipt_schema.DDL
     assert "ALTER TABLE" not in acceptance_receipt_schema.DDL.upper()
     assert schema.MIGRATIONS[17].version == 18
