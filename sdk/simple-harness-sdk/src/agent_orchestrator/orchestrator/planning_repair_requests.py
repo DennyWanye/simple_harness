@@ -173,8 +173,58 @@ def record_request(dispatch: Any, mission_id: str, *, event_type: str,
         impact = analyze_impact(request, **read_repair_impact_indexes(store, network, mission_id))
         append_hierarchical_event(store, REQUESTED, mission_id, key=source_key,
             payload={"source_key": source_key, "request_id": request.request_id,
-                     "request": request.to_json(), "impact": impact.to_json()})
+                     "request": request.to_json(), "impact": impact.to_json(),
+                     "trigger_scope": trigger_scope(store, network, mission_id, trigger_refs)})
     return True
+
+
+def trigger_scope(store: Any, network: Any, mission_id: str, trigger_refs: tuple[str, ...]) -> list[str]:
+    """The steps a request is *about*: each trigger's own task and occurrence plus the
+    compound goals above it.  Empty when no trigger names a step
+    (a Mission-level trigger such as a requirements amendment).
+
+    2026-09-30 真机（结构修复第 2 局）：消费规则只看影响范围，影响范围含下游；规划器只重做
+    下游第二步，"第一步引用了旧资料"的请求也被记成已处理，第一步从没重做。影响范围仍用于
+    展示与系统消费；"规划器处理了这条请求"只认它直接指向的步骤或其上级。
+    """
+    tasks: set[str] = set()
+    for ref in trigger_refs:
+        ref = str(ref)
+        if store.get_task(ref) is not None:
+            tasks.add(ref)
+            continue
+        attempt = store.get_attempt(ref)
+        if attempt is not None:
+            tasks.add(str(attempt.task_id))
+            continue
+        row = store.connection.execute(
+            "SELECT task_id FROM results WHERE result_id=? AND mission_id=?", (ref, mission_id)).fetchone()
+        if row is not None:
+            tasks.add(str(row[0]))
+    if not tasks:
+        return []
+    parent: dict[str, str] = {}
+    for instance in network.method_instances:
+        if not network.is_adopted(instance.instance_id):
+            continue
+        for child in instance.child_bindings:
+            parent[str(child.occurrence_id)] = str(instance.effective_goal_occurrence_id)
+    by_occurrence = {str(s.occurrence_id): s for s in network.occurrences}
+    scope: set[str] = set(tasks)
+    frontier = [str(s.occurrence_id) for s in network.occurrences if str(s.task_id) in tasks]
+    while frontier:
+        occurrence = frontier.pop()
+        if occurrence in scope:
+            continue
+        scope.add(occurrence)
+        spec = by_occurrence.get(occurrence)
+        if spec is not None:
+            # Not the obligation: sibling steps of one goal share it, so it would make a
+            # decision on any sibling "address" this request.
+            scope.add(str(spec.task_id))
+        if occurrence in parent:
+            frontier.append(parent[occurrence])
+    return sorted(scope)
 
 
 def collect_triggers(handler: Any, mission: Any) -> bool:
@@ -318,7 +368,7 @@ def repair_goal_occurrences(store: Any, network: Any) -> tuple[str, ...]:
 def address_requests(store: Any, mission_id: str, *, package: Any,
                      decision_id: str, decision_type: str, status: str,
                      subject_key: str) -> None:
-    """Only a committed plan change for the affected subject consumes a trigger.
+    """Only a committed plan change for the subject a trigger is about consumes it.
 
     Evidence, human questions, proposals and WAIT preserve the request so the
     resumed planner can still see the failure that opened the service call.
@@ -333,8 +383,15 @@ def address_requests(store: Any, mission_id: str, *, package: Any,
     addressed = []
     for request in package.get("repair_requests", ()):
         impact = request.get("impact", {})
-        affected = {str(item) for group in ("revalidate", "supersede", "new_work")
-                    for item in impact.get(group, ())}
+        scope = {str(item) for item in request.get("trigger_scope", ())}
+        if scope:
+            # Only a decision on the step the request is about (or a goal above it), or on
+            # work the request itself called for, addresses it.
+            affected = scope | {str(item) for item in impact.get("new_work", ())}
+        else:
+            # A Mission-level trigger (no step named): any affected subject answers it.
+            affected = {str(item) for group in ("revalidate", "supersede", "new_work")
+                        for item in impact.get(group, ())}
         if targets & affected:
             addressed.append(request["request_id"])
     if addressed:

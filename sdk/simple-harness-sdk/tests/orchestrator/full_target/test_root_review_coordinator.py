@@ -1451,6 +1451,43 @@ def test_the_system_settles_a_repair_request_once_every_affected_leaf_is_reaccep
         assert pending_requests(world.store, world.mission.id)
 
 
+def test_a_repair_on_a_downstream_step_does_not_address_a_request_opened_upstream(tmp_path) -> None:
+    """2026-09-30 真机（结构修复第 2 局）：资料换版本后，"第一步引用了旧版"那条请求的影响范围
+    含下游第二步；规划器只重做了第二步，系统把两条请求都记成已处理，第一步从没重做，终审判
+    返工失败。一条请求只有处理到**直接出问题的那一步**（或它的上级）才算处理了。"""
+
+    from test_htn_end_to_end import _leaf_task
+
+    from agent_orchestrator.orchestrator.planning_repair_requests import (
+        ADDRESSED,
+        address_requests,
+        pending_requests,
+        record_request,
+    )
+    from agent_orchestrator.planning.htn.planner_package import planning_subjects
+
+    world = committed(tmp_path, key="p23c-address-scope", demand=True)
+    leaf, review = _leaf_task(world), _review_task(world)
+    assert record_request(world.dispatch, world.mission.id, event_type="EvidenceInvalidated",
+                          trigger_refs=(leaf,), source_key="source:scope-1",
+                          detail={"reason": "source_superseded"})
+    [request] = pending_requests(world.store, world.mission.id)
+    assert review in request["impact"]["revalidate"], "precondition: the downstream step is in the impact"
+
+    def decide_on(task_id: str, decision_id: str) -> None:
+        subjects = planning_subjects(world.network())
+        subject = next(s for s in subjects if s["task_id"] == task_id)
+        package = {"planning_subjects": subjects, "repair_requests": pending_requests(world.store, world.mission.id)}
+        address_requests(world.store, world.mission.id, package=package, decision_id=decision_id,
+                         decision_type="REPAIR", status="COMMITTED", subject_key=subject["subject_key"])
+
+    decide_on(review, "pd-downstream")
+    assert [r["request_id"] for r in pending_requests(world.store, world.mission.id)] == [request["request_id"]]
+    assert not [e for e in world.store.list_events(world.mission.id) if e.type == ADDRESSED]
+    decide_on(leaf, "pd-upstream")
+    assert pending_requests(world.store, world.mission.id) == []
+
+
 def test_contributions_moving_is_its_own_recut_channel(cut: World) -> None:
     """P2-3: ``CONTRIBUTIONS_MOVED`` had no test — ``REQUIREMENTS_MOVED`` hid it.
 
