@@ -105,6 +105,22 @@ def test_two_inconclusive_reviews_go_to_the_person_and_a_pass_licenses_acceptanc
             assert any(r.startswith("human_adjudication:") for r in candidate.certificate.reasons)
             rt.settle_fixture_worker()
             assert rt.accept_now().accepted_result_id == rt.stored.envelope.id
+            # …and the step now counts as done for its parent (real run 3, 2026-09-30:
+            # the root kept "waiting_children" and the Mission died no_dispatchable_work)
+            from agent_orchestrator.orchestrator.completion_status import read_occurrence_completion
+            occurrence = rt.store.connection.execute(
+                "SELECT occurrence_id FROM operation_completion_scopes WHERE mission_id=?",
+                (rt.mission.id,)).fetchone()[0]
+            with rt.store.read_view():
+                status = read_occurrence_completion(rt.store, rt.mission.id, occurrence)
+            assert status.content_ready, status
+            # …and its acceptance is a usable support for the parent's resolution
+            from agent_orchestrator.orchestrator.assurance_validity import acceptance_id_for
+            from agent_orchestrator.orchestrator.completion_support import read_completion_support
+            with rt.store.read_view():
+                support = read_completion_support(
+                    rt.store, rt.mission.id, acceptance_id_for(rt.task.id, rt.stored.envelope.id))
+            assert support.record.record_id == record.record_id
     asyncio.run(case())
 
 

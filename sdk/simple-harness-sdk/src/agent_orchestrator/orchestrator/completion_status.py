@@ -28,6 +28,7 @@ from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store, StoreConflict, StoreError
 from .operation_completion import OperationCompletionReader
+from .review_adjudication import accepted_or_adjudicated
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +163,9 @@ def _official_accept_review(
         or acceptance.validity is not Validity.CURRENT
         or record.record_id != acceptance.review_record_id
         or record.purpose is not purpose
-        or record.verdict is not ReviewVerdict.ACCEPT
+        # 2026-09-30：两次审阅都判不下来、由人裁决通过的记录也算（真机第 3 局：验收已提交，
+        # 这里只认"通过"，根目标一直以为子步骤没做完，任务以无事可做失败）。
+        or not accepted_or_adjudicated(htn._store, record)
     ):
         return False
     official = htn.official_review_record(str(record.package_id))

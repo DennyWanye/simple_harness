@@ -13,6 +13,7 @@ from ..contracts.htn import TaskForm
 from ..contracts.resolution import ReviewPurpose, ReviewVerdict
 from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
 from ..storage.htn_store import HtnStore
+from .review_adjudication import accepted_or_adjudicated
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store, StoreError
 from .completion_status import _official_accept_review, read_occurrence_completion
@@ -44,7 +45,8 @@ def read_completion_support(store: Store, mission_id: str, support_id: str) -> C
     if (
         not stored.official
         or official != stored.record
-        or official.verdict is not ReviewVerdict.ACCEPT
+        # 2026-09-30：两次审阅都判不下来、由人裁决通过的记录同样作数（审阅升级）。
+        or not accepted_or_adjudicated(store, official)
     ):
         raise StoreError("completion support has no official accepted review")
     return CompletionSupport(
