@@ -1,0 +1,516 @@
+{
+ "mission": {
+  "goal": "根据资料 sources/policy.md 写出 summary.md：逐条概括全部值班规则并引用资料原文；另外在文末加一节“与公司官网核对”，说明这些规则与公司官网当前公布的版本是否一致。只写这一个文件。",
+  "success_criteria": [
+   "file:summary.md",
+   "summary.md 逐条概括 sources/policy.md 的全部规则并引用原文",
+   "summary.md 末尾“与公司官网核对”一节的结论与公司官网当前公布的版本一致"
+  ],
+  "domain": "doc-research-v1"
+ },
+ "steps": [
+  {
+   "t": 0,
+   "follow": {
+    "mission_id": "mission-f1f0eb8cdb194544"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "SourceRegistered",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "NativePlanningDecisionPrepared",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanRevisionCommitted",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "VerificationFailed",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningHumanRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningHumanAnswered",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "VerificationFailed",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "VerificationFailed",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "VerificationFailed",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AssuranceReviewSecondOpinionRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "VerificationSuspended",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "ApprovalRequested",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AssuranceReviewAdjudicated",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "ApprovalGranted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AcceptanceCommitted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "TaskCompleted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "HierarchicalRootReviewCut",
+    "task": "desktop-root-mission-f1f0eb8cdb194544"
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AssuranceReviewSecondOpinionRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningHumanRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "PlanningHumanAnswered",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 83449,
+    "type": "AssuranceReviewAdjudicated",
+    "task": "desktop-root-mission-f1f0eb8cdb194544"
+   }
+  },
+  {
+   "t": 0,
+   "mission": [
+    "COMPLETED",
+    "delivered",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 0,
+   "summary": {
+    "plan_revisions": 1,
+    "status": "COMPLETED"
+   }
+  }
+ ],
+ "mission_id": "mission-f1f0eb8cdb194544",
+ "plan_revisions": 1
+}

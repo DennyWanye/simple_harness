@@ -1,0 +1,478 @@
+{
+ "mission": {
+  "goal": "根据资料 sources/policy.md 写出 summary.md：逐条概括全部值班规则并引用资料原文；另外在文末加一节“与公司官网核对”，说明这些规则与公司官网当前公布的版本是否一致。只写这一个文件。",
+  "success_criteria": [
+   "file:summary.md",
+   "summary.md 逐条概括 sources/policy.md 的全部规则并引用原文",
+   "summary.md 末尾“与公司官网核对”一节的结论与公司官网当前公布的版本一致"
+  ],
+  "domain": "doc-research-v1"
+ },
+ "steps": [
+  {
+   "t": 0,
+   "created": {
+    "ok": true,
+    "mission_id": "mission-ef3a95718e77c81a",
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "confirm": {
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 76111,
+    "type": "SourceRegistered",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "mission": [
+    "CREATED",
+    "received",
+    "CONFIRMATION_REQUIRED"
+   ]
+  },
+  {
+   "t": 8,
+   "mission": [
+    "PLANNING",
+    "received",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 49,
+   "event": {
+    "seq": 76332,
+    "type": "NativePlanningDecisionPrepared",
+    "task": null
+   }
+  },
+  {
+   "t": 49,
+   "event": {
+    "seq": 76332,
+    "type": "PlanRevisionCommitted",
+    "task": null
+   }
+  },
+  {
+   "t": 49,
+   "event": {
+    "seq": 76332,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 49,
+   "event": {
+    "seq": 76332,
+    "type": "AttemptStarted",
+    "task": "task-0cddbdf5a2f162d31e878dac6165717c"
+   }
+  },
+  {
+   "t": 49,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 75,
+   "event": {
+    "seq": 76582,
+    "type": "VerificationFailed",
+    "task": "task-0cddbdf5a2f162d31e878dac6165717c"
+   }
+  },
+  {
+   "t": 75,
+   "event": {
+    "seq": 76582,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 75,
+   "event": {
+    "seq": 76582,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 75,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 93,
+   "event": {
+    "seq": 76624,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 93,
+   "event": {
+    "seq": 76624,
+    "type": "PlanningHumanRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 93,
+   "planning_answer": {
+    "question": "summary.md 末尾“与公司官网核对”一节需要公司官网当前公布的版本才能给出与官网一致的结论，但缺少这份外部资料：执行者已检查任务工作区（只有 sources/policy.md）和任务资料，可用工具里也没有联网/取网页的能力，系统内无法凭空得到官网内容，因此该节目前只能写“无法核对”，验收无法通过。请提供以下任一内容：(1) 公司官网值班规则页面的地址，以及其当前公布版本的原文（或可访问的离线副本/截图文字），供写入核对结论；(2) 如果确实没有可核对的官网版本，请明确该节应如何表述与验收，例如改为说明“公司官网无可核对版本”并相应调整验收标准，或删去该节。",
+    "answer": "资料已换成第 2 版，请按 sources/policy.md 当前内容重做受影响的部分。",
+    "ok": true
+   }
+  },
+  {
+   "t": 93,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 101,
+   "event": {
+    "seq": 76649,
+    "type": "PlanningHumanAnswered",
+    "task": null
+   }
+  },
+  {
+   "t": 101,
+   "event": {
+    "seq": 76649,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 102,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 150,
+   "event": {
+    "seq": 76678,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-0cddbdf5a2f162d31e878dac6165717c"
+   }
+  },
+  {
+   "t": 150,
+   "event": {
+    "seq": 76678,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 150,
+   "event": {
+    "seq": 76678,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 150,
+   "event": {
+    "seq": 76678,
+    "type": "AttemptStarted",
+    "task": "task-0cddbdf5a2f162d31e878dac6165717c"
+   }
+  },
+  {
+   "t": 150,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 214,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 267,
+   "event": {
+    "seq": 76736,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 277,
+   "event": {
+    "seq": 76790,
+    "type": "AcceptanceCommitted",
+    "task": "task-0cddbdf5a2f162d31e878dac6165717c"
+   }
+  },
+  {
+   "t": 277,
+   "event": {
+    "seq": 76790,
+    "type": "TaskCompleted",
+    "task": "task-0cddbdf5a2f162d31e878dac6165717c"
+   }
+  },
+  {
+   "t": 277,
+   "event": {
+    "seq": 76790,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 277,
+   "event": {
+    "seq": 76790,
+    "type": "AttemptStarted",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 277,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 329,
+   "event": {
+    "seq": 76849,
+    "type": "VerificationFailed",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 329,
+   "event": {
+    "seq": 76849,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 329,
+   "event": {
+    "seq": 76849,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 329,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 477,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 485,
+   "event": {
+    "seq": 76868,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 485,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 577,
+   "event": {
+    "seq": 76888,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 577,
+   "event": {
+    "seq": 76888,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 577,
+   "event": {
+    "seq": 76888,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 577,
+   "event": {
+    "seq": 76888,
+    "type": "AttemptStarted",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 577,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 762,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 867,
+   "event": {
+    "seq": 76964,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 867,
+   "event": {
+    "seq": 76964,
+    "type": "AssuranceReviewSecondOpinionRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 947,
+   "event": {
+    "seq": 77003,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 947,
+   "event": {
+    "seq": 77003,
+    "type": "VerificationSuspended",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 947,
+   "event": {
+    "seq": 77003,
+    "type": "ApprovalRequested",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 947,
+   "review_pass": {
+    "approval_id": "review-result-efec8d1595dc05bc",
+    "summary": "{'text': \"format_check: PASS — Result Envelope conforms to §26.4；rule_check: PASS — document citation and limitations checked；critic_review: NEEDS_HUMAN — the Critic cannot reliably judge; a person decides；code_test: NOT_REQUIRED — not in the Task verification policy；formal_check: NOT_REQUIRED — not in the Task verification policy；human_review: SUSPENDED — waiting for a person's review\", 'source': 'model'}",
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 955,
+   "event": {
+    "seq": 77043,
+    "type": "AssuranceReviewAdjudicated",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 955,
+   "event": {
+    "seq": 77043,
+    "type": "ApprovalGranted",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 955,
+   "event": {
+    "seq": 77043,
+    "type": "AcceptanceCommitted",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 955,
+   "event": {
+    "seq": 77043,
+    "type": "TaskCompleted",
+    "task": "task-52e8907cd143a58f5ec93402c2d050fc"
+   }
+  },
+  {
+   "t": 955,
+   "mission": [
+    "FAILED",
+    "failed",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 955,
+   "summary": {
+    "plan_revisions": 1,
+    "status": "FAILED"
+   }
+  }
+ ],
+ "mission_id": "mission-ef3a95718e77c81a",
+ "plan_revisions": 1
+}

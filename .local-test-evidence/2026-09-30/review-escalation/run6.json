@@ -1,0 +1,722 @@
+{
+ "mission": {
+  "goal": "根据资料 sources/policy.md 写出 summary.md：逐条概括全部值班规则并引用资料原文；另外在文末加一节“与公司官网核对”，说明这些规则与公司官网当前公布的版本是否一致。只写这一个文件。",
+  "success_criteria": [
+   "file:summary.md",
+   "summary.md 逐条概括 sources/policy.md 的全部规则并引用原文",
+   "summary.md 末尾“与公司官网核对”一节的结论与公司官网当前公布的版本一致"
+  ],
+  "domain": "doc-research-v1"
+ },
+ "steps": [
+  {
+   "t": 0,
+   "created": {
+    "ok": true,
+    "mission_id": "mission-f1f0eb8cdb194544",
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "confirm": {
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 81434,
+    "type": "SourceRegistered",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "mission": [
+    "CREATED",
+    "received",
+    "CONFIRMATION_REQUIRED"
+   ]
+  },
+  {
+   "t": 9,
+   "mission": [
+    "PLANNING",
+    "received",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 30,
+   "event": {
+    "seq": 81695,
+    "type": "NativePlanningDecisionPrepared",
+    "task": null
+   }
+  },
+  {
+   "t": 30,
+   "event": {
+    "seq": 81695,
+    "type": "PlanRevisionCommitted",
+    "task": null
+   }
+  },
+  {
+   "t": 30,
+   "event": {
+    "seq": 81695,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 30,
+   "event": {
+    "seq": 81695,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 30,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 73,
+   "event": {
+    "seq": 81911,
+    "type": "VerificationFailed",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 73,
+   "event": {
+    "seq": 81911,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 73,
+   "event": {
+    "seq": 81911,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 73,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 103,
+   "event": {
+    "seq": 81974,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 103,
+   "event": {
+    "seq": 81974,
+    "type": "PlanningHumanRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 103,
+   "planning_answer": {
+    "question": "任务要求 summary.md 文末的「与公司官网核对」一节给出「这些值班规则与公司官网当前公布的版本是否一致」的结论，但任务工作区里只有 sources/policy.md，执行者已确认工作区和任务资料中都没有公司官网的页面、快照或导出内容，当前工具集（workspace_read_file / workspace_write_file / workspace_list / knowledge_list / knowledge_read / run_tests / skill_discover / skill_load / skill_execute）也没有访问或抓取公司官网的能力，系统内无",
+    "answer": "没有公司官网的资料可用，也不需要联网：“与公司官网核对”一节直接写明“无法核实，理由是没有官网资料”，其余按 sources/policy.md 写完即可。",
+    "ok": true
+   }
+  },
+  {
+   "t": 103,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 115,
+   "event": {
+    "seq": 82008,
+    "type": "PlanningHumanAnswered",
+    "task": null
+   }
+  },
+  {
+   "t": 115,
+   "event": {
+    "seq": 82008,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 115,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 139,
+   "event": {
+    "seq": 82048,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 139,
+   "event": {
+    "seq": 82048,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 139,
+   "event": {
+    "seq": 82048,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 139,
+   "event": {
+    "seq": 82048,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 139,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 191,
+   "event": {
+    "seq": 82133,
+    "type": "VerificationFailed",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 191,
+   "event": {
+    "seq": 82133,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 191,
+   "event": {
+    "seq": 82133,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 191,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 238,
+   "event": {
+    "seq": 82170,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 238,
+   "event": {
+    "seq": 82170,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 238,
+   "event": {
+    "seq": 82170,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 238,
+   "event": {
+    "seq": 82170,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 238,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 300,
+   "event": {
+    "seq": 82212,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 300,
+   "event": {
+    "seq": 82212,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 300,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 320,
+   "event": {
+    "seq": 82232,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 320,
+   "event": {
+    "seq": 82232,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 320,
+   "event": {
+    "seq": 82232,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 333,
+   "event": {
+    "seq": 82245,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 334,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 404,
+   "event": {
+    "seq": 82324,
+    "type": "VerificationFailed",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 404,
+   "event": {
+    "seq": 82324,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 404,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 416,
+   "event": {
+    "seq": 82336,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 416,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 460,
+   "event": {
+    "seq": 82371,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 460,
+   "event": {
+    "seq": 82371,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 460,
+   "event": {
+    "seq": 82371,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 460,
+   "event": {
+    "seq": 82371,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 460,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 517,
+   "event": {
+    "seq": 82456,
+    "type": "VerificationFailed",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 517,
+   "event": {
+    "seq": 82456,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 517,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 530,
+   "event": {
+    "seq": 82468,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 530,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 557,
+   "event": {
+    "seq": 82488,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 557,
+   "event": {
+    "seq": 82488,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 557,
+   "event": {
+    "seq": 82488,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 566,
+   "event": {
+    "seq": 82496,
+    "type": "AttemptStarted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 566,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 659,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 788,
+   "event": {
+    "seq": 82651,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 788,
+   "event": {
+    "seq": 82651,
+    "type": "AssuranceReviewSecondOpinionRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 962,
+   "event": {
+    "seq": 82753,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 962,
+   "event": {
+    "seq": 82753,
+    "type": "VerificationSuspended",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 962,
+   "event": {
+    "seq": 82753,
+    "type": "ApprovalRequested",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 962,
+   "review_pass": {
+    "approval_id": "review-result-2b4239f5a7643db6",
+    "summary": "{'text': \"format_check: PASS — Result Envelope conforms to §26.4；rule_check: PASS — document citation and limitations checked；critic_review: NEEDS_HUMAN — the Critic cannot reliably judge; a person decides；code_test: NOT_REQUIRED — not in the Task verification policy；formal_check: NOT_REQUIRED — not in the Task verification policy；human_review: SUSPENDED — waiting for a person's review\", 'source': 'model'}",
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 962,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 977,
+   "event": {
+    "seq": 82808,
+    "type": "AssuranceReviewAdjudicated",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 977,
+   "event": {
+    "seq": 82808,
+    "type": "ApprovalGranted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 977,
+   "event": {
+    "seq": 82808,
+    "type": "AcceptanceCommitted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 977,
+   "event": {
+    "seq": 82808,
+    "type": "TaskCompleted",
+    "task": "task-a54ac8272721f73c1f6e5fc8aa00cbb8"
+   }
+  },
+  {
+   "t": 977,
+   "event": {
+    "seq": 82808,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 977,
+   "event": {
+    "seq": 82808,
+    "type": "HierarchicalRootReviewCut",
+    "task": "desktop-root-mission-f1f0eb8cdb194544"
+   }
+  },
+  {
+   "t": 977,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 1092,
+   "event": {
+    "seq": 82861,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 1123,
+   "event": {
+    "seq": 82882,
+    "type": "AssuranceReviewSecondOpinionRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 1242,
+   "event": {
+    "seq": 82935,
+    "type": "AssuranceReviewClassified",
+    "task": null
+   }
+  },
+  {
+   "t": 1262,
+   "event": {
+    "seq": 82952,
+    "type": "PlanningHumanRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 1262,
+   "planning_answer": {
+    "question": "最终审查两位审阅员都判不下来，需要你裁决整个任务的产出是否合格。\n审阅员的疑点：\n- c-user-1：候选链存在修订/哈希不一致：本请求 package.candidate_refs 指向 acc-845d…revision 1（content_hash c8d3c0e9…），而可读验收证据 ev-0503a8bc… 为 revision 0（content_hash 76980bb9…）；本次实际核读的是 artifact-e83438aacc0669e8（revision 5）。; 文件路径/文件名与 artifact 的对应关系来自检查收据与验收引用，而非目录清单直接核验。; 本判定只",
+    "answer": "pass",
+    "ok": true
+   }
+  },
+  {
+   "t": 1262,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 1273,
+   "event": {
+    "seq": 82962,
+    "type": "PlanningHumanAnswered",
+    "task": null
+   }
+  },
+  {
+   "t": 1273,
+   "event": {
+    "seq": 82962,
+    "type": "AssuranceReviewAdjudicated",
+    "task": "desktop-root-mission-f1f0eb8cdb194544"
+   }
+  },
+  {
+   "t": 1273,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 2181,
+   "watchdog": "stalled_or_timeout"
+  },
+  {
+   "t": 2181,
+   "summary": {
+    "plan_revisions": 1,
+    "status": "ACTIVE"
+   }
+  }
+ ],
+ "mission_id": "mission-f1f0eb8cdb194544",
+ "plan_revisions": 1
+}
