@@ -1021,7 +1021,8 @@ def test_the_root_trigger_reads_the_composition_verdict_rather_than_asserting_it
     import inspect
 
     source = inspect.getsource(HierarchicalDispatch.attempt_root_resolution)
-    assert "composition_obligation_passed=inputs.record.verdict is ReviewVerdict.ACCEPT" in source
+    # 2026-09-30 审阅升级：读记录的结论，或人对判不下来的记录的裁决——仍不是触发器自己断言。
+    assert "composition_obligation_passed=accepted_or_adjudicated(self.store, inputs.record)" in source
     assert "composition_obligation_passed=True" not in source
 
 

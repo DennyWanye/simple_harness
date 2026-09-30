@@ -2587,6 +2587,7 @@ class HierarchicalDispatch:
         from .scoped_content_review import uses_completion_protocol
         completion_protocol = uses_completion_protocol(self.store, mission_id)
         resolution_id = resolution_id or f"res-{inputs.occurrence_id}"
+        from .review_adjudication import accepted_or_adjudicated
         # Handoff item 7: on the assured lane the licence is the current
         # UseCertificate over the bound MISSION_FINAL manifest, prepared here outside
         # the write lock and committed by ``commit_goal_resolution`` under it. The
@@ -2692,7 +2693,8 @@ class HierarchicalDispatch:
                 else CompoundFacts(
                     selected_method_legal=inputs.method_instance_id is not None,
                     contributing_occurrence_ids=tuple(sorted(inputs.contributions)),
-                    composition_obligation_passed=inputs.record.verdict is ReviewVerdict.ACCEPT,
+                    # 2026-09-30 真机第 6 局：两次判不下来、人裁决通过的最终审查同样算组合义务达成
+                    composition_obligation_passed=accepted_or_adjudicated(self.store, inputs.record),
                 )
             ),
             is_mission_root=True,
