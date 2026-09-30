@@ -42,7 +42,9 @@ REVIEW_CODEC_VERSION = "assurance-review-reply-v2"
 #: (FORMAT_REPAIR) or a turn that failed before committing, e.g. a transient
 #: provider error (TURN_RETRY, 2026-09-25 UI 全量点击 — one provider 5xx on the
 #: final review used to fail the whole Mission).
-SECOND_INVOCATION_REASONS = frozenset({"FORMAT_REPAIR", "TURN_RETRY"})
+#: SECOND_OPINION（2026-09-30）：第一次回复"判不下来"时换一个新会话独立复审一次，
+#: 同一冻结请求、不带第一次的结论。
+SECOND_INVOCATION_REASONS = frozenset({"FORMAT_REPAIR", "TURN_RETRY", "SECOND_OPINION"})
 
 
 @dataclass(frozen=True, slots=True)

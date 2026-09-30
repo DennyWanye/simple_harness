@@ -225,7 +225,17 @@ def read_task_content_projection(
                 "OP_CONTENT_REVIEW_UNAVAILABLE", "result Attempt differs"
             )
         layers = layer_outcomes(store.list_verifications(result_id))
-        if not layers or not any(item.layer == "critic_review" and item.passed for item in layers):
+        # D7-8' sixth layer (2026-09-30, 审阅判不下来交给人): a Critic that could not
+        # decide (NEEDS_HUMAN) counts as passed only under a recorded human_review PASS
+        # of this same result; the person's ruling is the recorded ground, never a
+        # rewritten Critic verdict.
+        human_passed = any(item.layer == "human_review" and item.passed for item in layers)
+        critic_passed = any(
+            item.layer == "critic_review"
+            and (item.passed or (item.status == "NEEDS_HUMAN" and human_passed))
+            for item in layers
+        )
+        if not layers or not critic_passed:
             raise OperationCompletionError(
                 "OP_CONTENT_REVIEW_UNAVAILABLE", "no recorded Critic PASS"
             )

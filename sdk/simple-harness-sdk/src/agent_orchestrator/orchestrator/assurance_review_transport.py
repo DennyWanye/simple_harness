@@ -688,6 +688,9 @@ _SECOND_INVOCATION_SOURCES = {
     "TURN_FAILED": "AssuranceReviewClassified",
     # A committed reply that decodes but cannot be imported as given (2026-09-26).
     "INTERPRETATION_INVALID": "AssuranceReviewInterpretationRejected",
+    # A committed, well-formed reply that could not decide (INCONCLUSIVE): one
+    # independent second opinion in a fresh session (2026-09-30).
+    "SECOND_OPINION": "AssuranceReviewSecondOpinionRequested",
 }
 
 #: What the reviewer is told when its first reply could not be imported.
@@ -774,7 +777,7 @@ def _require_format_repair(
         or turn.get("agent_id") != intent.agent_id
         # a malformed reply was a committed turn; a failed turn never committed
         or (turn.get("state") == "COMMITTED")
-        != (classification in {"FORMAT_INVALID", "INTERPRETATION_INVALID"})
+        != (classification in {"FORMAT_INVALID", "INTERPRETATION_INVALID", "SECOND_OPINION"})
     ):
         raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
     if commit._assurance_settlement is None:
@@ -872,7 +875,8 @@ def ensure_format_repair_invocation(
                 + _INTERPRETATION_FEEDBACK.get(code, "fix the reply and answer again.")
             )
             config["message"] = user_message_json(canonical(message))
-        # TURN_FAILED: the same frozen request is asked again, unchanged.
+        # TURN_FAILED / SECOND_OPINION: the same frozen request is asked again,
+        # unchanged — a second opinion must not see the first reviewer's verdict.
 
     def require_current() -> None:
         validator = commit._assurance_review_handoff
@@ -893,5 +897,6 @@ def ensure_format_repair_invocation(
         ),
         require_current_locked=require_current,
         prior_failure=prior_failure,
-        repair_reason="TURN_RETRY" if classification == "TURN_FAILED" else "FORMAT_REPAIR",
+        repair_reason={"TURN_FAILED": "TURN_RETRY", "SECOND_OPINION": "SECOND_OPINION"}.get(
+            classification, "FORMAT_REPAIR"),
     )

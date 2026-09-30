@@ -160,12 +160,13 @@ class AssuranceReviewRuntime:
             ).body_json
         )
         verdict = manifest["effective_verdict"]
-        if verdict == "INCONCLUSIVE":
-            raise ContractError("Assurance review is INCONCLUSIVE; no conclusive verification")
-        if verdict not in {"ACCEPT", "REWORK", "REJECTED"}:
+        if verdict not in {"ACCEPT", "REWORK", "REJECTED", "INCONCLUSIVE"}:
             raise ContractError("Assurance official verdict cannot drive this verification")
+        # INCONCLUSIVE（2026-09-30）：复审后仍判不下来，不再当"没通过"让执行者重做——
+        # 结论标"需要人定"，走现成的挂起 → 复核审批 → 用户点通过/不通过；证书那边认用户的裁决。
+        inconclusive = verdict == "INCONCLUSIVE"
         return CriticVerdict(
-            "PASS" if verdict == "ACCEPT" else "FAIL",
+            "PASS" if verdict == "ACCEPT" or inconclusive else "FAIL",
             tuple(
                 {
                     "severity": item["severity"].lower(),
@@ -190,7 +191,9 @@ class AssuranceReviewRuntime:
             {
                 "official_review_record_id": str(record.record_id),
                 "evidence_manifest_hash": record.evidence_manifest_hash,
+                "effective_verdict": verdict,
             },
+            needs_human=inconclusive,
         )
 
     def _licensed(self, record: Any) -> CriticVerdict:

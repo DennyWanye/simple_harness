@@ -529,6 +529,8 @@ class HumanCommitsMixin:
             )
             self._store.put_approval(request)
             self._store.set_result_verification(result_id, state="RUNNING", verdict=None)
+            self._record_review_adjudication(request, result_id, verdict=verdict, note=note,
+                                             principal=principal, receipt=receipt)
             self._emit(
                 "ApprovalGranted" if verdict == "pass" else "ApprovalRejected",
                 str(request["mission_id"]),
@@ -545,6 +547,63 @@ class HumanCommitsMixin:
                 actor_id=principal.principal_id,
             )
             return request, receipt
+
+    def _record_review_adjudication(
+        self, request: Mapping[str, Any], result_id: str, *, verdict: str, note: str,
+        principal: Principal, receipt: str,
+    ) -> None:
+        """Assurance 1.1 (2026-09-30): the person's ruling on an INCONCLUSIVE official review.
+
+        The use certificate is re-decided from the official record's manifest; an
+        INCONCLUSIVE record alone never licenses an acceptance. The ruling is written
+        as an authenticated commit receipt the certificate preparation reads into its
+        read set, so "reviewers could not decide, the person passed it" is a recorded,
+        auditable ground — never an edit of the immutable record.
+        """
+        from ..assurance.codec import fingerprint
+        from ..storage.assurance_store import AssuranceStore
+        from ..storage.htn_store import HtnStore
+
+        mission_id = str(request["mission_id"])
+        if AssuranceStore(self._store).lane(mission_id) != "ASSURANCE_1_1":
+            return
+        stored = self._store.get_result(result_id)
+        if stored is None:
+            return
+        rows = self._store.connection.execute(
+            "SELECT package_id FROM assurance_review_bindings WHERE mission_id=? AND subject_hash=? "
+            "AND json_extract(binding_json,'$.subject.purpose')='TASK_CONTENT'",
+            (mission_id, fingerprint(stored.envelope.to_json())),
+        ).fetchall()
+        if len(rows) != 1:
+            return
+        record = HtnStore(self._store).official_review_record(rows[0][0])
+        if record is None:
+            return
+        body = {
+            "mission_id": mission_id,
+            "result_id": result_id,
+            "record_id": str(record.record_id),
+            "record_verdict": str(record.verdict),
+            "request_id": str(request["request_id"]),
+            "decision": verdict,
+            "note": note,
+            "principal_id": principal.principal_id,
+            "decision_receipt_hash": receipt,
+        }
+        receipt_id = "assurance-review-adjudicated:" + str(record.record_id)
+        old = self._store.get_receipt(receipt_id)
+        if old is not None:
+            if dict(old) != body:
+                raise ActionCommitError("this review already has a different recorded ruling")
+            return
+        self._store.insert_receipt(
+            commit_id=receipt_id, kind="AssuranceReviewAdjudicated", subject_id=str(record.record_id),
+            base_version=0, proposal_hash=fingerprint(body), receipt=body,
+        )
+        self._emit("AssuranceReviewAdjudicated", mission_id, key=receipt_id,
+                   task_id=request.get("task_id"), payload=body,
+                   actor_type="user", actor_id=principal.principal_id)
 
     # ------------------------------------------------------------ arbitration (D7-8')
     def request_arbitration(

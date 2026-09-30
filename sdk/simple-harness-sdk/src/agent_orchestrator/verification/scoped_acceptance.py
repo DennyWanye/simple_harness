@@ -63,6 +63,9 @@ class AssuredAcceptance:
     effective_grades: Mapping[str, str]
     gate_reasons: Mapping[str, str]
     licence_reasons: tuple[AcceptReason, ...] = ()
+    #: 2026-09-30：两次审阅都判不下来、由人裁决通过——记录的结论仍是 INCONCLUSIVE（不可改），
+    #: 证书把人的裁决作为依据；这里只免掉"记录结论不是通过"这一条，其余规则照常。
+    human_adjudicated: bool = False
 
 
 def _assurance_formula(expression: SuccessExpression) -> dict[str, Any]:
@@ -271,7 +274,9 @@ def _acceptable_scoped(
     if not completeness.complete:
         reasons.append(AcceptReason.REQUIRED_CHECKS_INCOMPLETE)
 
-    if record.verdict is not ReviewVerdict.ACCEPT:
+    if record.verdict is not ReviewVerdict.ACCEPT and not (
+        assured is not None and assured.human_adjudicated
+    ):
         reasons.append(AcceptReason.REVIEW_VERDICT_NOT_ACCEPT)
     independence = independence_ok(package, record, facts=subject.independence)
     independence_required = subject.semantic_review_required or bool(
@@ -369,7 +374,9 @@ def acceptable_assured_root(
     if not completeness.complete:
         reasons.append(AcceptReason.REQUIRED_CHECKS_INCOMPLETE)
 
-    if record.verdict is not ReviewVerdict.ACCEPT:
+    if record.verdict is not ReviewVerdict.ACCEPT and not (
+        assured is not None and assured.human_adjudicated
+    ):
         reasons.append(AcceptReason.REVIEW_VERDICT_NOT_ACCEPT)
     independence = independence_ok(package, record, facts=subject.independence)
     independence_required = subject.semantic_review_required or bool(

@@ -10,6 +10,7 @@ from ..assurance.check_bindings import CheckBinding
 from ..assurance.codec import AssuranceError, decode, fingerprint, text
 from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import Artifact, Event
+from ..contracts.resolution import ReviewVerdict
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.assurance_work import WorkClaim, WorkTarget
 from ..storage.htn_store import HtnStore
@@ -272,6 +273,12 @@ class AssuranceReviewConsumer:
                 check_uses=tuple(checks),
                 check_adapter=self.check_adapter,
             )
+            if (
+                prepared.record.verdict is ReviewVerdict.INCONCLUSIVE
+                and imported.invocation.to_json()["ordinal"] == 1
+            ):
+                # 2026-09-30：第一次就"判不下来"不当正式结论，换一个新会话独立复审一次。
+                return self._prepare_second_opinion(reader, imported, event)
             return PreparedAssuranceWork(prepared.import_locked)
         except AssuranceError as error:
             if error.code not in {
@@ -378,6 +385,58 @@ class AssuranceReviewConsumer:
             return AssuranceRef("commit_receipt", Pin(receipt_id, 0, digest))
 
         return PreparedAssuranceWork(late)
+
+    def _prepare_second_opinion(
+        self, reader: AssuranceReader, imported: Any, event: Event
+    ) -> PreparedAssuranceWork:
+        """The first reviewer could not decide: ask a second one, in a fresh session.
+
+        The committed INCONCLUSIVE reply is not imported as the official record;
+        the second invocation resends the frozen request unchanged (no verdict of
+        the first reviewer leaks in) and its reply is imported as any first reply
+        would be — ACCEPT, REWORK or INCONCLUSIVE again, which then goes to a person.
+        """
+        invocation = imported.invocation.to_json()
+        body = {
+            "mission_id": reader.mission_id,
+            "review_key": invocation["review_key"],
+            "intent_id": invocation["dispatch_intent_id"],
+            "invocation_ordinal": 1,
+            "classification": "SECOND_OPINION",
+            "error_code": None,
+            "classification_ref": ref_from_event(event).to_json(),
+            "turn_ref": imported.turn.ref.to_json(),
+        }
+        digest = fingerprint(body)
+        receipt_id = "assurance-review-second-opinion:" + body["intent_id"]
+
+        def second_opinion() -> AssuranceRef:
+            self.commit._assurance_root_gate.require_execution()
+            if read_imported_review_locked(self.commit, reader, ref_from_event(event)) != imported:
+                raise AssuranceError("RECHECK_REQUIRED")
+            old = self.store.get_receipt(receipt_id)
+            if old is not None and dict(old) != body:
+                raise AssuranceError("IMMUTABLE_IDENTITY_CONFLICT")
+            if old is None:
+                self.store.insert_receipt(
+                    commit_id=receipt_id,
+                    kind=SECOND_OPINION_REQUESTED,
+                    subject_id=body["intent_id"],
+                    base_version=0,
+                    proposal_hash=digest,
+                    receipt=body,
+                )
+                self.commit._emit(SECOND_OPINION_REQUESTED, reader.mission_id, key=receipt_id,
+                                  payload=body)
+            second = self.commit.ensure_assurance_format_repair(
+                tenant_id=self.tenant_id,
+                prior_failure=AssuranceRef("commit_receipt", Pin(receipt_id, 0, digest)),
+            )
+            return AssuranceRef.from_json(
+                second.to_json()["source_receipt_ref"], kinds={"commit_receipt"}
+            )
+
+        return PreparedAssuranceWork(second_opinion)
 
     def _prepare_interpretation_repair(
         self, reader: AssuranceReader, imported: Any, event: Event, error_code: str
@@ -502,6 +561,7 @@ REPAIRABLE_INTERPRETATION_ERRORS = frozenset(
     {"UNEXPOSED_EVIDENCE", "DUPLICATE_CRITERION", "FINDING_SCOPE", "MANDATORY_CRITERIA_INVALID"}
 )
 INTERPRETATION_REJECTED = "AssuranceReviewInterpretationRejected"
+SECOND_OPINION_REQUESTED = "AssuranceReviewSecondOpinionRequested"
 
 
 def _format_retries(store: Any, mission_id: str) -> int | None:

@@ -113,6 +113,9 @@ class CandidateUseCertificate:
     grades: tuple[tuple[str, str], ...]
     gates: tuple[tuple[str, str], ...]
     prepared_at_ms: int
+    #: The person's recorded ruling this certificate rests on (INCONCLUSIVE review,
+    #: human pass), or None.
+    adjudication_ref: str | None = None
 
     @property
     def usable(self) -> bool:
@@ -310,6 +313,16 @@ class AssuranceValidity:
             ).fetchone()
             if side_row is None:
                 raise AssuranceError("REVIEW_RECORD_BINDING_REQUIRED")
+            # 2026-09-30：审阅两次都判不下来后由人裁决；裁决回执进读集，"判不下来 + 人通过"算可用。
+            adjudication_row = store.connection.execute(
+                "SELECT commit_id, receipt_json FROM commit_receipts "
+                "WHERE kind='AssuranceReviewAdjudicated' AND subject_id=?",
+                (str(record.record_id),),
+            ).fetchone()
+            adjudication = None if adjudication_row is None else decode(adjudication_row[1])
+            adjudication_ref = None if adjudication is None else AssuranceRef(
+                "commit_receipt", Pin(adjudication_row[0], 0, fingerprint(adjudication))
+            )
             side = decode(side_row["binding_json"])
             classification_ref = AssuranceRef.from_json(
                 decode(import_receipt.body_json)["classification_ref"], kinds={"commit_receipt"}
@@ -420,6 +433,8 @@ class AssuranceValidity:
                 target,
                 *consumed_refs,
             }
+            if adjudication_ref is not None:
+                required.add(adjudication_ref)
             metadata = tuple(
                 reader.read_exact_metadata(ref) for ref in sorted(required, key=lambda r: r.key)
             )
@@ -439,6 +454,26 @@ class AssuranceValidity:
                 check_grades.append((use.binding_ref, result.effective.value))
             manifest = decode(reader.read_exact_metadata(manifest_ref).body_json)
             acceptable, decision_reasons, effective, gates = self._redecide(body, manifest, checks)
+            if (
+                not acceptable
+                and adjudication is not None
+                and manifest["effective_verdict"] == "INCONCLUSIVE"
+                and adjudication.get("decision") == "pass"
+                and adjudication.get("mission_id") == mission_id
+                and adjudication.get("record_id") == str(record.record_id)
+                and adjudication.get("result_id") == target.pin.id
+            ):
+                acceptable = True
+                decision_reasons.append("human_adjudication:" + adjudication_row[0])
+                # The person passed the result as a whole: what the reviewers could
+                # not grade counts as met; a FAIL would have made the review REWORK.
+                effective = {
+                    name: ("PASS" if value == "UNKNOWN" else value)
+                    for name, value in effective.items()
+                }
+                adjudicated = adjudication_row[0]
+            else:
+                adjudicated = None
             complete = read_complete_evidence_snapshot(reader, scope_id=identity.scope_id)
             policy_row = store.connection.execute(
                 "SELECT policy_hash FROM assurance_mission_bindings WHERE mission_id=?",
@@ -542,6 +577,7 @@ class AssuranceValidity:
             tuple(sorted(effective.items())),
             tuple(sorted(gates.items())),
             now_ms,
+            adjudicated,
         )
         with store.read_view():
             self.require_current_locked(candidate, now_ms=int(store.now * 1000))

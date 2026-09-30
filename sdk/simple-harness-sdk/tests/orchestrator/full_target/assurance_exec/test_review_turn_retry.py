@@ -29,4 +29,5 @@ def test_a_failed_review_turn_schedules_the_one_second_invocation():
 
 
 def test_second_invocation_reasons():
-    assert SECOND_INVOCATION_REASONS == {"FORMAT_REPAIR", "TURN_RETRY"}
+    # SECOND_OPINION（2026-09-30）：第一次判不下来，换新会话独立复审一次。
+    assert SECOND_INVOCATION_REASONS == {"FORMAT_REPAIR", "TURN_RETRY", "SECOND_OPINION"}
