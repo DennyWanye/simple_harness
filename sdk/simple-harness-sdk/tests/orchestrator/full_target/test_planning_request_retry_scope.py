@@ -39,8 +39,14 @@ def test_later_request_retries_its_own_frozen_package_once(tmp_path: Path, ordin
             assert loop._planning_format_retry_remaining(intent=retry, mission=mission) == 0
             await loop._collect_plan_decision(retry, None, mission, "bad again", dispatch)
             assert store.get_planning_decision_by_attempt(opener.intent_id, 1)["status"] == "UNREADABLE"
-            assert loop.store.get_intent_for_subject(f"{mission.id}:planner:{ordinal + 2}") is None
-            assert str(loop.store.get_mission(mission.id).status) == "FAILED"
+            # 2026-09-30：同一请求的格式重试只有一次（上面），用完后规划总次数还有剩就开一个
+            # **新请求**（新的冻结包、自己的一次格式重试），任务不因两次格式错失败。
+            fresh = loop.store.get_intent_for_subject(f"{mission.id}:planner:{ordinal + 2}")
+            assert fresh is not None and fresh.intent_id != retry.intent_id
+            assert store.get_planning_request(fresh.intent_id) is None or \
+                store.get_planning_request(fresh.intent_id).intent_id == fresh.intent_id
+            assert loop._planning_format_retry_remaining(intent=fresh, mission=mission) == 1
+            assert str(loop.store.get_mission(mission.id).status) != "FAILED"
             before = loop.store.connection.total_changes
             await loop._collect_plan_decision(retry, None, mission, "bad again", dispatch)
             assert loop.store.connection.total_changes == before
@@ -80,7 +86,10 @@ def test_active_repair_format_retry_survives_cold_reopen(tmp_path, corrected):
             await loop._collect_plan_decision(retry, None, mission, reply, dispatch)
             row = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(opener.intent_id, 1)
             assert row["status"] == ("COMMITTED" if corrected else "UNREADABLE"), row["detail_json"]
-            assert str(loop.store.get_mission(mission.id).status) == ("ACTIVE" if corrected else "FAILED")
+            # 2026-09-30：没改对也不判失败——同一请求的格式重试用完，规划总次数还有剩，开新请求。
+            assert str(loop.store.get_mission(mission.id).status) == "ACTIVE"
+            if not corrected:
+                assert loop.store.get_intent_for_subject(f"{mission.id}:planner:4") is not None
             assert (pending_retry_permit(loop.store, mission.id, task_id) is not None) is corrected
             assert len(loop.store.list_attempts(task_id)) == 1
             changes = loop.store.connection.total_changes

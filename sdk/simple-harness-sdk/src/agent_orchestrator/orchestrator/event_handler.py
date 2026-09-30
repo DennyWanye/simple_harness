@@ -490,6 +490,16 @@ def _turn_failed(event: Any) -> bool:
     return isinstance(detail, Mapping) and detail.get("turn_failed") is True
 
 
+
+def _task_ref_hashes(semantics: Any) -> frozenset[str]:
+    """The two digests a planner may legitimately quote for one task binding.
+
+    2026-09-30（真机）：规划器引用清单里同一步有两个引用——``_network_authorities`` 用绑定
+    的内容哈希，H4 共享候选（``graph_repair_sources``）用它的合同哈希。两者指同一步、同一
+    修订的同一份当前绑定；WAIT 的"能不能等 / 等到了没有"两个都认，别的哈希照旧拒绝。
+    """
+    return frozenset({semantics.content_hash(), str(semantics.contract_hash)})
+
 class Orchestrator:
     def __init__(
         self,
@@ -3343,7 +3353,7 @@ class Orchestrator:
                     and task.status in TERMINAL_TASK
                     and semantics is not None
                     and int(semantics.contract_revision) == ref.semantic_revision
-                    and semantics.content_hash() == ref.content_hash
+                    and ref.content_hash in _task_ref_hashes(semantics)
                 )
             if ref.kind is PlanningRefKind.OBLIGATION:
                 obligation = ObligationStore(self.store).obligation(
@@ -3416,7 +3426,7 @@ class Orchestrator:
                                 and not self._awaiting_retry_decision(mission.id, task)))
             and semantics is not None
             and int(semantics.contract_revision) == ref.semantic_revision
-            and semantics.content_hash() == ref.content_hash
+            and ref.content_hash in _task_ref_hashes(semantics)
         )
 
     async def _wake_planning_waits(self) -> bool:
@@ -7178,6 +7188,16 @@ class Orchestrator:
                 await self._planner_round_on_committed_plan(
                     mission.id, ordinal=ordinal + 1, phase="planner_turn_retry"
                 )
+            elif not self._planning_ladder_spent(mission.id):
+                # 2026-09-30（收口第 6 项第 5 轮真机）：两次都没写对格式就整局失败，而规划
+                # 总次数还剩很多——格式没写对不算模型做错（用户 09-28）。同一请求的格式重试
+                # 用完就开一个新请求；这次拒绝照样记入规划次数，所以有界。
+                if mission.status is MissionStatus.PLANNING:
+                    await self._try_planner_intent(mission.id, ordinal=ordinal + 1)
+                else:
+                    await self._planner_round_on_committed_plan(
+                        mission.id, ordinal=ordinal + 1, phase="planning_format_ladder"
+                    )
             else:
                 self._stop_planning_round(
                     mission.id, reason="planning_format_retry_exhausted",

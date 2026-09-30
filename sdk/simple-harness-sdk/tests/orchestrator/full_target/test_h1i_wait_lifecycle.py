@@ -481,3 +481,33 @@ def test_wait_unknown_or_foreign_mission_ref_never_passes_from_task_existence(
             )
 
     asyncio.run(case())
+
+
+def test_wait_accepts_a_task_ref_carrying_its_binding_contract_hash(tmp_path: Path) -> None:
+    """2026-09-30 真机（方案 B 第 1 局）：规划器的引用清单里同一步有两个引用——分层语义的
+    内容哈希（``_network_authorities``）与共享候选里的合同哈希（``graph_repair_sources``）。
+    规划器选了后者回 WAIT，"能不能等"只认前者，两次被拒、白花两轮规划次数。两者指的是
+    同一步、同一修订的同一份当前绑定：能等、等到终态时能被唤醒；错的哈希仍然拒绝。"""
+    from agent_orchestrator.contracts.planning_decisions import PlanningRefV1
+
+    async def case() -> None:
+        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
+            mission, _env, _contract, dispatch = _seed_new_protocol(loop, tmp_path, key="h1i-wait-contract-hash")
+            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
+            _reply, visible = _wait_reply(opener.config["planning_package"])
+            _ensure_wait_task(loop, mission, visible)
+            semantics = HtnStore(loop.store).task_semantics_of(mission.id, visible["id"])
+            assert semantics is not None and semantics.contract_hash != semantics.content_hash()
+            by_contract = PlanningRefV1.from_json({**visible, "content_hash": semantics.contract_hash})
+            by_content = PlanningRefV1.from_json({**visible, "content_hash": semantics.content_hash()})
+            wrong = PlanningRefV1.from_json({**visible, "content_hash": "0" * 64})
+            assert loop._planning_wait_ref_waitable(mission, by_content)
+            assert loop._planning_wait_ref_waitable(mission, by_contract)
+            assert not loop._planning_wait_ref_waitable(mission, wrong)
+            assert not loop._planning_wait_ref_satisfied(mission, by_contract)
+            _mark_wait_task_terminal(loop, mission, visible)
+            assert loop._planning_wait_ref_satisfied(mission, by_contract)
+            assert loop._planning_wait_ref_satisfied(mission, by_content)
+            assert not loop._planning_wait_ref_satisfied(mission, wrong)
+
+    asyncio.run(case())

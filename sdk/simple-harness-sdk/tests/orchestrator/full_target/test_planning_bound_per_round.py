@@ -88,12 +88,13 @@ def test_only_a_turn_failure_is_marked() -> None:
     assert planning_failure_detail(ContractError("bad block"), {"error": "e"}) == {"error": "e"}
 
 
-def _reject(detail: dict, *, prior: list[tuple[str, dict]], format_retry_left: int = 0) -> list[tuple[str, object]]:
+def _reject(detail: dict, *, prior: list[tuple[str, dict]], format_retry_left: int = 0,
+            ladder_spent: bool = False, status: object = None) -> list[tuple[str, object]]:
     import asyncio
 
     events = list(prior)
     calls: list[tuple[str, object]] = []
-    mission = SimpleNamespace(id="m1", status=None)
+    mission = SimpleNamespace(id="m1", status=status)
     fake = SimpleNamespace()
     fake.store = SimpleNamespace(
         get_mission=lambda mission_id: mission,
@@ -103,12 +104,18 @@ def _reject(detail: dict, *, prior: list[tuple[str, dict]], format_retry_left: i
     fake.commit = SimpleNamespace(record_planning_rejected=lambda mission_id, **kw: events.append(
         ("PlanningRejected", {"reason": kw["reason"], "detail": dict(kw["detail"])})))
     fake._planning_format_retry_remaining = lambda **kw: format_retry_left
+    fake._planning_ladder_spent = lambda mission_id: ladder_spent
     fake._planner_turn_failure_forgiven = lambda mission_id: Orchestrator._planner_turn_failure_forgiven(fake, mission_id)
 
     async def reopen(mission_id, *, ordinal, phase):
         calls.append(("reopen", phase))
 
     fake._planner_round_on_committed_plan = reopen
+
+    async def first_plan(mission_id, *, ordinal):
+        calls.append(("reopen", "first_plan"))
+
+    fake._try_planner_intent = first_plan
     fake._stop_planning_round = lambda mission_id, **kw: calls.append(("stop", kw["reason"]))
     intent = SimpleNamespace(mission_id="m1", config={"ordinal": 5, "planning_decision_attempt_ordinal": 1})
     asyncio.run(Orchestrator._planning_rejected(fake, intent, reason="proposal_unreadable", detail=detail))
@@ -118,7 +125,12 @@ def _reject(detail: dict, *, prior: list[tuple[str, dict]], format_retry_left: i
 def test_no_reply_on_the_format_retry_asks_again_instead_of_ending_the_round() -> None:
     no_reply = {"error": "planner turn failed: {}", "turn_failed": True}
     assert _reject(no_reply, prior=[]) == [("reopen", "planner_turn_retry")]
-    assert _reject({"error": "bad block"}, prior=[]) == [("stop", "planning_format_retry_exhausted")]
+    # 2026-09-30：同一请求的格式重试用完，只要规划总次数没用完就开新请求（格式没写对不算模型
+    # 做错的决定，09-28）；这次拒绝照样计入总次数，所以一定有界；总次数也用完才停。
+    assert _reject({"error": "bad block"}, prior=[]) == [("reopen", "planning_format_ladder")]
+    from agent_orchestrator.contracts import MissionStatus
+    assert _reject({"error": "bad block"}, prior=[], status=MissionStatus.PLANNING) == [("reopen", "first_plan")]
+    assert _reject({"error": "bad block"}, prior=[], ladder_spent=True) == [("stop", "planning_format_retry_exhausted")]
     spent = [_NO_REPLY] * PLANNER_TURN_FAILURE_GRACE
     # 宽限用完：模型服务按不可用处理，连"全新请求"的格式重试也不再开（审阅 2026-09-28）
     assert _reject(no_reply, prior=spent) == [("stop", "planner_turn_failures_exhausted")]
