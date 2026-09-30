@@ -54,7 +54,7 @@ def test_finished_work_is_the_finalizers_business():
     assert decision.route is Route.FAST and decision.action == "FINALIZE"
 
 
-def _loop(*, closeout: bool, actions=()):
+def _loop(*, closeout: bool, actions=(), approvals=()):
     notes = []
     mission = SimpleNamespace(id="m1")
     fake = SimpleNamespace(
@@ -65,6 +65,7 @@ def _loop(*, closeout: bool, actions=()):
         store=SimpleNamespace(
             list_tasks=lambda mission_id: [SimpleNamespace(status="READY")],
             list_actions=lambda mission_id: list(actions),
+            list_approvals=lambda mission_id, *states: [a for a in approvals if not states or a["state"] in states],
         ),
         commit=SimpleNamespace(assured_closeout_pending=lambda mission_id: closeout),
         _awaiting_retry_decision=lambda mission_id, task: False,
@@ -98,3 +99,19 @@ def test_without_a_wait_the_plan_is_read_and_withheld_work_is_a_candidate():
     fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}])
     facts, admissions, _ = Orchestrator._idle_facts(fake, mission)
     assert admissions is not None and idle_verdict(facts).route is Route.STOP
+
+
+def test_a_result_suspended_for_a_persons_review_waits_instead_of_stalling():
+    # Real run 2026-09-30 (mission-f13b483137b6f435): two reviews INCONCLUSIVE, the
+    # result suspended and a review approval requested — and the same cycle failed the
+    # Mission "no dispatchable work" and cancelled the approval: only *action*
+    # approvals counted as a person's pending approval.
+    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}],
+                          approvals=[{"kind": "review", "state": "PENDING"}])
+    facts, admissions, _ = Orchestrator._idle_facts(fake, mission)
+    assert facts.approvals_pending and admissions is None
+    assert idle_verdict(facts).reason_code == "APPROVAL_PENDING"
+    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}],
+                          approvals=[{"kind": "review", "state": "GRANTED"}])
+    facts, _, _ = Orchestrator._idle_facts(fake, mission)
+    assert not facts.approvals_pending  # a decided one is no longer a wait

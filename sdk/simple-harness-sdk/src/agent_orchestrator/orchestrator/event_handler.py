@@ -2742,7 +2742,12 @@ class Orchestrator:
                 for task in rows
             ),
             "unknown_actions": any(a["state"] in IN_FLIGHT_ACTION_STATES for a in actions),
-            "approvals_pending": any(a["state"] in OPEN_ACTION_STATES for a in actions),
+            # A person's pending approval of any kind: an action awaiting approval, or a
+            # review / arbitration / source-change request still open (2026-09-30 real
+            # run: a result suspended for a review was failed "no dispatchable work" in
+            # the same cycle its review request was made).
+            "approvals_pending": any(a["state"] in OPEN_ACTION_STATES for a in actions)
+            or bool(self.store.list_approvals(mission.id, "PENDING")),
             "operation_completion": self._has_pending_operation_completion(mission),
             "assurance_work": self._has_pending_assurance_work(mission.id),
             "repair_continuation_waiting": self._repair_continuation_waiting(mission.id),
