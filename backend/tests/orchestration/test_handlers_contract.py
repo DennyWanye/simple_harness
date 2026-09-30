@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from deskpet.orchestration.handlers import MESSAGE_TYPES, handle
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request
@@ -74,6 +75,7 @@ async def test_create_then_get_round_trip(orchestration_root, principal):
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:
@@ -113,6 +115,7 @@ async def test_errors_are_coded_and_never_raise(
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:

@@ -34,6 +34,7 @@ from deskpet.orchestration.service import (
 )
 
 from ._support import (
+    LEASE_SECONDS,
     NOTES_TASK,  # noqa: F401 - documents the scripted Task shape
     SCRIPTED_LANE,
     _notes_worker,
@@ -79,7 +80,7 @@ def _usage_refs(root: Path) -> list[str]:
 def _restarted(root: Path, provider: RoleScriptedProvider, principal) -> OrchestrationService:  # type: ignore[no-untyped-def]
     return OrchestrationService(
         root,
-        OrchestrationSettings(lease_seconds=2.0),
+        OrchestrationSettings(lease_seconds=LEASE_SECONDS),
         provider=provider,
         principal=principal,
         drive=False,

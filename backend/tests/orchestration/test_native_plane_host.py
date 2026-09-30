@@ -3,8 +3,8 @@
 
 """ARP-EXEC-1.1.1 RP-E3: the Host runs pools on the native runtime plane.
 
-Seam tests only (RP-E test plan layer ②): the native pools are assembled beside the
-legacy ones, one runtime-plane read, one write and its replay go through the control
+Seam tests only (RP-E test plan layer ②): the native pools are the only pools (legacy
+pools deleted 2026-09-30), one runtime-plane read, one write and its replay go through the control
 channel, and the Host links a Skill evaluation to its original Assurance Mission.  The
 counter is a certified fixture standing in for the DeepSeek one (trusted composition).
 """
@@ -16,8 +16,10 @@ import asyncio
 import pytest
 
 from deskpet.orchestration.handlers import handle
+from deskpet.orchestration.native_fixture import FixtureWordCounter
+from deskpet.orchestration.provider import ProviderSnapshot
+from deskpet.orchestration.runtime_profile import ONLY_DEEPSEEK_REASON
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
-from simple_harness.agents.arp.meter import MeterBinding, model_limits
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.profile import default_policy
 from simple_harness.agents.arp.strict import digest
@@ -25,28 +27,8 @@ from simple_harness.agents.arp.strict import digest
 from ._support import notes_provider, notes_request
 
 
-class ExactWordCounter:
-    """One token per whitespace word: exact for the scripted provider, certified below."""
-
-    fingerprint = "host-test-exact-words:v1"
-    count_mode = "EXACT"
-    requires_prior_output_reserve = False
-    tool_schema_mode = "legacy"
-    bound_protocol = "host-test-exact-words-v1"
-
-    def count_text(self, text: str) -> int:
-        return len(text.split())
-
-    def estimate_input_tokens(self, request) -> int:  # type: ignore[no-untyped-def]
-        return sum(self.count_text(m.content if isinstance(m.content, str) else "") for m in request.messages)
-
-    def meter_factory(self, counter, *, input_limit_tokens, max_output_tokens, prior_reserve=None):  # type: ignore[no-untyped-def]
-        limits = model_limits(model="agent-model", tokenizer=counter, input_limit_tokens=input_limit_tokens, max_output_tokens=max_output_tokens, provider_id="host-test")
-        return MeterBinding(tokenizer=counter, model_limits=limits, certification_ref=Pin("receipt", "meter-certification:host-test-exact-words", 0, digest({"rule": "one token per word"})), prior_reserve=prior_reserve)
-
-
 def _service(root, principal, **settings):  # type: ignore[no-untyped-def]
-    return OrchestrationService(root, OrchestrationSettings(**settings), provider=notes_provider(), principal=principal, drive=False, native_test_counter=ExactWordCounter())
+    return OrchestrationService(root, OrchestrationSettings(**settings), provider=notes_provider(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
 
 
 def _request(verb: str, *, subject_id: str, payload, command_id=None, expected_revision=None, request_id="r"):  # type: ignore[no-untyped-def]
@@ -69,11 +51,10 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         assert all(row["consecutive_failures"] == 0 for p in native["profiles"] for row in p["background"])
         assert status["default_context_profile_id"] == "deepseek-native-256k-v1"
         rows = {p["profile_id"]: p for p in status["context_profiles"]}
-        assert rows["deepseek-native-256k-v1"]["native_plane"] is True
-        # 2026-09-30（完成度评估）：装了原生池就不再列旧式池——旧式池上没有任务来源绑定和技能
-        # 工具，选了就绕开 NEXT-TG 第五批 A/B；指名旧式池新建任务同样被拒。
-        assert all(p["native_plane"] for p in status["context_profiles"])
-        assert "deepseek-context-256k-v1" not in rows
+        # 2026-09-30 用户决定：旧式执行池已删除，只列原生池；指名非原生池新建任务被拒。
+        assert set(rows) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1"}
+        assert all("native_plane" not in p for p in status["context_profiles"])
+        assert "context_unavailable_reason" not in status
         from deskpet.orchestration.service import OrchestrationRequestError
         with pytest.raises(OrchestrationRequestError, match="上下文配置"):
             service.create_mission({"goal": "legacy pool", "success_criteria": ["file:a.md"],
@@ -85,7 +66,7 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         assert pool.runtime.arp.profile.body["owner_mode"] == "MISSION" and pool.runtime.arp.profile.revision == 2
         assert pool.runtime.arp.ports.mission_sources is service._native.mission_sources
         assert all(p["owner_mode"] == "MISSION" for p in native["profiles"])
-        assert service._orchestrator.assembled.pool("default").bridge.native_plane is False
+        assert set(service._runtime_options["profiles"]) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1"}
         # Each pool has its own Assurance acceptance reader, bound to that pool's own Skill
         # lifecycle and to the orchestrator store (review finding: a shared reader answered
         # for the last pool built).
@@ -141,15 +122,20 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
 
 
 @pytest.mark.asyncio
-async def test_native_plane_off_keeps_the_legacy_pools_and_says_so(orchestration_root, principal):
-    service = _service(orchestration_root, principal, native_plane="off")
+async def test_a_non_deepseek_deployment_without_a_counter_is_refused_as_only_deepseek(orchestration_root, principal):
+    # 2026-09-30 用户决定：旧式池删除后，没有认证计数器（非 DeepSeek 模型）就没有执行池，
+    # 服务明说"只支持 DeepSeek"，不再退回旧池。
+    other = ProviderSnapshot("luna", "https://example.test/v1", "gpt-5.6-luna", "gpt-5.6-luna", "fixture")
+    service = OrchestrationService(orchestration_root, OrchestrationSettings(), provider=notes_provider(),
+                                   principal=principal, drive=False, provider_snapshot=other)
     await service.start()
     try:
         status = service.status()
-        assert status["native_plane"] == {"enabled": False, "available": False, "reason": "原生运行平面已关闭"}
-        assert status["default_context_profile_id"] == "deepseek-context-256k-v1"
+        assert status["state"] == "unavailable" and status["reason"] == ONLY_DEEPSEEK_REASON
+        assert status["native_plane"]["available"] is False and not status["native_plane"].get("profiles")
+        assert status["context_profiles"] == [] and status["default_context_profile_id"] is None
         refused = await handle(service, "agent_runtime_request", _request("agent_skills_list", subject_id="x", payload={"namespace_id": "x", "kind": "SKILL", "cursor": None, "limit": 1}))
-        assert refused["payload"]["ok"] is False and refused["payload"]["error_code"] == "native_plane_unavailable"
+        assert refused["payload"]["ok"] is False
     finally:
         await service.close()
 
@@ -215,7 +201,6 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
                     for r in connection.execute("SELECT original_request_key FROM arp_context_requests")]
         assert mission_sources.record_pin(session.session_id, record).to_json() in frozen["authority_refs"]
         assert frozen["owner_contract_ref"]["id"].endswith("owner-mode:MISSION")
-        assert loop.assembled.pool("default").runtime.uow.database.connection.execute("SELECT COUNT(*) FROM provider_invocations").fetchone()[0] == 0
         tasks = loop.store.list_tasks(mission_id)
         assert tasks == []  # the fixture provider has no synthesizer script (see above)
 

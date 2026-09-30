@@ -16,6 +16,7 @@ import json
 import pytest
 
 from deskpet.orchestration.manifest import MANIFEST_NAME
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationRequestError, OrchestrationService
 from deskpet.orchestration.settings import OrchestrationSettings
 
@@ -31,6 +32,7 @@ async def _service(root, principal, **settings):
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     return service

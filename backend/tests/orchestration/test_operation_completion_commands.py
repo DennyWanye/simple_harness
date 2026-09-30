@@ -16,6 +16,7 @@ from agent_orchestrator.orchestrator.operation_completion import OperationComple
 from agent_orchestrator.storage.htn_store import HtnStore
 
 from deskpet.orchestration.handlers import handle
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request
@@ -26,6 +27,7 @@ async def test_completion_confirmation_uses_actual_host_principal(orchestration_
     service = OrchestrationService(
         orchestration_root, OrchestrationSettings(), provider=notes_provider(),
         principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:

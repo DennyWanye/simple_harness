@@ -18,7 +18,8 @@
  * 不画成通过）；金额没有价目时显示「未计价」。可访问名称是原生 AX 验收的定位点，改名要同步
  * 改验收脚本。
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
@@ -29,7 +30,7 @@ import { PlanningQuestions } from "./PlanningQuestions";
 import { PlanningAuthorization } from "./PlanningAuthorization";
 import { OperationWorkspace } from "./OperationWorkspace";
 import { MissionDiagnostics } from "./MissionDiagnostics";
-import { LiveGraph } from "./liveGraph/LiveGraph";
+import { MissionStory } from "./missionStory/MissionStory";
 import { MissionProgress } from "./liveGraph/MissionProgress";
 import { MissionAssurance } from "./MissionAssurance";
 import { PublishCriterionHelper } from "./PublishCriterionHelper";
@@ -116,6 +117,11 @@ const OWN_RESPONSES = new Set([
   "mission_artifact_read_response",
 ]);
 const EVENT_PAGE_LIMIT = 200;
+/** 结构图（elkjs + React Flow）按需加载：默认看「任务过程」，不点结构图就不下载这两个库。 */
+const LiveGraph = lazy(() => import("./liveGraph/LiveGraph").then((m) => ({ default: m.LiveGraph })));
+/** 只说明"后台还活着"、不改变详情内容的事件：推送只带这些时不重拉详情（2026-09-27 性能：
+ *  运行中每几秒一次心跳，每次都重拉整份详情并重画整页）。等人操作的变化由 5 秒兜底刷新接住。 */
+const NOISE_EVENTS = new Set(["HeartbeatReceived", "AssuranceEvidenceChanged", "AssuranceUseValidityChecked"]);
 const MAX_AUTO_PAGES = 20;
 const TIMELINE_SIZE = 50;
 
@@ -386,7 +392,15 @@ const TakeoverBox: React.FC<{ taskId: string; send: (type: string, payload?: Jso
 };
 
 export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
-  const store = useMissionsStore();
+  // 2026-09-27 性能：按字段订阅。以前订阅整个 store，任何任务的每秒推送都让整页重画。
+  const store = useMissionsStore(useShallow((s) => ({
+    selectedId: s.selectedId, detail: s.detail, status: s.status, policy: s.policy, missions: s.missions, error: s.error,
+    selectedEvents: s.selectedId ? s.events[s.selectedId] : undefined,
+    selectedHasMore: s.selectedId ? s.eventsHasMore[s.selectedId] === true : false,
+    selectedLoading: s.selectedId ? s.eventsLoading[s.selectedId] === true : false,
+    select: s.select, setError: s.setError,
+  })));
+  const [graphTab, setGraphTab] = useState<"story" | "graph">("graph");
   const [creating, setCreating] = useState(false);
   const [goal, setGoal] = useState("");
   const [criteria, setCriteria] = useState("");
@@ -542,7 +556,10 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         // the resident feed applies the change to the list; here only the open detail
         const missionId = text(payload.mission_id);
         if (!missionId || missionId !== selectedRef.current) return;
-        fetchDetail(missionId);
+        const pushed = Array.isArray(payload.events) ? (payload.events as MissionEvent[]) : [];
+        const onlyNoise = payload.truncated !== true && pushed.length > 0 && pushed.every((e) => NOISE_EVENTS.has(e.type))
+          && text(payload.status) === text(record(state.detail?.mission).status);
+        if (!onlyNoise) fetchDetail(missionId);
         // 2026-09-26 推送带事件：接得上就直接追加；有缺口、没带全或分页在途时照旧分页补齐
         const lastSeq = Number(payload.last_seq) || 0;
         const events = Array.isArray(payload.events) ? (payload.events as MissionEvent[]) : [];
@@ -833,13 +850,17 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     if (selectedRef.current) refreshSelected(selectedRef.current);
   }, [refreshSelected]);
 
+  const onStalled = useCallback((count: number) => {
+    const id = selectedRef.current;
+    if (id) setStalled((current) => current[id] === count ? current : { ...current, [id]: count });
+  }, []);
   const detail = store.detail;
   const mission = record(detail?.mission);
   const selectedId = store.selectedId;
-  const events = selectedId ? store.events[selectedId] ?? [] : [];
+  const events = store.selectedEvents ?? [];
   // 2026-09-25 UI 全量点击：以前只显示最近 50 条，更早的已加载也看不到。
   const recentEvents = allEventsShown ? events : events.slice(-TIMELINE_SIZE);
-  const showMore = selectedId ? store.eventsHasMore[selectedId] === true && store.eventsLoading[selectedId] !== true : false;
+  const showMore = selectedId ? store.selectedHasMore && !store.selectedLoading : false;
   const pendingApprovals = useMemo(
     () => list(detail?.approvals).filter((approval) => text(approval.state) === "PENDING"),
     [detail],
@@ -986,7 +1007,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 ? `输入与输出共享 ${selectedContext.max_total_tokens / 1024}K 总窗口；输入最多 ${selectedContext.max_input_tokens / 1024}K，已预留输出与安全余量。总预算按实际调用消耗。`
                 : "容量包含本轮材料与历史；单次输出另计，上限 32K。总预算按实际调用消耗。"}</span>
             </label>}
-            {status?.context_unavailable_reason && <div role="status" style={muted}>{status.context_unavailable_reason}</div>}
             <div style={{ display: "flex", gap: tokens.space.sm }}>
               <input aria-label="Token 上限" inputMode="numeric" placeholder={defaultTokenCap ? `Token 上限（留空=${defaultTokenCap}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
               <input aria-label="尝试次数上限" inputMode="numeric" placeholder={status?.mission_budget_defaults ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）` : "尝试次数上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
@@ -1179,9 +1199,23 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               );
             })}
 
-            <LiveGraph key={selectedId + ":live-graph"} missionId={selectedId} channel={channel} detail={detail}
-              onLoadMoreEvents={() => fetchEvents(selectedId, true)}
-              onStalled={(count) => setStalled((current) => current[selectedId] === count ? current : { ...current, [selectedId]: count })} />
+            {/* 2026-09-27：默认看「任务过程」（模型每一步做了什么）；结构图（步骤之间的先后关系）按需打开 */}
+            <div role="tablist" aria-label="任务视图" style={{ display: "flex", gap: tokens.space.xs }}>
+              {([["graph", "执行图"], ["story", "任务过程"]] as const).map(([key, label]) => (
+                <button key={key} type="button" role="tab" aria-selected={graphTab === key} onClick={() => setGraphTab(key)}
+                  style={{ ...button, borderColor: graphTab === key ? tokens.color.accent.border : tokens.color.surface.hairline,
+                    fontWeight: graphTab === key ? tokens.weight.semibold : undefined }}>{label}</button>
+              ))}
+            </div>
+            {graphTab === "story" ? (
+              <MissionStory key={selectedId + ":story"} missionId={selectedId} channel={channel} missionStatus={text(mission.status)}
+                onStalled={onStalled} />
+            ) : (
+              <Suspense fallback={<div style={muted}>正在加载执行图…</div>}>
+                <LiveGraph key={selectedId + ":live-graph"} missionId={selectedId} channel={channel} detail={detail}
+                  onLoadMoreEvents={() => fetchEvents(selectedId, true)} onStalled={onStalled} />
+              </Suspense>
+            )}
 
             {detail.document != null && <MissionDocument key={selectedId + ":document"} missionId={selectedId} document={record(detail.document)} channel={channel} onChanged={() => refreshSelected(selectedId)} />}
 
@@ -1316,7 +1350,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             </div>
 
             <div style={box}>
-              <div style={heading}>事件</div>
+              <div style={heading}>原始事件记录</div>
+              <div style={muted}>系统内部记录，排查问题时看；想了解模型做了什么，看上面的「任务过程」。</div>
               {events.length > TIMELINE_SIZE ? (
                 <div style={muted}>
                   {allEventsShown ? `共 ${events.length} 条` : `共 ${events.length} 条，显示最近 ${TIMELINE_SIZE} 条`}

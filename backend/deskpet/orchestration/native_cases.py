@@ -78,7 +78,7 @@ def document_case_mission(case: str) -> dict[str, Any]:
         "domain": "doc-research-v1",
         "idempotency_key": "native-document-" + case,
         "budget": {
-            "max_tokens": 200_000,
+            "max_tokens": 8_000_000,
             "max_attempts": 1 if case == "n6-active-revoke" else 4,
         },
     }

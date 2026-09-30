@@ -15,6 +15,7 @@ import json
 
 import pytest
 
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.provider import ProviderSnapshot
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
@@ -42,6 +43,9 @@ def _service(root, principal):  # type: ignore[no-untyped-def]
         provider=notes_provider(),
         provider_snapshot=snapshot,
         drive=False,
+        # A non-DeepSeek model has no certified counter (2026-09-30: no pool, "only
+        # DeepSeek"); the trusted test counter keeps this key-door test on a native pool.
+        native_test_counter=FixtureWordCounter(),
     )
 
 

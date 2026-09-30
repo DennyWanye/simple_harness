@@ -19,9 +19,10 @@ from agent_orchestrator.testing.fixtures import (
     graph_proposal_step,
 )
 from deskpet.orchestration.service import OrchestrationRequestError, OrchestrationService
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.settings import OrchestrationSettings
 
-from ._support import SCRIPTED_LANE, WORKSPACE_TOOLS, notes_provider, notes_request
+from ._support import NATIVE_TASK_TOKENS, SCRIPTED_LANE, WORKSPACE_TOOLS, notes_provider, notes_request
 
 KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 
@@ -34,6 +35,7 @@ async def test_default_deployment_offers_workspace_and_scoped_knowledge_tools(or
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:
@@ -62,6 +64,7 @@ async def test_client_cannot_widen_the_tool_set(orchestration_root, principal):
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:
@@ -100,7 +103,7 @@ async def test_model_written_tests_never_run_when_local_tests_are_off(
         "verification_policy": ["format_check", "rule_check", "code_test"],
         "outputs": ["NOTES.md", "test_probe.py"],
         "allowed_tools": WORKSPACE_TOOLS,
-        "budget": {"max_tokens": 30_000, "max_attempts": 1},
+        "budget": {"max_tokens": NATIVE_TASK_TOKENS, "max_attempts": 1},
         "priority": 1.0,
     }
     provider = RoleScriptedProvider(
@@ -171,6 +174,7 @@ async def test_no_host_tool_reaches_the_orchestration_runtime(orchestration_root
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:

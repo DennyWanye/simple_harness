@@ -226,7 +226,7 @@ async def test_active_source_revoke_before_original_human_pass_cannot_accept(
         assert service.status()["available"], service.status()
         request = document_case_mission(case)
         [material] = document_case_materials(case)
-        assert request["budget"] == {"max_tokens": 200_000, "max_attempts": 1}
+        assert request["budget"] == {"max_tokens": 8_000_000, "max_attempts": 1}
         created = service.create_mission_with_sources(
             {"mission": request, "sources": [material]}
         )

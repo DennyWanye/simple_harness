@@ -220,10 +220,8 @@ def _no_symlinks(path: Path) -> None:
         raise LauncherError("run paths must not contain symlinks")
 
 
-def prepare_run(
-    path: Path, bundle: dict, port: int, resume: bool, *,
-    base_url: str = BASE_URL, model: str = MODEL,
-) -> Path:
+def prepare_run(path: Path, bundle: dict, port: int, resume: bool) -> Path:
+    base_url, model = BASE_URL, MODEL  # DeepSeek only (2026-09-30: local-model path deleted)
     path = path.absolute()
     _no_symlinks(path)
     run = path.resolve()
@@ -233,8 +231,6 @@ def prepare_run(
             "run-dir must be under the Host ignored .local-test-evidence directory"
         )
     marker = {"owner": OWNER, "run_dir": str(run), "bundle": bundle, "port": port}
-    if (base_url, model) != (BASE_URL, MODEL):
-        marker["provider"] = {"base_url": base_url, "model": model}
     user = run / "userdata"
     if resume:
         try:

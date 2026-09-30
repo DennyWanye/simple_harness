@@ -11,6 +11,7 @@ import json
 import pytest
 from agent_orchestrator.contracts.models import sha256_hex
 from deskpet.orchestration import diagnostics
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.diagnostics import (
     MAX_SUPPORT_BYTES,
     build_diagnostics,
@@ -32,6 +33,7 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         provider=provider,
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:
@@ -109,6 +111,7 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
     service = OrchestrationService(
         orchestration_root, OrchestrationSettings(),
         provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:

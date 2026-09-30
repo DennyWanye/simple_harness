@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from deskpet.orchestration.handlers import handle
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request
@@ -27,7 +28,7 @@ def _snapshot(mission_id, **overrides):
 
 async def _service(root, principal, **settings):
     service = OrchestrationService(root, OrchestrationSettings(**settings),
-                                   provider=notes_provider(missions=2), principal=principal, drive=False)
+                                   provider=notes_provider(missions=2), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
     await service.start()
     return service
 

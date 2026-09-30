@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 from deskpet.orchestration.handlers import handle
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request
@@ -17,7 +18,7 @@ def batch(key="g-batch"):
 
 async def opened(root, principal):
     service = OrchestrationService(root, OrchestrationSettings(), principal=principal,
-                                   provider=notes_provider(), drive=False)
+                                   provider=notes_provider(), drive=False, native_test_counter=FixtureWordCounter())
     await service.start()
     assert service.status()["state"] == "available", service.status()
     return service
@@ -163,7 +164,7 @@ async def test_source_change_uses_existing_approval_and_fixed_principal(orchestr
 
 @pytest.mark.asyncio
 async def test_citation_read_dispatch_preserves_binding_and_character_page(tmp_path, principal):
-    service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal, drive=False)
+    service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
     service._state = "available"
     service._call = Mock(return_value={"text": "原\r\n文", "offset": 3, "next_offset": 7,
                                      "total_chars": 10, "path": "sources/A.md", "version_hash": "a" * 64})
@@ -208,7 +209,7 @@ async def test_only_native_fixture_first_page_delays_delivery(tmp_path, principa
 
 @pytest.mark.asyncio
 async def test_citation_read_rejects_client_path_before_facade(tmp_path, principal):
-    service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal, drive=False)
+    service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
     service._state = "available"
     service._call = Mock()
     reply = await handle(service, "mission_citation_read", {

@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from deskpet.orchestration.lock import InstanceLock
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
@@ -43,11 +44,13 @@ HOLD = (
 @pytest.mark.asyncio
 async def test_second_service_on_the_same_directory_is_unavailable(orchestration_root, principal):
     first = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await first.start()
     second = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await second.start()
     try:

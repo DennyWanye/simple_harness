@@ -17,14 +17,15 @@ from deskpet.orchestration.service import (
 
 def _service(tmp_path, principal, **kwargs):
     service = OrchestrationService(
-        # These cases pin the candidate retry/close protocol with stubbed Orchestrator
-        # candidates; the native runtime plane (default on since ARP) needs a real
-        # deployment and config, so it is switched off here rather than faked.
-        tmp_path, OrchestrationSettings(backoff_max_seconds=0.001, native_plane="off"),
+        tmp_path, OrchestrationSettings(backoff_max_seconds=0.001),
         principal=principal, **kwargs,
     )
     service._config = object()
     service._deployment = SimpleNamespace(to_json=lambda: {})
+    # These cases pin the candidate retry/close protocol with stubbed Orchestrator
+    # candidates; the native runtime plane (the only plane since 2026-09-30) needs a real
+    # deployment and config, so its composition is stubbed out here.
+    service._build_native = lambda: None
     return service
 
 
@@ -39,7 +40,9 @@ def _wire_candidates(monkeypatch, candidates):
 
     pending = iter(candidates)
     monkeypatch.setattr(event_handler, "Orchestrator", lambda *args, **kwargs: next(pending))
-    monkeypatch.setattr(service_module, "source_runtime_options", lambda *args, **kwargs: {})
+    # One (stub) native pool: an empty pool set is the "only DeepSeek" refusal.
+    monkeypatch.setattr(service_module, "source_runtime_options",
+                        lambda *args, **kwargs: {"profiles": {"deepseek-native-256k-v1": object()}})
     monkeypatch.setattr(facade, "MissionControlV1", lambda candidate, **kwargs: ("control", candidate))
     monkeypatch.setattr(policies, "PolicyApi", lambda commit, *args, **kwargs: ("policy", commit))
 

@@ -7862,11 +7862,6 @@ class _ProductSdkProviderBindingResolver:
             model_params=thaw_json(binding.model_params),
             pre_invoke_guard=request_guard,
         )
-        from deskpet.orchestration.local_capacity import bind_selected_local_capacity
-        provider = bind_selected_local_capacity(
-            provider, _CONFIG_PATH,
-            base_url=str(getattr(entry, "base_url", "")), model=binding.model_id,
-        )
         price = provider.price_snapshot
         estimator = FrozenPriceEstimator(
             price.version,

@@ -72,7 +72,7 @@ def native_load_mission(case: str) -> dict[str, Any]:
     return {
         "goal": goals[case], "success_criteria": criteria,
         "domain": "doc-research-v1", "idempotency_key": f"{CASE}-{case}",
-        "budget": {"max_tokens": 160_000, "max_attempts": 4},
+        "budget": {"max_tokens": 8_000_000, "max_attempts": 4},  # 2026-09-30 旧式池删除：原生池下限 = 一轮 + 审阅（256K 约 59 万）
     }
 
 

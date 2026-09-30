@@ -16,6 +16,7 @@ from deskpet.orchestration.service import (
     OrchestrationService,
     OrchestrationSettings,
 )
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 
 from ._support import SCRIPTED_LANE
 from ._support import mission_count as _mission_count
@@ -59,6 +60,7 @@ async def test_a_pytest_criterion_follows_the_sandbox_probe(orchestration_root, 
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:
@@ -98,6 +100,7 @@ async def test_door_refuses_and_writes_nothing(orchestration_root, principal, ov
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:
@@ -129,6 +132,7 @@ async def test_fields_the_facade_does_not_open_are_refused(orchestration_root, p
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:
@@ -153,6 +157,7 @@ async def test_cancel_stops_dispatch_and_is_idempotent(orchestration_root, princ
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:

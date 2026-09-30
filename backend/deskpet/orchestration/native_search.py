@@ -32,11 +32,11 @@ def native_search_mission() -> dict[str, Any]:
         "success_criteria": ["file:final.md"],
         "domain": "code-v1",  # current code profile uses manager-v3
         "idempotency_key": CASE,
-        "budget": {"max_tokens": 450_000, "max_attempts": 20},
+        "budget": {"max_tokens": 8_000_000, "max_attempts": 20},  # 2026-09-30 旧式池删除：原生池下限 = 一轮 + 审阅（256K 约 59 万）
         "synthesis": {
             "goal": f"independently synthesize consumer C using pytest:{PROBE}",
             "success_criteria": ["file:final.md", f"pytest:{SYNTHESIS_PROBE}"],
-            "budget": {"max_tokens": 30_000, "max_attempts": 2},
+            "budget": {"max_tokens": 1_200_000, "max_attempts": 2},
         },
     }
 
@@ -90,18 +90,18 @@ def native_search_provider() -> Any:
              "dependencies": [], "success_criteria": ["file:good.md", "file:missing.md"],
              "verification_policy": ["format_check", "rule_check"],
              "allowed_tools": TOOLS, "outputs": ["good.md", "missing.md"],
-             "priority": 0.5, "budget": {"max_tokens": 120_000, "max_attempts": 3}},
+             "priority": 0.5, "budget": {"max_tokens": 1_200_000, "max_attempts": 3}},
             {"key": "B", "goal": "independent B", "rationale": "independent branch",
              "dependencies": [], "success_criteria": ["file:b.md"],
              "verification_policy": ["format_check", "rule_check"],
              "allowed_tools": TOOLS, "outputs": ["b.md"],
-             "priority": 0.1, "budget": {"max_tokens": 30_000, "max_attempts": 2}},
+             "priority": 0.1, "budget": {"max_tokens": 1_200_000, "max_attempts": 2}},
             {"key": "C", "goal": "consumer C", "rationale": "consume A replacement and B",
              "dependencies": ["A", "B"],
              "success_criteria": ["file:good.md", "file:consumer.md", f"pytest:{PROBE}"],
              "verification_policy": ["format_check", "rule_check", "code_test"],
              "allowed_tools": TOOLS, "outputs": ["good.md", "consumer.md", PROBE],
-             "budget": {"max_tokens": 30_000, "max_attempts": 2}},
+             "budget": {"max_tokens": 1_200_000, "max_attempts": 2}},
         ]
         return graph_proposal_step(nodes)
 

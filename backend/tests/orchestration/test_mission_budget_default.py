@@ -19,6 +19,7 @@ from deskpet.orchestration.service import (
     OrchestrationService,
     OrchestrationSettings,
 )
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 
 from ._support import notes_provider, notes_request
 
@@ -36,7 +37,8 @@ def _request(key: str, budget):  # type: ignore[no-untyped-def]
 
 async def _service(root, principal):  # type: ignore[no-untyped-def]
     service = OrchestrationService(
-        root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False
+        root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     return service

@@ -85,10 +85,21 @@ async def main():
                 got = await call(ws, "mission_operation_completion_approve", confirm_body(w))
                 confirmed = bool(got.get("ok"))
                 note("confirm", {"ok": got.get("ok"), "error": got.get("error")})
-            events = ((await call(ws, "mission_events", {"mission_id": mid, "after_seq": seen_seq, "limit": 300}))
-                      .get("data") or {}).get("events") or []
+            # 接口每页上限 200；翻到最新为止（第 1 局用了 300，每次都被拒，脚本一条事件都没收到）。
+            events = []
+            while True:
+                page = await call(ws, "mission_events", {"mission_id": mid, "after_seq": seen_seq, "limit": 200})
+                if not page.get("ok"):
+                    note("events_error", page.get("error"))
+                    break
+                data = page.get("data") or {}
+                batch = data.get("events") or []
+                events.extend(batch)
+                if batch:
+                    seen_seq = max(seen_seq, max(int(e.get("seq") or 0) for e in batch))
+                if not data.get("has_more"):
+                    break
             for event in events:
-                seen_seq = max(seen_seq, int(event.get("seq") or event.get("sequence") or 0))
                 kind = str(event.get("type") or event.get("event_type") or "")
                 payload = event.get("payload") or {}
                 if kind == "AcceptanceCommitted":

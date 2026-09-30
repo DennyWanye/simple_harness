@@ -15,8 +15,6 @@ import hashlib
 import json
 import os
 import plistlib
-import re
-import shlex
 import shutil
 import socket
 import subprocess
@@ -36,14 +34,6 @@ from launch_frozen_orchestrator import (
 )
 
 MODEL_OVERRIDE = b'[models."deepseek-flash"]\ncontext_window = 32000\n'
-LOCAL_CONTEXT = 262144
-LOCAL_FIELDS = ("BaseURLLOCAL", "APIKeyLOCAL", "MODELLOCAL", "APIPATH")
-REQUIRED_TOKENIZER_FILES = {"config.json", "tokenizer_config.json", "tokenizer.json"}
-TOKENIZER_FILES = REQUIRED_TOKENIZER_FILES | {
-    "chat_template.jinja", "chat_template.json", "special_tokens_map.json",
-    "added_tokens.json", "vocab.json", "merges.txt", "vocab.txt",
-    "tokenizer.model", "sentencepiece.bpe.model",
-}
 SLOT_CONFIG_TEMPLATE = (
     "[orchestration]\nenabled = true\n"
     "max_concurrency = {logical_slots}\n"
@@ -59,86 +49,6 @@ def _digest(value: object) -> str:
     return hashlib.sha256(json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
     ).encode()).hexdigest()
-
-
-def read_local_credentials() -> tuple[str, str, str]:
-    """Read only the four dedicated dotenv fields, with no expansion or output."""
-    fields: dict[str, str] = {}
-    try:
-        with (HOST_ROOT / ".env").open(encoding="utf-8") as handle:
-            for line in handle:
-                match = re.match(r"^\s*(?:export\s+)?(BaseURLLOCAL|APIKeyLOCAL|MODELLOCAL|APIPATH)\s*=(.*)$", line)
-                if not match:
-                    continue
-                name = match.group(1)
-                try:
-                    values = shlex.split(match.group(2), comments=True, posix=True)
-                except ValueError:
-                    raise LauncherError("local provider field is malformed") from None
-                if name in fields or len(values) != 1 or not values[0] or any(
-                    char.isspace() for char in values[0]
-                ) or "$" in values[0] or "`" in values[0]:
-                    raise LauncherError("local provider field is missing, duplicate or malformed")
-                fields[name] = values[0]
-    except OSError:
-        raise LauncherError("local provider credential file is unavailable") from None
-    if set(fields) != set(LOCAL_FIELDS) or fields["APIPATH"] != "/chat/completions":
-        raise LauncherError("local provider fields or chat endpoint are missing or unsupported")
-    try:
-        url = urlparse(fields["BaseURLLOCAL"])
-    except ValueError:
-        raise LauncherError("local provider base URL is invalid") from None
-    if (url.scheme not in {"http", "https"} or not url.hostname or url.username
-            or url.password or url.query or url.fragment or not url.path.endswith("/v1")
-            or fields["BaseURLLOCAL"].endswith("/")):
-        raise LauncherError("local provider base URL is invalid")
-    return fields["BaseURLLOCAL"], fields["MODELLOCAL"], fields["APIKeyLOCAL"]
-
-
-def local_profile_identity(path: Path, *, base_url: str, model: str) -> dict:
-    """Validate a public profile and bind its exact bytes and tokenizer payloads."""
-    profile = _path(path)
-    try:
-        raw = profile.read_bytes()
-        value = json.loads(raw)
-        if not isinstance(value, dict) or set(value) != {
-            "base_url", "model", "max_total_tokens", "tokenizer_path",
-            "tokenizer_files", "chat_template_kwargs",
-        }:
-            raise ValueError("profile schema")
-        if (value["base_url"] != base_url or value["model"] != model
-                or type(value["max_total_tokens"]) is not int
-                or value["max_total_tokens"] != LOCAL_CONTEXT
-                or value["chat_template_kwargs"] != {}
-                or not isinstance(value["tokenizer_path"], str)
-                or not isinstance(value["tokenizer_files"], dict)
-                or not value["tokenizer_files"]):
-            raise ValueError("profile values")
-        if not Path(value["tokenizer_path"]).is_absolute():
-            raise ValueError("tokenizer path must be absolute")
-        if Path(value["tokenizer_path"]).is_symlink():
-            raise ValueError("linked tokenizer directory")
-        tokenizer = _path(Path(value["tokenizer_path"]), directory=True)
-        if ((tokenizer / "chat_templates").exists()
-                or (tokenizer / "chat_templates").is_symlink()
-                or not REQUIRED_TOKENIZER_FILES.issubset(value["tokenizer_files"])
-                or {entry.name for entry in tokenizer.iterdir() if entry.name in TOKENIZER_FILES}
-                   != set(value["tokenizer_files"])):
-            raise ValueError("incomplete tokenizer manifest")
-        hashes = {}
-        for name, expected in value["tokenizer_files"].items():
-            if (not isinstance(name, str) or name not in TOKENIZER_FILES
-                    or not isinstance(expected, str)
-                    or not re.fullmatch(r"[0-9a-f]{64}", expected)):
-                raise ValueError("tokenizer file declaration")
-            entry = tokenizer / name
-            if entry.is_symlink() or _sha(_path(entry)) != expected:
-                raise ValueError("tokenizer file digest")
-            hashes[name] = expected
-        return {"path": str(profile), "sha256": hashlib.sha256(raw).hexdigest(),
-                "tokenizer_path": str(tokenizer), "tokenizer_files": hashes}
-    except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError):
-        raise LauncherError("local profile or tokenizer identity is invalid") from None
 
 
 def _path(path: Path, *, directory: bool = False, executable: bool = False) -> Path:
@@ -247,17 +157,7 @@ def _python_identity(entry: Path) -> dict:
             "distribution_scope": "manifest_hashes_not_installed_payload_verification"}
 
 
-def source_identity(args, *, host_head: str, provider: str = "deepseek") -> dict:
-    # Direct helper callers keep their historical DeepSeek identity; the CLI
-    # passes its selected provider explicitly.
-    if provider not in {"local", "deepseek"}:
-        raise LauncherError("unsupported source provider")
-    local = None
-    if provider == "local":
-        if getattr(args, "local_profile", None) is None:
-            raise LauncherError("local provider requires --local-profile")
-        base_url, model, _ = read_local_credentials()
-        local = local_profile_identity(args.local_profile, base_url=base_url, model=model)
+def source_identity(args, *, host_head: str) -> dict:
     root = _path(args.source_root, directory=True)
     _path(root / "backend", directory=True)
     _path(root / "tauri-app", directory=True)
@@ -287,11 +187,7 @@ def source_identity(args, *, host_head: str, provider: str = "deepseek") -> dict
         "resources": _inventory(args.resource_root), "models": _inventory(args.model_root),
         "sdk_attestation_sha256": _sha(_path(args.sdk_attestation)),
         "tokenizer_sha256": _sha(_path(args.tokenizer)),
-        "model_override_sha256": hashlib.sha256(
-            model_override_bytes(model if local else None)
-        ).hexdigest(),
-        **({"provider": "local", "local_profile": local,
-            "endpoint": {"base_url": base_url, "model": model}} if local else {}),
+        "model_override_sha256": hashlib.sha256(model_override_bytes()).hexdigest(),
         "vite_port": args.vite_port,
         "orchestration_slots": {
             "logical_slots": args.logical_slots,
@@ -304,17 +200,13 @@ def source_identity(args, *, host_head: str, provider: str = "deepseek") -> dict
     }
 
 
-def model_override_bytes(model: str | None = None) -> bytes:
-    if model is None:
-        return MODEL_OVERRIDE
-    if not model or any(char in model for char in '\\"\n\r'):
-        raise LauncherError("local model name cannot be represented in an override")
-    return f'[models."{model}"]\ncontext_window = {LOCAL_CONTEXT}\n'.encode()
+def model_override_bytes() -> bytes:
+    return MODEL_OVERRIDE
 
 
-def bind_model_override(run: Path, *, resume: bool, model: str | None = None) -> None:
+def bind_model_override(run: Path, *, resume: bool) -> None:
     path = run / "userdata/model_overrides.toml"
-    expected = model_override_bytes(model)
+    expected = model_override_bytes()
     try:
         if path.is_symlink():
             raise ValueError("linked override")
@@ -330,7 +222,6 @@ def bind_model_override(run: Path, *, resume: bool, model: str | None = None) ->
 
 def bind_slot_config(
     run: Path, *, logical_slots: int, model_slots: int, resume: bool,
-    local_profile: Path | None = None,
 ) -> None:
     """Bind source-native test slots before the backend sees its fresh config.
 
@@ -343,8 +234,6 @@ def bind_slot_config(
         "max_concurrency": logical_slots,
         "max_concurrent_model_calls": model_slots,
     }
-    if local_profile is not None:
-        expected["local_model_profile"] = str(local_profile)
     try:
         if path.is_symlink():
             raise ValueError("linked config")
@@ -352,18 +241,15 @@ def bind_slot_config(
         if resume:
             section = tomllib.loads(raw).get("orchestration")
             if not isinstance(section, dict) or any(
-                (type(section.get(key)) is not int if key != "local_model_profile"
-                 else type(section.get(key)) is not str) or section[key] != value
+                type(section.get(key)) is not int or section[key] != value
                 for key, value in expected.items()
-            ) or (local_profile is None and "local_model_profile" in section):
+            ):
                 raise ValueError("persisted slots differ")
             return
         seed = "[orchestration]\nenabled = true\n"
         if raw.count(seed) != 1:
             raise ValueError("unexpected fresh config")
         replacement = SLOT_CONFIG_TEMPLATE.format(logical_slots=logical_slots, model_slots=model_slots)
-        if local_profile is not None:
-            replacement += "local_model_profile = " + json.dumps(str(local_profile)) + "\n"
         path.write_text(
             raw.replace(seed, replacement),
             encoding="utf-8",
@@ -419,9 +305,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--python", required=True, type=Path)
     parser.add_argument("--sdk-attestation", required=True, type=Path)
     parser.add_argument("--tokenizer", required=True, type=Path)
-    parser.add_argument("--provider", choices=("local", "deepseek"), default="local")
-    parser.add_argument("--local-profile", type=Path,
-                        help="Secret-free local model profile JSON (required for local provider)")
     parser.add_argument("--resource-root", required=True, type=Path)
     parser.add_argument("--model-root", required=True, type=Path)
     parser.add_argument("--run-dir", required=True, type=Path)
@@ -447,8 +330,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.fixture_case and args.fixture_dir is None:
         parser.error("--fixture-case requires --fixture-dir")
-    if args.provider == "deepseek" and args.local_profile is not None:
-        parser.error("--local-profile requires --provider local")
     return args
 
 
@@ -487,21 +368,15 @@ def main(argv: list[str] | None = None) -> int:
         cwd=root,
     ):
         raise LauncherError("source backend/frontend must match their recorded commit")
-    identity = source_identity(args, host_head=head, provider=args.provider)
-    local = identity.get("local_profile")
-    endpoint = identity.get("endpoint")
-    run = prepare_run(
-        args.run_dir, identity, args.backend_port, args.resume,
-        **(endpoint or {}),
-    )
+    identity = source_identity(args, host_head=head)
+    run = prepare_run(args.run_dir, identity, args.backend_port, args.resume)
     bind_slot_config(
         run,
         logical_slots=args.logical_slots,
         model_slots=args.model_slots,
         resume=args.resume,
-        local_profile=Path(local["path"]) if local else None,
     )
-    bind_model_override(run, resume=args.resume, model=endpoint["model"] if endpoint else None)
+    bind_model_override(run, resume=args.resume)
     bind_test_publish_config(run, enabled=args.publish_test_reports, resume=args.resume)
     app = run / "SimpleHarness Source UI.app"
     for path in (app, app / "Contents", app / "Contents/MacOS",
@@ -528,16 +403,7 @@ def main(argv: list[str] | None = None) -> int:
     if _sha(app / "Contents/MacOS/simple-harness") != identity["binary_sha256"]:
         raise LauncherError("source carrier binary identity changed")
     ordinal = len(list(run.glob("launch-*.json"))) + 1
-    if local:
-        if local_profile_identity(
-            args.local_profile, base_url=endpoint["base_url"], model=endpoint["model"]
-        ) != local:
-            raise LauncherError("local profile changed during preparation")
-        current_url, current_model, key = read_local_credentials()
-        if (current_url, current_model) != (endpoint["base_url"], endpoint["model"]):
-            raise LauncherError("local provider changed during preparation")
-    else:
-        key = read_key()
+    key = read_key()
     env = {name: os.environ[name] for name in STANDARD_ENV if name in os.environ}
     env.update(
         DESKPET_BACKEND_DIR=str(root / "backend"),

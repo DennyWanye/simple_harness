@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 
 
 def _heartbeat(attempt_id: str, liveness: dict[str, Any]) -> SimpleNamespace:
@@ -50,7 +51,7 @@ def _service(*, heartbeats: list[SimpleNamespace], statuses: dict[str, str]) -> 
             }
         },
     )
-    service = OrchestrationService(".", OrchestrationSettings(), principal=object())
+    service = OrchestrationService(".", OrchestrationSettings(), principal=object(), native_test_counter=FixtureWordCounter())
     service._state = "available"
     service._control = control
     service._orchestrator = SimpleNamespace(store=store)

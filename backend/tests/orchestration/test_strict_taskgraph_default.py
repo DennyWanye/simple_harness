@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from deskpet.orchestration.service import OrchestrationService
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.settings import OrchestrationSettings, load_settings
 
 
@@ -32,7 +33,7 @@ def _service(tmp_path, monkeypatch, *, waiting, refusals=(), strict=True):
     import agent_orchestrator.orchestrator.taskgraph_requirement as requirement
 
     service = OrchestrationService(tmp_path, OrchestrationSettings(strict_taskgraph=strict),
-                                   principal=object(), drive=False)
+                                   principal=object(), drive=False, native_test_counter=FixtureWordCounter())
     store = object()
     service._orchestrator = SimpleNamespace(store=store)
     service._taskgraph = SimpleNamespace(policy=_Policy(dict(refusals)))

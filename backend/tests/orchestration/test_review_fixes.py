@@ -18,6 +18,7 @@ import asyncio
 import pytest
 
 from deskpet.orchestration.handlers import handle
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
@@ -48,7 +49,7 @@ async def _eventually(predicate, seconds: float = 3.0) -> bool:  # type: ignore[
 
 @pytest.mark.asyncio
 async def test_a_failed_rebuild_keeps_the_loop_alive_and_degraded(orchestration_root, principal):
-    service = OrchestrationService(orchestration_root, FAST, provider=notes_provider(), principal=principal)
+    service = OrchestrationService(orchestration_root, FAST, provider=notes_provider(), principal=principal, native_test_counter=FixtureWordCounter())
     await service.start()
     runs = {"fail": True, "ok": 0}
 
@@ -88,7 +89,7 @@ async def test_a_long_failure_streak_never_ends_the_loop(orchestration_root, pri
     """Before the cap, ``2.0 ** 5001`` raised OverflowError outside the loop's try and the
     driver task ended; now it keeps failing, backing off and counting."""
 
-    service = OrchestrationService(orchestration_root, FAST, provider=notes_provider(), principal=principal)
+    service = OrchestrationService(orchestration_root, FAST, provider=notes_provider(), principal=principal, native_test_counter=FixtureWordCounter())
     await service.start()
 
     async def run() -> None:
@@ -112,7 +113,8 @@ async def test_a_long_failure_streak_never_ends_the_loop(orchestration_root, pri
 @pytest.mark.asyncio
 async def test_degraded_still_cancels_but_refuses_new_missions(orchestration_root, principal):
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:
@@ -134,7 +136,8 @@ async def test_degraded_still_cancels_but_refuses_new_missions(orchestration_roo
 @pytest.mark.parametrize("payload", [["mission-1"], "mission-1", 7])
 async def test_a_payload_that_is_not_an_object_is_answered(orchestration_root, principal, payload):
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:

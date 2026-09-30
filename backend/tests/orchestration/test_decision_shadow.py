@@ -31,6 +31,7 @@ from pathlib import Path
 import pytest
 
 from deskpet.orchestration import decision as seam
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.settings import (
     HOST_DECISION_MODES,
     SHADOW_TIMEOUT_CEILING_SECONDS,
@@ -675,6 +676,7 @@ def test_the_service_builds_the_seam_from_its_own_settings(tmp_path):
         replace(OrchestrationSettings(), decision_mode="existing"),
         principal=object(),
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     assert service._decision is None, "nothing is built before start()"
     service._install_decision_seam()
@@ -687,6 +689,7 @@ def test_the_service_builds_the_seam_from_its_own_settings(tmp_path):
         replace(OrchestrationSettings(), decision_mode="shadow"),
         principal=object(),
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     shadow_service._install_decision_seam()
     assert shadow_service._decision.mode == "shadow"
@@ -702,6 +705,7 @@ def test_the_service_status_projects_the_decision_seam(tmp_path):
         replace(OrchestrationSettings(), decision_mode="shadow"),
         principal=object(),
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     service._install_decision_seam()
     projected = service.status()["decision"]
@@ -723,7 +727,8 @@ def test_the_service_status_projects_existing_when_the_seam_was_never_built(tmp_
     from deskpet.orchestration.service import OrchestrationService
 
     service = OrchestrationService(
-        tmp_path / "orchestration", OrchestrationSettings(), principal=object(), drive=False
+        tmp_path / "orchestration", OrchestrationSettings(), principal=object(), drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     projected = service.status()["decision"]
     assert projected["mode"] == "existing"

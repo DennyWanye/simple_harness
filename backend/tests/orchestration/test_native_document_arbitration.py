@@ -20,6 +20,7 @@ from deskpet.orchestration.native_arbitration import (
     document_arbitration_materials,
     document_arbitration_mission,
 )
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 
@@ -45,7 +46,7 @@ async def test_current_document_conflict_contextual_ruling_survives_cold_reopen(
             "mission": request, "sources": list(document_arbitration_materials()),
         })
         mission_id = created["mission_id"]
-        assert await asyncio.wait_for(service.drain(timeout=8), 10), service.status()
+        assert await asyncio.wait_for(service.drain(timeout=90), 100), service.status()  # 原生池较慢
         orch = service._orchestrator
         store = orch.store
         assert DOC_PROFILE.version == "9"
@@ -135,6 +136,7 @@ async def test_current_document_conflict_contextual_ruling_survives_cold_reopen(
     reopened = OrchestrationService(
         library, OrchestrationSettings(), principal=principal, provider=idle,
         drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await asyncio.wait_for(reopened.start(), 10)
     try:

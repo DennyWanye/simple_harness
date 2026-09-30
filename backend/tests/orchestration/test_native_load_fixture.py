@@ -60,7 +60,7 @@ def _verifier_rows(root: Path) -> list[dict]:
 def _submit(service: OrchestrationService, case: str) -> str:
     request = native_load_mission(case)
     assert request["domain"] == "doc-research-v1"
-    assert request["budget"] == {"max_tokens": 160_000, "max_attempts": 4}
+    assert request["budget"] == {"max_tokens": 8_000_000, "max_attempts": 4}
     assert "allowed_tools" not in request
     created = service.create_mission_with_sources(
         {"mission": request, "sources": list(native_load_materials(case))}
@@ -287,14 +287,14 @@ async def test_host_verifier_pressure_two_real_verifies_one_pending(
 
         compare_id = _submit(service, COMPARE)
         review_id = _submit(service, REVIEW)
-        running = asyncio.create_task(service.drain(timeout=45))
+        running = asyncio.create_task(service.drain(timeout=150))  # 原生池较慢
         await _until_workers(provider)
         long_id = _submit(service, LONG)
         mission_ids = {compare_id, review_id, long_id}
         (provider.control_root / RELEASE_MARKER).touch()
 
         async def observe_queue() -> tuple[list, list, list[dict]]:
-            deadline = time.monotonic() + 12
+            deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
                 rows = _verifier_rows(provider.control_root)
                 gate_starts = [row for row in rows if row["event"] == "critic_gate_start"]

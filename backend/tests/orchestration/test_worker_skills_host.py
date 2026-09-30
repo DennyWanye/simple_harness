@@ -6,7 +6,8 @@
 With the native plane on, the deployment declares the three model-side Skill tools, the
 pools' authorization port allows them, a new Mission's charter carries them, and the
 current hierarchical Worker's frozen tool list (the original four-way intersection) has
-them — on a native pool, which serves them.  With the native plane off nothing changes.
+them — on a native pool, which serves them.  (Since 2026-09-30 the native plane is the
+only execution plane, so there is no "off" case any more.)
 """
 
 from __future__ import annotations
@@ -47,16 +48,5 @@ async def test_native_plane_deployment_offers_skill_tools_to_the_mission_worker(
         pool = service._orchestrator.assembled.pool(service.status()["default_context_profile_id"])
         assert pool.bridge.native_plane is True
         pool.bridge.check_tools(AgentConfig(name="w", instructions="-", model_profile_ref="p", tool_names=worker))
-    finally:
-        await service.close()
-
-
-@pytest.mark.asyncio
-async def test_without_the_native_plane_no_skill_tool_is_offered(orchestration_root, principal):
-    service = _service(orchestration_root, principal, native_plane="off")
-    await service.start()
-    try:
-        assert service._deployment.skill_tools == ()
-        assert not set(SKILL_TOOL_NAMES) & set(service.status()["allowed_tools"])
     finally:
         await service.close()

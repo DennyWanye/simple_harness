@@ -117,68 +117,6 @@ def test_official_endpoint_is_exact_and_a_relay_gets_the_learned_upper_bound(tmp
     assert runtime_profile.calibrated(raw, official) is raw  # the official endpoint is not recalibrated
 
 
-def test_pools_frozen_with_an_older_counter_identity_keep_it_or_are_retired(tmp_path) -> None:
-    """A pool's context identity pins its counter (nothing migrates old requests): a pool
-    frozen with the identity released before 2026-09-24 keeps that exact counter; an ARP pool
-    or an unknown identity is not registered, so the service still starts."""
-    import json
-
-    import pytest
-
-    from deskpet.orchestration import runtime_profile
-
-    try:
-        from agent_orchestrator.runtime.assembly import execution_db_for
-        from agent_orchestrator.runtime.deepseek_tokens import LegacyPriorOutputDeepSeekCounter
-    except ImportError:
-        pytest.skip("SDK without the legacy counter")
-    if runtime_profile.tokenizer_path() is None:
-        pytest.skip("pinned DeepSeek tokenizer not installed")
-    config = SimpleNamespace(evidence_root=tmp_path, execution_db=tmp_path / "execution.db")
-    legacy = runtime_profile.legacy_counter_for(DEEPSEEK)
-    assert isinstance(legacy, LegacyPriorOutputDeepSeekCounter) and legacy.requires_prior_output_reserve is True
-    assert runtime_profile.legacy_counter_for(OTHER) is None
-
-    def freeze(profile_id: str, fingerprint: str) -> None:
-        database = execution_db_for(config, profile_id)
-        database.with_name(database.name + ".context.json").write_text(json.dumps({"tokenizer_fingerprint": fingerprint}))
-
-    current = runtime_profile.deepseek_counter_for(DEEPSEEK, OrchestrationSettings(), state_dir=tmp_path)
-    pick = runtime_profile.counter_for_pool
-    assert runtime_profile.frozen_tokenizer_fingerprint(config, "default") is None
-    assert pick(config, "default", current, legacy, native_pool=False) is current  # a fresh pool
-    freeze("default", legacy.fingerprint)
-    assert runtime_profile.frozen_tokenizer_fingerprint(config, "default") == legacy.fingerprint
-    assert pick(config, "default", current, legacy, native_pool=False) is legacy  # keeps its old counter
-    freeze("deepseek-long-256k-v1", current.fingerprint)
-    assert pick(config, "deepseek-long-256k-v1", current, legacy, native_pool=False) is current
-    freeze("deepseek-native-256k-v1", legacy.fingerprint)
-    assert pick(config, "deepseek-native-256k-v1", current, legacy, native_pool=True) is None  # retired
-    freeze("deepseek-native-512k-v1", "deepseek-v41:an-intermediate-identity")
-    assert pick(config, "deepseek-native-512k-v1", current, legacy, native_pool=True) is None  # retired
-
-
-def test_the_legacy_counter_on_a_relay_charges_that_hosts_margin(tmp_path) -> None:
-    import pytest
-
-    from deskpet.orchestration import runtime_profile
-
-    try:
-        from agent_orchestrator.runtime.deepseek_meter import LegacyRelayDeepSeekCounter
-        from agent_orchestrator.runtime.deepseek_tokens import LegacyPriorOutputDeepSeekCounter
-    except ImportError:
-        pytest.skip("SDK without the legacy relay counter")
-    if runtime_profile.tokenizer_path() is None:
-        pytest.skip("pinned DeepSeek tokenizer not installed")
-    relay = ProviderSnapshot("relay", "https://legacy-relay.example.test/v1", "deepseek-v4.1-flash", "deepseek-v4.1-flash", "fixture")
-    official = runtime_profile.legacy_counter_for(DEEPSEEK, tmp_path)
-    on_relay = runtime_profile.legacy_counter_for(relay, tmp_path)
-    assert type(official) is LegacyPriorOutputDeepSeekCounter
-    assert isinstance(on_relay, LegacyRelayDeepSeekCounter) and on_relay.fingerprint == official.fingerprint
-    assert on_relay.margin is runtime_profile.relay_tool_margin("legacy-relay.example.test", tmp_path)
-    assert runtime_profile.calibrated(object(), on_relay) is not None
-
-
 def test_declared_relay_echo_aliases_reach_every_pool_provider() -> None:
     """A relay that echoes a vendor-prefixed model name is trusted only when declared."""
 

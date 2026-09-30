@@ -28,7 +28,7 @@ def native_compare_mission(version_id: str | None = None) -> dict[str, Any]:
         "success_criteria": [f"file:{RESULT}", f"pytest:{PROBE}"],
         "domain": "code-v1",
         "idempotency_key": CASE,
-        "budget": {"max_tokens": 160_000, "max_attempts": 4},
+        "budget": {"max_tokens": 8_000_000, "max_attempts": 4},  # 2026-09-30 旧式池删除：原生池下限 = 一轮 + 审阅（256K 约 59 万）
     }
     if version_id is not None:
         request["search_policy_version_id"] = version_id
@@ -139,7 +139,7 @@ def native_compare_provider() -> Any:
         "dependencies": [], "success_criteria": [f"file:{RESULT}", f"pytest:{PROBE}"],
         "verification_policy": ["format_check", "rule_check", "code_test"],
         "allowed_tools": list(TOOLS), "outputs": [RESULT, PROBE, COMBINED, *COPIES],
-        "budget": {"max_tokens": 120_000, "max_attempts": 3},
+        "budget": {"max_tokens": 1_200_000, "max_attempts": 3},
     }
 
     def worker(request: Any) -> Any:

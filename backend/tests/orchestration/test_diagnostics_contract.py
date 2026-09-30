@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from agent_orchestrator.api.facade import MissionControlV1
 from deskpet.orchestration.handlers import handle
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import SCRIPTED_LANE, notes_provider, notes_request
@@ -19,7 +20,7 @@ async def test_diagnostics_authenticates_before_reading_and_rejects_scope_overri
     orchestration_root, principal, monkeypatch
 ):
     service = OrchestrationService(orchestration_root, OrchestrationSettings(),
-        provider=notes_provider(), principal=principal, drive=False)
+        provider=notes_provider(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
     await service.start()
     try:
         own = service.create_mission(notes_request("p36-owned"))["mission_id"]
@@ -87,7 +88,7 @@ async def test_completed_diagnostics_and_exports_preserve_state_calls_and_artifa
 async def test_unadvertised_diagnostics_is_unavailable(orchestration_root, principal, monkeypatch):
     monkeypatch.setattr(OrchestrationService, "_detect_diagnostics", lambda self: False)
     service = OrchestrationService(orchestration_root, OrchestrationSettings(),
-        provider=notes_provider(), principal=principal, drive=False)
+        provider=notes_provider(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
     await service.start()
     try:
         assert service.status()["diagnostics_available"] is False

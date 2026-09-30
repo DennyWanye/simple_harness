@@ -2,6 +2,7 @@
 import pytest
 
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 
 
 class _Control:
@@ -24,7 +25,7 @@ def _service(tmp_path, mode, control):
         return mode
 
     service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=object(),
-                                   drive=False, permission_mode_reader=read)
+                                   drive=False, permission_mode_reader=read, native_test_counter=FixtureWordCounter())
     service._state, service._control = "available", control
     return service
 

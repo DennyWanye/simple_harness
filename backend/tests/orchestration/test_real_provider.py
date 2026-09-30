@@ -71,7 +71,9 @@ async def test_real_model_mission_reaches_a_terminal_state(orchestration_root, p
                     "SUMMARY.md 是中文，三到五句，说明了新建 Mission、查看进度和人工审批",
                 ],
                 "idempotency_key": "ha-11-real-1",
-                "budget": {"max_tokens": 400_000, "max_attempts": 3},
+                # 2026-09-30: only native pools remain; one Task needs at least a turn and its
+                # Critic at the 256k pool's size (589824 tokens), so the old 400k cap is too small.
+                "budget": {"max_tokens": 4_000_000, "max_attempts": 3},
             }
         )
         mission_id = receipt["mission_id"]

@@ -52,8 +52,8 @@ def document_arbitration_mission() -> dict[str, Any]:
         "success_criteria": ["cite:sources/outdoor.md"],
         "domain": "doc-research-v1",
         "idempotency_key": "native-document-contextual-arbitration",
-        "conflict_reserve_tokens": 30_000,
-        "budget": {"max_tokens": 240_000, "max_attempts": 6},
+        "conflict_reserve_tokens": 1_200_000,
+        "budget": {"max_tokens": 8_000_000, "max_attempts": 6},  # 2026-09-30 旧式池删除：原生池下限 = 一轮 + 审阅（256K 约 59 万）
     }
 
 

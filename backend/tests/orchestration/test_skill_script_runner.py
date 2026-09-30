@@ -94,9 +94,9 @@ def test_sync_run_outside_a_loop(tmp_path) -> None:
 def test_native_plane_binds_the_runner_only_with_a_proven_sandbox(tmp_path, with_sandbox) -> None:
     from deskpet.orchestration.native_plane import HostNativePlane
 
-    from .test_native_plane_host import ExactWordCounter
+    from deskpet.orchestration.native_fixture import FixtureWordCounter
 
-    counter = ExactWordCounter()
+    counter = FixtureWordCounter()
     executor = ProcessOnlyExecutor(sys.executable, exec_root=tmp_path / "exec") if with_sandbox else None
     plane = HostNativePlane(tenant_id="t", principal_id="p", allowed_tools=(), models_dir=None,
                             meter_factory=counter.meter_factory, script_executor=executor)

@@ -63,8 +63,6 @@ class OrchestrationSettings:
     default_mission_max_tokens: int = 20_000_000
     task_max_tokens: int = 3_000_000
     default_mission_max_attempts: int = 12
-    # Secret-free, pinned local-model profile selected by this deployment.
-    local_model_profile: str = ""
     # New official DeepSeek source Missions; existing Missions keep their profile.
     context_input_tokens: int = 262_144
     # P3.2 (plan D9 / P32-14): the one directory the user authorised for published files.
@@ -90,11 +88,6 @@ class OrchestrationSettings:
     # lane. The Host always passes its own selection point, so the SDK's default
     # selection never decides for a Host Mission.
     assurance_profile: str = "on"
-    # ARP-EXEC-1.1.1 (RP-E3): whether new official-DeepSeek Missions run on the native
-    # runtime plane ("on", the default in the testing phase) or keep the legacy pools
-    # ("off", the explicit opt-out).  A native pool needs the certified DeepSeek counter;
-    # without one no native pool is assembled and the status says why.
-    native_plane: str = "on"
     # 2026-09-25 user decision: task/session data is kept forever for audit; the Settings
     # page only reminds the user once ``<user_data>/data/agent-orchestrator`` passes this.
     storage_warn_bytes: int = 5 * 1024**3
@@ -200,8 +193,6 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         enabled=enabled if isinstance(enabled, bool) else True,
         max_concurrency=_bounded_int(raw.get("max_concurrency"), 2, 1, 4),
         max_concurrent_model_calls=_bounded_int(raw.get("max_concurrent_model_calls"), 2, 1, 4),
-        local_model_profile=(str(raw.get("local_model_profile", "")).strip()
-                             if isinstance(raw.get("local_model_profile", ""), str) else ""),
         context_input_tokens=(524_288 if type(raw.get("context_input_tokens")) is int
                               and raw["context_input_tokens"] == 524_288 else 262_144),
         # a path only; whether it exists and can carry a hard link is decided at start-up,
@@ -211,7 +202,6 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         decision_mode=_decision_mode(raw.get("decision_mode")),
         decision_shadow_timeout_seconds=_shadow_timeout(raw.get("decision_shadow_timeout_seconds")),
         assurance_profile=_assurance_profile(raw.get("assurance_profile")),
-        native_plane=_assurance_profile(raw.get("native_plane")),
         storage_warn_bytes=_bounded_int(raw.get("storage_warn_bytes"), 5 * 1024**3, 1024**2, 1024**5),
         deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),
         thinking=_thinking(raw.get("thinking")),

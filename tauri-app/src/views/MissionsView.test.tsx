@@ -206,22 +206,22 @@ describe("P33 G creation and explicit approval branches", () => {
   it("selects the actual long context and announces its separate total budget", () => {
     const channel = renderAvailable();
     channel.reply("orchestration_status", { ...AVAILABLE,
-      default_context_profile_id: "deepseek-context-256k-v1",
+      default_context_profile_id: "deepseek-native-256k-v1",
       context_profiles: [262144, 524288].map((tokens) => ({
-        profile_id: `deepseek-context-${tokens / 1024}k-v1`, max_input_tokens: tokens,
+        profile_id: `deepseek-native-${tokens / 1024}k-v1`, max_input_tokens: tokens,
         default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768,
         mission_max_tokens: tokens === 262144 ? 4000000 : 8000000,
       })),
     });
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    expect((screen.getByLabelText("输入上下文容量") as HTMLSelectElement).value).toBe("deepseek-context-256k-v1");
+    expect((screen.getByLabelText("输入上下文容量") as HTMLSelectElement).value).toBe("deepseek-native-256k-v1");
     expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toContain("4000000");
-    fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-context-512k-v1" } });
+    fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-native-512k-v1" } });
     expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toContain("8000000");
     fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "long references" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe("deepseek-context-512k-v1");
+    expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe("deepseek-native-512k-v1");
   });
 
   it("keeps the creation key and capacity when a lost receipt is retried after default drift", () => {
@@ -229,7 +229,7 @@ describe("P33 G creation and explicit approval branches", () => {
     try {
       const channel = renderAvailable();
       const profiles = [262144, 524288].map((tokens) => ({
-        profile_id: `deepseek-context-${tokens / 1024}k-v1`, max_input_tokens: tokens,
+        profile_id: `deepseek-native-${tokens / 1024}k-v1`, max_input_tokens: tokens,
         default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768,
         mission_max_tokens: 8000000,
       }));
@@ -253,13 +253,13 @@ describe("P33 G creation and explicit approval branches", () => {
   it("clears an unsent context selection when the replacement Host has no long profiles", () => {
     const channel = renderAvailable();
     channel.reply("orchestration_status", { ...AVAILABLE,
-      default_context_profile_id: "deepseek-context-512k-v1", context_profiles: [{
-        profile_id: "deepseek-context-512k-v1", max_input_tokens: 524288,
+      default_context_profile_id: "deepseek-native-512k-v1", context_profiles: [{
+        profile_id: "deepseek-native-512k-v1", max_input_tokens: 524288,
         default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 8000000,
       }],
     });
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-context-512k-v1" } });
+    fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-native-512k-v1" } });
     channel.reply("orchestration_status", AVAILABLE);
     fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "legacy entry" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
@@ -271,8 +271,8 @@ describe("P33 G creation and explicit approval branches", () => {
   it("allows creation on a legacy Host after the initial long-context send was refused", () => {
     const channel = renderAvailable();
     channel.reply("orchestration_status", { ...AVAILABLE,
-      default_context_profile_id: "deepseek-context-512k-v1", context_profiles: [{
-        profile_id: "deepseek-context-512k-v1", max_input_tokens: 524288,
+      default_context_profile_id: "deepseek-native-512k-v1", context_profiles: [{
+        profile_id: "deepseek-native-512k-v1", max_input_tokens: 524288,
         default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 8000000,
       }],
     });
@@ -1366,5 +1366,44 @@ describe("2026-09-26 列表进度条", () => {
     const progress = within(screen.getByTestId("mission-row-mission-1")).getByTestId("mission-progress");
     expect(progress.getAttribute("aria-label")).toBe("进度：执行");
     expect(progress.textContent).toContain("1/3");
+  });
+});
+
+describe("2026-09-27 任务过程与性能", () => {
+  const beat = (from: number, to: number) => events(from, to).map((e) => ({ ...e, type: "HeartbeatReceived" }));
+
+  it("任务过程标签；推送只有心跳时不重拉详情，有实质事件才拉", () => {
+    const channel = openMission({ ...DETAIL, mission: { ...DETAIL.mission, status: "ACTIVE" } });
+    fireEvent.click(screen.getByRole("tab", { name: "任务过程" }));
+    expect(screen.getByTestId("mission-story")).toBeTruthy();
+    // 2026-09-30：任务过程改走 SDK 正式接口，不再有 mission_story
+    expect(channel.all("mission_story")).toHaveLength(0);
+    expect(channel.all("taskgraph.execution_snapshot").length).toBeGreaterThan(0);
+    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    const gets = channel.all("mission_get").length;
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 7,
+      from_seq: 5, events: beat(6, 7), truncated: false } });
+    expect(channel.all("mission_get")).toHaveLength(gets);
+    expect(useMissionsStore.getState().eventCursor["mission-1"]).toBe(7); // events still appended
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 8,
+      from_seq: 7, events: events(8, 8), truncated: false } });
+    expect(channel.all("mission_get")).toHaveLength(gets + 1);
+  });
+
+  it("状态变了即使只有心跳也拉详情", () => {
+    const channel = openMission({ ...DETAIL, mission: { ...DETAIL.mission, status: "ACTIVE" } });
+    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    const gets = channel.all("mission_get").length;
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 6,
+      from_seq: 5, events: beat(6, 6), truncated: false } });
+    expect(channel.all("mission_get")).toHaveLength(gets + 1);
+  });
+
+  it("默认显示执行图（SDK 执行过程接口）；任务过程按需打开", async () => {
+    const channel = openMission();
+    await waitFor(() => expect(screen.getByTestId("live-graph")).toBeTruthy());
+    expect(channel.all("taskgraph.execution_snapshot")).toHaveLength(1);
+    expect(channel.all("mission_story")).toHaveLength(0);
+    expect(screen.queryByTestId("mission-story")).toBeNull();
   });
 });

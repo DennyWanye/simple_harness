@@ -16,6 +16,7 @@ import pytest
 
 import deskpet.orchestration.service as service_module
 from deskpet.orchestration.manifest import MANIFEST_NAME, MANIFEST_SCHEMA
+from deskpet.orchestration.native_fixture import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, SDK_WHEEL_SHA256
 
@@ -25,7 +26,8 @@ from ._support import notes_provider
 @pytest.mark.asyncio
 async def test_manifest_records_the_imported_sdk_and_the_fixed_policy(orchestration_root, principal):
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:
@@ -65,7 +67,8 @@ async def test_a_version_that_differs_from_the_pin_never_opens_the_library(
 
     monkeypatch.setattr(service_module, "distributions", mismatched)
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
     )
     await service.start()
     try:

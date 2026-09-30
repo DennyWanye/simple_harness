@@ -30,7 +30,7 @@ from deskpet.orchestration.service import OrchestrationService, OrchestrationSet
 async def test_p34_fragment_crossbranch_public_orchestrator(tmp_path: Path):
     request = native_search_mission()
     assert request["domain"] == "code-v1"
-    assert request["budget"] == {"max_tokens": 450_000, "max_attempts": 20}
+    assert request["budget"] == {"max_tokens": 8_000_000, "max_attempts": 20}
     assert "allowed_tools" not in request
     assert set(request["synthesis"]) == {"goal", "success_criteria", "budget"}
     root = tmp_path / ".local-test-evidence" / CASE
@@ -149,7 +149,7 @@ async def test_p34_public_ui_shape_through_real_host_service_defaults(
         assert "allowed_tools" not in request
         created = service.create_mission(request)
         mission_id = created["mission_id"]
-        assert await service.drain(timeout=30), service.status()
+        assert await service.drain(timeout=90), service.status()
         orch = service._orchestrator
         store = orch.store
         assert store.get_mission(mission_id).status.value == "COMPLETED"

@@ -37,6 +37,16 @@ WORKSPACE_TOOLS = ["workspace_read_file", "workspace_write_file", "workspace_lis
 #: 覆盖仍待夹具迁移（RP-E3 实施记录 §5 第 3 条：Assurance 交接第③项）。
 SCRIPTED_LANE = "scripted-legacy-fixture"
 
+#: 2026-09-30 旧式执行池删除后，脚本化通道也跑在原生池（256k）上。原生池的任务预算下限是
+#: "一轮 + 它的 Critic"各一整轮：(262144 + 32768) × 2 = 589824 个 token（SDK
+#: ``floor_refusal``）。夹具任务与 Mission 预算据此放大；预算只是上限，不是花费。
+NATIVE_TASK_TOKENS = 1_200_000
+NATIVE_MISSION_TOKENS = 8_000_000
+
+#: 重启恢复用例的短租约。原来是 2 秒；原生池上 SDK 运行租约取它的一半（1 秒），实测
+#: Worker 的工具调用结算后下一轮不再继续（Mission 卡在 ACTIVE），3 秒起正常。取 4 秒。
+LEASE_SECONDS = 4.0
+
 NOTES_TASK: dict[str, Any] = {
     "key": "A",
     "goal": "在工作区写一份 NOTES.md，列出三个要点",
@@ -46,7 +56,7 @@ NOTES_TASK: dict[str, Any] = {
     "verification_policy": ["format_check", "rule_check", "critic_review"],
     "outputs": ["NOTES.md"],
     "allowed_tools": WORKSPACE_TOOLS,
-    "budget": {"max_tokens": 30_000, "max_attempts": 2},
+    "budget": {"max_tokens": NATIVE_TASK_TOKENS, "max_attempts": 2},
     "priority": 1.0,
 }
 
@@ -56,7 +66,7 @@ def notes_request(key: str = "notes-1", **overrides: Any) -> dict[str, Any]:
         "goal": "写一份 NOTES.md，列出三个要点",
         "success_criteria": ["file:NOTES.md"],
         "idempotency_key": key,
-        "budget": {"max_tokens": 200_000, "max_attempts": 4},
+        "budget": {"max_tokens": NATIVE_MISSION_TOKENS, "max_attempts": 4},
     }
     request.update(overrides)
     return request

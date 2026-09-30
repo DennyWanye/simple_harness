@@ -47,7 +47,7 @@ from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
 from .storage_usage import StorageUsage
 from .runtime_profile import (
     CONTEXT_INPUT_LIMITS,
-    long_context_profile_id,
+    ONLY_DEEPSEEK_REASON,
     source_runtime_options,
 )
 from .settings import OrchestrationSettings
@@ -164,6 +164,11 @@ class OrchestrationService:
         # Orchestrator lifetime; ``native_test_counter`` is trusted test composition only
         # (a certified fixture counter standing in for the DeepSeek one).
         self._native: Any = None
+        if native_test_counter is None and test_scenario is not None:
+            # 2026-09-30: fixture scenarios run on native pools too (legacy pools deleted).
+            from .native_fixture import FixtureWordCounter
+
+            native_test_counter = FixtureWordCounter()
         self._native_test_counter = native_test_counter
         # PR-7: test/local runtime may inject a typed shadow provider.  Production
         # remains provider-free until a real NanoJev checkpoint is authorized.
@@ -366,12 +371,14 @@ class OrchestrationService:
         self._native = self._build_native()
         self._runtime_options = source_runtime_options(
             self._config, provider, self._snapshot,
-            **({"local_profile_path": self.settings.local_model_profile}
-               if self.settings.local_model_profile else {}),
             settings=self.settings, native=self._native,
             native_test_counter=self._native_test_counter,
             thinking_provider=self._thinking_provider(),
         )
+        if not self._runtime_options["profiles"]:
+            # 2026-09-30 用户决定：旧式执行池删除，编排只在原生池上跑；没有认证计数器
+            # （非 DeepSeek 模型）就明说不支持，不再退回旧池。
+            raise ProviderUnavailable(ONLY_DEEPSEEK_REASON)
         taskgraph = assurance = None
 
         def assemble_startup(orchestrator: Any) -> None:
@@ -691,18 +698,13 @@ class OrchestrationService:
 
     # ------------------------------------------------------------ native plane (RP-E3)
     def _native_skill_tools(self) -> tuple[str, ...]:
-        """The Skill tools this deployment's native pools serve (none without them)."""
-        if self.settings.native_plane != "on" or self._test_scenario is not None:
-            return ()
+        """The Skill tools this deployment's native pools serve."""
         from agent_orchestrator.governance.policies import SKILL_TOOL_NAMES
 
         return tuple(SKILL_TOOL_NAMES)
 
     def _build_native(self) -> Any:
-        """The Host's native-plane composition, or None when this deployment keeps the
-        legacy pools (explicit opt-out, or a fixture lane)."""
-        if self.settings.native_plane != "on" or self._test_scenario is not None:
-            return None
+        """The Host's native-plane composition (the only execution plane since 2026-09-30)."""
         from .native_plane import HostNativePlane
 
         if self._native_test_counter is not None:
@@ -730,7 +732,7 @@ class OrchestrationService:
         self._require()
         native = self._native_profile_ids()
         if self._native is None or not native:
-            raise OrchestrationRequestError("native_plane_unavailable", "当前部署没有可用的原生运行平面")
+            raise OrchestrationRequestError("native_plane_unavailable", ONLY_DEEPSEEK_REASON)
         selected = profile_id or self._context_default()
         if selected not in native:
             raise OrchestrationRequestError("invalid_request", "所选运行配置不在原生运行平面上")
@@ -1096,12 +1098,12 @@ class OrchestrationService:
         self._native = self._build_native()
         self._runtime_options = source_runtime_options(
             self._config, self._effective_provider, self._snapshot,
-            **({"local_profile_path": self.settings.local_model_profile}
-               if self.settings.local_model_profile else {}),
             settings=self.settings, native=self._native,
             native_test_counter=self._native_test_counter,
             thinking_provider=self._thinking_provider(),
         )
+        if not self._runtime_options["profiles"]:
+            raise ProviderUnavailable(ONLY_DEEPSEEK_REASON)
         taskgraph = assurance = None
 
         def assemble_startup(orchestrator: Any) -> None:
@@ -1155,27 +1157,11 @@ class OrchestrationService:
     # ------------------------------------------------------------ status
     def _context_profiles(self) -> list[dict[str, Any]]:
         profiles = self._runtime_options.get("profiles", {})
-        from .local_profile import LOCAL_PROFILE_ID
-
-        if LOCAL_PROFILE_ID in profiles:
-            profile = profiles[LOCAL_PROFILE_ID]
-            policy = profile.context_policy
-            return [{
-                "profile_id": LOCAL_PROFILE_ID,
-                "max_input_tokens": policy.input_budget(),
-                "max_total_tokens": policy.max_total_tokens,
-                "output_reserve": policy.output_reserve,
-                "safety_margin": policy.safety_margin,
-                "default_max_output_tokens": profile.default_max_output_tokens,
-                "max_output_tokens_ceiling": profile.max_output_tokens_ceiling,
-                "mission_max_tokens": self.settings.default_mission_max_tokens,
-            }]
         from .native_plane import native_profile_id
 
         rows = []
         for tokens in CONTEXT_INPUT_LIMITS:
-            for identifier, native in ((long_context_profile_id(tokens), False), (native_profile_id(tokens), True),
-                                       (native_profile_id(tokens, thinking=True), True)):
+            for identifier in (native_profile_id(tokens), native_profile_id(tokens, thinking=True)):
                 if identifier not in profiles:
                     continue
                 rows.append({
@@ -1185,12 +1171,7 @@ class OrchestrationService:
                     "max_output_tokens_ceiling": 32768,
                     # A bounded multi-turn allowance, not a charge for unused capacity.
                     "mission_max_tokens": self.settings.default_mission_max_tokens,
-                    "native_plane": native,
                 })
-        # 2026-09-30（完成度评估）：部署装了原生池时，旧式池不再可选——旧式池上没有任务来源
-        # 绑定与技能工具，选了就绕开 NEXT-TG 第五批 A/B。只有旧式池时（原生平面关闭）照旧列出。
-        if any(row["native_plane"] for row in rows):
-            rows = [row for row in rows if row["native_plane"]]
         return rows
 
     def _thinking_provider(self) -> Any:
@@ -1211,27 +1192,21 @@ class OrchestrationService:
 
             cached = provider_on_client(
                 client, snapshot, timeout=900.0,
-                allow_private_http=bool(self.settings.local_model_profile), thinking="enabled",
+                thinking="enabled",
                 reasoning_effort=THINKING_EFFORT,
             )
             self._thinking_provider_instance = cached
         return cached
 
     def _context_default(self) -> str | None:
-        from .local_profile import LOCAL_PROFILE_ID
-
-        if LOCAL_PROFILE_ID in self._runtime_options.get("profiles", {}):
-            return LOCAL_PROFILE_ID
         from .native_plane import native_profile_id
 
-        # RP-E3: a new Mission takes the native pool when this deployment assembled one.
         available = {p["profile_id"] for p in self._context_profiles()}
         # The thinking setting picks the pool of a *new* Mission only; an existing Mission keeps
         # the pool (and so the thinking mode) it was frozen on.
         thinking = getattr(self.settings, "thinking", "disabled") == "enabled"
         for selected in (native_profile_id(self.settings.context_input_tokens, thinking=thinking),
-                         native_profile_id(self.settings.context_input_tokens),
-                         long_context_profile_id(self.settings.context_input_tokens)):
+                         native_profile_id(self.settings.context_input_tokens)):
             if selected in available:
                 return selected
         return None
@@ -1278,17 +1253,9 @@ class OrchestrationService:
             "context_profiles": self._context_profiles(),
             "native_plane": (
                 self._native.status() if self._native is not None
-                else {"enabled": self.settings.native_plane == "on", "available": False,
-                      "reason": "夹具场景保留原有执行池" if self._test_scenario is not None else "原生运行平面已关闭"}
+                else {"enabled": True, "available": False, "reason": self._reason or ONLY_DEEPSEEK_REASON}
             ),
             "default_context_profile_id": self._context_default(),
-            "context_unavailable_reason": (
-                "旧执行库尚未具备按请求计量的恢复身份；当前保留原配置，长上下文需使用新的执行库。"
-                if self._runtime_options.get("profiles")
-                and self._snapshot is not None and self._snapshot.requested_model == "deepseek-flash"
-                and not self._context_profiles()
-                and self._runtime_options["profiles"]["default"].context_policy is None else None
-            ),
             "mission_budget_defaults": {
                 "max_tokens": self._mission_token_default(),
                 "max_attempts": self.settings.default_mission_max_attempts,
@@ -1655,7 +1622,7 @@ class OrchestrationService:
                 stale = index.stale(sorted(used))
             detail = project_detail(view, blocked=self._blocked(mission_id), source_issues=stale)
             raw = view["snapshot"].get("mission", {})
-            identifier = (raw.get("final_report") or {}).get("runtime_profile_id", "default")
+            identifier = (raw.get("final_report") or {}).get("runtime_profile_id")
             profile = self._runtime_options.get("profiles", {}).get(identifier)
             if profile is not None and profile.context_policy is not None:
                 detail["runtime_context"] = {
