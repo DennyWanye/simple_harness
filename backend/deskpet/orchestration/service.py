@@ -284,7 +284,8 @@ class OrchestrationService:
             )
 
             # the Host deployment offers the workspace tools only (SDK 0.9.10 parameter)
-            provider = demo_approval_action_provider(allowed_tools=WORKSPACE_TOOLS)
+            # native pools need one turn + its review per Task (≈590k at 256K)
+            provider = demo_approval_action_provider(allowed_tools=WORKSPACE_TOOLS, task_tokens=1_200_000)
             self._connectors = {
                 "test_config": TestConfigService(self.root / "test-services" / "config.json")
             }
