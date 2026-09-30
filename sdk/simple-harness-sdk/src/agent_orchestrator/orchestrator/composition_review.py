@@ -101,6 +101,21 @@ COMPOSITION_UNCOVERED = "composition_criterion_uncovered"
 REVIEWER_ACCESS = WorkspaceAccess.READ_ONLY
 
 
+def assured_composition_action(record: Any, ruling: Mapping[str, Any] | None) -> str:
+    """What an official COMPOSITION record calls for: resolve / ask / repair.
+
+    ACCEPT resolves; INCONCLUSIVE with no ruling asks the person; a ruling of
+    "pass" resolves, of "fail" repairs; REWORK / REJECTED repair.
+    """
+    if record.verdict is ReviewVerdict.ACCEPT:
+        return "resolve"
+    if record.verdict is ReviewVerdict.INCONCLUSIVE:
+        if ruling is None:
+            return "ask"
+        return "resolve" if ruling.get("decision") == "pass" else "repair"
+    return "repair"
+
+
 @dataclass(frozen=True, slots=True)
 class CompositionAcceptanceAssembly:
     """Form a non-root ``GoalResolution`` from children's CURRENT Acceptances."""
@@ -110,6 +125,11 @@ class CompositionAcceptanceAssembly:
     dispatch: HierarchicalDispatch
     scope_id: str = "mission"
     issued_by: str = "orchestrator"
+    #: 2026-10-01（第 3 项）：保证通道下正式组合审阅记录的两个出口，由编排循环提供——
+    #: 复审后仍判不下来 → ``ask_person(record, task_id, occurrence_id)``；
+    #: 打回 / 拒绝（或人裁决打回）→ ``on_rejected(record, package, task_id, occurrence_id)``。
+    ask_person: Any = None
+    on_rejected: Any = None
 
     @property
     def semantics(self) -> HtnStore:
@@ -230,7 +250,28 @@ class CompositionAcceptanceAssembly:
                 )
             except AssuranceError as error:
                 raise ContractError(f"Assurance COMPOSITION review unavailable: {error}") from error
-            return None
+            # 2026-10-01（第 3 项）：消费正式记录。此前这里直接返回，记录进来后没人读它，
+            # 中间目标永远收不了尾（真机库里从没跑过三层计划，所以没暴露）。
+            from .review_adjudication import adjudication_of
+
+            record = self.semantics.official_review_record(str(package.package_id))
+            if record is None:
+                return None
+            ruling = (adjudication_of(self.store, str(record.record_id))
+                      if record.verdict is ReviewVerdict.INCONCLUSIVE else None)
+            action = assured_composition_action(record, ruling)
+            if action == "ask":
+                if self.ask_person is not None:
+                    self.ask_person(record, str(spec.task_id), str(occurrence_id))
+                return None
+            if action == "repair":
+                if self.on_rejected is not None:
+                    self.on_rejected(record, package, str(spec.task_id), str(occurrence_id))
+                return None
+            return self._commit_assured_composition(
+                mission_id, spec, binding, revision, package, record, accepted, producers,
+                instance_id=instance_id, manifest=manifest, now_ms=now_ms,
+            )
         record = self._record(mission_id, package, occurrence_id, accepted, gating)
         if record.verdict is not ReviewVerdict.ACCEPT:
             return None
@@ -284,6 +325,80 @@ class CompositionAcceptanceAssembly:
             issued_by=self.issued_by,
             scope_id=self.scope_id,
             source={"occurrence_id": str(occurrence_id), "policy": COMPOSITION_REVIEW_POLICY},
+        )
+        principal = ResolutionPrincipal(
+            principal_id=self.issued_by,
+            scope_id=self.scope_id,
+            manager_epoch=self.semantics.epoch(mission_id, self.scope_id),
+        )
+        return self.commit.commit_goal_resolution(command, principal)
+
+    def _commit_assured_composition(
+        self, mission_id, spec, binding, revision, package, record, accepted, producers, *,
+        instance_id, manifest, now_ms,
+    ):  # type: ignore[no-untyped-def]
+        """Form the compound's GoalResolution from its official COMPOSITION record.
+
+        The licence is the record's current use certificate (prepared here outside
+        the write lock, committed by ``commit_goal_resolution`` under it); every
+        criterion verdict is restated from the certificate's current effective grades,
+        never asserted here (review F4, as for the root).
+        """
+        validity = getattr(self.commit, "_assurance_validity", None)
+        if validity is None:
+            raise ContractError("USE_CERTIFICATE_REQUIRED")
+        resolution_id = f"res-{spec.occurrence_id}-{content_hash_of(str(package.package_id))[:16]}"
+        candidate = validity.prepare_composition_use(record, resolution_id=resolution_id)
+        grades = candidate.effective_grades
+        resolution = GoalResolution(
+            resolution_id=GoalResolutionId(resolution_id),
+            mission_id=mission_id,
+            obligation_id=str(spec.obligation_id),
+            goal_task_id=str(spec.task_id),
+            requirements_version=int(revision.revision),
+            contract_revision=int(binding.contract_revision),
+            method_instance_id=instance_id,
+            input_manifest_hash=manifest,
+            artifact_refs=(),
+            child_resolution_ids=tuple(ref.id for ref in package.candidate_refs
+                if ref.kind is TypedRefKind.RESOLUTION),
+            criteria=tuple(
+                ResolutionCriterion(
+                    criterion_id=item.criterion_id,
+                    verdict=CriterionVerdict(grades.get(str(item.criterion_id), "UNKNOWN")),
+                )
+                for item in package.criteria
+            ),
+            review_receipt_id=str(record.record_id),
+            verdict=ReviewVerdict.ACCEPT,
+            validity=Validity.CURRENT,
+        )
+        command = CommitGoalResolutionCommand(
+            command_id=f"compose:{spec.occurrence_id}:{str(package.package_id)}",
+            mission_id=mission_id,
+            resolution=resolution,
+            package=package,
+            record=record,
+            requirements=revision,
+            witness_id=candidate.certificate_id,
+            independence=IndependenceFacts(
+                producer_agent_ids=producers,
+                reviewer_can_write_candidate=False,
+            ),
+            posture=ExecutionPosture(),
+            read_set=self._read_set(mission_id, binding, revision),
+            decided_at_ms=now_ms,
+            purpose=ReviewPurpose.COMPOSITION,
+            compound=CompoundFacts(
+                selected_method_legal=True,
+                contributing_occurrence_ids=tuple(sorted(accepted)),
+                composition_obligation_passed=True,  # the official record, or the person, said so
+            ),
+            is_mission_root=False,
+            semantic_review_required=True,
+            issued_by=self.issued_by,
+            scope_id=self.scope_id,
+            source={"occurrence_id": str(spec.occurrence_id), "policy": COMPOSITION_REVIEW_POLICY},
         )
         principal = ResolutionPrincipal(
             principal_id=self.issued_by,

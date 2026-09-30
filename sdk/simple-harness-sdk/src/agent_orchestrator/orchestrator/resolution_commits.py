@@ -1100,6 +1100,14 @@ class ResolutionCommitsMixin:
                 # UseCertificate over the bound MISSION_FINAL manifest, committed in
                 # this same transaction; the legacy witness never licenses it.
                 assured, licence_id = self._require_assured_root_use(command)
+            assured_compound = (
+                not command.is_mission_root
+                and command.purpose is ReviewPurpose.COMPOSITION
+                and AssuranceStore(self._store).lane(command.mission_id) == "ASSURANCE_1_1"
+            )
+            if assured_compound:
+                # 2026-10-01（第 3 项）：中间目标的结论由组合审阅证书许可，同根终审。
+                assured, licence_id = self._require_assured_compound_use(command)
             self._check_resolution_identity(
                 semantics,
                 command,
@@ -1120,7 +1128,7 @@ class ResolutionCommitsMixin:
             )
             self._check_reads(semantics, command.mission_id, command.read_set, principal)
             witness = None
-            if not assured_root:
+            if not assured_root and not assured_compound:
                 witness = self._require_accept_witness(
                     semantics,
                     command.mission_id,
@@ -1142,16 +1150,7 @@ class ResolutionCommitsMixin:
                 semantic_review_required=command.semantic_review_required,
                 compound=compound,
             )
-            if assured is not None:
-                from ..verification.scoped_acceptance import acceptable_assured_root
-
-                decision = acceptable_assured_root(
-                    subject,
-                    now_ms=int(command.decided_at_ms),
-                    purpose=command.purpose,
-                    assured=assured,
-                )
-            elif scoped_projection is not None:
+            if scoped_projection is not None:
                 from ..verification.scoped_composition import acceptable_scoped_composition
 
                 decision = acceptable_scoped_composition(
@@ -1160,7 +1159,19 @@ class ResolutionCommitsMixin:
                     projected_expression=scoped_projection.expression,
                     now_ms=int(command.decided_at_ms),
                     witness=witness,
-                    current_scope_epoch=semantics.epoch(command.mission_id, witness.scope_id),
+                    current_scope_epoch=semantics.epoch(
+                        command.mission_id, "mission" if witness is None else witness.scope_id
+                    ),
+                    assured=assured,
+                )
+            elif assured is not None:
+                from ..verification.scoped_acceptance import acceptable_assured_root
+
+                decision = acceptable_assured_root(
+                    subject,
+                    now_ms=int(command.decided_at_ms),
+                    purpose=command.purpose,
+                    assured=assured,
                 )
             else:
                 decision = acceptable(
@@ -1978,6 +1989,53 @@ class ResolutionCommitsMixin:
             ) from error
         # The candidate is forgotten by accept_result after this UoW commits; a
         # rolled-back decision keeps it for the bounded re-preparation there.
+        return (
+            AssuredAcceptance(
+                effective_grades=candidate.effective_grades,
+                gate_reasons=candidate.gate_reasons,
+                human_adjudicated=getattr(candidate, "adjudication_ref", None) is not None,
+            ),
+            candidate.certificate_id,
+        )
+
+    def _require_assured_compound_use(self, command: CommitGoalResolutionCommand) -> tuple[Any, str]:
+        """2026-10-01（第 3 项）：中间目标结论的许可 = 组合审阅记录的当前证书，同根终审。"""
+
+        from ..assurance.codec import AssuranceError
+        from ..verification.scoped_acceptance import AssuredAcceptance
+        from .assurance_validity import COMPOUND_RESOLUTION_CONSUMER
+
+        validity = getattr(self, "_assurance_validity", None)
+        if validity is None:
+            raise ResolutionCommitRejected(
+                "USE_CERTIFICATE_REQUIRED",
+                "no current validity evaluator is installed for this deployment",
+            )
+        candidate = validity.candidate_for(command.mission_id, str(command.record.record_id))
+        if candidate is None:
+            raise ResolutionCommitRejected(
+                "USE_CERTIFICATE_REQUIRED",
+                f"no current use certificate is prepared for official review "
+                f"{command.record.record_id!s}",
+            )
+        if (
+            candidate.record != command.record
+            or candidate.identity.purpose != "ACCEPT"
+            or candidate.identity.consumer_kind != COMPOUND_RESOLUTION_CONSUMER
+            or candidate.identity.consumer_id != str(command.resolution.resolution_id)
+            or candidate.identity.mission_id != command.mission_id
+            or candidate.certificate_id != command.witness_id
+        ):
+            raise ResolutionCommitRejected(
+                "USE_CERTIFICATE_IDENTITY",
+                "the prepared use certificate does not name this compound resolution and record",
+            )
+        try:
+            validity.commit_use_locked(candidate, now_ms=int(self._store.now * 1000))
+        except AssuranceError as error:
+            raise ResolutionCommitRejected(
+                error.code, "the current use certificate refused this compound resolution"
+            ) from error
         return (
             AssuredAcceptance(
                 effective_grades=candidate.effective_grades,

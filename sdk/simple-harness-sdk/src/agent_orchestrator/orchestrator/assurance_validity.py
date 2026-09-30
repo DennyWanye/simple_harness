@@ -80,10 +80,17 @@ from .assurance_review_import import (
 USE_CERTIFIED_KIND = "AssuranceUseCertified"
 ACCEPTANCE_CONSUMER = "ACCEPTANCE"
 ROOT_RESOLUTION_CONSUMER = "ROOT_RESOLUTION"
+COMPOUND_RESOLUTION_CONSUMER = "COMPOUND_RESOLUTION"
 MAXIMUM_CANDIDATES = 256
 #: Official record purposes a use certificate can be prepared from, with the
 #: kind of the review subject's target (approved contract SUBJECT_TARGET_KINDS).
-USE_TARGET_KINDS = {"TASK_CONTENT": "result", "MISSION_FINAL": "task", "OPERATION_OUTCOME": "operation"}
+USE_TARGET_KINDS = {
+    "TASK_CONTENT": "result",
+    "MISSION_FINAL": "task",
+    "OPERATION_OUTCOME": "operation",
+    # 2026-10-01（第 3 项）：中间目标的组合审阅，目标是该复合任务
+    "COMPOSITION": "task",
+}
 
 
 def acceptance_id_for(task_id: str, result_id: str) -> str:
@@ -281,6 +288,23 @@ class AssuranceValidity:
             if purpose != "MISSION_FINAL":
                 raise AssuranceError("USE_PURPOSE_UNSUPPORTED", purpose)
             return ROOT_RESOLUTION_CONSUMER, resolution
+
+        return self._prepare_use(record, consumer)
+
+    def prepare_composition_use(
+        self, record: ReviewRecord, *, resolution_id: str
+    ) -> CandidateUseCertificate:
+        """The ACCEPT use of an official ``COMPOSITION`` record for one compound resolution.
+
+        2026-10-01（第 3 项）：中间目标的独立组合审阅此前只发起、不消费；它的结论由这张
+        证书许可，与根终审同一套（当前重判、读集、根权威），消费方是要形成的目标结论。
+        """
+        resolution = text(resolution_id)
+
+        def consumer(purpose: str, owner_task: str, target: AssuranceRef) -> tuple[str, str]:
+            if purpose != "COMPOSITION":
+                raise AssuranceError("USE_PURPOSE_UNSUPPORTED", purpose)
+            return COMPOUND_RESOLUTION_CONSUMER, resolution
 
         return self._prepare_use(record, consumer)
 

@@ -62,7 +62,8 @@ async def _root_after_two_inconclusive_final_reviews(rt):
         completion_scope=scope_ref, candidate_mapping=mapping, purpose="MISSION_FINAL")
     dispatch = HierarchicalDispatch(rt.store, rt.commit)
     assert dispatch.root_review_ready(mission_id)
-    _bind(rt.orch, "_root_review", "_ask_person_to_adjudicate_root", "_next_planning_ordinal")
+    _bind(rt.orch, "_root_review", "_ask_person_to_adjudicate_root", "_ask_person_to_adjudicate",
+          "_next_planning_ordinal")
     coordinator = rt.orch._root_review(rt.mission, dispatch)
     package = coordinator.cut(mission_id, now_ms=int(rt.store.now * 1000))
     rt.runner.ensure_mission_final(rt.mission, package=package, dispatch=dispatch)

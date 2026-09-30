@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ..contracts.evidence_state import ValidityWitness
 from ..contracts.resolution import Criterion, ReviewPurpose, SuccessExpression
 from .acceptance_rules import AcceptanceSubject, AcceptDecision, AcceptReason
@@ -16,10 +18,15 @@ def acceptable_scoped_composition(
     projected_criteria: tuple[Criterion, ...],
     projected_expression: SuccessExpression,
     now_ms: int,
-    witness: ValidityWitness,
+    witness: ValidityWitness | None,
     current_scope_epoch: int,
+    assured: Any = None,
 ) -> AcceptDecision:
     """Reuse the scoped gates after binding the only allowed purpose/compound facts.
+
+    ``assured`` (2026-10-01, 第 3 项) carries the current certificate facts of an
+    assured Mission's composition review; then ``witness`` is None, exactly as for
+    an assured leaf.
 
     The primitive helper intentionally rejects compounds and non-TASK_CONTENT
     purposes.  A local immutable view changes only those two type discriminators;
@@ -41,6 +48,7 @@ def acceptable_scoped_composition(
             now_ms=now_ms,
             witness=witness,
             current_scope_epoch=current_scope_epoch,
+            assured=assured,
         )
     projected = replace(
         subject,
@@ -55,6 +63,7 @@ def acceptable_scoped_composition(
         now_ms=now_ms,
         witness=witness,
         current_scope_epoch=current_scope_epoch,
+        assured=assured,
     )
     compound = subject.compound
     assert compound is not None

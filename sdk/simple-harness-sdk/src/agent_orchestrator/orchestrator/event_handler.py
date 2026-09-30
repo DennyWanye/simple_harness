@@ -1675,8 +1675,7 @@ class Orchestrator:
                 raise StoreError("TASKGRAPH_COMPOSITION_SOURCE_UNAVAILABLE")
             return {"status": str(state.status),
                     "package_id": None if state.package is None else str(state.package.package_id)}
-        receipt = CompositionAcceptanceAssembly(self.store, self.commit, dispatch=dispatch,
-                                                issued_by=self._owner).resolve_one(mission_id, occurrence_id)
+        receipt = self._composition_assembly(mission, dispatch).resolve_one(mission_id, occurrence_id)
         return {"status": "NOT_READY" if receipt is None else "RESOLVED",
                 "resolution_id": None if receipt is None else receipt.resolution_id}
 
@@ -5806,12 +5805,7 @@ class Orchestrator:
             new_mode.advance_compound_phases(mission.id)
             from .composition_review import CompositionAcceptanceAssembly
 
-            CompositionAcceptanceAssembly(
-                self.store,
-                self.commit,
-                dispatch=new_mode,
-                issued_by=self._owner,
-            ).resolve_ready(mission.id)
+            self._composition_assembly(mission, new_mode).resolve_ready(mission.id)
         except (GraphIntegrityError, ContractError, StoreError) as error:
             self._note(f"task {task.id}: inner composition review deferred ({error})")
 
@@ -12709,12 +12703,7 @@ class Orchestrator:
                 new_mode.advance_compound_phases(mission.id)
                 from .composition_review import CompositionAcceptanceAssembly
 
-                CompositionAcceptanceAssembly(
-                    self.store,
-                    self.commit,
-                    dispatch=new_mode,
-                    issued_by=self._owner,
-                ).resolve_ready(mission.id)
+                self._composition_assembly(mission, new_mode).resolve_ready(mission.id)
             except (GraphIntegrityError, ContractError, StoreError) as error:
                 self._note(f"mission {mission.id}: inner composition review deferred ({error})")
         try:
@@ -13006,6 +12995,58 @@ class Orchestrator:
             return await self._ask_root_reviewer(mission, coordinator, state.package)
         return False
 
+    def _composition_assembly(self, mission: Mission, dispatch: Any) -> Any:
+        """The inner-compound resolver with this loop's two assured outlets bound."""
+        from functools import partial
+
+        from .composition_review import CompositionAcceptanceAssembly
+
+        return CompositionAcceptanceAssembly(
+            self.store, self.commit, dispatch=dispatch, issued_by=self._owner,
+            ask_person=partial(self._ask_person_to_adjudicate_compound, mission),
+            on_rejected=partial(self._request_composition_repair, mission, dispatch),
+        )
+
+    def _ask_person_to_adjudicate_compound(
+        self, mission: Mission, record: Any, task_id: str, occurrence_id: str
+    ) -> bool:
+        """2026-10-01（第 3 项）：中间目标的组合审阅复审后仍判不下来 → 同根终审，问人裁决。"""
+        return self._ask_person_to_adjudicate(
+            mission, record, target_id=str(task_id), subject_key=str(task_id),
+            decision_id="adjudicate-compound:" + str(record.record_id),
+            intro="中间目标「" + str(occurrence_id) + "」的组合审查两位审阅员都判不下来，"
+                  "需要你裁决这一部分拼起来是否合格。",
+            extra={"package_id": str(record.package_id), "occurrence_id": str(occurrence_id)})
+
+    def _request_composition_repair(
+        self, mission: Mission, dispatch: Any, record: Any, package: Any, task_id: str, occurrence_id: str
+    ) -> bool:
+        """2026-10-01（第 3 项）：组合审阅打回 / 拒绝（或人裁决打回）→ 一条修复请求交规划器。
+
+        走验收失败同一条路（``PlanningRepairRequested``，触发步骤 = 该中间目标），规划器
+        在修复轮里拿到审阅员的具体意见；同一份记录只记一次。
+        """
+        from .planning_repair_requests import record_request
+        from .review_adjudication import adjudication_of
+
+        findings = [
+            {"criterion_id": str(item.criterion_id), "verdict": str(item.verdict),
+             "limitations": list(item.limitations)}
+            for item in record.criteria if str(item.verdict) != "PASS"
+        ]
+        ruling = adjudication_of(self.store, str(record.record_id))
+        produced = record_request(
+            dispatch, mission.id, event_type="VerifierAcceptanceRejected",
+            trigger_refs=(str(task_id),), source_key="composition-review:" + str(record.record_id),
+            detail={"source": "composition_review", "record_id": str(record.record_id),
+                    "package_id": str(package.package_id), "occurrence_id": str(occurrence_id),
+                    "verdict": str(record.verdict), "findings": findings[:16],
+                    **({"human_ruling": ruling} if ruling is not None else {})})
+        if produced:
+            self._note(f"mission {mission.id}: composition review of {occurrence_id} concluded "
+                       f"{record.verdict!s}; repair requested")
+        return produced
+
     def _ask_person_to_adjudicate_root(
         self, mission: Mission, new_mode: HierarchicalDispatch, coordinator: Any, state: Any
     ) -> bool:
@@ -13025,8 +13066,24 @@ class Orchestrator:
         record, package = state.record, state.package
         if record is None or package is None:
             return False
+        return self._ask_person_to_adjudicate(
+            mission, record, target_id=str(state.task_id), subject_key=str(state.task_id),
+            decision_id="adjudicate-root:" + str(record.record_id),
+            intro="最终审查两位审阅员都判不下来，需要你裁决整个任务的产出是否合格。",
+            extra={"package_id": str(package.package_id)})
+
+    def _ask_person_to_adjudicate(
+        self, mission: Mission, record: Any, *, target_id: str, subject_key: str,
+        decision_id: str, intro: str, extra: Mapping[str, Any],
+    ) -> bool:
+        """One blocking two-option question per official record; its answer becomes the
+        ``AssuranceReviewAdjudicated`` receipt (never a planner round). True when this
+        call registered the question or consumed its answer; False while waiting."""
+        from ..contracts.planning_decisions import HumanOptionV1, RequestHumanDecision
+        from ..storage.htn_store import HtnStore
+        from ..storage.planning_human_store import PlanningHumanStore
+
         questions = PlanningHumanStore(self.store)
-        decision_id = "adjudicate-root:" + str(record.record_id)
         row = questions.get(decision_id)
         if row is None:
             findings = "\n".join(
@@ -13034,38 +13091,40 @@ class Orchestrator:
                 for item in record.criteria if str(item.verdict) != "PASS"
             ) or "-（审阅员没有写明疑点）"
             question = RequestHumanDecision(
-                "最终审查两位审阅员都判不下来，需要你裁决整个任务的产出是否合格。\n审阅员的疑点：\n"
-                + findings + "\n选“通过”则按合格收尾；选“打回”则交规划器修改后重做。",
+                intro + "\n审阅员的疑点：\n" + findings
+                + "\n选“通过”则按合格处理；选“打回”则交规划器修改后重做。",
                 (HumanOptionV1("pass", "通过"), HumanOptionV1("fail", "打回")), True)
             htn = HtnStore(self.store)
             plan = htn.active_plan_revision(mission.id)
             requirements = htn.latest_requirements_revision(mission.id)
             with self.store.transaction():
                 questions.register(
-                    decision_id=decision_id, mission_id=mission.id, subject_key=str(state.task_id),
+                    decision_id=decision_id, mission_id=mission.id, subject_key=subject_key,
                     payload=question,
                     request_binding={"plan_revision": 0 if plan is None else int(plan.revision),
                                      "requirements_revision": 0 if requirements is None else int(requirements.revision),
                                      "manager_epoch": htn.epoch(mission.id, "mission")},
                     next_ordinal=self._next_planning_ordinal(mission.id),
                     repair_context={"kind": "review_adjudication", "record_id": str(record.record_id),
-                                    "package_id": str(package.package_id), "target_id": str(state.task_id)})
+                                    "target_id": target_id, **dict(extra)})
                 append_hierarchical_event(
                     self.store, "PlanningHumanRequested", mission.id, key=decision_id,
                     payload={"decision_id": decision_id, "question_id": decision_id, "state": "PENDING",
                              "origin": "review_adjudication", "record_id": str(record.record_id)})
-            self._note(f"mission {mission.id}: final review inconclusive twice; asked the person to rule")
+            self._note(f"mission {mission.id}: review {record.record_id} inconclusive twice; asked the person to rule")
             return True
         if row["state"] != "ANSWERED":
             return False  # waiting for the person; the idle verdict counts the pending question
+        if self.store.get_receipt("assurance-review-adjudicated:" + str(record.record_id)) is not None:
+            return False  # already consumed
         answer = row["answer"] or {}
         with self.store.transaction():
             self.commit.adjudicate_review_record(
-                mission.id, record, target_id=str(state.task_id), decision=str(answer.get("answer")),
+                mission.id, record, target_id=target_id, decision=str(answer.get("answer")),
                 note="", principal_id=str(answer.get("principal_id") or ""),
                 decision_receipt_hash=str(answer.get("receipt_hash") or ""), request_id=decision_id,
-                task_id=str(state.task_id))
-        self._note(f"mission {mission.id}: the person ruled {answer.get('answer')} on the final review")
+                task_id=target_id)
+        self._note(f"mission {mission.id}: the person ruled {answer.get('answer')} on review {record.record_id}")
         return True
 
     async def _repair_after_root_review(
