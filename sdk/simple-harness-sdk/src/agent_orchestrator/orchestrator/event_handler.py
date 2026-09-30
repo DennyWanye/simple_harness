@@ -13443,18 +13443,24 @@ class Orchestrator:
             count += 1
         return count
 
-    def _repeated_verification_repairs(self, mission_id: str) -> int:
+    def _repeated_verification_repairs(self, mission_id: str, task_id: str | None = None) -> int:
+        """Method repairs asked for identical verification failures.
+
+        2026-09-30 user decision: the bound is **per step** — a step that appeared later
+        (e.g. a successor) gets its own repair; ``task_id=None`` counts the Mission's."""
+
         return sum(
             1
             for event in self.store.list_events(mission_id)
             if event.type == "PlanningRejected"
             and event.payload.get("reason") == REPEATED_VERIFICATION_FAILURE_REASON
+            and (task_id is None or (event.payload.get("detail") or {}).get("task_id") == task_id)
         )
 
     def _repeated_verification_stop_detail(
-        self, mission: Mission, new_mode: HierarchicalDispatch | None = None
+        self, mission: Mission, new_mode: HierarchicalDispatch | None = None, task_id: str | None = None,
     ) -> dict[str, Any]:
-        if self._repeated_verification_repairs(mission.id) < 1:
+        if self._repeated_verification_repairs(mission.id, task_id) < 1:
             return {}
         revision = 0
         if new_mode is not None:
@@ -13466,12 +13472,14 @@ class Orchestrator:
                 continue
             if event.payload.get("reason") != REPEATED_VERIFICATION_FAILURE_REASON:
                 continue
+            if task_id is not None and (event.payload.get("detail") or {}).get("task_id") != task_id:
+                continue  # only this step's own findings (another step's read as this one's)
             findings = list((event.payload.get("detail") or {}).get("findings") or [])
         return {
             "repeated_verification_failure": {
                 "reason": REPEATED_VERIFICATION_FAILURE_REASON,
                 "plan_revision": revision,
-                "repairs_used": self._repeated_verification_repairs(mission.id),
+                "repairs_used": self._repeated_verification_repairs(mission.id, task_id),
                 "max_repairs": MAX_IDENTICAL_VERIFICATION_REPAIRS,
                 "findings": findings[:8],
             }
@@ -13509,7 +13517,7 @@ class Orchestrator:
                 await self._release_cancelled_repair_work(mission.id)
         except (GraphIntegrityError, ContractError, StoreError, KeyError):
             pass
-        used = self._repeated_verification_repairs(mission.id)
+        used = self._repeated_verification_repairs(mission.id, task.id)
         summaries = [
             f"{item.get('layer')}: {item.get('summary')}"
             for item in failures
@@ -13529,7 +13537,7 @@ class Orchestrator:
                     "failures": count,
                     "fingerprint": fingerprint,
                     "summaries": summaries[:8],
-                    **self._repeated_verification_stop_detail(mission, new_mode),
+                    **self._repeated_verification_stop_detail(mission, new_mode, task.id),
                 },
             )
             self._note(
