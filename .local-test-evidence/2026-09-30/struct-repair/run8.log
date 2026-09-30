@@ -1,0 +1,64 @@
+created {"ok": true, "mission_id": "mission-d4615e8a9404e5d8", "error": null}
+confirm {"ok": true, "error": null}
+event {"seq": 73308, "type": "SourceRegistered", "task": null}
+mission ["CREATED", "received", "CONFIRMATION_REQUIRED"]
+mission ["PLANNING", "received", "APPROVED"]
+event {"seq": 73558, "type": "NativePlanningDecisionPrepared", "task": null}
+event {"seq": 73558, "type": "PlanRevisionCommitted", "task": null}
+event {"seq": 73558, "type": "PlanningDecisionEvaluated", "task": null}
+event {"seq": 73558, "type": "AttemptStarted", "task": "task-e46a973eed3f28fde69d8ec8629ffd09"}
+mission ["ACTIVE", "running", "APPROVED"]
+event {"seq": 73783, "type": "VerificationFailed", "task": "task-e46a973eed3f28fde69d8ec8629ffd09"}
+event {"seq": 73783, "type": "PlanningRepairRequested", "task": null}
+mission ["ACTIVE", "waiting_person", "APPROVED"]
+event {"seq": 73792, "type": "TaskGraphSourceChanged", "task": null}
+mission ["ACTIVE", "queued", "APPROVED"]
+event {"seq": 73836, "type": "PlanningRetryAuthorized", "task": "task-e46a973eed3f28fde69d8ec8629ffd09"}
+event {"seq": 73836, "type": "PlanningRepairAddressed", "task": null}
+event {"seq": 73836, "type": "PlanningDecisionEvaluated", "task": null}
+event {"seq": 73836, "type": "AttemptStarted", "task": "task-e46a973eed3f28fde69d8ec8629ffd09"}
+mission ["ACTIVE", "running", "APPROVED"]
+mission ["ACTIVE", "verifying", "APPROVED"]
+event {"seq": 73957, "type": "AcceptanceCommitted", "task": "task-e46a973eed3f28fde69d8ec8629ffd09"}
+event {"seq": 73957, "type": "TaskCompleted", "task": "task-e46a973eed3f28fde69d8ec8629ffd09"}
+event {"seq": 73957, "type": "TaskGraphSourceChanged", "task": null}
+event {"seq": 73957, "type": "AttemptStarted", "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"}
+supersede {"after_accepted": ["task-e46a973eed3f28fde69d8ec8629ffd09"], "ok": true, "error": null}
+approve {"approval_id": "approval-source-81de5f0cbab0aa9a05afbfbf1609c47bf01da2c3aebfe7bee7b211d829c5462d", "kind": "source_change", "ok": true, "error": null}
+mission ["ACTIVE", "running", "APPROVED"]
+event {"seq": 73971, "type": "SourceSuperseded", "task": null}
+event {"seq": 74031, "type": "VerificationFailed", "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"}
+event {"seq": 74031, "type": "PlanningRepairRequested", "task": null}
+event {"seq": 74031, "type": "PlanningRepairRequested", "task": null}
+event {"seq": 74031, "type": "TaskGraphSourceChanged", "task": null}
+mission ["ACTIVE", "queued", "APPROVED"]
+event {"seq": 74089, "type": "PlanRevisionCommitted", "task": null}
+event {"seq": 74089, "type": "PlanningRepairAddressed", "task": null}
+event {"seq": 74089, "type": "PlanningDecisionEvaluated", "task": null}
+event {"seq": 74099, "type": "AttemptStarted", "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"}
+mission ["ACTIVE", "running", "APPROVED"]
+event {"seq": 74151, "type": "VerificationFailed", "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"}
+event {"seq": 74151, "type": "PlanningRepairRequested", "task": null}
+mission ["ACTIVE", "waiting_person", "APPROVED"]
+event {"seq": 74161, "type": "TaskGraphSourceChanged", "task": null}
+mission ["ACTIVE", "queued", "APPROVED"]
+event {"seq": 74181, "type": "PlanningRetryAuthorized", "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"}
+event {"seq": 74181, "type": "PlanningRepairAddressed", "task": null}
+event {"seq": 74181, "type": "PlanningDecisionEvaluated", "task": null}
+event {"seq": 74181, "type": "AttemptStarted", "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"}
+mission ["ACTIVE", "running", "APPROVED"]
+mission ["ACTIVE", "verifying", "APPROVED"]
+event {"seq": 74291, "type": "AcceptanceCommitted", "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"}
+event {"seq": 74291, "type": "TaskCompleted", "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"}
+event {"seq": 74291, "type": "TaskGraphSourceChanged", "task": null}
+mission ["ACTIVE", "queued", "APPROVED"]
+event {"seq": 74301, "type": "AttemptStarted", "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"}
+mission ["ACTIVE", "running", "APPROVED"]
+mission ["ACTIVE", "verifying", "APPROVED"]
+event {"seq": 74404, "type": "AcceptanceCommitted", "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"}
+event {"seq": 74404, "type": "TaskCompleted", "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"}
+mission ["ACTIVE", "queued", "APPROVED"]
+event {"seq": 74421, "type": "TaskGraphSourceChanged", "task": null}
+event {"seq": 74421, "type": "HierarchicalRootReviewCut", "task": "desktop-root-mission-d4615e8a9404e5d8"}
+mission ["COMPLETED", "delivered", "APPROVED"]
+summary {"plan_revisions": 2, "status": "COMPLETED"}

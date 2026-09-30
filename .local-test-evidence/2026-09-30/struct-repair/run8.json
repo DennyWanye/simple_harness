@@ -1,0 +1,529 @@
+{
+ "mission": {
+  "goal": "分两步完成：第一步，根据资料 sources/policy.md 写出 summary.md，逐条概括全部值班规则，每条都引用资料原文；第二步，根据 summary.md 写出 faq.md，给出三个问答，答案必须与 summary.md 一致。只写这两个文件。",
+  "success_criteria": [
+   "file:summary.md",
+   "summary.md 逐条概括 sources/policy.md 的全部规则并引用原文",
+   "file:faq.md",
+   "faq.md 有三个问答，答案与 summary.md 一致"
+  ],
+  "domain": "doc-research-v1"
+ },
+ "steps": [
+  {
+   "t": 0,
+   "created": {
+    "ok": true,
+    "mission_id": "mission-d4615e8a9404e5d8",
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "confirm": {
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 0,
+   "event": {
+    "seq": 73308,
+    "type": "SourceRegistered",
+    "task": null
+   }
+  },
+  {
+   "t": 0,
+   "mission": [
+    "CREATED",
+    "received",
+    "CONFIRMATION_REQUIRED"
+   ]
+  },
+  {
+   "t": 8,
+   "mission": [
+    "PLANNING",
+    "received",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 35,
+   "event": {
+    "seq": 73558,
+    "type": "NativePlanningDecisionPrepared",
+    "task": null
+   }
+  },
+  {
+   "t": 35,
+   "event": {
+    "seq": 73558,
+    "type": "PlanRevisionCommitted",
+    "task": null
+   }
+  },
+  {
+   "t": 35,
+   "event": {
+    "seq": 73558,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 35,
+   "event": {
+    "seq": 73558,
+    "type": "AttemptStarted",
+    "task": "task-e46a973eed3f28fde69d8ec8629ffd09"
+   }
+  },
+  {
+   "t": 35,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 61,
+   "event": {
+    "seq": 73783,
+    "type": "VerificationFailed",
+    "task": "task-e46a973eed3f28fde69d8ec8629ffd09"
+   }
+  },
+  {
+   "t": 61,
+   "event": {
+    "seq": 73783,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 61,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 69,
+   "event": {
+    "seq": 73792,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 69,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 89,
+   "event": {
+    "seq": 73836,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-e46a973eed3f28fde69d8ec8629ffd09"
+   }
+  },
+  {
+   "t": 89,
+   "event": {
+    "seq": 73836,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 89,
+   "event": {
+    "seq": 73836,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 89,
+   "event": {
+    "seq": 73836,
+    "type": "AttemptStarted",
+    "task": "task-e46a973eed3f28fde69d8ec8629ffd09"
+   }
+  },
+  {
+   "t": 89,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 122,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 165,
+   "event": {
+    "seq": 73957,
+    "type": "AcceptanceCommitted",
+    "task": "task-e46a973eed3f28fde69d8ec8629ffd09"
+   }
+  },
+  {
+   "t": 165,
+   "event": {
+    "seq": 73957,
+    "type": "TaskCompleted",
+    "task": "task-e46a973eed3f28fde69d8ec8629ffd09"
+   }
+  },
+  {
+   "t": 165,
+   "event": {
+    "seq": 73957,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 165,
+   "event": {
+    "seq": 73957,
+    "type": "AttemptStarted",
+    "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"
+   }
+  },
+  {
+   "t": 165,
+   "supersede": {
+    "after_accepted": [
+     "task-e46a973eed3f28fde69d8ec8629ffd09"
+    ],
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 165,
+   "approve": {
+    "approval_id": "approval-source-81de5f0cbab0aa9a05afbfbf1609c47bf01da2c3aebfe7bee7b211d829c5462d",
+    "kind": "source_change",
+    "ok": true,
+    "error": null
+   }
+  },
+  {
+   "t": 165,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 173,
+   "event": {
+    "seq": 73971,
+    "type": "SourceSuperseded",
+    "task": null
+   }
+  },
+  {
+   "t": 190,
+   "event": {
+    "seq": 74031,
+    "type": "VerificationFailed",
+    "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"
+   }
+  },
+  {
+   "t": 190,
+   "event": {
+    "seq": 74031,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 190,
+   "event": {
+    "seq": 74031,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 190,
+   "event": {
+    "seq": 74031,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 190,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 252,
+   "event": {
+    "seq": 74089,
+    "type": "PlanRevisionCommitted",
+    "task": null
+   }
+  },
+  {
+   "t": 252,
+   "event": {
+    "seq": 74089,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 252,
+   "event": {
+    "seq": 74089,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 260,
+   "event": {
+    "seq": 74099,
+    "type": "AttemptStarted",
+    "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"
+   }
+  },
+  {
+   "t": 260,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 288,
+   "event": {
+    "seq": 74151,
+    "type": "VerificationFailed",
+    "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"
+   }
+  },
+  {
+   "t": 288,
+   "event": {
+    "seq": 74151,
+    "type": "PlanningRepairRequested",
+    "task": null
+   }
+  },
+  {
+   "t": 288,
+   "mission": [
+    "ACTIVE",
+    "waiting_person",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 296,
+   "event": {
+    "seq": 74161,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 296,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 360,
+   "event": {
+    "seq": 74181,
+    "type": "PlanningRetryAuthorized",
+    "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"
+   }
+  },
+  {
+   "t": 360,
+   "event": {
+    "seq": 74181,
+    "type": "PlanningRepairAddressed",
+    "task": null
+   }
+  },
+  {
+   "t": 360,
+   "event": {
+    "seq": 74181,
+    "type": "PlanningDecisionEvaluated",
+    "task": null
+   }
+  },
+  {
+   "t": 360,
+   "event": {
+    "seq": 74181,
+    "type": "AttemptStarted",
+    "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"
+   }
+  },
+  {
+   "t": 364,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 409,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 486,
+   "event": {
+    "seq": 74291,
+    "type": "AcceptanceCommitted",
+    "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"
+   }
+  },
+  {
+   "t": 486,
+   "event": {
+    "seq": 74291,
+    "type": "TaskCompleted",
+    "task": "task-successor-966b26d17508768bf52bb78f82482d0934dc722311ca97f5317d275fc5e97385"
+   }
+  },
+  {
+   "t": 486,
+   "event": {
+    "seq": 74291,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 486,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 496,
+   "event": {
+    "seq": 74301,
+    "type": "AttemptStarted",
+    "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"
+   }
+  },
+  {
+   "t": 496,
+   "mission": [
+    "ACTIVE",
+    "running",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 538,
+   "mission": [
+    "ACTIVE",
+    "verifying",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 632,
+   "event": {
+    "seq": 74404,
+    "type": "AcceptanceCommitted",
+    "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"
+   }
+  },
+  {
+   "t": 632,
+   "event": {
+    "seq": 74404,
+    "type": "TaskCompleted",
+    "task": "task-4b8989fc47fb09f425e2a93a45fd0ca9"
+   }
+  },
+  {
+   "t": 632,
+   "mission": [
+    "ACTIVE",
+    "queued",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 643,
+   "event": {
+    "seq": 74421,
+    "type": "TaskGraphSourceChanged",
+    "task": null
+   }
+  },
+  {
+   "t": 643,
+   "event": {
+    "seq": 74421,
+    "type": "HierarchicalRootReviewCut",
+    "task": "desktop-root-mission-d4615e8a9404e5d8"
+   }
+  },
+  {
+   "t": 750,
+   "mission": [
+    "COMPLETED",
+    "delivered",
+    "APPROVED"
+   ]
+  },
+  {
+   "t": 750,
+   "summary": {
+    "plan_revisions": 2,
+    "status": "COMPLETED"
+   }
+  }
+ ],
+ "mission_id": "mission-d4615e8a9404e5d8",
+ "plan_revisions": 2
+}
