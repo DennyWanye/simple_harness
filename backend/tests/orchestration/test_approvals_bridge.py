@@ -33,7 +33,7 @@ def _approval_request(key: str) -> dict:
         "goal": APPROVAL_SPEC["goal"],
         "success_criteria": list(APPROVAL_SPEC["success_criteria"]),
         "idempotency_key": key,
-        "budget": {"max_tokens": 200_000, "max_attempts": 8},
+        "budget": {"max_tokens": 8_000_000, "max_attempts": 8},  # 原生池下限
     }
 
 
