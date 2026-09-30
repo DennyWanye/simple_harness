@@ -1278,6 +1278,7 @@ class ResolutionCommitsMixin:
                     ObligationLifecycle.SATISFIED,
                     resolution_ref=str(resolution.resolution_id),
                 )
+            semantics.clear_revoked_generation(command.mission_id, resolution.goal_task_id)
             payload = {
                 "command_id": command.command_id,
                 "resolution_id": str(resolution.resolution_id),

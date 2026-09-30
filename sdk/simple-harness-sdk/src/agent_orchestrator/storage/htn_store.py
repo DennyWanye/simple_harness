@@ -1631,6 +1631,38 @@ class HtnStore:
             )
         return entry
 
+    def clear_revoked_generation(self, mission_id: str, goal_task_id: str) -> int:
+        """A result of the goal's current generation was committed: its revocations are done.
+
+        A plan commit that re-versions a Task marks each of its occurrences
+        ``dispatch_generation_revoked``; nothing else ever clears that mark, and every
+        completion reader refuses a dirty subject.  The revision moved with the mark, and
+        a goal resolution is admitted only at the current contract revision, so once one
+        is committed the revoked generation can no longer be mistaken for the live one.
+        Only this goal's revocations are cleared; marks for any other reason stay.
+        """
+
+        mission = identifier(mission_id, "mission_id")
+        task_id = identifier(goal_task_id, "goal_task_id")
+        subjects = {task_id}
+        active = self.active_plan_revision(mission)
+        if active is not None:
+            subjects |= {str(spec.occurrence_id)
+                         for spec in self.list_plan_memberships(mission, active.revision)
+                         if str(spec.task_id) == task_id}
+        subjects |= {str(item.effective_goal_occurrence_id)
+                     for item in self.list_method_instances(mission, state="ADOPTED")
+                     if str(item.goal_id) == task_id and item.effective_goal_occurrence_id}
+        marks = ",".join("?" * len(subjects))
+        with self._store.transaction() as connection:
+            cursor = connection.execute(
+                "UPDATE validity_dirty SET state='CLEARED', updated_at=? WHERE mission_id=?"
+                " AND subject_kind='occurrence' AND reason='dispatch_generation_revoked'"
+                f" AND state IN ('PENDING','RECHECKING') AND subject_id IN ({marks})",  # noqa: S608
+                (self._store.now, mission, *sorted(subjects)),
+            )
+        return int(cursor.rowcount)
+
     def list_dirty(self, mission_id: str, *, state: str = "PENDING") -> tuple[DirtyEntry, ...]:
         rows = self._store.connection.execute(
             "SELECT mission_id,subject_kind,subject_id,epoch,scope_id,reason,state"
