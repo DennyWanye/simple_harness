@@ -163,6 +163,8 @@ class RootReviewStatus(StrEnum):
     AWAITING_REVIEW = "AWAITING_REVIEW"
     #: The reviewer concluded, and did not conclude ACCEPT.
     REVIEW_REJECTED = "REVIEW_REJECTED"
+    #: Two reviewers could not decide (INCONCLUSIVE): the person rules (2026-09-30).
+    AWAITING_PERSON = "AWAITING_PERSON"
     #: A live package carries an official ACCEPT record: the resolution may be offered.
     READY = "READY"
     #: A re-cut is needed and this revision has no cuts left.
@@ -883,7 +885,30 @@ class RootReviewCoordinator:
         record = semantics.official_review_record(str(package.package_id))
         if record is None:
             return base
-        if record.verdict is not ReviewVerdict.ACCEPT:
+        from .review_adjudication import adjudication_of
+
+        ruling = (
+            adjudication_of(semantics._store, str(record.record_id))
+            if record.verdict is ReviewVerdict.INCONCLUSIVE else None
+        )
+        if record.verdict is ReviewVerdict.INCONCLUSIVE and ruling is None:
+            # 审阅升级（2026-09-30）：复审后仍判不下来，不当"没通过"去修计划，交给人定。
+            return RootReviewState(
+                status=RootReviewStatus.AWAITING_PERSON,
+                detail=(
+                    f"the final review of {package.package_id!s} concluded INCONCLUSIVE twice; "
+                    "a person decides"
+                ),
+                task_id=base.task_id,
+                obligation_id=base.obligation_id,
+                package=package,
+                record=record,
+                requirements_revision=bound,
+                contributions=contributions,
+                cuts_used=spent,
+            )
+        adjudicated_pass = ruling is not None and ruling.get("decision") == "pass"
+        if record.verdict is not ReviewVerdict.ACCEPT and not adjudicated_pass:
             return RootReviewState(
                 status=RootReviewStatus.REVIEW_REJECTED,
                 detail=(

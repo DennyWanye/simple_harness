@@ -580,30 +580,51 @@ class HumanCommitsMixin:
         record = HtnStore(self._store).official_review_record(rows[0][0])
         if record is None:
             return
+        self.adjudicate_review_record(
+            mission_id, record, target_id=result_id, decision=verdict, note=note,
+            principal_id=principal.principal_id, decision_receipt_hash=receipt,
+            request_id=str(request["request_id"]), task_id=request.get("task_id"),
+            extra={"result_id": result_id},
+        )
+
+    def adjudicate_review_record(
+        self, mission_id: str, record: Any, *, target_id: str, decision: str, note: str,
+        principal_id: str, decision_receipt_hash: str, request_id: str,
+        task_id: str | None = None, extra: Mapping[str, Any] | None = None,
+    ) -> str:
+        """Write the person's ruling on one official review record (idempotent).
+
+        ``target_id`` is what the record reviewed — the Result for a step's content
+        review, the root Task for the final review — and is what the use certificate
+        matches against its target. The same review can carry only one ruling.
+        """
+        from ..assurance.codec import fingerprint
+
         body = {
             "mission_id": mission_id,
-            "result_id": result_id,
+            "target_id": str(target_id),
             "record_id": str(record.record_id),
             "record_verdict": str(record.verdict),
-            "request_id": str(request["request_id"]),
-            "decision": verdict,
+            "request_id": request_id,
+            "decision": decision,
             "note": note,
-            "principal_id": principal.principal_id,
-            "decision_receipt_hash": receipt,
+            "principal_id": principal_id,
+            "decision_receipt_hash": decision_receipt_hash,
+            **dict(extra or {}),
         }
         receipt_id = "assurance-review-adjudicated:" + str(record.record_id)
         old = self._store.get_receipt(receipt_id)
         if old is not None:
             if dict(old) != body:
                 raise ActionCommitError("this review already has a different recorded ruling")
-            return
+            return receipt_id
         self._store.insert_receipt(
             commit_id=receipt_id, kind="AssuranceReviewAdjudicated", subject_id=str(record.record_id),
             base_version=0, proposal_hash=fingerprint(body), receipt=body,
         )
         self._emit("AssuranceReviewAdjudicated", mission_id, key=receipt_id,
-                   task_id=request.get("task_id"), payload=body,
-                   actor_type="user", actor_id=principal.principal_id)
+                   task_id=task_id, payload=body, actor_type="user", actor_id=principal_id)
+        return receipt_id
 
     # ------------------------------------------------------------ arbitration (D7-8')
     def request_arbitration(

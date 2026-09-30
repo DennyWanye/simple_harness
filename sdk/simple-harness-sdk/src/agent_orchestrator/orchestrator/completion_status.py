@@ -283,7 +283,7 @@ def _compound_content(
         not stored.official
         or official is None
         or official.to_json() != record.to_json()
-        or record.verdict is not ReviewVerdict.ACCEPT
+        or not accepted_or_adjudicated(htn._store, record)
         or record.purpose not in {ReviewPurpose.COMPOSITION, ReviewPurpose.MISSION_FINAL}
         or package.purpose is not record.purpose
         or package.binding.mission_id != mission_id

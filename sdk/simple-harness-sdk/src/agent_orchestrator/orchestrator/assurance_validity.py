@@ -461,7 +461,7 @@ class AssuranceValidity:
                 and adjudication.get("decision") == "pass"
                 and adjudication.get("mission_id") == mission_id
                 and adjudication.get("record_id") == str(record.record_id)
-                and adjudication.get("result_id") == target.pin.id
+                and adjudication.get("target_id") == target.pin.id
             ):
                 acceptable = True
                 decision_reasons.append("human_adjudication:" + adjudication_row[0])

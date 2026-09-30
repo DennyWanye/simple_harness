@@ -3237,6 +3237,12 @@ class Orchestrator:
                         and e.payload.get("service_id", e.payload.get("decision_id")) == identity
                         and e.payload.get("source_type") == event.type for e in events):
                     return False
+                if event.type in {"PlanningHumanRequested", "PlanningHumanAnswered"}:
+                    row = questions.get(str(identity))
+                    # 审阅升级（2026-09-30）：根终审"判不下来"问人的裁决题，答案由
+                    # ``_advance_root_review`` 消费（写裁决回执），不开规划轮。
+                    if row and (row["request"].get("repair_context") or {}).get("kind") == "review_adjudication":
+                        return False
                 if event.type == "PlanningHumanRequested":
                     row = questions.get(str(identity))
                     return bool(row and row["state"] == "PENDING"
@@ -12967,6 +12973,8 @@ class Orchestrator:
             coordinator.record_cut_budget_spent(mission.id, state)
             self._note(f"mission {mission.id}: root review not re-cut ({state.detail})")
             return False
+        if state.status is RootReviewStatus.AWAITING_PERSON:
+            return self._ask_person_to_adjudicate_root(mission, new_mode, coordinator, state)
         if state.status is RootReviewStatus.REVIEW_REJECTED:
             # §9.1's decision table, never a silent retry.  The record is already
             # written and announced by ``record_review``; this loop does not get to
@@ -12997,6 +13005,68 @@ class Orchestrator:
             # package already out for review is not asked about twice.
             return await self._ask_root_reviewer(mission, coordinator, state.package)
         return False
+
+    def _ask_person_to_adjudicate_root(
+        self, mission: Mission, new_mode: HierarchicalDispatch, coordinator: Any, state: Any
+    ) -> bool:
+        """Two final reviewers could not decide: the person rules on the root (2026-09-30).
+
+        A step's INCONCLUSIVE review suspends its Result and reuses the review
+        approval; the root has no Result to suspend, so the question goes through the
+        planning-question channel (blocking, two options) and its answer is consumed
+        here — never by a planner round — as the same ``AssuranceReviewAdjudicated``
+        receipt the use certificate, the acceptance formula and the completion reads
+        already honour. One question per official record; the record is not rewritten.
+        """
+        from ..contracts.planning_decisions import HumanOptionV1, RequestHumanDecision
+        from ..storage.htn_store import HtnStore
+        from ..storage.planning_human_store import PlanningHumanStore
+
+        record, package = state.record, state.package
+        if record is None or package is None:
+            return False
+        questions = PlanningHumanStore(self.store)
+        decision_id = "adjudicate-root:" + str(record.record_id)
+        row = questions.get(decision_id)
+        if row is None:
+            findings = "\n".join(
+                f"- {item.criterion_id}：{'; '.join(item.limitations) or str(item.verdict)}"
+                for item in record.criteria if str(item.verdict) != "PASS"
+            ) or "-（审阅员没有写明疑点）"
+            question = RequestHumanDecision(
+                "最终审查两位审阅员都判不下来，需要你裁决整个任务的产出是否合格。\n审阅员的疑点：\n"
+                + findings + "\n选“通过”则按合格收尾；选“打回”则交规划器修改后重做。",
+                (HumanOptionV1("pass", "通过"), HumanOptionV1("fail", "打回")), True)
+            htn = HtnStore(self.store)
+            plan = htn.active_plan_revision(mission.id)
+            requirements = htn.latest_requirements_revision(mission.id)
+            with self.store.transaction():
+                questions.register(
+                    decision_id=decision_id, mission_id=mission.id, subject_key=str(state.task_id),
+                    payload=question,
+                    request_binding={"plan_revision": 0 if plan is None else int(plan.revision),
+                                     "requirements_revision": 0 if requirements is None else int(requirements.revision),
+                                     "manager_epoch": htn.epoch(mission.id, "mission")},
+                    next_ordinal=self._next_planning_ordinal(mission.id),
+                    repair_context={"kind": "review_adjudication", "record_id": str(record.record_id),
+                                    "package_id": str(package.package_id), "target_id": str(state.task_id)})
+                append_hierarchical_event(
+                    self.store, "PlanningHumanRequested", mission.id, key=decision_id,
+                    payload={"decision_id": decision_id, "question_id": decision_id, "state": "PENDING",
+                             "origin": "review_adjudication", "record_id": str(record.record_id)})
+            self._note(f"mission {mission.id}: final review inconclusive twice; asked the person to rule")
+            return True
+        if row["state"] != "ANSWERED":
+            return False  # waiting for the person; the idle verdict counts the pending question
+        answer = row["answer"] or {}
+        with self.store.transaction():
+            self.commit.adjudicate_review_record(
+                mission.id, record, target_id=str(state.task_id), decision=str(answer.get("answer")),
+                note="", principal_id=str(answer.get("principal_id") or ""),
+                decision_receipt_hash=str(answer.get("receipt_hash") or ""), request_id=decision_id,
+                task_id=str(state.task_id))
+        self._note(f"mission {mission.id}: the person ruled {answer.get('answer')} on the final review")
+        return True
 
     async def _repair_after_root_review(
         self, mission: Mission, new_mode: HierarchicalDispatch, state: Any
@@ -13047,6 +13117,14 @@ class Orchestrator:
             return False
         findings = self._root_review_findings(mission.id, str(package.package_id))
         blocking = [item for item in findings if str(item.get("severity", "")).lower() == "blocker"]
+        if not blocking and getattr(state, "record", None) is not None:
+            from .review_adjudication import adjudication_of
+
+            ruling = adjudication_of(self.store, str(state.record.record_id))
+            if ruling is not None and ruling.get("decision") == "fail":
+                blocking = [{"severity": "blocker", "criterion_id": "",
+                             "detail": "the person rejected the inconclusive final review: "
+                             + str(ruling.get("note") or "")}]
         if not blocking:
             return False
         active = new_mode.semantics().active_plan_revision(mission.id)

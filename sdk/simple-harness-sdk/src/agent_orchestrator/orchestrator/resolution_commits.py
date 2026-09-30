@@ -2036,6 +2036,7 @@ class ResolutionCommitsMixin:
             AssuredAcceptance(
                 effective_grades=candidate.effective_grades,
                 gate_reasons=candidate.gate_reasons,
+                human_adjudicated=getattr(candidate, "adjudication_ref", None) is not None,
             ),
             candidate.certificate_id,
         )
