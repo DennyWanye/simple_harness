@@ -94,6 +94,7 @@ def mission_coverage(
             verdicts.append(item)
             continue
         passed, uncertain, failed = False, False, False
+        unassessed: list[str] = []
         for binding, ordinal, proposal, claim, rows, issues in evaluations:
             candidate = criterion["criterion_id"] in proposal.mission_criterion_ids
             matches = (
@@ -118,8 +119,10 @@ def mission_coverage(
                 item["reasons"].append("claim_not_usable")
                 continue
             if not rows:
-                failed = True
-                item["reasons"].append("missing_valid_task_assessment")
+                # 2026-10-01（真机 mission-4c97c315ed039e6f）：多步任务里执行者常把全部任务判据都声称
+                # 一遍，而验证只对本步契约里的判据出评估。没有评估的声称不作数、也不否决——由有评估的
+                # 贡献决定；一条评估都没有才算"缺有效评估"。
+                unassessed.append(claim.id)
                 continue
             if any(r.verdict not in {"PASS", "INCONCLUSIVE"} for r in rows):
                 failed = True
@@ -168,6 +171,9 @@ def mission_coverage(
                 continue
             item["claim_ids"].append(claim.id)
             item["task_assessment_receipt_ids"].extend(r.receipt_id for r in rows)
+        if unassessed and not passed and not uncertain:
+            failed = True
+            item["reasons"].append("missing_valid_task_assessment")
         item["verdict"] = (
             "FAIL" if failed else "INCONCLUSIVE" if uncertain else "PASS" if passed else "FAIL"
         )
