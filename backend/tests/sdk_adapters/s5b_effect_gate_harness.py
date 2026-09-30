@@ -378,6 +378,24 @@ class _Registry:
     def assert_workspace_current(self, run_id) -> None:
         del run_id
 
+    def run_session_and_root(self, run_id):
+        # 生产 ProductToolRegistry.run_session_and_root（受保护路径检查点，2026-09-26
+        # 权限改造）对未知 Run 返回空会话、无根目录；本替身没有 Run 权限表，同样返回。
+        del run_id
+        return "", None
+
+
+def _harness_disclosure(db_path: Path):
+    from deskpet.task_scope.disclosure import render_scope_disclosure
+
+    async def read(run_id, package, effect_id):
+        del run_id, effect_id
+        return await render_scope_disclosure(
+            db_path=db_path, package=package, subject=AUTH.subject, stack=None,
+        )
+
+    return read
+
 
 class _NoEffectLedger:
     """SDK effect ledger stand-in: no durable record ever exists, so the
@@ -608,6 +626,10 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
         binding_append_getter=lambda: None,
         ledger=ledger,
         tool_context_getter=lambda: tool_context_var.get(),
+        # 生产装配（main.py）接 ScopeDisclosureReader；resume_existing 缺它会以
+        # scope_disclosure_reader_missing 失败（2026-09-05 起）。本车道没有前台 Run
+        # 行（生产读取器靠它查主体），直接用同一个渲染函数、固定本车道主体。
+        scope_disclosure_reader=_harness_disclosure(db_path),
     )
     from deskpet.execution.semantic_closure import closure_instruction_for_run
 
@@ -638,10 +660,11 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
         )
     )
     frozen: dict[str, object] = {"authority": None}
+    scope_store = CanonicalTaskScopeStore(db_path)
     gate = EffectGate(
         binding_store=binding_store,
         route_ledger=ledger,
-        scope_store=CanonicalTaskScopeStore(db_path),
+        scope_store=scope_store,
         authority_resolver=lambda run_id: frozen["authority"],
         exposure_resolver=lambda run_id: exposure,
     )
@@ -672,6 +695,7 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
         memo=memo,
         route_memo=route_memo,
         binding_store=binding_store,
+        scope_store=scope_store,  # test_effect_gate 读规范头状态（a189ec4e 起引用，替身此前缺）
         task_authority=task_authority,
         frozen=frozen,
         workspace_base=tmp_path / "workspace",

@@ -9,6 +9,7 @@ Draft written before the implementation (plan 2026-09-11 H3).
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 
 import pytest
@@ -22,12 +23,13 @@ from deskpet.orchestration.projection import (
 from deskpet.orchestration.pump import MissionChangePump
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
-from ._support import notes_provider, notes_request
+from ._support import SCRIPTED_LANE, notes_provider, notes_request
 
 
 async def _completed_service(root, principal):  # type: ignore[no-untyped-def]
     service = OrchestrationService(
-        root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False
+        root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     created = service.create_mission(notes_request("k-proj"))
@@ -197,6 +199,7 @@ async def test_pump_announces_a_status_change_within_two_seconds(orchestration_r
         OrchestrationSettings(tick_active_seconds=0.05, tick_idle_seconds=0.2),
         provider=notes_provider(),
         principal=principal,
+        test_scenario=SCRIPTED_LANE,
     )
     await service.start()
     pushed: list[tuple[float, dict]] = []
@@ -224,7 +227,8 @@ async def test_pump_announces_a_status_change_within_two_seconds(orchestration_r
             and message["payload"]["status"] == "COMPLETED"
         ]
         assert done and done[0] - completed_at <= 2.0
-        assert all("sk-" not in str(message) for _, message in pushed)
+        # 密钥形如 sk-xxxx；按词首匹配，Task id（"...:task-1"）里的 "sk-" 不是密钥。
+        assert not any(re.search(r"\bsk-", str(message)) for _, message in pushed)
     finally:
         await pump.stop()
         await service.close()

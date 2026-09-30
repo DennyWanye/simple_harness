@@ -32,6 +32,8 @@ from deskpet.orchestration.native_load import (
 )
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
+from ._support import SCRIPTED_LANE
+
 
 def _interval_rows(root: Path) -> list[dict]:
     rows = [json.loads(line) for line in (root / INTERVALS_FILE).read_text().splitlines()]
@@ -95,6 +97,7 @@ async def test_three_public_source_imports_two_real_provider_handoffs_and_ui_can
         evidence / "libraries" / CASE,
         OrchestrationSettings(max_concurrency=3, max_concurrent_model_calls=2),
         principal=principal, provider=provider, drive=False,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await asyncio.wait_for(service.start(), 20)
     running = None

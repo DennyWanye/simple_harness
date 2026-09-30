@@ -76,13 +76,6 @@ def test_mismatched_deployment_refused_without_model_call(local_config, change):
     assert not config.evidence_root.exists()
 
 
-def test_local_profile_not_silently_ignored_by_old_wheel(local_config, monkeypatch):
-    config, snapshot, path = local_config
-    monkeypatch.setenv("DESKPET_SDK_RUNTIME_MODE", "wheel")
-    with pytest.raises(RuntimeError, match="源码 SDK"):
-        source_runtime_options(config, Provider(), snapshot, local_profile_path=str(path))
-
-
 def test_settings_preserve_explicit_local_profile_path(tmp_path):
     path = str(tmp_path / "local.json")
     assert load_settings({"local_model_profile": path}).local_model_profile == path

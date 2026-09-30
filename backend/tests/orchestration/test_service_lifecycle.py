@@ -21,7 +21,7 @@ from deskpet.orchestration.service import (
     OrchestrationSettings,
 )
 
-from ._support import notes_provider, notes_request
+from ._support import SCRIPTED_LANE, notes_provider, notes_request
 
 
 def test_service_name_is_registered():
@@ -126,6 +126,7 @@ async def test_driver_loop_runs_a_mission_without_being_asked(orchestration_root
         OrchestrationSettings(tick_active_seconds=0.2, tick_idle_seconds=0.5),
         provider=notes_provider(),
         principal=principal,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     try:

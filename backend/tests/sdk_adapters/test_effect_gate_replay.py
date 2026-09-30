@@ -51,6 +51,12 @@ class _Registry(ToolRegistry):
     def assert_workspace_current(self, run_id) -> None:
         del run_id
 
+    def run_session_and_root(self, run_id):
+        # 生产 ProductToolRegistry.run_session_and_root（受保护路径检查点，2026-09-26
+        # 权限改造）对未知 Run 返回空会话、无根目录；本替身没有 Run 权限表，同样返回。
+        del run_id
+        return "", None
+
 
 class _AllowAuthorization:
     async def prepare(self, prepared) -> AuthorizationResult:  # type: ignore[no-untyped-def]

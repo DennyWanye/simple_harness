@@ -19,7 +19,13 @@ from deskpet.orchestration.service import (
     OrchestrationSettings,
 )
 
-from ._support import judgment_provider, judgment_request, notes_request, review_provider
+from ._support import (
+    SCRIPTED_LANE,
+    judgment_provider,
+    judgment_request,
+    notes_request,
+    review_provider,
+)
 
 
 def _approval_request(key: str) -> dict:
@@ -116,6 +122,7 @@ async def test_review_request_pass_accepts_the_result(orchestration_root, princi
         provider=review_provider(),
         principal=principal,
         drive=False,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     try:
@@ -161,6 +168,7 @@ async def test_a_judgment_disagreement_is_arbitrated_by_a_person(orchestration_r
         provider=judgment_provider(),
         principal=principal,
         drive=False,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     try:

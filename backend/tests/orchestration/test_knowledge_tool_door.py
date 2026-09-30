@@ -9,7 +9,7 @@ from agent_orchestrator.testing.fixtures import (
 
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
-from ._support import NOTES_TASK, WORKSPACE_TOOLS, notes_request
+from ._support import NOTES_TASK, SCRIPTED_LANE, WORKSPACE_TOOLS, notes_request
 
 
 @pytest.mark.asyncio
@@ -26,8 +26,11 @@ async def test_default_host_mission_can_reach_current_knowledge_reader(orchestra
         ],
         "critic": [critic_step(verdict="PASS", criteria_met=True)] * 3,
     })
+    # 脚本化旧协议 Provider 只在夹具通道可用（见 _support.SCRIPTED_LANE）；Mission 仍用
+    # 默认工具集（请求里不写 allowed_tools），知识工具的门与默认部署相同。
     service = OrchestrationService(
         orchestration_root, OrchestrationSettings(), provider=provider, principal=principal, drive=False,
+        test_scenario=SCRIPTED_LANE,
     )
     await service.start()
     try:

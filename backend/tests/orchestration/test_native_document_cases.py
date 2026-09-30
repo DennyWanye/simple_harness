@@ -18,6 +18,8 @@ from deskpet.orchestration.native_cases import (
 )
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
+from ._support import SCRIPTED_LANE
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -35,6 +37,7 @@ async def test_native_case_uses_current_document_contract_and_real_verification(
         principal=principal,
         provider=provider,
         drive=False,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     try:
@@ -216,6 +219,7 @@ async def test_active_source_revoke_before_original_human_pass_cannot_accept(
         principal=principal,
         provider=provider,
         drive=False,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     try:

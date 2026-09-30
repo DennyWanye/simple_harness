@@ -33,6 +33,7 @@ from deskpet.sdk_adapters.context_route import ContextRouteToolService
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 from tests.sdk_adapters.test_s5a_milestone_route_loop import (
     AUTH,
+    harness_scope_disclosure,
     HarnessCheckpoint,
     HarnessContext,
     RouteExposure,
@@ -110,6 +111,7 @@ class MatrixEnv:
                 "tests.sdk_adapters.test_s5a_milestone_route_loop",
                 fromlist=["_tool_context_var"],
             )._tool_context_var.get(),
+            scope_disclosure_reader=harness_scope_disclosure(self.db_path),
         )
         effects = RouteToolEffects(route_service)
         authority = ProductRunContextAuthority(
@@ -276,7 +278,11 @@ async def test_six_step_five_route_sequence_over_one_durable_state(
     assert ("direct_standalone", "context_tool") in routes
     assert ("resume_existing", "context_tool") in routes
     assert ("continue_active", "context_tool") in routes
-    assert routes.count(("direct_standalone", "no_recall")) >= 3
+    # 2026-09-10 第 2 步由 memory_standalone（被拦→no_recall）改成 direct_standalone
+    # （context_tool），当时漏改这里的计数：现在第 1、2 步是 context_tool，
+    # 第 3 步（continue_active 被拒）与第 6 步是 no_recall。
+    assert routes.count(("direct_standalone", "context_tool")) == 2
+    assert routes.count(("direct_standalone", "no_recall")) == 2
 
 
 @pytest.mark.asyncio
@@ -512,7 +518,10 @@ async def test_cutover_v44_forward_migration_and_empty_presented_table(
     legacy_dir = tmp_path / "migrations-v44"
     legacy_dir.mkdir()
     for source in sorted(DEFAULT_MIGRATIONS_DIR.glob("*.sql")):
-        if source.name.startswith(("037_", "038_")):  # 038 = S5b v46（同样不属于 v44 库）
+        # v44 库只含 036（v44）及以前的迁移；037=v45、038=v46，之后新增的
+        # 039～041（v47～v49）同样不属于 v44 库（漏排它们会让 v44 初始化读到
+        # 未来迁移、标记校验失败 human_memory_program_marker_invalid）。
+        if int(source.name[:3]) > 36:
             continue
         shutil.copy2(source, legacy_dir / source.name)
     monkeypatch.setattr(migrator, "DEFAULT_MIGRATIONS_DIR", legacy_dir)

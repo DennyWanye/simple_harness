@@ -22,7 +22,7 @@ from pathlib import Path
 from agent_orchestrator.governance.permissions import Principal
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
-from ._support import blocking_worker_provider, notes_request, review_provider
+from ._support import SCRIPTED_LANE, blocking_worker_provider, notes_request, review_provider
 
 
 async def main(root: Path, scenario: str, marker: Path) -> None:
@@ -32,6 +32,7 @@ async def main(root: Path, scenario: str, marker: Path) -> None:
         OrchestrationSettings(lease_seconds=2.0, tick_active_seconds=0.05, tick_idle_seconds=0.2),
         provider=provider,
         principal=Principal("local-user:test", "本机用户"),
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     service.create_mission(notes_request(f"k-{scenario}"))

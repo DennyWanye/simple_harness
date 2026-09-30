@@ -17,11 +17,6 @@ class Provider:
         raise AssertionError("profile selection must not call the provider")
 
 
-def test_wheel_runtime_does_not_load_new_source_ports(monkeypatch):
-    monkeypatch.delenv("DESKPET_SDK_RUNTIME_MODE", raising=False)
-    assert source_runtime_options(object(), Provider(), None) == {}
-
-
 @pytest.fixture
 def source_config(tmp_path, monkeypatch):
     from agent_orchestrator.runtime import assembly

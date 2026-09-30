@@ -159,7 +159,9 @@ class _Coordinator(ProductProviderInvocationCoordinator):
         self.invoked: list[str] = []
 
 
-async def _sdk_invoke(self, run_id, request, *, cancel, execution_lease, workflow_lease=None):  # type: ignore[no-untyped-def]
+async def _sdk_invoke(self, run_id, request, *, cancel, execution_lease, workflow_lease=None, context_use=None):  # type: ignore[no-untyped-def]
+    # 签名对齐当前 SDK ProviderInvocationCoordinator.invoke（新增 context_use，Host 包装层透传）。
+    del context_use
     self.invoked.append(request.request_id.value)
     item = self._responses.pop(0)
     if isinstance(item, BaseException):

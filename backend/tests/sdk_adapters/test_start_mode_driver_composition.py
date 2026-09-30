@@ -3,7 +3,7 @@ import pytest
 
 from simple_harness import HostControlAuthorityV1
 from simple_harness.execution.uow import RunState
-from simple_harness.runtime import ReActDriver, StartModeDriverRouter
+from simple_harness.runtime import StartModeDriverRouter
 
 from deskpet.sdk_adapters.skill_install_verification import (
     ProductRootDriverRouter, SkillInstallVerificationAttemptResolver,
@@ -14,23 +14,10 @@ from tests.sdk_adapters.test_skill_install_verification_router import (
 )
 
 
-@pytest.mark.asyncio
-async def test_real_main_factory_selects_sdk_react_and_original_control_delegate(tmp_path, monkeypatch):
-    import simple_harness.runtime as sdk_runtime
-    from tests.test_provider_runtime_refresh import test_human_epoch_composition_registers_three_authorities
-
-    selected = []
-    def record_selection(*, ordinary, host_control):
-        result = StartModeDriverRouter(ordinary, host_control)
-        selected.append(result)
-        return result
-    monkeypatch.setattr(sdk_runtime, "StartModeDriverRouter", record_selection)
-    await test_human_epoch_composition_registers_three_authorities(tmp_path, monkeypatch)
-    assert selected
-    for router in selected:
-        assert type(router.ordinary) is ReActDriver
-        assert type(router.host_control) is ProductRootDriverRouter
-        assert router.policy_fingerprint == router.ordinary.policy_fingerprint
+# 2026-09-30 删除 test_real_main_factory_selects_sdk_react_and_original_control_delegate：
+# 它借 tests.test_provider_runtime_refresh.test_human_epoch_composition_registers_three_authorities
+# 真跑 main._build_product_sdk_runtime_stack，该冒烟用例依赖记忆 SDK（MemoryManager），
+# 已随记忆 SDK 于 2026-09-10 删除（fb08f475）。真组装覆盖在 tests/sdk_adapters/test_composition.py。
 
 
 @pytest.mark.asyncio

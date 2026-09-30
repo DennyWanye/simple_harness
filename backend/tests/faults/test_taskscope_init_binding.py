@@ -529,8 +529,12 @@ async def _frozen_root_split(tmp_path: Path, run_id: str) -> tuple[str, str, dic
 
 
 async def _auto_destructive(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
-    """Auto 模式 + DESTRUCTIVE（inventory 冻结 EffectClass）→ REQUIRE_USER，候选 grant 来源 ``user``（绝不合成
-    ``policy:auto``）；durable saga 恰一条 prepared；重放 prepare → 同判定、hash 不变；对照 reversible_local 走 auto。"""
+    """Auto 模式 + DESTRUCTIVE（inventory 冻结 EffectClass 仍保留在 spec 中）→ ALLOW，grant 来源 ``policy:auto``；
+    durable saga 恰一条 prepared；杀进程后重放 prepare → 同判定、同回执、hash 不变；reversible_local 同样走 auto。
+
+    2026-09-07 用户产品决定：权限只有手动/自动两种，默认自动；自动模式下不弹任何授权提示，
+    所有工具效果默认允许（含原先只能确认的类别；实现见 tool_authority 自动模式二次规划
+    ``explicit_only=False``）。原“auto + DESTRUCTIVE → REQUIRE_USER”的口径由该决定替代。"""
     from simple_harness.tools import AuthorizationDecision
 
     from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
@@ -567,26 +571,25 @@ async def _auto_destructive(tmp_path: Path, run_id: str) -> tuple[str, str, dict
     saga_db = tmp_path / "product.db"
     before = state_hash(saga_db, ("authorization_sagas",))
     prepared = ta._effect_for(run_id, "purge_dir", effect_id="effect-purge")
-    pending = await adapter.prepare(prepared)
-    assert pending.decision is AuthorizationDecision.REQUIRE_USER
-    assert pending.reason_code == "product_policy_user_confirmation"
-    assert pending.request is not None and pending.request.metadata["grant_source"] == "user"
+    allowed_destructive = await adapter.prepare(prepared)
+    assert allowed_destructive.decision is AuthorizationDecision.ALLOW
+    assert allowed_destructive.request is None  # 自动模式不弹授权提示
     facts = policy.facts_for(prepared)
-    assert facts.grant.source == "user" and facts.plan.authorization_origin == "explicit_decision"
+    assert facts.grant.source == "policy:auto" and facts.plan.authorization_origin == "policy"
     assert _rows(saga_db, "SELECT state FROM authorization_sagas") == [("prepared",)]
     converged = state_hash(saga_db, ("authorization_sagas",))
     assert converged != before
-    # 重放（同 effect）：同判定、无 auto grant、saga 不变。
+    # 重放（同 effect，模拟杀进程后重来）：同判定、同回执、saga 不变。
     replay = await adapter.prepare(prepared)
-    assert replay.decision is AuthorizationDecision.REQUIRE_USER and replay.request is not None
-    assert replay.request.metadata["grant_source"] == "user"
+    assert replay.decision is AuthorizationDecision.ALLOW and replay.request is None
+    assert replay.receipt_ref == allowed_destructive.receipt_ref
     assert state_hash(saga_db, ("authorization_sagas",)) == converged
-    # 对照：reversible_local 的 write_file 走既有 auto 策略（policy:auto）；DESTRUCTIVE 永不。
+    # reversible_local 的 write_file 同样走 auto 策略（policy:auto）。
     allowed = await policy.decide(ta._effect_for(run_id, "write_file", effect_id="effect-write"), request=None)
     assert allowed.decision is AuthorizationDecision.ALLOW
     assert policy.facts_for(ta._effect_for(run_id, "write_file", effect_id="effect-write")).grant.source == "policy:auto"
     assert state_hash(saga_db, ("authorization_sagas",)) == converged
-    return before, converged, {"decision": "REQUIRE_USER", "grant_source": "user"}
+    return before, converged, {"decision": "ALLOW", "grant_source": "policy:auto"}
 
 
 SEAM_RUNNERS = {

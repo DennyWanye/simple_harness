@@ -937,8 +937,9 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
     await ch.record_terminal(env2, observed2)
     restarted, _ = ch.build_fallback(env2, facts2, ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=1))]))
     replay = await ch.settle(env2, restarted)
-    # 本 Run 已有 durable pending(closure_attempt_unknown) → 重放视为已收口（pending），零调用。
-    assert replay.status == "already_closed" and replay.reason_code == "closure_attempt_unknown"
+    # 本 Run 已有 durable pending(closure_attempt_unknown) → 重放照实报 pending（c6af1ac4，
+    # 2026-09-06 起不再报 already_closed：债务仍在），零调用。
+    assert replay.status == "pending" and replay.reason_code == "closure_attempt_unknown"
     assert replay.provider_calls == 0 and replay.receipt is not None and replay.receipt.outcome == "pending"
     assert len(ch.attempts(env2.db_path)) == 1  # 无新 attempt
     assert (await dirty_state(CanonicalTaskScopeStore(env2.db_path), ch.SCOPE)).is_dirty  # pending 不清脏

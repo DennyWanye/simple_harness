@@ -21,7 +21,7 @@ from agent_orchestrator.testing.fixtures import (
 from deskpet.orchestration.service import OrchestrationRequestError, OrchestrationService
 from deskpet.orchestration.settings import OrchestrationSettings
 
-from ._support import WORKSPACE_TOOLS, notes_provider, notes_request
+from ._support import SCRIPTED_LANE, WORKSPACE_TOOLS, notes_provider, notes_request
 
 KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 
@@ -127,6 +127,7 @@ async def test_model_written_tests_never_run_when_local_tests_are_off(
         provider=provider,
         principal=principal,
         drive=False,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     try:

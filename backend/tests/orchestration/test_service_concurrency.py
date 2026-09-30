@@ -23,7 +23,7 @@ import pytest
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, critic_step, graph_proposal_step, package_of
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
-from ._support import NOTES_TASK, _notes_worker, notes_request, review_provider
+from ._support import NOTES_TASK, SCRIPTED_LANE, _notes_worker, notes_request, review_provider
 
 
 async def _until(service, mission_id: str, status: str, seconds: float = 30.0) -> str:  # type: ignore[no-untyped-def]
@@ -63,6 +63,7 @@ async def test_writes_interleaved_with_a_running_loop_do_not_collide(orchestrati
         OrchestrationSettings(tick_active_seconds=0.01, tick_idle_seconds=0.05),
         provider=provider,
         principal=principal,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     try:
@@ -91,6 +92,7 @@ async def test_a_decision_and_a_comment_land_while_the_loop_runs(orchestration_r
         OrchestrationSettings(tick_active_seconds=0.01, tick_waiting_seconds=0.01, tick_idle_seconds=0.05),
         provider=review_provider(),
         principal=principal,
+        test_scenario=SCRIPTED_LANE,
     )
     await service.start()
     try:

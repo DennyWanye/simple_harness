@@ -39,6 +39,8 @@ from deskpet.orchestration.native_context import (
 )
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
+from ._support import SCRIPTED_LANE
+
 
 def _rows(database: Path, query: str, parameters=()) -> list[dict]:
     with closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
@@ -73,11 +75,14 @@ async def test_public_source_mission_rotates_actual_worker_and_delivers_report(
         provider_request_fingerprint,
     )
 
+    sdk_source_root = Path(assembly.__file__).resolve().parents[3]
+    if Path(assembly.__file__).resolve().parents[2].name != "src" or not (sdk_source_root / ".git").exists():
+        # 环境前提：本用例要求 SDK 以可编辑源码（Git 仓库根下 src/ 布局）安装，才能做源码证明。
+        # 当前 venv 装的是 wheel（site-packages/agent_orchestrator），无源码仓库可证明。
+        pytest.skip("需要可编辑源码安装的 SDK（Git 仓库根/src/agent_orchestrator）；当前是 wheel 安装")
     monkeypatch.setenv("DESKPET_SDK_RUNTIME_MODE", "editable-source")
     attestation = tmp_path / "sdk-source-attestation.json"
-    attestation.write_text(json.dumps(capture_sdk_source_attestation(
-        Path(assembly.__file__).resolve().parents[3]
-    )))
+    attestation.write_text(json.dumps(capture_sdk_source_attestation(sdk_source_root)))
     monkeypatch.setenv("DESKPET_SDK_SOURCE_ATTESTATION", str(attestation))
     evidence = tmp_path / ".local-test-evidence" / CASE
     fixture_root = evidence / "fixtures"
@@ -92,7 +97,8 @@ async def test_public_source_mission_rotates_actual_worker_and_delivers_report(
     provider = native_context_provider(fixture_root, control_root=controls)
     library = evidence / "library"
     service = OrchestrationService(library, OrchestrationSettings(),
-                                   principal=principal, provider=provider, drive=False)
+                                   principal=principal, provider=provider, drive=False,
+                                   test_scenario=SCRIPTED_LANE)  # 脚本化旧协议 Provider 只在夹具通道可用
     await asyncio.wait_for(service.start(), 20)
     try:
         assert service.status()["available"], service.status()
@@ -216,7 +222,7 @@ async def test_public_source_mission_rotates_actual_worker_and_delivers_report(
     # Optional parent UI cold test has the same contract: completed reopen invokes no Provider.
     cold_provider = native_context_provider(fixture_root, control_root=controls)
     cold = OrchestrationService(library, OrchestrationSettings(), principal=principal,
-                                provider=cold_provider, drive=False)
+                                provider=cold_provider, drive=False, test_scenario=SCRIPTED_LANE)
     await asyncio.wait_for(cold.start(), 20)
     try:
         assert cold.status()["available"], cold.status()

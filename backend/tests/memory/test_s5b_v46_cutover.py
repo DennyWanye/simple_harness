@@ -60,25 +60,37 @@ def _table_hash(db: Path, table: str) -> str:
     return hashlib.sha256(repr(rows).encode("utf-8")).hexdigest()
 
 
-def _enter_legacy_v45_world(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
-    """S5a 口径：target=45、无 038 文件、037 在链外应用、链校验不要求 037。"""
+#: 当前前向链的目标版本。v46 之后又新增了 039～041（v47～v49）；前向迁移一次到当前目标，
+#: 各用例原意（037/038 注册、evidence 守恒、旧 runtime 拒绝）不随目标版本变化。
+TARGET = migrator.HUMAN_MEMORY_TARGET_SCHEMA_VERSION
 
-    monkeypatch.setattr(migrator, "MIGRATION_STEPS", {k: v for k, v in migrator.MIGRATION_STEPS.items() if v <= 45})
-    monkeypatch.setattr(migrator, "HUMAN_MEMORY_TARGET_SCHEMA_VERSION", 45)
-    monkeypatch.setattr(schema, "HUMAN_MEMORY_TARGET_SCHEMA_VERSION", 45)
+
+def _cap_migrations(monkeypatch, tmp_path: Path, version: int) -> None:  # type: ignore[no-untyped-def]
+    """把迁移世界截到 ``version``：步骤表、目标版本、迁移目录都只含该版本及以前的迁移。"""
+
+    monkeypatch.setattr(migrator, "MIGRATION_STEPS", {k: v for k, v in migrator.MIGRATION_STEPS.items() if v <= version})
+    monkeypatch.setattr(migrator, "HUMAN_MEMORY_TARGET_SCHEMA_VERSION", version)
+    monkeypatch.setattr(schema, "HUMAN_MEMORY_TARGET_SCHEMA_VERSION", version)
+    last_file = max(int(name[:3]) for name, v in migrator.MIGRATION_STEPS.items() if v <= version)
+    legacy_dir = tmp_path / f"migrations-v{version}"
+    if not legacy_dir.exists():
+        legacy_dir.mkdir(parents=True)
+        for source in sorted(DEFAULT_MIGRATIONS_DIR.glob("*.sql")):
+            if int(source.name[:3]) > last_file:
+                continue
+            shutil.copy2(source, legacy_dir / source.name)
+    monkeypatch.setattr(migrator, "DEFAULT_MIGRATIONS_DIR", legacy_dir)
+
+
+def _enter_legacy_v45_world(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """S5a 口径：target=45、无 038 及之后的迁移文件、037 在链外应用、链校验不要求 037。"""
+
+    _cap_migrations(monkeypatch, tmp_path, 45)
     monkeypatch.setattr(
         migrator, "_S4_HUMAN_MIGRATIONS",
         migrator._S4_HUMAN_MIGRATIONS - {EFFECT_CLOSURE_MIGRATION, CONTEXT_ROUTE_MIGRATION},
     )
     monkeypatch.setattr(schema, "_validate_s4_migration_chain", lambda *a, **k: None)
-    legacy_dir = tmp_path / "migrations-v45"
-    if not legacy_dir.exists():
-        legacy_dir.mkdir(parents=True)
-        for source in sorted(DEFAULT_MIGRATIONS_DIR.glob("*.sql")):
-            if source.name.startswith("038_"):
-                continue
-            shutil.copy2(source, legacy_dir / source.name)
-    monkeypatch.setattr(migrator, "DEFAULT_MIGRATIONS_DIR", legacy_dir)
 
 
 async def _legacy_v45_database(tmp_path: Path, monkeypatch) -> Path:  # type: ignore[no-untyped-def]
@@ -113,23 +125,23 @@ async def test_v45_migration_registered_in_human_chain(tmp_path: Path, monkeypat
     # ① 新库：037 在链内应用 → marker / 链行 / 恢复注册 + fence 触发器齐全，链校验通过。
     fresh = tmp_path / "fresh" / "state.db"
     await initialize_human_memory_program_state_db(fresh)
-    assert _user_version(fresh) == 46
+    assert _user_version(fresh) == TARGET
     _assert_context_route_registered(fresh)
     chain = dict(_rows(fresh, "SELECT migration_id,schema_version FROM human_memory_migration_chain"))
     assert chain[CONTEXT_ROUTE_MIGRATION] == 45 and chain[EFFECT_CLOSURE_MIGRATION] == 46
-    schema._validate_s4_migration_chain(fresh, expected_user_version=46)
+    schema._validate_s4_migration_chain(fresh, expected_user_version=TARGET)
     # fence 触发器体：非 OPEN 即拒（与 v42 注册表其它 A 类表同一口径）。
     [(body,)] = _rows(fresh, "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='hm_recovery_fence_context_route_decisions_insert'")
     assert "human_memory_ingress_fenced" in body and "<>'OPEN'" in body
-    # ② S5a 旧库（037 链外）：打开即回补（幂等），随后前向到 v46 且链校验（含 037）通过。
+    # ② S5a 旧库（037 链外）：打开即回补（幂等），随后前向到当前目标且链校验（含 037）通过。
     legacy = await _legacy_v45_database(tmp_path / "legacy", monkeypatch)
     assert await repair_context_route_registration(legacy) is True
     _assert_context_route_registered(legacy)
     assert await repair_context_route_registration(legacy) is False
     await initialize_human_memory_program_state_db(legacy)
-    assert _user_version(legacy) == 46
+    assert _user_version(legacy) == TARGET
     _assert_context_route_registered(legacy)
-    schema._validate_s4_migration_chain(legacy, expected_user_version=46)
+    schema._validate_s4_migration_chain(legacy, expected_user_version=TARGET)
     # ③ 未回补的旧库直接走启动入口：initialize 自身先回补再校验（不是 stable reject）。
     legacy2 = await _legacy_v45_database(tmp_path / "legacy2", monkeypatch)
     await initialize_human_memory_program_state_db(legacy2)
@@ -147,6 +159,18 @@ async def _legacy_v45_with_run(tmp_path: Path, monkeypatch, *, waiting: bool):  
     from tests.execution import test_foreground_queue as fq
 
     _enter_legacy_v45_world(monkeypatch, tmp_path)
+    # v45 时代的 runtime 没有可信披露绑定（040/v48 才有 human_memory_disclosure_heads），
+    # 也没有准入拒绝记录（041/v49 的 foreground_admission_rejections）。用当前排队代码在
+    # v45 库上建 Run 时，按旧 runtime 口径跳过这两处（只影响建库，不影响被测的迁移前置）。
+    from deskpet.execution import admission_rejection
+    from deskpet.memory import trusted_disclosure
+
+    async def _absent_in_v45(db, **kwargs):  # type: ignore[no-untyped-def]
+        del db, kwargs
+        return None
+
+    monkeypatch.setattr(trusted_disclosure, "enqueue_binding_tx", _absent_in_v45)
+    monkeypatch.setattr(admission_rejection, "read_admission_rejection_tx", _absent_in_v45)
     queue_db, primary_id, clock = await fq._ready(tmp_path / "queue")
     assert _user_version(queue_db) == 45
     store = ForegroundQueueStore(queue_db, clock=clock)
@@ -246,9 +270,10 @@ async def test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path: 
     shutil.copy2(db, backup)
     assert _user_version(backup) == 45
 
-    # 前向：v45 → v46（Task 3/4 加列在 038 内：tool_name / result_envelope_json）。
+    # 前向：v45 → 当前目标（v46 起每次新增迁移都在同一前向链里；Task 3/4 加列在 038 内：
+    # tool_name / result_envelope_json）。
     await initialize_human_memory_program_state_db(db)
-    assert _user_version(db) == 46
+    assert _user_version(db) == migrator.HUMAN_MEMORY_TARGET_SCHEMA_VERSION
     columns = {row[1] for row in _rows(db, "PRAGMA table_info(harness_evidence_reservations)")}
     assert "tool_name" in columns
     columns = {row[1] for row in _rows(db, "PRAGMA table_info(post_turn_invocation_attempts)")}
@@ -270,7 +295,7 @@ async def test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path: 
     assert {table: _table_hash(backup, table) for table in EVIDENCE_TABLES} == hashes_before
     assert _user_version(backup) == 45
     await initialize_human_memory_program_state_db(backup)
-    assert _user_version(backup) == 46
+    assert _user_version(backup) == migrator.HUMAN_MEMORY_TARGET_SCHEMA_VERSION
     assert {table: _table_hash(backup, table) for table in EVIDENCE_TABLES} == hashes_before
 
 
@@ -311,7 +336,7 @@ async def _legacy_v45_with_evidence(tmp_path: Path, monkeypatch) -> tuple[Path, 
 
 def _assert_startup_opened(db: Path, decision, hashes_before: dict[str, str]) -> None:  # type: ignore[no-untyped-def]
     assert decision.epoch is StartupEpoch.HUMAN_RESUME and decision.reason_code == "human_memory_resume_database"
-    assert _user_version(db) == 46
+    assert _user_version(db) == TARGET
     assert _rows(db, "SELECT COUNT(*) FROM human_memory_evidence") == [(1,)]
     assert {table: _table_hash(db, table) for table in EVIDENCE_TABLES} == hashes_before
     _assert_context_route_registered(db)
@@ -342,7 +367,8 @@ async def test_startup_opens_pre_repair_v46_userdata(tmp_path: Path, monkeypatch
     from deskpet.memory.schema import dispatch_startup_epoch
 
     db, hashes_before = await _legacy_v45_with_evidence(tmp_path, monkeypatch)
-    # Task 2–6 之间的世界：038 已在链内、037 仍在链外、启动不做回补。
+    # Task 2–6 之间的世界：目标 v46（无 039 及之后的迁移）、038 已在链内、037 仍在链外、启动不做回补。
+    _cap_migrations(monkeypatch, tmp_path, 46)
     monkeypatch.setattr(migrator, "_S4_HUMAN_MIGRATIONS", migrator._S4_HUMAN_MIGRATIONS - {CONTEXT_ROUTE_MIGRATION})
     monkeypatch.setattr(schema, "_validate_s4_migration_chain", lambda *a, **k: None)
     monkeypatch.setattr(migrator, "repair_context_route_registration", _no_repair)

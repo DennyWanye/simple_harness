@@ -25,7 +25,7 @@ from deskpet.orchestration.service import (
     backoff_delay,
 )
 
-from ._support import notes_provider, notes_request
+from ._support import SCRIPTED_LANE, notes_provider, notes_request
 
 FAST = OrchestrationSettings(
     tick_active_seconds=0.01,
@@ -153,7 +153,8 @@ async def test_a_payload_that_is_not_an_object_is_answered(orchestration_root, p
 @pytest.mark.asyncio
 async def test_an_artifact_is_read_by_id_with_its_hash_checked(orchestration_root, principal):
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     try:

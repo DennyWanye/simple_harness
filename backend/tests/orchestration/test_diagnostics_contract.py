@@ -11,7 +11,7 @@ from agent_orchestrator.api.facade import MissionControlV1
 from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
-from ._support import notes_provider, notes_request
+from ._support import SCRIPTED_LANE, notes_provider, notes_request
 
 
 @pytest.mark.asyncio
@@ -51,7 +51,8 @@ async def test_completed_diagnostics_and_exports_preserve_state_calls_and_artifa
 ):
     provider = notes_provider()
     service = OrchestrationService(orchestration_root, OrchestrationSettings(),
-        provider=provider, principal=principal, drive=False)
+        provider=provider, principal=principal, drive=False,
+        test_scenario=SCRIPTED_LANE)  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     await service.start()
     try:
         mission_id = service.create_mission(notes_request("p36-completed"))["mission_id"]

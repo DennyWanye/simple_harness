@@ -35,6 +35,7 @@ from deskpet.orchestration.service import (
 
 from ._support import (
     NOTES_TASK,  # noqa: F401 - documents the scripted Task shape
+    SCRIPTED_LANE,
     _notes_worker,
     pending_approval_kinds,
 )
@@ -82,6 +83,7 @@ def _restarted(root: Path, provider: RoleScriptedProvider, principal) -> Orchest
         provider=provider,
         principal=principal,
         drive=False,
+        test_scenario=SCRIPTED_LANE,  # 与子进程同一夹具通道（见 _support）
     )
 
 

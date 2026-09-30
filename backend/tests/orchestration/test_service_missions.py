@@ -17,6 +17,7 @@ from deskpet.orchestration.service import (
     OrchestrationSettings,
 )
 
+from ._support import SCRIPTED_LANE
 from ._support import mission_count as _mission_count
 from ._support import notes_provider, notes_request
 
@@ -29,6 +30,7 @@ async def test_create_runs_to_completed_and_is_idempotent(orchestration_root, pr
         provider=notes_provider(),
         principal=principal,
         drive=False,
+        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
     )
     await service.start()
     try:

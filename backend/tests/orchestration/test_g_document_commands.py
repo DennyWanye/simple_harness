@@ -232,7 +232,7 @@ async def test_real_sdk_accepted_report_25_claims_and_receipt_click(orchestratio
         package_of,
     )
 
-    from ._support import NOTES_TASK
+    from ._support import NOTES_TASK, SCRIPTED_LANE
 
     path = "sources/A.md"
     quotes = [f"第{i}项记录完整。" for i in range(1, 26)]
@@ -268,8 +268,9 @@ async def test_real_sdk_accepted_report_25_claims_and_receipt_click(orchestratio
         "worker": [("workspace_write_file", {"path": "REPORT.md", "content": content}), worker],
         "critic": [("workspace_read_file", {"path": "REPORT.md"}), review] * 3,
     })
+    # 脚本化旧协议 Provider 只在夹具通道可用（见 _support.SCRIPTED_LANE）
     service = OrchestrationService(orchestration_root, OrchestrationSettings(), principal=principal,
-                                   provider=provider, drive=False)
+                                   provider=provider, drive=False, test_scenario=SCRIPTED_LANE)
     await service.start()
     try:
         command = {"mission": notes_request("accepted-report", domain="doc-research-v1",

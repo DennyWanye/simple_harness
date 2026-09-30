@@ -19,6 +19,7 @@ s5a-context-route-verification-spec.json (S5A-S1/S2-deterministic/S4 subsets).
 from __future__ import annotations
 
 import contextvars
+import json
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -286,6 +287,23 @@ AUTH = AuthenticatedHostSnapshot(
 )
 
 
+def harness_scope_disclosure(db_path: Path):
+    """生产装配（main.py）给 ContextRouteToolService 接 ScopeDisclosureReader；缺它时
+    resume_existing/continue 以 scope_disclosure_reader_missing 失败，Run 停在
+    routed_standalone（2026-09-05 起）。本车道没有前台 Run 行（生产读取器靠它查主体），
+    直接用同一个渲染函数、固定本车道主体。"""
+
+    from deskpet.task_scope.disclosure import render_scope_disclosure
+
+    async def read(run_id, package, effect_id):
+        del run_id, effect_id
+        return await render_scope_disclosure(
+            db_path=db_path, package=package, subject=AUTH.subject, stack=None,
+        )
+
+    return read
+
+
 class _ManualAuthority:
     def __init__(self) -> None:
         self.evidence: dict = {}
@@ -396,6 +414,7 @@ async def milestone(tmp_path: Path):
         binding_append_getter=lambda: None,
         ledger=ledger,
         tool_context_getter=lambda: _tool_context_var.get(),
+        scope_disclosure_reader=harness_scope_disclosure(db_path),
     )
     effects = RouteToolEffects(route_service)
     authority = ProductRunContextAuthority(
@@ -538,9 +557,19 @@ async def test_milestone_resume_existing_same_run_continuation(milestone, tmp_pa
 
     # Same-Run continuation: the final provider turn's snapshot (payload the
     # model actually answered from) contains the exact ResumePackage content.
+    # 2026-09-05 起恢复包经 ScopeDisclosureReader 投影：标题/目标只有经生产
+    # create_new 路由证明过才披露（disclosure.py），本用例的 scope 由服务直接创建，
+    # 标题/目标按 original_sources_unavailable 不披露（同轮 task_scope_search 的候选
+    # 也一样）。因此核对的是本轮 context_route 实际返回的那份恢复包（披露清单哈希）。
     final_request = provider.calls[-1]
     joined = "".join(str(message.content) for message in final_request.messages)
-    assert "季度报告" in joined
+    [route_message] = [
+        str(message.content) for message in final_request.messages
+        if message.role is MessageRole.TOOL and message.name == "context_route"
+    ]
+    package = json.loads(route_message)["value"]["resume_package"]
+    assert package["task_scope_id"] == scope_id and package["status"] == "active"
+    assert package["disclosure_manifest"]["manifest_hash"] in joined
     snapshots = _rows(
         milestone.db_path,
         "SELECT snapshot_revision FROM run_context_snapshot_receipts "
