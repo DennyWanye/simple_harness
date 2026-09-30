@@ -264,8 +264,13 @@ def parse_planning_decision(
     request_id: str | None = None,
     attempt_ordinal: int | None = None,
     raw_output_hash: str | None = None,
+    fill: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> PlanningDecisionEnvelopeV1:
     """Decode one planner reply into a ``PlanningDecisionEnvelopeV1`` (V2 §42).
+
+    ``fill`` (2026-09-30) is the caller's lossless completion against its own request
+    package (``decision_feedback.package_filler``); it runs on the raw object just
+    before the strict decode and may only add a field it can prove.
 
     ``request_id`` / ``attempt_ordinal`` / ``raw_output_hash`` are supplied by the
     caller (H1-F) and do not participate in the decode: the model never writes a
@@ -302,6 +307,8 @@ def parse_planning_decision(
     # any unknown key a nested contract refuses — see ``unknown_fields``.
     raw = {key: value for key, value in raw.items() if key in ENVELOPE_FIELDS or key in SYSTEM_FIELD_KEYS}
     _refuse_unknown_keys(raw)
+    if fill is not None:
+        raw = fill(raw)
 
     # 5. The envelope decodes through the contract; its refusals map by table.
     try:

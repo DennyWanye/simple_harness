@@ -54,7 +54,7 @@ from agent_orchestrator.planning.decision_codec import serialize_planning_decisi
 from agent_orchestrator.planning.htn.observers.code import code_observers  # noqa: E402
 from agent_orchestrator.planning.htn.world import build_planning_world  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL_V12, PLANNING_DECISION_PACKAGE_LABEL  # noqa: E402
+from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL_V13, PLANNING_DECISION_PACKAGE_LABEL  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider  # noqa: E402
@@ -206,7 +206,7 @@ async def _open_planner_round(
     from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
     frozen = PlanningDecisionStore(loop.store).get_mission_protocol(mission.id)
     assert frozen["package_version"] == 8
-    assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL_V12.prompt_version
+    assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL_V13.prompt_version
     assert intent.config["planning_package"]["planning_protocol"]["protocol"] == (
         "planning-decision-v1"
     )
@@ -299,7 +299,10 @@ def test_format_retry_keeps_opener_package_and_request_identity(tmp_path: Path) 
             retry = await _open_planner_round(loop, mission, dispatch, ordinal=2)
 
             assert retry.config["planning_package"] == opener.config["planning_package"]
-            assert retry.config["message"] == opener.config["message"]
+            # 2026-09-30：包冻结；消息 = 原消息 + 上一次的字段路径反馈。
+            original = opener.config["message"]["content"]
+            assert retry.config["message"]["content"].startswith(original)
+            assert "previous_feedback" in retry.config["message"]["content"][len(original):]
             request = loop.store.connection.execute(
                 "SELECT request_id, intent_id, package_hash, base_plan_revision "
                 "FROM planning_requests WHERE request_id = ?",

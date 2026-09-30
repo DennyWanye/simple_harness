@@ -1315,13 +1315,13 @@ def test_new_planning_decision_mission_selects_the_current_prompt_even_when_lega
 
     from agent_orchestrator.contracts.planning_decisions import UnsupportedPlanningPackage
     from agent_orchestrator.runtime.role_templates import (
-        PLANNER_HIERARCHICAL_V12,
+        PLANNER_HIERARCHICAL_V13,
         PLANNER_HIERARCHICAL_V7,
         PLANNING_DECISION_PACKAGE_VERSION,
     )
 
     assert _Pinned(PLANNER_HIERARCHICAL_V7.prompt_version, package_version=PLANNING_DECISION_PACKAGE_VERSION).choose() is (
-        PLANNER_HIERARCHICAL_V12
+        PLANNER_HIERARCHICAL_V13
     )
     with pytest.raises(UnsupportedPlanningPackage):
         _Pinned(PLANNER_HIERARCHICAL_V7.prompt_version, package_version=4).choose()
@@ -1340,6 +1340,11 @@ def test_a_mission_bound_to_planner_v11_keeps_it_after_v12_ships() -> None:
                    bound_prompt="planner-hierarchical-v11").choose() is PLANNER_HIERARCHICAL_V11
     assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION,
                    bound_prompt="planner-hierarchical-v12").choose() is PLANNER_HIERARCHICAL_V12
+    # 2026-09-30: v13 on the same package; a new binding names v13.
+    from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL_V13
+    assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION,
+                   bound_prompt="planner-hierarchical-v13").choose() is PLANNER_HIERARCHICAL_V13
+    assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION).choose() is PLANNER_HIERARCHICAL_V13
 
 
 # ======================================================================================

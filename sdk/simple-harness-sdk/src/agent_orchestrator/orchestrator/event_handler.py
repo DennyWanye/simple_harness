@@ -4513,6 +4513,34 @@ class Orchestrator:
             if event.type in {"TaskGraphRejected", "PlanningRejected"}
         ]
 
+    def _planning_retry_budgets(self, mission: Mission, *, format_retries: int) -> Any:
+        """The §39 budget view a feedback value reports (same count admission uses)."""
+
+        from ..contracts.planning_decisions import PlanningRetryBudgetView
+
+        allowance = max(
+            0, int(self._config.max_planning_attempts) + self._synthesis_credits(mission.id)
+        )
+        return PlanningRetryBudgetView(
+            same_request_format_retries_remaining=max(0, int(format_retries)),
+            planning_rounds_remaining=max(0, allowance - self._planning_attempts(mission.id)),
+            synthesis_asks_remaining=0,
+            root_review_repairs_remaining=max(0, int(self._config.max_root_review_repairs)),
+            repeated_failure_before_escalation_remaining=None,
+        )
+
+    def _latest_planning_feedback(self, mission: Mission) -> Any:
+        """2026-09-30：新请求的 ``previous_feedback``——本任务最近一条规划决定被拒时，
+        告诉规划器拒在哪（字段路径）；最近一条没被拒就是 ``None``。"""
+
+        from ..planning.decision_feedback import feedback_from_decision
+        from ..storage.planning_decision_store import PlanningDecisionStore
+
+        row = PlanningDecisionStore(self.store).latest_planning_decision(mission.id)
+        return feedback_from_decision(
+            row, budgets=self._planning_retry_budgets(mission, format_retries=1)
+        )
+
     def _remaining_synthesis_asks(self, mission: Mission, new_mode: HierarchicalDispatch) -> int:
         rejected = {str(row.goal_id): row for row in new_mode.rejected_refinements(mission.id)}
         remaining = 0
@@ -4529,7 +4557,8 @@ class Orchestrator:
         return remaining
 
     def _hierarchical_planner_package(
-        self, new_mode: HierarchicalDispatch, mission: Mission, *, ordinal: int
+        self, new_mode: HierarchicalDispatch, mission: Mission, *, ordinal: int,
+        previous_feedback: Any = None,
     ) -> Any:
         """Seal the hierarchical Planner's package (P2.3c part 2).
 
@@ -4637,6 +4666,7 @@ class Orchestrator:
                 mission.id, reason=READ_ONLY_REWRITE_REPAIR_REASON
             ),
             planning_protocol=planning_protocol,
+            previous_feedback=previous_feedback if planning_protocol is not None else None,
             authoritative_refs=method_instance_authorities,
             task_states=task_states,
             repair_goal_occurrences=repair_goal_occurrences(self.store, network),
@@ -5270,8 +5300,8 @@ class Orchestrator:
             HIERARCHICAL_PLANNER_PACKAGE_VERSION,
             PLANNER_HIERARCHICAL_V7,
             PLANNER_HIERARCHICAL_V11,
-            PLANNER_HIERARCHICAL_V11_VERSION,
             PLANNER_HIERARCHICAL_V12,
+            PLANNER_HIERARCHICAL_V13,
             PLANNING_DECISION_PACKAGE_VERSION,
             hierarchical_planner_versions,
         )
@@ -5287,11 +5317,12 @@ class Orchestrator:
         if candidate.prompt_version in hierarchical_planner_versions(package_version):
             return candidate
         if package_version == PLANNING_DECISION_PACKAGE_VERSION:
-            # 2026-09-29: the package pairs with v11 and v12; a Mission keeps the prompt
-            # its durable binding names (replay stays exact), a new binding names v12.
-            if binding is not None and binding.get("prompt_version") == PLANNER_HIERARCHICAL_V11_VERSION:
-                return PLANNER_HIERARCHICAL_V11
-            return PLANNER_HIERARCHICAL_V12
+            # 2026-09-29/30: the package pairs with v11, v12 and v13; a Mission keeps the
+            # prompt its durable binding names (replay stays exact), a new binding names v13.
+            paired = {template.prompt_version: template for template in (
+                PLANNER_HIERARCHICAL_V11, PLANNER_HIERARCHICAL_V12, PLANNER_HIERARCHICAL_V13)}
+            bound = None if binding is None else binding.get("prompt_version")
+            return paired.get(str(bound), PLANNER_HIERARCHICAL_V13)
         if package_version != HIERARCHICAL_PLANNER_PACKAGE_VERSION:
             # 2026-09-25: no historical package/prompt pairings are served any more; a
             # Mission bound to one fails loudly instead of running on a stale prompt.
@@ -5409,6 +5440,12 @@ class Orchestrator:
                 new_mode,
                 mission,
                 ordinal=package_ordinal,
+                # A format retry answers the opener's frozen package (rehydrated below);
+                # only a fresh request is told about the last refusal in its package.
+                previous_feedback=(
+                    None if retry_request_id is not None
+                    else self._latest_planning_feedback(mission)
+                ),
             )
             if retry_request_id is not None:
                 # A format retry answers the opener's exact durable request.  The
@@ -5530,6 +5567,24 @@ class Orchestrator:
                     "method_instance_ref remains the full method_instance reference object. "
                     "decision_type never contains a slash: write REPAIR and put the kind in "
                     "payload.repair_kind, choosing only from planning_protocol.enabled_repair_kinds."
+                )
+        if retry_package_frozen and retry_request_id is not None:
+            # 2026-09-30 格式三件：同一请求的格式重试原来一字不差重发原消息，模型不知道错在
+            # 哪、照样再错。包仍冻结不变（请求事实不动）；只在消息末尾附上上一次的字段路径反馈。
+            from ..planning.decision_feedback import feedback_from_decision
+            from ..storage.planning_decision_store import PlanningDecisionStore
+
+            feedback = feedback_from_decision(
+                PlanningDecisionStore(self.store).get_planning_decision_by_attempt(
+                    retry_request_id, 0
+                ),
+                budgets=self._planning_retry_budgets(mission, format_retries=0),
+            )
+            if feedback is not None:
+                package_text += (
+                    "\n\n上一次回复被拒（这是同一个请求的格式重试，也是最后一次）。previous_feedback: "
+                    + json.dumps(feedback.to_json(), ensure_ascii=False, sort_keys=True)
+                    + "\n按 problems 里的 field_path 改正，重新输出完整的 <planning_decision> 块。"
                 )
         from .planning_selection import local_decision, reserve_selection
         native_decision = local_decision(package.package) if new_mode is not None else None
@@ -8254,6 +8309,8 @@ class Orchestrator:
             )
 
         decoded_subject_key = ""
+        # 2026-09-30：唯一的无损补齐（goal_type_ref 只缺一个字段且能唯一对上）；补了什么记进评估事件。
+        autofilled: list[str] = []
 
         def evaluated(status: PlanningDecisionStatus, **payload: Any) -> None:
             from .planning_repair_requests import address_requests
@@ -8268,6 +8325,8 @@ class Orchestrator:
             payload.setdefault("decision_type", None)
             payload.setdefault("rejection_codes", [])
             payload.setdefault("canonical_hash", canonical_hash)
+            if autofilled:
+                payload.setdefault("autofilled", list(autofilled))
             append_hierarchical_event(
                 self.store,
                 "PlanningDecisionEvaluated",
@@ -8284,11 +8343,14 @@ class Orchestrator:
             )
 
         try:
+            from ..planning.decision_feedback import package_filler
+
             decision = parse_planning_decision(
                 text,
                 request_id=request_id,
                 attempt_ordinal=attempt_ordinal,
                 raw_output_hash=raw_hash,
+                fill=package_filler(intent.config.get("planning_package"), autofilled),
             )
             canonical_json = canonical_decision_json(decision)
             canonical_hash = canonical_decision_hash(decision)

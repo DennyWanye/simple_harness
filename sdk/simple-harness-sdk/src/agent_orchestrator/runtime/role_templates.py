@@ -846,6 +846,61 @@ PLANNER_HIERARCHICAL_V12 = RoleTemplate(
 )
 register_template(PLANNER_HIERARCHICAL_V12)
 
+#: 2026-09-30 规划器格式三件（用户同意）：真机被判格式错的回复，大多是子结构字段写不全
+#: （assumptions 缺 key/risk、uncertainties.affects 不是数组、goal_type_ref 缺 version），
+#: 而 v8 起的提示词只给了一个所有列表都为空的示例。v13 = v12 + 每个子结构的全部字段、
+#: 一个把这些列表填满的示例，以及"上一次被拒"的反馈怎么读（包里 previous_feedback，
+#: 同一请求的格式重试附在消息末尾）。与 v11/v12 同配第 8 版包；已绑 v12 的任务不变。
+PLANNER_HIERARCHICAL_V13_VERSION = "planner-hierarchical-v13"
+PLANNER_HIERARCHICAL_V13 = RoleTemplate(
+    name="planner", prompt_version=PLANNER_HIERARCHICAL_V13_VERSION, tool_names=(),
+    instructions=PLANNER_HIERARCHICAL_V12.instructions + (
+        "\n子结构字段（逐项写全）：下面每个列表里的每一项都必须是带全部字段的 JSON 对象，"
+        "不能写成字符串，也不能少字段；某个列表写不全就让它为 []（空列表永远合法）。\n"
+        "  - 引用四元组：kind、id、semantic_revision（整数）、content_hash，整个对象从 visible_refs 照抄。"
+        "reason_refs、wait_for 是这种对象的数组。\n"
+        "  - assumptions 每项 5 个字段：key（英文短标识，如 \"source-is-current\"）、statement（一句话）、"
+        "required_for（decision_type 的数组，如 [\"REFINE\"]）、risk（LOW、MEDIUM、HIGH 之一）、"
+        "suggested_predicate_key（evidence_predicates 里的 id@version；没有就写 null，但这个键不能省）。\n"
+        "  - uncertainties 每项 3 个字段：statement、severity（LOW、MEDIUM、HIGH 之一）、"
+        "affects（字符串数组，写受影响的 subject_key 或文件名；只有一个也写成数组）。\n"
+        "  - alternatives 每项 4 个字段：method_ref（visible_refs 里 kind=method 的四元组；没有就写 null）、"
+        "label、disposition（CONSIDERED、REJECTED、DEFERRED 之一）、reason。\n"
+        "  - replan_triggers 每项 3 个字段：description、referenced_predicates（字符串数组，可以是 []）、"
+        "suggested_decision（一个 decision_type，如 \"REPAIR\"）。\n"
+        "  - goal_type_ref（REPAIR 且 repair_kind=PROPOSE_SUCCESSOR 时）：3 个字段 id、version（整数）、"
+        "content_hash，整个对象从 successor_types 里对应条目的 task_type_ref 照抄，一个字段都不能少。\n"
+        "填满子结构的示例（一行一个完整 JSON 对象）：\n"
+        '{"schema_version":1,"decision_type":"REFINE","subject_key":"subject-root",'
+        '"rationale":"选择已注册且当前可适用的方法。","reason_refs":[],'
+        '"assumptions":[{"key":"source-is-current","statement":"sources/policy.md 是当前版本。",'
+        '"required_for":["REFINE"],"risk":"LOW","suggested_predicate_key":null}],'
+        '"payload":{"method_ref":{"kind":"method","id":"doc.write-from-source","semantic_revision":1,'
+        '"content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},"bindings":{"target":"summary.md"}},'
+        '"uncertainties":[{"statement":"资料之后可能换新版本。","severity":"LOW","affects":["subject-root"]}],'
+        '"alternatives":[{"method_ref":null,"label":"不按资料直接写","disposition":"REJECTED",'
+        '"reason":"任务要求逐条引用资料原文。"}],'
+        '"replan_triggers":[{"description":"资料换成新版本","referenced_predicates":[],'
+        '"suggested_decision":"REPAIR"}]}\n'
+        '{"schema_version":1,"decision_type":"REPAIR","subject_key":"subject-step-1",'
+        '"rationale":"已完成的这一步引用了旧版资料，用同一类型的后继步骤按新版重做。","reason_refs":[],'
+        '"assumptions":[],"payload":{"repair_kind":"PROPOSE_SUCCESSOR",'
+        '"old_task_ref":{"kind":"task","id":"task-1","semantic_revision":1,"content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},'
+        '"obligation_ref":{"kind":"obligation","id":"obligation-1","semantic_revision":1,"content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},'
+        '"goal_type_ref":{"id":"doc.write","version":1,"content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},'
+        '"bindings":{"target":"summary.md"}},'
+        '"uncertainties":[{"statement":"下游步骤可能也要跟着重做。","severity":"MEDIUM","affects":["faq.md"]}],'
+        '"alternatives":[],"replan_triggers":[]}\n'
+        "上一次被拒时怎么改：请求包里的 previous_feedback 不为 null，说明你上一次的回复被拒绝了。"
+        "status 是结果，rejection_codes 是错误码，problems 每项的 field_path 是出错位置（JSON 指针，"
+        "例如 /uncertainties/0/affects 表示第 1 条 uncertainties 的 affects 字段，/payload/goal_type_ref "
+        "表示 payload 里的 goal_type_ref），detail 说明错在哪里。先改正这些位置，同一个错误不要再犯。"
+        "如果消息末尾附有“上一次回复被拒”和一段 previous_feedback（这是同一个请求的格式重试），"
+        "按同样的方式改正后重新输出完整的 <planning_decision> 块；这是这个请求最后一次机会。"
+    ),
+)
+register_template(PLANNER_HIERARCHICAL_V13)
+
 #: Every registered prompt version that belongs to the *hierarchical* Planner.
 #: P2.3c part 2b: a deployment's frozen ``prompt_versions`` pins ``planner`` to a
 #: DAG-Planner version (``planner-v4``), and ``template_for`` honours that pin for
@@ -868,6 +923,7 @@ HIERARCHICAL_PLANNER_VERSIONS: frozenset[str] = frozenset(
         PLANNER_HIERARCHICAL_V10_VERSION,
         PLANNER_HIERARCHICAL_V11_VERSION,
         PLANNER_HIERARCHICAL_V12_VERSION,
+        PLANNER_HIERARCHICAL_V13_VERSION,
     }
 )
 
@@ -930,15 +986,21 @@ HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE: Mapping[int, frozenset[str]] = {
     # types and ``enabled_repair_kinds`` the repair sub-kinds; v11 says so.
     # 2026-09-29: v12 is v11 plus the "missing external input → ESCALATE" rule on the
     # same package; Missions already bound to v11 keep it, new ones bind v12.
+    # 2026-09-30: v13 is v12 plus every sub-structure's fields, a filled example and
+    # how to read ``previous_feedback``; new Missions bind v13.
     PLANNING_DECISION_PACKAGE_VERSION: frozenset(
-        {PLANNER_HIERARCHICAL_V11_VERSION, PLANNER_HIERARCHICAL_V12_VERSION}
+        {
+            PLANNER_HIERARCHICAL_V11_VERSION,
+            PLANNER_HIERARCHICAL_V12_VERSION,
+            PLANNER_HIERARCHICAL_V13_VERSION,
+        }
     ),
 }
 
 #: The prompt a *new* binding on the current package uses: its newest version.  Still
 #: derived from the package table, so a package bump cannot leave the durable binding
 #: on the previous package's prompt.
-PLANNING_DECISION_PROMPT_VERSION = PLANNER_HIERARCHICAL_V12_VERSION
+PLANNING_DECISION_PROMPT_VERSION = PLANNER_HIERARCHICAL_V13_VERSION
 assert PLANNING_DECISION_PROMPT_VERSION in HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE[
     PLANNING_DECISION_PACKAGE_VERSION
 ]

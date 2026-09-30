@@ -556,6 +556,18 @@ class PlanningDecisionStore:
         ).fetchone()
         return None if row is None else _decision_row(row)
 
+    def latest_planning_decision(self, mission_id: str) -> dict[str, Any] | None:
+        """The Mission's most recent decision row (any request), or ``None``."""
+
+        mission = identifier(mission_id, "planning_requests.mission_id")
+        row = self._store.connection.execute(
+            f"SELECT {','.join('d.' + column + ' AS ' + column for column in _DECISION_COLUMNS)}"
+            " FROM planning_decisions d JOIN planning_requests r ON r.request_id = d.request_id"
+            " WHERE r.mission_id = ? ORDER BY d.created_at DESC, d.rowid DESC LIMIT 1",
+            (mission,),
+        ).fetchone()
+        return None if row is None else _decision_row(row)
+
     @staticmethod
     def _read_decision(
         connection: sqlite3.Connection, *, decision_id: str

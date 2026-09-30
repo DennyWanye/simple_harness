@@ -20,6 +20,17 @@ from agent_orchestrator.orchestrator.planning_retry import pending_retry_permit
 from test_h4_retry_runtime_entry import attempt, grant, refined, retry_payload
 
 
+def _assert_retry_message_carries_feedback(retry, opener, code):
+    before = opener.config["message"]["content"]
+    after = retry.config["message"]["content"]
+    assert after.startswith(before) and after != before
+    tail = after[len(before):]
+    assert "previous_feedback" in tail and code in tail
+    feedback = json.loads(tail[tail.index("{"):tail.rindex("}") + 1])
+    assert feedback["status"] == "UNREADABLE" and feedback["rejection_codes"] == [code]
+    assert feedback["budgets"]["same_request_format_retries_remaining"] == 0
+
+
 @pytest.mark.parametrize("ordinal", [2, 5])
 def test_later_request_retries_its_own_frozen_package_once(tmp_path: Path, ordinal: int):
     async def case():
@@ -34,7 +45,9 @@ def test_later_request_retries_its_own_frozen_package_once(tmp_path: Path, ordin
             retry = loop.store.get_intent(binding.intent_id)
             assert retry.config["ordinal"] == ordinal + 1
             assert retry.config["planning_package"] == opener.config["planning_package"]
-            assert retry.config["message"] == opener.config["message"]
+            assert opener.config["planning_package"]["previous_feedback"] is None
+            # 2026-09-30 格式三件：同一请求的包不变，但消息末尾附上"上一次错在哪"（字段路径反馈）。
+            _assert_retry_message_carries_feedback(retry, opener, "DECISION_BLOCK_MISSING")
             assert store.get_planning_decision_by_attempt(opener.intent_id, 0)["status"] == "UNREADABLE"
             assert loop._planning_format_retry_remaining(intent=retry, mission=mission) == 0
             await loop._collect_plan_decision(retry, None, mission, "bad again", dispatch)
@@ -46,6 +59,11 @@ def test_later_request_retries_its_own_frozen_package_once(tmp_path: Path, ordin
             assert store.get_planning_request(fresh.intent_id) is None or \
                 store.get_planning_request(fresh.intent_id).intent_id == fresh.intent_id
             assert loop._planning_format_retry_remaining(intent=fresh, mission=mission) == 1
+            # 新请求的包里带 previous_feedback：上一次（同一请求的重试）为什么被拒。
+            feedback = fresh.config["planning_package"]["previous_feedback"]
+            assert feedback["status"] == "UNREADABLE"
+            assert feedback["rejection_codes"] == ["DECISION_BLOCK_MISSING"]
+            assert feedback["budgets"]["same_request_format_retries_remaining"] == 1
             assert str(loop.store.get_mission(mission.id).status) != "FAILED"
             before = loop.store.connection.total_changes
             await loop._collect_plan_decision(retry, None, mission, "bad again", dispatch)
@@ -76,7 +94,7 @@ def test_active_repair_format_retry_survives_cold_reopen(tmp_path, corrected):
             dispatch = loop.install_hierarchical(planning=world)
             retry = await loop._create_planner_intent(mission.id, ordinal=3)
             assert retry.intent_id == retry_id
-            assert retry.config["message"] == opener.config["message"]
+            _assert_retry_message_carries_feedback(retry, opener, "DECISION_BLOCK_MISSING")
             subject = next(s for s in retry.config["planning_package"]["planning_subjects"] if s["task_id"] == task_id)
             body = {"schema_version": 1, "decision_type": "REPAIR", "subject_key": subject["subject_key"],
                 "rationale": "Retry the recorded failure.", "reason_refs": [], "assumptions": [],

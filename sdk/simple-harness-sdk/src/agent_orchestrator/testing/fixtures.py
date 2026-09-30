@@ -1551,7 +1551,7 @@ def demo_approval_action_provider(
         "verification_policy": ["format_check", "rule_check"],
         "outputs": ["CHANGE.md", "actions/set-new-ui.json"],
         "allowed_tools": list(allowed_tools or APPROVAL_SPEC["allowed_tools"]),
-        "budget": {"max_tokens": 30_000, "max_attempts": 2},
+        "budget": {"max_tokens": 1_200_000, "max_attempts": 2},  # 原生池下限（Host 夹具场景跑在原生池上）
         "priority": 1.0,
     }
     worker: list[object] = [

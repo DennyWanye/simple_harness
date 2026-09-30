@@ -71,8 +71,17 @@ def compute_convergence_impact(
     new_members = {item.occurrence_id: item for item in new_pins.member_pins}
     old_bindings = {str(item.task_id): item for item in old.task_bindings}
     new_bindings = {str(item.task_id): item for item in new.task_bindings}
-    new_demands = {item.producer_occurrence_id for item in new_pins.demand_refs}
     retired_instances = set(before.adopted_instance_ids) - set(candidate.adopted_instance_ids)
+    surviving_instances = set(before.adopted_instance_ids) & set(candidate.adopted_instance_ids)
+    # 2026-09-30（结构修复真机第 3 局）：只有真正共享的产出才不能改义——候选里仍按共享方式
+    # （share_active / reuse_accepted）需要它，或一个修订前后都在的使用方仍需要它。只被换了新
+    # 方法实例的同一父目标需要的步骤（后继步骤换掉上游后它的输入改指新上游）不是共享，照常列为
+    # 输入已替换去重做；原来连它也拒，结构修复永远提交不了。
+    shared_demands = {
+        item.producer_occurrence_id
+        for item in new_pins.demand_refs
+        if item.mode != "new_work" or item.consumer_instance_id in surviving_instances
+    }
     affected_producers = {
         item.producer_occurrence_id
         for item in old_pins.demand_refs
@@ -116,7 +125,7 @@ def compute_convergence_impact(
                 if str(item.consumer_occurrence) == identity
             )
             changed = changed or old_inputs != new_inputs
-        if identity in new_demands and (retiring or changed) and identity in affected_producers:
+        if identity in shared_demands and (retiring or changed) and identity in affected_producers:
             # Sharing cannot preserve old work while silently changing its meaning.
             raise ContractError("TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED")
         if retiring or changed:
