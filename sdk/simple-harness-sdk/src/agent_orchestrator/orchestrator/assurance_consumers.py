@@ -16,6 +16,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from ..assurance.codec import AssuranceError, canonical, decode, fields, fingerprint, integer, text
+from .assurance_recheck import EVIDENCE_STALE, changed_items, live_usable_certificates, stale_certificates
 from ..assurance.expiry import EXPIRY_EVENT, classify_expiry, validity_work_key
 from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import Event
@@ -170,16 +171,7 @@ class AssuranceValidityConsumer(_ConsumerBase):
     def _live_certificates(self, mission_id: str) -> list[Any]:
         # Latest inserted certificate per exact consumer identity; only USABLE
         # ones carry a validity to observe.
-        return self.store.connection.execute(
-            "SELECT c.* FROM assurance_use_certificates c WHERE c.mission_id=? "
-            "AND json_extract(c.certificate_json,'$.decision')='USABLE' "
-            "AND NOT EXISTS(SELECT 1 FROM assurance_use_certificates newer "
-            "WHERE newer.mission_id=c.mission_id AND newer.consumer_kind=c.consumer_kind "
-            "AND newer.consumer_id=c.consumer_id AND newer.purpose=c.purpose "
-            "AND newer.scope_id=c.scope_id AND newer.rowid>c.rowid) "
-            "ORDER BY c.rowid LIMIT ?",
-            (mission_id, MAX_WAKE_ROWS + 1),
-        ).fetchall()
+        return live_usable_certificates(self.store.connection, mission_id, limit=MAX_WAKE_ROWS + 1)
 
     def classify(self, event: Event) -> tuple[WorkTarget, ...]:
         if event.type == EXPIRY_EVENT:
@@ -230,12 +222,18 @@ class AssuranceValidityConsumer(_ConsumerBase):
         reasons = []
         if certificate["root_incarnation_id"] != root:
             reasons.append("ROOT_CHANGED")
+        # 2026-10-01（第 4 项）：来源是否变了按读集逐项重读，不再比整任务时钟——时钟一动
+        # 就判"来源已变"让这个观察从没接到任何决定上。时钟移动只是说明（notes）。
+        changed = changed_items(self.store, tenant_id=self.tenant_id, certificate=certificate)
+        if changed:
+            reasons.append("SOURCE_CHANGED")
+        notes = []
         if (
             certificate["mission_epoch"],
             certificate["environment_epoch"],
             certificate["clock_generation"],
         ) != (epochs.mission, epochs.environment, epochs.clock_generation):
-            reasons.append("SOURCE_CHANGED")
+            notes.append("EPOCH_MOVED")
         if epochs.clock_state != "STABLE":
             reasons.append("TIME_DISCONTINUITY")
         if row["not_after_ms"] is not None and now_ms >= row["not_after_ms"]:
@@ -267,6 +265,8 @@ class AssuranceValidityConsumer(_ConsumerBase):
             "not_after_ms": row["not_after_ms"],
             "validity": "CURRENT" if not reasons else "STALE",
             "reasons": reasons,
+            "changed_items": changed,
+            "notes": notes,
             "observed_at_ms": now_ms,
             "epochs": epochs.to_json(),
         }
@@ -294,9 +294,10 @@ class AssuranceValidityConsumer(_ConsumerBase):
                 if current is None or current["certificate_hash"] != certificate_hash:
                     raise AssuranceError("RECHECK_REQUIRED")
                 observed = self._observe_locked(current, now_ms=int(self.store.now * 1000))
-                if (observed["validity"], observed["reasons"]) != (
+                if (observed["validity"], observed["reasons"], observed["changed_items"]) != (
                     preview["validity"],
                     preview["reasons"],
+                    preview["changed_items"],
                 ):
                     raise AssuranceError("RECHECK_REQUIRED")
                 body = {
@@ -452,6 +453,13 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             reasons.append("ROOT_RESOLUTION_NOT_ACCEPT")
         if str(resolution.validity) != "CURRENT":
             reasons.append("ROOT_RESOLUTION_NOT_CURRENT")
+        # 2026-10-01（第 4 项）：收尾前复查"当初通过的依据现在还成立吗"——根结论、中间目标
+        # 结论、每条贡献验收的证书逐项重读；真变了就不收尾，由规划器按修复请求决定重做。
+        # 这里只拦收尾，不写 goal_resolutions.validity（用户红线）。
+        stale = stale_certificates(self.store, tenant_id=self.tenant_id, mission_id=mission.id)
+        body["stale_certificates"] = stale
+        if stale:
+            reasons.append(EVIDENCE_STALE)
         unknown_effects: list[str] = []
         unmet: list[str] = []
         if uses_completion_protocol(self.store, mission.id):

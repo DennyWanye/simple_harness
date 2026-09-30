@@ -12,6 +12,7 @@ from typing import Any
 from ..contracts.semantic_base import content_hash_of
 from ..planning.htn.repair_adapter import RepairEventAdapter
 from ..planning.htn.repair_decision import analyze_impact
+from .assurance_recheck import closeout_stale_findings
 from .hierarchical_dispatch import append_hierarchical_event
 from .repair_impact import read_repair_impact_indexes
 
@@ -85,6 +86,27 @@ def source_change_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: s
             continue
         produced |= record_request(dispatch, mission.id, event_type="EvidenceInvalidated",
                                    trigger_refs=refs, source_key=source_key, detail=detail)
+    return produced
+
+
+def stale_evidence_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: set[str],
+                            active_tasks: set[str]) -> bool:
+    """第 4 项（2026-10-01）：收尾评估发现"通过的依据已变"→ 给受影响的步骤记一条证据失效修复请求。
+
+    收尾消费者只拦收尾并把变了的证书写进评估正文（``stale_certificates``）；这里把它翻成规划器
+    看得懂的请求（与资料换版同一条路 ``EvidenceInvalidated``），同一张证书同一处变化只记一次；
+    规划器处理过（``PlanningRepairAddressed``）后收尾评估不再把它算作拦截。
+    """
+    produced = False
+    for stale in closeout_stale_findings(handler.store, mission.id):
+        source_key = str(stale["source_key"])
+        if source_key in seen:
+            continue
+        task_id = stale.get("task_id")
+        refs = (str(task_id),) if task_id and str(task_id) in active_tasks else (mission.id,)
+        produced |= record_request(dispatch, mission.id, event_type="EvidenceInvalidated", trigger_refs=refs,
+                                   source_key=source_key,
+                                   detail={"reason": "evidence_stale", **{k: v for k, v in stale.items() if k != "source_key"}})
     return produced
 
 
@@ -257,6 +279,7 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     sources["OutcomeRecorded"] = "WorkerRejected"
     produced |= settle_addressed_requests(handler, dispatch, mission)
     produced |= source_change_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
+    produced |= stale_evidence_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
     for event in tuple(store.iter_events(mission.id)):
         source_key = "event:" + event.idempotency_key
         if event.type not in sources or source_key in seen:

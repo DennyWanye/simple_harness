@@ -250,10 +250,12 @@ class CompleteRead:
         return ReadItem(
             "QUERY_SET",
             self.query_key,
+            # 2026-10-01（第 4 项）：指纹不含时钟。含时钟时任务里任何一次写入都让每张证书的
+            # 查询集"变了"，逐项重读（orchestrator/assurance_recheck）永远比不上；时钟另由
+            # 证书自己的 epoch 字段记着。
             fingerprint(
                 {
                     "schema_hash": self.schema_hash,
-                    "epochs": self.epochs.to_json(),
                     "count": self.count,
                     "set_hash": self.set_hash,
                     "sql_exhausted": True,
