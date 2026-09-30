@@ -69,7 +69,15 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         assert all(row["consecutive_failures"] == 0 for p in native["profiles"] for row in p["background"])
         assert status["default_context_profile_id"] == "deepseek-native-256k-v1"
         rows = {p["profile_id"]: p for p in status["context_profiles"]}
-        assert rows["deepseek-native-256k-v1"]["native_plane"] is True and rows["deepseek-context-256k-v1"]["native_plane"] is False
+        assert rows["deepseek-native-256k-v1"]["native_plane"] is True
+        # 2026-09-30（完成度评估）：装了原生池就不再列旧式池——旧式池上没有任务来源绑定和技能
+        # 工具，选了就绕开 NEXT-TG 第五批 A/B；指名旧式池新建任务同样被拒。
+        assert all(p["native_plane"] for p in status["context_profiles"])
+        assert "deepseek-context-256k-v1" not in rows
+        from deskpet.orchestration.service import OrchestrationRequestError
+        with pytest.raises(OrchestrationRequestError, match="上下文配置"):
+            service.create_mission({"goal": "legacy pool", "success_criteria": ["file:a.md"],
+                                    "idempotency_key": "legacy-pool", "runtime_profile_id": "deepseek-context-256k-v1"})
         pool = service._orchestrator.assembled.pool("deepseek-native-256k-v1")
         assert pool.runtime.arp.protocol == "ARP_V1_1_1" and pool.bridge.native_plane is True
         # NEXT-TG-1.0 §10: orchestrator pools create Agents in MISSION owner mode from the

@@ -1187,6 +1187,10 @@ class OrchestrationService:
                     "mission_max_tokens": self.settings.default_mission_max_tokens,
                     "native_plane": native,
                 })
+        # 2026-09-30（完成度评估）：部署装了原生池时，旧式池不再可选——旧式池上没有任务来源
+        # 绑定与技能工具，选了就绕开 NEXT-TG 第五批 A/B。只有旧式池时（原生平面关闭）照旧列出。
+        if any(row["native_plane"] for row in rows):
+            rows = [row for row in rows if row["native_plane"]]
         return rows
 
     def _thinking_provider(self) -> Any:
