@@ -567,6 +567,35 @@ CREATE TRIGGER taskgraph_requirements_no_delete BEFORE DELETE ON taskgraph_requi
  SELECT RAISE(ABORT,'TG_IMMUTABLE'); END;
 """
 
+# 2026-09-30（结构修复真机第 4 局）：结构修复会把相关步骤换代（输入版本号 +1）。换代后输入内容
+# 与原来一字不差时，input_manifest_bindings 里同一步骤、同一份内容只有一行（首次绑定时的版本号），
+# 新版本的尝试因"清单没绑到确切输入版本"开工失败。确切版本由 task_semantics 与逐次尝试记录保证；
+# 这里只要求这一步在这一版或更早绑定过同一份内容。
+DDL_V30 = """
+DROP TRIGGER tg_attempt_identity_guard;
+CREATE TRIGGER tg_attempt_identity_guard BEFORE INSERT ON taskgraph_attempt_inputs BEGIN
+ SELECT CASE WHEN NOT EXISTS (
+  SELECT 1 FROM attempts a JOIN dispatch_intents d ON d.subject_id=a.attempt_id
+  JOIN plan_memberships m ON m.mission_id=a.mission_id AND m.task_id=a.task_id
+  JOIN task_semantics s ON s.task_id=a.task_id AND s.binding_revision=NEW.binding_revision
+  JOIN taskgraph_revision_records rr ON rr.mission_id=NEW.mission_id AND rr.revision=NEW.source_revision
+  LEFT JOIN planning_admission_checks c ON c.check_id=NEW.admission_check_id
+  LEFT JOIN planning_requests r ON r.request_id=c.request_id
+  JOIN input_manifest_bindings b ON b.mission_id=a.mission_id AND b.task_id=a.task_id
+   AND b.manifest_hash=NEW.manifest_hash AND b.input_binding_revision<=NEW.input_binding_revision
+  WHERE a.attempt_id=NEW.attempt_id AND a.mission_id=NEW.mission_id AND a.task_id=NEW.task_id
+   AND d.intent_id=NEW.intent_id AND d.mission_id=NEW.mission_id
+   AND d.creation_key=NEW.creation_key AND d.input_id=NEW.input_id AND d.input_hash=NEW.frozen_input_hash
+   AND m.revision=NEW.source_revision AND m.occurrence_id=NEW.occurrence_id AND m.form='primitive'
+   AND s.mission_id=NEW.mission_id AND s.form='primitive'
+   AND s.input_binding_revision=NEW.input_binding_revision AND s.dispatch_generation=NEW.dispatch_generation
+   AND ((rr.source_kind='CAPTURED_BASELINE' AND rr.admission_check_id IS NULL AND NEW.admission_check_id IS NULL)
+     OR (rr.source_kind<>'CAPTURED_BASELINE' AND rr.admission_check_id=NEW.admission_check_id
+         AND r.mission_id=NEW.mission_id AND c.phase='APPLIED'))
+ ) THEN RAISE(ABORT,'TG_ATTEMPT_IDENTITY_MISMATCH') END;
+END;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -597,6 +626,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(27, "orchestrator-assurance-pin-per-object", DDL_V27),
     Migration(28, "orchestrator-commit-receipts-kind-index", DDL_V28),
     Migration(29, "orchestrator-taskgraph-required", DDL_V29),
+    Migration(30, "orchestrator-manifest-binding-revision-at-or-before", DDL_V30),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

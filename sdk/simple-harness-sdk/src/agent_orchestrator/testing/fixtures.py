@@ -1537,10 +1537,13 @@ APPROVAL_SPEC = {
 
 def demo_approval_action_provider(
     allowed_tools: Sequence[str] | None = None,
+    task_tokens: int = 30_000,
 ) -> RoleScriptedProvider:
     """S7 demo on fixtures: one Task writes the candidate and the change note.
     ``allowed_tools`` lets a deployment with a narrower tool set (the Host: workspace
-    tools only) run the same script (host support S2)."""
+    tools only) run the same script (host support S2).  ``task_tokens`` is the
+    Task's budget; a deployment whose pools have a larger per-turn floor (the Host's
+    native pools, 2026-09-30) passes its own."""
 
     task = {
         "key": "A",
@@ -1551,7 +1554,7 @@ def demo_approval_action_provider(
         "verification_policy": ["format_check", "rule_check"],
         "outputs": ["CHANGE.md", "actions/set-new-ui.json"],
         "allowed_tools": list(allowed_tools or APPROVAL_SPEC["allowed_tools"]),
-        "budget": {"max_tokens": 1_200_000, "max_attempts": 2},  # 原生池下限（Host 夹具场景跑在原生池上）
+        "budget": {"max_tokens": int(task_tokens), "max_attempts": 2},
         "priority": 1.0,
     }
     worker: list[object] = [

@@ -62,7 +62,11 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
     if sources.independent_required - set(old_members):
         raise ContractError("TASKGRAPH_INDEPENDENT_DEMAND_SOURCE_INVALID")
     impact = compute_convergence_impact(before, candidate)
-    if sources.independent_required & {target.occurrence_id for target in impact.targets}:
+    # 2026-09-30（结构修复真机第 4 局）：独立需要的工作不能被**移除**。保留下来、只是换代的
+    # （父目标换了方法实例、输入改指新上游）仍在计划里、照样满足那份需要；原来连它也拒，
+    # 执行图开着时任何改任务根目标方法的结构修复都提交不了。
+    if sources.independent_required & {target.occurrence_id for target in impact.targets
+                                       if target.target_kind == "RETIRING"}:
         raise ContractError("TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED")
     for identity in old_demanded & set(new_members):
         if identity not in remaining and identity not in candidate.root_occurrence_ids and identity not in sources.independent_required:
