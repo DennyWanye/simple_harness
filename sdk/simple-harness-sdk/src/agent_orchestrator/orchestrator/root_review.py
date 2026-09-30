@@ -401,7 +401,7 @@ def root_requirements(
     )
 
 
-def acceptance_ref(acceptance_id: str) -> TypedRef:
+def acceptance_ref(store: Any, acceptance_id: str) -> TypedRef:
     """One contributing acceptance, referenced as the candidate it is.
 
     ``Provenance.TOOL``: an ``Acceptance`` row is written by the Commit Service, so
@@ -409,11 +409,15 @@ def acceptance_ref(acceptance_id: str) -> TypedRef:
     model never gets to attribute a candidate ref to the system.
     """
 
+    # 2026-10-01（审阅升级具名后续）：此前是占位——修订号写死 1、哈希是 id 的哈希；而保证层
+    # 披露给审阅员的同一条验收按不可变行钉（修订 0、正文指纹），审阅员看到两套号起疑。
+    # 现在按真实验收正文构造，与披露的证据一字不差。
+    acceptance = HtnStore(store).get_acceptance(str(acceptance_id))
     return TypedRef(
         kind=TypedRefKind.ACCEPTANCE,
         id=str(acceptance_id),
-        revision=1,
-        content_hash=content_hash_of(str(acceptance_id)),
+        revision=0,
+        content_hash=content_hash_of(acceptance.to_json()),
         produced_by=Provenance.TOOL,
     )
 
@@ -1018,8 +1022,8 @@ class RootReviewCoordinator:
             # and it is named in both places the annex has for it: ``candidate_refs``
             # is what the reviewer is shown, ``child_acceptance_refs`` is what the
             # cut was made over and what :meth:`stale_reasons` compares against.
-            candidate_refs=tuple(acceptance_ref(item) for item in contributions),
-            child_acceptance_refs=tuple(acceptance_ref(item) for item in contributions),
+            candidate_refs=tuple(acceptance_ref(self.store, item) for item in contributions),
+            child_acceptance_refs=tuple(acceptance_ref(self.store, item) for item in contributions),
             producer_agent_ids=producers,
             reviewer_workspace_access=WorkspaceAccess.READ_ONLY,
             requirements_content_hash=requirements.content_hash(),

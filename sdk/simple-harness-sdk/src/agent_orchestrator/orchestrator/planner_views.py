@@ -205,11 +205,7 @@ def assemble_runtime_views(*, store: Any, mission: Any, network: Any, world: Any
     result["planning_protocol"] = {**package["planning_protocol"],
                                    "enabled_decision_types": decision_types,
                                    "enabled_repair_kinds": repair_kinds}
-    from ..storage.planning_human_store import PlanningHumanStore
-    result["human_answers"] = [
-        {"subject_key": row["subject_key"], "question": row["request"]["payload"]["question"], "answer": row["answer"]}
-        for row in PlanningHumanStore(store).list(mission.id) if row["state"] == "ANSWERED"
-        and PlanningHumanStore(store).binding_current(row)]
+    result["human_answers"] = answered_questions_for_planner(store, mission.id)
     from ..planning.htn.synthesis import build_request
     result["method_proposal_contexts"] = [
         {"subject_key": goal.subject_key, "request": build_request(network.binding_for_task(goal.task_id), world.capabilities(), world.registry,
@@ -252,3 +248,20 @@ def assemble_runtime_views(*, store: Any, mission: Any, network: Any, world: Any
     if len(canonical_json(result).encode("utf-8")) > MAX_PACKAGE_BYTES:
         raise PlannerPackageCodecError("mandatory request exceeds 96 KiB; narrow the planning subject")
     return result
+
+
+def answered_questions_for_planner(store: Any, mission_id: str) -> list[dict[str, Any]]:
+    """规划器能看到的全部已答问题（最近 16 条）。
+
+    2026-10-01（审阅升级具名后续）：此前只列"绑定还是最新"的回答——任务里每写一次库时钟就变，
+    答过的问题就从规划器眼前消失，它于是把同一个问题连问 13 次。回答是给这个任务的，一律给看，
+    只标明 ``binding_current``。
+    """
+    from ..storage.planning_human_store import PlanningHumanStore
+
+    questions = PlanningHumanStore(store)
+    return [
+        {"subject_key": row["subject_key"], "question": row["request"]["payload"]["question"],
+         "answer": row["answer"], "binding_current": questions.binding_current(row)}
+        for row in questions.list(mission_id) if row["state"] == "ANSWERED"
+    ][-16:]

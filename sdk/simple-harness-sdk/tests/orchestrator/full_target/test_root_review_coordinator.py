@@ -1500,7 +1500,7 @@ def test_contributions_moving_is_its_own_recut_channel(cut: World) -> None:
 
     import dataclasses
 
-    from agent_orchestrator.orchestrator.root_review import acceptance_ref
+    from agent_orchestrator.contracts.semantic_base import Provenance, TypedRef
 
     coordination = coordinator(cut)
     package = coordination.live_package(cut.mission.id)
@@ -1508,7 +1508,7 @@ def test_contributions_moving_is_its_own_recut_channel(cut: World) -> None:
     assert coordination.stale_reasons(cut.mission.id, package) == ()
     moved = dataclasses.replace(
         package,
-        child_acceptance_refs=(*package.child_acceptance_refs, acceptance_ref("acc-from-later")),
+        child_acceptance_refs=(*package.child_acceptance_refs, TypedRef(kind=TypedRefKind.ACCEPTANCE, id="acc-from-later", revision=0, content_hash="a" * 64, produced_by=Provenance.TOOL)),
     )
     reasons = coordination.stale_reasons(cut.mission.id, moved)
     assert reasons == ("CONTRIBUTIONS_MOVED",), "only this channel, and it really fires"

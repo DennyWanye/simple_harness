@@ -98,6 +98,42 @@ class PlanningHumanStore:
             assert result is not None
             return result
 
+    def find_answered(self, mission_id: str, subject_key: str, question: str) -> dict[str, Any] | None:
+        """同一主题、同一问题最近一次的回答（2026-10-01：规划器重复提问沿用它）。"""
+        rows = [r for r in self.list(mission_id) if r["state"] == "ANSWERED" and r["subject_key"] == subject_key
+                and r["request"]["payload"].get("question") == question]
+        return rows[-1] if rows else None
+
+    def register_reusing_answer(self, *, decision_id: str, mission_id: str, subject_key: str,
+                                payload: RequestHumanDecision, request_binding: dict[str, Any], next_ordinal: int,
+                                previous: dict[str, Any]) -> dict[str, Any]:
+        """把重复的问题直接登记成"已答"，答案沿用上一次（``reused_from``），不再打扰人。
+
+        真机第 4 局：规划器对同一件事连问 13 次，每次都等人。回执与普通回答同形，
+        ``PlanningHumanAnswered`` 照常发出，下一轮规划照常拿到答案。
+        """
+        from ..orchestrator.hierarchical_dispatch import append_hierarchical_event
+        body: dict[str, Any] = {"payload": payload.to_json(), "binding": request_binding, "next_ordinal": next_ordinal,
+                                "reused_from": previous["decision_id"]}
+        digest = content_hash_of(body)
+        receipt = {k: v for k, v in previous["answer"].items() if k != "receipt_hash"}
+        receipt.update(decision_id=decision_id, request_hash=digest, reused_from=previous["decision_id"])
+        receipt["receipt_hash"] = content_hash_of(receipt)
+        with self.store.transaction():
+            old = self.get(decision_id)
+            if old is not None:
+                return old
+            self.store.connection.execute(
+                "INSERT INTO planning_human_requests(decision_id,mission_id,subject_key,request_json,request_hash,state,"
+                "answer_json,answered_at,created_at) VALUES(?,?,?,?,?,'ANSWERED',?,?,?)",
+                (decision_id, mission_id, subject_key, canonical_json(body), digest, canonical_json(receipt),
+                 self.store.now, self.store.now))
+            append_hierarchical_event(self.store, "PlanningHumanAnswered", mission_id, key=decision_id,
+                                      payload={**receipt, "next_ordinal": next_ordinal})
+            result = self.get(decision_id)
+            assert result is not None
+            return result
+
     def answer(self, *, decision_id: str, tenant_id: str, principal: Any,
                answer: str, expected_version: int, nonce: str,
                attached_source_path: str | None = None) -> dict[str, Any]:

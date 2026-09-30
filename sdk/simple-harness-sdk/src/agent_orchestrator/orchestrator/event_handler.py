@@ -8745,14 +8745,10 @@ class Orchestrator:
                         else:
                             human_payload = (decision.payload.human_request()
                                              if isinstance(decision.payload, RepairEscalateDecision) else decision.payload)
-                        question = PlanningHumanStore(self.store).register(
-                            decision_id=decision_id, mission_id=mission.id,
-                            subject_key=decision.subject_key, payload=human_payload,
-                            request_binding={"plan_revision": current.plan_revision,
-                                "requirements_revision": current.requirements_revision,
-                                "manager_epoch": new_mode.semantics().epoch(mission.id, "mission")},
+                        question, service_detail = self._register_human_question(
+                            mission, new_mode, decision_id=decision_id, subject_key=decision.subject_key,
+                            payload=human_payload, current=current,
                             next_ordinal=int(intent.config.get("ordinal", 1)) + 1, repair_context=repair_context)
-                        service_detail = {"question_id": decision_id, "state": question["state"]}
                         event_type = "PlanningHumanRequested"
                     else:
                         assert isinstance(decision.payload, ProposeMethodDecision)
@@ -13006,6 +13002,31 @@ class Orchestrator:
             ask_person=partial(self._ask_person_to_adjudicate_compound, mission),
             on_rejected=partial(self._request_composition_repair, mission, dispatch),
         )
+
+    def _register_human_question(self, mission: Mission, new_mode: Any, *, decision_id: str, subject_key: str,
+                                 payload: Any, current: Any, next_ordinal: int,
+                                 repair_context: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+        """登记规划器的问题；同一主题、同一问题已经答过就沿用那次回答，不再打扰人。
+
+        2026-10-01（审阅升级具名后续）：真机第 4 局规划器对同一件事连问 13 次直到次数用完。
+        带修复上下文的问题（补偿、裁决）各有各的主体，不去重。
+        """
+        from ..storage.planning_human_store import PlanningHumanStore
+
+        questions = PlanningHumanStore(self.store)
+        binding = {"plan_revision": current.plan_revision, "requirements_revision": current.requirements_revision,
+                   "manager_epoch": new_mode.semantics().epoch(mission.id, "mission")}
+        previous = None if repair_context is not None else questions.find_answered(
+            mission.id, subject_key, payload.to_json().get("question"))
+        if previous is not None:
+            row = questions.register_reusing_answer(
+                decision_id=decision_id, mission_id=mission.id, subject_key=subject_key, payload=payload,
+                request_binding=binding, next_ordinal=next_ordinal, previous=previous)
+            return row, {"question_id": decision_id, "state": row["state"], "reused_from": previous["decision_id"]}
+        row = questions.register(decision_id=decision_id, mission_id=mission.id, subject_key=subject_key,
+                                 payload=payload, request_binding=binding, next_ordinal=next_ordinal,
+                                 repair_context=repair_context)
+        return row, {"question_id": decision_id, "state": row["state"]}
 
     def _ask_person_to_adjudicate_compound(
         self, mission: Mission, record: Any, task_id: str, occurrence_id: str

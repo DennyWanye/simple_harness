@@ -531,25 +531,23 @@ class CompositionAcceptanceAssembly:
         expression: Any | None = None,
         persist: bool = True,
     ) -> ReviewPackage:
-        child_refs = tuple(
-            TypedRef(
-                kind=TypedRefKind.ACCEPTANCE,
-                id=acceptance_id,
-                revision=1,
-                content_hash=content_hash_of(acceptance_id),
-                produced_by=Provenance.TOOL,
-            )
-            for ids in accepted.values()
-            for acceptance_id in ids
-        )
         resolution_refs: tuple[TypedRef, ...] = ()
         if uses_completion_protocol(self.store, mission_id):
+            # 完成协议下 ``accepted`` 装的是子步骤的支撑（验收或复用的目标结论），引用由支撑读取给出。
             from .completion_support import read_completion_support
 
             supports = tuple(read_completion_support(self.store, mission_id, source_id)
                 for source_ids in accepted.values() for source_id in source_ids)
             child_refs = tuple(item.ref for item in supports if item.ref.kind is TypedRefKind.ACCEPTANCE)
             resolution_refs = tuple(item.ref for item in supports if item.ref.kind is TypedRefKind.RESOLUTION)
+        else:
+            from .root_review import acceptance_ref  # 与根审查包同一构造：真实验收正文（2026-10-01）
+
+            child_refs = tuple(
+                acceptance_ref(self.store, acceptance_id)
+                for ids in accepted.values()
+                for acceptance_id in ids
+            )
         identity: dict[str, Any] = {"occ": str(spec.occurrence_id), "rev": revision.revision}
         if uses_completion_protocol(self.store, mission_id):
             identity.update(method_instance_id=method_instance_id, manifest_hash=manifest_hash,
