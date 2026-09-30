@@ -3432,6 +3432,66 @@ class Orchestrator:
             and ref.content_hash in _task_ref_hashes(semantics)
         )
 
+    def _expand_planning_wait(
+        self, mission: Mission, refs: tuple[PlanningRefV1, ...]
+    ) -> tuple[PlanningRefV1, ...] | None:
+        """What a WAIT really waits for, or ``None`` when nothing it names can progress.
+
+        2026-09-30（资料换版真机）：规划器等的对象常写成正在跑的那一步所在的方法实例或
+        目标，旧规则一律拒，白花规划次数。方法实例 / 目标先按规划包给的身份核对（版本与
+        内容哈希），再换成它下面正在跑的步骤；下面没有正在跑的步骤就不能等。步骤与已完成
+        记录照旧原样认。
+        """
+        from ..contracts.htn import ObligationId
+        from ..storage.htn_store import HtnStore
+        from ..storage.obligation_store import ObligationStore
+        from .planning_wait_targets import steps_under
+
+        waited: list[PlanningRefV1] = []
+        for ref in refs:
+            if self._planning_wait_ref_waitable(mission, ref):
+                waited.append(ref)
+                continue
+            dispatch = self._dispatch_for(mission.id)
+            if dispatch is None or ref.kind not in {
+                PlanningRefKind.METHOD_INSTANCE, PlanningRefKind.OBLIGATION
+            }:
+                return None
+            try:
+                network = dispatch.network(mission.id)
+                if ref.kind is PlanningRefKind.METHOD_INSTANCE:
+                    instance = next((item for item in network.method_instances
+                                     if str(item.instance_id) == ref.id
+                                     and item.instance_id in set(network.adopted_instance_ids)), None)
+                    if (instance is None
+                            or max(1, int(instance.plan_revision)) != ref.semantic_revision
+                            or instance.parameters_digest() != ref.content_hash):
+                        return None
+                    task_ids = steps_under(network, instance_id=ref.id)
+                else:
+                    obligation = ObligationStore(self.store).obligation(mission.id, ObligationId(ref.id))
+                    if (ref.semantic_revision != 1
+                            or content_hash_of(obligation.to_json()) != ref.content_hash):
+                        return None
+                    task_ids = steps_under(network, obligation_id=ref.id)
+            except (ContractError, KeyError, StoreError, ValueError):
+                return None
+            running = []
+            for task_id in task_ids:
+                semantics = HtnStore(self.store).task_semantics_of(mission.id, task_id)
+                if semantics is None:
+                    continue
+                step = PlanningRefV1(kind=PlanningRefKind.TASK, id=task_id,
+                                     semantic_revision=int(semantics.contract_revision),
+                                     content_hash=semantics.content_hash())
+                if (self._planning_wait_ref_waitable(mission, step)
+                        and not self._planning_wait_ref_satisfied(mission, step)):
+                    running.append(step)
+            if not running:
+                return None
+            waited.extend(running)
+        return tuple({(str(item.kind), item.id): item for item in waited}.values())
+
     async def _wake_planning_waits(self) -> bool:
         """Commit target validation, Planner intent and wake receipt atomically."""
 
@@ -8804,13 +8864,12 @@ class Orchestrator:
             return
         if isinstance(pre_admitted, NoMutationDecision):
             with self.store.transaction():
-                invalid_wait = decision.decision_type is PlanningDecisionType.WAIT and (
-                    not pre_admitted.wait_for
-                    or not all(
-                        self._planning_wait_ref_waitable(mission, ref)
-                        for ref in pre_admitted.wait_for
-                    )
+                waited = (
+                    self._expand_planning_wait(mission, tuple(pre_admitted.wait_for))
+                    if decision.decision_type is PlanningDecisionType.WAIT and pre_admitted.wait_for
+                    else None
                 )
+                invalid_wait = decision.decision_type is PlanningDecisionType.WAIT and not waited
                 status = (
                     PlanningDecisionStatus.REJECTED
                     if invalid_wait
@@ -8822,6 +8881,12 @@ class Orchestrator:
                     detail["reason"] = (
                         "WAIT target has no matching active producer or completed authoritative record"
                     )
+                    if any(ref.kind in {PlanningRefKind.METHOD_INSTANCE, PlanningRefKind.OBLIGATION}
+                           for ref in pre_admitted.wait_for or ()):
+                        detail["reason"] += (
+                            " (a method instance or duty may be waited on only while a step under"
+                            " it is running; no step under it is running)"
+                        )
                 record_decision(
                     request_id=request_id,
                     attempt_ordinal=attempt_ordinal,
@@ -8859,7 +8924,12 @@ class Orchestrator:
                             "request_id": request_id,
                             "attempt_ordinal": attempt_ordinal,
                             "canonical_hash": canonical_hash,
-                            "wait_for": [ref.to_json() for ref in pre_admitted.wait_for],
+                            "wait_for": [ref.to_json() for ref in waited or ()],
+                            **(
+                                {"requested_wait_for": [ref.to_json() for ref in pre_admitted.wait_for]}
+                                if tuple(waited or ()) != tuple(pre_admitted.wait_for)
+                                else {}
+                            ),
                             "reason": pre_admitted.reason,
                         },
                     )
