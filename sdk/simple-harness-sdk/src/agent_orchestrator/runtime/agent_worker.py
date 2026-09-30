@@ -94,6 +94,18 @@ class AgentBridge:
         agent = await self._runtime.create(config, creation_key=creation_key, caller=caller)
         return agent.agent_id, agent.run_id, ""
 
+    async def close(self, *, agent_id: str) -> bool:
+        """Close a finished Agent (lifecycle only; its binding and history are kept).
+
+        True when this call closed it; False when it is unknown here or already closed."""
+
+        binding = self._runtime.uow.read_agent_binding(agent_id)
+        if binding is None or binding.lifecycle == "closed":
+            return False
+        receipt = await self._runtime.close_agent(
+            agent_id, command_id=f"orchestrator-close:{agent_id}", drain_timeout=0)
+        return receipt.state == "closed"
+
     async def submit(
         self, *, agent_id: str, input_id: str, message_json: Mapping[str, Any]
     ) -> Mapping[str, Any]:

@@ -284,3 +284,25 @@ def test_instance_cap_is_enforced_at_insert_for_single_create(tmp_path):
             assert same.agent_id == agent_id_for("default", "a")
 
     asyncio.run(case())
+
+
+def test_a_closed_agent_no_longer_counts_against_the_instance_cap(tmp_path):
+    """2026-09-30（结构修复真机第 6 局）：上限原来数每一个建过的 Agent（含早已关闭的），
+    编排每个模型回合建一个 Agent，一个执行池用满 1000 个就永远建不出新的。只数没关闭的。"""
+
+    async def case():
+        ports = _ports(tmp_path, ScriptedProvider([]), max_batch_size=3, max_agents=2)
+        async with build_agent_runtime(ports) as runtime:
+            first = await runtime.create(_config("a"), creation_key="a")
+            await runtime.create(_config("b"), creation_key="b")
+            with pytest.raises(AgentInstanceCapExceeded):
+                await runtime.create(_config("c"), creation_key="c")
+            closed = await runtime.close_agent(first.agent_id, command_id="close-a", drain_timeout=0)
+            assert closed.state == "closed"
+            await runtime.create(_config("c"), creation_key="c")  # one open slot again
+            with pytest.raises(AgentBatchRejected):
+                await runtime.create_many([_config("d")], batch_key="over")
+            # the closed Agent's binding and history are kept (audit), only not counted
+            assert runtime.uow.read_agent_binding(first.agent_id) is not None
+
+    asyncio.run(case())

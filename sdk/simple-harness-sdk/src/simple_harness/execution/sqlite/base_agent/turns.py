@@ -121,7 +121,8 @@ def insert_binding(
     if max_agents is not None:
         count = int(
             connection.execute(
-                "SELECT COUNT(*) FROM base_agent_bindings_v1 WHERE owner_scope=?",
+                # 2026-09-30: live Agents only; a closed one keeps its binding and history
+                "SELECT COUNT(*) FROM base_agent_bindings_v1 WHERE owner_scope=? AND lifecycle<>'closed'",
                 (owner_scope,),
             ).fetchone()[0]
         )

@@ -657,6 +657,9 @@ class Orchestrator:
         #: planning intents already noted as waiting for their TaskGraph binding.
         self._taskgraph_waits_noted: set[str] = set()
         self._creation_refusals_noted: set[str] = set()
+        # 2026-09-30: finished Missions' Agents are closed in bounded, throttled sweeps
+        self._agent_sweep_at: float | None = None
+        self._agents_closed: set[str] = set()
         self.cancel_receipts: list[dict[str, Any]] = []
         self._rotation = 0  # D6-1: round-robin start across active Missions
         # 任务号 → (上次无进展一轮时的全局事件游标, 时刻)；见 _missions_due（第 4 批）
@@ -3572,8 +3575,43 @@ class Orchestrator:
             await asyncio.sleep(self._poll)
             return False
 
+    async def _close_finished_agents(self, *, force: bool = False, limit: int = 50) -> int:
+        """Close the Agents of Missions that have ended (2026-09-30, structural-repair run 6).
+
+        Every model turn creates an Agent and nothing closed them, while a pool's instance
+        cap counts the Agents that are not closed: a desktop library filled its pool with
+        1000 finished Agents in a few days and no new step could get an executor.  Only the
+        lifecycle moves; bindings, sessions and journals stay for audit.  Bounded per sweep
+        and throttled; a failure to close one Agent never stops the loop."""
+
+        now = self.store.now
+        if not force and self._agent_sweep_at is not None and now - self._agent_sweep_at < 30.0:
+            return 0
+        self._agent_sweep_at = now
+        rows = self.store.connection.execute(
+            "SELECT d.intent_id, d.agent_id FROM dispatch_intents d JOIN missions m ON m.mission_id=d.mission_id"
+            " WHERE d.agent_id IS NOT NULL AND d.state IN ('SETTLED','FAILED')"
+            " AND m.status IN ('COMPLETED','FAILED','CANCELLED') ORDER BY d.updated_at").fetchall()
+        closed = 0
+        for intent_id, agent_id in rows:
+            if agent_id in self._agents_closed:
+                continue
+            if closed >= limit:
+                break
+            intent = self.store.get_intent(str(intent_id))
+            if intent is None or self._pool_missing(intent):
+                continue
+            try:
+                if await self.bridge_for(intent).close(agent_id=str(agent_id)):
+                    closed += 1
+            except Exception as error:  # noqa: BLE001 - housekeeping never stops the loop
+                self._note(f"agent {agent_id}: close skipped ({type(error).__name__})")
+            self._agents_closed.add(str(agent_id))
+        return closed
+
     async def _cycle_inner(self) -> bool:
         self._require_assurance_execution_root()
+        await self._close_finished_agents()
         progressed = import_late_accounting(self)
         if self._assurance_tick is not None and await self._assurance_tick.tick():
             progressed = True

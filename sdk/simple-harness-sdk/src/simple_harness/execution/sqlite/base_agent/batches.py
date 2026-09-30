@@ -115,7 +115,8 @@ def commit_batch(
 def count_bindings(connection: sqlite3.Connection, owner_scope: str) -> int:
     return int(
         connection.execute(
-            "SELECT COUNT(*) FROM base_agent_bindings_v1 WHERE owner_scope=?", (owner_scope,)
+            "SELECT COUNT(*) FROM base_agent_bindings_v1 WHERE owner_scope=? AND lifecycle<>'closed'",
+            (owner_scope,),
         ).fetchone()[0]
     )
 
