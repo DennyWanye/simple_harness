@@ -546,9 +546,14 @@ def test_code_missions_and_commit_without_cas_keep_old_behavior(env):
         )
     )
     before = e.store.snapshot(mission.id)
-    with pytest.raises(FacadeError):
-        _register(e, mission_id=mission.id)
+    # 2026-09-26 用户决定：通用（code）任务 v5 也可附资料，但只限 ``sources/`` 目录；
+    # 目录外的路径照旧按"找不到"拒绝，一个字节都不写。
+    with pytest.raises(FacadeError) as outside:
+        _register(e, mission_id=mission.id, path="notes/report.md")
+    assert outside.value.code == "not_found"
     assert e.store.snapshot(mission.id) == before
+    # 无显式 CAS 的拒绝见 test_memory_store_requires_explicit_cas_instead_of_writing_cwd
+    # （磁盘库现在默认用库旁 artifacts/）。
 
 
 def test_schema8_readonly_snapshot_has_no_sources_and_needs_no_optional_fields(

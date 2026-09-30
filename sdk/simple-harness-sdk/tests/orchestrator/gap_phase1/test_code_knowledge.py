@@ -48,12 +48,12 @@ def test_k02_dangling_reference_does_not_support_a_claim(tmp_path, reference):
 def test_new_missions_freeze_strict_code_grading(tmp_path):
     service, mission, _ = two_branch_service(tmp_path)
     domain = service.domain_for(mission.id)
-    assert domain.version == "4"
+    assert domain.version == "5"  # 2026-09-26：通用任务 v5 只加资料目录，判分规则仍同 v4
     assert domain.completion_rules["claim_grading"] == "scoped-observation-v2"
     assert domain.completion_rules["result_envelope_contract"] == "candidate-json-v1"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("mutation", [None, "hash", "result", "attempt", "unrecorded", "receipt"])
 async def test_k03_only_current_recorded_execution_produces_scoped_knowledge(tmp_path, mutation):
     service, mission, (task, _) = two_branch_service(tmp_path)

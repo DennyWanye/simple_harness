@@ -30,7 +30,7 @@ def test_real_orchestrator_and_restored_wire_share_single_capacity_grants(tmp_pa
     assert snapshot.held_slots == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_direct_meter_cancel_while_shared_queue_is_known_zero(tmp_path):
     ledger = CapacityLedger(tmp_path / "capacity.db", pool_id="local", max_slots=1, max_tokens=100)
     cap = DeploymentCapacity(ledger, estimate=lambda request: 60)
@@ -51,7 +51,7 @@ async def test_direct_meter_cancel_while_shared_queue_is_known_zero(tmp_path):
     assert ledger.snapshot().held_slots == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_direct_meter_and_capacity_provider_do_not_double_reserve(tmp_path):
     ledger = CapacityLedger(tmp_path / "capacity.db", pool_id="local", max_slots=1, max_tokens=100)
     cap = DeploymentCapacity(ledger, estimate=lambda request: 60)
@@ -90,7 +90,7 @@ def test_bounded_response_wait_survives_short_executor_stall_threshold(tmp_path,
     assert not cap.response_waiting("")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_response_deadline_is_bounded_and_unknown_capacity_stays_held(tmp_path):
     ledger = CapacityLedger(tmp_path / "capacity.db", pool_id="local", max_slots=1, max_tokens=100)
     cap = DeploymentCapacity(ledger, estimate=lambda request: 60, call_seconds=0.1)

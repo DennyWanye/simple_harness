@@ -214,7 +214,8 @@ def _function_uses_logger(source: Path, func_name: str) -> bool:
     [
         ("runtime/kernel.py", "_terminalize"),
         ("execution/dispatch.py", "_response_charge"),
-        ("tools/executor.py", "execute"),
+        # execute() 现在只包一层审计记录，授权/执行日志都在 _execute_audited() 里。
+        ("tools/executor.py", "_execute_audited"),
         ("execution/budget.py", "authorize"),
     ],
 )

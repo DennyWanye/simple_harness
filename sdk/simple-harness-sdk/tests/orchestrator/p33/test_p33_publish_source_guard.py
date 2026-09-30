@@ -17,7 +17,7 @@ import pytest
 from graph_helpers7 import graph_service, node
 
 from agent_orchestrator.artifacts.store import ArtifactStore
-from agent_orchestrator.governance.domains import DOC_DOMAIN
+from agent_orchestrator.governance.domains import CODE_PROFILE_V4, DOC_DOMAIN
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec
@@ -246,12 +246,26 @@ def test_disjoint_publish_executes_with_or_without_document_missions(env, docume
     assert Path(result["receipt"]["after"]["path"]).read_bytes() == b"report\n"
 
 
-def test_pure_code_library_keeps_legacy_publishing_without_roots_hook(env):
+def test_pure_code_library_keeps_legacy_publishing_without_roots_hook(env, monkeypatch):
     e = env
+    # 2026-09-26 起新建的通用（code）任务 v5 带 ``sources/`` 资料目录，不再算"纯代码库"；
+    # 纯代码库只剩冻结在 v1～v4 通用档案下的旧任务。这里把库里任务按冻结的 v4 档案读，
+    # 验证旧库照旧无需物理目录钩子即可发布。
+    monkeypatch.setattr(e.service, "domain_for", lambda mission_id: CODE_PROFILE_V4)
     publisher = ObservedPublisher(e.roots[1], e.tmp / "legacy-ledger")
     run = ActionExecutor(e.service, {"file_publish": publisher}, DEPLOYMENT, owner="legacy")
     result = asyncio.run(run.hand_off(e.action["action_key"]))
     assert result["state"] == "SUCCEEDED" and publisher.executions == 1
+
+
+def test_current_code_library_without_roots_hook_fails_closed(env):
+    e = env
+    assert e.service.domain_for(e.mission.id).source_roots == ("sources/",)
+    publisher = ObservedPublisher(e.roots[1], e.tmp / "current-ledger")
+    run = ActionExecutor(e.service, {"file_publish": publisher}, DEPLOYMENT, owner="current")
+    assert asyncio.run(run.hand_off(e.action["action_key"])) is None
+    assert run.last_refusal[e.action["action_key"]] == "source_publish_root_unavailable"
+    assert publisher.executions == 0
 
 
 def test_document_library_without_physical_roots_fails_closed(env):

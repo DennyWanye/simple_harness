@@ -144,7 +144,7 @@ def receipt(root):
     return json.loads((root / "experiment.json").read_text())
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_96_pending_pause_resume_and_frozen_identity(tmp_path):
     worlds, providers = [], []
     clock = Clock(MONDAY.replace(hour=0, minute=59, second=40))
@@ -193,7 +193,7 @@ async def test_96_pending_pause_resume_and_frozen_identity(tmp_path):
     assert len(providers) == 96
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_handoff_clock_advance_denies_zero_physical_and_pauses_pending(tmp_path):
     worlds, providers = [], []
     clock = Clock(MONDAY.replace(minute=1))
@@ -217,7 +217,7 @@ async def test_handoff_clock_advance_denies_zero_physical_and_pauses_pending(tmp
     assert receipt(tmp_path) == result
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_clock_advance_during_weighted_queue_denies_second_physical_call(tmp_path):
     worlds, providers = [], []
     clock = Clock(MONDAY.replace(minute=1))
@@ -263,7 +263,7 @@ async def test_clock_advance_during_weighted_queue_denies_second_physical_call(t
     assert result["runs"][1]["status"] == "pending"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_actual_call_before_peak_accounted_and_unknown_still_blocks(tmp_path):
     worlds, providers = [], []
     clock = Clock(MONDAY.replace(minute=59, second=30))

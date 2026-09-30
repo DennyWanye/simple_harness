@@ -52,6 +52,10 @@ class _Mission:
 
 
 class _Commit:
+    # 门面现在先问保障层根门禁（_require_native_root）；替身不装门禁，等同本机原生根。
+    _assurance_root_gate = None
+    _assurance_read_authority = None
+
     def __init__(self, outcome: Any = None) -> None:
         self.calls: list[dict[str, Any]] = []
         self.outcome = outcome

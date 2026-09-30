@@ -9,7 +9,7 @@ from simple_harness.execution.sqlite import Database
 from simple_harness.execution.sqlite.audit_schema import (
     AUDIT_SCHEMA_VERSION, CHECKSUM, OBJECTS, AuditSchemaIncompatible,
 )
-from simple_harness.execution.sqlite.schema import fresh_descriptor
+from simple_harness.execution.sqlite.schema import SCHEMA_VERSION, fresh_descriptor
 
 
 def old_empty_v7(path):
@@ -36,7 +36,7 @@ def test_old_empty_execution7_gets_explicit_audit_schema_and_reopens(tmp_path):
     old_empty_v7(path)
     for _ in range(2):
         with Database.open(path) as database:
-            assert database.schema_version == 7
+            assert database.schema_version == SCHEMA_VERSION
             assert tuple(
                 database.connection.execute(
                     "SELECT version,checksum FROM sdk_audit_schema"
@@ -49,7 +49,7 @@ def test_old_empty_execution7_gets_explicit_audit_schema_and_reopens(tmp_path):
                 == 0
             )
             with database.audit_reader() as reader:
-                assert reader.schema_version == 7
+                assert reader.schema_version == SCHEMA_VERSION
 
 
 @pytest.mark.parametrize("corruption", ["future", "noop_trigger", "extra_column", "partial", "descriptor_column"])

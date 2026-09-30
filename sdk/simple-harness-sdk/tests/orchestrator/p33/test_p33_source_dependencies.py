@@ -16,6 +16,7 @@ import ast
 import copy
 import hashlib
 import inspect
+import sys
 import textwrap
 from dataclasses import replace
 from types import SimpleNamespace
@@ -501,7 +502,11 @@ def test_legacy_check_ast_and_default_retrieval_bytes_are_unchanged(scene):
         frozen_node._fields = tuple(
             field for field in frozen_node._fields if field != "type_params"
         )
-    actual = hashlib.sha256(ast.dump(frozen_node, include_attributes=False).encode()).hexdigest()
+    # Python 3.13 起 ast.dump() 默认省略空列表/None 字段；基线按完整输出记录。
+    dump_options = {"show_empty": True} if sys.version_info >= (3, 13) else {}
+    actual = hashlib.sha256(
+        ast.dump(frozen_node, include_attributes=False, **dump_options).encode()
+    ).hexdigest()
     assert actual == BASELINE_CHECK_AST
     item = scene.record("old", scene.source())
     task = scene.repo.tasks[item.source_task]

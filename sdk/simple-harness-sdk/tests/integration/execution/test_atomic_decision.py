@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,26 @@ def _create(uow: SqliteExecutionUnitOfWork):
         event_id="event-root-1",
         now=1.0,
     )
+
+
+def _run_event_count(database: Database) -> int:
+    """业务事件条数。每条运行事件在同一事务里带一条 audit.event.v2 审计镜像
+    （source_id 指向原事件），这里核对镜像一一对应后只数业务事件。"""
+    connection = database.connection
+    domain = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT event_id FROM run_events WHERE kind != 'audit.event.v2'"
+        )
+    }
+    mirrored = [
+        json.loads(str(row[0]))["source_id"]
+        for row in connection.execute(
+            "SELECT payload_json FROM run_events WHERE kind = 'audit.event.v2'"
+        )
+    ]
+    assert sorted(mirrored) == sorted(domain)
+    return len(domain)
 
 
 START_POINTS = tuple(
@@ -103,7 +124,7 @@ def test_start_admission_fault_reopens_all_before(tmp_path: Path, fault_point: s
     with Database.open(path) as reopened:
         assert reopened.connection.execute("SELECT state FROM runs").fetchone()[0] == "created"
         assert reopened.connection.execute("SELECT COUNT(*) FROM run_admissions").fetchone()[0] == 0
-        assert reopened.connection.execute("SELECT COUNT(*) FROM run_events").fetchone()[0] == 1
+        assert _run_event_count(reopened) == 1
 
 
 def test_start_admission_after_commit_reopens_all_after(tmp_path: Path) -> None:
@@ -118,7 +139,7 @@ def test_start_admission_after_commit_reopens_all_after(tmp_path: Path) -> None:
         uow = SqliteExecutionUnitOfWork(reopened)
         assert _start(uow).state is AdmissionState.PENDING
         assert uow.read_run("run-1").state.value == "admission_pending"  # type: ignore[union-attr]
-        assert reopened.connection.execute("SELECT COUNT(*) FROM run_events").fetchone()[0] == 2
+        assert _run_event_count(reopened) == 2
 
 
 @pytest.mark.parametrize("fault_point", RESOLVE_POINTS)
@@ -135,7 +156,7 @@ def test_resolve_admission_fault_reopens_all_before(tmp_path: Path, fault_point:
         uow = SqliteExecutionUnitOfWork(reopened)
         assert uow.read_admission("admission-1").state is AdmissionState.PENDING  # type: ignore[union-attr]
         assert uow.read_run("run-1").state.value == "admission_pending"  # type: ignore[union-attr]
-        assert reopened.connection.execute("SELECT COUNT(*) FROM run_events").fetchone()[0] == 2
+        assert _run_event_count(reopened) == 2
 
 
 def test_resolve_admission_after_commit_reopens_all_after(tmp_path: Path) -> None:
@@ -151,7 +172,7 @@ def test_resolve_admission_after_commit_reopens_all_after(tmp_path: Path) -> Non
         uow = SqliteExecutionUnitOfWork(reopened)
         assert _resolve(uow).state is AdmissionState.ALLOWED
         assert uow.read_run("run-1").state.value == "queued"  # type: ignore[union-attr]
-        assert reopened.connection.execute("SELECT COUNT(*) FROM run_events").fetchone()[0] == 3
+        assert _run_event_count(reopened) == 3
 
 
 @pytest.mark.parametrize("fault_point", DECISION_POINTS)
@@ -167,7 +188,7 @@ def test_decision_fault_reopens_all_before(tmp_path: Path, fault_point: str) -> 
         uow = SqliteExecutionUnitOfWork(reopened)
         assert uow.read_decision("decision-1") is None
         assert uow.read_run("run-1").state.value == "created"  # type: ignore[union-attr]
-        assert reopened.connection.execute("SELECT COUNT(*) FROM run_events").fetchone()[0] == 1
+        assert _run_event_count(reopened) == 1
 
 
 def test_decision_after_commit_reopens_all_after(tmp_path: Path) -> None:
@@ -182,4 +203,4 @@ def test_decision_after_commit_reopens_all_after(tmp_path: Path) -> None:
         uow = SqliteExecutionUnitOfWork(reopened)
         assert _decision(uow).state is DecisionState.ALLOWED
         assert uow.read_run("run-1").state.value == "running"  # type: ignore[union-attr]
-        assert reopened.connection.execute("SELECT COUNT(*) FROM run_events").fetchone()[0] == 2
+        assert _run_event_count(reopened) == 2

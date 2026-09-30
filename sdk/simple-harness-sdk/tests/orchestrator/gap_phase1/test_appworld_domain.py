@@ -41,7 +41,7 @@ def _gateway(tmp_path, callback):
     return gateway, call
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("error_type", [ValueError, RuntimeError, TypeError])
 async def test_appworld_callback_exception_is_failed_without_leaking_message(
     tmp_path, error_type
@@ -69,7 +69,7 @@ async def test_appworld_callback_exception_is_failed_without_leaking_message(
     assert secret not in repr(gateway.calls)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_appworld_gateway_failure_settles_as_failed_at_sdk_boundary(tmp_path):
     def callback(_code):
         raise RuntimeError("key_live_private_value")
@@ -107,7 +107,7 @@ async def test_appworld_gateway_failure_settles_as_failed_at_sdk_boundary(tmp_pa
     assert "key_live_private_value" not in repr(gateway.calls)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("physical_fails", [False, True])
 async def test_appworld_cancel_audits_unknown_after_physical_settlement(tmp_path, physical_fails):
     entered, release, settled = Event(), Event(), Event()
@@ -175,7 +175,7 @@ def test_appworld_templates_never_expose_evaluator_or_pytest_tool():
             assert "appworld_execute" in template.tool_names
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_actual_gateway_shares_one_world_and_refuses_other_missions(tmp_path):
     import asyncio
     import time
@@ -218,7 +218,7 @@ async def test_actual_gateway_shares_one_world_and_refuses_other_missions(tmp_pa
         gateway.bind_appworld("m2")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancelled_appworld_call_keeps_physical_lock_until_thread_finishes(tmp_path):
     import asyncio
     from threading import Event

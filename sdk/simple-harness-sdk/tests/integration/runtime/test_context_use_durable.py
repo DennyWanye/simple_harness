@@ -30,8 +30,15 @@ from simple_harness.providers import (
 from simple_harness.runtime.react_checkpoint import DurableReactCheckpoint
 from simple_harness.runtime.start_snapshot import StartSnapshot
 
-from .context_use_public_fixture import PublicMemoryFixture
-from .test_context_use_public_memory import canonical, digest
+from .test_context_use_public_memory import (
+    PublicMemoryFixture,
+    canonical,
+    digest,
+    requires_memory_sdk,
+)
+
+# 全部用例都要真实记忆 SDK（simple_harness_memory）出具的回执，没装就跳过。
+pytestmark = requires_memory_sdk
 
 
 class LocalProvider:

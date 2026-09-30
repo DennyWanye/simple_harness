@@ -199,7 +199,7 @@ def test_database_requires_fresh_v7_storage_set(tmp_path: Path) -> None:
     connection.commit()
     connection.close()
 
-    with pytest.raises(ExecutionSchemaIncompatible, match="fresh schema v7"):
+    with pytest.raises(ExecutionSchemaIncompatible, match="execution database requires schema v"):
         Database.open(path)
 
     check = sqlite3.connect(path)

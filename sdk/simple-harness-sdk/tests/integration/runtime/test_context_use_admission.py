@@ -112,8 +112,9 @@ elif point=='accepted_command':
     SqliteExecutionUnitOfWork.submit_start_command=crash
 else:
     original=DurableReactCheckpoint._write
-    def crash(self,run_id,lease,expected_version,state):
-        result=original(self,run_id,lease,expected_version,state)
+    # _write 现在多一个可选 companion 关键字参数（cas 会传），替身原样透传。
+    def crash(self,run_id,lease,expected_version,state,**kwargs):
+        result=original(self,run_id,lease,expected_version,state,**kwargs)
         if state.source_schema_version==(6 if point=='schema6_before_pin' else 7):
             # Abandoned activation explicitly releases its owned lease; no expiry wait,
             # no result/checkpoint rewriting. The required-mode fact must survive it.

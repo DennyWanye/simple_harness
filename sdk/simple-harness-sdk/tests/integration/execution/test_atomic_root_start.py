@@ -82,8 +82,17 @@ def test_root_start_fault_after_commit_reopens_as_all_after_and_retry_is_idempot
     with Database.open(path) as reopened:
         uow = SqliteExecutionUnitOfWork(reopened)
         assert _create(uow).state is RunState.CREATED
-        for table in ("execution_sessions", "runs", "run_start_snapshots", "run_events"):
+        for table in ("execution_sessions", "runs", "run_start_snapshots"):
             assert reopened.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 1
+        # 每条运行事件在同一事务里附带一条 audit.event.v2 镜像（后加的审计出生记录），
+        # 所以这里按种类核对：恰好一条 run.created 加一条指向它的审计镜像，重试不再多写。
+        kinds = [
+            str(row[0])
+            for row in reopened.connection.execute(
+                "SELECT kind FROM run_events ORDER BY durable_seq"
+            )
+        ]
+        assert kinds == ["run.created", "audit.event.v2"]
 
 
 def test_root_start_uses_immediate_write_lock(tmp_path: Path) -> None:

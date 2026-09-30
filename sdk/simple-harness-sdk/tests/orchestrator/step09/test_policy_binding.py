@@ -267,26 +267,25 @@ def test_the_library_role_keeps_evaluation_pins_out_of_production(tmp_path):
 
 
 # ------------------------------------------------------------------ interpreter drift (P1-1)
-def test_a_resumed_mission_says_when_the_code_that_reads_its_policy_changed(tmp_path):
+def test_a_resumed_mission_says_when_the_code_that_reads_its_policy_changed(
+    tmp_path, monkeypatch
+):
+    import agent_orchestrator.scheduling.allocator as allocator
+
     config = _config(tmp_path)
 
     async def case():
+        # An older build recorded another allocator.  policy_versions 是保障层审计的全局
+        # 来源表，裸 SQL 改写会被触发器拒绝（SOURCE_CHANGE_RECEIPT_REQUIRED），所以改为
+        # 让第一段真的在"旧版分配器"下绑定策略，再换回当前版本续跑。
+        monkeypatch.setattr(allocator, "ALLOCATOR_VERSION", "allocator-v0")
         async with Orchestrator(config, _provider()) as orch:
             mission = await orch.submit_mission(_spec("drift"))
             bound = orch.store.get_mission_policy(mission.id)["version_id"]
-        connection = sqlite3.connect(
-            config.orchestrator_db
-        )  # an older build recorded another allocator
-        row = connection.execute(
-            "SELECT json FROM policy_versions WHERE version_id = ?", (bound,)
-        ).fetchone()
-        record = json.loads(row[0])
-        record["interpreter_versions"]["allocator"] = "allocator-v0"
-        connection.execute(
-            "UPDATE policy_versions SET json = ? WHERE version_id = ?", (json.dumps(record), bound)
-        )
-        connection.commit()
-        connection.close()
+            recorded = orch.store.get_policy_version(bound)["interpreter_versions"]
+            assert recorded["allocator"] == "allocator-v0"
+        monkeypatch.undo()
+        assert allocator.ALLOCATOR_VERSION == "allocator-v1"
         async with Orchestrator(config, _provider()) as orch:
             await orch.run()
             drift = [
@@ -317,6 +316,12 @@ def test_review_p1_1_a_mission_older_than_policy_binding_still_replays_completel
 
     mission_id = asyncio.run(case())
     connection = sqlite3.connect(config.orchestrator_db)  # make it look like a v5 Mission, migrated
+    # 真实库里 policy-legacy 由第 6 号迁移写入，那时还没有保障层的全局来源触发器；
+    # 这里事后补写，只能给触发器一个已存在的提交回执充当"原写入者"上下文。
+    receipt = connection.execute(
+        "SELECT commit_id FROM commit_receipts ORDER BY rowid LIMIT 1"
+    ).fetchone()[0]
+    connection.create_function("assurance_change_receipt", 0, lambda: receipt)
     connection.execute(
         "INSERT INTO policy_versions(version_id,params_hash,source,status,json,created_at,updated_at)"
         " VALUES ('policy-legacy','legacy','legacy','LEGACY',?,1.0,1.0)",

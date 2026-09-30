@@ -10,7 +10,10 @@ import subprocess
 import pytest
 import simple_harness as h
 from simple_harness.execution.sqlite import Database
-from .test_context_use_migration import OLD_SEED
+from .test_context_use_migration import OLD_SEED, requires_frozen_binaries
+
+# 全部用例都要本机冻结的 H073 与 H074 旧版 SDK（解释器 + wheel）。
+pytestmark = requires_frozen_binaries("H073", "H074")
 
 
 def rows(path):

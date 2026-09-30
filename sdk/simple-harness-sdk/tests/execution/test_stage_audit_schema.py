@@ -5,7 +5,7 @@ import sqlite3
 import pytest
 from test_audit_schema import digest, old_empty_v7
 
-from simple_harness.execution.sqlite import Database
+from simple_harness.execution.sqlite import SCHEMA_VERSION, Database
 from simple_harness.execution.sqlite.audit_schema import (
     V1_CHECKSUM,
     V1_DDL,
@@ -35,7 +35,7 @@ def test_exact_audit1_upgrades_atomically_and_readonly_never_upgrades(tmp_path):
     readonly_host.close()
     for _ in range(2):
         with Database.open(path) as database:
-            assert database.schema_version == 7 and database.audit_schema_version == 2
+            assert database.schema_version == SCHEMA_VERSION and database.audit_schema_version == 2
             assert (
                 database.connection.execute(
                     "SELECT COUNT(*) FROM sdk_stage_audit_events"

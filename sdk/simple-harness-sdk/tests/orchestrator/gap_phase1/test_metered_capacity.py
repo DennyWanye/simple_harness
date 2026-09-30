@@ -93,7 +93,7 @@ async def enter(provider, name):
     assert await asyncio.wait_for(provider.entered.get(), 1) == name
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_two_small_parallel_large_fifo_wait_and_cancelled_queued_zero_calls():
     provider = Provider()
     wrapped, reports = meter(provider)
@@ -129,7 +129,7 @@ async def test_two_small_parallel_large_fifo_wait_and_cancelled_queued_zero_call
     assert not wrapped._capacity_waiters
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_oversize_known_zero_and_unknown_unblocks_waiters_without_handoff():
     provider = Provider()
     provider.fail.add("first")
@@ -152,7 +152,7 @@ async def test_oversize_known_zero_and_unknown_unblocks_waiters_without_handoff(
     assert wrapped._capacity_reserved == wrapped._capacity_active == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_window_callback_runs_after_weighted_wait_and_denies_known_zero():
     provider = Provider()
     admitted = True
@@ -180,7 +180,7 @@ async def test_window_callback_runs_after_weighted_wait_and_denies_known_zero():
     assert wrapped._capacity_reserved == wrapped._capacity_active == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_queued_deadline_does_not_leak_capacity_or_count_a_call():
     provider = Provider()
     wrapped, _ = meter(provider, slots=1, seconds=0.05)
@@ -205,7 +205,7 @@ def test_capacity_validation():
             meter(provider, cap=bad)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancel_token_wakes_weighted_waiter_before_active_call_finishes():
     provider = Provider()
     wrapped, _ = meter(provider)

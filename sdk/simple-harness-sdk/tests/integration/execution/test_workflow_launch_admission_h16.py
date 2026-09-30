@@ -5099,7 +5099,7 @@ def test_runtime_admission_retry_wait_returns_same_durable_wake(tmp_path: Path, 
         )
         database.connection.execute(
             "INSERT INTO run_events(event_id,run_id,durable_seq,kind,payload_json,created_at) "
-            "VALUES(?,'run-1',2,'workflow.retry_waiting',?,7)",
+            "VALUES(?,'run-1',(SELECT COALESCE(MAX(durable_seq),0)+1 FROM run_events WHERE run_id='run-1'),'workflow.retry_waiting',?,7)",
             (wait_event_id, canonical_json(wake_core)),
         )
         database.connection.commit()
@@ -5179,7 +5179,7 @@ def test_runtime_admission_terminal_requires_full_durable_outcome(
         )
         database.connection.execute(
             "INSERT INTO run_events(event_id,run_id,durable_seq,kind,payload_json,created_at) "
-            "VALUES('terminal-event','run-1',2,'run.completed',?,8)",
+            "VALUES('terminal-event','run-1',(SELECT COALESCE(MAX(durable_seq),0)+1 FROM run_events WHERE run_id='run-1'),'run.completed',?,8)",
             (event_json,),
         )
         database.connection.execute(
@@ -6289,11 +6289,14 @@ def test_catalog_publisher_first_is_final_authority_for_admission(
         finally:
             database.close()
 
+    # Database.open 现在每次都在 BEGIN IMMEDIATE 里确认审计表结构（ensure_audit_schema），
+    # 若等发布方拿到写锁后再打开，打开本身就会卡在锁上、测不到准入。所以先打开准入连接，
+    # 再让发布方进入写锁屏障，然后验证准入事务排在发布方之后。
+    admission_database = Database.open(path, timeout=5.0)
+    admission_uow = SqliteExecutionUnitOfWork(admission_database)
     publisher = threading.Thread(target=publish)
     publisher.start()
     assert entered.wait(5.0)
-    admission_database = Database.open(path, timeout=5.0)
-    admission_uow = SqliteExecutionUnitOfWork(admission_database)
     admission_failure: list[BaseException] = []
 
     def admit() -> None:
@@ -7939,7 +7942,7 @@ def _seed_runtime_retry_wait(uow: SqliteExecutionUnitOfWork):  # type: ignore[no
     connection.execute("UPDATE run_fences SET state='released',released_at=7 WHERE run_id='run-1'")
     connection.execute(
         "INSERT INTO run_events(event_id,run_id,durable_seq,kind,payload_json,created_at) "
-        "VALUES('retry-wait-event','run-1',2,'workflow.retry_waiting',?,7)",
+        "VALUES('retry-wait-event','run-1',(SELECT COALESCE(MAX(durable_seq),0)+1 FROM run_events WHERE run_id='run-1'),'workflow.retry_waiting',?,7)",
         (canonical_json(wake_core),),
     )
     connection.commit()

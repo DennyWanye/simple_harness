@@ -48,7 +48,13 @@ hierarchical_planner_pairing_is_valid = getattr(
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-H0_DIGESTS = REPO_ROOT / "plans" / "llm-native-htn" / "H0" / "prompt-digests.json"
+H0_PLAN_RECORD = REPO_ROOT / "plans" / "llm-native-htn" / "H0" / "prompt-digests.json"
+# 2026-09-23 从 Host 内嵌副本同步时，plans/ 下的 H0 记录没有带过来（独立仓库 3d4f129
+# 把它删了）。原件在独立 SDK 仓库 e1684b7:plans/llm-native-htn/H0/prompt-digests.json，
+# 这里存一份逐字节副本，并用摘要钉住，副本被改动就失败。
+H0_FIXTURE_COPY = Path(__file__).parent / "fixtures" / "h0" / "prompt-digests.json"
+H0_FIXTURE_SHA256 = "b66cdb15eab4f37211d4aad8b3fa3ba5354dba3209996a886ed226e2c02b0d87"
+H0_DIGESTS = H0_PLAN_RECORD if H0_PLAN_RECORD.is_file() else H0_FIXTURE_COPY
 
 #: §13's core-field set, verbatim.  The envelope type itself is not in the merged
 #: contract core yet (it waits on H1-A2), so the example can only be checked structurally.
@@ -207,6 +213,10 @@ def test_v8_pairs_only_with_package_four_and_package_four_refuses_v7() -> None:
 # ======================================================================================
 # 4. Every prompt H0 froze keeps its bytes (read the expectation from H0, not a copy)
 # ======================================================================================
+
+
+def test_the_h0_record_copy_is_byte_identical_to_the_original() -> None:
+    assert hashlib.sha256(H0_FIXTURE_COPY.read_bytes()).hexdigest() == H0_FIXTURE_SHA256
 
 
 def test_every_existing_prompt_still_matches_the_h0_recorded_digest() -> None:

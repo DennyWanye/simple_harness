@@ -17,6 +17,7 @@ from pathlib import Path
 from agent_orchestrator.api.facade import MissionControlV1
 from agent_orchestrator.artifacts.store import read_verified
 from agent_orchestrator.artifacts.workspace import WorkspaceManager
+from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.contracts import Budget, MissionStatus
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
@@ -426,6 +427,56 @@ async def recovered(root, external, original, *, settle):
                 await orch.__aexit__(None, None, None)
 
 
+async def refused_restore(root, external, original):
+    """2026-09-30 按保障层"恢复后只读、绝不复活执行"改写：恢复出来的根处于隔离状态，
+    冷恢复与对账都被明确拒绝（ROOT_QUARANTINED）；即使权威服务此刻已能给出原回执，
+    也不在恢复根上对账。动作身份、UNKNOWN 状态、预留、事件、外部账本与模型调用全都不变，
+    原动作绝不重发。"""
+    provider = RoleScriptedProvider({})
+    service = ReceiptGate(external)
+    orch = runtime(root, provider, service)
+    with host_lock(root):
+        try:
+            with phase("restored root refuses cold recovery and reconciliation"):
+                await orch.__aenter__()
+                key = original["identity"]["action_key"]
+                before = orch.store.get_action(key)
+                mission_id = before["mission_id"]
+                events = orch.store.count_events(mission_id)
+                (external / "allow-lookup").touch()
+                for _ in range(2):
+                    try:
+                        await orch.run()
+                    except AssuranceError as error:
+                        assert error.code == "ROOT_QUARANTINED", error.code
+                    else:
+                        raise AssertionError("restored root ran recovery")
+                after = orch.store.get_action(key)
+                assert after == before
+                assert action_identity(after) == original["identity"]
+                assert after["state"] == "UNKNOWN" and after["reconcile"] == "STILL_UNKNOWN"
+                assert after["receipt"] is None and after["handoffs"] == 1
+                assert reservation(orch, key) == ["RESERVED", 1, None]
+                assert orch.store.count_events(mission_id) == events
+                # 隔离根上执行池根本不装配，调用记录无从增加；尝试与成果逐项不变。
+                assert orch._assembled is None
+                assert [
+                    a.id
+                    for m in orch.store.list_missions()
+                    for t in orch.store.list_tasks(m.id)
+                    for a in orch.store.list_attempts(t.id)
+                ] == original["inventory"]["attempts"]
+                assert {
+                    a.id: hashlib.sha256(read_verified(a)).hexdigest()
+                    for a in orch.store.list_all_artifacts()
+                } == original["inventory"]["artifacts"]
+                assert provider.calls == 0 and service.lookup_keys == []
+                check_external(service, original)
+        finally:
+            with phase("safe runtime close", CLEANUP_SECONDS):
+                await orch.__aexit__(None, None, None)
+
+
 def main():
     # Independent hard stop catches cancellation-resistant threads/async teardown.
     watchdog = threading.Timer(24, lambda: os._exit(124))
@@ -465,7 +516,7 @@ def main():
                 destination=restored,
                 expected_manifest_sha256=receipt["manifest_sha256"],
             )
-        asyncio.run(recovered(restored, external, original, settle=True))
+        asyncio.run(refused_restore(restored, external, original))
         assert root.is_file(), "runtime unexpectedly recreated the original storage root"
     else:
         raise AssertionError(f"unknown mode {mode}")

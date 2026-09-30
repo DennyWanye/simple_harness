@@ -73,7 +73,7 @@ class Provider:
         )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("arm", ["S", "R"])
 async def test_base_agent_arms_execute_real_gateway_and_r_reuses_same_identity(tmp_path, arm):
     world = World()
@@ -111,7 +111,7 @@ async def test_base_agent_arms_execute_real_gateway_and_r_reuses_same_identity(t
     assert world.evaluations == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "selection",
     [
@@ -154,7 +154,7 @@ async def test_r_self_selection_rejects_unversioned_invalid_or_ambiguous_envelop
     assert world.value == 2
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_local_budget_refusal_finishes_base_agent_without_unknown_wait(tmp_path):
     from dataclasses import replace
 
@@ -230,7 +230,7 @@ def test_request_estimator_counts_tool_schemas():
     assert bound > messages_only
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_r_skips_selection_when_reservation_overrun_clears_candidates(tmp_path):
     from dataclasses import replace
 

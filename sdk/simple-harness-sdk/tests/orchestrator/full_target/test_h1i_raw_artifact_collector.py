@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from test_h1i_decode_only_collector import _raw_fixture
 from test_h1i_production_entry import _config, _open_planner_round, _seed_new_protocol
 
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
@@ -24,6 +23,20 @@ from agent_orchestrator.planning.decision_codec import (
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import StoreConflict
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+
+_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "planning_decision_v1" / "valid"
+
+
+def _raw_fixture(name: str, package: dict[str, Any]) -> str:
+    """Keep fixture payload syntax, grounding only the real request's subject.
+
+    原先从 test_h1i_decode_only_collector 导入；那个文件已在 d6af5b98 随历史包 6 删除，
+    这里原样保留这个小工具函数。
+    """
+
+    body = json.loads((_FIXTURE_DIR / f"{name}.json").read_text(encoding="utf-8"))
+    body["subject_key"] = package["planning_subjects"][0]["subject_key"]
+    return "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
 
 
 def _sql_snapshot(loop: Orchestrator, mission_id: str) -> tuple[int, tuple[tuple[Any, ...], ...]]:

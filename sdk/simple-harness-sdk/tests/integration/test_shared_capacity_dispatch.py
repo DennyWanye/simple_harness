@@ -23,7 +23,7 @@ def capacity(tmp_path, weight=60):
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_wait_cancel_is_zero_handoff_and_zero_physical_usage(tmp_path):
     cap = capacity(tmp_path)
     held = cap.ledger.enqueue("occupier", weight=60, owner="test", pid=os.getpid())
@@ -51,7 +51,7 @@ async def test_wait_cancel_is_zero_handoff_and_zero_physical_usage(tmp_path):
     cap.ledger.finish(held, known_terminal=True)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_nested_coordinator_provider_uses_one_grant_and_replay_none(tmp_path):
     cap = capacity(tmp_path)
     physical = RecordingProvider()
@@ -71,7 +71,7 @@ async def test_nested_coordinator_provider_uses_one_grant_and_replay_none(tmp_pa
     assert physical.calls == 1 and len(cap.ledger.snapshot().rows) == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_after_handoff_cancel_keeps_unknown_capacity(tmp_path):
     cap = capacity(tmp_path)
     physical = RecordingProvider(release=asyncio.Event())
@@ -91,7 +91,7 @@ async def test_after_handoff_cancel_keeps_unknown_capacity(tmp_path):
     assert snapshot.rows[0].state == "UNKNOWN"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_guard_tracks_cancel_token_without_cancelling_task(tmp_path):
     cap = capacity(tmp_path)
     held = cap.ledger.enqueue("occupier", weight=100, owner="test", pid=os.getpid())
@@ -110,7 +110,7 @@ async def test_guard_tracks_cancel_token_without_cancelling_task(tmp_path):
     assert cap.ledger.snapshot().held_slots == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sdk_terminal_commit_recovers_capacity_after_missed_callback(tmp_path, monkeypatch):
     cap = capacity(tmp_path)
     physical = RecordingProvider()
@@ -136,7 +136,7 @@ async def test_sdk_terminal_commit_recovers_capacity_after_missed_callback(tmp_p
     assert physical.calls == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_response_without_usage_cannot_release_unknown_capacity(tmp_path):
     cap = capacity(tmp_path)
     uow = FakeProviderInvocationUnitOfWork()
@@ -151,7 +151,7 @@ async def test_response_without_usage_cannot_release_unknown_capacity(tmp_path):
     assert cap.ledger.snapshot().held_slots == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_capacity_marker_without_sdk_handoff_has_zero_call_proof(tmp_path):
     cap = capacity(tmp_path)
     uow = FakeProviderInvocationUnitOfWork()

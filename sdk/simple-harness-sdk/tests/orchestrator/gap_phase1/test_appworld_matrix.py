@@ -135,7 +135,7 @@ def receipt(root: Path):
     return json.loads((root / "experiment.json").read_text(encoding="utf-8"))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_general_entrypoint_accepts_smaller_frozen_matrix(tmp_path):
     worlds, providers, seen = [], [], []
     smaller = config(manifest=replace(config().manifest, task_ids=TASKS[:2], repetitions=1))
@@ -152,7 +152,7 @@ async def test_general_entrypoint_accepts_smaller_frozen_matrix(tmp_path):
     assert all(row["status"] == "success" for row in result["runs"])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_96_episode_enumeration_scoring_and_idempotent_resume(tmp_path):
     worlds, providers, seen = [], [], []
 
@@ -187,7 +187,7 @@ async def test_96_episode_enumeration_scoring_and_idempotent_resume(tmp_path):
     assert len(worlds) == len(providers) == 96
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unknown_usage_stops_and_resume_does_not_reissue(tmp_path):
     worlds, providers = [], []
 
@@ -208,7 +208,7 @@ async def test_unknown_usage_stops_and_resume_does_not_reissue(tmp_path):
     assert len(worlds) == len(providers) == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancel_marks_admitted_run_interrupted_then_resumes_pending_only(tmp_path):
     worlds, providers, seen = [], [], []
     entered = asyncio.Event()
@@ -238,7 +238,7 @@ async def test_cancel_marks_admitted_run_interrupted_then_resumes_pending_only(t
     assert all(row["status"] == "success" for row in result["runs"][1:])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "change",
     [
@@ -266,7 +266,7 @@ async def test_wrong_identity_rejected_before_provider_or_world(tmp_path, change
     assert len(worlds) == len(providers) == 96
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_pilot_and_matrix_roots_cannot_be_cross_resumed(tmp_path):
     worlds, providers = [], []
 
@@ -284,7 +284,7 @@ async def test_pilot_and_matrix_roots_cannot_be_cross_resumed(tmp_path):
     assert len(worlds) == len(providers) == 96
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_damaged_run_identity_rejected_before_provider_or_world(tmp_path):
     worlds, providers = [], []
 
@@ -303,7 +303,7 @@ async def test_damaged_run_identity_rejected_before_provider_or_world(tmp_path):
     assert len(worlds) == len(providers) == original_count
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_real_matrix_receipt_analysis_and_source_binding(tmp_path):
     from agent_orchestrator.evaluation.matrix_analysis import analyze_frozen_matrix
 
@@ -330,7 +330,7 @@ async def test_real_matrix_receipt_analysis_and_source_binding(tmp_path):
     assert len(providers) == count
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("denial", ["capacity", "token_budget"])
 async def test_swallowed_known_zero_refusal_is_durable_and_not_valid_success(tmp_path, denial):
     from agent_orchestrator.evaluation.metered_provider import ExperimentBudgetExhausted

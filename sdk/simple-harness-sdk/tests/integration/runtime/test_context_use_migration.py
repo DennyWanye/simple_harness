@@ -16,6 +16,20 @@ import pytest
 from simple_harness import migrate_execution_v7_to_v8
 from simple_harness.execution.sqlite import Database
 
+
+def requires_frozen_binaries(*prefixes):
+    """这些用例要本机装好的冻结旧版 SDK（独立解释器 + 原始 wheel），由环境变量指向；
+    未配置时跳过（机器相关环境，不是缺陷）；配置了但路径不对仍按原断言失败。"""
+    names = [f"{prefix}_{kind}" for prefix in prefixes for kind in ("PYTHON", "WHEEL")]
+    missing = [name for name in names if not os.environ.get(name)]
+    return pytest.mark.skipif(
+        bool(missing),
+        reason="缺少冻结旧版 SDK 解释器/wheel 环境变量: " + ", ".join(missing),
+    )
+
+
+pytestmark = requires_frozen_binaries("H073")
+
 VERIFY_OLD = r"""
 import hashlib, importlib.metadata, json, os, pathlib, sys, zipfile
 import simple_harness
@@ -148,6 +162,7 @@ else: raise AssertionError('old binary accepted execution8')
     assert rows(path) == original
 
 
+@requires_frozen_binaries("H074")
 def test_fresh_current_noop_and_unknown_catalog_readonly_refusal(tmp_path):
     fresh = tmp_path / "fresh.sqlite"
     from .test_short_context_migration import old

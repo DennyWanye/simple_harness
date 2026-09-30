@@ -28,7 +28,7 @@ class Counter(UpperBoundTokenizer):
         return 1000
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("arm", ["D", "F"])
 async def test_undersized_plan_is_repaired_before_worker_and_critic_run(tmp_path, arm, monkeypatch):
     # AppWorld prepends domain instructions before the ordinary fixture role marker.

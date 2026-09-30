@@ -27,7 +27,11 @@ from simple_harness import (
     StartCommandIntent,
 )
 from simple_harness.execution.command_ingress import CommandIngress
-from simple_harness.execution.sqlite import Database, ExecutionSchemaIncompatible
+from simple_harness.execution.sqlite import (
+    SCHEMA_VERSION,
+    Database,
+    ExecutionSchemaIncompatible,
+)
 from simple_harness.execution.sqlite.uow import SqliteExecutionUnitOfWork
 from simple_harness.runtime import ConversationContinuationInput, ConversationTurnInput
 
@@ -62,7 +66,7 @@ def _continuation(command_id: str, continuation_id: str) -> ContinueCommandInten
 
 def test_fresh_v5_schema_and_command_admission_replay_conflicts(tmp_path: Path) -> None:
     with Database.open(tmp_path / "execution.db") as database:
-        assert database.schema_version == 7
+        assert database.schema_version == SCHEMA_VERSION
         assert {
             "conversation_command_namespaces",
             "conversation_run_modes",
@@ -262,7 +266,7 @@ def test_normal_open_rejects_v4_without_writing_any_bytes(tmp_path: Path) -> Non
     connection.close()
     before = path.read_bytes()
     before_stat = path.stat()
-    with pytest.raises(ExecutionSchemaIncompatible, match="fresh schema v7"):
+    with pytest.raises(ExecutionSchemaIncompatible, match="execution database requires schema v"):
         Database.open(path, wal=True)
     assert path.read_bytes() == before
     assert path.stat().st_mtime_ns == before_stat.st_mtime_ns

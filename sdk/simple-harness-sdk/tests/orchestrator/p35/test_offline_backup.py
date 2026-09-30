@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import sqlite3
+import time
 from dataclasses import replace
 
 import pytest
@@ -18,9 +19,14 @@ from graph_helpers7 import node, spec
 from test_multi_mission_load import MeasuredProvider, _mission
 from test_provider_budget_guard import ActualProvider, Counter, grants
 
-from agent_orchestrator.api.facade import MissionControlV1
-from agent_orchestrator.artifacts.store import read_verified
+from agent_orchestrator.api.citations import citation_page
+from agent_orchestrator.api.facade import FacadeError, MissionControlV1
+from agent_orchestrator.artifacts.store import ArtifactStore, read_verified
 from agent_orchestrator.artifacts.workspace import WorkspaceManager
+from agent_orchestrator.assurance.codec import AssuranceError
+from agent_orchestrator.assurance.evidence import ReadItem
+from agent_orchestrator.assurance.refs import AssuranceRef, Pin
+from agent_orchestrator.assurance.root_gate import CurrentReadPermission
 from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.governance.domains import DOC_DOMAIN
 from agent_orchestrator.governance.permissions import Principal
@@ -37,6 +43,38 @@ from simple_harness.agents import AgentConfig
 from simple_harness.agents.context.budget import ContextPolicy
 
 IDENTITY = backup.BackupSourceIdentity("a" * 40, "b" * 64)
+
+# 2026-09-30 按保障层"恢复后只读、绝不复活执行"改写：恢复出来的根处于隔离状态，
+# 原生执行入口（续跑、审批、原生根上的读取门面）一律明确拒绝；要读只能先经
+# ``MissionControlV1.reauthorize_restored_read`` 拿当前读授权。
+
+
+def _quarantine_marker(root):
+    return json.loads((root / "restore-quarantine.json").read_text())
+
+
+def _current_read_authority(calls):
+    """A deployed CURRENT read authority (external ACL owner) for these fixtures."""
+
+    def authority(principal, tenant_id, mission_id, ref, purpose):
+        calls.append((principal.principal_id, tenant_id, mission_id, ref.kind, purpose))
+        key = f"{tenant_id}:{principal.principal_id}:{mission_id}"
+
+        def item(channel):
+            name = f"{channel.lower()}:{key}"
+            return ReadItem(channel, name, hashlib.sha256(name.encode()).hexdigest())
+
+        return CurrentReadPermission(
+            item("ACCESS"), item("POLICY"), not_after_ms=int(time.time() * 1000) + 3_600_000
+        )
+
+    return authority
+
+
+def _refused(code, call, *args, **kwargs):
+    with pytest.raises((AssuranceError, FacadeError)) as raised:
+        call(*args, **kwargs)
+    assert raised.value.code == code, raised.value.code
 
 
 @pytest.fixture
@@ -169,7 +207,12 @@ def test_case_alias_destination_inside_source_is_rejected_without_changes(tmp_pa
 
 
 def test_actual_source_citations_survive_isolated_restore_and_pending_approval(tmp_path):
-    """Actual SDK/Verifier receipts, source history and pending bytes, no fake bindings."""
+    """Actual SDK/Verifier receipts, source history and pending bytes, no fake bindings.
+
+    2026-09-30 按保障层"恢复后只读、绝不复活执行"改写：恢复后原生门面的引用读取与审批
+    都被明确拒绝，待批准的第三版保持 PENDING；经 reauthorize_restored_read 拿到当前读
+    授权后才能读成果文件；引用原文、分页、历史撤销与待批准字节仍逐项核对（直接读恢复库）。
+    """
     path = "sources/report.md"
     quote = "资料只记录一次离线实验。"
     original = quote + "\r\n保留完整的范围与限制。\r\n"
@@ -367,27 +410,77 @@ def test_actual_source_citations_survive_isolated_restore_and_pending_approval(t
             provider_token_estimator=Counter(1000),
         ) as orch:
             api = control(orch, mid)
-            assert api.citation_read(mid, **args) == expected
-            offset, chunks = 0, []
-            while True:
-                page = api.citation_read(mid, **args, offset=offset, limit=5)
-                assert page["block_id"] == expected["block_id"]
-                chunks.append(page["text"])
-                if page["next_offset"] is None:
-                    break
-                assert page["next_offset"] > offset
-                offset = page["next_offset"]
-            assert "".join(chunks).encode() == original.encode()
-            historical = orch.store.get_source(mid, path, replaced_hash)
-            assert historical["revoked"] is True
+            events_before = orch.store.count_events(mid)
+            # The restored root is quarantined: native-root reads and decisions refuse.
+            _refused("ROOT_QUARANTINED", api.citation_read, mid, **args)
+            _refused(
+                "ROOT_QUARANTINED",
+                api.decide, pending["request_id"], "approve", nonce="approve-after-restore",
+            )
+            # Current read re-authorization, then the sanctioned read of the accepted file.
+            [artifact] = orch.store.list_mission_artifacts(mid)
+            ref = AssuranceRef(
+                "artifact", Pin(artifact.id, artifact.version, artifact.content_hash)
+            )
+            granted_by = []
+            orch.commit._assurance_read_authority = _current_read_authority(granted_by)
+            marker = _quarantine_marker(target)
+            grant = api.reauthorize_restored_read(
+                {
+                    "command_id": "read-after-restore",
+                    "root_incarnation_id": marker["root_incarnation_id"],
+                    "restore_manifest_hash": marker["restore_manifest_hash"],
+                    "targets": [{"mission_id": mid, "ref": ref.to_json(), "purpose": "DISCLOSE"}],
+                }
+            )
+            assert grant["state"] == "READ_ONLY_REAUTHORIZED"
+            assert grant["execution_allowed"] is False
+            read = api.artifact_read(artifact.id)
+            assert read["content"] == report and read["content_hash"] == artifact.content_hash
+            assert granted_by and {row[4] for row in granted_by} == {"DISCLOSE"}
+            # A read grant never becomes execution.
+            _refused("RESTORED_EXECUTION_REQUIRES_RECOVERY", api.citation_read, mid, **args)
+            _refused(
+                "RESTORED_EXECUTION_REQUIRES_RECOVERY",
+                api.decide, pending["request_id"], "approve", nonce="approve-after-grant",
+            )
             assert orch.store.get_approval(pending["request_id"])["state"] == "PENDING"
-            api.decide(pending["request_id"], "approve", nonce="approve-after-restore")
-            assert orch.store.get_source(mid, path)["version_hash"] == pending["version_hash"]
-            assert orch.commit._source_cas().read(pending["version_hash"]) == pending_text.encode()
-            assert api.citation_read(mid, **args)["text"] == original
-            assert provider.calls == calls  # restore/read/approval must not run SDK work
+            assert orch.store.get_source(mid, path) is None  # the pending version never applied
+            # Only the read grant itself was written; no decision, no mission event.
+            assert orch.store.count_events(mid) == events_before
+            assert provider.calls == calls  # restore/read/refusals must not run SDK work
 
     asyncio.run(read_restored())
+    # 引用读取在恢复根上即使拿到读授权也只属于原生根（citation_page 同样要求可执行根），
+    # 所以恢复库里的原始字节改为离线只读核对：不经门面、不装根门禁，只读库与 CAS。
+    restored_store = Store.open_readonly(target / "orchestrator.db")
+    try:
+        cas = ArtifactStore(target / "artifacts")
+        tenant = restored_store.get_mission(mid).tenant_id
+
+        def page_of(**window):
+            return citation_page(
+                restored_store, cas, tenant_id=tenant, mission_id=mid, **args, **window
+            )
+
+        assert page_of() == expected
+        offset, chunks = 0, []
+        while True:
+            page = page_of(offset=offset, limit=5)
+            assert page["block_id"] == expected["block_id"]
+            chunks.append(page["text"])
+            if page["next_offset"] is None:
+                break
+            assert page["next_offset"] > offset
+            offset = page["next_offset"]
+        assert "".join(chunks).encode() == original.encode()
+        historical = restored_store.get_source(mid, path, replaced_hash)
+        assert historical["revoked"] is True
+        assert restored_store.get_approval(pending["request_id"])["state"] == "PENDING"
+        assert cas.read(pending["version_hash"]) == pending_text.encode()
+    finally:
+        restored_store.close()
+    assert provider.calls == calls
     # Reproduce an older producer's incomplete inventory, with a trusted manifest
     # digest: restore must derive required bytes from the actual SQL rows again.
     damaged = tmp_path / "incomplete-source-bundle"
@@ -407,6 +500,8 @@ def test_actual_source_citations_survive_isolated_restore_and_pending_approval(t
 
 
 def test_two_real_pools_wal_cas_and_frozen_receipts_restore_without_source(source, tmp_path):
+    """2026-09-30 按保障层"恢复后只读、绝不复活执行"改写：WAL/CAS/冻结回执照旧只读核对，
+    恢复库上续跑被明确拒绝（ROOT_QUARANTINED），任务状态、事件与模型调用都不增加。"""
     cfg, profiles, provider, missions = source
     # Keep a committed WAL page outside the main db file while the helper copies.
     writer = sqlite3.connect(cfg.orchestrator_db, isolation_level=None)
@@ -461,10 +556,16 @@ def test_two_real_pools_wal_cas_and_frozen_receipts_restore_without_source(sourc
             routing=RoutingRules("default", by_role={"critic": "critic"}),
             provider_token_estimator=Counter(1000),
         ) as orch:
-            await asyncio.wait_for(orch.run(), 10)
+            events = {m: orch.store.count_events(m) for m in mission_ids}
+            with pytest.raises(AssuranceError) as refused:
+                await asyncio.wait_for(orch.run(), 10)
+            assert refused.value.code == "ROOT_QUARANTINED"
             assert orch.store.get_mission(missions["slow"][0].id).status is MissionStatus.COMPLETED
+            assert orch.store.list_approvals(missions["human"][0].id)[0]["state"] == "PENDING"
+            assert {m: orch.store.count_events(m) for m in mission_ids} == events
             assert len(provider.trace) == original_calls
 
+    mission_ids = [missions[name][0].id for name in ("slow", "human")]
     asyncio.run(resume())
 
 
@@ -611,6 +712,9 @@ def test_live_sdk_without_host_lock_is_not_offline(tmp_path):
 
 @pytest.mark.parametrize("state", ["unknown", "succeeded_without_usage"])
 def test_actual_uncertain_call_keeps_original_hold_receipt_and_never_replays(tmp_path, state):
+    """2026-09-30 按保障层"恢复后只读、绝不复活执行"改写：恢复库上的恢复/续跑被明确拒绝
+    （ROOT_QUARANTINED），原预留、UNKNOWN 授权与调用记录原样保留，不确定的调用绝不重放。"""
+
     class UncertainProvider(ActualProvider):
         async def invoke(self, request, *, cancel):
             response = await super().invoke(request, cancel=cancel)
@@ -717,14 +821,18 @@ def test_actual_uncertain_call_keeps_original_hold_receipt_and_never_replays(tmp
             profiles={"default": profile},
             provider_token_estimator=Counter(1000),
         ) as recovered:
-            await asyncio.wait_for(recovered.run(), 10)
+            events = recovered.store.count_events(mission.id)
+            with pytest.raises(AssuranceError) as refused:
+                await asyncio.wait_for(recovered.run(), 10)
+            assert refused.value.code == "ROOT_QUARANTINED"
+            assert recovered.store.count_events(mission.id) == events
             assert recovered.store.get_mission(mission.id).status is MissionStatus.CANCELLED
             assert grants(recovered.commit)[0]["state"] == "UNKNOWN"
             actual_holds = recovered.store.connection.execute(
                 "SELECT * FROM budget_reservations ORDER BY subject_id"
             ).fetchall()
             assert [tuple(row) for row in actual_holds] == original_holds
-            assert provider.calls == 1  # ordinary recovery must not replay the uncertain call
+            assert provider.calls == 1  # a refused recovery never replays the uncertain call
 
     asyncio.run(exercise())
 

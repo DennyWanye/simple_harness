@@ -2507,7 +2507,12 @@ def test_mutation_a_revocation_that_does_not_move_the_generation_is_caught(tmp_p
     world.commit()
     target = world.command.delta.occurrences[0]
     before = world.semantics.task_semantics_of(world.mission.id, str(target.task_id))
-    _mutate(monkeypatch, "_revoke_running_work", lambda self, semantics, command: {})
+    # _revoke_running_work 现在多一个关键字参数 revocation_targets（执行图影响范围）。
+    _mutate(
+        monkeypatch,
+        "_revoke_running_work",
+        lambda self, semantics, command, revocation_targets=None: {},
+    )
     world.commit(_second_revision(world, superseded=(target.occurrence_id,)))
     after = world.semantics.task_semantics_of(world.mission.id, str(target.task_id))
     with pytest.raises(AssertionError):

@@ -11,6 +11,7 @@ import asyncio
 import pytest
 from test_system_critic_hold_growth import _scenario
 
+import agent_orchestrator.orchestrator.event_handler as event_handler
 from agent_orchestrator.contracts import MissionStatus, TaskStatus
 from agent_orchestrator.orchestrator.commit_service import task_account
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
@@ -84,7 +85,16 @@ def test_cold_critic_admission_failure_stops_original_task_without_new_handoff(
                     crashes.append(gap)
                     raise InjectedCrash(gap)
 
+            late_accounting = event_handler.import_late_accounting
+
+            def dead_after_crash(orch):
+                # 注入的崩溃在审阅任务里抛出，事件循环还会再跑一轮；2026-09-28 起每轮都有
+                # "补记已结束调用的用量"一步，会替冷恢复提前结清预留。真实进程此刻已死，
+                # 什么都不会再写，所以崩溃之后这一步在本进程里不再执行。
+                return False if crashes else late_accounting(orch)
+
             with monkeypatch.context() as patch:
+                patch.setattr(event_handler, "import_late_accounting", dead_after_crash)
                 patch.setattr(first, "_settle_intent", after_failed)
                 patch.setattr(first.commit, "record_verification_layer", after_error)
                 with pytest.raises(InjectedCrash, match=gap):

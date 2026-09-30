@@ -191,7 +191,7 @@ def test_pre_handoff_budget_refusal_stops_actual_orchestrator_without_retry(tmp_
     asyncio.run(exercise())
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_pre_handoff_adapter_preserves_public_catch_and_run_window_distinction():
     physical = ScriptedPhysicalProvider(ProviderUsage(1, 1, 2))
     meter = make_meter(physical)
@@ -218,7 +218,7 @@ async def test_pre_handoff_adapter_preserves_public_catch_and_run_window_distinc
     assert window_meter.admission_denials[-1]["reason"] == "RunWindowDenied"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_physical_overrun_retains_original_error_and_actual_usage_charge():
     physical = ScriptedPhysicalProvider(ProviderUsage(3, 2, 5))
     meter = make_meter(physical, estimate=1)

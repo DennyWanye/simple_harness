@@ -13,7 +13,10 @@ from pathlib import Path
 from typing import Annotated
 
 import pytest
-from pydantic import BaseModel
+
+# AgentDojo（及其依赖 pydantic）是可选评测运行时，未装在 dev 环境里时整文件跳过。
+pytest.importorskip("agentdojo", reason="环境缺可选评测包 agentdojo（及其依赖 pydantic）")
+from pydantic import BaseModel  # noqa: E402
 
 from agent_orchestrator.evaluation.agentdojo_bridge import (
     AgentDojoToolPort,

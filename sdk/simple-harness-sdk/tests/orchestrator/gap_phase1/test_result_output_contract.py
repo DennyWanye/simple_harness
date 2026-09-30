@@ -15,6 +15,7 @@ from agent_orchestrator.contracts import Budget, ResultEnvelope
 from agent_orchestrator.governance import domains
 from agent_orchestrator.orchestrator.commit_service import MissionSpec
 from agent_orchestrator.orchestrator.event_handler import Orchestrator, OrchestratorConfig
+from agent_orchestrator.orchestrator.failure_classes import NON_MODEL_FAILURE_CAP
 from agent_orchestrator.testing.fixtures import (
     RoleScriptedProvider,
     graph_proposal_step,
@@ -102,7 +103,11 @@ def test_actual_provider_gets_valid_example_but_missing_file_still_fails(
             if write_file
             else []
         )
-        worker.append(submit)
+        # 2026-09-28 用户决定：envelope_invalid（此处是声明的产出文件不在工作区）算格式错，
+        # 不扣任务次数、原地重做，同一步合计 NON_MODEL_FAILURE_CAP 次后停下。
+        # 没写文件时每次重做都照旧交同样的结果，最终仍必须 FAILED。
+        submissions = 1 if write_file else NON_MODEL_FAILURE_CAP
+        worker.extend([submit] * submissions)
         task = {
             "key": "A",
             "goal": "Write REPORT.md",
@@ -131,7 +136,7 @@ def test_actual_provider_gets_valid_example_but_missing_file_still_fails(
             )
             async with asyncio.timeout(10):
                 await orch.run()
-            assert len(captured) == 1
+            assert len(captured) == submissions
             assert str(orch.store.get_mission(mission.id).status) == (
                 "COMPLETED" if success else "FAILED"
             )

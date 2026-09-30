@@ -6,15 +6,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from packaging.version import Version
+
 import simple_harness
 import simple_harness.contracts as contracts
 import simple_harness.runtime as runtime
 from simple_harness.testing import arm64_candidate
 
+# 冻结快照按发布版本（去掉 .devN 与 +opt.N 本地段）记录；开发构建每次升 opt 号不需要重冻，
+# 只要导出清单完全一致。升到下一个发布版本时必须重冻快照。
+RELEASE_VERSION = Version(simple_harness.__version__).base_version
+
 
 def test_public_api_matches_frozen_snapshot() -> None:
     snapshot = json.loads((Path(__file__).with_name("public-api.json")).read_text(encoding="utf-8"))
-    assert simple_harness.__version__ == snapshot["version"]
+    assert RELEASE_VERSION == snapshot["version"]
     assert list(simple_harness.__all__) == snapshot["simple_harness"]
     assert list(contracts.__all__) == snapshot["simple_harness.contracts"]
     assert list(runtime.__all__) == snapshot["simple_harness.runtime"]
@@ -39,7 +45,7 @@ def test_receipt_reservation_successor_preserves_h073_exports() -> None:
     root = Path(__file__).parent
     previous = json.loads((root / "public-api-0.7.3.json").read_text())
     current = json.loads((root / "public-api.json").read_text())
-    assert previous["version"] == "0.7.3" and current["version"] == simple_harness.__version__
+    assert previous["version"] == "0.7.3" and current["version"] == RELEASE_VERSION
     for module in previous:
         if module != "version":
             assert set(previous[module]) <= set(current[module])
@@ -49,7 +55,7 @@ def test_short_successor_preserves_h074_exports():
     root = Path(__file__).parent
     old = json.loads((root / "public-api-0.7.4.json").read_text())
     current = json.loads((root / "public-api.json").read_text())
-    assert old["version"] == "0.7.4" and current["version"] == simple_harness.__version__
+    assert old["version"] == "0.7.4" and current["version"] == RELEASE_VERSION
     for module in old:
         if module != "version":
             assert set(old[module]) <= set(current[module])
@@ -59,7 +65,7 @@ def test_start_mode_router_preserves_h077_exports():
     root = Path(__file__).parent
     old = json.loads((root / "public-api-0.7.7.json").read_text())
     current = json.loads((root / "public-api.json").read_text())
-    assert old["version"] == "0.7.7" and current["version"] == simple_harness.__version__
+    assert old["version"] == "0.7.7" and current["version"] == RELEASE_VERSION
     for module in old:
         if module != "version":
             assert set(old[module]) <= set(current[module])
@@ -72,7 +78,7 @@ def test_base_agent_successor_preserves_h0710_exports():
     root = Path(__file__).parent
     old = json.loads((root / "public-api-0.7.10.json").read_text())
     current = json.loads((root / "public-api.json").read_text())
-    assert old["version"] == "0.7.10" and current["version"] == simple_harness.__version__
+    assert old["version"] == "0.7.10" and current["version"] == RELEASE_VERSION
     for module in old:
         if module != "version":
             assert set(old[module]) <= set(current[module])

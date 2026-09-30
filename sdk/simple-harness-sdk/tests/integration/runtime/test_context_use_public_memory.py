@@ -11,12 +11,27 @@ import hashlib
 import json
 
 import pytest
-from simple_harness_memory import MemoryValidationError
 
 import simple_harness as h
 from simple_harness.runtime import RunStart
 
-from .context_use_public_fixture import PublicMemoryFixture
+# 记忆 SDK（simple_harness_memory）2026-09-10 起不再是产品/SDK 依赖，默认环境没装。
+# 本文件的用例要真实记忆 SDK，没装就跳过；但下面的小工具（digest、Unused*）
+# 仍被不需要记忆 SDK 的 test_context_use_admission 复用，所以模块本身必须能导入。
+try:
+    from simple_harness_memory import MemoryValidationError
+
+    from .context_use_public_fixture import PublicMemoryFixture
+except ModuleNotFoundError as missing:
+    if missing.name is None or not missing.name.startswith("simple_harness_memory"):
+        raise
+    MemoryValidationError = PublicMemoryFixture = None
+
+requires_memory_sdk = pytest.mark.skipif(
+    PublicMemoryFixture is None,
+    reason="缺少可选包 simple_harness_memory（记忆 SDK 已从产品移除，默认环境不安装）",
+)
+pytestmark = requires_memory_sdk
 
 
 def canonical(value):

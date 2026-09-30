@@ -19,6 +19,11 @@ network Provider, or production patches. Child lifetime <=25s, each phase <=10s,
 cleanup <=3s. This is a strict assertion oracle, never an xfail/skip workaround;
 an API or semantic gap must fail explicitly. Main owns execution; AST is not a
 runtime PASS, and this fixture is not production-connector or native UI evidence.
+
+2026-09-30 按保障层"恢复后只读、绝不复活执行"改写：隔离恢复出来的根不再冷恢复、
+不再对账——打开生产编排器续跑被明确拒绝（ROOT_QUARANTINED），动作保持 UNKNOWN、
+预留保持 RESERVED、事件与外部账本都不增加，原动作绝不重发（applied_count 仍为一）。
+原根上的冷恢复（STILL_UNKNOWN 保持预留、不重发）照旧在 cold-backup 阶段核对。
 """
 
 from __future__ import annotations
@@ -161,7 +166,10 @@ def _verify_bundle(base, original, identity):
 
 
 def test_action_applied_receipt_lost_sigkill_cold_and_offline_backup(tmp_path):
-    """One A05/A08 cross-case; strict failures preserve logs under pytest tmp_path."""
+    """One A05/A08 cross-case; strict failures preserve logs under pytest tmp_path.
+
+    2026-09-30 按保障层"恢复后只读、绝不复活执行"改写：restore 阶段断言恢复根拒绝续跑与对账。
+    """
     started = time.monotonic()
     (tmp_path / "external").mkdir()
     identity = _source_identity()

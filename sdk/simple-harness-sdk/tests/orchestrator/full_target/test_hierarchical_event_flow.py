@@ -1529,6 +1529,14 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     root ``GoalResolution`` already stood (Grok C3, defect N3).  Asking the mode there
     is what sends the hierarchical Mission to its resolution's contributions and keeps
     the legacy Mission on the legacy merge, byte for byte.
+
+    2026-09-30 清点（计数 21→25，按上面的约定补记没写进来的站点；都只在分层任务上生效，
+    旧任务在这些入口一律拿到 None 并按原路走）：TaskGraph 对外的两个入口
+    ``taskgraph_recheck_mission`` / ``taskgraph_request_composition``；
+    ``_has_pending_operation_completion``（待确认的操作完成只存在于分层任务）；
+    ``_retry_deferred_repair`` 与 ``_dispatch_h4_repair_trigger``（延后修补/H4 修补触发）；
+    ``_idle_facts``（2026-09-28，空转时汇总"在等什么"的事实）；以及
+    ``_resolve_provider_blocked_service`` 里保障层审阅分支的第二处询问（2026-09-24）。
     """
 
     del tmp_path
@@ -1537,7 +1545,7 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     from agent_orchestrator.orchestrator import event_handler
 
     source = inspect.getsource(event_handler)
-    assert source.count("self._new_mode(mission)") == 21
+    assert source.count("self._new_mode(mission)") == 25
     assert "is_hierarchical(mission)" in inspect.getsource(event_handler.Orchestrator._new_mode)
 
 

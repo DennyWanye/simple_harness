@@ -10,7 +10,7 @@ from simple_harness.contracts import CallId, RunId
 from simple_harness.tools.reconciliation import ReconciliationState
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_known_write_reconciles_without_reexecution_and_drift_stays_unknown(tmp_path):
     manager = WorkspaceManager(tmp_path)
     workspace = manager.create("attempt", seed={"report.md": "precise text\n"})
@@ -37,7 +37,7 @@ async def test_known_write_reconciles_without_reexecution_and_drift_stays_unknow
     assert (await gateway.observe(effect)).state is ReconciliationState.STILL_UNKNOWN
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "case", ["no_proof", "wrong_agent", "wrong_tool", "failed", "other_call", "external"]
 )

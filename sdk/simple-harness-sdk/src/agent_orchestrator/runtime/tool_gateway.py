@@ -171,6 +171,33 @@ READ_PAGE_BYTES = 2000
 LARGE_READ_PAGE_BYTES = 32768
 
 
+async def _await_physical_call(pending: "asyncio.Task[Any]") -> Any:
+    """Await a physical call that must outlive our own cancellation.
+
+    Cancelling ``to_thread`` does not stop the call, so on cancellation we keep waiting
+    until it settles (the caller still holds its environment lock), silently retrieve
+    its outcome and re-raise the cancellation; the SDK keeps the interrupted effect
+    UNKNOWN.  2026-09-30: this used a shield; since Python 3.13 a shield whose outer
+    future was cancelled reports the inner exception to the loop's exception handler
+    ("exception in shielded future"), which logs the physical call's error text
+    verbatim (it may echo an argument or a credential).  ``asyncio.wait`` never cancels
+    and never reports: the error is retrieved here and only here.
+    """
+
+    try:
+        await asyncio.wait((pending,))
+    except asyncio.CancelledError:
+        while not pending.done():
+            try:
+                await asyncio.wait((pending,))
+            except asyncio.CancelledError:
+                continue
+        if not pending.cancelled():
+            pending.exception()  # retrieve it; keep the cancellation semantics
+        raise
+    return pending.result()
+
+
 def read_tool_schemas(*, large: bool = False) -> dict[str, dict[str, Any]]:
     schemas = deepcopy(TOOL_SCHEMAS)
     if large:
@@ -882,19 +909,7 @@ class WorkspaceToolGateway:
                         raise WorkspaceError(refusal)
                     pending = asyncio.create_task(asyncio.to_thread(
                         tool.invoke, arguments, binding.mission_id, f"{run_id}:{call.call_id}"))
-                    try:
-                        value = dict(await asyncio.shield(pending))
-                    except asyncio.CancelledError:
-                        while not pending.done():
-                            try:
-                                await asyncio.shield(pending)
-                            except asyncio.CancelledError:
-                                continue
-                            except Exception:
-                                break
-                        if not pending.cancelled():
-                            pending.exception()
-                        raise
+                    value = dict(await _await_physical_call(pending))
             elif call.name in self._agentdojo_schemas:
                 if (not binding.writable or binding.view != "work"
                         or self._agentdojo_invoke is None or binding.mission_id is None
@@ -908,21 +923,7 @@ class WorkspaceToolGateway:
                         self._agentdojo_invoke, call.name, arguments,
                         f"{run_id}:{record['call_id']}",
                     ))
-                    try:
-                        value = await asyncio.shield(pending)
-                    except asyncio.CancelledError:
-                        # Keep the original environment locked until the physical
-                        # runtime settles. SDK interrupted effects remain UNKNOWN.
-                        while not pending.done():
-                            try:
-                                await asyncio.shield(pending)
-                            except asyncio.CancelledError:
-                                continue
-                            except Exception:
-                                break
-                        if not pending.cancelled():
-                            pending.exception()
-                        raise
+                    value = await _await_physical_call(pending)
                     if self._agentdojo_stopped:
                         record["outcome"] = "unknown"
                         record["stage"] = "execute"
@@ -942,21 +943,7 @@ class WorkspaceToolGateway:
                         self._are_invoke, call.name, arguments,
                         f"{run_id}:{record['call_id']}",
                     ))
-                    try:
-                        value = await asyncio.shield(pending)
-                    except asyncio.CancelledError:
-                        # Keep the original environment locked until the physical
-                        # runtime settles. SDK interrupted effects remain UNKNOWN.
-                        while not pending.done():
-                            try:
-                                await asyncio.shield(pending)
-                            except asyncio.CancelledError:
-                                continue
-                            except Exception:
-                                break
-                        if not pending.cancelled():
-                            pending.exception()
-                        raise
+                    value = await _await_physical_call(pending)
                     if self._are_stopped:
                         record["outcome"] = "unknown"
                         record["stage"] = "execute"
@@ -973,22 +960,7 @@ class WorkspaceToolGateway:
                     pending = asyncio.create_task(
                         asyncio.to_thread(self._appworld_execute, arguments["code"])
                     )
-                    try:
-                        value = await asyncio.shield(pending)
-                    except asyncio.CancelledError:
-                        # Cancelling to_thread does not stop its physical call.
-                        # Keep the world lock until that call settles, then let
-                        # the SDK retain its interrupted effect as UNKNOWN.
-                        while not pending.done():
-                            try:
-                                await asyncio.shield(pending)
-                            except asyncio.CancelledError:
-                                continue
-                            except Exception:
-                                break
-                        if not pending.cancelled():
-                            pending.exception()  # Retrieve an error; retain cancellation semantics.
-                        raise
+                    value = await _await_physical_call(pending)
             elif call.name == "run_tests":
                 if not self._local_code_execution:  # host support 0.9.8: defence in depth
                     return self._reject(

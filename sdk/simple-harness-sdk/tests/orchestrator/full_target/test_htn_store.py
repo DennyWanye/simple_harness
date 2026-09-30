@@ -237,6 +237,11 @@ FULL_TARGET_TABLES: tuple[str, ...] = (*MIGRATION_16_TABLES, *MIGRATION_17_TABLE
 #: immediately, because the check is a subset test against nothing.
 KNOWN_RAW_SQL_DEBT: frozenset[tuple[str, str]] = frozenset()
 SQL_ACCESS = ("FROM", "INTO", "UPDATE", "JOIN", "TABLE")
+#: §18.5 names one *writing* authority.  2026-09-30: the check had also matched reads
+#: (``FROM`` / ``JOIN``), which read models outside ``storage`` (TaskGraph execution
+#: view, Assurance purpose reviews) legitimately do; a second writer is what is forbidden.
+SQL_WRITE = (r"INSERT\s+(?:OR\s+\w+\s+)?INTO", r"REPLACE\s+INTO", "UPDATE", r"DELETE\s+FROM",
+             r"CREATE\s+(?:TEMP\s+)?TABLE(?:\s+IF\s+NOT\s+EXISTS)?", r"ALTER\s+TABLE", r"DROP\s+TABLE(?:\s+IF\s+EXISTS)?")
 
 
 # --------------------------------------------------------------------------------------
@@ -559,7 +564,38 @@ def envelope(
 def store(tmp_path) -> Store:
     opened = Store.open(tmp_path / "orchestrator.db")
     opened.insert_mission(_mission(), spec_hash="h")
+    _record_legacy_creation_contract(opened, MISSION)
     return opened
+
+
+def _record_legacy_creation_contract(store: Store, mission_id: str) -> None:
+    """保障层上线后每个任务创建时都有一条"创建契约"（走哪条线）；这里的任务是直接插表的，
+    照 ``assurance_factory.record_mission_creation`` 的旧线（LEGACY）写法补上，
+    否则正式审阅记录一写就报 CREATION_CONTRACT_UNRESOLVED。"""
+
+    from agent_orchestrator.assurance.codec import fingerprint
+    from agent_orchestrator.assurance.refs import AssuranceRef, Pin
+    from agent_orchestrator.storage.assurance_store import AssuranceStore
+
+    body = {"schema_version": 1, "mission_id": mission_id, "lane": "LEGACY"}
+    digest = fingerprint(body)
+    receipt_id = "creation-contract:" + mission_id
+    store.insert_receipt(
+        commit_id=receipt_id,
+        kind="MissionCreationClassified",
+        subject_id=mission_id,
+        base_version=None,
+        proposal_hash=digest,
+        receipt=body,
+    )
+    AssuranceStore(store).record_creation_contract(
+        mission_id,
+        lane="LEGACY",
+        origin="FACTORY",
+        source_hash=digest,
+        receipt=AssuranceRef("commit_receipt", Pin(receipt_id, 0, digest)),
+        now_ms=int(store.now * 1000),
+    )
 
 
 @pytest.fixture
@@ -581,8 +617,9 @@ def planned(htn: HtnStore) -> HtnStore:
 
 
 def test_operation_completion_is_the_new_head_without_replacing_admission() -> None:
-    assert schema.SCHEMA_VERSION == 24
-    assert schema.SCHEMA_NAME == "orchestrator-planning-human-requests"
+    assert schema.SCHEMA_VERSION == 29  # 迁移 25～29 已追加在后
+    assert schema.SCHEMA_NAME == "orchestrator-taskgraph-required"
+    assert schema.MIGRATIONS[23].name == "orchestrator-planning-human-requests"
     assert schema.MIGRATIONS[18].ddl is planning_decision_schema.DDL
     assert schema.MIGRATIONS[19].ddl is admission_seams_schema.DDL
     assert schema.MIGRATIONS[20].name == "orchestrator-operation-seams"
@@ -776,7 +813,7 @@ def test_migration_eighteen_upgrades_an_existing_library_in_place(
             schema.SCHEMA_NAME,
             schema.MIGRATIONS[-1].checksum,
         )
-        assert (tmp_path / "deployed.db.pre-schema-24.backup").is_file()
+        assert (tmp_path / f"deployed.db.pre-schema-{schema.SCHEMA_VERSION}.backup").is_file()
         stored = HtnStore(upgraded).list_validity_witnesses(MISSION)
         assert [item.witness_id for item in stored] == ["witness-1"]
         subjects = [
@@ -986,6 +1023,12 @@ def _raw_sql_uses(text: str, table: str) -> bool:
     return any(re.search(rf"\b{keyword}\s+{re.escape(table)}\b", text) for keyword in SQL_ACCESS)
 
 
+def _raw_sql_writes(text: str, table: str) -> bool:
+    """True when ``text`` contains SQL that writes ``table`` (insert/update/delete/DDL)."""
+
+    return any(re.search(rf"\b{keyword}\s+{re.escape(table)}\b", text) for keyword in SQL_WRITE)
+
+
 def test_no_module_outside_storage_writes_the_new_tables_in_sql() -> None:
     """§18.5: the new tables have one writing authority, and it is ``storage``.
 
@@ -1001,7 +1044,7 @@ def test_no_module_outside_storage_writes_the_new_tables_in_sql() -> None:
             continue
         text = path.read_text()
         for table in FULL_TARGET_TABLES:
-            if _raw_sql_uses(text, table):
+            if _raw_sql_writes(text, table):
                 leaks.add((relative, table))
     assert leaks <= KNOWN_RAW_SQL_DEBT, sorted(leaks - KNOWN_RAW_SQL_DEBT)
 
@@ -1093,7 +1136,7 @@ def test_the_upgrade_writes_a_backup_of_the_old_library(
     _open_at_version_fifteen(path, monkeypatch)
     upgraded = Store.open(path)
     upgraded.close()
-    backup = tmp_path / "v15.db.pre-schema-24.backup"
+    backup = tmp_path / f"v15.db.pre-schema-{schema.SCHEMA_VERSION}.backup"
     assert backup.is_file()
     assert [row[0] for row in _dump(backup, "orch_schema_migrations")] == list(range(1, 16))
     assert _dump(backup, "missions")

@@ -197,7 +197,7 @@ def _decision_rows(store: Store) -> list[tuple[Any, ...]]:
 
 
 def test_migration_nineteen_is_the_new_head() -> None:
-    assert schema.SCHEMA_VERSION == 24
+    assert schema.SCHEMA_VERSION == 29  # 迁移 25～29 已追加在后
     assert schema.MIGRATIONS[18].name == "orchestrator-planning-decision-v1"
     assert schema.MIGRATIONS[18].ddl is planning_decision_schema.DDL
     assert schema.MIGRATIONS[18].checksum == MIGRATION_19_CHECKSUM
@@ -725,7 +725,7 @@ def test_an_upgrade_from_eighteen_keeps_every_old_row(
             schema.MIGRATIONS[-1].checksum,
         )
         assert applied[17] == (18, "orchestrator-full-target-witness-subject", FROZEN_18_CHECKSUM)
-        assert (tmp_path / "deployed.db.pre-schema-24.backup").is_file()
+        assert (tmp_path / f"deployed.db.pre-schema-{schema.SCHEMA_VERSION}.backup").is_file()
         rows = _tables(upgraded)
         for table in NEW_TABLES:
             assert table in rows and "STRICT" in rows[table].upper(), table

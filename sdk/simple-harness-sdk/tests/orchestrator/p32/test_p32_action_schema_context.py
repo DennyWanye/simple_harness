@@ -15,7 +15,9 @@ import pytest
 from fixtures_provider import RoleScriptedProvider, envelope_step, graph_proposal_step, package_of
 from graph_helpers7 import change, node, spec
 
+from agent_orchestrator import __version__ as ORCHESTRATOR_VERSION
 from agent_orchestrator.contracts import Artifact, ContractError
+from agent_orchestrator.contracts.models import sha256_hex
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.graph.task_graph import TaskGraphProposal
 from agent_orchestrator.orchestrator.action_commits import (
@@ -179,7 +181,20 @@ def test_planner_wire_receives_source_destination_and_approval_semantics(
                 assert package["budget_allocation_semantics"]["kind"] == (
                     "permitted_ceiling_not_expected_spend"
                 )
-                historical_message = dict(intent.config["message"])
+                # 另两处有意的变化也只按原样去掉/还原，其余字节仍须与基线一致：
+                # 1) 2026-09-26 通用任务 v5 可附资料，新增 source_versions/source_roots/
+                #    source_notice 三节；2) package_version 是 agent_orchestrator 版本号，
+                #    每次发布都变，基线记录时是 0.11.1。
+                current_message = dict(intent.config["message"])
+                current_message["content"] = current_message["content"].replace(
+                    f"## package_version\n{ORCHESTRATOR_VERSION}\n", "## package_version\n0.11.1\n"
+                )
+                for section in ("source_versions", "source_roots", "source_notice"):
+                    current_message["content"] = re.sub(
+                        rf"\n\n## {section}\n.*?(?=\n\n## |\Z)",
+                        "", current_message["content"], flags=re.DOTALL,
+                    )
+                historical_message = dict(current_message)
                 historical_message["content"] = re.sub(
                     r"\n\n## budget_allocation_semantics\n.*?(?=\n\n## |\Z)",
                     "", historical_message["content"], flags=re.DOTALL,
@@ -188,12 +203,19 @@ def test_planner_wire_receives_source_destination_and_approval_semantics(
                     "3c9ec1513b5cf20e4f73bb09484cfd08a9c00e2018fd053f73bf72e820955c54"
                 )
                 message_hash = hashlib.sha256(
-                    canonical_json(intent.config["message"]).encode()
+                    canonical_json(current_message).encode()
                 ).hexdigest()
                 assert message_hash == (
                     "c5017c6420bf3677a1fbd52d45a49378e32a22b21e618b7df3f61eceacc202f5"
                 )
-                assert intent.config["context_version"] == "ctx-c4042b6c85b13dbd"
+                # context_version 是整个包的摘要，同样只还原上面两处有意变化后再比基线。
+                historical_package = {
+                    key: value for key, value in package.items()
+                    if key not in {"source_versions", "source_roots", "source_notice"}
+                }
+                historical_package["package_version"] = "0.11.1"
+                assert "ctx-" + sha256_hex(historical_package)[:16] == "ctx-c4042b6c85b13dbd"
+                assert intent.config["context_version"] == "ctx-" + sha256_hex(package)[:16]
                 return
             contract = package["action_candidate_contract"]
             assert contract["version"] == "action-candidate-context-v2"

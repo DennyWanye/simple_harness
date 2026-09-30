@@ -42,6 +42,9 @@ def test_s8_07_every_configuration_field_is_classified(tmp_path):
         "workspace_retention_seconds",
         "sandbox_executor",  # P3.2 (plan D2): a runtime object, digest in every receipt
         "appworld_execute",  # capability availability is the serialized config value above
+        # 后加的能力字段：只在配置了时把公开身份写进 config，其余情况列为不入快照
+        "domain_tools",
+        "planning_backend",
     }
 
 

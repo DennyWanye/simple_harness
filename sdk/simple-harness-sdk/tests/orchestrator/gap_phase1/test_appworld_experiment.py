@@ -128,7 +128,7 @@ def inputs(worlds, providers, execute):
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_fixed_matrix_shared_meter_host_score_and_resume(tmp_path):
     worlds, providers, seen = [], [], []
 
@@ -169,7 +169,7 @@ async def test_fixed_matrix_shared_meter_host_score_and_resume(tmp_path):
     assert len(worlds) == 16
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_failure_retained_then_resume_only_pending(tmp_path):
     worlds, providers = [], []
     attempts = []
@@ -193,7 +193,7 @@ async def test_failure_retained_then_resume_only_pending(tmp_path):
     assert len(attempts) == 16
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unknown_physical_usage_stops_remaining_pending(tmp_path):
     worlds, providers = [], []
 
@@ -219,7 +219,7 @@ async def test_unknown_physical_usage_stops_remaining_pending(tmp_path):
     assert len(worlds) == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unknown_watcher_cancels_stalled_arm_before_episode_deadline(tmp_path):
     worlds, providers = [], []
     cleaned = asyncio.Event()
@@ -246,7 +246,7 @@ async def test_unknown_watcher_cancels_stalled_arm_before_episode_deadline(tmp_p
     assert worlds[0].closed == worlds[0].evaluated == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_environment_setup_failure_stops_without_fake_zero_usage(tmp_path):
     worlds, providers = [], []
     params = inputs(worlds, providers, lambda *args: None)
@@ -262,7 +262,7 @@ async def test_environment_setup_failure_stops_without_fake_zero_usage(tmp_path)
     assert all(r["status"] == "pending" for r in result["runs"][1:])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_host_evaluator_failure_closes_world_and_stops_matrix(tmp_path):
     worlds, providers = [], []
 
@@ -294,7 +294,7 @@ async def test_host_evaluator_failure_closes_world_and_stops_matrix(tmp_path):
     assert all(r["status"] == "pending" for r in result["runs"][1:])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancel_finalizes_world_and_keeps_rest_pending(tmp_path):
     worlds, providers = [], []
     entered = asyncio.Event()
@@ -323,7 +323,7 @@ def world_config():
     return AppWorldConfig("one", "new-episode")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "change",
     [
@@ -357,7 +357,7 @@ def test_fixed_seed_and_exact_four_task_validation():
         replace(config(), manifest=replace(config().manifest, task_ids=("one",)))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_failed_mission_return_is_not_successful_runtime(tmp_path):
     worlds, providers = [], []
 
@@ -372,7 +372,7 @@ async def test_failed_mission_return_is_not_successful_runtime(tmp_path):
     assert all(r["pilot"]["runtime_success"] is False for r in result["runs"])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_official_success_is_recorded_but_cannot_validate_failed_driver(tmp_path):
     worlds, providers = [], []
 
@@ -390,7 +390,7 @@ async def test_official_success_is_recorded_but_cannot_validate_failed_driver(tm
     assert all(r["pilot"]["valid_success"] is False for r in result["runs"])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "declared,expected", [("success", True), ("fail", False), ("pending", False)]
 )

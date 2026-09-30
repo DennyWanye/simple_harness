@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -86,7 +87,9 @@ def test_version_has_one_runtime_authority() -> None:
     assert 'dynamic = ["version"]' in pyproject
     assert 'path = "src/simple_harness/version.py"' in pyproject
     assert "from .version import __version__" in package
-    assert '__version__ = "0.7.5"' in version
+    # 版本号随发布推进，不钉具体值；只要求 version.py 是唯一一处字面量版本定义。
+    assert len(re.findall(r'^__version__ = "[^"]+"$', version, flags=re.MULTILINE)) == 1
+    assert "__version__ = " not in package
     build_script = (ROOT / "scripts/build/reproducibility.py").read_text(encoding="utf-8")
     assert 'VERSION = "0.1.1"' not in build_script
     assert "src/simple_harness/version.py" in build_script
@@ -130,8 +133,9 @@ def test_authoritative_provenance_is_canonical_and_detects_tampering(
     wheel.write_bytes(b"wheel-bytes")
     sdist.write_bytes(b"sdist-bytes")
     commit = "a" * 40
+    project_version = module.project_identity()[1]
     module.emit(dist, source_commit=commit, build_utc="2026-08-21T10:11:12Z")
-    module.verify(dist, source_commit=commit, version="0.7.1")
+    module.verify(dist, source_commit=commit, version=project_version)
     build_info = (dist / "BUILD_INFO.txt").read_text(encoding="utf-8").splitlines()
     assert [line.partition("=")[0] for line in build_info] == list(module.KEYS)
     sums = (dist / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
@@ -139,7 +143,7 @@ def test_authoritative_provenance_is_canonical_and_detects_tampering(
     assert all("  " in line for line in sums)
     wheel.write_bytes(b"tampered")
     with pytest.raises(module.ProvenanceError, match="checksum differs"):
-        module.verify(dist, source_commit=commit, version="0.7.1")
+        module.verify(dist, source_commit=commit, version=project_version)
 
 
 def test_candidate_workflow_accepts_identity_inputs_and_never_publishes() -> None:

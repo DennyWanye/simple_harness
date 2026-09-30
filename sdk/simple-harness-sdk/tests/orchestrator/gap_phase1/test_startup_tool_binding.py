@@ -18,7 +18,7 @@ from simple_harness.contracts import CallId
 from simple_harness.tools.contracts import ToolCall
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("kind", ["attempt", "critic"])
 async def test_pending_agent_tools_and_audit_are_ready_before_sdk_starts(
     tmp_path, monkeypatch, kind

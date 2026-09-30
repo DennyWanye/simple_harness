@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from simple_harness.execution.sqlite import Database
+from simple_harness.execution.sqlite import SCHEMA_VERSION, Database
 
 
 @pytest.mark.parametrize("wal", [False, True])
@@ -26,7 +26,7 @@ def test_explicit_open_close_and_reopen(tmp_path: Path, wal: bool) -> None:
     database.close()
 
     with Database.open(path, wal=wal) as reopened:
-        assert reopened.schema_version == 7
+        assert reopened.schema_version == SCHEMA_VERSION
         assert reopened.is_open
     assert not reopened.is_open
 
