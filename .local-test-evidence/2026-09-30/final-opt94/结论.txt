@@ -1,0 +1,6 @@
+老测试欠账清理后的全量回归（SDK opt.94 / Host dab3b2a6，2026-09-30），与 final-opt90 逐条对比（compare.py → compare.txt）：
+SDK 19 组：0 失败、0 报错（清理前：full_target 47+1、p32 7、p33 3、p35 8、step08 1、step09 2、gap_phase1 1+14、non_orch 70+19）。
+Host tests/orchestration + tests/sdk_adapters：0 失败（清理前 71；1217 通过）。
+前端 vitest：952 全部通过。
+跳过的用例都注明了缺什么环境（可选评测包 agentdojo、机器相关的旧版本解释器/wheel 路径、未装的记忆 SDK 包、SDK 以 wheel 安装时的源码证明前提等）。
+跑之前核对：部署清单按 opt.94 源码重新生成；隔离应用已关闭。
