@@ -1,11 +1,15 @@
-最后更新：2026-10-01 夜 CST（HTN 精简改造 片 B：中间目标，SDK opt.115）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版与 `中间目标判据-试验结论.md`；逐步记录见同目录 `HTN-片B-实施记录.md`。
-- **目标类型带层级，层数上限由类型结构保证**：`TaskTypeSpec.refinement_level`（只有目标类型能有；不带层级的类型正文与哈希不变）。做法注册检查（`planning/htn/registry._check_structure`）：做法的目标类型在第 L 层时，它里面的子目标必须是更深一层的类型，否则以 `UNBOUNDED_RECURSION` 拒收——同层、更浅、没有层级的都不行，互相嵌套出环在注册时就被拒。不另写层数计数器。Host（`deskpet/orchestration/hierarchical.planning_world`）注册 `desktop.user-goal`（0 层）、`desktop.sub-goal-1`、`desktop.sub-goal-2`；两个子目标类型不声明判据、不声明端口。
+最后更新：2026-10-02 凌晨 CST（HTN 精简改造 片 B：中间目标，SDK opt.115～120）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版与 `中间目标判据-试验结论.md`；逐步记录见同目录 `HTN-片B-实施记录.md`。
+- **目标类型带层级，层数上限由类型结构保证**：`TaskTypeSpec.refinement_level`（只有目标类型能有；不带层级的类型正文与哈希不变）。做法注册检查（`planning/htn/registry._check_structure`）：做法的目标类型在第 L 层时，它里面的子目标必须是更深一层的类型，否则以 `UNBOUNDED_RECURSION` 拒收——同层、更浅、没有层级的都不行，互相嵌套出环在注册时就被拒。不另写层数计数器。Host（`deskpet/orchestration/hierarchical.planning_world`）注册 `desktop.user-goal`（0 层）、`desktop.sub-goal-1`、`desktop.sub-goal-2`；两个子目标类型不声明判据，各声明一个 `delivery` 输出端口。
 - **交给中间目标的要求保持原编号**：中间目标的类型不声明判据，它负责哪几条要求由上级做法用链接交给它，编号与用户要求相同。注册检查拒收"链接到子目标步骤却换了编号"的做法。
 - **中间目标的做法：覆盖完整、归属唯一**（秩序检查，两处同一口径）：提做法时（`planning_method_proposal._coverage_problems`，问题以 `SUBGOAL_COVERAGE` 开头逐条列出）与计划提交时（`planning/htn/completion_scopes.compile_completion_scopes`）。漏了交给它的要求、链接了没交给它的要求、有步骤没落到任何要求上，都拒收。
 - **"目标还没有做法"是通用请求的一种触发源**：`RepairTriggerSource.GOAL_UNREFINED`；`planning_repair_requests.open_goal_triggers`（由 `collect_triggers` 每轮调用）在当前计划有目标没有做法时记一条 `PlanningRepairRequested`，幂等键 `open-goals:<计划版本号>`，请求里只有事实（哪几个目标、各是什么类型），影响范围只写"要新做的工作"。规划器在其中任一目标上提交做法即了结；计划到了别的版本，旧版本的请求由系统了结（`SYSTEM_SUPERSEDED`）。同一计划版本只问一次。主循环专用入口 `_refine_open_compounds`、事件 `HierarchicalRefinementRequested`、内存标记 `_refinement_rounds`、`CommitService.record_refinement_requested` 全部删除。
 - **写做法的材料**（`HierarchicalDispatch.method_proposal_context`）：`criterion_evidence` 在类型声明的要求之外加上分给这个目标实例的要求（带用户原文）；新增 `subgoal_types`——比这个目标更深一层的子目标类型（类型引用、层级、参数）。规划器提示词（当前这一份，原地修改）补了相应的事实与秩序说明和一个带子目标的完整示例，写明"是否需要中间目标由你判断"。
 - **删掉一条过时规则**：计划预检的"可约性"检查（库里没有做法的子目标 → 整份计划结构无效，`DeltaProblemKind.NOT_REDUCIBLE`）。规划器现在可以自己为目标提做法，没有库做法的子目标只是规划的前沿。
-- 验证：见实施记录"测试"一节。
+- **中间目标的产出接到后续步骤**（opt.120）：子目标类型可声明输出端口；`HierarchicalDispatch.goal_port_outputs` 把**完成的**子目标的端口对到它采用做法的收尾步骤在同名端口上已验收的产出（收尾步骤本身是子目标时再往下找），以别名形式并入 `accepted_outputs` 与 `issue_input_witnesses`——解析、见证、冻结输入沿用原规则，没有第二套数据路径。注册检查：目标类型声明了输出端口，做法必须写收尾步骤且其类型声明同名端口（`PORT_UNAVAILABLE`）。Host 的两个子目标类型声明 `delivery` 端口。一步执行时只铺通过输入端口接进来的上游产出，只排在后面拿不到文件——这是原有规则，提示词里写明了。
+- **幂等键带任务号**（opt.118）：`open_goals_key(mission_id, plan_revision)` = `open-goals:<任务号>:<计划版本号>`。事件幂等键全库唯一，只写版本号时同库后来的任务全部撞键（真机第 2、3 局）。
+- **中间目标出不了结论时记事件**（opt.116）：`CompositionAcceptanceAssembly.on_deferred` → `CompositionReviewDeferred`（同一目标同一原因只记一次，原因原样写入）。
+- **已终止任务的收敛作业不再被唤醒**（opt.117）：`TaskGraphConvergenceWakeups.schedule` 与 `TaskGraphNotifications.has_pending` 都跳过已完成 / 失败 / 取消的任务；作业与围栏原样保留。真机库里一个已取消任务的作业被唤醒一万三千多次，把主循环拖到每轮一两分钟。
+- 验证：相关定向测试 141 个文件 2420 通过；变异 27 项全部抓住；独立核验一轮；真机六局，第 6 局完成交付（中间目标 → 做法单独过审 → 组合审阅正式记录 → 中间结论 → 后续步骤其后开工并拿到它的产出）。逐局经过见实施记录。
 
 最后更新：2026-10-01 晚 CST（HTN 精简改造 片 A：编排 Agent 判断 + 自己提做法 + 审阅闸门，SDK opt.114）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版；逐步记录见同目录 `HTN-片A-实施记录.md`。
 - **选做法、提做法都由规划器判断**：程序只按能力与类型把跑不了的做法筛掉（`planning/htn/method_selection.filter_candidates`、`HierarchicalDispatch.method_candidates`），每个还没有做法的目标都开一轮规划器。删掉两条程序代答（只有一个候选时直接替它采用、同一组候选问过一次就回"无变更"）、选择策略档位与选择调用账本、部署配置里的选择策略项。非模型故障的原地重做保留，来源如实标为 `system_infrastructure_retry`（`planning_selection.infrastructure_retry`）。
