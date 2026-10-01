@@ -220,14 +220,14 @@ def test_a_stale_request_left_pending_is_retired_in_the_loop(tmp_path):
 def test_a_request_about_an_older_plan_revision_is_retired_by_the_system():
     """"第 N 版计划里这些目标没有做法"在计划到了别的版本之后就过时了：还开着的目标由新版本
     自己的请求去说，不让两条请求指着同一个目标。别的请求不动。"""
-    from agent_orchestrator.orchestrator.planning_repair_requests import superseded_open_goal_requests
+    from agent_orchestrator.orchestrator.planning_repair_requests import superseded_revision_requests
 
     pending = [{"request_id": "r1", "source_key": "open-goals:m1:1"},
                {"request_id": "r2", "source_key": "open-goals:m1:2"},
                {"request_id": "r3", "source_key": "event:step-failed"}]
-    assert superseded_open_goal_requests(pending, "m1", 2) == ["r1"]
-    assert superseded_open_goal_requests(pending, "m1", 3) == ["r1", "r2"]
-    assert superseded_open_goal_requests(pending[2:], "m1", 3) == []
+    assert superseded_revision_requests(pending, "m1", 2) == ["r1"]
+    assert superseded_revision_requests(pending, "m1", 3) == ["r1", "r2"]
+    assert superseded_revision_requests(pending[2:], "m1", 3) == []
 
 
 def test_the_first_plan_is_not_asked_for_through_a_request(tmp_path):

@@ -3033,15 +3033,43 @@ class Orchestrator:
                     "this execution cycle ends"
                 )
                 continue
+            # 片 D 第 1 项："计划卡住了要不要改"是规划器的判断。确认停滞之后先把局面如实交给
+            # 它一次（每个计划版本一条请求）；同一版计划问过之后又停在原地，才判停。
+            from ..runtime.planning_operations import SourceUnavailable
+            from . import planning_repair_requests as repair_requests
+
+            withheld = [item.to_json() for item in admissions.refusals]
+            try:
+                asked = repair_requests.request_planner_for_stall(
+                    new_mode, mission, plan_revision=int(admissions.plan_revision),
+                    detail={"withheld": withheld[:32], "withheld_count": len(withheld),
+                            "admitted_not_dispatched": sorted(admissions.readiness)[:32],
+                            "outstanding_obligations": outstanding,
+                            # 最终审查没给出结论（回复用完仍无法采用）或被打回，是事实，一并交给规划器。
+                            **self._root_review_stop_detail(mission, new_mode)})
+            except (GraphIntegrityError, ContractError, StoreError, SourceUnavailable) as error:
+                # SourceUnavailable：算影响范围要读操作台账，读不了时问不成，照旧判停。
+                self._note(f"mission {mission.id}: the stall could not be handed to the Planner ({error})")
+                asked = False
+            if asked:
+                carry_on = True
+                self._note(
+                    f"mission {mission.id}: no dispatchable work, confirmed by one more cycle; "
+                    "the Planner is asked once for this plan revision before the Mission is stopped"
+                )
+                continue
             self._commit_fail_mission(
                 mission.id,
                 stop_reason=MissionStopReason.NO_DISPATCHABLE_WORK,
                 detail={
                     "plan_revision": int(admissions.plan_revision),
+                    # 这一版计划问过规划器（请求编号、它那一轮有没有开出来）之后仍停在原地。
+                    "planner_asked": repair_requests.stall_request_asked(
+                        self.store, mission.id, int(admissions.plan_revision)),
                     # §6.4: the report names the structure that was expanded and the
                     # duties still outstanding.  Every refusal, not a sample — an
                     # operator must not have to re-derive which gate held what.
-                    "withheld": [item.to_json() for item in admissions.refusals],
+                    "withheld": withheld,
                     "admitted_not_dispatched": sorted(admissions.readiness),
                     "outstanding_obligations": outstanding,
                     "fingerprint": after,
@@ -11912,6 +11940,7 @@ class Orchestrator:
 
         detail: dict[str, Any] = {}
         for prefix, name in (("assurance-mission-final:", "final_review"),
+                             ("assurance-composition:", "composition_review"),
                              ("assurance-operation-outcome:", "operation_outcome_review")):
             found = self._exhausted_reviews(mission_id, prefix)
             if name == "final_review":
@@ -11922,11 +11951,17 @@ class Orchestrator:
         return detail
 
     def _exhausted_reviews(self, mission_id: str, prefix: str) -> list[dict[str, str]]:
-        """Reviews under ``prefix`` whose retries ran out (no verdict will come)."""
+        """Reviews under ``prefix`` whose retries ran out (no verdict will come).
+
+        Two endings: the reply never decoded (``AssuranceReviewFormatExhausted``), or the
+        second reply decoded and still could not be imported as given — it cited
+        evidence it was never shown, say (``AssuranceReviewImportRejected``; 片 C 真机
+        第 1 局, 2026-10-02: that ending was not reported at all).
+        """
 
         rows = self.store.connection.execute(
-            "SELECT payload_json FROM events WHERE mission_id=? AND type='AssuranceReviewFormatExhausted' "
-            "ORDER BY seq",
+            "SELECT payload_json FROM events WHERE mission_id=? AND type IN "
+            "('AssuranceReviewFormatExhausted','AssuranceReviewImportRejected') ORDER BY seq",
             (mission_id,),
         ).fetchall()
         from .failure_classes import review_exhausted_by_interruption
@@ -13198,29 +13233,37 @@ class Orchestrator:
         mission: Mission,
         judgments: Sequence[Mapping[str, Any]],
     ) -> list[dict[str, Any]]:
+        """Re-read the document rows of a kept judgment against the sources as they are now.
+
+        片 D 第 2 项：保证通道上文字要求的结论是最终审查的，这里只重看秩序检查（资料换了
+        版本会让它变）；``cite:`` 要求和不走保证通道的任务照旧整行按覆盖结果重算。
+        """
         domain = self.commit.domain_for(mission.id)
         result = [dict(item) for item in judgments]
         if not requires_mission_source_binding(domain):
             return result
-        from ..verification.mission_coverage import mission_coverage
+        from ..verification.mission_coverage import (
+            document_judgment,
+            mission_coverage,
+            replace_document_judgment,
+        )
 
+        assured = self._is_assured(mission.id)
         coverage = mission_coverage(
-            self.store, mission, domain, artifact_store=self.assembled.workspaces.artifact_store
+            self.store, mission, domain, artifact_store=self.assembled.workspaces.artifact_store,
+            assured=assured,
         )
         assessed = {
             item["text"]: item for item in coverage["criteria"] if item["verdict"] != "STRUCTURAL"
         }
+        grades = self._assured_root_grades(mission, self._new_mode(mission)) if assured else None
         for item in result:
             row = assessed.get(item["criterion"])
             if row is not None:
+                replace_document_judgment(item, document_judgment(
+                    item["criterion"], row, assured=assured,
+                    grade=None if grades is None else grades.get(item["criterion"])))
                 item.update(
-                    criterion_id=row["criterion_id"],
-                    met=row["verdict"] in {"PASS", "INCONCLUSIVE"},
-                    verdict=row["verdict"],
-                    judge="document_coverage",
-                    reason="; ".join(row["reasons"]),
-                    limitations=list(row["limitations"]),
-                    task_assessment_receipt_ids=list(row["task_assessment_receipt_ids"]),
                     excluded_claim_ids=list(row["excluded_claim_ids"]),
                     source_provenance_issues=list(row["source_provenance_issues"]),
                 )
@@ -13284,7 +13327,8 @@ class Orchestrator:
             from ..verification.mission_coverage import mission_coverage
 
             document_coverage = mission_coverage(
-                self.store, mission, domain, artifact_store=self.assembled.workspaces.artifact_store
+                self.store, mission, domain, artifact_store=self.assembled.workspaces.artifact_store,
+                assured=self._is_assured(mission.id),
             )
         all_tasks = {t.id: t for t in tasks}
         # P2.3k / defect N3.  The legacy merge reads "independent branches" off
@@ -13489,21 +13533,13 @@ class Orchestrator:
                 document_coverage is not None
                 and document_coverage["criteria"][ordinal]["verdict"] != "STRUCTURAL"
             ):
-                assessed = document_coverage["criteria"][ordinal]
-                judgments.append(
-                    {
-                        "criterion": criterion,
-                        "criterion_id": assessed["criterion_id"],
-                        "met": assessed["verdict"] in {"PASS", "INCONCLUSIVE"},
-                        "verdict": assessed["verdict"],
-                        "judge": "document_coverage",
-                        "reason": "; ".join(assessed["reasons"]),
-                        "limitations": list(assessed["limitations"]),
-                        "task_assessment_receipt_ids": list(
-                            assessed["task_assessment_receipt_ids"]
-                        ),
-                    }
-                )
+                # 片 D 第 2 项：保证通道上的文字要求以已认证的最终审查结论为准，覆盖结果
+                # 只留秩序检查；``cite:`` 要求和不走保证通道的任务照旧由覆盖结果决定。
+                from ..verification.mission_coverage import document_judgment
+
+                judgments.append(document_judgment(
+                    criterion, document_coverage["criteria"][ordinal], assured=assured,
+                    grade=None if assured_grades is None else assured_grades.get(criterion)))
             elif assured:
                 grade = None if assured_grades is None else assured_grades.get(criterion)
                 judgments.append(

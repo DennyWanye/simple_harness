@@ -128,16 +128,63 @@ def open_goals_key(mission_id: str, plan_revision: int) -> str:
     return f"{OPEN_GOALS_PREFIX}{mission_id}:{int(plan_revision)}"
 
 
-def superseded_open_goal_requests(pending: Any, mission_id: str, plan_revision: int) -> list[str]:
-    """待处理的"目标还没有做法"请求里，属于旧计划版本的那些（请求编号）。
+#: 片 D：计划停在原地（没有一步可派发，也不在等任何东西）→ 判停之前问规划器一次，每个计划
+#: 版本一条。键的写法与上面相同（任务号 + 计划版本号）。
+STALLED_PREFIX = "stalled:"
 
-    这种请求说的是"第 N 版计划里这些目标没有做法"。计划已经到了别的版本，这句话就过时了：
-    还开着的目标由新版本自己的请求去说，不让两条请求指着同一个目标。
+
+def stalled_key(mission_id: str, plan_revision: int) -> str:
+    return f"{STALLED_PREFIX}{mission_id}:{int(plan_revision)}"
+
+
+#: 说的是"第 N 版计划的局面"的请求：计划换了版本，这句话就过时了。
+REVISION_SCOPED_PREFIXES = (OPEN_GOALS_PREFIX, STALLED_PREFIX)
+
+
+def superseded_revision_requests(pending: Any, mission_id: str, plan_revision: int) -> list[str]:
+    """待处理的请求里，说的是旧计划版本局面的那些（请求编号）。
+
+    "第 N 版计划里这些目标没有做法""第 N 版计划停在原地"——计划已经到了别的版本，这句话就
+    过时了：新版本的局面由新版本自己的请求去说，不让两条请求指着同一件事。
     """
-    current = open_goals_key(mission_id, plan_revision)
+    current = {prefix + f"{mission_id}:{int(plan_revision)}" for prefix in REVISION_SCOPED_PREFIXES}
     return [str(row["request_id"]) for row in pending
-            if str(row.get("source_key", "")).startswith(OPEN_GOALS_PREFIX)
-            and row.get("source_key") != current]
+            if str(row.get("source_key", "")).startswith(REVISION_SCOPED_PREFIXES)
+            and row.get("source_key") not in current]
+
+
+def request_planner_for_stall(dispatch: Any, mission: Any, *, plan_revision: int,
+                              detail: dict[str, Any]) -> bool:
+    """片 D：确认停滞之后、判失败之前，把局面交给规划器一次。
+
+    请求里只有事实：哪些步骤被哪道闸挡住、哪些放行了却没派发、哪些要求还欠着。改计划、问
+    用户还是别的，由规划器定。范围是整个计划——任何一步上的计划改动都算处理了它。每个计划
+    版本只记一条；已经记过返回 False，调用方据此按"没有可派发的工作"停。
+    """
+    network = dispatch.network(mission.id)
+    tasks = tuple(str(spec.task_id) for spec in network.occurrences)
+    roots = tuple(str(network.occurrence(occurrence).task_id) for occurrence in network.root_occurrence_ids)
+    return record_request(
+        dispatch, mission.id, event_type="NoDispatchableWork", trigger_refs=roots or (mission.id,),
+        source_key=stalled_key(mission.id, plan_revision),
+        detail={"reason": "no_dispatchable_work", "plan_revision": int(plan_revision), **detail},
+        scope=tasks + tuple(str(spec.occurrence_id) for spec in network.occurrences))
+
+
+def stall_request_asked(store: Any, mission_id: str, plan_revision: int) -> dict[str, Any] | None:
+    """这一版计划因为停在原地而记下的那条请求：请求编号、规划器那一轮有没有开出来。
+
+    没有记过就是 None。只是事实，供停机报告如实写明"问过"。
+    """
+    source_key = stalled_key(mission_id, plan_revision)
+    events = tuple(store.iter_events(mission_id))
+    asked = next((e for e in events if e.type == REQUESTED and e.payload.get("source_key") == source_key), None)
+    if asked is None:
+        return None
+    request_id = str(asked.payload["request_id"])
+    opened = any(e.type == "PlanningServiceResumed" and e.payload.get("source_type") == REQUESTED
+                 and e.payload.get("service_id") == f"{REQUESTED}:{request_id}" for e in events)
+    return {"request_id": request_id, "planner_turn_opened": opened}
 
 
 def open_goal_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: set[str]) -> bool:
@@ -156,7 +203,7 @@ def open_goal_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: set[s
         return False
     revision = int(active.revision)
     produced = False
-    for request_id in superseded_open_goal_requests(pending_requests(store, mission.id), mission.id, revision):
+    for request_id in superseded_revision_requests(pending_requests(store, mission.id), mission.id, revision):
         append_hierarchical_event(store, ADDRESSED, mission.id, key="system:" + request_id,
             payload={"decision_id": None, "decision_type": "SYSTEM_SUPERSEDED", "status": "COMMITTED",
                      "subject_key": None, "repair_request_ids": [request_id],

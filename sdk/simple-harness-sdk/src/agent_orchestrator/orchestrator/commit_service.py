@@ -116,7 +116,7 @@ from ..verification.conflicts import (
 from ..verification.critics import parse_critic_verdict
 from ..verification.deterministic_checks import LayerResult
 from ..verification.human_review import review_request_id
-from ..verification.mission_coverage import mission_coverage
+from ..verification.mission_coverage import mission_coverage, reconcile_document_judgments
 from .action_commits import ActionCommitsMixin
 from .fragment_commits import FragmentCommitsMixin
 from .human_commits import HumanCommitsMixin
@@ -5395,7 +5395,8 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         mission = self._require_mission(mission_id)
         try:
             coverage = mission_coverage(
-                self._store, mission, domain, artifact_store=self._source_artifact_store
+                self._store, mission, domain, artifact_store=self._source_artifact_store,
+                assured=self._on_assured_lane(mission_id),
             )
         except ContractError as error:
             self.fail_mission(
@@ -5415,6 +5416,11 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             )
             return "document_sources_stale"
         return None
+
+    def _on_assured_lane(self, mission_id: str) -> bool:
+        from ..storage.assurance_store import AssuranceStore
+
+        return AssuranceStore(self._store).lane(mission_id) == "ASSURANCE_1_1"
 
     def stop_insufficient_mission(self, mission_id: str) -> Mission | None:
         """Recompute the original Mission catalogue before any judge or publication."""
@@ -5436,7 +5442,8 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             if not tasks or any(task.status is not TaskStatus.COMPLETED for task in tasks):
                 return None
             coverage = mission_coverage(
-                self._store, mission, domain, artifact_store=self._source_artifact_store
+                self._store, mission, domain, artifact_store=self._source_artifact_store,
+                assured=self._on_assured_lane(mission_id),
             )
             if not coverage["insufficient"]:
                 return None
@@ -5530,9 +5537,13 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             domain = self.domain_for(mission_id)
             document_coverage = None
             if supports_document_assessments(domain):
+                # 片 D 第 2 项：保证通道上，文字要求的结论是最终审查的，这里只守秩序——
+                # 秩序检查没过的要求不许记成满足；"不确定"占比不再停机。
+                assured = self._on_assured_lane(mission_id)
                 try:
                     document_coverage = mission_coverage(
-                        self._store, mission, domain, artifact_store=self._source_artifact_store
+                        self._store, mission, domain, artifact_store=self._source_artifact_store,
+                        assured=assured,
                     )
                 except ContractError as error:
                     if not requires_mission_source_binding(domain):
@@ -5548,30 +5559,13 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     raise CommitRejected(
                         "judgments must cover the Mission success criteria in order"
                     )
-                for item, assessed in zip(
-                    mutable_judgments, document_coverage["criteria"], strict=True
-                ):
-                    if assessed["verdict"] == "STRUCTURAL":
-                        continue
-                    allowed = assessed["verdict"] in {"PASS", "INCONCLUSIVE"}
-                    if (
-                        requires_mission_source_binding(domain)
-                        and item.get("met") is True
-                        and not allowed
-                        and item.get("judge") == "document_coverage"
-                        and item.get("criterion_id") == assessed["criterion_id"]
-                    ):
-                        # A once-valid deterministic judgment can become stale while
-                        # waiting for actions/approval. Commit the fresh failure once.
-                        item.update(
-                            met=False,
-                            verdict=assessed["verdict"],
-                            reason="; ".join(assessed["reasons"]),
-                        )
-                    if type(item.get("met")) is not bool or item["met"] != allowed:
-                        raise CommitRejected(
-                            "Mission content judgment disagrees with deterministic coverage"
-                        )
+                objection = reconcile_document_judgments(
+                    mutable_judgments, document_coverage["criteria"], assured=assured,
+                    refresh_stale=requires_mission_source_binding(domain))
+                if objection is not None:
+                    raise CommitRejected(
+                        f"Mission content judgment disagrees with deterministic coverage ({objection})"
+                    )
             for task in all_tasks:  # a paused READY route ends with the Mission as not needed
                 if task.paused and task.status is TaskStatus.READY:
                     self._store.update_task(

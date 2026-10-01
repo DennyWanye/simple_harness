@@ -459,7 +459,7 @@ register_template(SYNTHESIZER_V2)
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v15"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v16"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -522,6 +522,14 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "（consecutive_identical）、已经修过几次和上限。它不是已经执行的修复，也不替你下结论。"
         "trigger_source 为 GOAL_UNREFINED 的请求说的是另一件事：当前计划里有目标还没有做法"
         "（context.open_goals 列出是哪几个、各是什么类型），请为它们选做法或提出新做法，一轮处理一个。"
+        "trigger_source 为 NO_DISPATCHABLE_WORK 的请求说的是：当前计划停在原地——没有一步可以派发，"
+        "也没有在等任何东西。context.withheld 逐条列出哪个步骤被哪道闸挡住和原因代码，"
+        "context.admitted_not_dispatched 是放行了却没派发的步骤，context.outstanding_obligations "
+        "是还欠着的要求；context.final_review（最终审查）或 context.composition_review（中间目标的"
+        "组合审查）出现时表示那一次审查没有给出结论——审阅员的回复用完了仍无法采用，reason 是原因代码，"
+        "这一版计划不会再有这次审查的结论。"
+        "要不要改计划（换做法、补步骤、重试）、要不要问用户，由你判断；同一版计划"
+        "只会这样问你一次，你这一轮之后计划仍停在原地，任务就按「没有可派发的工作」结束。"
         "unknown_coverage 或 unresolved_operations 没解决时不能声称修复完成。\n"
         "  - human_answers：用户已经回答过的问题。先看这里，答过的不要再问。\n"
         "  - previous_feedback：不为 null 表示你上一次的回复被拒绝了（见最后一节）。\n"

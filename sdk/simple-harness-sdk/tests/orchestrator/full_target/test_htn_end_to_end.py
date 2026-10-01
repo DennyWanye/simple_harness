@@ -4903,7 +4903,7 @@ def test_the_decide_loop_issues_the_start_licence_before_it_reads_readiness() ->
 # --------------------------------------------------------------------------------------
 
 
-def _stalled(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS):
+def _stalled(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, provider: Any = None):
     """A committed plan whose leaves every gate withholds, on a real Orchestrator."""
 
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
@@ -4923,19 +4923,43 @@ def _stalled(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS):
     )
     world.store.close()
     config = OrchestratorConfig(evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5)
-    return world, Orchestrator(config, RoleScriptedProvider({"planner": []})), mode
+    return world, Orchestrator(config, provider or RoleScriptedProvider({"planner": []})), mode
 
 
-def _install(loop: Any, world: World) -> None:
+def _install(loop: Any, world: World, *, planner_asked: bool = True) -> None:
     """Hand the loop this Env, pointed at the store the **loop** opened.
 
     ``_stalled`` closes the fixture's handle and the Orchestrator opens its own over
     the same file; since review P2-16 the Env reads its evidence counters out of a
     store, so it has to be the live one.
+
+    ``planner_asked``（片 D）：判停之前先问规划器一次，每个计划版本一条请求。这一组测试看的是
+    停滞的记录、确认与停机报告，所以默认站在"这一版计划已经问过规划器、它那一轮没有改动"
+    的位置上；看"问"这一步本身的测试传 False（``test_stall_asks_planner_first.py``）。
     """
 
     world.env.semantics = HtnStore(loop.store)
     loop.install_hierarchical(planning=world.env)
+    if planner_asked and loop.hierarchical.semantics().active_plan_revision(world.mission.id) is not None:
+        _planner_already_asked(loop, world.mission)
+
+
+def _planner_already_asked(loop: Any, mission: Any) -> None:
+    from agent_orchestrator.orchestrator.hierarchical_dispatch import append_hierarchical_event
+    from agent_orchestrator.orchestrator.planning_repair_requests import (
+        REQUESTED,
+        request_planner_for_stall,
+        stall_request_asked,
+    )
+
+    dispatch = loop.hierarchical
+    revision = int(dispatch.network(mission.id).plan_revision)
+    assert request_planner_for_stall(dispatch, mission, plan_revision=revision, detail={})
+    request_id = stall_request_asked(loop.store, mission.id, revision)["request_id"]
+    service_id = f"{REQUESTED}:{request_id}"
+    append_hierarchical_event(loop.store, "PlanningServiceResumed", mission.id, key=service_id, payload={
+        "service_id": service_id, "source_type": REQUESTED, "decision_id": None,
+        "intent_id": "planner-turn-that-changed-nothing", "ordinal": 1})
 
 
 def test_an_idle_hierarchical_mission_with_withheld_work_records_the_stall(tmp_path) -> None:

@@ -315,7 +315,7 @@ def test_non_true_never_authorises(value: TruthValue) -> None:
     "payload",
     [
         "truth_value == 'TRUE'",
-        {"op": "predicate", "predicate_ref": "eval('True')", "arguments": {}},
+        {"op": "predicate", "predicate_ref": "not-a-versioned-ref", "arguments": {}},
         {"op": "python", "source": "return True"},
         {"op": "all", "items": [{"op": "sql", "query": "SELECT 1 FROM tasks"}]},
     ],
@@ -328,17 +328,6 @@ def test_the_ast_refuses_code_and_unknown_operators(payload: object) -> None:
 def test_the_ast_refuses_a_callable() -> None:
     with pytest.raises(ContractError, match="callable"):
         parse_condition({"op": "constant", "value": len})
-
-
-def test_the_ast_refuses_an_sql_fragment_in_an_argument() -> None:
-    with pytest.raises(ContractError, match="executable code or a query fragment"):
-        parse_condition(
-            {
-                "op": "predicate",
-                "predicate_ref": {"id": "p", "version": 1, "content_hash": "a" * 64},
-                "arguments": {"q": {"op": "constant", "value": "SELECT * FROM secrets"}},
-            }
-        )
 
 
 def test_the_ast_refuses_more_nodes_than_the_structure_budget() -> None:
@@ -661,17 +650,6 @@ def test_a_stored_declaration_cannot_acquire_denial_powers_registration_refused(
     payload["observer_ids"] = []
 
     with pytest.raises(ContractError, match="needs at least one authoritative observer"):
-        PredicateSignature.from_json(payload)
-
-
-def test_a_stored_declaration_cannot_smuggle_executable_content_back_in() -> None:
-    payload = PredicateSignature(
-        predicate_ref=VersionedRef(id="pred-sources", version=1, content_hash="a" * 64),
-        statement="the named sources are readable",
-    ).to_json()
-    payload["statement"] = "eval('True')"
-
-    with pytest.raises(ContractError, match="executable code or a query fragment"):
         PredicateSignature.from_json(payload)
 
 

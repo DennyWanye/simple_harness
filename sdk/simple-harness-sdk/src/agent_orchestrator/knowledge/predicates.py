@@ -166,7 +166,7 @@ class PredicateSignature:
         The registration rules run again on the way back in — a CLOSED-world
         predicate still needs an observer, and the whole payload still goes through
         :func:`reject_executable` — so a stored or transmitted declaration cannot
-        acquire denial powers, or executable content, that registration refused.
+        acquire denial powers, or a callable, that registration refused.
         """
 
         data = fields_of(

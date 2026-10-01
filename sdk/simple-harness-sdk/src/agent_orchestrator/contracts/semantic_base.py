@@ -132,18 +132,17 @@ def json_object(value: object, name: str) -> dict[str, Any]:
 
 
 def reject_executable(value: object, name: str) -> None:
-    """A registry / condition entry may never carry code.
+    """A registry / condition entry may never carry a callable.
 
-    ``eval``-style payloads reach contracts in two shapes: an actual callable, or
-    a string that a naive interpreter would hand to ``eval`` / a SQL driver.  Both
-    are refused here; the safe interpreter in ``planning.htn.applicability`` only
-    ever walks structured AST nodes.
+    Strings are data: the safe interpreter in ``planning.htn.applicability`` only
+    ever walks structured AST nodes and never hands a string to ``eval`` or a SQL
+    driver, so what a string *says* is not checked here.  (It used to be matched
+    against a table of substrings — "update ", "select ", "delete from" — which
+    refused ordinary sentences such as "update the README"; 片 D 第 5 项.)
     """
 
     if callable(value) or isinstance(value, (staticmethod, classmethod)):
         raise ContractError(f"{name} must not be a callable")
-    if isinstance(value, str) and _looks_like_code(value):
-        raise ContractError(f"{name} must not contain executable code or a query fragment")
     if isinstance(value, Mapping):
         for key, item in value.items():
             reject_executable(key, f"{name}.key")
@@ -152,28 +151,6 @@ def reject_executable(value: object, name: str) -> None:
     if isinstance(value, (list, tuple, set, frozenset)):
         for item in value:
             reject_executable(item, f"{name}[]")
-
-
-_CODE_MARKERS = (
-    "eval(",
-    "exec(",
-    "lambda ",
-    "__import__",
-    "import os",
-    "subprocess",
-    "select ",
-    "insert into",
-    "update ",
-    "delete from",
-    "drop table",
-    "union all",
-    "--;",
-)
-
-
-def _looks_like_code(value: str) -> bool:
-    lowered = value.strip().lower()
-    return any(marker in lowered for marker in _CODE_MARKERS)
 
 
 def sequence_of(

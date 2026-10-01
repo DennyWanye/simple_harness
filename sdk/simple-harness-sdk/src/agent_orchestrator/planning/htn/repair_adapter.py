@@ -45,6 +45,8 @@ EVENT_TRIGGER_MAP: dict[str, RepairTriggerSource] = {
     "requirementsupdated": RepairTriggerSource.REQUIREMENTS_UPDATE,
     "goal_unrefined": RepairTriggerSource.GOAL_UNREFINED,
     "goalunrefined": RepairTriggerSource.GOAL_UNREFINED,
+    "no_dispatchable_work": RepairTriggerSource.NO_DISPATCHABLE_WORK,
+    "nodispatchablework": RepairTriggerSource.NO_DISPATCHABLE_WORK,
 }
 
 
@@ -107,7 +109,7 @@ class RepairEventAdapter:
             else EVENT_TRIGGER_MAP.get(_normal_event_type(_event_value(event, "type")))
         )
         if source is None:
-            raise ContractError("event does not identify one of the five H4 repair triggers")
+            raise ContractError("event does not identify a repair trigger")
         payload = _event_value(event, "payload", {})
         payload = payload if isinstance(payload, Mapping) else {}
         context = dict(payload.get("context", {}))

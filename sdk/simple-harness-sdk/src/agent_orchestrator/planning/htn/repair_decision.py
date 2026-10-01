@@ -51,7 +51,7 @@ class RepairActionType(StrEnum):
 
 
 class RepairTriggerSource(StrEnum):
-    """The six events that can open one request to the Planner."""
+    """The events that can open one request to the Planner."""
 
     WORKER_REJECT = "WORKER_REJECT"
     VERIFIER_ACCEPTANCE_REJECT = "VERIFIER_ACCEPTANCE_REJECT"
@@ -60,6 +60,8 @@ class RepairTriggerSource(StrEnum):
     REQUIREMENTS_UPDATE = "REQUIREMENTS_UPDATE"
     #: 片 B：当前计划里有目标还没有做法（上级做法放进来的中间目标）。
     GOAL_UNREFINED = "GOAL_UNREFINED"
+    #: 片 D：计划停在原地——没有一步可以派发，也不在等任何东西。
+    NO_DISPATCHABLE_WORK = "NO_DISPATCHABLE_WORK"
 
     # Readable aliases used by callers that name the producer rather than the
     # protocol row.  They are aliases, so the wire vocabulary remains closed.

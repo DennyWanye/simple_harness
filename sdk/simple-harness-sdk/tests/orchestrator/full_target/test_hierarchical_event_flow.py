@@ -1501,6 +1501,10 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     2026-10-01 HTN 精简片 B（计数 23→22）：第十七处 ``_refine_open_compounds`` 整条删除，
     "计划里有目标还没有做法"改由 ``planning_repair_requests.open_goal_triggers`` 记一条通用
     规划请求（它经 ``collect_triggers`` 拿到的已经是分层调度，不再询问模式）。
+
+    2026-10-02 HTN 精简片 D 第 2 项（计数 22→23）：``_refresh_document_judgments`` 重看一份留存
+    的文档判定时，保证通道上的文字要求要读已认证的最终审查结论（``_assured_root_grades``），
+    它需要分层调度；旧平面任务这里拿到 None，照旧只按覆盖结果重算。
     """
 
     del tmp_path
@@ -1509,7 +1513,7 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     from agent_orchestrator.orchestrator import event_handler
 
     source = inspect.getsource(event_handler)
-    assert source.count("self._new_mode(mission)") == 22
+    assert source.count("self._new_mode(mission)") == 23
     assert "is_hierarchical(mission)" in inspect.getsource(event_handler.Orchestrator._new_mode)
 
 

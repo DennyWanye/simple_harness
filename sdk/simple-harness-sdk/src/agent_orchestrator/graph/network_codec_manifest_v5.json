@@ -58,7 +58,7 @@
     {
       "component": "semantic",
       "source_path": "agent_orchestrator/contracts/semantic_base.py",
-      "source_sha256": "e60c139c9c2f372a5a0aab1bd7a0d7f9ce7e96d4fa1be07a116661395db56363"
+      "source_sha256": "9e544b8eb34a7a0f8c49763731a7d0c1e7a38b69452888fdecd96043f74c9dd8"
     },
     {
       "component": "evidence",
