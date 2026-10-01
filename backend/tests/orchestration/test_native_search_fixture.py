@@ -44,6 +44,7 @@ async def test_p34_fragment_crossbranch_public_orchestrator(tmp_path: Path):
         tenant_id="local-desktop", idempotency_key=request["idempotency_key"],
         allowed_tools=tuple(TOOLS), domain=request["domain"],
         budget=Budget(**request["budget"]), synthesis=request["synthesis"],
+        orchestration_semantics_version="legacy",
     )
     async with Orchestrator(config, provider, owner="p34-first") as orch:
         mission = await orch.submit_mission(spec)

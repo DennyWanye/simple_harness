@@ -25,7 +25,10 @@ async def test_diagnostics_authenticates_before_reading_and_rejects_scope_overri
     try:
         own = service.create_mission(notes_request("p36-owned"))["mission_id"]
         foreign = MissionControlV1(service._orchestrator, tenant_id="another-user", principal=principal)
-        other = foreign.create(notes_request("p36-foreign"))["mission_id"]
+        # created straight through the SDK facade (not the Host service), so the mode
+        # is written out: the SDK's own default is the hierarchical mode
+        other = foreign.create(notes_request(
+            "p36-foreign", orchestration_semantics_version="legacy"))["mission_id"]
         assert service.status()["diagnostics_available"] is True
         def forbidden(*args, **kwargs):
             pytest.fail("diagnostics read ran before ownership/request validation")

@@ -1363,8 +1363,10 @@ class OrchestrationService:
             self.tenant_id, str(body.get("idempotency_key", "")),
         ) if self._orchestrator is not None else None
         existing = found[0] if found else None
+        from agent_orchestrator.orchestrator.plan_commits import (
+            HIERARCHICAL_SEMANTICS, LEGACY_SEMANTICS, semantics_of,
+        )
         if self._test_scenario is None and hasattr(self._orchestrator, "install_hierarchical_deployment"):
-            from agent_orchestrator.orchestrator.plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
             from agent_orchestrator.orchestrator.planning_protocol_binding import planning_protocol_for_mission
             if existing is None:
                 body.setdefault("orchestration_semantics_version", HIERARCHICAL_SEMANTICS)
@@ -1374,6 +1376,9 @@ class OrchestrationService:
                 frozen = planning_protocol_for_mission(self._orchestrator.store, existing.id)
                 if frozen is not None:
                     body.setdefault("planning_protocol_version", frozen["protocol_version"])
+        # The mode is always written out: the SDK's own default is the hierarchical
+        # mode, and a scripted test scenario or a retry of a flat Mission is flat.
+        body.setdefault("orchestration_semantics_version", LEGACY_SEMANTICS)
         profiles = self._context_profiles()
         if "runtime_profile_id" in body:
             selected = body["runtime_profile_id"]

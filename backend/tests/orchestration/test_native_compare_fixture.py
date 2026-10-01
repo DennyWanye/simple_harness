@@ -39,6 +39,7 @@ def _spec(request):
         tenant_id="local-desktop", idempotency_key=request["idempotency_key"],
         allowed_tools=TOOLS, domain=request["domain"], budget=Budget(**request["budget"]),
         search_policy_version_id=request.get("search_policy_version_id"),
+        orchestration_semantics_version="legacy",
     )
 
 
