@@ -53,8 +53,7 @@ from agent_orchestrator.planning.htn.observers.code import code_observers  # noq
 from agent_orchestrator.planning.htn.world import build_planning_world  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.runtime.role_templates import (  # noqa: E402
-    PLANNER_HIERARCHICAL_V14,
-    PLANNING_DECISION_PACKAGE_LABEL,
+    PLANNER_HIERARCHICAL,
     PLANNING_DECISION_PACKAGE_VERSION,
 )
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
@@ -108,12 +107,13 @@ def _approve_root_content_only_spec(commit, mission, binding, *, command_id: str
     return requirements
 
 
-def test_only_the_current_planning_package_label_binds() -> None:
+def test_the_package_states_its_version_as_the_integer_the_binding_stores() -> None:
     assert Orchestrator._planning_decision_package_version(
-        {"package_version": PLANNING_DECISION_PACKAGE_LABEL}
+        {"package_version": PLANNING_DECISION_PACKAGE_VERSION}
     ) == PLANNING_DECISION_PACKAGE_VERSION
-    with pytest.raises(ContractError):  # 2026-09-25: historical labels are no longer served
-        Orchestrator._planning_decision_package_version({"package_version": "planner-package-hierarchical-v8"})
+    for malformed in ("planner-package-hierarchical-v8", True, 0, None):
+        with pytest.raises(ContractError):
+            Orchestrator._planning_decision_package_version({"package_version": malformed})
 
 
 def _config(tmp_path: Path) -> OrchestratorConfig:
@@ -208,7 +208,7 @@ async def _open_planner_round(
     from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
     frozen = PlanningDecisionStore(loop.store).get_mission_protocol(mission.id)
     assert frozen["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
-    assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL_V14.prompt_version
+    assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL.prompt_version
     assert intent.config["planning_package"]["planning_protocol"]["protocol"] == (
         "planning-decision-v1"
     )
@@ -217,20 +217,11 @@ async def _open_planner_round(
 
 def _refine_reply(package: dict[str, Any]) -> str:
     subject = package["planning_subjects"][0]["subject_key"]
-    applicable = next(
-        item for item in package["applicability"] if item["verdict"] == "APPLICABLE"
+    goal = next(item for item in package["views"]["goals"] if item["open"])
+    method_ref = next(
+        dict(item["method_ref"]) for item in package["views"]["methods"]
+        if any(report["verdict"] == "APPLICABLE" for report in item["applicability"])
     )
-    method = next(
-        item["method_ref"]
-        for item in package["method_library"]
-        if item["method_ref"] == applicable["method_ref"]
-    )
-    method_ref = {
-        "kind": "method",
-        "id": method["method_id"],
-        "semantic_revision": method["version"],
-        "content_hash": method["content_hash"],
-    }
     body = {
         "schema_version": 1,
         "decision_type": "REFINE",
@@ -240,7 +231,7 @@ def _refine_reply(package: dict[str, Any]) -> str:
         "assumptions": [],
         "payload": {
             "method_ref": method_ref,
-            "bindings": dict(package["plan"]["open_compound_goals"][0]["typed_parameters"]),
+            "bindings": dict(goal["params"]),
         },
         "uncertainties": [],
         "alternatives": [],
@@ -256,22 +247,18 @@ def _events(loop: Orchestrator, mission_id: str, event_type: str) -> list[Any]:
     return [event for event in loop.store.list_events(mission_id) if event.type == event_type]
 
 
-def test_new_protocol_production_entry_selects_prompt_v10(tmp_path: Path) -> None:
+def test_the_planning_request_is_the_package_and_nothing_appended(tmp_path: Path) -> None:
     async def case() -> None:
         async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
             mission, _env, _contract, dispatch = _seed_new_protocol(loop, tmp_path, key="h1i-v10")
             intent = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            assert intent.config["planning_package"]["package_version"] == PLANNING_DECISION_PACKAGE_LABEL
+            assert intent.config["planning_package"]["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
+            # One prompt: the wire format is described in the role template only.  A second
+            # block of instructions appended to the request used to live here.
             message = intent.config["message"]["content"]
-            assert (
-                "rejected_method_instance and replacement_method_ref must each be JSON objects"
-                in message
-            )
-            assert (
-                "the first object has kind method_instance and the second has kind method"
-                in message
-            )
-            assert 'decision_type exactly "REPAIR" (never "REPAIR/REPLACE_METHOD")' in message
+            assert "REMINDER" not in message and "plan_revision_proposal" not in message
+            assert message.startswith("## context_builder_version")
+            assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL.prompt_version
 
     asyncio.run(case())
 
@@ -438,7 +425,7 @@ def test_real_collector_preview_commit_commits_one_plan_revision(tmp_path: Path)
 
 @pytest.mark.parametrize(
     "decision_type",
-    ("WAIT", "NO_CHANGE", "DECLARE_BLOCKED"),
+    ("WAIT", "NO_CHANGE"),
 )
 def test_state_free_decision_context_has_no_uninitialised_operation_snapshot(
     tmp_path: Path, decision_type: str

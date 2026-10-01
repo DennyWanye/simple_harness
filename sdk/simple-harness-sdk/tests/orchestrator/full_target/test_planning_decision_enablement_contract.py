@@ -14,7 +14,7 @@ import pytest
 
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
-    H4_DECISION_ENABLEMENT,
+    ENABLED_DECISIONS,
     PlanningDecisionType,
     RepairKind,
     exposed_enablement,
@@ -28,7 +28,7 @@ from test_h1i_production_entry import _config, _seed_new_protocol
 
 
 def test_exposed_values_are_legal_and_slash_free() -> None:
-    types, kinds = exposed_enablement(H4_DECISION_ENABLEMENT)
+    types, kinds = exposed_enablement()
     assert types and kinds
     assert all("/" not in value for value in types + kinds)
     assert {PlanningDecisionType(value) for value in types}  # every value decodes
@@ -37,9 +37,8 @@ def test_exposed_values_are_legal_and_slash_free() -> None:
 
 
 def test_exposed_and_internal_are_inverses() -> None:
-    executable = frozenset(k for k, v in H4_DECISION_ENABLEMENT.items() if v.executable)
-    types, kinds = exposed_enablement(H4_DECISION_ENABLEMENT)
-    assert internal_enablement_keys(types, kinds) == executable
+    types, kinds = exposed_enablement()
+    assert internal_enablement_keys(types, kinds) == ENABLED_DECISIONS
 
 
 def test_internal_keys_refuse_kinds_without_repair() -> None:
@@ -49,20 +48,13 @@ def test_internal_keys_refuse_kinds_without_repair() -> None:
         internal_enablement_keys(["REPAIR/RETRY_SAME_METHOD"], [])
 
 
-def test_current_package_pairs_with_v11_for_bound_missions_and_v12_for_new_ones() -> None:
-    # 2026-09-29: v12 = v11 + "missing external input → REPAIR/ESCALATE"; same package 8.
-    # 2026-09-30: v13 = v12 + sub-structure fields and feedback (package 8).
-    # 2026-10-01 HTN 精简片 A：当前包是第 9 版、只配 v14；第 8 版包的配对不变。
-    assert role_templates.PLANNING_DECISION_PACKAGE_VERSION == 9
-    assert role_templates.PLANNING_DECISION_PROMPT_VERSION == role_templates.PLANNER_HIERARCHICAL_V14_VERSION
-    assert role_templates.hierarchical_planner_pairing_is_valid("planner-hierarchical-v13", 8)
-    assert role_templates.hierarchical_planner_pairing_is_valid("planner-hierarchical-v11", 8)
-    assert role_templates.hierarchical_planner_pairing_is_valid("planner-hierarchical-v12", 8)
-    assert not role_templates.hierarchical_planner_pairing_is_valid("planner-hierarchical-v10", 8)
-    assert "enabled_repair_kinds" in role_templates.PLANNER_HIERARCHICAL_V11.instructions
-    v12 = role_templates.PLANNER_HIERARCHICAL_V12.instructions
-    assert v12.startswith(role_templates.PLANNER_HIERARCHICAL_V11.instructions)
-    assert "repair_kind=ESCALATE" in v12 and "target=human" in v12
+def test_the_current_package_pairs_with_the_one_prompt() -> None:
+    assert role_templates.PLANNING_DECISION_PACKAGE_VERSION == 10
+    assert role_templates.PLANNING_DECISION_PROMPT_VERSION == role_templates.PLANNER_HIERARCHICAL_VERSION
+    assert role_templates.hierarchical_planner_pairing_is_valid(
+        role_templates.PLANNING_DECISION_PROMPT_VERSION, role_templates.PLANNING_DECISION_PACKAGE_VERSION)
+    assert not role_templates.hierarchical_planner_pairing_is_valid("planner-hierarchical-v13", 8)
+    assert "enabled_repair_kinds" in role_templates.PLANNER_HIERARCHICAL.instructions
 
 
 def test_package_lists_types_and_kinds_and_admission_reads_internal_keys(tmp_path: Path) -> None:
@@ -80,7 +72,7 @@ def test_package_lists_types_and_kinds_and_admission_reads_internal_keys(tmp_pat
             assert all("/" not in v for v in protocol["enabled_decision_types"] + protocol["enabled_repair_kinds"])
             assert "REPAIR" in protocol["enabled_decision_types"]
             assert "RETRY_SAME_METHOD" in protocol["enabled_repair_kinds"]
-            assert intent.config["planning_package"]["package_version"] == role_templates.PLANNING_DECISION_PACKAGE_LABEL
+            assert intent.config["planning_package"]["package_version"] == role_templates.PLANNING_DECISION_PACKAGE_VERSION
 
     asyncio.run(case())
 

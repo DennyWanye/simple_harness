@@ -86,39 +86,25 @@ def _envelope(subject_key: str, decision_type: str, payload: Mapping[str, Any], 
     }
 
 
-def _method_ref(row: Mapping[str, Any]) -> dict[str, Any]:
-    ref = row["method_ref"]
-    return {
-        "kind": "method",
-        "id": ref["method_id"],
-        "semantic_revision": ref["version"],
-        "content_hash": ref["content_hash"],
-    }
-
-
 def refine_reply(package: Mapping[str, Any], *, method_id: str | None = None) -> str:
     """REFINE the first open goal with ``method_id``, or with the first applicable method."""
 
-    goal = package["plan"]["open_compound_goals"][0]
-    subject = next(
-        row["subject_key"]
-        for row in package["planning_subjects"]
-        if row["occurrence_id"] == goal["occurrence_id"]
-    )
-    applicable = [
-        row["method_ref"] for row in package["applicability"] if row["verdict"] == "APPLICABLE"
-    ]
+    goal = next(row for row in package["views"]["goals"] if row["open"])
+
+    def applies(row: Mapping[str, Any]) -> bool:
+        return any(report["verdict"] == "APPLICABLE"
+                   and report["goal_occurrence_id"] == goal["occurrence_id"]
+                   for report in row["applicability"])
+
     chosen = next(
-        row
-        for row in package["method_library"]
-        if (row["method_id"] == method_id if method_id is not None
-            else row["method_ref"] in applicable)
+        row for row in package["views"]["methods"]
+        if (row["method_ref"]["id"] == method_id if method_id is not None else applies(row))
     )
     return decision_text(
         _envelope(
-            subject,
+            goal["subject_key"],
             "REFINE",
-            {"method_ref": _method_ref(chosen), "bindings": dict(goal["typed_parameters"])},
+            {"method_ref": dict(chosen["method_ref"]), "bindings": dict(goal["params"])},
             rationale="选择当前可适用的已注册方法。",
         )
     )

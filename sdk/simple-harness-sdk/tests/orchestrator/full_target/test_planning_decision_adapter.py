@@ -23,7 +23,6 @@ from agent_orchestrator.contracts.planning_decisions import (
     BindExistingGoalMode,
     BlockedItemV1,
     BlockerCode,
-    DeclareBlockedDecision,
     NoChangeDecision,
     PlanningDecisionEnvelopeV1,
     PlanningDecisionType,
@@ -262,35 +261,14 @@ def test_wait_and_no_change_are_durable_only_and_never_proposals() -> None:
         if decision.decision_type is PlanningDecisionType.WAIT:
             assert outcome.durable_only.reason == decision.payload.reason
             assert outcome.durable_only.wait_for == decision.payload.wait_for
-            assert outcome.durable_only.blockers == ()
-            assert outcome.durable_only.resumable_if == ()
         else:
             assert outcome.durable_only.reason == decision.payload.reason
             assert outcome.durable_only.wait_for == ()
-            assert outcome.durable_only.blockers == ()
-            assert outcome.durable_only.resumable_if == ()
     outcome = adapt_admitted_decision(_admitted(no_change), context=_context(read_set=()))
     assert outcome.proposal is None and outcome.durable_only is not None
 
 
-def test_declare_blocked_preserves_the_minimal_synthesis_stall_signal() -> None:
-    decision = _envelope(
-        PlanningDecisionType.DECLARE_BLOCKED,
-        DeclareBlockedDecision(
-            blockers=(BlockedItemV1(BlockerCode.NO_USABLE_METHOD, "没有可用方法"),),
-            resumable_if=(ResumableIf.NEW_METHOD_ADMITTED,),
-        ),
-    )
-    admitted = _admitted(decision)
-    outcome = adapt_admitted_decision(admitted, context=_context())
-    assert outcome.proposal is None
-    assert outcome.durable_only is not None
-    assert outcome.durable_only.canonical_hash == admitted.canonical_hash
-    assert outcome.durable_only.decision_type == decision.decision_type
-    assert outcome.durable_only.reason == decision.rationale
-    assert outcome.durable_only.blockers == decision.payload.blockers
-    assert outcome.durable_only.resumable_if == decision.payload.resumable_if
-    assert outcome.durable_only.wait_for == ()
+
 
 
 def test_system_fields_come_from_context_not_model_payload_values() -> None:

@@ -75,8 +75,8 @@ def test_suspended_method_is_not_offered_as_a_candidate(tmp_path):
     assert _goals_without_applicable_method(world)
     # Immutable definitions stay available to historical instances.
     assert world.env.registry.definition(reference) == world.contract
-    from agent_orchestrator.planning.htn.planner_package import method_library
-    assert method_library(world.env.registry, ["plan.goal"], mission_id=world.mission.id) == ()
+    from agent_orchestrator.planning.htn.planner_package import method_rows
+    assert method_rows(world.env.registry, ["plan.goal"], mission_id=world.mission.id) == ((), 0)
     registration = world.env.registry.reinstate(reference,
         mission_id=MissionRef("a-different-trial-mission"), reason="scoped re-evaluation")
     HtnStore(world.store).set_method_registration(registration)
@@ -98,9 +98,9 @@ def test_current_runtime_views_do_not_reintroduce_suspended_methods(tmp_path):
             registration = world.registry.suspend(reference, reason="source-library experiment")
             HtnStore(loop.store).set_method_registration(registration)
             sealed = loop._hierarchical_planner_package(dispatch, mission, ordinal=1)
-            assert sealed.package["package_version"] == __import__("agent_orchestrator.runtime.role_templates", fromlist=["x"]).PLANNING_DECISION_PACKAGE_LABEL
-            rows = sealed.package["method_library"]
-            assert rows and all(r["method_ref"] != reference.to_json() for r in rows)
+            assert sealed.package["package_version"] == __import__("agent_orchestrator.runtime.role_templates", fromlist=["x"]).PLANNING_DECISION_PACKAGE_VERSION
+            rows = sealed.package["views"]["methods"]
+            assert rows and all(r["method_ref"]["id"] != reference.method_id for r in rows)
             assert provider.calls == 0
     asyncio.run(case())
 

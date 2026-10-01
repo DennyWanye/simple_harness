@@ -1,30 +1,12 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""P2.3q: repair-round reuse of accepted read-only leaves, empty-Planner shortcut,
-synthesis method-width bound, and split rejection flags.
+"""Repair-round reuse of accepted read-only leaves.
 
-Grok fourth-batch L3 (SDK d360750): all four episodes hit a calls/attempts ceiling
-after a retire+refine that re-materialised the whole net (C2-r0 funded_now=10),
-two doomed Planner rounds at kickoff, one more empty Planner on every repair, and
-a 10-leaf synthesised method. C1-r1's Planner called a read-only-leaf cancel
-``rejected_by_root_review`` because the package used one flag for both reasons.
-
-Four changes, none of them in ``contracts/``:
-
-(a) retire+refine defaults ``share_active`` for CURRENT-accepted read-only leaves
-    of the retiring instance that are not criterion-linked (facts / reproduce);
-    write leaves and unaccepted leaves stay new work; ``funded_now`` counts only
-    the new primitives.
-(b) when evidence is saturated and no APPLICABLE method remains (rejected
-    methods already excluded), skip the Planner and go to
-    ``_request_method_synthesis`` — kickoff and repair alike — recording
-    ``PlannerRoundSkippedForSynthesis``. Never skip while an APPLICABLE method
-    exists.
-(c) a synthesised method wider than ``MAX_SYNTHESIS_METHOD_STEPS`` (8) is a
-    P2.3i correctable refusal; one re-ask, then reject.
-(d) ``rejected_by_root_review`` and ``rejected_by_read_only_leaf`` are two
-    fields; planner-hierarchical-v7 names both; v6 bytes stay frozen.
+A retire+refine used to re-materialise the whole net.  It now defaults
+``share_active`` for CURRENT-accepted read-only leaves of the retiring instance that
+are not criterion-linked (facts / reproduce); write leaves and unaccepted leaves stay
+new work, and ``funded_now`` counts only the new primitives.
 """
 
 from __future__ import annotations
@@ -47,40 +29,10 @@ from test_root_review_repair_library import (  # noqa: E402
 )
 
 from agent_orchestrator.contracts.htn import ReusePolicy, SideEffectKind, TaskForm  # noqa: E402
-from agent_orchestrator.planning.htn.registry import RejectionCode  # noqa: E402
-from agent_orchestrator.planning.htn.synthesis import (  # noqa: E402
-    CORRECTABLE_REJECTIONS,
-    MAX_SYNTHESIS_METHOD_STEPS,
-    rejection_is_correctable,
-)
 
 # ======================================================================================
 # Helpers
 # ======================================================================================
-
-
-def _nine_step():
-    """A synthesised method with nine primitive steps — one over the width bound."""
-
-    steps = tuple(
-        step(
-            f"s{index}",
-            "plan.leaf",
-            TaskForm.PRIMITIVE,
-            {"subject": param("subject")},
-            capabilities=("plan.read",),
-        )
-        for index in range(9)
-    )
-    return method(
-        "plan.outer.wide",
-        "plan.goal",
-        parameter_schema="plan.goal.params",
-        applicable=(),
-        steps=steps,
-        links=(("c-root", "s0", "c-done"),),
-        finalizer="s0",
-    )
 
 
 def _leaf_occurrence(network, signature: str) -> str:
@@ -359,42 +311,3 @@ def test_a_criterion_linked_leaf_is_not_shared_even_when_accepted(tmp_path) -> N
         command_id="cmd-no-share-review",
     )
     assert _leaf_occurrence(world.network(), "plan.review") != old_review
-
-
-# ======================================================================================
-# (c) synthesis method width
-# ======================================================================================
-
-
-def test_the_synthesis_width_bound_is_eight() -> None:
-    assert MAX_SYNTHESIS_METHOD_STEPS == 8
-    assert RejectionCode.SIZE_BOUND not in CORRECTABLE_REJECTIONS
-
-
-def test_a_width_overflow_is_correctable_without_moving_size_bound() -> None:
-    """Step-count overflow is a P2.3q re-ask; other SIZE_BOUND stays non-correctable."""
-
-    from agent_orchestrator.planning.htn.registry import (  # noqa: PLC0415
-        SYNTHESIS_WIDTH_REASON,
-        AdmissionProblem,
-        AdmissionStepId,
-    )
-    from agent_orchestrator.planning.htn.synthesis import (  # noqa: PLC0415
-        _is_synthesis_width_bound,
-    )
-
-    assert RejectionCode.SIZE_BOUND not in CORRECTABLE_REJECTIONS
-    width = AdmissionProblem(
-        code=RejectionCode.SIZE_BOUND,
-        detail="the method declares 9 steps, above the policy's 8",
-        step=AdmissionStepId.STRUCTURE_AND_TYPES,
-        reason=SYNTHESIS_WIDTH_REASON,
-    )
-    ports = AdmissionProblem(
-        code=RejectionCode.SIZE_BOUND,
-        detail="the method declares 9 steps, above the policy's 8",
-        step=AdmissionStepId.STRUCTURE_AND_TYPES,
-    )
-    assert _is_synthesis_width_bound(width) is True
-    assert _is_synthesis_width_bound(ports) is False, "substring match must not license a re-ask"
-    assert rejection_is_correctable  # live re-ask path

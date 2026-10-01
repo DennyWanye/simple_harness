@@ -185,7 +185,7 @@ ARTIFACT_MERGE_NOT_APPLICABLE = "ArtifactMergeNotApplicableUnderHierarchical"
 #: out of its root resolution and never out of a sweep of Task statuses (§6.3, §8.1).
 HIERARCHICAL_JUDGMENT_REFUSED = "HierarchicalJudgmentRefused"
 
-#: P2.3f.  A hierarchical Mission's service intent (Planner, MethodSynthesizer, root
+#: P2.3f.  A hierarchical Mission's service intent (Planner, root
 #: reviewer, Critic) whose executor turn was left waiting on a Provider hand-off with
 #: an *unknown* outcome was handed off once more — same subject, same reservation, a
 #: new executor.  The runtime records the unknown invocation honestly and by design

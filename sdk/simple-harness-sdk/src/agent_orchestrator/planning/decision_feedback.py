@@ -47,9 +47,9 @@ _ELEMENT_LISTS = {
 #: Contract names of decision payloads (``<name>.<field>`` in their errors).
 _PAYLOAD_NAMES = frozenset({
     "refine", "repair_retry", "repair_cancel", "repair_rebind", "repair_refine",
-    "repair_replace", "repair_successor", "bind_goal", "declare_blocked", "repair_blocked",
+    "repair_replace", "repair_successor", "bind_goal", "repair_blocked",
     "wait", "no_change", "request_evidence", "request_human", "propose_method",
-    "repair_compensation", "repair_escalate", "payload",
+    "repair_compensation", "payload",
 })
 
 _LEADING_NAME = re.compile(r"^([A-Za-z_]+)((?:\.[A-Za-z_]+|\[\d+\])*)")

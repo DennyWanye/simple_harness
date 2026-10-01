@@ -91,7 +91,7 @@ def _package() -> TaskPackage:
                 }
             ],
             "package_version": 4,
-            "plan": {"plan_revision": 3},
+            "views": {"plans": [{"plan_revision": 3}]},
         },
     )
 
@@ -369,19 +369,7 @@ def test_the_unreadable_refusal_reports_the_retry_it_still_has(tmp_path) -> None
     assert evaluated[0].payload["attempt_ordinal"] == 0
 
 
-def test_current_executable_filter_accepts_h4_and_rejects_unknown_types() -> None:
-    """H4 executes graph repair; old-package refusal is checked in the collector."""
-    orchestrator = object.__new__(Orchestrator)
-    enabled = orchestrator._executable_decision_types(
-        ["REFINE", "BIND_EXISTING_GOAL", "REPAIR/PROPOSE_SUCCESSOR", "WAIT", "UNKNOWN"]
-    )
-    assert enabled == frozenset({"REFINE", "BIND_EXISTING_GOAL", "REPAIR/PROPOSE_SUCCESSOR", "WAIT"})
 
-    # A package that names no executable row fails closed instead of silently widening
-    # the phase to decisions that were absent from the frozen package.
-    assert orchestrator._executable_decision_types(["UNKNOWN"]) == frozenset()
-    assert orchestrator._executable_decision_types([]) == frozenset()
-    assert orchestrator._executable_decision_types([]) == frozenset()
 
 
 def test_a_first_round_never_inherits_an_identity(tmp_path) -> None:
@@ -418,7 +406,7 @@ def test_a_retry_may_not_change_anything_but_the_answering_intent(tmp_path) -> N
     # The same request id, but the reply was produced against a different plan revision:
     # that is a new question wearing the old request's identity, and it must not bind.
     drifted = _package()
-    drifted.package["plan"] = {"plan_revision": 9}
+    drifted.package["views"] = {"plans": [{"plan_revision": 9}]}
     raised = False
     try:
         orchestrator._bind_hierarchical_planning_request(
@@ -554,12 +542,10 @@ def test_the_admission_context_reports_this_rounds_remaining_format_retries(
     assert len(read_connections) >= 2
     assert len({id(connection) for connection in read_connections}) == 1
 
-    # The current Views label maps to the current integer package version (one pairing).
-    from agent_orchestrator.runtime.role_templates import (
-        PLANNING_DECISION_PACKAGE_LABEL, PLANNING_DECISION_PACKAGE_VERSION,
-    )
+    # The package states the same integer the binding stores.
+    from agent_orchestrator.runtime.role_templates import PLANNING_DECISION_PACKAGE_VERSION
 
-    assert package.package["package_version"] == PLANNING_DECISION_PACKAGE_LABEL
+    assert package.package["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
     assert context.package_version == PLANNING_DECISION_PACKAGE_VERSION
     binding_row = PlanningDecisionStore(world.store).get_planning_request(opener.intent_id)
     assert binding_row is not None

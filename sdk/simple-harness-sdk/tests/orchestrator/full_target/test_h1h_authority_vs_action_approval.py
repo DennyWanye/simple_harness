@@ -59,7 +59,8 @@ def test_a06_zero_declared_approvals_and_applicable_method_do_not_replace_grant(
             )
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             package = opener.config["planning_package"]
-            assert any(item["verdict"] == "APPLICABLE" for item in package["applicability"])
+            assert any(report["verdict"] == "APPLICABLE" for item in package["views"]["methods"]
+                       for report in item["applicability"])
             # No approval is named by the planner decision.  This must not be
             # confused with the separate durable planning-lane grant.
             reply = _refine_reply(package)

@@ -26,7 +26,6 @@ wording is deliberately *not* softened (see journal §2m): on a genuine failing 
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -46,16 +45,7 @@ from agent_orchestrator.orchestrator.root_review import (  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "htn" / "c2_root_review"
 
-#: sha256 of ``root-reviewer-v2``'s instructions, frozen (§26.3): the Grok batch-2
-#: episodes replay on it, so v3 is registered beside it and v2 is never edited.
-FROZEN_ROOT_REVIEWER_V2 = "75debfd9640f1c635b808cdaf7657168ce10782d9e0cd93f08450fdc0d744c76"
 
-#: H1-E closes H0's third freeze gap: v3 (the pre-DeepSeek live root reviewer) was
-#: registered but had no literal anywhere.  The digest is the value H0 recorded in
-#: ``plans/llm-native-htn/H0/prompt-digests.json``; registering it here means a future
-#: edit of v3's words fails loudly instead of silently rewriting a shipped prompt.
-FROZEN_ROOT_REVIEWER_V3 = "21a7814076b72957f41c47bf21fb340d2c2243e3fc0687fb397a143373930980"
-FROZEN_ROOT_REVIEWER_V4 = "7ccbc9c6a2d9ca0fc453452d41cccdf593cb37d46a005fab78697b334753ec48"
 
 
 # ======================================================================================
@@ -170,58 +160,19 @@ def test_the_sealed_intent_shows_the_reviewer_the_same_goal(tmp_path) -> None:
 
 
 # ======================================================================================
-# 3. The prompt: v3 explains the field; v2 keeps its bytes
+# 3. The prompt reads the requirement against the user's goal
 # ======================================================================================
 
 
-def test_the_prompt_v3_reads_the_requirement_against_the_user_goal_and_v2_is_frozen() -> None:
-    from agent_orchestrator.runtime.role_templates import (
-        ROOT_REVIEWER,
-        ROOT_REVIEWER_V1,
-        ROOT_REVIEWER_V2,
-        ROOT_REVIEWER_V2_VERSION,
-        ROOT_REVIEWER_V3,
-        ROOT_REVIEWER_V4,
-        ROOT_REVIEWER_VERSION,
-        TEMPLATE_VERSIONS,
-        template_for,
-    )
+def test_the_prompt_reads_the_requirement_against_the_user_goal() -> None:
+    from agent_orchestrator.runtime.role_templates import ROOT_REVIEWER
 
-    assert ROOT_REVIEWER.prompt_version == ROOT_REVIEWER_VERSION == "root-reviewer-v5"
     for field in ("mission_goal", "goal_parameters"):
         assert field in ROOT_REVIEWER.instructions, field
-        assert field not in ROOT_REVIEWER_V2.instructions, field
-        assert field not in ROOT_REVIEWER_V1.instructions, field
     # The rule itself: the author's wording yields to the user's goal, and a named
     # test that was green at baseline turns into "show a test covering the goal".
     assert "以 mission_goal 为准" in ROOT_REVIEWER.instructions
     assert "基线" in ROOT_REVIEWER.instructions and "由红转绿" in ROOT_REVIEWER.instructions
-    assert ROOT_REVIEWER_V2.prompt_version == ROOT_REVIEWER_V2_VERSION == "root-reviewer-v2"
-    assert (
-        hashlib.sha256(ROOT_REVIEWER_V2.instructions.encode("utf-8")).hexdigest()
-        == FROZEN_ROOT_REVIEWER_V2
-    )
-    # H1-E closes H0's third freeze gap: v3, the live template, now has a literal too.
-    assert (
-        hashlib.sha256(ROOT_REVIEWER_V3.instructions.encode("utf-8")).hexdigest()
-        == FROZEN_ROOT_REVIEWER_V3
-    )
-    assert "绝不能写成 <cricit_verdict>" in ROOT_REVIEWER_V4.instructions
-    assert (
-        hashlib.sha256(ROOT_REVIEWER_V4.instructions.encode()).hexdigest()
-        == FROZEN_ROOT_REVIEWER_V4
-    )
-    assert "<cricit_verdict>" not in ROOT_REVIEWER.instructions
-    assert ROOT_REVIEWER.instructions != ROOT_REVIEWER_V3.instructions
-    assert TEMPLATE_VERSIONS["root_reviewer"].keys() >= {
-        "root-reviewer-v1",
-        "root-reviewer-v2",
-        "root-reviewer-v3",
-        "root-reviewer-v4",
-        "root-reviewer-v5",
-    }
-    assert template_for(ROOT_REVIEWER, {"root_reviewer": "root-reviewer-v2"}) is ROOT_REVIEWER_V2
-    # Everything v2 said, v3 still says: it is a revision, not a rewrite.
     for field in ("excerpt", "covered_by", "carries_root_criteria", "不得据此判 false"):
         assert field in ROOT_REVIEWER.instructions, field
 

@@ -41,7 +41,6 @@ def test_h4_action_vocabulary_is_exactly_eleven_values() -> None:
         "CANCEL_BRANCH",
         "REQUEST_COMPENSATION",
         "DECLARE_RUNTIME_BLOCKED",
-        "ESCALATE",
         "PROPOSE_SUCCESSOR",
     }
 

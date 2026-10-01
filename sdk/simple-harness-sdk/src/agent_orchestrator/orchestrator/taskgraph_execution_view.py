@@ -246,15 +246,14 @@ class ExecutionProjection:
             role = str(config.get("role") or "")
             if intent["kind"] != "plan" or role in _ROLE_REVIEW:
                 continue
-            is_request = intent["intent_id"] in requests
-            if not is_request and role != "method_synthesizer":
+            if intent["intent_id"] not in requests:
                 continue
             rows = decisions.get(intent["intent_id"], [])
             last = rows[-1] if rows else None
             node_id = f"planning:{intent['intent_id']}"
             self._node(node_id, "planning", _ms(intent["created_at"]),
-                       role="method_synthesizer" if role == "method_synthesizer" else "planner",
-                       request_id=intent["intent_id"] if is_request else None,
+                       role="planner",
+                       request_id=intent["intent_id"],
                        base_plan_revision=requests.get(intent["intent_id"]),
                        decisions=[{k: v for k, v in row.items() if k != "rationale"} for row in rows],
                        turn=_turn_ref(intent),

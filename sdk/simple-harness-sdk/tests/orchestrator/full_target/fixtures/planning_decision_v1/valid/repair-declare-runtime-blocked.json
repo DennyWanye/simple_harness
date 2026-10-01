@@ -10,7 +10,7 @@
     "repair_request_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "blockers": [
       {
-        "code": "OTHER",
+        "code": "CAPABILITY_MISSING",
         "detail": "runtime unavailable"
       }
     ],

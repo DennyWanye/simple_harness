@@ -24,7 +24,6 @@ def _in_flight(*roles):
 def test_only_planner_and_root_review_rounds_count():
     assert _in_flight(None)
     assert _in_flight("root_reviewer")
-    assert not _in_flight("method_synthesizer")
     assert not _in_flight("operation_proposal_reviewer", "operation_outcome_reviewer")
     assert not _in_flight()
 

@@ -38,8 +38,6 @@ from ..contracts.models import ContractError
 from ..contracts.planning_decisions import (
     BindExistingGoalDecision,
     BindExistingGoalMode,
-    BlockedItemV1,
-    DeclareBlockedDecision,
     NoChangeDecision,
     PlanningDecisionEnvelopeV1,
     PlanningDecisionRejectionCode,
@@ -56,14 +54,12 @@ from ..contracts.planning_decisions import (
     RepairCancelBranchDecision,
     RepairRetrySameMethodDecision,
     RepairRuntimeBlockedDecision,
-    RepairEscalateDecision,
     RepairCompensationRequestDecision,
     RepairProposeSuccessorDecision,
     RepairReplaceMethodDecision,
     RequestEvidenceDecision,
     RequestHumanDecision,
     ProposeMethodDecision,
-    ResumableIf,
     WaitDecision,
     canonical_decision_hash,
 )
@@ -94,7 +90,6 @@ REPAIR_ENABLEMENT_PREFIX = "REPAIR/"
 #: hatches, so an exhausted budget must not be able to silence them (§29, §30).
 _STATE_FREE_TYPES = frozenset(
     {
-        PlanningDecisionType.DECLARE_BLOCKED,
         PlanningDecisionType.WAIT,
         PlanningDecisionType.NO_CHANGE,
     }
@@ -380,7 +375,7 @@ class AdmissionContext:
       ``prompt_hash`` — the package and prompt the decision was produced
       against, compared with the binding's.
     * ``enabled_decision_types`` — the phase's enabled rows, keyed the way
-      ``H1_DECISION_ENABLEMENT`` keys them (``"REPAIR/REPLACE_METHOD"``).
+      ``ENABLED_DECISIONS`` keys them (``"REPAIR/REPLACE_METHOD"``).
     * ``repair_allowed`` — whether this phase may repair at all.
     * ``methods`` — the method-library view (id, version, content hash, status,
       applicability and the parameters/preconditions it needs).
@@ -620,14 +615,12 @@ class PreAdmittedPlanningDecision:
 
 @dataclass(frozen=True, slots=True)
 class NoMutationDecision:
-    """Typed result for WAIT, NO_CHANGE and DECLARE_BLOCKED."""
+    """Typed result for WAIT and NO_CHANGE."""
 
     decision_type: PlanningDecisionType
     reason: str
     canonical_hash: str
     wait_for: tuple[PlanningRefV1, ...] = ()
-    blockers: tuple[BlockedItemV1, ...] = ()
-    resumable_if: tuple[ResumableIf, ...] = ()
 
     def __post_init__(self) -> None:
         if self.decision_type not in _STATE_FREE_TYPES:
@@ -965,8 +958,8 @@ def _check_budget_and_bound(
 ) -> None:
     """§43 stage 7: a plan-changing decision needs bound and budget left.
 
-    The state-free kinds (WAIT / NO_CHANGE / DECLARE_BLOCKED) are exempt: they
-    are how a planner reports "nothing to do" or "I am stuck", and silencing
+    The state-free kinds (WAIT / NO_CHANGE) are exempt: they
+    are how a planner reports "nothing to do", and silencing
     them when the budget runs out would leave the mission with no voice at all.
     """
 
@@ -1143,7 +1136,7 @@ def _check_payload(
     """§43 stage 8 / §24–§31: the per-type payload rules."""
 
     payload = decision.payload
-    if isinstance(payload, (RepairRuntimeBlockedDecision, RepairEscalateDecision, RepairCompensationRequestDecision)):
+    if isinstance(payload, (RepairRuntimeBlockedDecision, RepairCompensationRequestDecision)):
         if not context.repair_allowed:
             stage.refuse(REJECTION.REPAIR_NOT_ALLOWED, "repair is disabled for this request",
                          field_path="/payload/repair_kind")
@@ -1188,7 +1181,7 @@ def _check_payload(
     elif isinstance(payload, RequestEvidenceDecision):
         _check_request_evidence(decision, context, stage)
     elif isinstance(
-        payload, (DeclareBlockedDecision, WaitDecision, NoChangeDecision, RefineDecision, RequestHumanDecision, ProposeMethodDecision)
+        payload, (WaitDecision, NoChangeDecision, RefineDecision, RequestHumanDecision, ProposeMethodDecision)
     ):
         return
     else:  # pragma: no cover - the envelope's payload is a closed set
@@ -1494,8 +1487,6 @@ def pre_admit_planning_decision(
             reason=getattr(payload, "reason", decision.rationale),
             canonical_hash=canonical_decision_hash(decision),
             wait_for=tuple(getattr(payload, "wait_for", ())),
-            blockers=tuple(getattr(payload, "blockers", ())),
-            resumable_if=tuple(getattr(payload, "resumable_if", ())),
         )
     subject = next(
         row

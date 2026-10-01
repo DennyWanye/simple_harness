@@ -97,10 +97,8 @@ def proposed_method(method_id: str = "plan.proposed", *, version: int = 1) -> An
 
 
 def _open_subject(package: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    goal = package["plan"]["open_compound_goals"][0]
-    subject = next(row["subject_key"] for row in package["planning_subjects"]
-                   if row["occurrence_id"] == goal["occurrence_id"])
-    return goal, subject
+    goal = next(row for row in package["views"]["goals"] if row["open"])
+    return goal, goal["subject_key"]
 
 
 def propose_step(contract: Any):
@@ -127,7 +125,7 @@ def refine_with_step(contract: Any):
             subject, "REFINE",
             {"method_ref": {"kind": "method", "id": ref.method_id, "semantic_revision": int(ref.version),
                             "content_hash": ref.content_hash},
-             "bindings": dict(goal["typed_parameters"])},
+             "bindings": dict(goal["params"])},
             rationale="采用通过审阅的新做法。"))
 
     return reply

@@ -358,8 +358,6 @@ def preview_candidate(
             inputs.budget,
             task_bindings=compilation.task_bindings,
             network=compilation.network,
-            registry=inputs.registry,
-            catalog=inputs.catalog,
             methods=methods,
             snapshot=inputs.evidence,
             predicates=inputs.predicates,

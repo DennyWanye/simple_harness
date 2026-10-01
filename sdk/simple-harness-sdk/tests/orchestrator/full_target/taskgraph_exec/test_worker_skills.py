@@ -71,16 +71,17 @@ def test_a_deployment_declares_the_skill_tools_its_pools_serve():
     assert "skill_tools" not in DeploymentPolicy().to_json()
 
 
-def test_the_current_hierarchical_worker_lists_the_skill_tools_and_older_versions_stay_replayable():
+def test_the_hierarchical_worker_lists_the_skill_tools():
     current = roles.WORKER_HIERARCHICAL
-    previous = roles.TEMPLATE_VERSIONS["worker"]["worker-hierarchical-v4"]
     assert current.prompt_version == "worker-hierarchical-v5"
-    assert current.tool_names == (*previous.tool_names, *SKILLS)
-    assert current.instructions.startswith(previous.instructions) and SKILL_DISCOVER_TOOL_NAME in current.instructions
-    assert {"worker-hierarchical-v4", "worker-hierarchical-v5"} <= roles.HIERARCHICAL_WORKER_VERSIONS
-    # the drone-sim Worker is a frozen version and keeps its tools exactly
+    base = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
+    assert current.tool_names == (*base, *SKILLS)
+    assert SKILL_DISCOVER_TOOL_NAME in current.instructions
+    assert current.prompt_version in roles.HIERARCHICAL_WORKER_VERSIONS
+    # the drone-sim Worker has its own tools and none of the Skill ones
     drone = roles.TEMPLATE_VERSIONS["worker"]["worker-drone-sim-hierarchical-v1"]
-    assert drone.tool_names == (*previous.tool_names, "drone_sim_telemetry", "drone_sim_command")
+    assert drone.tool_names == (*base, "drone_sim_telemetry", "drone_sim_command")
+    assert SKILL_DISCOVER_TOOL_NAME not in drone.instructions
     # the original intersection: offered by the deployment → the Worker gets them
     offered = DeploymentPolicy(allowed_tools=(*TOOL_NAMES, *SKILLS), skill_tools=SKILLS)
     tools = (*TOOL_NAMES, *SKILLS)

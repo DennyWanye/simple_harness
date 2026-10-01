@@ -126,7 +126,7 @@ def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_moun
                                      principal=Principal(loop._owner)).issue(
                 mission.id, command_id="grant-h1h-answer-source", request_id=opener.intent_id)
             # 片 A（2026-10-01）："卡住了"只有问用户一种：问题由规划器的 REQUEST_HUMAN 登记
-            # （DECLARE_BLOCKED 已不可执行），被测的"回答附资料"行为不变。
+            # （声明受阻这种决定已删除），被测的"回答附资料"行为不变。
             body = json.loads((_FIXTURES / "request-human.json").read_text(encoding="utf-8"))
             body["subject_key"] = opener.config["planning_package"]["planning_subjects"][0]["subject_key"]
             body["payload"] = {"question": "工作区里没有 data/sales.csv，无法汇总，请提供数据",

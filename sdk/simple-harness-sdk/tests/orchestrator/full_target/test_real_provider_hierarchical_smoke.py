@@ -64,7 +64,7 @@ from agent_orchestrator.orchestrator.root_review import (  # noqa: E402
 )
 from agent_orchestrator.planning.htn import evidence_round  # noqa: E402
 from agent_orchestrator.planning.htn.observers.code import code_observers  # noqa: E402
-from agent_orchestrator.planning.htn.planner_package import recorded_facts  # noqa: E402
+from agent_orchestrator.planning.htn.planner_package import fact_rows  # noqa: E402
 from agent_orchestrator.planning.htn.seed_methods import seed_content_hash  # noqa: E402
 from agent_orchestrator.planning.htn.world import build_planning_world  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
@@ -341,8 +341,8 @@ def test_real_hierarchical_planner_round(tmp_path):
                 # ``READ_SET_UNRESOLVED`` can be read as "the model ignored what it was
                 # shown" or as "the package showed it nothing".
                 "package_facts": [
-                    item["read_set_entry"]
-                    for item in recorded_facts(semantics.list_observations(mission.id))
+                    item["observation_ref"]
+                    for item in fact_rows(semantics.list_observations(mission.id))[0]
                 ],
                 # P2.3c part 2c: a loop that goes idle with occurrences still withheld
                 # records why.  It is the third honest ending beside COMPLETED and a

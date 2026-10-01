@@ -33,8 +33,6 @@ from ..contracts.htn import (
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import (
     BindExistingGoalDecision,
-    BlockedItemV1,
-    DeclareBlockedDecision,
     NoChangeDecision,
     PlanningDecisionEnvelopeV1,
     PlanningDecisionType,
@@ -46,7 +44,6 @@ from ..contracts.planning_decisions import (
     RepairCancelBranchDecision,
     RepairProposeSuccessorDecision,
     RepairReplaceMethodDecision,
-    ResumableIf,
     WaitDecision,
 )
 from ..contracts.semantic_base import VersionedRef, hash_hex, identifier, index
@@ -142,8 +139,6 @@ class DurableOnly:
     reason: str
     canonical_hash: str
     wait_for: tuple[PlanningRefV1, ...] = ()
-    blockers: tuple[BlockedItemV1, ...] = ()
-    resumable_if: tuple[ResumableIf, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -240,16 +235,6 @@ def _proposal(
 
 def _durable(decision: PlanningDecisionEnvelopeV1, canonical_hash: str) -> AdaptedPlanningOutcome:
     payload = decision.payload
-    if isinstance(payload, DeclareBlockedDecision):
-        return AdaptedPlanningOutcome(
-            durable_only=DurableOnly(
-                decision_type=decision.decision_type,
-                reason=decision.rationale,
-                canonical_hash=canonical_hash,
-                blockers=payload.blockers,
-                resumable_if=payload.resumable_if,
-            )
-        )
     if isinstance(payload, WaitDecision):
         return AdaptedPlanningOutcome(
             durable_only=DurableOnly(
@@ -323,7 +308,6 @@ def adapt_admitted_decision(
         raise ContractError("REPAIR payload has no enabled repair kind")
 
     if decision.decision_type in {
-        PlanningDecisionType.DECLARE_BLOCKED,
         PlanningDecisionType.WAIT,
         PlanningDecisionType.NO_CHANGE,
     }:

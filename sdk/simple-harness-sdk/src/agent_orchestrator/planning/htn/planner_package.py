@@ -1,48 +1,39 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""P2.3c part 2: the context package a **hierarchical** Planner is actually given.
+"""The package a hierarchical Planner is given, assembled in one layer.
 
-P2.3b's journal recorded this as blocker (c): the prompt selection did not look at
-``is_hierarchical`` and ``build_planner_package`` kept producing the legacy DAG
-package.  A Planner told to answer with ``<plan_revision_proposal>`` while being
-handed a package about ``budget_for_tasks`` and ``workspace_files`` has nothing to
-propose *with* — it does not know which methods are registered, which goals are open,
-which plan revision it is answering against, or why the methods it can see were
-refused — so every round came back ``proposal_unreadable`` under a real model.
+What the model reads is facts, in nine views, plus the things it is asked to act on:
 
-This module builds the other package.  It is a *new* function beside the legacy one
-rather than a branch inside it (§18.5 rule 1): ``build_planner_package`` keeps its
-exact bytes, so a legacy Mission's request hash does not move.
+``views``
+    ``goals`` (every goal and step on the board, with its state), ``obligations``,
+    ``plans`` (the current revision: adopted method instances, order and data edges),
+    ``methods`` (the library rows for the goals that can take a method, each with its
+    applicability reports and — for a method proposed in this Mission — its review),
+    ``facts``, ``accepted_results``, ``failures`` (an index of what failed; no
+    details), ``capabilities`` and ``planning_budgets``.
+``repair_requests`` / ``human_answers``
+    what happened that the Planner is asked about, and what the user already said.
+    **The details of a failure live here and nowhere else**: the pending request
+    carries the reviewer's findings and the verifier's record; ``views.failures`` only
+    names the attempt, so the same record is not sent twice.
+``method_selection`` / ``method_proposal_contexts``
+    per goal that still needs a method: which library methods can run, and the
+    material a new method is written from.
+the candidate lists
+    ``sharing_candidates``, ``successor_types``, ``compensation_candidates``,
+    ``evidence_predicates`` — what the corresponding decisions may name.
+the protocol fields
+    ``planning_protocol``, ``planning_subjects``, ``visible_refs``,
+    ``previous_feedback``, ``decision_limits`` (V2 §38).
 
-What the package carries, and why each part is load-bearing:
+There is no intermediate mapping: every row is built once, from the store, the
+registry and the network, and is the row the model sees.  The module is pure — the
+reads happen in ``orchestrator/planner_views``, which hands the rows to
+:func:`assemble_planner_package`.
 
-``plan``
-    the current revision and the open compound goals, each with its obligation, its
-    goal signature and its bound parameters.  The Planner's ``refine`` operation names
-    a ``goal_id`` and an ``obligation_id``; without this section it would be guessing
-    both.
-``method_library``
-    every method the registry holds for those goal signatures, with the exact
-    ``method_ref`` triple (id / version / content_hash) the operation must quote.  The
-    triple is the whole point: §18.5 forbids the model to invent a version or a hash,
-    and a model that is not *shown* them can only invent them.
-``applicability``
-    why an applicable-looking method was refused, split by axis (preconditions,
-    parameters, capabilities, authority).  This is the input the MethodSynthesizer
-    needs to be worth calling at all — "no method fits" is not actionable, "no method
-    fits because none of them declares the ``code.run-tests`` capability this
-    deployment has" is.
-``operators``
-    the capabilities this deployment really registered, and the ones a method could
-    ask for and not get.  A method proposal that requires a capability nobody runs is
-    refused at admission, so telling the Planner in advance is the difference between
-    one wasted round and none.
-
-Nothing here decides anything.  Every value is read from the store, the registry and
-the deployment, and the Planner's answer still goes through ``parse_plan_proposal`` →
-``assess_method`` → ``compile_refinement_bundle`` → ``commit_plan_revision`` before a
-single row moves.
+Nothing here decides anything.  Every value is read, and the Planner's answer still
+goes through decode → admission → compile → commit before a single row moves.
 """
 
 from __future__ import annotations
@@ -51,10 +42,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from simple_harness.contracts import canonical_json
+
 from ...contracts.htn import ReadItemKind, TaskForm
 from ...contracts.models import ContractError
 from ...contracts.planning_decisions import (
-    H1_DECISION_ENABLEMENT,
     MAX_PD_ALTERNATIVES,
     MAX_PD_ARGUMENTS,
     MAX_PD_ASSUMPTIONS,
@@ -70,23 +62,37 @@ from ...contracts.planning_decisions import (
     PlanningFeedbackV1,
     PlanningRefKind,
     PlanningRefV1,
+    exposed_enablement,
 )
 from ...contracts.semantic_base import content_hash_of
 from ...graph.task_network import TaskNetworkSnapshot
 
-#: The in-package string label of the collector's package (the runtime-view assembler
-#: relabels the final package; see ``orchestrator/planner_views``).
-HIERARCHICAL_DECISION_PACKAGE_VERSION = "planner-package-hierarchical-v6"
+#: The nine views, in the order the package lists them.
+VIEW_NAMES = (
+    "goals", "obligations", "plans", "methods", "facts", "accepted_results",
+    "failures", "capabilities", "planning_budgets",
+)
 
-#: The output block the decision protocol asks for.
-DECISION_OUTPUT_CONTRACT = "<planning_decision>{json}</planning_decision>"
+#: The whole provider envelope is bounded, not just the views: the package is a prompt.
+MAX_PACKAGE_BYTES = 96 * 1024
+
+#: How many accepted results / failures one package lists.  The newest are kept.
+MAX_ACCEPTED_RESULTS = 24
+MAX_FAILURES = 16
+
+#: The views size pressure may shorten, in the order it does so.  Goals, the plan and
+#: the budgets are mandatory and are never dropped.
+_SHRINKABLE = ("accepted_results", "failures", "facts", "methods")
+
+
+class PlannerPackageError(ContractError):
+    """The package cannot be assembled within its bounds."""
 
 #: V2 §48 / §18: how many reference quadruples one package exposes.  A bound, for the
 #: same reason every other cap here exists — the package is a prompt — and a
 #: *deterministic* one: the surviving refs are the sorted prefix, so two builds of the
 #: same request carry the same ones and the request binding can be recomputed.
 MAX_VISIBLE_REFS = 128
-
 #: §16 decision limits, spelled with the contract constants so the package and the
 #: codec can never disagree about a number.
 DECISION_LIMITS: Mapping[str, int] = {
@@ -102,196 +108,16 @@ DECISION_LIMITS: Mapping[str, int] = {
     "MAX_PD_HUMAN_OPTIONS": MAX_PD_HUMAN_OPTIONS,
     "MAX_PD_ARGUMENTS": MAX_PD_ARGUMENTS,
 }
-
 #: How many method definitions one package lists per goal signature.  A bound, because
 #: the package is a prompt: a registry with two hundred methods for one signature would
 #: push the open goals out of the model's attention long before it ran out of context.
 MAX_METHODS_PER_SIGNATURE = 12
-
 #: How many refused-applicability reports one package carries.  Same reason.
 MAX_APPLICABILITY_REPORTS = 12
-
 #: How many recorded observations one package quotes.  Same reason again, and one
 #: more: the section exists so the Planner can *cite* a fact, not so it can browse
 #: the Mission's whole evidence history.
 MAX_FACTS = 24
-
-
-def open_goals(network: TaskNetworkSnapshot) -> tuple[dict[str, Any], ...]:
-    """The compound occurrences that still have no adopted method.
-
-    These are exactly the goals a ``refine`` operation may name.  A compound that is
-    already refined is *not* listed: proposing a second adopted method for one
-    occurrence is refused by the network contract ("alternatives are OR, not AND"),
-    and offering it as a choice would invite a round that cannot be committed.
-    """
-
-    goals: list[dict[str, Any]] = []
-    for spec in network.occurrences:
-        if spec.form is not TaskForm.COMPOUND:
-            continue
-        if network.adopted_instance_for(spec.occurrence_id) is not None:
-            continue
-        goals.append(_goal_row(network, spec))
-    return tuple(sorted(goals, key=lambda item: item["occurrence_id"]))
-
-
-def _goal_row(network: TaskNetworkSnapshot, spec: Any) -> dict[str, Any]:
-    binding = network.binding_for_occurrence(spec.occurrence_id)
-    return {
-        "occurrence_id": str(spec.occurrence_id),
-        "goal_id": str(spec.task_id),
-        "obligation_id": str(spec.obligation_id),
-        "requiredness": str(spec.requiredness),
-        "goal_signature_id": str(binding.goal_signature.signature_id),
-        "statement": binding.goal_signature.statement,
-        "typed_parameters": dict(binding.typed_parameters),
-        "requirement_refs": list(binding.requirement_refs),
-        "contract_revision": int(binding.contract_revision),
-        "capability_requirements": sorted(
-            str(item) for item in binding.capability_requirements
-        ),
-    }
-
-
-def refined_goals_under_repair(
-    network: TaskNetworkSnapshot, occurrence_ids: Sequence[str]
-) -> tuple[dict[str, Any], ...]:
-    """The refined goals a pending repair request is about, shown like an open goal.
-
-    ``open_goals`` cannot list them — they are refined — and a decision that replaces
-    the adopted method has to quote the goal's parameters and name the instance it
-    retires.  Each row is the goal as ``open_goals`` would show it plus the method
-    instance adopted for it now.  A fact about the plan; whether to replace anything
-    is the Planner's decision.
-    """
-
-    wanted = {str(item) for item in occurrence_ids}
-    rows: list[dict[str, Any]] = []
-    for spec in network.occurrences:
-        if spec.form is not TaskForm.COMPOUND or str(spec.occurrence_id) not in wanted:
-            continue
-        adopted = network.adopted_instance_for(spec.occurrence_id)
-        if adopted is None:
-            continue
-        rows.append(
-            {
-                **_goal_row(network, spec),
-                "adopted_method_instance_id": str(adopted.instance_id),
-                "adopted_method_ref": adopted.method_ref.to_json(),
-            }
-        )
-    return tuple(sorted(rows, key=lambda item: item["occurrence_id"]))
-
-
-def pending_primitives(network: TaskNetworkSnapshot) -> tuple[dict[str, Any], ...]:
-    """The primitive occurrences on the board, so the Planner does not re-plan them.
-
-    A Planner that cannot see the work it already committed proposes it again; the
-    commit then refuses the round for a structural reason and the model is told
-    nothing useful about what it did wrong.
-    """
-
-    return tuple(
-        {
-            "occurrence_id": str(spec.occurrence_id),
-            "task_id": str(spec.task_id),
-            "obligation_id": str(spec.obligation_id),
-            "requiredness": str(spec.requiredness),
-        }
-        for spec in sorted(network.occurrences, key=lambda item: str(item.occurrence_id))
-        if spec.form is TaskForm.PRIMITIVE
-    )
-
-
-def method_library(
-    registry: Any,
-    signatures: Sequence[str],
-    *,
-    limit: int = MAX_METHODS_PER_SIGNATURE,
-    retired: Sequence[Mapping[str, Any]] = (),
-    mission_id: str | None = None,
-    reviews: Mapping[tuple[str, int, str], Mapping[str, Any]] | None = None,
-) -> tuple[dict[str, Any], ...]:
-    """The methods this deployment holds for the open goals' signatures.
-
-    Every entry carries the ``method_ref`` triple verbatim, because that triple is
-    what a ``refine`` operation has to quote and §18.5 refuses a model-invented
-    version or hash.  ``registry_status`` is shown and stated as read-only: a
-    ``TRIAL_ADMITTED`` method is offered *and* labelled, so the Planner can prefer a
-    promoted one without the package having to hide the other.
-
-    ``retired`` is the history of this plan's retirements (see
-    ``HierarchicalDispatch.retired_methods``): a method that was adopted for a goal and
-    later retired by a repair decision is still listed, and its row says so in
-    ``rejected_reasons`` — which goal, at which plan revision, and the reason recorded
-    at the time.  One field for every reason; it is a fact for the Planner to weigh,
-    not a ban.
-
-    ``reviews`` is where the independent review of each method proposed in this Mission
-    stands (``method_plan_reviews.reviews_by_method``): still out, passed, rejected with
-    the reviewer's words, or ended without a verdict.  Shown as ``review`` on the row;
-    a library method has none.  The plan commit adopts a proposed method only once its
-    review passed.
-    """
-
-    reasons: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
-    for item in retired:
-        reasons.setdefault(_ref_key(item.get("method_ref")), []).append(
-            {key: value for key, value in dict(item).items() if key != "method_ref"}
-        )
-    entries: list[dict[str, Any]] = []
-    for signature in sorted({str(item) for item in signatures}):
-        found = _methods_for(registry, signature)
-        if mission_id is not None:
-            from ...contracts.htn import MissionRef
-            found = tuple(contract for contract in found
-                          if registry.retrievable(contract.method_ref(), mission_id=MissionRef(mission_id)))
-        for contract in list(found)[: max(0, limit)]:
-            reference = contract.method_ref()
-            review = (reviews or {}).get(_ref_key(reference))
-            entries.append(
-                {
-                    "goal_signature_id": signature,
-                    "method_ref": reference.to_json(),
-                    **({} if review is None else {"review": dict(review)}),
-                    "rejected_reasons": [dict(item) for item in reasons.get(_ref_key(reference), ())],
-                    # P2.3c part 2b: the *same* triple again, spelled the way a
-                    # ``refine`` operation has to spell it.  ``MethodRef.to_json``
-                    # writes ``method_id`` and the proposal codec reads ``id``, so a
-                    # package that showed only the first shape asked the model to
-                    # re-key a hash by hand — which is exactly the invention §18.5
-                    # forbids, and exactly what the first real-model round did wrong.
-                    "refine_method_ref": {
-                        "id": str(contract.method_id),
-                        "version": int(contract.method_version),
-                        "content_hash": str(reference.content_hash),
-                    },
-                    "method_id": str(contract.method_id),
-                    "parameter_schema_ref": _ref_id(contract.parameter_schema_ref),
-                    # ``MethodStep`` names them ``local_id`` and ``task_type_ref``;
-                    # reading ``step_key`` / ``goal_type_ref`` produced one empty
-                    # entry per step, so the package said "this method has four
-                    # anonymous steps" and the model had nothing to reason about.
-                    "steps": [
-                        {
-                            "step": str(getattr(item, "local_id", "")),
-                            "form": str(getattr(item, "form", "")),
-                            "task_type_ref": _ref_id(getattr(item, "task_type_ref", None)),
-                            "required_capabilities": sorted(
-                                str(one) for one in getattr(item, "required_capabilities", ())
-                            ),
-                        }
-                        for item in getattr(contract, "steps", ())
-                    ],
-                    "required_capabilities": sorted(
-                        str(item) for item in getattr(contract, "required_capabilities", ())
-                    ),
-                    "registry_status": str(_status(registry, contract)),
-                }
-            )
-    return tuple(entries)
-
 
 def _ref_key(reference: Any) -> tuple[str, int, str]:
     to_json = getattr(reference, "to_json", None)
@@ -329,14 +155,6 @@ def applicability_reports(
     missing capability needs a different method, and a missing authority needs a
     person.  Merging them into "not applicable" is what made the round unactionable.
 
-    P2.3c part 2c (review F16): this used to read ``unmet_preconditions`` /
-    ``parameter_problems`` / ``missing_capabilities`` / ``missing_authority`` off the
-    report with ``getattr`` defaults.  ``ApplicabilityReport`` has none of those
-    names — its fields are ``needs_evidence``, ``conflicts``, ``type_errors``,
-    ``unmet_capabilities`` and ``authorization`` — so every axis came back empty and
-    the section the module docstring calls load-bearing was four empty lists under a
-    verdict string.  Nothing caught it because no test ever put a real report through
-    here.  The names are the report's own now.
     """
 
     out: list[dict[str, Any]] = []
@@ -375,85 +193,208 @@ def applicability_reports(
     return tuple(out)
 
 
-#: Everything one ``facts`` entry may say.  Review P2-12: the section exists to hand
-#: the Planner *references* — what was observed, by whom, when, and the read-set entry
-#: that cites it — and never a conclusion drawn from them.  A judgement ("this holds",
-#: "this method is applicable") computed here would be this package deciding the very
-#: question the refinement round decides, with no record that it did.  The guard is
-#: structural because the failure is: nobody notices a field being added.
-FACT_ENTRY_FIELDS: frozenset[str] = frozenset(
-    {
-        "proposition_key",
-        "polarity",
-        "coverage",
-        "observer_id",
-        "observed_at_ms",
-        "read_set_entry",
-    }
-)
+# ------------------------------------------------------------------------- view rows
 
 
-def refuse_fact_inference(entries: Sequence[Mapping[str, Any]]) -> None:
-    """Refuse a ``facts`` section that carries anything but references (P2-12)."""
-
-    for entry in entries:
-        extra = sorted(set(entry) - FACT_ENTRY_FIELDS)
-        if extra:
-            raise ContractError(
-                f"the planner package's facts section may only reference what was observed; "
-                f"{extra} would hand the model an inference this package is not entitled to "
-                f"make (allowed: {sorted(FACT_ENTRY_FIELDS)})"
-            )
-
-
-def recorded_facts(
-    observations: Sequence[Any],
+def goal_rows(
+    network: TaskNetworkSnapshot,
     *,
-    limit: int = MAX_FACTS,
-    read_item: Any = None,
+    task_states: Mapping[str, Mapping[str, Any]] | None = None,
+    under_repair: Sequence[str] = (),
 ) -> tuple[dict[str, Any], ...]:
-    """The observations this Mission has recorded, in the shape a ``read_set`` wants.
+    """``views.goals``: every goal and step on the board, each said once.
 
-    P2.3c part 2c.  The real-model smoke got as far as a readable
-    ``<plan_revision_proposal>`` and was then refused with ``READ_SET_UNRESOLVED``:
-    the model had written ``kind=fact`` entries in its read-set, and the package had
-    never shown it a single observation id, so the ids it wrote were invented and the
-    library could not re-check them.  Telling the model harder not to invent them is
-    the wrong repair — a model that is not *shown* an identifier can only make one up,
-    which is the same reasoning that put ``refine_method_ref`` in ``method_library``.
+    ``open`` marks a compound that has no adopted method yet — exactly the goals a
+    REFINE or a PROPOSE_METHOD may name.  A refined compound carries ``adopted_method``
+    instead, and ``under_repair`` says a pending repair request is about it (so a
+    decision that replaces its method can quote the instance it retires).  A primitive
+    is listed so the Planner does not re-plan work it already committed.  The task
+    state, when the caller supplies it, is the store's own; it is an execution fact and
+    never implies the work was accepted.
+    """
 
-    So each entry carries a ready-made ``read_set_entry``: the observation's id, the
-    semantic revision and the content hash the checker recomputes
-    (``_read_set.ReadSetChecker.observation_state``).  Copy it, do not derive it.
+    subjects = {row["occurrence_id"]: row["subject_key"] for row in planning_subjects(network)}
+    repairing = {str(item) for item in under_repair}
+    rows: list[dict[str, Any]] = []
+    for spec in sorted(network.occurrences, key=lambda item: str(item.occurrence_id)):
+        occurrence = str(spec.occurrence_id)
+        binding = network.binding_for_occurrence(spec.occurrence_id)
+        compound = spec.form is TaskForm.COMPOUND
+        adopted = network.adopted_instance_for(spec.occurrence_id) if compound else None
+        row: dict[str, Any] = {
+            "subject_key": subjects[occurrence],
+            "occurrence_id": occurrence,
+            "task_id": str(spec.task_id),
+            "obligation_id": str(spec.obligation_id),
+            "form": str(spec.form),
+            "signature_id": str(binding.goal_signature.signature_id),
+            "statement": binding.goal_signature.statement,
+            "params": dict(binding.typed_parameters),
+            "requirement_refs": list(binding.requirement_refs),
+            "contract_revision": int(binding.contract_revision),
+            "requiredness": str(spec.requiredness),
+            "capability_requirements": sorted(str(item) for item in binding.capability_requirements),
+            "open": compound and adopted is None,
+            "adopted_method": None if adopted is None else {
+                "method_instance_id": str(adopted.instance_id),
+                "method_ref": _method_ref(adopted.method_ref),
+            },
+            "under_repair": occurrence in repairing,
+        }
+        state = (task_states or {}).get(occurrence)
+        if state is not None:
+            row.update(task_status=state["task_status"], task_version=state["task_version"],
+                       occurrence_outcome=state["occurrence_outcome"])
+        rows.append(row)
+    return tuple(rows)
 
-    Review P2-13: **who computes that entry** is the checker, when a caller hands one
-    over.  ``ReadSetChecker.read_item``'s own docstring says the proposing side and
-    the checking side must agree on what a semantic revision is and that writing the
-    formula twice is how they stop agreeing — and this function was the second place
-    it was written.  ``read_item`` is therefore a callable ``(ReadItemKind, id) ->
-    ReadItem``; the literal below is the offline form, used only when no checker is
-    available (a package rendered without a store behind it).
 
-    Two deliberate limits:
+def plan_row(
+    network: TaskNetworkSnapshot, *, method_instance_refs: Sequence[Mapping[str, Any]] = ()
+) -> dict[str, Any]:
+    """``views.plans``: the current revision — what was adopted and how steps connect.
 
-    * **Only the newest observation per proposition.**  An earlier record for the
-      same proposition is *superseded*, and the read-set checker reports exactly that
-      — so offering it would be handing the Planner an entry guaranteed to refuse the
-      commit.
-    * **No predicate statement.**  ``ObservationRecord`` keys a fact by
-      ``proposition_key``, a digest of the signature and the grounded arguments, and
-      the record does not carry the signature itself.  Rather than reconstruct a name
-      the store does not hold, the fact is quoted by its key and the *names* stay in
-      ``applicability``, where the unknown preconditions are listed.
+    Each adopted method instance carries its reference quadruple (the form a repair
+    decision quotes) beside its own record; each data edge carries the hash a
+    REBIND_INPUT must repeat.
+    """
+
+    refs = {str(ref["id"]): dict(ref) for ref in method_instance_refs
+            if ref.get("kind") == PlanningRefKind.METHOD_INSTANCE.value}
+    adopted = set(network.adopted_instance_ids)
+    return {
+        "plan_revision": int(network.plan_revision),
+        "root_occurrences": [str(item) for item in network.root_occurrence_ids],
+        "required_obligations": sorted(str(item) for item in network.required_obligations),
+        "adopted_methods": [
+            {"method_instance_ref": refs.get(str(instance.instance_id)), **instance.to_json()}
+            for instance in network.method_instances if instance.instance_id in adopted
+        ],
+        "order_constraints": [item.to_json() for item in network.order_constraints],
+        "data_requirements": [
+            {"requirement": edge.to_json(), "expected_requirement_hash": content_hash_of(edge.to_json())}
+            for edge in network.data_requirements
+        ],
+    }
+
+
+def method_signatures(network: TaskNetworkSnapshot, under_repair: Sequence[str] = ()) -> tuple[str, ...]:
+    """The goal types the library is read for: goals with no method, and goals a
+    pending repair is about (their method may be replaced)."""
+
+    repairing = {str(item) for item in under_repair}
+    found: set[str] = set()
+    for spec in network.occurrences:
+        if spec.form is not TaskForm.COMPOUND:
+            continue
+        if network.adopted_instance_for(spec.occurrence_id) is None or str(spec.occurrence_id) in repairing:
+            found.add(str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id))
+    return tuple(sorted(found))
+
+
+def method_rows(
+    registry: Any,
+    signatures: Sequence[str],
+    *,
+    mission_id: str | None = None,
+    retired: Sequence[Mapping[str, Any]] = (),
+    reviews: Mapping[tuple[str, int, str], Mapping[str, Any]] | None = None,
+    reports: Sequence[MethodApplicability] = (),
+    schemas: Any = None,
+    first: Sequence[str] = (),
+    limit: int = MAX_METHODS_PER_SIGNATURE,
+) -> tuple[tuple[dict[str, Any], ...], int]:
+    """``views.methods``: the library rows for ``signatures``, and how many were left out.
+
+    One row per method, carrying everything the package says about it: the reference
+    quadruple a decision quotes (``method_ref``, the same spelling ``visible_refs``
+    uses), its steps, its parameters, its preconditions, the applicability reports of
+    this request, the plan's retirement history (``rejected_reasons`` — a fact to
+    weigh, not a ban) and, for a method proposed in this Mission, where its independent
+    review stands (``review``; a library method has none).  ``registry_status`` is
+    shown and is read-only.
+
+    At most ``limit`` rows per goal type.  ``first`` names method ids that must not be
+    the ones left out (the methods that can run now): a registry's alphabetical first
+    twelve must not hide the only applicable one.
+    """
+
+    reasons: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
+    for item in retired:
+        reasons.setdefault(_ref_key(item.get("method_ref")), []).append(
+            {key: value for key, value in dict(item).items() if key != "method_ref"})
+    by_method: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
+    for report in applicability_reports(reports, limit=len(reports)):
+        row = dict(report)
+        by_method.setdefault(_ref_key(row.pop("method_ref")), []).append(row)
+    priority = {str(item) for item in first}
+    rows: list[dict[str, Any]] = []
+    omitted = 0
+    for signature in sorted({str(item) for item in signatures}):
+        found = _methods_for(registry, signature)
+        if mission_id is not None:
+            from ...contracts.htn import MissionRef
+            found = tuple(contract for contract in found
+                          if registry.retrievable(contract.method_ref(), mission_id=MissionRef(mission_id)))
+        ordered = sorted(found, key=lambda contract: (
+            str(contract.method_id) not in priority, str(contract.method_id), int(contract.method_version)))
+        omitted += max(0, len(ordered) - max(0, limit))
+        for contract in ordered[: max(0, limit)]:
+            reference = contract.method_ref()
+            key = _ref_key(reference)
+            review = (reviews or {}).get(key)
+            schema = None if schemas is None else schemas.resolve(contract.parameter_schema_ref)
+            if schemas is not None and schema is None:
+                raise PlannerPackageError("method parameter schema is unavailable")
+            rows.append({
+                "method_ref": _method_ref(reference),
+                "goal_signature_id": signature,
+                "registry_status": str(_status(registry, contract)),
+                **({} if review is None else {"review": dict(review)}),
+                "rejected_reasons": [dict(item) for item in reasons.get(key, ())],
+                "steps": [
+                    {
+                        "step": str(getattr(item, "local_id", "")),
+                        "form": str(getattr(item, "form", "")),
+                        "task_type_ref": _ref_id(getattr(item, "task_type_ref", None)),
+                        "required_capabilities": sorted(
+                            str(one) for one in getattr(item, "required_capabilities", ())),
+                    }
+                    for item in getattr(contract, "steps", ())
+                ],
+                "required_capabilities": sorted(
+                    str(item) for item in getattr(contract, "required_capabilities", ())),
+                "parameters": [] if schema is None else [field.to_json() for field in schema.fields],
+                "applicable_when": [item.to_json() for item in getattr(contract, "applicable_when", ())],
+                "applicability": by_method.get(key, []),
+            })
+    return tuple(rows), omitted
+
+
+def fact_rows(
+    observations: Sequence[Any], *, read_item: Any = None, state_of: Any = None,
+    limit: int = MAX_FACTS,
+) -> tuple[tuple[dict[str, Any], ...], int]:
+    """``views.facts``: the newest observation per proposition, and how many were left out.
+
+    Each row carries the reference a decision quotes (``observation_ref``): the
+    observation's id, the semantic revision and the content hash the read-set checker
+    recomputes.  ``read_item`` is that checker's own function, so the proposing side
+    and the checking side cannot disagree about what a revision is; the literal below
+    is the offline form, for a package rendered without a store behind it.
+
+    Only the newest record per proposition is shown: an earlier one is superseded, and
+    quoting it would refuse the commit.  ``state_of`` (proposition key → availability,
+    truth) is the evidence snapshot's reading; the package states it and draws nothing
+    from it.
     """
 
     newest: dict[str, Any] = {}
     for record in observations:
         key = str(getattr(record, "proposition_key", ""))
-        if not key:
-            continue
-        newest[key] = record
-    entries: list[dict[str, Any]] = []
+        if key:
+            newest[key] = record
+    rows: list[dict[str, Any]] = []
     for key in sorted(newest):
         record = newest[key]
         identity = str(getattr(record, "observation_id", ""))
@@ -461,34 +402,95 @@ def recorded_facts(
             quoted = read_item(ReadItemKind.FACT, identity).to_json()
         else:
             to_json = getattr(record, "to_json", None)
-            quoted = {
-                "kind": "fact",
-                "id": identity,
-                "semantic_revision": 1,
-                "content_hash": content_hash_of(to_json()) if callable(to_json) else "",
-            }
-        entries.append(
-            {
-                "proposition_key": key,
-                "polarity": bool(getattr(record, "polarity", False)),
-                "coverage": str(getattr(record, "coverage", "")),
-                "observer_id": getattr(record, "observer_id", None),
-                "observed_at_ms": int(getattr(record, "observed_at_ms", 0)),
-                "read_set_entry": quoted,
-            }
-        )
-    chosen = tuple(entries[: max(0, limit)])
-    refuse_fact_inference(chosen)
-    return chosen
+            quoted = {"kind": "fact", "id": identity, "semantic_revision": 1,
+                      "content_hash": content_hash_of(to_json()) if callable(to_json) else ""}
+        availability, truth = ("recorded", "UNKNOWN") if state_of is None else state_of(key)
+        rows.append({
+            "observation_ref": quoted,
+            "proposition_key": key,
+            "polarity": bool(getattr(record, "polarity", False)),
+            "availability": str(availability),
+            "truth": str(truth),
+            "coverage": str(getattr(record, "coverage", "")),
+            "observer": getattr(record, "observer_id", None),
+            "times": {name: getattr(record, name, None) for name in (
+                "observed_at_ms", "recorded_at_ms", "valid_from_ms", "valid_until_ms",
+                "query_watermark_ms")},
+        })
+    kept = tuple(rows[: max(0, limit)])
+    return kept, len(rows) - len(kept)
 
 
-# ------------------------------------------------------------------ decision protocol
-# H1-D (V2 §18/§19/§38/§39, ruling addendum §1/§7).  Everything below is a *pure*
-# reader of the package that already exists, or a canonical-JSON hash of one of its
-# sections.  Nothing here decides anything, writes anything or changes what the
-# legacy package carries: the collector is what H1-F's admission layer re-runs to
-# answer "is this ref something this request showed the model", and the three hash
-# helpers are what H1-F's request binding is computed over.
+def failure_outline(failure: Mapping[str, Any] | None) -> dict[str, Any]:
+    """What ``views.failures`` says about one failed attempt: which layers failed and
+    their one-line summaries.  The nested record (the verifier's ``detail``, the
+    envelope it judged) is not repeated here — it is in the pending repair request
+    about this failure, which is where the Planner is asked to act on it."""
+
+    def scalars(value: Mapping[str, Any]) -> dict[str, Any]:
+        return {str(key): item for key, item in value.items()
+                if item is None or isinstance(item, (str, int, float, bool))}
+
+    if not isinstance(failure, Mapping):
+        return {}
+    outline = scalars(failure)
+    layers = [scalars(item) for item in failure.get("failures", ()) if isinstance(item, Mapping)]
+    if layers:
+        outline["failures"] = layers
+    return outline
+
+
+def failure_index(
+    *, attempts: Sequence[tuple[float, Mapping[str, Any]]],
+    planning: Sequence[tuple[float, Mapping[str, Any]]],
+) -> list[dict[str, Any]]:
+    """``views.failures`` in the order it is shown: the steps' failed attempts first,
+    newest first, then the Planner's own refused replies, newest first.
+
+    Each input is ``(time, row)``.  Attempts lead because a decision names one of them
+    (a retry quotes the attempt it redoes): however many replies were refused, the
+    count cap must not push a step's failure out of the index.
+    """
+
+    def newest_first(rows: Sequence[tuple[float, Mapping[str, Any]]]) -> list[dict[str, Any]]:
+        return [dict(row) for _, row in sorted(rows, key=lambda item: item[0], reverse=True)]
+
+    return [*newest_first(attempts), *newest_first(planning)]
+
+
+def attempt_is_indexed(package: Mapping[str, Any], attempt_id: str) -> bool:
+    """Whether this request's failure index names ``attempt_id`` — the question a
+    retry decision is checked against.  A row with no attempt (a refused reply) is
+    simply not that attempt."""
+
+    rows = (package.get("views") or {}).get("failures", ())
+    return any(isinstance(row, Mapping)
+               and (row.get("attempt_review_ref") or {}).get("id") == attempt_id
+               for row in rows)
+
+
+def task_type_row(spec: Any, schemas: Any) -> dict[str, Any]:
+    """One task type as a decision may quote it: its reference, what it does, the
+    parameters to bind and its ports."""
+
+    schema = None if spec.parameter_schema_ref is None else schemas.resolve(spec.parameter_schema_ref)
+    return {
+        "task_type_ref": spec.task_type_ref.to_json(),
+        "form": str(spec.form),
+        "statement": spec.goal_signature.statement,
+        "parameter_schema_ref": (None if spec.parameter_schema_ref is None
+                                 else spec.parameter_schema_ref.to_json()),
+        "parameters": [field.to_json() for field in getattr(schema, "fields", ())],
+        "input_ports": [port.port_key for port in spec.input_ports],
+        "output_ports": [port.port_key for port in spec.output_ports],
+    }
+
+
+# ------------------------------------------------------------------ visible references
+# Every reference the model may quote, as the §17 quadruple.  A pure function of the
+# rows the package shows plus the caller's authoritative digests for the kinds whose
+# rows quote only an id (tasks, obligations): §18 makes the quadruple a byte-match
+# contract, so a digest is stated by whoever owns it and never derived here.
 
 
 def _one_ref(
@@ -503,7 +505,7 @@ def _one_ref(
     binding was never attached, an obligation with no ledger beside it — is dropped
     rather than given a plausible-looking digest.  A digest derived from
     ``{kind, id, revision}`` describes the reference, not the object it points at, and
-    every downstream re-check (H1-F admission, the read-set checker) compares hashes:
+    every downstream re-check (admission, the read-set checker) compares hashes:
     a fabricated one fails that comparison *after* the model has been told to quote
     it, which is worse than the ref never having been offered.
 
@@ -516,7 +518,7 @@ def _one_ref(
       would be refused at commit time anyway, so it is not shown.
 
     ``PlanningRefV1`` is the validator, so the shape returned here is exactly the
-    shape H1-F's admission layer re-checks the model's answer against.
+    shape the admission layer re-checks the model's answer against.
     """
 
     if id is None or str(id) == "":
@@ -565,15 +567,12 @@ def _authority_index(
 ) -> Mapping[tuple[str, str], Mapping[str, Any]]:
     """The authoritative digest per ``(kind, id)`` the *caller* supplied (§5.1).
 
-    ``visible_refs`` has to carry the *object's* digest, and the request package does
-    not have one for a task or an obligation: ``open_compound_goals`` quotes a
-    ``contract_revision`` but never a hash, and nothing in the package reaches the
+    ``visible_refs`` has to carry the *object's* digest, and a goal row quotes a
+    ``contract_revision`` but never a hash, while nothing in the rows reaches the
     obligation ledger.  Rather than derive a digest from the ref (which describes the
-    ref, not the object), the caller passes the collector one quadruple per referenced
-    object — read from ``task_semantics.content_hash`` / the obligation's canonical
-    JSON — as a plain argument.  It is **not** a package field: the ruling of
-    2026-09-19 06:30 keeps the decision package at V2 §38's five additions, so the
-    authoritative digests never reach the model.
+    ref, not the object), the caller passes one quadruple per referenced object —
+    read from ``task_semantics.content_hash`` / the obligation's canonical JSON — as a
+    plain argument.  The table itself is never a package field.
 
     A ``(kind, id)`` that is not in the table has no authoritative digest, so its ref
     is simply not emitted; a malformed row is skipped here rather than raising.
@@ -590,133 +589,6 @@ def _authority_index(
             continue
         index[(str(kind), str(id))] = entry
     return index
-
-
-def _task_ref(
-    entry: Mapping[str, Any],
-    id_key: str,
-    authorities: Mapping[tuple[str, str], Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    """The task and the obligation a plan entry names, with their §5.1 digests.
-
-    Both kinds take their revision and hash from the authority table and nothing
-    from the plan entry: the entry's ``contract_revision`` is what the *goal* quotes,
-    while the ref's revision is the ``task_semantics`` binding revision, and the two
-    need not agree.  A kind the table does not cover yields no ref.
-    """
-
-    out: list[dict[str, Any]] = []
-    for kind, id_key in (
-        (PlanningRefKind.TASK.value, id_key),
-        (PlanningRefKind.OBLIGATION.value, "obligation_id"),
-    ):
-        identity = entry.get(id_key)
-        if not identity:
-            continue
-        authority = authorities.get((kind, str(identity)))
-        if authority is None:
-            continue
-        ref = _one_ref(
-            kind,
-            identity,
-            authority.get("semantic_revision"),
-            authority.get("content_hash"),
-        )
-        if ref is not None:
-            out.append(ref)
-    return out
-
-
-def _read_set_ref(entry: Mapping[str, Any]) -> dict[str, Any] | None:
-    """A ``facts[].read_set_entry`` as an ``observation`` (V2 §17: no ``fact`` kind)."""
-
-    quoted = entry.get("read_set_entry")
-    if not isinstance(quoted, Mapping):
-        return None
-    # §17: a planning fact *is* an observation.  The package's own entry says
-    # kind=fact (the read-set wire kind); the planning ref kind is observation.
-    # §5.1 gives the observation hash as ``ReadItem.content_hash`` — the entry's own
-    # value, never a derivation, so a hash-less entry is dropped by ``_one_ref``.
-    return _one_ref(
-        PlanningRefKind.OBSERVATION.value,
-        quoted.get("id"),
-        quoted.get("semantic_revision"),
-        quoted.get("content_hash"),
-    )
-
-
-def _accepted_ref(entry: Mapping[str, Any]) -> dict[str, Any] | None:
-    """The accepted result's acceptance ref, and — separately — its resolution ref.
-
-    §5.1 lists ``acceptance`` and ``resolution`` as two kinds with two sources, so a
-    ``resolution_ref`` is reported as a ``resolution`` and an ``acceptance_ref`` as an
-    ``acceptance``.  Either may be absent; neither is renamed into the other.
-    """
-
-    for key, kind in (
-        ("acceptance_ref", PlanningRefKind.ACCEPTANCE.value),
-        ("resolution_ref", PlanningRefKind.RESOLUTION.value),
-    ):
-        goal = entry.get(key)
-        if not isinstance(goal, Mapping):
-            continue
-        ref = _one_ref(
-            kind,
-            goal.get("id"),
-            goal.get("semantic_revision", goal.get("revision")),
-            goal.get("content_hash"),
-        )
-        if ref is not None:
-            return ref
-    return None
-
-
-def _collect_refs(
-    package: Mapping[str, Any], authorities: object = ()
-) -> list[dict[str, Any]]:
-    """Every reference the package's own sections show, in §17 shape.
-
-    ``authorities`` carries the §5.1 digests for the kinds whose sections quote only
-    an id and a revision (tasks, obligations).  It is an *input*, never read out of
-    ``package``: the ruling forbids a sixth package field, so this argument is how the
-    caller lets ``visible_refs`` carry a task's ``task_semantics.content_hash`` without
-    a fabricated one.
-    """
-
-    collected: list[dict[str, Any]] = []
-
-    authority_by_key = _authority_index(authorities)
-    plan = package.get("plan")
-    plan = plan if isinstance(plan, Mapping) else {}
-    for entry in plan.get("open_compound_goals", ()):  # type: ignore[union-attr]
-        if isinstance(entry, Mapping):
-            collected.extend(_task_ref(entry, "goal_id", authority_by_key))
-    for entry in plan.get("committed_primitives", ()):  # type: ignore[union-attr]
-        if isinstance(entry, Mapping):
-            collected.extend(_task_ref(entry, "task_id", authority_by_key))
-
-    for entry in package.get("method_library", ()):
-        if not isinstance(entry, Mapping):
-            continue
-        ref = _method_ref(entry.get("refine_method_ref", entry.get("method_ref")))
-        if ref is not None:
-            collected.append(ref)
-    for entry in package.get("applicability", ()):
-        if isinstance(entry, Mapping):
-            ref = _method_ref(entry.get("method_ref"))
-            if ref is not None:
-                collected.append(ref)
-    for entry in package.get("facts", ()):
-        if isinstance(entry, Mapping):
-            ref = _read_set_ref(entry)
-            if ref is not None:
-                collected.append(ref)
-    for entry in package.get("accepted_results", ()):
-        if isinstance(entry, Mapping):
-            ref = _accepted_ref(entry)
-            if ref is not None:
-                collected.append(ref)
-    return collected
 
 
 def _ref_sort_key(ref: Mapping[str, Any]) -> tuple[str, str, int, str]:
@@ -750,49 +622,102 @@ def _authority_sort_key(row: Any) -> tuple[str, str, int, str]:
     )
 
 
-def _sorted_unique_refs(
-    package: Mapping[str, Any], authorities: object = ()
+def _task_refs(
+    row: Mapping[str, Any], authorities: Mapping[tuple[str, str], Mapping[str, Any]]
 ) -> list[dict[str, Any]]:
-    seen: set[tuple[str, str, int, str]] = set()
-    unique: list[dict[str, Any]] = []
-    for ref in _collect_refs(package, authorities):
-        key = _ref_sort_key(ref)
-        if key in seen:
+    """The task and the obligation a goal row names, with their §5.1 digests.
+
+    Both take their revision and hash from the authority table and nothing from the
+    row: the row's ``contract_revision`` is what the *goal* quotes, while the ref's
+    revision is the binding's, and the two need not agree.  A kind the table does not
+    cover yields no ref.
+    """
+
+    out: list[dict[str, Any]] = []
+    for kind, key in ((PlanningRefKind.TASK.value, "task_id"),
+                      (PlanningRefKind.OBLIGATION.value, "obligation_id")):
+        identity = row.get(key)
+        if not identity:
             continue
-        seen.add(key)
-        unique.append(ref)
-    unique.sort(key=_ref_sort_key)
-    return unique
+        authority = authorities.get((kind, str(identity)))
+        if authority is None:
+            continue
+        ref = _one_ref(kind, identity, authority.get("semantic_revision"), authority.get("content_hash"))
+        if ref is not None:
+            out.append(ref)
+    return out
 
 
-def visible_refs_from_hierarchical_package(
-    package: Mapping[str, Any], *, authoritative_refs: object = ()
-) -> tuple[dict[str, Any], ...]:
-    """The §18 reference quadruples a package exposes to the model.
+def _observation_ref(row: Mapping[str, Any]) -> dict[str, Any] | None:
+    """A fact row's reference as an ``observation`` (V2 §17: there is no ``fact`` kind)."""
 
-    A pure function of the package's own sections — method library, applicability,
-    open goals, committed primitives, recorded facts, rejected refinements and (from
-    H2) accepted results — plus the caller-supplied ``authoritative_refs`` for the
-    kinds those sections quote without a digest (§5.1).  Deduped on the §17 quadruple
-    and sorted by ``(kind, id, semantic_revision, content_hash)``, then capped at
-    :data:`MAX_VISIBLE_REFS`; the count dropped by the cap is reported separately by
-    :func:`visible_refs_omitted` so the request binding can pin both.
+    quoted = row.get("observation_ref")
+    if not isinstance(quoted, Mapping):
+        return None
+    return _one_ref(PlanningRefKind.OBSERVATION.value, quoted.get("id"),
+                    quoted.get("semantic_revision"), quoted.get("content_hash"))
+
+
+def _accepted_ref(row: Mapping[str, Any]) -> dict[str, Any] | None:
+    """An accepted result's acceptance ref, else its resolution ref — two kinds with
+    two sources (§5.1); neither is renamed into the other."""
+
+    for key, kind in (("acceptance_ref", PlanningRefKind.ACCEPTANCE.value),
+                      ("resolution_ref", PlanningRefKind.RESOLUTION.value)):
+        goal = row.get(key)
+        if not isinstance(goal, Mapping):
+            continue
+        ref = _one_ref(kind, goal.get("id"), goal.get("semantic_revision", goal.get("revision")),
+                       goal.get("content_hash"))
+        if ref is not None:
+            return ref
+    return None
+
+
+def collect_refs(
+    views: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    authorities: object = (),
+    extra: Sequence[Mapping[str, Any]] = (),
+) -> list[dict[str, Any]]:
+    """Every reference the views show, deduped on the quadruple and sorted.
+
+    ``authorities`` is a lookup table and nothing more: the digests of the tasks and
+    obligations the goal rows name.  ``extra`` is for references no view row carries —
+    an adopted method instance a repair may name, a goal that can be shared and its
+    resolution.  A source that cannot state its reference correctly is skipped, never
+    invented.
     """
 
-    return tuple(_sorted_unique_refs(package, authoritative_refs)[:MAX_VISIBLE_REFS])
-
-
-def visible_refs_omitted(package: Mapping[str, Any], *, authoritative_refs: object = ()) -> int:
-    """How many references the :data:`MAX_VISIBLE_REFS` cap dropped (§38 truncation).
-
-    The count is over *unique* references — the same set ``visible_refs`` is drawn
-    from — so a ref that two sections both quote is one ref, never a dropped one.
-    """
-
-    return max(
-        0,
-        len(_sorted_unique_refs(package, authoritative_refs)) - MAX_VISIBLE_REFS,
-    )
+    authority_rows = sorted(_as_json_refs(authorities), key=_authority_sort_key)
+    index = _authority_index(authority_rows)
+    collected: list[dict[str, Any]] = []
+    for row in views.get("goals", ()):
+        if isinstance(row, Mapping):
+            collected.extend(_task_refs(row, index))
+    for row in views.get("methods", ()):
+        if isinstance(row, Mapping):
+            ref = _method_ref(row.get("method_ref"))
+            if ref is not None:
+                collected.append(ref)
+    for row in views.get("facts", ()):
+        if isinstance(row, Mapping):
+            ref = _observation_ref(row)
+            if ref is not None:
+                collected.append(ref)
+    for row in views.get("accepted_results", ()):
+        if isinstance(row, Mapping):
+            ref = _accepted_ref(row)
+            if ref is not None:
+                collected.append(ref)
+    for row in extra:
+        if not isinstance(row, Mapping):
+            continue
+        ref = _one_ref(row.get("kind"), row.get("id"), row.get("semantic_revision"), row.get("content_hash"))
+        if ref is not None:
+            collected.append(ref)
+    unique = {_ref_sort_key(ref): ref for ref in collected}
+    return [unique[key] for key in sorted(unique)]
 
 
 def planning_subjects(network: TaskNetworkSnapshot) -> tuple[dict[str, Any], ...]:
@@ -852,14 +777,6 @@ def package_hash(package: Mapping[str, Any]) -> str:
     """
 
     return content_hash_of(package)
-
-
-def _enabled_decision_types() -> list[str]:
-    """The H1-executable decision kinds from ``contracts.planning_decisions`` (§12)."""
-
-    return sorted(
-        name for name, enablement in H1_DECISION_ENABLEMENT.items() if enablement.executable
-    )
 
 
 def _feedback_json(value: Any) -> dict[str, Any] | None:
@@ -941,86 +858,50 @@ def _merge_authorities(
     return merged
 
 
-def _decision_fields(
-    package: Mapping[str, Any],
-    network: TaskNetworkSnapshot,
-    previous_feedback: Any,
-    authorities: Sequence[Any],
-) -> dict[str, Any]:
-    """The §38 decision-protocol fields, added on top of the legacy package.
-
-    Ruling 2026-09-19 06:30: the decision package adds **only** V2 §38's five fields —
-    ``planning_protocol`` / ``planning_subjects`` / ``visible_refs`` /
-    ``previous_feedback`` / ``decision_limits``.  The §5.1 authoritative digests that
-    ``visible_refs`` needs for tasks and obligations are therefore a *collector
-    argument*, not a package key: they resolve the refs but never render to the model.
-    """
-
-    # The authority list is an input *set*: its row order is not semantic, and letting
-    # it through would move ``visible_refs`` (and the whole package hash the request
-    # binding is computed over) for two callers that handed in the same facts.  Sort
-    # by the §5.1 quadruple, exactly as the refs it feeds are sorted.  The key is
-    # tolerant because a row the caller malformed is *skipped* downstream, not a crash
-    # mid-package: ordering must not be the thing that validates it.
-    authority_rows = sorted(_as_json_refs(authorities), key=_authority_sort_key)
-    refs = visible_refs_from_hierarchical_package(package, authoritative_refs=authority_rows)
-    # Exactly §38's five fields.  The caller reads the dropped count from
-    # ``visible_refs_omitted(package, authoritative_refs=...)``, which is computed from
-    # the same input as the list above; it is not a package key, because the ruling of
-    # 2026-09-19 06:30 refuses a sixth model-visible field.
-    return {
-        "planning_protocol": {
-            "protocol": PLANNING_DECISION_V1,
-            "enabled_decision_types": _enabled_decision_types(),
-        },
-        "planning_subjects": [dict(item) for item in planning_subjects(network)],
-        "visible_refs": [dict(item) for item in refs],
-        "previous_feedback": _feedback_json(previous_feedback),
-        "decision_limits": dict(DECISION_LIMITS),
-    }
+# ------------------------------------------------------------------------- assembling
 
 
-def hierarchical_planner_package(
+def _size(package: Mapping[str, Any]) -> int:
+    return len(canonical_json(package).encode("utf-8"))
+
+
+def assemble_planner_package(
+    *,
+    package_version: int,
     mission: Any,
     network: TaskNetworkSnapshot,
-    *,
-    registry: Any,
-    capabilities: Sequence[str] = (),
-    unavailable_capabilities: Sequence[str] = (),
-    reports: Sequence[MethodApplicability] = (),
-    observations: Sequence[Any] = (),
-    attempt_ordinal: int = 1,
-    rejected: Sequence[Mapping[str, Any]] = (),
-    read_item: Any = None,
-    retired_methods: Sequence[Mapping[str, Any]] = (),
-    method_reviews: Mapping[tuple[str, int, str], Mapping[str, Any]] | None = None,
+    views: Mapping[str, Sequence[Mapping[str, Any]]],
+    sections: Mapping[str, Any] | None = None,
+    authorities: object = (),
+    extra_refs: Sequence[Mapping[str, Any]] = (),
     previous_feedback: Any = None,
-    authoritative_refs: Sequence[Any] = (),
-    task_states: Mapping[str, Mapping[str, Any]] | None = None,
-    repair_goal_occurrences: Sequence[str] = (),
+    omitted: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     """The whole package, as a plain mapping the context builder can seal.
 
-    Returned as data rather than as a rendered string so the caller keeps ownership of
-    rendering and of the context hash — the legacy ``_seal`` already does both, and a
-    second renderer here would be a second answer to "what did the model see".
+    ``views`` is the nine views, row for row as the model will read them; ``sections``
+    is everything else the reader gathered (repair requests, candidate lists, …).
+    This function adds the protocol fields, computes ``visible_refs`` from the rows
+    actually shown, applies the count caps and the size bound, and records what it
+    left out in ``truncated`` / ``omitted_counts`` — a cut row is hidden, not absent,
+    and the package says so.
 
-    ``retired_methods`` is the plan's retirement history; ``method_library`` marks
-    the affected rows with ``rejected_reasons``.
-
-    The package carries the five fields §38 names and asks for a
-    ``<planning_decision>``; authoritative task state, when supplied, enriches the
-    plan rows.  ``previous_feedback`` is the caller's ``PlanningFeedbackV1`` for a
-    re-ask, or ``None`` for a first round.
+    Returned as data rather than as a rendered string, so the caller keeps ownership
+    of rendering and of the context hash.
     """
 
-    goals = open_goals(network)
-    signatures = [item["goal_signature_id"] for item in goals]
-    repair_goals = set(repair_goal_occurrences)
-    signatures.extend(str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-                      for spec in network.occurrences
-                      if spec.form is TaskForm.COMPOUND and str(spec.occurrence_id) in repair_goals)
+    if set(views) != set(VIEW_NAMES):
+        raise PlannerPackageError(
+            f"the package needs exactly the nine views; got {sorted(views)}")
+    omitted_counts = {str(key): int(value) for key, value in dict(omitted or {}).items() if int(value) > 0}
+    shown: dict[str, list[Any]] = {name: [dict(row) for row in views[name]] for name in VIEW_NAMES}
+    for name, limit in (("accepted_results", MAX_ACCEPTED_RESULTS), ("failures", MAX_FAILURES)):
+        if len(shown[name]) > limit:
+            omitted_counts[name] = omitted_counts.get(name, 0) + len(shown[name]) - limit
+            shown[name] = shown[name][:limit]
+    decision_types, repair_kinds = exposed_enablement()
     package: dict[str, Any] = {
+        "package_version": int(package_version),
         "role": "planner",
         "mode": "hierarchical",
         "mission": {
@@ -1031,85 +912,53 @@ def hierarchical_planner_package(
             "budget": mission.budget.to_json(),
             "risk_level": mission.risk_level,
         },
-        "planning_attempt": int(attempt_ordinal),
-        "plan": {
-            "plan_revision": int(network.plan_revision),
-            "root_occurrences": [str(item) for item in network.root_occurrence_ids],
-            "open_compound_goals": [dict(item) for item in goals],
-            "refined_goals_under_repair": [
-                dict(item) for item in refined_goals_under_repair(network, repair_goal_occurrences)
-            ],
-            "committed_primitives": [dict(item) for item in pending_primitives(network)],
-            "required_obligations": sorted(str(item) for item in network.required_obligations),
+        "planning_protocol": {
+            "protocol": PLANNING_DECISION_V1,
+            "enabled_decision_types": decision_types,
+            "enabled_repair_kinds": repair_kinds,
         },
-        "method_library": [
-            dict(item)
-            for item in method_library(
-                registry,
-                signatures,
-                retired=retired_methods,
-                mission_id=str(network.mission_id),
-                reviews=method_reviews,
-            )
-        ],
-        "applicability": [dict(item) for item in applicability_reports(reports)],
-        # Every observation this Mission has recorded, each with the read-set entry
-        # that cites it verbatim.  See :func:`recorded_facts`: a Planner that is shown
-        # no observation id can only invent one, and an invented id is
-        # ``READ_SET_UNRESOLVED``.
-        "facts": [dict(item) for item in recorded_facts(observations, read_item=read_item)],
-        "operators": {
-            "available_capabilities": sorted(str(item) for item in capabilities),
-            "unavailable_capabilities": sorted(str(item) for item in unavailable_capabilities),
-        },
-        "planning_rejected": [dict(item) for item in rejected],
-        "constraint": (
-            "propose semantic operations on the current plan; quote expected_plan_revision "
-            "exactly as given, copy a method_library entry's refine_method_ref into the "
-            "operation's method_ref field verbatim (id / version / content_hash unchanged), "
-            "and list in read_set every object you actually read (a stale read refuses the "
-            "commit). A read_set entry must be copied from this package: a method entry from "
-            "method_library.refine_method_ref (as kind=method) and a fact entry from "
-            "facts[].read_set_entry unchanged. Do not write a read_set entry whose id does not "
-            "appear in this package; if facts is empty, write no kind=fact entry at all. "
-            "A method_library entry's rejected_reasons lists when that method was adopted "
-            "for a goal of this plan and later retired by a repair decision, with the reason "
-            "recorded at the time"
-        ),
-        "output_contract": DECISION_OUTPUT_CONTRACT,
-        "package_version": HIERARCHICAL_DECISION_PACKAGE_VERSION,
+        "planning_subjects": [dict(item) for item in planning_subjects(network)],
+        "previous_feedback": _feedback_json(previous_feedback),
+        "decision_limits": dict(DECISION_LIMITS),
+        "views": shown,
+        **{str(key): value for key, value in dict(sections or {}).items()},
     }
-    # Authoritative execution outcomes belong to the frozen plan view.
-    # They are not rejection feedback and never imply semantic acceptance.
-    for section in ("open_compound_goals", "refined_goals_under_repair", "committed_primitives"):
-        for row in package["plan"][section]:
-            state = (task_states or {}).get(row["occurrence_id"])
-            if state is not None:
-                row.update({
-                    "task_status": state["task_status"],
-                    "task_version": state["task_version"],
-                    "occurrence_outcome": state["occurrence_outcome"],
-                })
-    # The authority list combines what the network can attest (every task binding, at
-    # its ``task_semantics.content_hash``) with what the caller supplies
-    # (obligations live in a ledger this module cannot read).
-    #
-    # The **builder's rows come first and a caller row may only fill a gap**: §5.1
-    # fixes a task's hash to the binding's own digest, so a caller row naming a
-    # task the network already attests must not replace it (an override would put
-    # a value the store disagrees with in front of the model).  This is why the
-    # merge de-duplicates on ``(kind, id)`` keeping the first occurrence rather
-    # than letting a later row win.
-    authorities = _merge_authorities(_network_authorities(network), authoritative_refs)
-    package.update(_decision_fields(package, network, previous_feedback, authorities))
+
+    def refs() -> list[dict[str, Any]]:
+        return collect_refs(shown, authorities=authorities, extra=extra_refs)
+
+    def drop_last(name: str) -> None:
+        shown[name].pop()
+        omitted_counts[name] = omitted_counts.get(name, 0) + 1
+
+    # Everything shown with a reference is quotable, so the reference bound is kept by
+    # showing fewer optional rows — never by listing a row whose reference is missing.
+    for name in _SHRINKABLE:
+        while len(refs()) > MAX_VISIBLE_REFS and shown[name]:
+            drop_last(name)
+    if len(refs()) > MAX_VISIBLE_REFS:
+        raise PlannerPackageError(
+            "required visible references exceed 128; narrow the planning subject")
+
+    def seal() -> None:
+        package["visible_refs"] = refs()
+        package["omitted_counts"] = dict(omitted_counts)
+        package["truncated"] = bool(omitted_counts)
+
+    seal()
+    for name in _SHRINKABLE:
+        while _size(package) > MAX_PACKAGE_BYTES and shown[name]:
+            drop_last(name)
+            seal()
+    if _size(package) > MAX_PACKAGE_BYTES:
+        raise PlannerPackageError("mandatory request exceeds 96 KiB; narrow the planning subject")
     return package
 
 
 # ------------------------------------------------------------------ registry probing
 # The registry is a Protocol in ``hierarchical_dispatch`` and a concrete class in
 # ``planning/htn/registry``; deployments bring their own.  These readers ask for the
-# richer interface and fall back to the narrower one rather than requiring every
-# deployment to grow a method this package happens to want.
+# richer interface and fall back to the narrower one.
 
 
 def _methods_for(registry: Any, signature: str) -> Sequence[Any]:
@@ -1173,26 +1022,30 @@ def _ref_json(value: Any) -> Mapping[str, Any] | None:
 
 __all__ = (
     "DECISION_LIMITS",
-    "DECISION_OUTPUT_CONTRACT",
-    "HIERARCHICAL_DECISION_PACKAGE_VERSION",
+    "MAX_ACCEPTED_RESULTS",
     "MAX_APPLICABILITY_REPORTS",
     "MAX_FACTS",
+    "MAX_FAILURES",
     "MAX_METHODS_PER_SIGNATURE",
+    "MAX_PACKAGE_BYTES",
     "MAX_VISIBLE_REFS",
+    "VIEW_NAMES",
     "MethodApplicability",
+    "PlannerPackageError",
     "applicability_reports",
-    "hierarchical_planner_package",
-    "method_library",
-    "open_goals",
+    "assemble_planner_package",
+    "attempt_is_indexed",
+    "collect_refs",
+    "fact_rows",
+    "failure_index",
+    "failure_outline",
+    "goal_rows",
+    "method_rows",
+    "method_signatures",
     "package_hash",
-    "pending_primitives",
+    "plan_row",
     "planning_subjects",
     "subject_bindings_hash",
+    "task_type_row",
     "visible_refs_digest",
-    "visible_refs_from_hierarchical_package",
-    "visible_refs_omitted",
-    "FACT_ENTRY_FIELDS",
-    "recorded_facts",
-    "refined_goals_under_repair",
-    "refuse_fact_inference",
 )

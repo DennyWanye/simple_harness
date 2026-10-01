@@ -1,8 +1,9 @@
-"""规划器格式三件（2026-09-30 用户同意）：v13 提示词、字段路径反馈、无损补齐。
+"""规划器格式三件（2026-09-30 用户同意）：提示词写清子结构字段、字段路径反馈、无损补齐。
 
 真机里规划器回复被判"格式错"的主要原因：子结构（assumptions / uncertainties /
 goal_type_ref）字段写不全，而同一请求的格式重试把原消息一字不差再发一遍，模型不知道
-自己错在哪。这里钉住三件事：v13 把每个子结构的字段和填满的示例写清楚且示例能过解码；
+自己错在哪。这里钉住三件事：提示词把每个子结构的字段写清楚（示例能过解码见
+``test_planner_prompt_single``）；
 重试和新请求都带上字段路径反馈；goal_type_ref 只缺 version 且 id + content_hash
 在 successor_types 里唯一对上时由系统补齐（其它情况照旧严格拒绝）。
 """
@@ -28,41 +29,19 @@ from agent_orchestrator.planning.decision_feedback import (
     feedback_from_decision,
     fill_missing_type_ref_fields,
 )
-from agent_orchestrator.runtime.role_templates import (
-    HIERARCHICAL_PLANNER_VERSIONS,
-    PLANNER_HIERARCHICAL_V12,
-    PLANNER_HIERARCHICAL_V13,
-    PLANNER_HIERARCHICAL_V14_VERSION,
-    PLANNING_DECISION_PACKAGE_VERSION,
-    PLANNING_DECISION_PROMPT_VERSION,
-    hierarchical_planner_pairing_is_valid,
-)
+from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL
 
 HASH_A = "a" * 64
 HASH_B = "b" * 64
 BUDGETS = {
     "same_request_format_retries_remaining": 0,
     "planning_rounds_remaining": 3,
-    "synthesis_asks_remaining": 0,
     "root_review_repairs_remaining": 1,
     "repeated_failure_before_escalation_remaining": None,
 }
 
 
-def _added() -> str:
-    full = PLANNER_HIERARCHICAL_V13.instructions
-    assert full.startswith(PLANNER_HIERARCHICAL_V12.instructions)
-    return full[len(PLANNER_HIERARCHICAL_V12.instructions):]
-
-
-def test_v13_is_the_prompt_new_missions_bind_on_package_8() -> None:
-    # 2026-10-01 HTN 精简片 A：当前包升到第 9 版、只配 v14；v13 仍是第 8 版包的提示词。
-    assert PLANNING_DECISION_PROMPT_VERSION == PLANNER_HIERARCHICAL_V14_VERSION
-    assert PLANNER_HIERARCHICAL_V13.prompt_version in HIERARCHICAL_PLANNER_VERSIONS
-    assert hierarchical_planner_pairing_is_valid(PLANNER_HIERARCHICAL_V13.prompt_version, 8)
-    assert hierarchical_planner_pairing_is_valid(
-        PLANNING_DECISION_PROMPT_VERSION, PLANNING_DECISION_PACKAGE_VERSION
-    )
+PROMPT = PLANNER_HIERARCHICAL.instructions
 
 
 @pytest.mark.parametrize(
@@ -77,10 +56,9 @@ def test_v13_is_the_prompt_new_missions_bind_on_package_8() -> None:
     ],
     ids=["assumption", "uncertainty", "alternative", "replan_trigger", "goal_type_ref", "planning_ref"],
 )
-def test_v13_names_every_required_field_of_each_sub_structure(fields) -> None:
-    added = _added()
+def test_the_prompt_names_every_required_field_of_each_sub_structure(fields) -> None:
     for name in fields:
-        assert name in added, name
+        assert name in PROMPT, name
 
 
 def test_the_listed_fields_match_the_contract() -> None:
@@ -97,21 +75,9 @@ def test_the_listed_fields_match_the_contract() -> None:
         assert kind.from_json(sample).to_json().keys() == sample.keys()
 
 
-def test_every_filled_example_in_v13_decodes() -> None:
-    examples = [line for line in _added().splitlines() if line.startswith('{"schema_version"')]
-    assert len(examples) >= 2
-    for line in examples:
-        decision = parse_planning_decision(f"<planning_decision>{line}</planning_decision>")
-        body = json.loads(line)
-        # A filled example: every optional list the model tends to get wrong is non-empty.
-        assert body["assumptions"] or body["uncertainties"], line
-        assert decision.to_json()["decision_type"] == body["decision_type"]
-
-
-def test_v13_explains_the_feedback_the_retry_carries() -> None:
-    added = _added()
+def test_the_prompt_explains_the_feedback_the_retry_carries() -> None:
     for word in ("previous_feedback", "field_path", "rejection_codes", "problems"):
-        assert word in added, word
+        assert word in PROMPT, word
 
 
 @pytest.mark.parametrize(

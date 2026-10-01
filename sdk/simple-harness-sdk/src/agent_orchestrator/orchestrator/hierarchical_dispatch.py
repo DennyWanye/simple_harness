@@ -2956,7 +2956,7 @@ class HierarchicalDispatch:
         """
 
         from ..planning.htn.applicability import assess_method as _assess
-        from ..planning.htn.synthesis import build_request
+        from ..planning.htn.method_proposals import build_context
 
         world = self._world()
         network = self.network(mission_id)
@@ -2976,7 +2976,7 @@ class HierarchicalDispatch:
                 world.capabilities(),
                 registry=world.predicates,
             )
-        request = build_request(
+        request = build_context(
             goal,
             world.capabilities(),
             world.registry,
@@ -2994,7 +2994,7 @@ class HierarchicalDispatch:
         if statements:
             request = replace(request, criterion_evidence=tuple(
                 {"id": item["id"],
-                 "evidence_requirement": (synthesis_statement(statements[item["id"]])
+                 "evidence_requirement": (criterion_statement(statements[item["id"]])
                                           if item["id"] in statements else item["evidence_requirement"])}
                 for item in request.criterion_evidence))
         # 片 B：中间目标的类型不声明判据，它负责的是上级做法分给它的要求（原编号、用户原话）。
@@ -3004,18 +3004,13 @@ class HierarchicalDispatch:
                   if item in statements and item not in listed]
         if handed:
             request = replace(request, criterion_evidence=tuple(request.criterion_evidence) + tuple(
-                {"id": item, "evidence_requirement": synthesis_statement(statements[item])}
+                {"id": item, "evidence_requirement": criterion_statement(statements[item])}
                 for item in handed))
         fresh_id = "proposed-" + content_hash_of({"goal_task_id": str(goal_task_id)})[:24]
         occupied = [int(item.contract.method_version) for item in self.semantics().list_methods()
                     if item.contract.method_id == fresh_id]
         document = replace(
             request, new_method_identity=(fresh_id, max(occupied, default=0) + 1)).to_json()
-        # The Planner writes the method inside its decision's payload; the fields that
-        # addressed a separate synthesiser role (its own output tag, its prompt version,
-        # its re-ask feedback) say nothing true here.
-        for name in ("output_tag", "role_prompt_version", "schema_feedback", "review_feedback"):
-            document.pop(name, None)
         document["subgoal_types"] = self._subgoal_types(world, signature)
         return document
 
@@ -3026,6 +3021,8 @@ class HierarchicalDispatch:
         层数上限由类型的层级保证（注册检查拒收同层或更浅的子目标），这里只是把"能放什么"
         如实告诉规划器；要不要再拆一层由它判断。目标类型没有层级，或没有更深的类型，就是空。
         """
+
+        from ..planning.htn.planner_package import task_type_row
 
         owner = next((spec for spec in world.catalog.task_types()
                       if spec.goal_signature.signature_id == signature.signature_id
@@ -3038,16 +3035,7 @@ class HierarchicalDispatch:
             if (spec.form is not TaskForm.COMPOUND or spec.refinement_level is None
                     or spec.refinement_level <= owner.refinement_level):
                 continue
-            rows.append({
-                "task_type_ref": spec.task_type_ref.to_json(), "form": str(spec.form),
-                "level": int(spec.refinement_level), "statement": spec.goal_signature.statement,
-                "parameter_schema_ref": (None if spec.parameter_schema_ref is None
-                                         else spec.parameter_schema_ref.to_json()),
-                "parameters": [field.to_json() for field in getattr(
-                    None if spec.parameter_schema_ref is None
-                    else world.schemas.resolve(spec.parameter_schema_ref), "fields", ())],
-                "input_ports": [port.port_key for port in spec.input_ports],
-                "output_ports": [port.port_key for port in spec.output_ports]})
+            rows.append({**task_type_row(spec, world.schemas), "level": int(spec.refinement_level)})
         return rows
 
     # ------------------------------------------------- rejected refinements (P2.3j)
@@ -3539,7 +3527,7 @@ class HierarchicalDispatch:
         return unclear
 
     def _admission_policy(self, mission_id: str) -> Any:
-        """The policy a synthesised method is decided against on this deployment.
+        """The policy a proposed method is decided against on this deployment.
 
         A world that knows how to build its own policy is asked for it; anything else
         gets one assembled from the four declaration stores plus the live capability
@@ -3564,14 +3552,14 @@ class HierarchicalDispatch:
                 schemas=world.schemas,
                 capabilities=world.capabilities(),
             )
-        # P2.3q / N10c: synthesised methods are capped at the method-width bound.
+        # A method the Planner proposes is capped at the method-width bound.
         from dataclasses import replace
 
-        from ..planning.htn.synthesis import MAX_SYNTHESIS_METHOD_STEPS
+        from ..planning.htn.method_proposals import MAX_PROPOSED_METHOD_STEPS
 
-        current = int(getattr(policy, "max_steps", MAX_SYNTHESIS_METHOD_STEPS))
-        if current > MAX_SYNTHESIS_METHOD_STEPS:
-            policy = replace(policy, max_steps=MAX_SYNTHESIS_METHOD_STEPS)
+        current = int(getattr(policy, "max_steps", MAX_PROPOSED_METHOD_STEPS))
+        if current > MAX_PROPOSED_METHOD_STEPS:
+            policy = replace(policy, max_steps=MAX_PROPOSED_METHOD_STEPS)
         return policy
 
     def apply_plan_proposal(
@@ -4270,7 +4258,7 @@ def _refined_occurrence(
     """Which occurrence a ``refine`` operation is about (P2.3c part 2c).
 
     The proposal contract names a *goal* and a *duty*, not an occurrence — the model
-    is shown ``goal_id`` / ``obligation_id`` in the package's ``open_compound_goals``
+    is shown ``task_id`` / ``obligation_id`` in the package's ``views.goals``
     and must quote them back.  The occurrence is therefore resolved here, from the
     plan, and two situations are refusals rather than guesses:
 
@@ -4678,11 +4666,11 @@ __all__ = (
 )
 
 
-def synthesis_statement(statement: str) -> str:
-    """A criterion's text as the method synthesiser reads it.
+def criterion_statement(statement: str) -> str:
+    """A criterion's text as the Planner reads it when it writes a method.
 
-    2026-09-29 第十三局：合成器不知道发布由系统做（只在打回时才说），给写文件的步骤都写了
-    "在发布目录中给出落点路径"、又自设了发布步骤，审阅员照这句把写模块那步判不通过。
+    2026-09-29 第十三局：写做法的模型不知道发布由系统做，给写文件的步骤都写了"在发布目录中
+    给出落点路径"、又自设了发布步骤，审阅员照这句把写模块那步判不通过。
     ``file:``/``action:`` 要求的原文后面附一句谁负责。
     """
     if statement.startswith("action:"):

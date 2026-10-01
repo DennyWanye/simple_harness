@@ -319,7 +319,7 @@ def parse_planning_decision(
     except ContractError as error:
         raise PlanningDecisionCodecError(_map_contract_error(error), str(error)) from error
 
-    # The inner method proposal of a decode-only PROPOSE_METHOD is real.
+    # The inner method proposal of a PROPOSE_METHOD is real.
     if decision.decision_type is PlanningDecisionType.PROPOSE_METHOD:
         _validate_method_proposal(raw.get("payload"))
 

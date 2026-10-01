@@ -65,7 +65,7 @@ from ...graph.projection_validation import (
 from ...graph.task_network import DEFAULT_PROJECTION_BUDGET, TaskNetworkSnapshot
 from ...knowledge.predicates import PredicateRegistry
 from .applicability import evaluate_condition
-from .registry import MethodRegistry, TaskTypeCatalog, iter_conditions
+from .registry import iter_conditions
 
 #: The HDDL subset this export claims.  Named so a receipt can record which
 #: fragment a witness was produced against, the way the PANDA adapter does.
@@ -217,8 +217,6 @@ def validate_delta(
     *,
     task_bindings: Sequence[TaskSemanticBindingV1] = (),
     network: TaskNetworkSnapshot | None = None,
-    registry: MethodRegistry | None = None,
-    catalog: TaskTypeCatalog | None = None,
     methods: Mapping[str, MethodContract] | None = None,
     snapshot: EvidenceSnapshot | None = None,
     predicates: PredicateRegistry | None = None,
@@ -229,7 +227,7 @@ def validate_delta(
 
     片 B（2026-10-01）：此前这里还有一条"可约性"检查——计划里的子目标如果库里一个做法都
     没有，就判整份计划结构无效（"之后什么都改变不了它"）。规划器现在可以自己为目标提做法，
-    没有库做法的子目标只是规划的前沿，这条检查删除；``registry`` 不再被读取。
+    没有库做法的子目标只是规划的前沿，这条检查删除。
 
     Every optional argument is an input the check *needs*; without it the matching
     check reports ``NOT_CHECKED`` rather than passing.  A report that silently
@@ -284,7 +282,6 @@ def validate_delta(
     unbound = _check_ports(delta, merged, problems)
     verdicts = _check_preconditions(delta, methods, snapshot, predicates, problems, now_ms=now_ms)
     _check_coverage(delta, merged, problems, pending_roots=frozenset(pending) if taskgraph_contract else frozenset())
-    del catalog, registry
     return DeltaReport(
         problems=tuple(sorted(problems, key=lambda item: (str(item.kind), item.detail))),
         projection_report=projection_report,

@@ -120,8 +120,6 @@ SCHEMA_LIMIT_MIRRORS: dict[str, int] = {
     "#/$defs/repairProposeSuccessorPayload/properties/bindings/maxProperties": MAX_PD_BINDINGS,
     "#/$defs/bindGoalPayload/properties/step/maxLength": MAX_ID,
     "#/$defs/blockedItem/properties/detail/maxLength": MAX_TEXT,
-    "#/$defs/declareBlockedPayload/properties/blockers/maxItems": MAX_PD_BLOCKERS,
-    "#/$defs/declareBlockedPayload/properties/resumable_if/maxItems": MAX_LIST,
     "#/$defs/waitPayload/properties/wait_for/maxItems": MAX_PD_WAIT_REFS,
     "#/$defs/waitPayload/properties/reason/maxLength": MAX_TEXT,
     "#/$defs/noChangePayload/properties/reason/maxLength": MAX_TEXT,
@@ -144,8 +142,6 @@ SCHEMA_LIMIT_MIRRORS: dict[str, int] = {
     "#/$defs/repairRuntimeBlockedPayload/properties/blockers/minItems": 1,
     "#/$defs/repairRuntimeBlockedPayload/properties/blockers/maxItems": MAX_PD_BLOCKERS,
     "#/$defs/repairRuntimeBlockedPayload/properties/resumable_if/maxItems": MAX_LIST,
-    "#/$defs/repairEscalatePayload/properties/question/maxLength": MAX_TEXT,
-    "#/$defs/repairEscalatePayload/properties/options/maxItems": MAX_PD_HUMAN_OPTIONS,
     "#/$defs/repairCompensationPayload/properties/action_key/maxLength": MAX_ID,
     "#/$defs/repairCompensationPayload/properties/action_hash/maxLength": 64,
     "#/$defs/repairCompensationPayload/properties/reason/maxLength": MAX_TEXT,
@@ -171,7 +167,6 @@ PAYLOAD_DEF_BY_DECISION_TYPE = {
     "PROPOSE_METHOD": "#/$defs/proposeMethodPayload",
     "REQUEST_EVIDENCE": "#/$defs/requestEvidencePayload",
     "BIND_EXISTING_GOAL": "#/$defs/bindGoalPayload",
-    "DECLARE_BLOCKED": "#/$defs/declareBlockedPayload",
     "WAIT": "#/$defs/waitPayload",
     "NO_CHANGE": "#/$defs/noChangePayload",
     "REQUEST_HUMAN": "#/$defs/requestHumanPayload",
@@ -183,7 +178,6 @@ REPAIR_PAYLOAD_BY_KIND = {
     "CANCEL_BRANCH": "#/$defs/repairCancelBranchPayload",
     "RETRY_SAME_METHOD": "#/$defs/repairRetrySameMethodPayload",
     "DECLARE_RUNTIME_BLOCKED": "#/$defs/repairRuntimeBlockedPayload",
-    "ESCALATE": "#/$defs/repairEscalatePayload",
     "REQUEST_COMPENSATION": "#/$defs/repairCompensationPayload",
     "PROPOSE_SUCCESSOR": "#/$defs/repairProposeSuccessorPayload",
 }
@@ -393,7 +387,7 @@ def _codec_canonical_variants() -> dict[str, dict[str, Any]]:
     for path in _valid_paths():
         variants[path.stem] = _read(path)
 
-    blocked = _read(VALID_DIR / "declare-blocked.json")
+    blocked = _read(VALID_DIR / "repair-declare-runtime-blocked.json")
     blocked["payload"]["blockers"] = [{"code": "NO_USABLE_METHOD"}]
     variants["variant-blocked-item-without-detail"] = blocked
 
@@ -582,7 +576,6 @@ def test_payload_defs_are_complete_and_match_the_codec_required_fields() -> None
             "goal_ref",
             "resolution_ref",
         ],
-        "declareBlockedPayload": ["blockers", "resumable_if"],
         "waitPayload": ["wait_for", "reason"],
         "noChangePayload": ["reason"],
         "requestEvidencePayload": ["questions"],
@@ -763,7 +756,7 @@ def test_bind_goal_payload_pins_share_active_without_a_resolution() -> None:
     assert then_shapes[BindExistingGoalMode.REUSE_ACCEPTED.value] == {"$ref": "#/$defs/planningRef"}
 
 
-def test_declare_blocked_other_requires_a_detail() -> None:
+def test_a_blocker_coded_other_requires_a_detail() -> None:
     node = _load_schema()["$defs"]["blockedItem"]
     assert node["properties"]["code"] == {"$ref": "#/$defs/blockerCode"}
     condition = [
@@ -828,7 +821,6 @@ def test_valid_fixtures_number_at_least_eleven_and_cover_every_shape() -> None:
         ("REFINE", None),
         *(("REPAIR", kind.value) for kind in RepairKind),
         ("BIND_EXISTING_GOAL", None),
-        ("DECLARE_BLOCKED", None),
         ("WAIT", None),
         ("NO_CHANGE", None),
         ("REQUEST_EVIDENCE", None),

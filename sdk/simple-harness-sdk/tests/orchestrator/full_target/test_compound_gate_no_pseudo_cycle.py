@@ -684,7 +684,6 @@ def test_validate_delta_passes_the_compiled_increment() -> None:
         bundle.network,
         BUDGET,
         network=bundle.network,
-        registry=env.registry,
         methods={"gate.outer": outer_method()},
         snapshot=env.snapshot(),
         predicates=env.predicates,
@@ -695,7 +694,7 @@ def test_validate_delta_passes_the_compiled_increment() -> None:
 def test_validate_delta_says_when_it_could_not_check_preconditions() -> None:
     env, _, _, bundle = outer_only()
     report = validate_delta(
-        bundle.delta, bundle.network, BUDGET, network=bundle.network, registry=env.registry
+        bundle.delta, bundle.network, BUDGET, network=bundle.network
     )
     assert DeltaProblemKind.NOT_CHECKED in report.kinds
 
@@ -710,7 +709,6 @@ def test_a_refuted_precondition_is_classified_not_just_reported() -> None:
         bundle.network,
         BUDGET,
         network=bundle.network,
-        registry=env.registry,
         methods={"gate.outer": outer_method()},
         snapshot=env.snapshot(),
         predicates=env.predicates,
@@ -729,7 +727,6 @@ def test_an_unknown_precondition_is_classified_as_needing_evidence() -> None:
         bundle.network,
         BUDGET,
         network=bundle.network,
-        registry=env.registry,
         methods={"gate.outer": outer_method()},
         snapshot=env.snapshot(),
         predicates=env.predicates,
@@ -749,7 +746,6 @@ def test_a_conflicting_precondition_is_classified_as_conflicted() -> None:
         bundle.network,
         BUDGET,
         network=bundle.network,
-        registry=env.registry,
         methods={"gate.outer": outer_method()},
         snapshot=env.snapshot(),
         predicates=env.predicates,

@@ -42,7 +42,6 @@ from agent_orchestrator.contracts.evidence_state import TruthValue
 from agent_orchestrator.contracts.htn import MethodRegistryStatus
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
-    H1_DECISION_ENABLEMENT,
     PlanningDecisionEnvelopeV1,
     PlanningDecisionRejectionCode,
     PlanningDecisionStatus,
@@ -99,11 +98,9 @@ CODEC_LAYER_CODES = frozenset(
     }
 )
 
-#: §12 H1: the decision kinds the package advertises as executable.  The phase
-#: gate reads this set, so every decode-only kind is refused.
-H1_ENABLED = frozenset(
-    name for name, enablement in H1_DECISION_ENABLEMENT.items() if enablement.executable
-)
+#: The decision kinds this file's request advertises.  The phase gate reads the set the
+#: request carried, so a kind outside it is refused whatever the build could execute.
+H1_ENABLED = frozenset({"REFINE", "REPAIR/REPLACE_METHOD", "WAIT", "NO_CHANGE"})
 
 #: Every rejection code this slice must be able to produce, mapped to the test
 #: that produces it.  The journal carries the same table; a code that §33 lists
@@ -312,7 +309,6 @@ def _budgets() -> PlanningRetryBudgetView:
     return PlanningRetryBudgetView(
         same_request_format_retries_remaining=1,
         planning_rounds_remaining=2,
-        synthesis_asks_remaining=2,
         root_review_repairs_remaining=1,
         repeated_failure_before_escalation_remaining=3,
     )
@@ -575,7 +571,6 @@ def test_every_admission_rejection_code_has_a_case() -> None:
 EXECUTABLE_VALID = (
     "refine",
     "repair-replace-method",
-    "declare-blocked",
     "no-change",
     "wait",
 )
@@ -995,9 +990,8 @@ def test_the_bound_outranks_an_exhausted_budget() -> None:
 
 
 def test_a_decision_that_changes_nothing_is_not_budget_gated() -> None:
-    # WAIT / NO_CHANGE / DECLARE_BLOCKED are the escape hatches an out-of-budget
-    # planner must still be able to say.
-    for name in ("no-change", "wait", "declare-blocked"):
+    # WAIT / NO_CHANGE are what an out-of-budget planner must still be able to say.
+    for name in ("no-change", "wait"):
         outcome = _admit(
             _valid_envelope(name),
             _context(

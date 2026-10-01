@@ -409,34 +409,15 @@ def _run(world: _CodeWorld, tmp_path, provider: RoleScriptedProvider) -> dict[st
 
 
 # ======================================================================================
-# 5. Prompt: a new hierarchical Worker version; v2 bytes stay frozen
+# 5. Prompt: the hierarchical Worker is told a read-only leaf does not rewrite files
 # ======================================================================================
 
 
-def test_the_hierarchical_worker_v4_forbids_rewriting_and_v2_is_frozen() -> None:
-    from agent_orchestrator.runtime.role_templates import (
-        WORKER_HIERARCHICAL,
-        WORKER_HIERARCHICAL_V2,
-        WORKER_HIERARCHICAL_V2_VERSION,
-        WORKER_HIERARCHICAL_VERSION,
-        template_for,
-    )
+def test_the_hierarchical_worker_prompt_forbids_rewriting_on_a_read_only_leaf() -> None:
+    from agent_orchestrator.runtime.role_templates import WORKER_HIERARCHICAL
 
-    assert WORKER_HIERARCHICAL.prompt_version == WORKER_HIERARCHICAL_VERSION
-    assert WORKER_HIERARCHICAL_VERSION == "worker-hierarchical-v5"  # v4 + Skill tools
-    v4 = WORKER_HIERARCHICAL.instructions
-    v2 = WORKER_HIERARCHICAL_V2.instructions
     for sentence in ("不能改已有文件", "报告里写明建议"):
-        assert sentence in v4, sentence
-        assert sentence not in v2, sentence
-    assert WORKER_HIERARCHICAL_V2.prompt_version == WORKER_HIERARCHICAL_V2_VERSION
-    assert hashlib.sha256(v2.encode("utf-8")).hexdigest() == (
-        "120372b8a49162ab1d96c6cf2725d6fcf7adec1988c7c8646f378c21649870b7"
-    )
-    assert (
-        template_for(WORKER_HIERARCHICAL, {"worker": WORKER_HIERARCHICAL_V2_VERSION})
-        is WORKER_HIERARCHICAL_V2
-    )
+        assert sentence in WORKER_HIERARCHICAL.instructions, sentence
 
 
 # ======================================================================================

@@ -47,17 +47,18 @@ from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 def _repair_reply(package: dict, *, instance_id: str) -> str:
     # the refined goal the pending repair request is about, as the package shows it
     rejected = next(
-        item for item in package["plan"]["refined_goals_under_repair"]
-        if item["adopted_method_instance_id"] == instance_id
+        item for item in package["views"]["goals"]
+        if item["under_repair"] and item["adopted_method"]["method_instance_id"] == instance_id
     )
     alternatives = [
-        item for item in package["applicability"]
-        if item["verdict"] == "APPLICABLE"
-        and item["goal_occurrence_id"] == rejected["occurrence_id"]
-        and item["method_ref"]["method_id"] == "code.fix-by-revert"
+        item["method_ref"] for item in package["views"]["methods"]
+        if item["method_ref"]["id"] == "code.fix-by-revert"
+        and any(report["verdict"] == "APPLICABLE"
+                and report["goal_occurrence_id"] == rejected["occurrence_id"]
+                for report in item["applicability"])
     ]
     assert alternatives
-    method_ref = alternatives[0]["method_ref"]
+    method_ref = alternatives[0]
     instance_ref = next(
         item for item in package["visible_refs"]
         if item["kind"] == "method_instance" and item["id"] == instance_id
@@ -76,13 +77,8 @@ def _repair_reply(package: dict, *, instance_id: str) -> str:
                 "payload": {
                     "repair_kind": "REPLACE_METHOD",
                     "rejected_method_instance": instance_ref,
-                    "replacement_method_ref": {
-                        "kind": "method",
-                        "id": method_ref["method_id"],
-                        "semantic_revision": method_ref["version"],
-                        "content_hash": method_ref["content_hash"],
-                    },
-                    "bindings": rejected["typed_parameters"],
+                    "replacement_method_ref": dict(method_ref),
+                    "bindings": rejected["params"],
                 },
                 "uncertainties": [],
                 "alternatives": [],
@@ -301,9 +297,9 @@ def test_deferred_replace_method_cold_resume_reuses_frozen_decision_without_llm(
             repair_package = repair_intent.config["planning_package"]
             applicable_alternatives = [
                 item
-                for item in repair_package["applicability"]
-                if item["verdict"] == "APPLICABLE"
-                and item["method_ref"]["method_id"] == "code.fix-by-revert"
+                for item in repair_package["views"]["methods"]
+                if item["method_ref"]["id"] == "code.fix-by-revert"
+                and any(report["verdict"] == "APPLICABLE" for report in item["applicability"])
             ]
             assert len(applicable_alternatives) == 1
             raw = _repair_reply(repair_package, instance_id=instance_id)
@@ -373,7 +369,7 @@ def test_deferred_replace_method_cold_resume_reuses_frozen_decision_without_llm(
             # 做法在做法库里只有一个字段说明"被退役过 + 原因"——规划器当时写的理由和它处理的
             # 请求——不再是按原因分开的两个标记。
             from agent_orchestrator.orchestrator.planning_repair_requests import pending_requests
-            from agent_orchestrator.planning.htn.planner_package import method_library
+            from agent_orchestrator.planning.htn.planner_package import method_rows
 
             assert pending_requests(resumed.store, mission.id) == []
             [retired] = resumed.hierarchical.retired_methods(mission.id)
@@ -387,10 +383,10 @@ def test_deferred_replace_method_cold_resume_reuses_frozen_decision_without_llm(
             network = resumed.hierarchical.network(mission.id)
             signature = str(network.binding_for_occurrence(
                 network.root_occurrence_ids[0]).goal_signature.signature_id)
-            library = method_library(world.registry, [signature],
+            library, _ = method_rows(world.registry, [signature],
                                      retired=resumed.hierarchical.retired_methods(mission.id),
                                      mission_id=mission.id)
-            marked = {row["method_id"]: row["rejected_reasons"] for row in library}
+            marked = {row["method_ref"]["id"]: row["rejected_reasons"] for row in library}
             old_id = frozen["old_method_ref"]["method_id"]
             assert [item["retired_instance_id"] for item in marked[old_id]] == [frozen["instance_id"]]
             assert "method_ref" not in marked[old_id][0]

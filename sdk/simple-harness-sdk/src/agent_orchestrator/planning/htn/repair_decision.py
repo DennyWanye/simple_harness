@@ -47,7 +47,6 @@ class RepairActionType(StrEnum):
     CANCEL_BRANCH = "CANCEL_BRANCH"
     REQUEST_COMPENSATION = "REQUEST_COMPENSATION"
     DECLARE_RUNTIME_BLOCKED = "DECLARE_RUNTIME_BLOCKED"
-    ESCALATE = "ESCALATE"
     PROPOSE_SUCCESSOR = "PROPOSE_SUCCESSOR"
 
 
@@ -542,7 +541,7 @@ class HumanRequestV1:
 
     @classmethod
     def from_planning_request(cls, value: object) -> HumanRequestV1:
-        """Bridge the H1 decode-only ``RequestHumanDecision`` contract."""
+        """Bridge the ``RequestHumanDecision`` contract."""
 
         question = getattr(value, "question", None)
         options = getattr(value, "options", ())

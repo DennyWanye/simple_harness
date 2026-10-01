@@ -16,12 +16,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from simple_harness.contracts import canonical_json
 
 from ..contracts.htn import TaskRef
 from ..contracts.models import ContractError
 from ..planning.htn.registry import MethodProposal
-from ..planning.htn.synthesis import MethodSynthesizer, rejection_problems
+from ..planning.htn.method_proposals import admit_proposal, rejection_problems
 from ..planning.unknown_fields import decode_dropping_unknown
 
 #: How many methods the Planner may propose for one goal in one Mission (规划预算之一).
@@ -141,9 +140,8 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
     # Candidate admission mutates only an isolated registry. Persist/install the
     # accepted definition after the caller rechecks the current grant and request.
     candidate = world.registry.fork()
-    text = "<method_proposal>" + canonical_json(dict(payload.method_proposal)) + "</method_proposal>"
-    receipt = MethodSynthesizer(candidate, world.catalog).accept_response(
-        text, policy=dispatch._admission_policy(mission_id))
+    receipt = admit_proposal(
+        proposal, registry=candidate, policy=dispatch._admission_policy(mission_id))
     if not receipt.admitted or receipt.method_ref is None:
         raise MethodProposalRefused(rejection_problems(receipt) or (f"REJECTED: {receipt.verdict!s}",))
     return receipt, candidate.definition(receipt.method_ref), candidate.registration(receipt.method_ref)

@@ -1,3 +1,15 @@
+最后更新：2026-10-02 CST（HTN 精简改造 片 C：规划包与提示词收口，SDK opt.121）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版；逐步记录见同目录 `HTN-片C-实施记录.md`。
+- **方法合成器角色删除**：提示词 `method-synthesizer-v1`～`v9`、`planning/htn/synthesis.py`、各处角色清单里的名字、前端的角色显示分支全部删除。仍在用的两件事在 `planning/htn/method_proposals.py`：`build_context`（给规划器写做法的材料：真实可用的步骤类型、每条要求的原文、现有做法为什么不适用、不许写的系统字段）与 `admit_proposal`（把规划器已解码的做法交给注册协议，作者固定为模型，最多到试用）。重问反馈、"哪些拒绝值得再问"的分类表随角色一起删。
+- **提示词每个分层角色只登记一份**（`runtime/role_templates.py`）：规划器 `planner-hierarchical-v15`、分层执行者 `worker-hierarchical-v5`、根审阅员 `root-reviewer-v5`，都是完整文本，不从历史版本拼接；历史版本、版本表、钉历史哈希的测试删除。配对检查只认"当前规划包版本 + 当前提示词版本"这一对；规划器模板的选用不读部署钉的版本。规划请求末尾原先追加的一段英文"协议提醒"删除——怎么写回复只在提示词里说。平面模式与各领域的提示词版本没有动。
+- **"允许哪些决定"只有一张表**：`contracts/planning_decisions.ENABLED_DECISIONS`，由决定类型与修复种类两个枚举直接得出，能解码的就是能执行的。四层叠加的表与"能解码 / 能受理 / 能执行"三个开关删除。`DECLARE_BLOCKED` 与 `REPAIR/ESCALATE` 连类型、载荷、JSON Schema 条目一起删（"卡住了"只有问用户一种说法；"运行环境受阻"保留）。规划授权策略只剩一个版本，允许的种类就是这张表。
+- **规划包只组装一层**：`orchestrator/planner_views.read_planner_package` 读一遍库、计划、做法库、证据快照，得到模型看到的每一行；`planning/htn/planner_package.assemble_planner_package`（纯函数）加协议字段、算可引用对象、施加条数上限与 96 KiB 上限并如实标注裁剪。旧收集器生成的映射和"映射 → 视图"的转换层（`planner_package_v1.py`）删除。规划包版本 10，包里 `package_version` 直接是这个整数。
+  - 顶层字段：`planning_protocol`、`planning_subjects`、`visible_refs`、`previous_feedback`、`decision_limits`；九个视图 `views`（`goals`、`obligations`、`plans`、`methods`、`facts`、`accepted_results`、`failures`、`capabilities`、`planning_budgets`）；`repair_requests`、`human_answers`；`method_selection`、`method_proposal_contexts`；`sharing_candidates`、`successor_types`、`compensation_candidates`、`evidence_predicates`；`truncated`、`omitted_counts`。
+  - 每件事只说一次：目标与步骤只在 `views.goals`（`open` / `adopted_method` / `under_repair` / 任务状态）；做法只在 `views.methods`（引用是与 `visible_refs` 相同的四元组，带步骤、参数、适用性结果、退役记录、审阅情况）；已采用的做法实例与数据绑定只在 `views.plans`；**一步失败的完整记录只在待处理的修复请求里**，`views.failures` 是索引（先列步骤的失败尝试、再列被拒的规划回复，只带各检查层的一句话摘要）。
+  - 可引用对象超过 128 条或整包超过 96 KiB 时，先裁可选行（已接受结果 → 失败索引 → 观察 → 做法）并记入 `omitted_counts`；目标、计划、预算放不下才拒绝。
+- 顺手：重试预算里恒为 0 的合成次数字段删除，规划预算视图里的 `synthesis_remaining` 改名 `method_proposals_remaining`；计划变更校验去掉两个无人读取的参数。
+- 没有做：文档领域按版本号的三个判断（收了以后平面模式文档领域的测试一百多条变红，属于旧平面模式那条线，改动已撤回）；`parse_method_proposal` 与 `<method_proposal>` 标签（源码已无人调用，随旧分层旁路一起清）。
+- 验证：相关定向测试、29 项变异、独立核验一轮（1 个阻断问题已修）、真机复验，见实施记录。
+
 最后更新：2026-10-02 凌晨 CST（HTN 精简改造 片 B：中间目标，SDK opt.115～120）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版与 `中间目标判据-试验结论.md`；逐步记录见同目录 `HTN-片B-实施记录.md`。
 - **目标类型带层级，层数上限由类型结构保证**：`TaskTypeSpec.refinement_level`（只有目标类型能有；不带层级的类型正文与哈希不变）。做法注册检查（`planning/htn/registry._check_structure`）：做法的目标类型在第 L 层时，它里面的子目标必须是更深一层的类型，否则以 `UNBOUNDED_RECURSION` 拒收——同层、更浅、没有层级的都不行，互相嵌套出环在注册时就被拒。不另写层数计数器。Host（`deskpet/orchestration/hierarchical.planning_world`）注册 `desktop.user-goal`（0 层）、`desktop.sub-goal-1`、`desktop.sub-goal-2`；两个子目标类型不声明判据，各声明一个 `delivery` 输出端口。
 - **交给中间目标的要求保持原编号**：中间目标的类型不声明判据，它负责哪几条要求由上级做法用链接交给它，编号与用户要求相同。注册检查拒收"链接到子目标步骤却换了编号"的做法。

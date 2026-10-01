@@ -1424,10 +1424,7 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     P2.3b had four sites; P2.3c part 2 added the fifth, ``_create_planner_intent``,
     which is where the *prompt* and the *package* are chosen together (blocker c: a
     Planner asked for a plan-revision proposal while holding the DAG package).  Part
-    2b added two more: ``_create_synthesizer_intent`` (a MethodSynthesizer round is a
-    hierarchical-only role, and asking the mode there is what stops a legacy Mission
-    from being handed a method library it has no way to use) and
-    ``_accept_hierarchical_leaf`` (a verified leaf becomes an ``Acceptance`` only in
+    2b added ``_accept_hierarchical_leaf`` (a verified leaf becomes an ``Acceptance`` only in
     the new mode; in the legacy one ``accept_result`` is the whole lifecycle).  Part
     2c added three more — ``_gather_evidence`` (the read-only evidence round),
     ``_request_method_synthesis`` (deciding a goal has no method that could apply) and

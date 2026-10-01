@@ -21,7 +21,7 @@ import pytest
 
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
-    H1_DECISION_ENABLEMENT,
+    ENABLED_DECISIONS,
     MAX_PD_ALTERNATIVES,
     MAX_PD_ARGUMENTS,
     MAX_PD_ASSUMPTIONS,
@@ -38,7 +38,6 @@ from agent_orchestrator.contracts.planning_decisions import (
     PLANNING_DECISION_SCHEMA_VERSION,
     PLANNING_DECISION_V1,
     AssumptionRisk,
-    DecisionEnablement,
     PlanningDecisionRejectionCode,
     PlanningDecisionStatus,
     PlanningDecisionType,
@@ -67,12 +66,11 @@ def test_planning_decision_type_members_are_pinned() -> None:
         ("REQUEST_EVIDENCE", "REQUEST_EVIDENCE"),
         ("REPAIR", "REPAIR"),
         ("BIND_EXISTING_GOAL", "BIND_EXISTING_GOAL"),
-        ("DECLARE_BLOCKED", "DECLARE_BLOCKED"),
         ("REQUEST_HUMAN", "REQUEST_HUMAN"),
         ("WAIT", "WAIT"),
         ("NO_CHANGE", "NO_CHANGE"),
     ]
-    assert len(PlanningDecisionType) == 9
+    assert len(PlanningDecisionType) == 8
 
 
 def test_planning_ref_kind_members_are_pinned() -> None:
@@ -215,26 +213,18 @@ def test_max_planning_ref_id_is_pinned_with_boundaries() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# H1 phase enablement table (§12, H1 column)
+# The enablement table: one, read off the two enums
 # --------------------------------------------------------------------------------------
 
 
-def test_h1_decision_enablement_matches_section_12() -> None:
-    executable = DecisionEnablement(decodable=True, admissible=True, executable=True)
-    decode_only = DecisionEnablement(decodable=True, admissible=False, executable=False)
-    assert dict(H1_DECISION_ENABLEMENT) == {
-        "REFINE": executable,
-        "REPAIR/REPLACE_METHOD": executable,
-        "REPAIR/PROPOSE_SUCCESSOR": decode_only,
-        "BIND_EXISTING_GOAL": decode_only,
-        "DECLARE_BLOCKED": executable,
-        "WAIT": executable,
-        "NO_CHANGE": executable,
-        "REQUEST_EVIDENCE": decode_only,
-        "REQUEST_HUMAN": decode_only,
-        "PROPOSE_METHOD": decode_only,
-    }
-    assert len(H1_DECISION_ENABLEMENT) == 10
+def test_every_decision_kind_this_build_decodes_is_enabled() -> None:
+    assert ENABLED_DECISIONS == frozenset({
+        "REFINE", "PROPOSE_METHOD", "REQUEST_EVIDENCE", "BIND_EXISTING_GOAL", "REQUEST_HUMAN",
+        "WAIT", "NO_CHANGE",
+        "REPAIR/REPLACE_METHOD", "REPAIR/REFINE_DEEPER", "REPAIR/REBIND_INPUT",
+        "REPAIR/CANCEL_BRANCH", "REPAIR/RETRY_SAME_METHOD", "REPAIR/DECLARE_RUNTIME_BLOCKED",
+        "REPAIR/REQUEST_COMPENSATION", "REPAIR/PROPOSE_SUCCESSOR",
+    })
 
 
 # --------------------------------------------------------------------------------------
@@ -285,7 +275,6 @@ def _retry_budget() -> PlanningRetryBudgetView:
     return PlanningRetryBudgetView(
         same_request_format_retries_remaining=1,
         planning_rounds_remaining=4,
-        synthesis_asks_remaining=2,
         root_review_repairs_remaining=3,
         repeated_failure_before_escalation_remaining=None,
     )
@@ -461,14 +450,12 @@ def test_retry_budget_counters_lower_bound_is_pinned() -> None:
         PlanningRetryBudgetView(
             same_request_format_retries_remaining=-1,
             planning_rounds_remaining=0,
-            synthesis_asks_remaining=0,
             root_review_repairs_remaining=0,
             repeated_failure_before_escalation_remaining=None,
         )
     zeroed = PlanningRetryBudgetView(
         same_request_format_retries_remaining=0,
         planning_rounds_remaining=0,
-        synthesis_asks_remaining=0,
         root_review_repairs_remaining=0,
         repeated_failure_before_escalation_remaining=None,
     )

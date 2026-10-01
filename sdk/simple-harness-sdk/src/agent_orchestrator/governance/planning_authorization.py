@@ -13,13 +13,14 @@ from typing import Any, Protocol
 from simple_harness.contracts import canonical_json
 
 from ..contracts import ContractError
+from ..contracts.planning_decisions import ENABLED_DECISIONS
 from ..orchestrator.plan_commits import PlanPrincipal
 from ..storage.store import StoreError
 
-PLANNING_POLICY_VERSION = "planning-lane-policy-v1"
-PLANNING_DECISIONS = (
-    "REFINE", "REPAIR/REPLACE_METHOD", "WAIT", "NO_CHANGE", "DECLARE_BLOCKED",
-)
+#: One policy: every hierarchical Mission runs the current protocol, and the planning
+#: lane may return every decision kind that protocol has.
+PLANNING_POLICY_VERSION = "planning-lane-policy-v3"
+PLANNING_DECISIONS: tuple[str, ...] = tuple(sorted(ENABLED_DECISIONS))
 
 
 def _hash(value: Mapping[str, Any]) -> str:
@@ -33,7 +34,7 @@ class PlanningLanePolicy:
     ttl_ms: int = 24 * 60 * 60 * 1000
 
     def __post_init__(self) -> None:
-        if self.policy_version not in {PLANNING_POLICY_VERSION, "planning-lane-policy-v2", "planning-lane-policy-v3"}:
+        if self.policy_version != PLANNING_POLICY_VERSION:
             raise ContractError("unknown planning lane policy")
         if not self.allowed_decisions or len(set(self.allowed_decisions)) != len(
             self.allowed_decisions
@@ -55,9 +56,7 @@ class PlanningLanePolicy:
 
 def planning_policy_for_mission(store: Any, mission_id: str) -> PlanningLanePolicy:
     del store, mission_id  # one policy: every hierarchical Mission runs the current protocol
-    from ..contracts.planning_decisions import H4_DECISION_ENABLEMENT
-    return PlanningLanePolicy(policy_version="planning-lane-policy-v3",
-        allowed_decisions=tuple(key for key, value in H4_DECISION_ENABLEMENT.items() if value.executable))
+    return PlanningLanePolicy()
 
 
 @dataclass(frozen=True, slots=True)

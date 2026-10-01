@@ -37,7 +37,7 @@ class LocalWorkFacts:
         subjects.update(row["reservation_subject"] for row in body["actions"]
                         if row.get("reservation_subject") and (row.get("task_id") in task_ids
                         or row.get("attempt_id") in subjects))
-        # A Critic/Manager or MethodSynthesizer can still execute on behalf of
+        # A Critic or Manager can still execute on behalf of
         # the same Task. The latter's original producer stores goal_task_id.
         # Explicit config/Attempt links are the only identity join; no id parsing.
         while True:

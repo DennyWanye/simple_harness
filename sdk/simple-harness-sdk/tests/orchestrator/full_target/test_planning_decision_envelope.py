@@ -130,9 +130,11 @@ BIND_SHARE_PAYLOAD = {
     "goal_ref": _ref("task", "g-1"),
     "resolution_ref": None,
 }
-DECLARE_BLOCKED_PAYLOAD = {
-    "blockers": [{"code": "NO_USABLE_METHOD", "detail": "no method applies"}],
-    "resumable_if": ["new_method_admitted"],
+RUNTIME_BLOCKED_PAYLOAD = {
+    "repair_kind": "DECLARE_RUNTIME_BLOCKED",
+    "repair_request_id": "c" * 64,
+    "blockers": [{"code": "CAPABILITY_MISSING", "detail": "the model service is down"}],
+    "resumable_if": ["evidence_updated"],
 }
 WAIT_PAYLOAD = {"wait_for": [_ref("review", "rv-1")], "reason": "wait for dispatch"}
 NO_CHANGE_PAYLOAD = {"reason": "current method still valid"}
@@ -159,7 +161,7 @@ VALID_DECISIONS = [
     ("REPAIR", PROPOSE_SUCCESSOR_PAYLOAD),
     ("BIND_EXISTING_GOAL", BIND_REUSE_PAYLOAD),
     ("BIND_EXISTING_GOAL", BIND_SHARE_PAYLOAD),
-    ("DECLARE_BLOCKED", DECLARE_BLOCKED_PAYLOAD),
+    ("REPAIR", RUNTIME_BLOCKED_PAYLOAD),
     ("WAIT", WAIT_PAYLOAD),
     ("NO_CHANGE", NO_CHANGE_PAYLOAD),
     ("REQUEST_EVIDENCE", REQUEST_EVIDENCE_PAYLOAD),
@@ -261,7 +263,6 @@ def test_repair_kind_members_are_pinned() -> None:
         ("CANCEL_BRANCH", "CANCEL_BRANCH"),
         ("RETRY_SAME_METHOD", "RETRY_SAME_METHOD"),
         ("DECLARE_RUNTIME_BLOCKED", "DECLARE_RUNTIME_BLOCKED"),
-        ("ESCALATE", "ESCALATE"),
         ("REQUEST_COMPENSATION", "REQUEST_COMPENSATION"),
         ("PROPOSE_SUCCESSOR", "PROPOSE_SUCCESSOR"),
     ]
@@ -428,8 +429,8 @@ def test_rationale_bounds() -> None:
     [
         ("WAIT", NO_CHANGE_PAYLOAD),
         ("NO_CHANGE", WAIT_PAYLOAD),
-        ("REFINE", DECLARE_BLOCKED_PAYLOAD),
-        ("DECLARE_BLOCKED", REFINE_PAYLOAD),
+        ("REFINE", WAIT_PAYLOAD),
+        ("DECLARE_BLOCKED", RUNTIME_BLOCKED_PAYLOAD),
     ],
 )
 def test_payload_shape_must_match_decision_type(decision_type: str, payload: dict) -> None:
@@ -705,11 +706,13 @@ def test_bind_existing_goal_payload_negatives(payload: dict) -> None:
             "blockers": [{"code": "NO_USABLE_METHOD", "detail": "x"}] * (MAX_PD_BLOCKERS + 1),
             "resumable_if": [],
         },
+        {"blockers": [], "resumable_if": []},  # a runtime blockage names at least one blocker
     ],
 )
-def test_declare_blocked_payload_negatives(payload: dict) -> None:
+def test_runtime_blocked_payload_negatives(payload: dict) -> None:
+    body = {"repair_kind": "DECLARE_RUNTIME_BLOCKED", "repair_request_id": "c" * 64, **payload}
     with pytest.raises(ContractError):
-        PlanningDecisionEnvelopeV1.from_json(_envelope("DECLARE_BLOCKED", payload))
+        PlanningDecisionEnvelopeV1.from_json(_envelope("REPAIR", body))
 
 
 @pytest.mark.parametrize(

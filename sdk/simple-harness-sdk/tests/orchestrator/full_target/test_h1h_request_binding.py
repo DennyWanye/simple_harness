@@ -79,7 +79,7 @@ def _package() -> TaskPackage:
                 }
             ],
             "package_version": 4,
-            "plan": {"plan_revision": 3},
+            "views": {"plans": [{"plan_revision": 3}]},
         },
     )
 

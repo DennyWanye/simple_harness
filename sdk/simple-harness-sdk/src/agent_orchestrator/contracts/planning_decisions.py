@@ -93,14 +93,13 @@ MAX_SUBJECT_KEY_CHARS = 256
 
 
 class PlanningDecisionType(StrEnum):
-    """§11: the nine things a planner reply may propose."""
+    """§11: the eight things a planner reply may propose."""
 
     REFINE = "REFINE"
     PROPOSE_METHOD = "PROPOSE_METHOD"
     REQUEST_EVIDENCE = "REQUEST_EVIDENCE"
     REPAIR = "REPAIR"
     BIND_EXISTING_GOAL = "BIND_EXISTING_GOAL"
-    DECLARE_BLOCKED = "DECLARE_BLOCKED"
     REQUEST_HUMAN = "REQUEST_HUMAN"
     WAIT = "WAIT"
     NO_CHANGE = "NO_CHANGE"
@@ -232,7 +231,7 @@ class ResumableIf(StrEnum):
 
 
 class RepairKind(StrEnum):
-    """Section 25/26: the H1 repair sub-kinds.  H4 may add more."""
+    """Section 25/26: the repair sub-kinds."""
 
     REPLACE_METHOD = "REPLACE_METHOD"
     REFINE_DEEPER = "REFINE_DEEPER"
@@ -240,7 +239,6 @@ class RepairKind(StrEnum):
     CANCEL_BRANCH = "CANCEL_BRANCH"
     RETRY_SAME_METHOD = "RETRY_SAME_METHOD"
     DECLARE_RUNTIME_BLOCKED = "DECLARE_RUNTIME_BLOCKED"
-    ESCALATE = "ESCALATE"
     REQUEST_COMPENSATION = "REQUEST_COMPENSATION"
     PROPOSE_SUCCESSOR = "PROPOSE_SUCCESSOR"
 
@@ -253,95 +251,31 @@ class BindExistingGoalMode(StrEnum):
 
 
 # --------------------------------------------------------------------------------------
-# Phase enablement (§12, H1 column)
+# The decision kinds a Planner may return
 # --------------------------------------------------------------------------------------
 
+REPAIR_ENABLEMENT_PREFIX = "REPAIR/"
 
-@dataclass(frozen=True, slots=True)
-class DecisionEnablement:
-    """Whether a decision kind can be decoded, admitted and executed in a phase."""
-
-    decodable: bool
-    admissible: bool
-    executable: bool
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "decodable", flag(self.decodable, "enablement.decodable"))
-        object.__setattr__(self, "admissible", flag(self.admissible, "enablement.admissible"))
-        object.__setattr__(self, "executable", flag(self.executable, "enablement.executable"))
-
-
-_EXECUTABLE = DecisionEnablement(decodable=True, admissible=True, executable=True)
-_DECODE_ONLY = DecisionEnablement(decodable=True, admissible=False, executable=False)
-
-#: §12 H1 column, keyed by decision type and (for REPAIR) its sub-kind.  The three
-#: decode-only kinds parse and persist, then return ``DECISION_NOT_ENABLED_IN_PHASE``
-#: rather than silently falling back to legacy behaviour.
-H1_DECISION_ENABLEMENT: Mapping[str, DecisionEnablement] = MappingProxyType(
-    {
-        "REFINE": _EXECUTABLE,
-        "REPAIR/REPLACE_METHOD": _EXECUTABLE,
-        "REPAIR/PROPOSE_SUCCESSOR": _DECODE_ONLY,
-        "BIND_EXISTING_GOAL": _DECODE_ONLY,
-        "DECLARE_BLOCKED": _EXECUTABLE,
-        "WAIT": _EXECUTABLE,
-        "NO_CHANGE": _EXECUTABLE,
-        "REQUEST_EVIDENCE": _DECODE_ONLY,
-        "REQUEST_HUMAN": _DECODE_ONLY,
-        "PROPOSE_METHOD": _DECODE_ONLY,
-    }
+#: Keyed the way admission and authorization key them: a decision type, or
+#: ``REPAIR/<kind>`` for a repair.  One table, read straight off the two enums: every
+#: kind this build decodes is one it admits and executes.  There is no "decodes but is
+#: refused" state — a kind that should not be offered is removed from the enum.
+ENABLED_DECISIONS: frozenset[str] = frozenset(
+    {str(item) for item in PlanningDecisionType if item is not PlanningDecisionType.REPAIR}
+    | {f"{REPAIR_ENABLEMENT_PREFIX}{item}" for item in RepairKind}
 )
-
-#: §12 H3 enables formal evidence requests while preserving H1's executable
-#: decision surface.  Keeping this as a separate map makes the phase transition
-#: explicit; callers using H1 continue to read the unchanged H1 constant.
-H3_DECISION_ENABLEMENT: Mapping[str, DecisionEnablement] = MappingProxyType(
-    {
-        **H1_DECISION_ENABLEMENT,
-        "REQUEST_EVIDENCE": _EXECUTABLE,
-    }
-)
-
-
-V14_DECISION_ENABLEMENT: Mapping[str, DecisionEnablement] = MappingProxyType({
-    **H3_DECISION_ENABLEMENT,
-    "REQUEST_HUMAN": _EXECUTABLE,
-    "PROPOSE_METHOD": _EXECUTABLE,
-})
-
-
-# Package 7 is an explicit H4 extension. Never mutate the package 6 matrix: it
-# also defines the authority and prompt surface of already frozen Missions.
-H4_DECISION_ENABLEMENT: Mapping[str, DecisionEnablement] = MappingProxyType({
-    **V14_DECISION_ENABLEMENT,
-    "BIND_EXISTING_GOAL": _EXECUTABLE,
-    "REPAIR/PROPOSE_SUCCESSOR": _EXECUTABLE,
-    "REPAIR/REBIND_INPUT": _EXECUTABLE,
-    "REPAIR/CANCEL_BRANCH": _EXECUTABLE,
-    "REPAIR/REFINE_DEEPER": _EXECUTABLE,
-    "REPAIR/RETRY_SAME_METHOD": _EXECUTABLE,
-    "REPAIR/DECLARE_RUNTIME_BLOCKED": _EXECUTABLE,
-    "REPAIR/REQUEST_COMPENSATION": _EXECUTABLE,
-    # 片 A 第 9 项（2026-10-01）："卡住了"只有一种说法——问用户（REQUEST_HUMAN）。声明受阻
-    # 与修复里的升级不再可选；"运行环境受阻"是基础设施事实，带恢复条件，保留。
-    "DECLARE_BLOCKED": _DECODE_ONLY,
-    "REPAIR/ESCALATE": _DECODE_ONLY,
-})
 
 
 # --------------------------------------------------------------------------------------
 # Enablement keys vs. what the model sees (2026-09-25 主流程优化条目 2)
 # --------------------------------------------------------------------------------------
-# The matrices above are keyed the way *admission* and *authorization* key them:
+# The table above is keyed the way *admission* and *authorization* key them:
 # ``REPAIR/<kind>``.  That key is not a decision type, and a model that copies it into
 # ``decision_type`` is refused with ``DECISION_TYPE_UNKNOWN`` (7 real-model rounds on
 # 2026-09-23 failed exactly so).  The request package therefore lists two things —
 # legal ``decision_type`` values and legal ``payload.repair_kind`` values — and the two
 # functions below are the only translation between the two spellings, in both
 # directions.
-
-REPAIR_ENABLEMENT_PREFIX = "REPAIR/"
-
 
 class UnsupportedPlanningPackage(ContractError):
     """A Mission is bound to (or a request names) a planning package this build no
@@ -350,21 +284,17 @@ class UnsupportedPlanningPackage(ContractError):
     never a silent fallback and never the whole orchestrator loop."""
 
 
-def exposed_enablement(
-    enablement: Mapping[str, DecisionEnablement],
-) -> tuple[list[str], list[str]]:
+def exposed_enablement(keys: Iterable[str] = ENABLED_DECISIONS) -> tuple[list[str], list[str]]:
     """Internal enablement keys -> ``(enabled_decision_types, enabled_repair_kinds)``.
 
     Every value in the first list is a :class:`PlanningDecisionType`; every value in
     the second is a :class:`RepairKind`.  Both are sorted, and ``REPAIR`` appears in
-    the first list exactly when at least one repair kind is executable.
+    the first list exactly when at least one repair kind is listed.
     """
 
     types: set[str] = set()
     kinds: set[str] = set()
-    for key, value in enablement.items():
-        if not value.executable:
-            continue
+    for key in keys:
         if key.startswith(REPAIR_ENABLEMENT_PREFIX):
             kinds.add(str(RepairKind(key[len(REPAIR_ENABLEMENT_PREFIX):])))
             types.add(str(PlanningDecisionType.REPAIR))
@@ -681,20 +611,18 @@ class PlanningRetryBudgetView:
 
     same_request_format_retries_remaining: int
     planning_rounds_remaining: int
-    synthesis_asks_remaining: int
     root_review_repairs_remaining: int
     repeated_failure_before_escalation_remaining: int | None
 
     _FIELDS = (
         "same_request_format_retries_remaining",
         "planning_rounds_remaining",
-        "synthesis_asks_remaining",
         "root_review_repairs_remaining",
         "repeated_failure_before_escalation_remaining",
     )
 
     def __post_init__(self) -> None:
-        for name in self._FIELDS[:4]:
+        for name in self._FIELDS[:3]:
             object.__setattr__(
                 self, name, index(getattr(self, name), name, minimum=0)
             )
@@ -719,7 +647,6 @@ class PlanningRetryBudgetView:
         return cls(
             same_request_format_retries_remaining=data["same_request_format_retries_remaining"],
             planning_rounds_remaining=data["planning_rounds_remaining"],
-            synthesis_asks_remaining=data["synthesis_asks_remaining"],
             root_review_repairs_remaining=data["root_review_repairs_remaining"],
             repeated_failure_before_escalation_remaining=data[
                 "repeated_failure_before_escalation_remaining"
@@ -1120,7 +1047,7 @@ def _has_method_instance_kind(ref: PlanningRefV1, name: str) -> PlanningRefV1:
 
 
 # --------------------------------------------------------------------------------------
-# The five executable payloads plus five decode-only payloads in H1 (V2 section 24-31)
+# The decision payloads (V2 section 24-31)
 # --------------------------------------------------------------------------------------
 
 
@@ -1473,7 +1400,7 @@ class BindExistingGoalDecision:
 
 @dataclass(frozen=True, slots=True)
 class BlockedItemV1:
-    """One entry of a DECLARE_BLOCKED payload; ``OTHER`` must carry a detail."""
+    """One blocker of a runtime-blocked repair; ``OTHER`` must carry a detail."""
 
     code: BlockerCode
     detail: str | None
@@ -1513,48 +1440,8 @@ def _blocked_item(value: object, name: str) -> BlockedItemV1:
 
 
 @dataclass(frozen=True, slots=True)
-class DeclareBlockedDecision:
-    """V2 section 28: record a blockage; never a Mission FAIL by itself."""
-
-    blockers: tuple[BlockedItemV1, ...]
-    resumable_if: tuple[ResumableIf, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "blockers",
-            sequence_of(
-                self.blockers,
-                "declare_blocked.blockers",
-                _blocked_item,
-                limit=MAX_PD_BLOCKERS,
-            ),
-        )
-        object.__setattr__(
-            self,
-            "resumable_if",
-            sequence_of(
-                self.resumable_if,
-                "declare_blocked.resumable_if",
-                lambda entry, where: enum_of(ResumableIf, entry, where),
-            ),
-        )
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "blockers": [item.to_json() for item in self.blockers],
-            "resumable_if": [str(item) for item in self.resumable_if],
-        }
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "declare_blocked") -> DeclareBlockedDecision:
-        data = fields_of(value, name, required=("blockers", "resumable_if"))
-        return cls(blockers=data["blockers"], resumable_if=data["resumable_if"])
-
-
-@dataclass(frozen=True, slots=True)
 class RepairRuntimeBlockedDecision:
-    """Suspend fresh work for an original runtime failure, without synthesizing."""
+    """Suspend fresh work for an original runtime failure."""
 
     repair_kind: RepairKind
     repair_request_id: str
@@ -1567,18 +1454,22 @@ class RepairRuntimeBlockedDecision:
             raise ContractError("repair_blocked.repair_kind must be DECLARE_RUNTIME_BLOCKED")
         object.__setattr__(self, "repair_kind", kind)
         object.__setattr__(self, "repair_request_id", hash_hex(self.repair_request_id, "repair_blocked.repair_request_id"))
-        blocked = DeclareBlockedDecision(self.blockers, self.resumable_if)
-        if not blocked.blockers:
+        blockers = sequence_of(self.blockers, "repair_blocked.blockers", _blocked_item,
+                               limit=MAX_PD_BLOCKERS)
+        resumable_if = sequence_of(self.resumable_if, "repair_blocked.resumable_if",
+                                   lambda entry, where: enum_of(ResumableIf, entry, where))
+        if not blockers:
             raise ContractError("runtime blockage needs at least one blocker")
         if any(item not in {ResumableIf.EVIDENCE_UPDATED, ResumableIf.HUMAN_RESOLVED,
-                            ResumableIf.PLAN_REVISION_CHANGED} for item in blocked.resumable_if):
+                            ResumableIf.PLAN_REVISION_CHANGED} for item in resumable_if):
             raise ContractError("runtime resume condition has no supported authoritative reader")
-        object.__setattr__(self, "blockers", blocked.blockers)
-        object.__setattr__(self, "resumable_if", blocked.resumable_if)
+        object.__setattr__(self, "blockers", blockers)
+        object.__setattr__(self, "resumable_if", resumable_if)
 
     def to_json(self) -> dict[str, Any]:
         return {"repair_kind": str(self.repair_kind), "repair_request_id": self.repair_request_id,
-                **DeclareBlockedDecision(self.blockers, self.resumable_if).to_json()}
+                "blockers": [item.to_json() for item in self.blockers],
+                "resumable_if": [str(item) for item in self.resumable_if]}
 
     @classmethod
     def from_json(cls, value: object, name: str = "repair_blocked") -> RepairRuntimeBlockedDecision:
@@ -1679,7 +1570,7 @@ def _evidence_question(value: object, name: str) -> EvidenceQuestionV1:
 
 @dataclass(frozen=True, slots=True)
 class RequestEvidenceDecision:
-    """Addendum 2 section 3: decode-only in H1; 1-8 questions."""
+    """Addendum 2 section 3: 1-8 questions."""
 
     questions: tuple[EvidenceQuestionV1, ...]
 
@@ -1733,7 +1624,7 @@ def _human_option(value: object, name: str) -> HumanOptionV1:
 
 @dataclass(frozen=True, slots=True)
 class RequestHumanDecision:
-    """Addendum 2 section 3: decode-only in H1; 0-12 options."""
+    """Addendum 2 section 3: 0-12 options."""
 
     question: str
     options: tuple[HumanOptionV1, ...]
@@ -1772,7 +1663,7 @@ class RequestHumanDecision:
 
 @dataclass(frozen=True, slots=True)
 class ProposeMethodDecision:
-    """Addendum 2 section 3: decode-only in H1.
+    """Addendum 2 section 3.
 
     The contract layer deliberately does not import the planning package: the
     inner ``method_proposal`` is only required to be a JSON object and is kept
@@ -1806,7 +1697,6 @@ PAYLOAD_BY_DECISION_TYPE: Mapping[PlanningDecisionType, type[Any]] = MappingProx
     {
         PlanningDecisionType.REFINE: RefineDecision,
         PlanningDecisionType.BIND_EXISTING_GOAL: BindExistingGoalDecision,
-        PlanningDecisionType.DECLARE_BLOCKED: DeclareBlockedDecision,
         PlanningDecisionType.WAIT: WaitDecision,
         PlanningDecisionType.NO_CHANGE: NoChangeDecision,
         PlanningDecisionType.REQUEST_EVIDENCE: RequestEvidenceDecision,
@@ -1844,43 +1734,9 @@ class RepairCompensationRequestDecision:
                    action_hash=data["action_hash"], reason=data["reason"])
 
 
-@dataclass(frozen=True, slots=True)
-class RepairEscalateDecision:
-    """H4 escalation explicitly targets a human; it never selects another model."""
-
-    repair_kind: RepairKind
-    target: str
-    question: str
-    options: tuple[HumanOptionV1, ...]
-    blocking: bool
-
-    def __post_init__(self) -> None:
-        kind = enum_of(RepairKind, self.repair_kind, "repair_escalate.repair_kind")
-        if kind is not RepairKind.ESCALATE or self.target != "human":
-            raise ContractError("ESCALATE requires the explicit target 'human'")
-        normalized = RequestHumanDecision(self.question, self.options, self.blocking)
-        object.__setattr__(self, "repair_kind", kind)
-        object.__setattr__(self, "question", normalized.question)
-        object.__setattr__(self, "options", normalized.options)
-        object.__setattr__(self, "blocking", normalized.blocking)
-
-    def human_request(self) -> RequestHumanDecision:
-        return RequestHumanDecision(self.question, self.options, self.blocking)
-
-    def to_json(self) -> dict[str, Any]:
-        return {"repair_kind": str(self.repair_kind), "target": self.target, **self.human_request().to_json()}
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "repair_escalate") -> RepairEscalateDecision:
-        data = fields_of(value, name, required=("repair_kind", "target", "question", "options", "blocking"))
-        return cls(repair_kind=data["repair_kind"], target=data["target"], question=data["question"],
-                   options=data["options"], blocking=data["blocking"])
-
-
 REPAIR_PAYLOAD_BY_KIND: Mapping[RepairKind, type[Any]] = MappingProxyType(
     {
         RepairKind.REQUEST_COMPENSATION: RepairCompensationRequestDecision,
-        RepairKind.ESCALATE: RepairEscalateDecision,
         RepairKind.DECLARE_RUNTIME_BLOCKED: RepairRuntimeBlockedDecision,
         RepairKind.RETRY_SAME_METHOD: RepairRetrySameMethodDecision,
         RepairKind.CANCEL_BRANCH: RepairCancelBranchDecision,
@@ -1898,8 +1754,6 @@ def _payload_class(
     if decision_type is PlanningDecisionType.REPAIR:
         if isinstance(payload, RepairCompensationRequestDecision):
             return RepairCompensationRequestDecision
-        if isinstance(payload, RepairEscalateDecision):
-            return RepairEscalateDecision
         if isinstance(payload, RepairRuntimeBlockedDecision):
             return RepairRuntimeBlockedDecision
         if isinstance(payload, RepairRetrySameMethodDecision):
@@ -1930,7 +1784,6 @@ def _payload_class(
 _ALL_PAYLOAD_CLASSES = (
     RefineDecision,
     RepairCompensationRequestDecision,
-    RepairEscalateDecision,
     RepairRuntimeBlockedDecision,
     RepairRetrySameMethodDecision,
     RepairRefineDeeperDecision,
@@ -1939,7 +1792,6 @@ _ALL_PAYLOAD_CLASSES = (
     RepairReplaceMethodDecision,
     RepairProposeSuccessorDecision,
     BindExistingGoalDecision,
-    DeclareBlockedDecision,
     WaitDecision,
     NoChangeDecision,
     RequestEvidenceDecision,
@@ -2162,12 +2014,9 @@ __all__ = (
     "BindExistingGoalMode",
     "BlockerCode",
     "BlockedItemV1",
-    "DecisionEnablement",
-    "DeclareBlockedDecision",
+    "ENABLED_DECISIONS",
     "ENVELOPE_FIELDS",
     "EvidenceQuestionV1",
-    "H1_DECISION_ENABLEMENT",
-    "H3_DECISION_ENABLEMENT",
     "HumanOptionV1",
     "MAX_PD_ALTERNATIVES",
     "MAX_PD_ARGUMENTS",
@@ -2204,13 +2053,11 @@ __all__ = (
     "REPAIR_PAYLOAD_BY_KIND",
     "RefineDecision",
     "ReplanTriggerHintV1",
-    "H4_DECISION_ENABLEMENT",
     "RepairRefineDeeperDecision",
     "RepairRebindInputDecision",
     "RepairCancelBranchDecision",
     "RepairRetrySameMethodDecision",
     "RepairRuntimeBlockedDecision",
-    "RepairEscalateDecision",
     "RepairCompensationRequestDecision",
     "RepairKind",
     "RepairProposeSuccessorDecision",

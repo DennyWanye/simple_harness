@@ -5,7 +5,7 @@ host-final-arp10 (2026-09-24): a Planner turn of an assured Mission lost its str
 hand-off; the lane recorded AssuranceProviderReconciliationRequired and nothing acted until
 the react wall clock ~17 minutes later.  Independent adjudication: on this lane nothing is
 ever re-handed off (that re-sends the original request) and reviews keep their original
-executor (§6.2), but a Planner / MethodSynthesizer round is not a review — after the same
+executor (§6.2), but a Planner round is not a review — after the same
 bound as P2.3f it ends through its own failure door, which on this lane keeps the UNKNOWN
 grants and the reservation.  Reviews keep waiting (unchanged).
 
@@ -44,7 +44,6 @@ def _intent(mission_id: str, *, kind: str, role: str, review: bool = False):  # 
     ("kind", "role", "review", "ends"),
     [
         ("plan", "planner", False, True),
-        ("plan", "method_synthesizer", False, True),
         ("plan", "root_reviewer", False, False),
         ("plan", "planner", True, False),  # an assured review of any purpose
         ("critic", "critic", True, False),

@@ -37,7 +37,7 @@ from .strict import digest
 
 RECEIPT_KIND = "mission-sources"
 SCHEMA = "mission-sources/v1"
-SOURCE_KINDS = frozenset({"worker", "reviewer", "critic", "planner", "method_synthesizer", "service"})
+SOURCE_KINDS = frozenset({"worker", "reviewer", "critic", "planner", "service"})
 
 
 class MissionSourcePort(Protocol):

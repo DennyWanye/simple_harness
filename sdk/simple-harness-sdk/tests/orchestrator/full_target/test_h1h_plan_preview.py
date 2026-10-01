@@ -33,14 +33,14 @@ def _adapter_context() -> AdapterContext:
         read_set=(ReadItem(ReadItemKind.TASK, "t-1", 1, "a" * 64),),
     )
 
-@pytest.mark.parametrize("fixture", ("wait", "no-change", "declare-blocked"))
+@pytest.mark.parametrize("fixture", ("wait", "no-change"))
 def test_state_free_decisions_stop_before_shape_or_operation_preview(
     monkeypatch, fixture: str
 ) -> None:
     decision = _valid_envelope(fixture)
     result = pre_admit_planning_decision(decision, context=_context())
     assert isinstance(result, NoMutationDecision)
-    assert result.decision_type.value in {"WAIT", "NO_CHANGE", "DECLARE_BLOCKED"}
+    assert result.decision_type.value in {"WAIT", "NO_CHANGE"}
 
     def fail(*args, **kwargs):
         raise AssertionError("state-free decision entered candidate preview")

@@ -348,8 +348,8 @@ def test_overlay_drops_new_tests_written_by_a_read_only_leaf() -> None:
     assert TESTS_PATH not in {item.path for item in overlay}
 
 
-def test_the_synthesis_request_carries_criterion_evidence() -> None:
-    from agent_orchestrator.planning.htn.synthesis import MethodSynthesizer
+def test_the_method_context_carries_criterion_evidence() -> None:
+    from agent_orchestrator.planning.htn.method_proposals import build_context
 
     env = build_planning_world("p23t-request", domains=("code",))
     goal = next(
@@ -375,9 +375,7 @@ def test_the_synthesis_request_carries_criterion_evidence() -> None:
         requirement_refs=tuple(goal.goal_signature.coverage_criteria),
         semantic_scope="mission",
     )
-    request = MethodSynthesizer(env.registry, env.catalog).build_request(
-        binding, env.capabilities(), env.registry
-    )
+    request = build_context(binding, env.capabilities(), env.registry, catalog=env.catalog)
     payload = request.to_json()
     evidence = payload["criterion_evidence"]
     ids = {item["id"] for item in evidence}
@@ -505,34 +503,9 @@ def test_a_legacy_mission_keeps_no_dispatchable_work_and_no_tests_port(tmp_path)
     )
 
 
-def test_the_synthesizer_prompt_v7_forbids_verify_writes_and_v6_is_frozen() -> None:
-    from agent_orchestrator.runtime.role_templates import (
-        METHOD_SYNTHESIZER,
-        METHOD_SYNTHESIZER_V6,
-        METHOD_SYNTHESIZER_V6_VERSION,
-        METHOD_SYNTHESIZER_VERSION,
-    )
-
-    assert METHOD_SYNTHESIZER.prompt_version == METHOD_SYNTHESIZER_VERSION
-    assert METHOD_SYNTHESIZER_VERSION == "method-synthesizer-v9"  # 2026-09-26: v8 beside v7
-    assert METHOD_SYNTHESIZER_V6.prompt_version == METHOD_SYNTHESIZER_V6_VERSION
-    assert METHOD_SYNTHESIZER_V6_VERSION == "method-synthesizer-v6"
-    text = METHOD_SYNTHESIZER.instructions
-    assert "只读 verify" in text or "只读 verify 步" in text
-    assert "tests" in text
-    assert METHOD_SYNTHESIZER_V6.instructions != METHOD_SYNTHESIZER.instructions
-
-
 def test_the_read_only_worker_prompt_reports_missing_tests_as_findings() -> None:
-    from agent_orchestrator.runtime.role_templates import (
-        WORKER_HIERARCHICAL,
-        WORKER_HIERARCHICAL_V2,
-        WORKER_HIERARCHICAL_VERSION,
-    )
+    from agent_orchestrator.runtime.role_templates import WORKER_HIERARCHICAL
 
-    assert WORKER_HIERARCHICAL.prompt_version == WORKER_HIERARCHICAL_VERSION
-    assert WORKER_HIERARCHICAL_VERSION == "worker-hierarchical-v5"  # v4 + Skill tools (NEXT-TG-1.0 §11)
-    assert WORKER_HIERARCHICAL_V2.prompt_version == "worker-hierarchical-v2"
     text = WORKER_HIERARCHICAL.instructions
     assert "finding" in text.lower() or "finding" in text
     assert "不要自己" in text or "不要自己写" in text or "不要自己创建" in text

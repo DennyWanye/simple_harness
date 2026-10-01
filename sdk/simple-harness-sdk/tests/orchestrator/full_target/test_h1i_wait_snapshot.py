@@ -89,10 +89,8 @@ def test_planner_task_state_projection_holds_one_write_snapshot(
             assert stored.status is TaskStatus.ACTIVE
             assert stored.version == task.version
             rows = [
-                row
-                for section in ("open_compound_goals", "committed_primitives")
-                for row in intent.config["planning_package"]["plan"][section]
-                if row.get("goal_id", row.get("task_id")) == task.id
+                row for row in intent.config["planning_package"]["views"]["goals"]
+                if row["task_id"] == task.id
             ]
             assert rows
             assert {

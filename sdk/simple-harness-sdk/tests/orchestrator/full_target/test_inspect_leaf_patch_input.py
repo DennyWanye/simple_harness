@@ -18,10 +18,8 @@ Three things change, none of them the v1 rows:
   ``report`` inputs) and ``code.summarize-review@2`` (``findings`` plus optional
   ``patch`` / ``report``) beside the @1 rows, which keep their bytes so a stored
   method or a stored reply still resolves;
-* the synthesiser's operator offers list one version per task type — the latest —
-  so the model is not invited to build on the row whose ports were the defect;
-* ``method-synthesizer-v5`` says the step answering an "explain the change"
-  requirement must be fed the change through an input port.
+* the operator offers a method is written from list one version per task type — the
+  latest — so the model is not invited to build on the row whose ports were the defect.
 
 The fixture under ``fixtures/htn/c1_inspect_input/`` is the C1-r1 method as the
 registry stored it; the first test pins the defect on it, the second binds it through
@@ -31,7 +29,6 @@ the new ports and shows the ``inspect`` leaf waiting for, then receiving, the pa
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -63,13 +60,11 @@ from agent_orchestrator.contracts.semantic_base import content_hash_of  # noqa: 
 from agent_orchestrator.graph.eligibility import ReadinessReason  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch  # noqa: E402
 from agent_orchestrator.orchestrator.plan_commits import PlanPrincipal  # noqa: E402
-from agent_orchestrator.planning.htn.synthesis import MethodSynthesizer  # noqa: E402
+from agent_orchestrator.planning.htn.method_proposals import admit_proposal, build_context  # noqa: E402
+from agent_orchestrator.planning.htn.registry import MethodProposal  # noqa: E402
 from agent_orchestrator.planning.htn.world import build_planning_world  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    method_proposal_step,
-)
 from scripted_plans import (  # noqa: E402
     apply_scripted_plan,
     approve_content_only_completion,
@@ -195,13 +190,10 @@ class _CodeWorld:
             "repository": REPOSITORY
         })
         self.dispatch = HierarchicalDispatch(self.service.store, self.service, planning=self.world)
-        # 片 A（2026-10-01）：合成器运行路径（``apply_synthesizer_reply``）已删。做法事先
-        # 经同一准入协议（作者 MODEL）登记进本任务的库，再由计划采用——铺垫不变。
-        from agent_orchestrator.planning.htn.synthesis import MethodSynthesizer
-
-        receipt = MethodSynthesizer(self.world.registry, self.world.catalog).accept_response(
-            method_proposal_step(method), policy=self.dispatch._admission_policy(self.mission.id)
-        )
+        # 做法事先经同一准入协议（作者 MODEL）登记进本任务的库，再由计划采用。
+        receipt = admit_proposal(
+            MethodProposal.from_json({"method": dict(method), "rationale": "脚本化方法"}),
+            registry=self.world.registry, policy=self.dispatch._admission_policy(self.mission.id))
         assert receipt.admitted, receipt.problems
         reference = receipt.method_ref
         self.semantics.register_method(
@@ -364,14 +356,21 @@ def test_the_v2_rows_declare_the_ports_as_optional() -> None:
 
 
 # ======================================================================================
-# 3. The synthesiser is offered the latest version only, and told to bind it
+# 3. A method is written against the latest version of each operator only
 # ======================================================================================
 
 
 def test_the_operator_offers_list_one_version_per_task_type_the_latest() -> None:
     world = build_planning_world("m-offers", domains=("code",))
-    synthesizer = MethodSynthesizer(world.registry, world.catalog)
-    offers = synthesizer._offers(world.capabilities(), domain="code")
+    goal = next(spec for spec in world.catalog.task_types()
+                if spec.task_type_ref.id == "code.fix-failing-test")
+    binding = TaskSemanticBindingV1(
+        task_id=TaskRef("task-root"), obligation_id=ObligationId("obl-root"),
+        contract_revision=1, contract_hash="a" * 64, form=TaskForm.COMPOUND,
+        goal_signature=goal.goal_signature, typed_parameters={},
+        requirement_refs=tuple(goal.goal_signature.coverage_criteria), semantic_scope="mission")
+    offers = build_context(binding, world.capabilities(), world.registry,
+                           catalog=world.catalog, domain="code").operators
     by_id: dict[str, list[Any]] = {}
     for offer in offers:
         by_id.setdefault(offer.task_type_id, []).append(offer)
@@ -387,38 +386,3 @@ def test_the_operator_offers_list_one_version_per_task_type_the_latest() -> None
     assert set(summarize.input_ports) == {"findings", "patch", "report"}
     # The @1 rows are not offered but still resolve (a stored reply still replays).
     assert world.catalog.resolve(ref(INSPECT, 1)) is not None
-
-
-def test_the_prompt_v5_binds_the_explaining_step_and_v4_is_frozen() -> None:
-    from agent_orchestrator.runtime.role_templates import (
-        METHOD_SYNTHESIZER,
-        METHOD_SYNTHESIZER_V4,
-        METHOD_SYNTHESIZER_V4_VERSION,
-        METHOD_SYNTHESIZER_VERSION,
-        template_for,
-    )
-
-    assert METHOD_SYNTHESIZER.prompt_version == METHOD_SYNTHESIZER_VERSION
-    assert METHOD_SYNTHESIZER_VERSION == "method-synthesizer-v9"  # 2026-09-26: v8 beside v7
-    v5 = METHOD_SYNTHESIZER.instructions
-    v4 = METHOD_SYNTHESIZER_V4.instructions
-    for sentence in (
-        "c-change-explained",
-        "patch 输入端口",
-        "report 输入端口",
-        "未修改的仓库快照",
-        "最高版本",
-    ):
-        assert sentence in v5, sentence
-        assert sentence not in v4, sentence
-    assert METHOD_SYNTHESIZER_V4.prompt_version == METHOD_SYNTHESIZER_V4_VERSION
-    assert METHOD_SYNTHESIZER_V4_VERSION == "method-synthesizer-v4"
-    assert hashlib.sha256(v4.encode("utf-8")).hexdigest() == (
-        "8d457abe7a74d614642ac7e2446e656aea9c46e4a7f509820353dd04f93f39b6"
-    )
-    assert (
-        template_for(METHOD_SYNTHESIZER, {"method_synthesizer": METHOD_SYNTHESIZER_V4_VERSION})
-        is METHOD_SYNTHESIZER_V4
-    )
-    # v5 is a revision: every v4 sentence survives.
-    assert "review_feedback" in v5 and "拒绝码" in v5

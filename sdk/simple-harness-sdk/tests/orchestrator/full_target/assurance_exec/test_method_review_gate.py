@@ -124,7 +124,9 @@ def test_a_rejected_method_reaches_the_planner_in_the_reviewers_words_and_cannot
 
             # the round the rejection woke was shown the method, its review and the words
             [package] = seen
-            row = next(item for item in package["method_library"] if item["method_ref"] == _ref_json(first))
+            row = next(item for item in package["views"]["methods"]
+                       if (item["method_ref"]["id"], item["method_ref"]["semantic_revision"])
+                       == (first.method_id, first.method_version))
             assert row["review"]["outcome"] == "REJECTED"
             assert "no step writes the report" in str(row["review"]["findings"])
 
@@ -139,8 +141,8 @@ def test_a_rejected_method_reaches_the_planner_in_the_reviewers_words_and_cannot
 
             # both versions stay visible as two rows, each with its own review
             final = seen_last[-1]
-            rows = {item["method_ref"]["version"]: item for item in final["method_library"]
-                    if item["method_id"] == "plan.proposed"}
+            rows = {item["method_ref"]["semantic_revision"]: item for item in final["views"]["methods"]
+                    if item["method_ref"]["id"] == "plan.proposed"}
             assert rows[1]["review"]["outcome"] == "REJECTED"
             assert rows[2]["review"]["outcome"] == "PASSED"
     asyncio.run(case())

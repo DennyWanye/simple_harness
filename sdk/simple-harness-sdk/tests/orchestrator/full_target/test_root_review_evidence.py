@@ -87,9 +87,7 @@ from agent_orchestrator.runtime.output_blocks import PortClaim  # noqa: E402
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "htn" / "c3_root_review"
 ROOT_CRITERIA = ("c-test-passes", "c-change-explained")
 
-#: sha256 of ``root-reviewer-v1``'s instructions, frozen (§26.3): an Attempt replays
-#: on the bytes it pinned, so the old words may be superseded but never edited.
-FROZEN_ROOT_REVIEWER_V1 = "2b5ebe37c1701f60e955a0e71d1d682fc344f2ccf6d06ed12606e2df9b9aa59a"
+
 
 
 # ======================================================================================
@@ -647,22 +645,9 @@ def test_the_revision_numbers_are_explained_rather_than_left_to_be_misread(c3: C
     assert root == 5, "exactly the C3 shape"
 
 
-def test_the_prompt_v2_names_the_new_fields_and_v1_is_frozen() -> None:
-    """P2.3k moved the default to v3 (``test_root_review_user_goal``); v2 keeps every
-    word this test pinned, and v1 keeps its bytes."""
+def test_the_prompt_names_the_fields_the_request_carries() -> None:
+    from agent_orchestrator.runtime.role_templates import ROOT_REVIEWER
 
-    from agent_orchestrator.runtime.role_templates import (
-        ROOT_REVIEWER_V1,
-        ROOT_REVIEWER_V1_VERSION,
-        ROOT_REVIEWER_V2,
-        ROOT_REVIEWER_V2_VERSION,
-        TEMPLATE_VERSIONS,
-        template_for,
-    )
-
-    ROOT_REVIEWER = ROOT_REVIEWER_V2  # noqa: N806 - the version this test is about
-    ROOT_REVIEWER_VERSION = ROOT_REVIEWER_V2_VERSION  # noqa: N806
-    assert ROOT_REVIEWER.prompt_version == ROOT_REVIEWER_VERSION == "root-reviewer-v2"
     for field in (
         "excerpt",
         "covered_by",
@@ -673,15 +658,7 @@ def test_the_prompt_v2_names_the_new_fields_and_v1_is_frozen() -> None:
         "c-leaf-verified",
     ):
         assert field in ROOT_REVIEWER.instructions, field
-        assert field not in ROOT_REVIEWER_V1.instructions, field
     assert "不得据此判 false" in ROOT_REVIEWER.instructions
-    assert ROOT_REVIEWER_V1.prompt_version == ROOT_REVIEWER_V1_VERSION == "root-reviewer-v1"
-    assert TEMPLATE_VERSIONS["root_reviewer"].keys() >= {"root-reviewer-v1", "root-reviewer-v2"}
-    assert template_for(ROOT_REVIEWER, {"root_reviewer": "root-reviewer-v1"}) is ROOT_REVIEWER_V1
-    assert (
-        hashlib.sha256(ROOT_REVIEWER_V1.instructions.encode("utf-8")).hexdigest()
-        == FROZEN_ROOT_REVIEWER_V1
-    )
 
 
 # ======================================================================================

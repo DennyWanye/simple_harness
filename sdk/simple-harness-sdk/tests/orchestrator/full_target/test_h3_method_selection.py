@@ -15,8 +15,7 @@ if str(_HTN_FIXTURES) not in sys.path:
 from agent_orchestrator.contracts.htn import MethodRef
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
-    H1_DECISION_ENABLEMENT,
-    H3_DECISION_ENABLEMENT,
+    ENABLED_DECISIONS,
     EvidenceQuestionV1,
     PLANNING_DECISION_V1,
     RequestEvidenceDecision,
@@ -33,10 +32,8 @@ from agent_orchestrator.planning.htn.planner_package import MethodApplicability
 from test_htn_end_to_end import build_world  # noqa: E402
 
 
-def test_h3_enables_request_evidence_without_mutating_h1_matrix() -> None:
-    assert H1_DECISION_ENABLEMENT["REQUEST_EVIDENCE"].executable is False
-    assert H3_DECISION_ENABLEMENT["REQUEST_EVIDENCE"].executable is True
-    assert H3_DECISION_ENABLEMENT["REFINE"] == H1_DECISION_ENABLEMENT["REFINE"]
+def test_request_evidence_is_an_enabled_decision() -> None:
+    assert {"REQUEST_EVIDENCE", "REFINE"} <= ENABLED_DECISIONS
 
 
 def _evidence_request(predicate_key: str) -> RequestEvidenceDecision:

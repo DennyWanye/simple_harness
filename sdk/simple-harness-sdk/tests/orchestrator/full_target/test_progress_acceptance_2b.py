@@ -119,14 +119,14 @@ def _reasons(world_or_dispatch, mission_id: str) -> dict[str, ReadinessReason]:
 
 
 def _plan_intent_count(store, mission_id: str) -> int:
-    """主 Planner / 方法合成的意图数（根审阅也用 kind='plan'，按角色排除）。"""
+    """主 Planner 的意图数（根审阅也用 kind='plan'，按角色排除）。"""
 
     rows = store.connection.execute(
         "SELECT subject_id, config_json FROM dispatch_intents WHERE mission_id=? AND kind='plan'",
         (mission_id,)).fetchall()
     return sum(1 for row in rows
                if ":planner:" in row["subject_id"]
-               or json.loads(row["config_json"]).get("role") in {"planner", "method_synthesizer"})
+               or json.loads(row["config_json"]).get("role") == "planner")
 
 
 # ======================================================================================
@@ -248,9 +248,9 @@ def test_abc_runs_to_completed_without_asking_the_main_planner_again(tmp_path) -
     outcome = _run_abc(world, tmp_path)
     assert outcome["status"] is MissionStatus.COMPLETED, (
         outcome["status"], outcome["stop_reason"], outcome["types"][-30:])
-    # 计划在循环之前已提交；FAST 推进不应再请求主 Planner 或方法合成。
+    # 计划在循环之前已提交；FAST 推进不应再请求主 Planner。
     assert outcome["plan_intents"] == 0
-    assert "planner" not in outcome["roles"] and "method_synthesizer" not in outcome["roles"], outcome["roles"]
+    assert "planner" not in outcome["roles"], outcome["roles"]
     assert not [t for t in outcome["types"] if t in PLANNING_TRACES]
     assert outcome["types"].count("PlanRevisionCommitted") == 1  # 仍是开局那一版计划
     # C 只跑一次，并且是在 A 与 B 都正式完成之后才创建 Attempt。

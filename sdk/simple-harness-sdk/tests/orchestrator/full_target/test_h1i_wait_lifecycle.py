@@ -92,7 +92,6 @@ def _planner_intents(loop: Orchestrator, mission_id: str) -> list[Any]:
         for i in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
         if i.mission_id == mission_id
         and i.kind == "plan"
-        and str(i.config.get("role", "")) != "method_synthesizer"
     ]
 
 
@@ -390,8 +389,8 @@ def test_wait_wakeup_freezes_terminal_task_outcome_in_new_protocol_package(
             package = intent.config["planning_package"]
             row = next(
                 item
-                for item in package["plan"]["open_compound_goals"]
-                if item["goal_id"] == visible["id"]
+                for item in package["views"]["goals"]
+                if item["task_id"] == visible["id"]
             )
             assert row["task_status"] == str(terminal)
             assert row["task_version"] == task.version + 1

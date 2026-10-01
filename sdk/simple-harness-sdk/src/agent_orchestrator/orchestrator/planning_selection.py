@@ -66,7 +66,8 @@ def _not_models_fault(request: Mapping[str, Any], context: Mapping[str, Any]) ->
 
 
 def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
-    if package.get("planning_rejected"):
+    views = package.get("views") or {}
+    if any(row.get("source") == "planning" for row in views.get("failures", ())):
         return None
     # 审阅 2026-09-28：包里是整个任务的全部待处理请求，两步同时失败时不止一条——挑第一条
     # 非模型原因的原地处理，其余留给后续几轮。
@@ -93,7 +94,8 @@ def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
     occurrence = subject["occurrence_id"]
     instance_ids = {
         str(child.get("instance_id"))
-        for instance in package.get("active_method_instances", ())
+        for plan in views.get("plans", ())
+        for instance in plan.get("adopted_methods", ())
         for child in instance.get("child_bindings", ())
         if occurrence in (child.get("occurrence_id"), child.get("goal_occurrence_id"))
     }

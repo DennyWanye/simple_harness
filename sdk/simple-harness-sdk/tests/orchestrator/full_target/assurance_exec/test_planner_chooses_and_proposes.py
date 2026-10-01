@@ -70,7 +70,8 @@ def test_one_candidate_is_still_the_planners_choice_and_a_library_method_needs_n
             [context] = package["method_proposal_contexts"]
             assert context["request"]["new_method_identity"]["method_id"].startswith("proposed-")
             # a library method carries no review, and is adoptable as it is
-            [row] = [item for item in package["method_library"] if item["method_id"] == "plan.library"]
+            [row] = [item for item in package["views"]["methods"]
+                     if item["method_ref"]["id"] == "plan.library"]
             assert "review" not in row
     asyncio.run(case())
 
@@ -141,7 +142,7 @@ def test_a_draft_that_breaks_an_order_rule_is_refused_with_each_problem_listed(t
             assert not events_of(world, "PlanningMethodProposed")
             # the next round was shown both refusals, problem by problem
             [package] = seen
-            shown = str(package["planning_rejected"])
+            shown = str([row for row in package["views"]["failures"] if row["source"] == "planning"])
             assert "METHOD_IDENTITY_TAKEN" in shown and "ROOT_COVERAGE_GAP" in shown
     asyncio.run(case())
 

@@ -19,8 +19,7 @@ real, and the last two sections are the scenarios that could not be written befo
 §5  OR methods: a precondition the observer denies moves the choice to the other
     branch.
 §6  a shared read-only subgoal is executed once.
-§7  the MethodSynthesizer's dispatch — typed context, ``mission_planning``, author
-    locked to MODEL.
+§7  the context the Planner writes a method from — typed, no authority vocabulary.
 §8  mutation self-check.
 """
 
@@ -764,23 +763,19 @@ def _conditions():
 
 
 # ======================================================================================
-# 4. the MethodSynthesizer's own dispatch
+# 4. the context the Planner writes a method from
 # ======================================================================================
 #
-# §7.3 source 4 / §18.5 C8: a new *role*, with its own template, its own budget
-# account and a typed context that carries no authority vocabulary at all.  Part 2
-# built the synthesiser and left it unreachable; this is the wiring.
-#
-# 2026-10-01 HTN 精简片 A：合成器运行路径删除，``synthesis_request`` 改为
-# ``method_proposal_context``（给规划器自己提做法用的字典）；合成器回复准入
-# (``apply_synthesizer_reply``) 与合成器意图 (``_create_synthesizer_intent``) 的测试删除。
+# §7.3 source 4 / §18.5 C8: a typed context that carries no authority vocabulary at
+# all.  The Planner proposes the method itself (HTN 精简 片 A); there is no separate
+# synthesiser role, and the context carries nothing that addressed one (片 C).
 
 
 from agent_orchestrator.contracts.obligations import Obligation  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
     HierarchicalDispatch,
 )
-from agent_orchestrator.planning.htn.synthesis import (  # noqa: E402
+from agent_orchestrator.planning.htn.method_proposals import (  # noqa: E402
     authority_claims,
 )
 from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
@@ -836,7 +831,7 @@ def synth(tmp_path) -> SynthWorld:
     )
 
 
-def test_the_synthesis_request_describes_the_goal_and_the_real_operators(
+def test_the_method_context_describes_the_goal_and_the_real_operators(
     synth: SynthWorld,
 ) -> None:
     request = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
@@ -845,9 +840,11 @@ def test_the_synthesis_request_describes_the_goal_and_the_real_operators(
     offered = {item["task_type_ref"]["id"] for item in request["operators"]}
     assert "demo.shared-read" in offered
     assert "demo.goal" not in offered  # a compound is not an operator
+    # nothing that addressed a separate synthesiser role (its tag, its prompt, its re-ask)
+    assert not {"output_tag", "role_prompt_version", "schema_feedback", "review_feedback"} & set(request)
 
 
-def test_the_synthesis_request_carries_no_authority_vocabulary(synth: SynthWorld) -> None:
+def test_the_method_context_carries_no_authority_vocabulary(synth: SynthWorld) -> None:
     """§18.5: a model proposes the shape of the work, never its authority."""
 
     request = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
@@ -857,7 +854,7 @@ def test_the_synthesis_request_carries_no_authority_vocabulary(synth: SynthWorld
 
 
 def test_each_criterion_id_is_shown_with_its_own_statement(synth: SynthWorld) -> None:
-    """2026-09-29 第十局：合成器只看到 c-user-1…c-user-10 和同一句总目标，只能按目标
+    """2026-09-29 第十局：写做法的模型只看到 c-user-1…c-user-10 和同一句总目标，只能按目标
     描述自己猜编号——把"写出 README.md"链接到了写模块的那一步。每个编号必须带上
     任务要求里它自己的原文；要求里没有的编号保持原样。"""
 
@@ -897,7 +894,7 @@ def test_each_criterion_id_is_shown_with_its_own_statement(synth: SynthWorld) ->
 
 
 def test_file_and_operation_criteria_say_publishing_is_the_systems(synth: SynthWorld) -> None:
-    """2026-09-29 第十三局：合成器不知道发布由系统做（只在打回时才说），给写模块、写
+    """2026-09-29 第十三局：写做法的模型不知道发布由系统做（只在打回时才说），给写模块、写
     README 的步骤都写了"在发布目录中给出落点路径"，又自设了发布步骤；审阅员照这句判
     写模块那步不通过，连败两次后向人要发布目录。file:/action: 要求原文后面附上说明。
 
@@ -906,14 +903,14 @@ def test_file_and_operation_criteria_say_publishing_is_the_systems(synth: SynthW
         AllExpr, Criterion, CriterionExpr, CriterionOrigin, EvaluationKind,
         RequirementClass, RequirementsRevision,
     )
-    from agent_orchestrator.orchestrator.hierarchical_dispatch import synthesis_statement
+    from agent_orchestrator.orchestrator.hierarchical_dispatch import criterion_statement
 
-    file_note = synthesis_statement("file:wordfreq.py")
+    file_note = criterion_statement("file:wordfreq.py")
     assert file_note.startswith("file:wordfreq.py") and "发布由系统完成" in file_note
-    action_note = synthesis_statement("action:file_publish.publish:wordfreq.py")
+    action_note = criterion_statement("action:file_publish.publish:wordfreq.py")
     assert action_note.startswith("action:file_publish.publish:wordfreq.py")
     assert "由系统执行" in action_note and "不要为它单独设步骤" in action_note
-    assert synthesis_statement("README 说明用法") == "README 说明用法"
+    assert criterion_statement("README 说明用法") == "README 说明用法"
 
     key = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")["criterion_evidence"][0]["id"]
     HtnStore(synth.service.store).insert_requirements_revision(RequirementsRevision(
@@ -927,6 +924,16 @@ def test_file_and_operation_criteria_say_publishing_is_the_systems(synth: SynthW
     ))
     shown = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")["criterion_evidence"][0]
     assert shown["evidence_requirement"] == file_note
+
+
+def test_a_proposed_method_is_admitted_against_the_method_width_bound(synth: SynthWorld) -> None:
+    """The deployment's own policy allows a human-authored method up to 64 steps; a
+    method the Planner proposes is decided against eight."""
+
+    from agent_orchestrator.planning.htn.method_proposals import MAX_PROPOSED_METHOD_STEPS
+
+    assert synth.env.policy().max_steps > MAX_PROPOSED_METHOD_STEPS
+    assert synth.dispatch._admission_policy(synth.mission.id).max_steps == MAX_PROPOSED_METHOD_STEPS
 
 
 def test_an_unusable_capability_is_reported_as_unavailable(synth: SynthWorld) -> None:

@@ -67,7 +67,7 @@ def test_unknown_operation_is_deferred_before_commit_boundary() -> None:
 def test_request_human_stays_blocked_without_authority() -> None:
     result = RepairEventAdapter.dispatch(
         {"type": "RuntimeUnavailable", "trigger_refs": ["task-a"]},
-        actions=(RepairAction(RepairActionType.ESCALATE),),
+        actions=(RepairAction(RepairActionType.DECLARE_RUNTIME_BLOCKED),),
         all_items=("task-a",),
         human_request=HumanRequestV1("Choose a runtime", options=("local", "remote")),
         human_authorized=True,

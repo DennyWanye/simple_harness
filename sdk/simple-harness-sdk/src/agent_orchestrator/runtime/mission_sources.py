@@ -15,7 +15,7 @@ ARP creation records, reading only the orchestrator's own records:
   purpose demands (a package of another purpose is refused), criteria and the
   reviewed Attempt / Operation identities;
 * ``critic``  – the reviewed Attempt (legacy critic without a package);
-* ``planner`` / ``method_synthesizer`` / ``service`` – the frozen planning inputs of the
+* ``planner`` / ``service`` – the frozen planning inputs of the
   intent; they have no Worker Attempt and say so, never borrowing one.
 
 ``require_current`` re-derives the same set and refuses by name when it moved, when the
@@ -159,9 +159,6 @@ class MissionSourceReader:
                         "input_manifest": {"not_applicable": "mission_judge_reads_its_judgment_view"}}
             return {**base, "source_kind": "critic", "reviewed_attempt": self._attempt_identity(store, intent, config.get("attempt_id")),
                     "input_manifest": {"not_applicable": "critic_reviews_an_attempt_result"}}
-        if config.get("role") == "method_synthesizer":
-            return {**base, "source_kind": "method_synthesizer",
-                    "input_manifest": {"not_applicable": "method_synthesizer_has_no_worker_attempt"}}
         if intent.kind == "plan":
             return {**base, "source_kind": "planner",
                     "input_manifest": {"not_applicable": "planner_has_no_worker_attempt"}}

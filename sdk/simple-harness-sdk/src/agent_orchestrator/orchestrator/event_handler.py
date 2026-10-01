@@ -340,7 +340,7 @@ RECONCILE_EVERY_CYCLES = 50  # D7-5': UNKNOWN actions are asked about again whil
 #: still ACTIVE and its stall recorded, which is an answer to the caller rather than a
 #: verdict about the Mission.
 MAX_STALL_CARRY_ONS = 2
-#: P2.3f: how long a hierarchical Mission's service turn (Planner, MethodSynthesizer,
+#: P2.3f: how long a hierarchical Mission's service turn (Planner,
 #: root reviewer, Critic) may sit on a Provider hand-off whose outcome is *unknown*
 #: before the loop acts — the smaller of ``stall_seconds`` and this ceiling.  The
 #: runtime is right not to settle such an invocation (the request may have reached
@@ -1997,7 +1997,6 @@ class Orchestrator:
         if intent.config.get("assurance_protocol") == "assurance-exec-v1.1":
             return False
         return intent.kind == "plan" and str(intent.config.get("role", "")) not in {
-            "method_synthesizer",
             "root_reviewer",
             "operation_proposal_reviewer",
             "operation_outcome_reviewer",
@@ -3539,13 +3538,12 @@ class Orchestrator:
                             "intent_id": intent.intent_id,
                             "registration_key": event.idempotency_key,
                             "settled_tasks": {
-                                row.get("task_id", row.get("goal_id")): row["task_status"]
-                                for section in ("open_compound_goals", "committed_primitives")
-                                for row in intent.config["planning_package"]["plan"][section]
+                                row["task_id"]: row["task_status"]
+                                for row in intent.config["planning_package"]["views"]["goals"]
                                 if "task_status" in row
                                 and any(
                                     ref.kind is PlanningRefKind.TASK
-                                    and ref.id == row.get("task_id", row.get("goal_id"))
+                                    and ref.id == row["task_id"]
                                     for ref in refs
                                 )
                             },
@@ -4176,7 +4174,6 @@ class Orchestrator:
         return PlanningRetryBudgetView(
             same_request_format_retries_remaining=max(0, int(format_retries)),
             planning_rounds_remaining=max(0, allowance - self._planning_attempts(mission.id)),
-            synthesis_asks_remaining=0,
             root_review_repairs_remaining=max(0, int(self._config.max_root_review_repairs)),
             repeated_failure_before_escalation_remaining=None,
         )
@@ -4197,146 +4194,67 @@ class Orchestrator:
         self, new_mode: HierarchicalDispatch, mission: Mission, *, ordinal: int,
         previous_feedback: Any = None,
     ) -> Any:
-        """Seal the hierarchical Planner's package (P2.3c part 2).
+        """Seal the hierarchical Planner's package.
 
         The network is read through :meth:`HierarchicalDispatch.network`, the same
-        call ``compile_proposal`` makes, so the package describes exactly the plan the
+        call the plan compiler makes, so the package describes exactly the plan the
         commit will be checked against — and before the first revision exists that
         call already answers with the *seed* network, because the Planner's first job
         is to refine the root goal the Mission was opened for.  A damaged plan raises
-        rather than producing a package about a plan that is not readable.
-
-        A deployment without a ``PlanningWorld`` raises here too rather than falling
-        back to the legacy package: §18.5 forbids the silent half-mode, and a Planner
-        given the DAG package while the Commit Service expects a plan revision is
-        exactly that.
+        rather than producing a package about a plan that is not readable, and a
+        deployment without a ``PlanningWorld`` raises rather than falling back to the
+        other mode's package.
         """
 
         # ``_seal`` is private to the context builder and is reached anyway, on
         # purpose: it renders the package *and* derives the context hash, and a second
-        # renderer here would be a second answer to "what did the model see".  The
-        # alternative — exporting a public alias — is a change to ``context/`` that
-        # buys nothing but a name.  Reaching for the private one is the smaller debt
-        # and is recorded in the journal as such.
+        # renderer here would be a second answer to "what did the model see".
         from ..context.context_builder import _seal
-        from ..planning.htn.planner_package import hierarchical_planner_package
+        from ..runtime.role_templates import PLANNING_DECISION_PACKAGE_VERSION
+        from .planner_views import read_planner_package
         from .planning_protocol_binding import current_planning_protocol
 
+        del ordinal  # the round number is not a fact the Planner reads
         current_planning_protocol(self.store, mission.id)
         world = new_mode.require_planning_world()
         network = new_mode.network(mission.id)
-        # ``registry`` / ``catalog`` / ``predicates`` are *attributes* on a
-        # ``PlanningWorld`` and ``capabilities`` / ``snapshot`` are calls — the same
-        # split ``compile_proposal`` reads them with.  Spelled the same way here so
-        # the package and the compiler cannot end up describing two different worlds.
-        from ._read_set import SemanticReadSetChecker as _SemanticReadSetChecker
-
-        snapshot = world.capabilities()
-        records = tuple(getattr(snapshot, "records", ()) or ())
-        # G1: one assessment, rendered into the prompt *and* recorded.  Computing it
-        # twice would let the record and the message disagree about a world that moved
+        # One assessment, rendered into the request *and* recorded.  Computing it twice
+        # would let the record and the message disagree about a world that moved
         # between them, and the record exists precisely to say what the model was told.
         reports = new_mode.method_applicability(mission.id)
-        # H3 routes this same frozen applicability read before the Planner request.
         new_mode.record_method_applicability(mission.id, reports=reports)
-        # The decision contract requires a method instance's full PlanningRef
-        # quadruple.  Supply that digest as an authoritative side row.
-        method_instance_authorities = [
-            {
-                "kind": "method_instance",
-                "id": str(instance.instance_id),
-                "semantic_revision": max(1, int(instance.plan_revision)),
-                "content_hash": instance.parameters_digest(),
-            }
-            for instance in network.method_instances
-            if instance.instance_id in set(network.adopted_instance_ids)
-        ]
-        task_states: dict[str, dict[str, Any]] = {}
-        outcomes = new_mode.occurrence_outcomes(mission.id, network)
-        for occurrence in network.occurrences:
-            task = self.store.get_task(str(occurrence.task_id))
-            if task is not None and task.mission_id == mission.id:
-                task_states[str(occurrence.occurrence_id)] = {
-                    "task_status": str(task.status),
-                    "task_version": task.version,
-                    "occurrence_outcome": str(outcomes[occurrence.occurrence_id]),
-                }
-        from .method_plan_reviews import reviews_by_method as method_reviews_by_method
-        from .planning_repair_requests import repair_goal_occurrences
-        package = hierarchical_planner_package(
-            mission,
-            network,
-            registry=world.registry,
-            capabilities=[
-                str(item.capability_id) for item in records if getattr(item, "available", False)
-            ],
-            unavailable_capabilities=[
-                str(item.capability_id) for item in records if not getattr(item, "available", False)
-            ],
-            # Review F16 / P2.3c part 2c: the four-axis report is computed and handed
-            # over instead of being declared and passed as ``()``.  ``facts`` is the
-            # other half of the same repair: the read-set entry for every observation
-            # this Mission recorded, so a Planner that cites a fact cites one the
-            # library holds (part 2b's smoke stopped at ``READ_SET_UNRESOLVED``
-            # because it had never been shown one).
-            reports=reports,
-            observations=new_mode.semantics().list_observations(mission.id),
-            attempt_ordinal=ordinal,
-            rejected=self._planning_rejections(mission.id) if ordinal > 1 else (),
-            # Review P2-13: the read-set entry a fact is quoted by is computed by the
-            # **checker that will re-check it**, never a second time here.
-            read_item=_SemanticReadSetChecker(
-                self.store, new_mode.semantics(), mission_id=mission.id
-            ).read_item,
-            # What this plan already tried and retired, with the reason recorded then.
-            retired_methods=new_mode.retired_methods(mission.id),
-            method_reviews=method_reviews_by_method(self.store, mission.id),
-            previous_feedback=previous_feedback,
-            authoritative_refs=method_instance_authorities,
-            task_states=task_states,
-            repair_goal_occurrences=repair_goal_occurrences(self.store, network),
-        )
-        from .planner_views import assemble_runtime_views
-        from ..planning.htn.planner_package_v1 import PlanningBudgetView
-
         usage = self.store.mission_budget_usage(mission.id)
         if usage is None:
             raise ContractError("planner budget ledger is unavailable")
         token_limit = mission.budget.max_tokens
         remaining_tokens = (self._config.planner_reserve_tokens if token_limit is None else
             max(0, int(token_limit) - int(usage["settled_tokens"]) - int(usage["reserved_tokens"])))
-        package = assemble_runtime_views(
-            store=self.store, mission=mission, network=network, world=world,
-            htn=new_mode.semantics(), package=package, authorities=method_instance_authorities,
-            selection_reports=reports, dispatch=new_mode,
-            budget=PlanningBudgetView(
-                planning_remaining=max(0, self._config.max_planning_attempts - self._planning_attempts(mission.id)),
-                synthesis_remaining=self._method_proposals_remaining(mission, new_mode),
-                root_repair_remaining=max(0, self._config.max_root_review_repairs - self._root_review_repairs(mission.id)),
-                max_method_candidates=12, max_new_steps=int(getattr(world, "max_steps", 64)),
-                max_repair_actions=1, token_budget=remaining_tokens,
-            ),
-        )
-        return _seal(package)
+        return _seal(read_planner_package(
+            store=self.store, mission=mission, network=network, world=world, dispatch=new_mode,
+            reports=reports, previous_feedback=previous_feedback,
+            package_version=PLANNING_DECISION_PACKAGE_VERSION,
+            budget={
+                "planning_remaining": max(
+                    0, self._config.max_planning_attempts - self._planning_attempts(mission.id)),
+                "method_proposals_remaining": self._method_proposals_remaining(mission, new_mode),
+                "root_repair_remaining": max(
+                    0, self._config.max_root_review_repairs - self._root_review_repairs(mission.id)),
+                "max_method_candidates": 12,
+                "max_new_steps": int(getattr(world, "max_steps", 64)),
+                "max_repair_actions": 1,
+                "token_budget": remaining_tokens,
+            },
+        ))
 
     @staticmethod
     def _planning_decision_package_version(body: Mapping[str, Any]) -> int:
-        """Translate the sealed package label to the durable H1 integer version.
+        """The package version a sealed request states, as the durable integer.
 
-        Only the current label (``PLANNING_DECISION_PACKAGE_LABEL``) is recognised;
-        the pairing is defined once in ``role_templates``.  Refuse malformed labels
-        and booleans instead of letting ``int()`` coerce or crash at the store
-        boundary.
+        Refuse malformed values and booleans instead of letting ``int()`` coerce or
+        crash at the store boundary.
         """
 
-        from ..runtime.role_templates import (
-            PLANNING_DECISION_PACKAGE_LABEL,
-            PLANNING_DECISION_PACKAGE_VERSION,
-        )
-
         raw = body.get("package_version")
-        if raw == PLANNING_DECISION_PACKAGE_LABEL:
-            return PLANNING_DECISION_PACKAGE_VERSION
         if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
             raise ContractError(f"unpairable planning package_version: {raw!r}")
         return raw
@@ -4386,7 +4304,7 @@ class Orchestrator:
             protocol_version=stored["protocol_version"],
             package_version=self._planning_decision_package_version(body),
             package_hash=package_hash(body),
-            base_plan_revision=int(body["plan"]["plan_revision"]),
+            base_plan_revision=int(body["views"]["plans"][0]["plan_revision"]),
             requirements_revision=0 if latest is None else int(latest.revision),
             scope_epoch_digest=planning_scope_digest(epochs),
             subject_bindings_hash=subject_bindings_hash(body.get("planning_subjects", ())),
@@ -4497,17 +4415,6 @@ class Orchestrator:
             and self._planning_format_retry_remaining(intent=intent, mission=mission) == 0
         )
 
-    @staticmethod
-    def _executable_decision_types(values: Sequence[str]) -> frozenset[str]:
-        from ..contracts.planning_decisions import H4_DECISION_ENABLEMENT
-
-        requested = frozenset(str(value) for value in values)
-        executable = frozenset(
-            key for key, enablement in H4_DECISION_ENABLEMENT.items() if enablement.executable
-        )
-        selected = requested & executable
-        return selected
-
     def _hierarchical_admission_context(
         self,
         *,
@@ -4521,7 +4428,7 @@ class Orchestrator:
 
         from ..contracts.htn import MethodRef, MethodRegistryStatus
         from ..contracts.planning_decisions import (
-            H1_DECISION_ENABLEMENT,
+            ENABLED_DECISIONS,
             PlanningRefKind,
             PlanningRefV1,
         )
@@ -4646,13 +4553,15 @@ class Orchestrator:
             for item in reports
         }
         methods: list[MethodView] = []
-        for row in body.get("method_library", ()):
+        for row in (body.get("views") or {}).get("methods", ()):
             if not isinstance(row, Mapping):
                 continue
             raw_ref = row.get("method_ref")
             if not isinstance(raw_ref, Mapping):
                 continue
-            ref = MethodRef.from_json(raw_ref)
+            # the row quotes the method as a decision does: the reference quadruple
+            ref = MethodRef(method_id=str(raw_ref["id"]), version=int(raw_ref["semantic_revision"]),
+                            content_hash=str(raw_ref["content_hash"]))
             contract = world.registry.definition(ref)
             registration = world.registry.registration(ref)
             if contract is None or registration is None:
@@ -4761,9 +4670,7 @@ class Orchestrator:
             if isinstance(protocol, Mapping)
             else frozenset()
         )
-        enabled_effective = enabled or frozenset(
-            key for key, value in H1_DECISION_ENABLEMENT.items() if value.executable
-        )
+        enabled_effective = enabled or ENABLED_DECISIONS
         allowance = max(0, int(self._config.max_planning_attempts))
         remaining = max(0, allowance - self._planning_attempts(mission.id))
         epochs = new_mode.scope_epochs(mission.id)
@@ -4843,47 +4750,34 @@ class Orchestrator:
                     intent=intent, mission=mission
                 ),
                 planning_rounds_remaining=remaining,
-                synthesis_asks_remaining=0,
                 root_review_repairs_remaining=max(0, int(self._config.max_root_review_repairs)),
                 repeated_failure_before_escalation_remaining=None,
             ),
         )
 
     def _hierarchical_planner_template(self, mission_id: str) -> Any:
-        """Choose the Planner prompt that is paired with this Mission's package.
+        """The hierarchical Planner's prompt: there is one.
 
-        ``template_for`` honours a deployment's frozen ``prompt_versions`` pin for any
-        template of the same *role*, and every code-domain deployment pins ``planner``
-        to a DAG-Planner version — so the pin is honoured only when it names a prompt
-        **written against the package this build assembles**.  Anything else falls back
-        to the prompt the Mission's durable binding names (replay stays exact).
+        A deployment's frozen ``prompt_versions`` pins ``planner`` to a DAG-Planner
+        version for the other mode; it says nothing here.  A Mission whose durable
+        binding names a different package/prompt pair is refused by
+        ``current_planning_protocol``, not served on other words.
         """
 
-        from ..runtime.role_templates import (
-            PLANNER_HIERARCHICAL_V14,
-            hierarchical_planner_versions,
-        )
         from .planning_protocol_binding import current_planning_protocol
 
-        binding = current_planning_protocol(self.store, mission_id)
-        candidate = self._template(PLANNER_HIERARCHICAL, mission_id)
-        if candidate.prompt_version in hierarchical_planner_versions(int(binding["package_version"])):
-            return candidate
-        # One package, one prompt (2026-10-01): the current package pairs with v14 only.
-        return PLANNER_HIERARCHICAL_V14
+        current_planning_protocol(self.store, mission_id)
+        return PLANNER_HIERARCHICAL
 
     def _hierarchical_worker_template(self, role: Any, mission_id: str) -> Any:
-        """The Worker prompt that knows about output ports (part 2d, decision 4).
+        """The Worker prompt that knows about output ports.
 
-        Same rule as :meth:`_hierarchical_planner_template`, for the same reason: a
-        deployment's frozen ``prompt_versions`` pins ``worker`` to a DAG-mode version,
+        A deployment's frozen ``prompt_versions`` pins ``worker`` to a DAG-mode version,
         and ``worker-v3`` never asks the model which port its files belong to — so the
-        accept side would refuse every leaf for ``OUTPUT_PORT_UNCLAIMED``.  A pin that
-        names a hierarchical version is honoured, which is how a Mission stays
-        replayable on the prompt it ran with; any other pin belongs to the other mode.
-
-        P2.3d / defect D1: "a hierarchical version" is now per domain, and so is the
-        fallback.
+        accept side would refuse every leaf for ``OUTPUT_PORT_UNCLAIMED``.  A role that
+        already is a hierarchical Worker (a domain's own) is kept; anything else is a
+        choice made for the other mode and is replaced by the domain's hierarchical
+        Worker.
         """
 
         from ..runtime.role_templates import (
@@ -5044,49 +4938,6 @@ class Orchestrator:
             ),
         )
         package_text = package.text
-        if new_mode is not None and not retry_package_frozen:
-            # A transport-level reminder of the decision wire format.  It is part of
-            # the immutable provider message and is therefore replayed on a format
-            # retry; it is not a new model-controlled package field.
-            package_text += (
-                "\n\nCURRENT PROTOCOL REMINDER: this request uses planning-decision-v1. "
-                "Output exactly one <planning_decision> JSON object. Do not include the "
-                "legacy plan_revision_proposal fields read_set, operations, or trigger_refs. "
-                "Use [] when a list is empty; assumptions, uncertainties, alternatives, and "
-                "replan_triggers must contain objects with the exact fields from the protocol "
-                "example, never bare strings. If you cannot provide every required key for an "
-                "entry, leave that list empty instead of guessing a shortened entry. For a "
-                "REFINE response, use the minimal valid shape with reason_refs, assumptions, "
-                "uncertainties, alternatives, and replan_triggers all set to []; the payload "
-                "must contain only method_ref and bindings. If optional entries are needed, "
-                "uncertainty keys are statement/severity/affects, alternative keys are "
-                "method_ref/label/disposition/reason, and replan trigger keys are "
-                "description/referenced_predicates/suggested_decision. Do not use fact as a "
-                "planning_ref kind; use only the kinds listed by the protocol. For "
-                "DECLARE_BLOCKED, the payload must always include blockers and resumable_if; "
-                "a capability denial uses code CAPABILITY_MISSING and resumable_if "
-                '["authorization_granted"]. WAIT has exactly wait_for and reason; '
-                "wait_for is an array of complete reference objects copied from visible_refs, "
-                "and reason is a string. Use [] only when there is no concrete condition to "
-                'wait for. NO_CHANGE is exactly {reason: "..."}. For REPAIR with '
-                'decision_type exactly "REPAIR" (never "REPAIR/REPLACE_METHOD") and '
-                'repair_kind exactly "REPLACE_METHOD", rejected_method_instance and '
-                "replacement_method_ref must each be JSON objects copied from visible_refs, "
-                "never string ids: the first object has kind method_instance and the second "
-                "has kind method, and both contain id, semantic_revision, and content_hash. "
-                "Keep bindings as an object. The REPAIR payload has exactly four keys: "
-                "repair_kind, rejected_method_instance, replacement_method_ref, and bindings. "
-                "Do not add goal_id, obligation_id, operations, read_set, or any other legacy field."
-                " For package 7, the four-key REPAIR example above applies only to REPLACE_METHOD. "
-                "Other enabled repair_kind values use their own exact payload fields from prompt v10. "
-                "Never convert RETRY_SAME_METHOD, REBIND_INPUT, CANCEL_BRANCH or another H4 action "
-                "into REPLACE_METHOD merely to match that example. "
-                "For RETRY_SAME_METHOD, failed_attempt_id is a JSON STRING copied from "
-                "failures[].attempt_review_ref.id, never the full reference object. "
-                "method_instance_ref remains the full method_instance reference object. "
-                "decision_type never contains a slash: write REPAIR and put the kind in "
-                "payload.repair_kind, choosing only from planning_protocol.enabled_repair_kinds."
-            )
         if retry_package_frozen and retry_request_id is not None:
             # 2026-09-30 格式三件：同一请求的格式重试原来一字不差重发原消息，模型不知道错在
             # 哪、照样再错。包仍冻结不变（请求事实不动）；只在消息末尾附上上一次的字段路径反馈。
@@ -7340,11 +7191,10 @@ class Orchestrator:
                 mission=mission,
                 new_mode=new_mode,
                 raw_text=text,
-                include_plan_sources=phase_key not in {"REPAIR/DECLARE_RUNTIME_BLOCKED", "REPAIR/ESCALATE", "REPAIR/REQUEST_COMPENSATION"}
+                include_plan_sources=phase_key not in {"REPAIR/DECLARE_RUNTIME_BLOCKED", "REPAIR/REQUEST_COMPENSATION"}
                 and decision.decision_type not in {
                     PlanningDecisionType.WAIT,
                     PlanningDecisionType.NO_CHANGE,
-                    PlanningDecisionType.DECLARE_BLOCKED,
                     PlanningDecisionType.REQUEST_EVIDENCE,
                     PlanningDecisionType.REQUEST_HUMAN,
                     PlanningDecisionType.PROPOSE_METHOD,
@@ -7464,7 +7314,7 @@ class Orchestrator:
                 allow_convergence_preview=(new_mode._taskgraph_preview is not None
                     and taskgraph_enabled(self.store, mission.id))), for_repair_preview=True,
         )
-        from ..contracts.planning_decisions import RepairRuntimeBlockedDecision, RepairEscalateDecision, RepairCompensationRequestDecision
+        from ..contracts.planning_decisions import RepairRuntimeBlockedDecision, RepairCompensationRequestDecision
         if isinstance(pre_admitted, PreAdmittedPlanningDecision) and isinstance(decision.payload, RepairRuntimeBlockedDecision):
             from .planning_runtime_block import register_block
             try:
@@ -7515,10 +7365,9 @@ class Orchestrator:
                     checked = pre_admit_planning_decision(decision, context=current)
                     if not isinstance(checked, PreAdmittedPlanningDecision):
                         raise ContractError("retry decision is no longer admitted")
-                    retry_package = intent.config.get("planning_package", {})
-                    visible_failures = retry_package.get("views", {}).get("failures", ())
-                    if not any(item.get("attempt_review_ref", {}).get("id") == decision.payload.failed_attempt_id
-                               for item in visible_failures):
+                    from ..planning.htn.planner_package import attempt_is_indexed
+                    if not attempt_is_indexed(intent.config.get("planning_package") or {},
+                                              decision.payload.failed_attempt_id):
                         raise ContractError("retry Attempt was not visible in this frozen request")
                     detail = self.commit.authorize_planning_retry(
                         mission_id=mission.id, task_id=str(checked.subject["task_id"]),
@@ -7548,7 +7397,7 @@ class Orchestrator:
             return
         if (isinstance(pre_admitted, PreAdmittedPlanningDecision)
             and (decision.decision_type in {PlanningDecisionType.REQUEST_HUMAN, PlanningDecisionType.PROPOSE_METHOD}
-                 or isinstance(decision.payload, (RepairEscalateDecision, RepairCompensationRequestDecision)))):
+                 or isinstance(decision.payload, RepairCompensationRequestDecision))):
             from .planning_method_proposal import prepare_method, persist_method
             from ..contracts.planning_decisions import RequestHumanDecision, ProposeMethodDecision
             prepared_method = None
@@ -7562,15 +7411,14 @@ class Orchestrator:
                     checked = pre_admit_planning_decision(decision, context=current)
                     if not isinstance(checked, PreAdmittedPlanningDecision):
                         raise ContractError("planning service request is no longer admitted")
-                    if isinstance(decision.payload, (RequestHumanDecision, RepairEscalateDecision, RepairCompensationRequestDecision)):
+                    if isinstance(decision.payload, (RequestHumanDecision, RepairCompensationRequestDecision)):
                         repair_context = None
                         if isinstance(decision.payload, RepairCompensationRequestDecision):
                             from .planning_compensation import prepare_request
                             human_payload, repair_context = prepare_request(
                                 self.store, mission.id, decision.payload, intent.config.get("planning_package"))
                         else:
-                            human_payload = (decision.payload.human_request()
-                                             if isinstance(decision.payload, RepairEscalateDecision) else decision.payload)
+                            human_payload = decision.payload
                         question, service_detail = self._register_human_question(
                             mission, new_mode, decision_id=decision_id, subject_key=decision.subject_key,
                             payload=human_payload, current=current,
@@ -10775,8 +10623,7 @@ class Orchestrator:
         executor (:data:`MAX_SERVICE_REHANDOFFS`, recorded as
         ``ServiceIntentRehandedOff``); if that one is unknown too, the round ends
         through the role's own failure door — a Planner round is rejected with
-        ``provider_outcome_unknown`` and the ladder decides, a MethodSynthesizer round
-        is recorded ``UNANSWERED`` and the synthesis wait ends, a root review is
+        ``provider_outcome_unknown`` and the ladder decides, a root review is
         recorded unreadable, and a Critic turn is handed back to its runner's own
         "did not answer" path.  The abandoned turn's charge stays unknown in the
         runtime ledger and keeps the reservation held, which is the honest count.
@@ -10835,7 +10682,7 @@ class Orchestrator:
             new_mode = self._new_mode(mission) if planning else None
             if new_mode is None:
                 return "give_up"  # reviews keep their original executor (§6.2)
-            # A Planner / MethodSynthesizer round is not a review: after the same bound as
+            # A Planner round is not a review: after the same bound as
             # P2.3f it ends through its own failure door instead of waiting for the wall
             # clock (host-final-arp10, 2026-09-24: ~17 minutes frozen).  On this lane that
             # door keeps the UNKNOWN grants and the reservation (never under-counted).

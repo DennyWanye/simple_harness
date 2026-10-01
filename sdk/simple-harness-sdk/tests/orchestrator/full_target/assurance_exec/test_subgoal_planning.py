@@ -43,10 +43,9 @@ def _decisions(world) -> list[tuple[str, str]]:
 
 
 def _open_goal_context(package: dict) -> dict:
-    goal = package["plan"]["open_compound_goals"][0]
-    subject = next(row["subject_key"] for row in package["planning_subjects"]
-                   if row["occurrence_id"] == goal["occurrence_id"])
-    return next(row for row in package["method_proposal_contexts"] if row["subject_key"] == subject)
+    goal = next(row for row in package["views"]["goals"] if row["open"])
+    return next(row for row in package["method_proposal_contexts"]
+                if row["subject_key"] == goal["subject_key"])
 
 
 def test_a_goal_without_a_method_reaches_the_planner_as_a_generic_request_and_is_reviewed_on_its_share(tmp_path):
@@ -129,9 +128,7 @@ def test_each_plan_revision_asks_once_and_three_levels_are_reached_through_the_s
 def test_a_planner_that_leaves_the_goal_open_is_not_asked_again_for_the_same_plan_revision(tmp_path):
     def no_change(request):
         package = package_of(request)
-        goal = package["plan"]["open_compound_goals"][0]
-        subject = next(row["subject_key"] for row in package["planning_subjects"]
-                       if row["occurrence_id"] == goal["occurrence_id"])
+        subject = next(row["subject_key"] for row in package["views"]["goals"] if row["open"])
         return decision_text(_envelope(subject, "NO_CHANGE", {"reason": "nothing to change"},
                                        rationale="计划不需要改动。"))
 

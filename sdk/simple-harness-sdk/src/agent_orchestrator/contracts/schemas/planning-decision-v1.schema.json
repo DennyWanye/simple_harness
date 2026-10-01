@@ -82,7 +82,6 @@
         "REQUEST_EVIDENCE",
         "REPAIR",
         "BIND_EXISTING_GOAL",
-        "DECLARE_BLOCKED",
         "REQUEST_HUMAN",
         "WAIT",
         "NO_CHANGE"
@@ -233,7 +232,7 @@
         },
         "required_for": {
           "type": "array",
-          "maxItems": 9,
+          "maxItems": 8,
           "items": {
             "$ref": "#/$defs/decisionType"
           }
@@ -548,30 +547,6 @@
         }
       ]
     },
-    "declareBlockedPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "blockers",
-        "resumable_if"
-      ],
-      "properties": {
-        "blockers": {
-          "type": "array",
-          "maxItems": 16,
-          "items": {
-            "$ref": "#/$defs/blockedItem"
-          }
-        },
-        "resumable_if": {
-          "type": "array",
-          "maxItems": 256,
-          "items": {
-            "$ref": "#/$defs/resumableIf"
-          }
-        }
-      }
-    },
     "waitPayload": {
       "type": "object",
       "additionalProperties": false,
@@ -720,7 +695,6 @@
         "CANCEL_BRANCH",
         "RETRY_SAME_METHOD",
         "DECLARE_RUNTIME_BLOCKED",
-        "ESCALATE",
         "REQUEST_COMPENSATION",
         "PROPOSE_SUCCESSOR"
       ]
@@ -931,41 +905,6 @@
         }
       }
     },
-    "repairEscalatePayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "repair_kind",
-        "target",
-        "question",
-        "options",
-        "blocking"
-      ],
-      "properties": {
-        "repair_kind": {
-          "$ref": "#/$defs/repairKind",
-          "const": "ESCALATE"
-        },
-        "target": {
-          "const": "human"
-        },
-        "question": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 20000
-        },
-        "options": {
-          "type": "array",
-          "maxItems": 12,
-          "items": {
-            "$ref": "#/$defs/humanOption"
-          }
-        },
-        "blocking": {
-          "type": "boolean"
-        }
-      }
-    },
     "repairCompensationPayload": {
       "type": "object",
       "additionalProperties": false,
@@ -1079,9 +1018,6 @@
                 "$ref": "#/$defs/repairRuntimeBlockedPayload"
               },
               {
-                "$ref": "#/$defs/repairEscalatePayload"
-              },
-              {
                 "$ref": "#/$defs/repairCompensationPayload"
               },
               {
@@ -1104,22 +1040,6 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/bindGoalPayload"
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "decision_type": {
-            "const": "DECLARE_BLOCKED"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "$ref": "#/$defs/declareBlockedPayload"
           }
         }
       }

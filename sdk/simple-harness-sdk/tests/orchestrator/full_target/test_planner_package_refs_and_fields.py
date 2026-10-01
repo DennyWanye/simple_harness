@@ -1,28 +1,20 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""H1-D red tests: the planning-decision-v1 shape of the hierarchical Planner package.
+"""The Planner package's protocol fields and its reference collector.
 
-V2 §18/§19/§38/§39 plus the ruling addendum §1/§7: when — and only when — the caller
-passes ``planning_protocol="planning-decision-v1"`` the package grows, on top of what
-it already carried,
+``planning_protocol`` (the protocol name and the decision kinds), ``planning_subjects``
+(the per-request subject keys the model may name, §19), ``visible_refs`` (the §17
+quadruples the model's references must byte-match, at most 128), ``previous_feedback``
+(``PlanningFeedbackV1.to_json()`` or ``null``) and ``decision_limits`` (§16).
 
-* ``planning_protocol`` — the protocol name plus the H1-executable decision
-  types;
-* ``planning_subjects`` — the per-request subject keys the model may name (§19);
-* ``visible_refs`` — the §17 quadruples the model's references must byte-match,
-  capped at 128 (the caller reads :func:`visible_refs_omitted` for the count);
-* ``previous_feedback`` — ``PlanningFeedbackV1.to_json()`` or ``null``;
-* ``decision_limits`` — the §16 limits.
+The reference collector is a pure function of the rows the package shows plus the
+caller's authoritative digests for tasks and obligations (§5.1): a digest is stated by
+whoever owns it, travels as an argument and never as a package key, and a source that
+cannot state its reference correctly is skipped rather than invented.
 
-``output_contract`` becomes ``<planning_decision>`` and the in-package string label
-becomes ``planner-package-hierarchical-v5``.  The decision package adds **exactly**
-V2 §38's five fields — the ruling of 2026-09-19 06:30 refuses a sixth, so the
-authoritative digests and the omitted count travel as arguments, not as keys.
-
-The old protocol is *byte-identical*: two packages built without the flag are pinned
-here by the canonical-JSON SHA-256 of what the previous build produced, measured
-before a single line of the new shape was written.
+The helpers below build the views from the row shapes each section of this file
+exercises (a goal row, a method row, a fact row, an accepted result).
 """
 
 from __future__ import annotations
@@ -41,7 +33,7 @@ import test_htn_end_to_end as e2e  # noqa: E402
 
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
-    H1_DECISION_ENABLEMENT,
+    exposed_enablement,
     MAX_PD_ALTERNATIVES,
     MAX_PD_ARGUMENTS,
     MAX_PD_ASSUMPTIONS,
@@ -61,26 +53,26 @@ from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
 )
 from agent_orchestrator.contracts.semantic_base import content_hash_of  # noqa: E402
 from agent_orchestrator.planning.htn.planner_package import (  # noqa: E402
-    HIERARCHICAL_DECISION_PACKAGE_VERSION,
     MAX_VISIBLE_REFS,
-    hierarchical_planner_package,
+    VIEW_NAMES,
+    PlannerPackageError,
+    _merge_authorities,
+    _network_authorities,
+    assemble_planner_package,
+    collect_refs,
+    goal_rows,
+    method_rows,
+    method_signatures,
     package_hash,
     subject_bindings_hash,
     visible_refs_digest,
-    visible_refs_from_hierarchical_package,
-    visible_refs_omitted,
 )
 
-#: Canonical-JSON SHA-256 of the package the *previous* build produced, measured on
-#: the unmodified module before the decision shape existed: one deterministic fixture
-#: world (``build_world(key="p23c-pkg")``) and one stub world with no registry, no
-#: occurrences and no observations.
-GOLDEN_FIXTURE_WORLD_SHA256 = "a9aa2e7e715596ebbec79ac3f319530ab6675272b6808a8a6e3d8f1e59ba42fd"
-GOLDEN_STUB_WORLD_SHA256 = "801b8e3934fd5a77c347385a13d467157bc3e5f325d85faafc5c84877293e9d0"
+PACKAGE_VERSION = 10
 
-#: The §32 structural system fields the model is forbidden to write.  The existing
-#: package already exposes ``mission.mission_id`` and ``plan.plan_revision`` *nested*
-#: — unchanged by this slice — but no *new top-level* field may be one of these.
+#: The §32 structural system fields the model is forbidden to write.  The package
+#: states ``mission.mission_id`` and the plan's ``plan_revision`` *nested*, as facts;
+#: no top-level field may be one of these.
 SYSTEM_BOUND_FIELDS = frozenset(
     {
         "mission_id",
@@ -109,8 +101,7 @@ SYSTEM_BOUND_FIELDS = frozenset(
     }
 )
 
-#: §38: the *only* fields the decision protocol adds.  The ruling of 2026-09-19 06:30
-#: does not ratify a sixth field: the authoritative task/obligation digests §5.1 needs
+#: §38: the protocol fields.  The authoritative task/obligation digests §5.1 needs
 #: travel as a *collector argument*, never as a package key.
 DECISION_ONLY_FIELDS = frozenset(
     {
@@ -158,6 +149,27 @@ class _Network:
         return None
 
 
+def hierarchical_planner_package(
+    mission: Any, network: Any, *, registry: Any = None, authoritative_refs: Sequence[Any] = (),
+    previous_feedback: Any = None,
+) -> dict[str, Any]:
+    """The package as the pure assembler builds it from a network and a registry.
+
+    The reader in ``orchestrator/planner_views`` adds the store-backed rows; the
+    protocol fields and the references asserted here do not depend on them.
+    """
+
+    views: dict[str, Any] = {name: () for name in VIEW_NAMES}
+    views["goals"] = goal_rows(network)
+    views["plans"] = [{"plan_revision": int(network.plan_revision)}]
+    if registry is not None:
+        views["methods"] = method_rows(registry, method_signatures(network))[0]
+    return assemble_planner_package(
+        package_version=PACKAGE_VERSION, mission=mission, network=network, views=views,
+        authorities=_merge_authorities(_network_authorities(network), authoritative_refs),
+        previous_feedback=previous_feedback)
+
+
 def stub_package(**kwargs: Any) -> dict[str, Any]:
     return hierarchical_planner_package(_Mission(), _Network(), registry=None, **kwargs)
 
@@ -167,28 +179,18 @@ def decision_package(**kwargs: Any) -> dict[str, Any]:
 
 
 def empty_package(**sections: Any) -> dict[str, Any]:
-    """A package skeleton carrying only the sections the collector reads."""
+    """The views the collector reads, given section by section.
 
-    package: dict[str, Any] = {
-        "plan": {
-            "plan_revision": 0,
-            "root_occurrences": [],
-            "open_compound_goals": [],
-            "committed_primitives": [],
-            "required_obligations": [],
-        },
-        "method_library": [],
-        "applicability": [],
-        "rejected_refinements": [],
-        "facts": [],
-        "accepted_results": [],
-    }
+    ``goals`` rows name a ``task_id`` and an ``obligation_id``; ``methods`` rows a
+    ``method_ref``; ``facts`` rows an ``observation_ref``; ``accepted_results`` rows an
+    ``acceptance_ref`` or a ``resolution_ref``.
+    """
+
+    views: dict[str, Any] = {name: [] for name in ("goals", "methods", "facts", "accepted_results")}
     for name, value in sections.items():
-        if name in {"open_compound_goals", "committed_primitives"}:
-            package["plan"][name] = value
-        else:
-            package[name] = value
-    return package
+        assert name in views, name
+        views[name] = value
+    return views
 
 
 def authority(kind: str, id: str, revision: int, digest: str) -> dict[str, Any]:
@@ -207,11 +209,8 @@ def refs_of(
 ) -> tuple[dict[str, Any], ...]:
     """The collector, with the caller-supplied §5.1 digests as an argument."""
 
-    return visible_refs_from_hierarchical_package(package, authoritative_refs=authorities)
-
-
-def omitted_of(package: Mapping[str, Any], authorities: Sequence[Any] = ()) -> int:
-    return visible_refs_omitted(package, authoritative_refs=authorities)
+    views = package["views"] if "views" in package else package
+    return tuple(collect_refs(views, authorities=authorities))
 
 
 def by_key(
@@ -332,16 +331,10 @@ def method_entry(index: int, *, version: int = 1) -> dict[str, Any]:
     digest = hex_digest(index)
     return {
         "goal_signature_id": "sig",
-        "method_ref": {"method_id": f"m-{index:04d}", "version": version, "content_hash": digest},
-        "refine_method_ref": {"id": f"m-{index:04d}", "version": version, "content_hash": digest},
-        "method_id": f"m-{index:04d}",
+        "method_ref": {"kind": "method", "id": f"m-{index:04d}", "semantic_revision": version,
+                       "content_hash": digest},
         "registry_status": "UNKNOWN",
     }
-
-
-# ======================================================================================
-# 1. the old protocol's bytes are pinned (§7.1: "关着开关的路径两个值逐字节不变")
-# ======================================================================================
 
 
 # ======================================================================================
@@ -352,27 +345,16 @@ def method_entry(index: int, *, version: int = 1) -> dict[str, Any]:
 def test_the_decision_package_states_the_protocol_and_its_enabled_types() -> None:
     protocol = decision_package()["planning_protocol"]
     assert protocol["protocol"] == PLANNING_DECISION_V1
-    expected = sorted(
-        name for name, enablement in H1_DECISION_ENABLEMENT.items() if enablement.executable
-    )
-    assert protocol["enabled_decision_types"] == expected
-    # Decode-only kinds are never advertised as executable in H1 (§12), including
-    # the two operations demoted by the 2026-09-19 ruling.
-    for decode_only in (
-        "REPAIR/PROPOSE_SUCCESSOR",
-        "BIND_EXISTING_GOAL",
-        "REQUEST_EVIDENCE",
-        "REQUEST_HUMAN",
-        "PROPOSE_METHOD",
-    ):
-        assert decode_only not in protocol["enabled_decision_types"]
+    decision_types, repair_kinds = exposed_enablement()
+    assert protocol["enabled_decision_types"] == decision_types
+    assert protocol["enabled_repair_kinds"] == repair_kinds
+    assert all("/" not in value for value in decision_types + repair_kinds)
 
 
-def test_the_decision_package_switches_the_output_contract_and_its_label() -> None:
+def test_the_package_states_its_version_as_an_integer() -> None:
     package = decision_package()
-    assert package["output_contract"] == "<planning_decision>{json}</planning_decision>"
-    assert package["package_version"] == HIERARCHICAL_DECISION_PACKAGE_VERSION
-    assert HIERARCHICAL_DECISION_PACKAGE_VERSION == "planner-package-hierarchical-v6"
+    assert package["package_version"] == PACKAGE_VERSION
+    assert "output_contract" not in package  # the output format is the prompt's to state
 
 
 def test_the_decision_limits_are_the_section_16_constants() -> None:
@@ -406,7 +388,6 @@ def test_previous_feedback_is_written_as_plain_json_when_given() -> None:
         budgets=PlanningRetryBudgetView(
             same_request_format_retries_remaining=1,
             planning_rounds_remaining=2,
-            synthesis_asks_remaining=1,
             root_review_repairs_remaining=0,
             repeated_failure_before_escalation_remaining=None,
         ),
@@ -428,7 +409,7 @@ def test_previous_feedback_is_validated_through_the_contract() -> None:
 
 def test_subject_keys_are_unique_and_stable_across_two_builds(tmp_path: Any) -> None:
     world = e2e.build_world(tmp_path, key="p23c-decided")
-    build = lambda: e2e.hierarchical_planner_package(  # noqa: E731 - two calls, one shape
+    build = lambda: hierarchical_planner_package(  # noqa: E731 - two calls, one shape
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -442,7 +423,7 @@ def test_subject_keys_are_unique_and_stable_across_two_builds(tmp_path: Any) -> 
 
 def test_every_subject_carries_exactly_the_section_19_keys(tmp_path: Any) -> None:
     world = e2e.build_world(tmp_path, key="p23c-decided")
-    subjects = e2e.hierarchical_planner_package(
+    subjects = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -461,7 +442,7 @@ def test_every_subject_carries_exactly_the_section_19_keys(tmp_path: Any) -> Non
 
 def test_subject_keys_cover_every_occurrence_on_the_board(tmp_path: Any) -> None:
     world = e2e.build_world(tmp_path, key="p23c-decided")
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -472,7 +453,7 @@ def test_subject_keys_cover_every_occurrence_on_the_board(tmp_path: Any) -> None
 
 def test_a_committed_plan_still_yields_unique_subject_keys(tmp_path: Any) -> None:
     world = e2e.committed(tmp_path, key="p23c-decided-committed")
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -487,8 +468,8 @@ def test_a_committed_plan_still_yields_unique_subject_keys(tmp_path: Any) -> Non
 
 
 def test_a_method_library_entry_becomes_a_method_ref() -> None:
-    refs = visible_refs_from_hierarchical_package(
-        empty_package(method_library=[method_entry(1, version=3)])
+    refs = refs_of(
+        empty_package(methods=[method_entry(1, version=3)])
     )
     assert [dict(item) for item in refs] == [
         {
@@ -502,7 +483,7 @@ def test_a_method_library_entry_becomes_a_method_ref() -> None:
 
 def test_an_applicability_row_also_exposes_its_method() -> None:
     package = empty_package(
-        applicability=[
+        methods=[
             {
                 "goal_occurrence_id": "occ-1",
                 "goal_signature_id": "sig",
@@ -511,7 +492,7 @@ def test_an_applicability_row_also_exposes_its_method() -> None:
             }
         ]
     )
-    assert [dict(item) for item in visible_refs_from_hierarchical_package(package)] == [
+    assert [dict(item) for item in refs_of(package)] == [
         {"kind": "method", "id": "m-0002", "semantic_revision": 2, "content_hash": "2" * 64}
     ]
 
@@ -522,10 +503,10 @@ def test_an_open_goal_yields_a_task_and_an_obligation_ref() -> None:
     task_hash = "a" * 64
     obligation_hash = "b" * 64
     package = empty_package(
-        open_compound_goals=[
+        goals=[
             {
                 "occurrence_id": "occ-1",
-                "goal_id": "task-1",
+                "task_id": "task-1",
                 "obligation_id": "obl-1",
                 "contract_revision": 4,
             }
@@ -556,26 +537,26 @@ def test_a_task_or_obligation_without_authority_is_skipped_rather_than_invented(
     """§18.5: a hash this package cannot state authoritatively is *omitted*, not faked."""
 
     package = empty_package(
-        open_compound_goals=[
+        goals=[
             {
                 "occurrence_id": "occ-1",
-                "goal_id": "task-1",
+                "task_id": "task-1",
                 "obligation_id": "obl-1",
                 "contract_revision": 4,
             }
         ]
     )
-    assert visible_refs_from_hierarchical_package(package) == ()
+    assert refs_of(package) == ()
 
 
 def test_a_task_ref_takes_the_sidecars_revision_and_hash_verbatim() -> None:
     """A task entry that carries its own ``contract_revision`` still needs authority."""
 
     package = empty_package(
-        open_compound_goals=[
+        goals=[
             {
                 "occurrence_id": "occ-1",
-                "goal_id": "task-1",
+                "task_id": "task-1",
                 "obligation_id": "obl-1",
                 "contract_revision": 9,
             }
@@ -589,7 +570,7 @@ def test_a_task_ref_takes_the_sidecars_revision_and_hash_verbatim() -> None:
 
 def test_a_committed_primitive_yields_a_task_and_an_obligation_ref() -> None:
     package = empty_package(
-        committed_primitives=[
+        goals=[
             {"occurrence_id": "occ-2", "task_id": "task-2", "obligation_id": "obl-2"}
         ]
     )
@@ -608,7 +589,7 @@ def test_a_fact_entry_is_written_as_an_observation() -> None:
         facts=[
             {
                 "proposition_key": "p-1",
-                "read_set_entry": {
+                "observation_ref": {
                     "kind": "fact",
                     "id": "obsrec-1",
                     "semantic_revision": 2,
@@ -617,7 +598,7 @@ def test_a_fact_entry_is_written_as_an_observation() -> None:
             }
         ]
     )
-    refs = [dict(item) for item in visible_refs_from_hierarchical_package(package)]
+    refs = [dict(item) for item in refs_of(package)]
     assert refs == [
         {"kind": "observation", "id": "obsrec-1", "semantic_revision": 2, "content_hash": "d" * 64}
     ]
@@ -630,7 +611,7 @@ def test_an_accepted_result_exposes_its_acceptance_ref() -> None:
             {"acceptance_ref": {"id": "acc-1", "semantic_revision": 5, "content_hash": "f" * 64}}
         ]
     )
-    refs = [dict(item) for item in visible_refs_from_hierarchical_package(package)]
+    refs = [dict(item) for item in refs_of(package)]
     assert refs == [
         {"kind": "acceptance", "id": "acc-1", "semantic_revision": 5, "content_hash": "f" * 64}
     ]
@@ -640,20 +621,20 @@ def test_a_non_integer_revision_is_skipped_not_coerced() -> None:
     """P2-1: ``"3"`` and ``3.5`` are not revisions; the ref is dropped (§18.5)."""
 
     package = empty_package(
-        method_library=[
-            {"refine_method_ref": {"id": "m-str", "version": "3", "content_hash": "1" * 64}},
-            {"refine_method_ref": {"id": "m-float", "version": 3.5, "content_hash": "2" * 64}},
+        methods=[
+            {"method_ref": {"id": "m-str", "version": "3", "content_hash": "1" * 64}},
+            {"method_ref": {"id": "m-float", "version": 3.5, "content_hash": "2" * 64}},
             method_entry(7, version=3),
         ]
     )
-    assert [item["id"] for item in visible_refs_from_hierarchical_package(package)] == ["m-0007"]
+    assert [item["id"] for item in refs_of(package)] == ["m-0007"]
 
 
 def test_a_non_positive_revision_is_skipped_not_raised_to_one() -> None:
     """P2-1: §5.1's "无则 1" is only for the ledger; a 0 revision has no valid四元组."""
 
     package = empty_package(
-        open_compound_goals=[{"goal_id": "task-1", "obligation_id": "obl-1"}]
+        goals=[{"task_id": "task-1", "obligation_id": "obl-1"}]
     )
     authorities = [
         authority("task", "task-1", 0, "a" * 64),
@@ -667,9 +648,9 @@ def test_an_observation_without_a_hash_is_skipped_not_derived() -> None:
 
     package = empty_package(
         facts=[
-            {"read_set_entry": {"kind": "fact", "id": "obsrec-1", "semantic_revision": 1}},
+            {"observation_ref": {"kind": "fact", "id": "obsrec-1", "semantic_revision": 1}},
             {
-                "read_set_entry": {
+                "observation_ref": {
                     "kind": "fact",
                     "id": "obsrec-2",
                     "semantic_revision": 1,
@@ -678,7 +659,7 @@ def test_an_observation_without_a_hash_is_skipped_not_derived() -> None:
             },
         ]
     )
-    assert [item["id"] for item in visible_refs_from_hierarchical_package(package)] == ["obsrec-2"]
+    assert [item["id"] for item in refs_of(package)] == ["obsrec-2"]
 
 
 def test_a_resolution_ref_keeps_its_own_kind() -> None:
@@ -701,8 +682,8 @@ def test_the_authority_table_keys_on_kind_and_id_not_id_alone() -> None:
     """P2-5: a task and an obligation may share an id; the ref must not cross kinds."""
 
     package = empty_package(
-        open_compound_goals=[
-            {"goal_id": "shared", "obligation_id": "shared", "contract_revision": 1}
+        goals=[
+            {"task_id": "shared", "obligation_id": "shared", "contract_revision": 1}
         ]
     )
     refs = by_key(
@@ -764,8 +745,8 @@ def test_an_authority_row_with_only_one_kind_does_not_answer_for_the_other() -> 
     """P2-5: the obligation entry is not served by a task row that shares its id."""
 
     package = empty_package(
-        open_compound_goals=[
-            {"goal_id": "shared", "obligation_id": "shared", "contract_revision": 1}
+        goals=[
+            {"task_id": "shared", "obligation_id": "shared", "contract_revision": 1}
         ]
     )
     authorities = [authority("task", "shared", 1, "a" * 64)]
@@ -776,8 +757,8 @@ def test_the_authority_sidecar_order_does_not_change_the_refs() -> None:
     """P2-6: the side table is an input set; its row order is not semantic."""
 
     entries = [
-        {"goal_id": "task-a", "obligation_id": "obl-a", "contract_revision": 1},
-        {"goal_id": "task-b", "obligation_id": "obl-b", "contract_revision": 1},
+        {"task_id": "task-a", "obligation_id": "obl-a", "contract_revision": 1},
+        {"task_id": "task-b", "obligation_id": "obl-b", "contract_revision": 1},
     ]
     rows = [
         authority("task", "task-a", 1, "a" * 64),
@@ -785,7 +766,7 @@ def test_the_authority_sidecar_order_does_not_change_the_refs() -> None:
         authority("task", "task-b", 1, "c" * 64),
         authority("obligation", "obl-b", 1, "d" * 64),
     ]
-    forward = empty_package(open_compound_goals=entries)
+    forward = empty_package(goals=entries)
     assert refs_of(forward, rows) == refs_of(forward, list(reversed(rows)))
 
 
@@ -800,7 +781,7 @@ def test_an_acceptance_ref_wins_over_a_resolution_ref_on_one_row() -> None:
             }
         ]
     )
-    assert [dict(item) for item in visible_refs_from_hierarchical_package(package)] == [
+    assert [dict(item) for item in refs_of(package)] == [
         {"kind": "acceptance", "id": "acc-1", "semantic_revision": 1, "content_hash": "a" * 64}
     ]
 
@@ -811,7 +792,7 @@ def test_a_resolution_ref_is_used_when_no_acceptance_ref_is_present() -> None:
             {"resolution_ref": {"id": "res-1", "semantic_revision": 1, "content_hash": "b" * 64}}
         ]
     )
-    assert [item["kind"] for item in visible_refs_from_hierarchical_package(package)] == [
+    assert [item["kind"] for item in refs_of(package)] == [
         "resolution"
     ]
 
@@ -820,9 +801,9 @@ def test_the_refs_are_sorted_by_hash_as_the_last_component() -> None:
     """P2-9: two refs equal on (kind, id, revision) are ordered by their hash."""
 
     package = empty_package(
-        method_library=[
-            {"refine_method_ref": {"id": "m-same", "version": 1, "content_hash": "b" * 64}},
-            {"refine_method_ref": {"id": "m-same", "version": 1, "content_hash": "a" * 64}},
+        methods=[
+            {"method_ref": {"id": "m-same", "version": 1, "content_hash": "b" * 64}},
+            {"method_ref": {"id": "m-same", "version": 1, "content_hash": "a" * 64}},
         ]
     )
     assert [item["content_hash"] for item in refs_of(package)] == ["a" * 64, "b" * 64]
@@ -837,9 +818,9 @@ def test_the_refs_are_sorted_by_id_ahead_of_revision_and_hash() -> None:
     """
 
     package = empty_package(
-        method_library=[
-            {"refine_method_ref": {"id": "m-z", "version": 1, "content_hash": "a" * 64}},
-            {"refine_method_ref": {"id": "m-a", "version": 2, "content_hash": "e" * 64}},
+        methods=[
+            {"method_ref": {"id": "m-z", "version": 1, "content_hash": "a" * 64}},
+            {"method_ref": {"id": "m-a", "version": 2, "content_hash": "e" * 64}},
         ]
     )
     assert [item["id"] for item in refs_of(package)] == ["m-a", "m-z"]
@@ -854,9 +835,9 @@ def test_the_refs_are_sorted_by_revision_numerically_not_as_strings() -> None:
     """
 
     package = empty_package(
-        method_library=[
-            {"refine_method_ref": {"id": "m-same", "version": 10, "content_hash": "a" * 64}},
-            {"refine_method_ref": {"id": "m-same", "version": 2, "content_hash": "a" * 64}},
+        methods=[
+            {"method_ref": {"id": "m-same", "version": 10, "content_hash": "a" * 64}},
+            {"method_ref": {"id": "m-same", "version": 2, "content_hash": "a" * 64}},
         ]
     )
     assert [item["semantic_revision"] for item in refs_of(package)] == [2, 10]
@@ -866,9 +847,9 @@ def test_the_refs_are_sorted_by_revision_ahead_of_hash() -> None:
     """Self-audit: two refs sharing (kind, id) whose revision order opposes hash order."""
 
     package = empty_package(
-        method_library=[
-            {"refine_method_ref": {"id": "m-same", "version": 2, "content_hash": "a" * 64}},
-            {"refine_method_ref": {"id": "m-same", "version": 1, "content_hash": "e" * 64}},
+        methods=[
+            {"method_ref": {"id": "m-same", "version": 2, "content_hash": "a" * 64}},
+            {"method_ref": {"id": "m-same", "version": 1, "content_hash": "e" * 64}},
         ]
     )
     assert [item["semantic_revision"] for item in refs_of(package)] == [1, 2]
@@ -898,9 +879,9 @@ def test_refs_differing_only_in_id_are_not_collapsed() -> None:
     """
 
     package = empty_package(
-        method_library=[
-            {"refine_method_ref": {"id": "m-one", "version": 1, "content_hash": "a" * 64}},
-            {"refine_method_ref": {"id": "m-two", "version": 1, "content_hash": "a" * 64}},
+        methods=[
+            {"method_ref": {"id": "m-one", "version": 1, "content_hash": "a" * 64}},
+            {"method_ref": {"id": "m-two", "version": 1, "content_hash": "a" * 64}},
         ]
     )
     assert [item["id"] for item in refs_of(package)] == ["m-one", "m-two"]
@@ -915,7 +896,7 @@ def test_the_refs_are_sorted_by_kind_ahead_of_id() -> None:
     """
 
     package = empty_package(
-        open_compound_goals=[{"goal_id": "a", "obligation_id": "z", "contract_revision": 1}]
+        goals=[{"task_id": "a", "obligation_id": "z", "contract_revision": 1}]
     )
     authorities = [
         authority("task", "a", 1, "a" * 64),
@@ -931,7 +912,7 @@ def test_a_malformed_authority_row_is_ignored_without_raising() -> None:
     """P2-10: a caller's junk row must not crash the collector nor produce a ref."""
 
     package = empty_package(
-        open_compound_goals=[{"goal_id": "task-1", "obligation_id": "obl-1"}]
+        goals=[{"task_id": "task-1", "obligation_id": "obl-1"}]
     )
     authorities = [
         "not-a-row",
@@ -960,7 +941,7 @@ def test_a_malformed_authority_row_does_not_crash_the_builder(tmp_path: Any) -> 
         {"id": "task-root"},  # no kind
         *task_authorities(world.network()),
     ]
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -971,13 +952,13 @@ def test_a_malformed_authority_row_does_not_crash_the_builder(tmp_path: Any) -> 
 
 def test_a_malformed_source_ref_is_skipped_rather_than_invented() -> None:
     package = empty_package(
-        method_library=[
-            {"refine_method_ref": {"id": "m-1", "version": 1, "content_hash": "not-hex"}},
-            {"refine_method_ref": {"id": "", "version": 1, "content_hash": "a" * 64}},
+        methods=[
+            {"method_ref": {"id": "m-1", "version": 1, "content_hash": "not-hex"}},
+            {"method_ref": {"id": "", "version": 1, "content_hash": "a" * 64}},
             method_entry(2),
         ]
     )
-    refs = [dict(item) for item in visible_refs_from_hierarchical_package(package)]
+    refs = [dict(item) for item in refs_of(package)]
     assert refs == [
         {
             "kind": "method",
@@ -990,7 +971,7 @@ def test_a_malformed_source_ref_is_skipped_rather_than_invented() -> None:
 
 def test_every_collected_ref_is_a_valid_planning_ref(tmp_path: Any) -> None:
     world = e2e.build_world(tmp_path, key="p23c-decided")
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -1000,9 +981,9 @@ def test_every_collected_ref_is_a_valid_planning_ref(tmp_path: Any) -> None:
 
 
 def test_the_same_package_twice_yields_the_same_refs_in_the_same_order() -> None:
-    package = empty_package(method_library=[method_entry(index) for index in range(1, 6)])
-    first = visible_refs_from_hierarchical_package(package)
-    second = visible_refs_from_hierarchical_package(package)
+    package = empty_package(methods=[method_entry(index) for index in range(1, 6)])
+    first = refs_of(package)
+    second = refs_of(package)
     assert first == second
     assert list(first) == sorted(
         first,
@@ -1017,97 +998,37 @@ def test_the_same_package_twice_yields_the_same_refs_in_the_same_order() -> None
 
 def test_duplicate_sources_are_collapsed_to_one_ref() -> None:
     entry = method_entry(1)
-    package = empty_package(method_library=[entry, dict(entry)])
-    assert len(visible_refs_from_hierarchical_package(package)) == 1
+    package = empty_package(methods=[entry, dict(entry)])
+    assert len(refs_of(package)) == 1
 
 
-def test_more_than_128_refs_are_truncated_to_the_sorted_prefix() -> None:
-    entries = [method_entry(index) for index in range(MAX_VISIBLE_REFS + 7)]
-    refs = visible_refs_from_hierarchical_package(empty_package(method_library=entries))
+def test_the_authority_table_is_a_lookup_and_never_a_source_of_refs() -> None:
+    """A digest the caller attests is quoted only when a row names its object: an
+    obligation no goal on the board carries is not something a decision may reference.
+    A reference no row carries (an adopted method instance) is passed as ``extra``."""
+
+    rows = [authority("obligation", "obl-elsewhere", 1, "a" * 64),
+            authority("method_instance", "mi-1", 1, "b" * 64)]
+    assert refs_of(empty_package(), rows) == ()
+    assert [item["id"] for item in collect_refs(empty_package(), authorities=rows, extra=rows[1:])] == ["mi-1"]
+
+
+def test_more_than_128_refs_is_refused_not_cut() -> None:
+    """The references a decision may quote are never silently shortened: a cut ref
+    would read to the model as an object that does not exist.  Over the bound the
+    request is refused, and the planning subject has to be narrowed."""
+
     assert MAX_VISIBLE_REFS == 128
-    assert len(refs) == MAX_VISIBLE_REFS
-    assert [item["id"] for item in refs] == [f"m-{index:04d}" for index in range(MAX_VISIBLE_REFS)]
+    at_the_bound, _ = wide_world(MAX_VISIBLE_REFS // 2)  # a task and an obligation per goal
+    assert len(at_the_bound["visible_refs"]) == MAX_VISIBLE_REFS
+    assert at_the_bound["truncated"] is False
+    with pytest.raises(PlannerPackageError, match="exceed 128"):
+        wide_world(MAX_VISIBLE_REFS // 2 + 1)
 
 
-def test_the_omitted_count_is_reported_for_over_long_input() -> None:
-    entries = [method_entry(index) for index in range(MAX_VISIBLE_REFS + 7)]
-    package = empty_package(method_library=entries)
-    assert visible_refs_omitted(package) == 7
-
-
-def test_the_omitted_count_counts_unique_refs_not_raw_collections() -> None:
-    """P1-3: a ref that appears in two sections is one ref, not two.
-
-    Production hands the collector the same method through ``method_library`` and
-    ``applicability``; counting the *raw* collections would call the duplicate a
-    dropped ref.  The count must describe unique references, so a duplicate that is
-    not needed to reach the cap must not inflate ``visible_refs_omitted``.
-    """
-
-    # One method, present twice (two sections) and a second, distinct one: two unique
-    # refs, well under the cap, so nothing is dropped.
+def test_a_ref_shown_by_two_rows_is_one_ref() -> None:
     entries = [method_entry(1), method_entry(2)]
-    package = empty_package(method_library=entries)
-    package["applicability"] = [dict(entries[0])]
-    assert len(refs_of(package)) == 2
-    assert omitted_of(package) == 0
-
-
-def test_the_omitted_count_counts_unique_refs_over_the_cap() -> None:
-    """P1-3: with duplicates *and* >128 unique refs, only unique refs are dropped."""
-
-    unique = MAX_VISIBLE_REFS + 7
-    entries = [method_entry(index) for index in range(unique)]
-    package = empty_package(method_library=entries)
-    # Every entry is repeated once in another section: raw collection is 2 * unique,
-    # but the unique count is ``unique`` and the dropped count is ``unique - 128``.
-    package["applicability"] = [dict(entry) for entry in entries]
-    assert omitted_of(package) == unique - MAX_VISIBLE_REFS
-    assert omitted_of(package) != 2 * unique - MAX_VISIBLE_REFS
-
-
-def test_the_omitted_count_is_zero_when_nothing_is_dropped() -> None:
-    assert visible_refs_omitted(empty_package()) == 0
-    assert visible_refs_omitted(empty_package(method_library=[method_entry(1)])) == 0
-
-
-def test_the_omitted_count_describes_the_refs_actually_emitted() -> None:
-    """P1-2: ``visible_refs`` and ``visible_refs_omitted`` must share one input.
-
-    The authority argument contributes task/obligation refs, so measuring the omitted
-    count without it under-reports what the cap dropped.  With ``count`` goals and
-    ``count`` obligation rows the collector sees two refs per goal, so the dropped
-    count is ``2 * count - 128`` — an oracle computed here from the inputs, not read
-    back out of the code under test.
-    """
-
-    count = MAX_VISIBLE_REFS + 5
-    package, authorities = wide_world(count)
-    assert len(package["visible_refs"]) == MAX_VISIBLE_REFS
-    assert omitted_of(package, authorities) == 2 * count - MAX_VISIBLE_REFS
-    assert len(refs_of(package, authorities)) >= len(package["visible_refs"])
-
-
-def test_a_caller_supplied_ref_can_push_the_package_over_the_cap() -> None:
-    """A package at the cap whose last ref comes from the caller still counts it."""
-
-    package, authorities = wide_world(
-        MAX_VISIBLE_REFS, obligations=False
-    )
-    authorities = [
-        *authorities,
-        authority("obligation", "obl-000", 1, hex_digest(9)),
-    ]
-    built = hierarchical_planner_package(
-        _Mission(),
-        _WideNetwork(MAX_VISIBLE_REFS),
-        registry=None,
-        authoritative_refs=authorities,
-    )
-    # MAX_VISIBLE_REFS task refs plus one obligation ref: exactly one is dropped.
-    assert len(built["visible_refs"]) == MAX_VISIBLE_REFS
-    assert omitted_of(built, authorities) == 1
-    del package
+    assert len(refs_of(empty_package(methods=[*entries, dict(entries[0])]))) == 2
 
 
 def test_the_built_decision_package_exposes_the_collector_output(tmp_path: Any) -> None:
@@ -1116,13 +1037,13 @@ def test_the_built_decision_package_exposes_the_collector_output(tmp_path: Any) 
         *task_authorities(world.network()),
         authority("obligation", "obl-root", 1, "b" * 64),
     ]
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
         authoritative_refs=authorities,
     )
-    assert omitted_of(package, authorities) == 0
+    assert package["truncated"] is False and package["omitted_counts"] == {}
     assert package["visible_refs"] == list(refs_of(package, authorities))
     kinds = {item["kind"] for item in package["visible_refs"]}
     assert kinds == {"method", "task", "obligation"}
@@ -1139,7 +1060,7 @@ def test_the_production_path_task_hash_is_the_bindings_own_digest(tmp_path: Any)
 
     world = e2e.build_world(tmp_path, key="p23c-decided")
     network = world.network()
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         network,
         registry=world.env.registry,
@@ -1214,7 +1135,7 @@ def test_the_built_task_ref_carries_the_bindings_authoritative_hash(tmp_path: An
 
     world = e2e.build_world(tmp_path, key="p23c-decided")
     network = world.network()
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         network,
         registry=world.env.registry,
@@ -1233,7 +1154,7 @@ def test_the_built_package_omits_a_ref_it_cannot_attest(tmp_path: Any) -> None:
     """No obligation ledger was handed in, so no obligation ref is emitted — never a guess."""
 
     world = e2e.build_world(tmp_path, key="p23c-decided")
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -1254,7 +1175,7 @@ def test_a_supplied_obligation_authority_reaches_visible_refs(tmp_path: Any) -> 
         *task_authorities(world.network()),
         authority("obligation", "obl-root", 1, authoritative),
     ]
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -1303,7 +1224,7 @@ def test_the_legacy_and_decision_packages_share_a_task_hash_source(tmp_path: Any
 
     world = e2e.build_world(tmp_path, key="p23c-decided")
     authorities = task_authorities(world.network())
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -1327,7 +1248,7 @@ def test_the_caller_authority_order_does_not_move_the_package(tmp_path: Any) -> 
         authority("obligation", "obl-second", 1, "c" * 64),
     ]
     world = e2e.build_world(tmp_path, key="p23c-decided")
-    build = lambda refs: e2e.hierarchical_planner_package(  # noqa: E731
+    build = lambda refs: hierarchical_planner_package(  # noqa: E731
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -1349,7 +1270,7 @@ def test_duplicate_authority_keys_are_order_independent(tmp_path: Any) -> None:
 
     world = e2e.build_world(tmp_path, key="p23c-decided")
     network = world.network()
-    build = lambda refs: e2e.hierarchical_planner_package(  # noqa: E731
+    build = lambda refs: hierarchical_planner_package(  # noqa: E731
         world.mission,
         network,
         registry=world.env.registry,
@@ -1397,7 +1318,7 @@ def test_a_caller_row_cannot_override_the_builders_task_digest(tmp_path: Any) ->
     network = world.network()
     binding = network.binding_for_occurrence("task-root")
     bogus = authority("task", str(binding.task_id), 99, "f" * 64)
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         network,
         registry=world.env.registry,
@@ -1440,7 +1361,7 @@ def test_caller_authority_revisions_sort_numerically_not_as_strings() -> None:
 def test_the_caller_authority_rows_are_plain_quadruples(tmp_path: Any) -> None:
     world = e2e.build_world(tmp_path, key="p23c-decided")
     authorities = task_authorities(world.network())
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -1462,7 +1383,7 @@ def test_the_builder_reads_task_authority_from_the_network_not_the_entry(tmp_pat
     world = e2e.build_world(tmp_path, key="p23c-decided")
     network = world.network()
     authorities = task_authorities(network)
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         network,
         registry=world.env.registry,
@@ -1481,7 +1402,7 @@ def test_the_sealed_text_never_renders_the_authority_list(tmp_path: Any) -> None
 
     world = e2e.build_world(tmp_path, key="p23c-decided")
     authorities = task_authorities(world.network())
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -1496,7 +1417,7 @@ def test_the_sealed_text_never_renders_the_authority_list(tmp_path: Any) -> None
 def test_the_built_decision_package_reports_a_stub_with_no_refs() -> None:
     package = decision_package()
     assert package["visible_refs"] == []
-    assert omitted_of(package) == 0
+    assert package["truncated"] is False and package["omitted_counts"] == {}
 
 
 # ======================================================================================
@@ -1579,7 +1500,7 @@ def test_the_helpers_are_independent_of_each_other() -> None:
 def test_the_helpers_hash_the_built_package_sections(tmp_path: Any) -> None:
     world = e2e.build_world(tmp_path, key="p23c-decided")
     authorities = task_authorities(world.network())
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -1605,7 +1526,7 @@ def test_no_new_top_level_field_is_a_system_bound_field() -> None:
 
 def test_visible_refs_are_only_kind_id_revision_and_hash(tmp_path: Any) -> None:
     world = e2e.build_world(tmp_path, key="p23c-decided")
-    package = e2e.hierarchical_planner_package(
+    package = hierarchical_planner_package(
         world.mission,
         world.network(),
         registry=world.env.registry,
@@ -1618,6 +1539,7 @@ def test_planning_protocol_carries_only_the_name_and_the_enabled_types() -> None
     assert set(decision_package()["planning_protocol"]) == {
         "protocol",
         "enabled_decision_types",
+        "enabled_repair_kinds",
     }
 
 

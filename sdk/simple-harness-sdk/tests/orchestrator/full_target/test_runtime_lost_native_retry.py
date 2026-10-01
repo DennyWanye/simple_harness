@@ -23,11 +23,11 @@ PACKAGE = {
         {"task_id": "task-742189979604bf7b96ea9335250e4a2c", "occurrence_id": "occ-960093fa91af16b8a9d2eaf91f4cdd71",
          "subject_key": "subject-4a288d48b1869537acc9985ee11bba2f"},
     ],
-    "active_method_instances": [{"child_bindings": [
+    "views": {"failures": [], "plans": [{"adopted_methods": [{"child_bindings": [
         {"occurrence_id": "occ-960093fa91af16b8a9d2eaf91f4cdd71", "goal_occurrence_id": "occ-960093fa91af16b8a9d2eaf91f4cdd71",
          "instance_id": REF["id"]},
         {"occurrence_id": "occ-other", "goal_occurrence_id": "occ-other", "instance_id": REF["id"]},
-    ]}],
+    ]}]}]},
     "visible_refs": [REF, {"kind": "method", "id": "m", "semantic_revision": 1, "content_hash": "b" * 64}],
 }
 
@@ -123,10 +123,10 @@ def test_an_interrupted_review_redoes_the_step_but_a_real_rejection_does_not():
 
 def test_a_refused_native_decision_is_not_repeated():
     refused = copy.deepcopy(PACKAGE)
-    refused["planning_rejected"] = [{"reason": "proposal_not_grounded", "detail": {}}]
+    refused["views"]["failures"] = [{"source": "planning", "reason": "proposal_not_grounded"}]
     assert infrastructure_retry(refused) is None
-    selection = {"repair_requests": [], "rejected_refinements": [], "method_selection": [{"route": "DETERMINISTIC"}],
-                 "planning_rejected": [{"reason": "proposal_not_grounded", "detail": {}}]}
+    selection = {"repair_requests": [], "method_selection": [],
+                 "views": {"failures": [{"source": "planning", "reason": "proposal_not_grounded"}]}}
     assert infrastructure_retry(selection) is None
 
 

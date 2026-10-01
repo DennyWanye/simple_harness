@@ -152,13 +152,11 @@ from agent_orchestrator.planning.htn.observers import (  # noqa: E402
     unavailable,
 )
 from agent_orchestrator.planning.htn.planner_package import (  # noqa: E402
-    HIERARCHICAL_DECISION_PACKAGE_VERSION,
     applicability_reports,
-    hierarchical_planner_package,
-    method_library,
-    open_goals,
-    pending_primitives,
-    recorded_facts,
+    assemble_planner_package,
+    fact_rows,
+    goal_rows,
+    method_rows,
 )
 from agent_orchestrator.storage import acceptance_receipt_schema, schema  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
@@ -1116,52 +1114,46 @@ def test_a_legacy_mission_still_reaches_the_legacy_graph_change(tmp_path) -> Non
 
 def test_the_seed_package_names_the_open_root_goal(tmp_path) -> None:
     fresh = build_world(tmp_path, key="p23c-pkg")
-    package = hierarchical_planner_package(
-        fresh.mission, fresh.dispatch.seed_network(fresh.mission.id), registry=fresh.env.registry
-    )
-    goals = package["plan"]["open_compound_goals"]
-    assert [item["goal_id"] for item in goals] == [ROOT_TASK]
-    assert goals[0]["obligation_id"] == ROOT_DUTY
+    goals = goal_rows(fresh.dispatch.seed_network(fresh.mission.id))
+    assert [(item["task_id"], item["open"]) for item in goals] == [(ROOT_TASK, True)]
+    assert goals[0]["obligation_id"] == ROOT_DUTY and goals[0]["adopted_method"] is None
 
 
-def test_the_package_carries_the_method_ref_triple_verbatim(tmp_path) -> None:
+def test_the_package_carries_the_method_ref_as_a_decision_quotes_it(tmp_path) -> None:
     fresh = build_world(tmp_path, key="p23c-pkg2")
-    entries = method_library(fresh.env.registry, ["plan.goal"])
-    assert entries, "the seed registry holds a method for the root signature"
+    entries, omitted = method_rows(fresh.env.registry, ["plan.goal"])
+    assert entries and omitted == 0, "the seed registry holds a method for the root signature"
     reference = fresh.contract.method_ref()
-    assert any(item["method_ref"]["content_hash"] == reference.content_hash for item in entries)
+    assert {"kind": "method", "id": reference.method_id, "semantic_revision": reference.version,
+            "content_hash": reference.content_hash} in [item["method_ref"] for item in entries]
 
 
 def test_a_refined_goal_is_no_longer_offered_for_refinement(world: World) -> None:
-    assert open_goals(world.network()) == ()
+    goals = goal_rows(world.network())
+    assert [item for item in goals if item["open"]] == []
+    root = next(item for item in goals if item["task_id"] == ROOT_TASK)
+    assert root["adopted_method"]["method_ref"]["kind"] == "method"
 
 
 def test_the_package_shows_the_committed_primitives(world: World) -> None:
-    listed = {item["task_id"] for item in pending_primitives(world.network())}
+    listed = {item["task_id"] for item in goal_rows(world.network()) if item["form"] == "primitive"}
     assert listed == {_leaf_task(world), _review_task(world)}
 
 
-def test_the_package_states_its_own_version_and_output_contract(world: World) -> None:
-    package = hierarchical_planner_package(
-        world.mission, world.network(), registry=world.env.registry
-    )
-    assert package["package_version"] == HIERARCHICAL_DECISION_PACKAGE_VERSION
-    assert package["output_contract"] == "<planning_decision>{json}</planning_decision>"
-    assert package["mode"] == "hierarchical"
+def test_the_package_states_its_version_and_says_everything_once(world: World) -> None:
+    from agent_orchestrator.planning.htn.planner_package import VIEW_NAMES, plan_row
 
-
-def test_the_package_separates_available_and_unavailable_capabilities(world: World) -> None:
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        capabilities=["plan.read"],
-        unavailable_capabilities=["plan.write"],
-    )
-    assert package["operators"] == {
-        "available_capabilities": ["plan.read"],
-        "unavailable_capabilities": ["plan.write"],
-    }
+    network = world.network()
+    views = {name: () for name in VIEW_NAMES}
+    views.update(goals=goal_rows(network), plans=[plan_row(network)],
+                 methods=method_rows(world.env.registry, ["plan.goal"])[0])
+    package = assemble_planner_package(
+        package_version=10, mission=world.mission, network=network, views=views)
+    assert package["package_version"] == 10 and package["mode"] == "hierarchical"
+    assert set(package["views"]) == set(VIEW_NAMES)
+    # the mapping the views used to be converted from is gone
+    assert not {"plan", "method_library", "applicability", "facts", "operators",
+                "planning_rejected", "constraint", "output_contract"} & set(package)
 
 
 def test_the_event_handler_chooses_the_hierarchical_prompt_with_the_package() -> None:
@@ -1261,57 +1253,41 @@ def test_a_legacy_prompt_pin_does_not_reach_the_hierarchical_branch() -> None:
     from agent_orchestrator.contracts.planning_decisions import UnsupportedPlanningPackage
     from agent_orchestrator.runtime.role_templates import (
         PLANNER,
-        PLANNER_HIERARCHICAL_V14,
+        PLANNER_HIERARCHICAL,
         PLANNING_DECISION_PACKAGE_VERSION,
         PLANNING_DECISION_PROMPT_VERSION,
     )
 
     current = PLANNING_DECISION_PACKAGE_VERSION
-    assert PLANNER_HIERARCHICAL_V14.prompt_version == PLANNING_DECISION_PROMPT_VERSION
+    assert PLANNER_HIERARCHICAL.prompt_version == PLANNING_DECISION_PROMPT_VERSION
     assert _Pinned(PLANNER.prompt_version, package_version=current,
-                   bound_prompt=PLANNING_DECISION_PROMPT_VERSION).choose() is PLANNER_HIERARCHICAL_V14
+                   bound_prompt=PLANNING_DECISION_PROMPT_VERSION).choose() is PLANNER_HIERARCHICAL
     assert _Pinned(None, package_version=current,
-                   bound_prompt=PLANNING_DECISION_PROMPT_VERSION).choose() is PLANNER_HIERARCHICAL_V14
+                   bound_prompt=PLANNING_DECISION_PROMPT_VERSION).choose() is PLANNER_HIERARCHICAL
     # 2026-10-01: a hierarchical Mission with no binding was created under the removed
     # proposal-text protocol; it gets no prompt at all.
     with pytest.raises(UnsupportedPlanningPackage, match="removed"):
         _Pinned(None).choose()
 
 
-def test_new_planning_decision_mission_selects_the_current_prompt_even_when_legacy_pin_is_frozen() -> None:
-    """A planning-decision Mission must never receive the legacy proposal wire prompt;
-    2026-09-25: only the current package is served, a historical one is refused loudly."""
+def test_a_pin_never_changes_the_hierarchical_prompt_and_a_historical_package_is_refused() -> None:
+    """There is one hierarchical Planner prompt.  Whatever a deployment pins ``planner``
+    to and whatever prompt name the stored binding carries, the current package is
+    served on it; a Mission bound to a historical package is refused loudly."""
 
     from agent_orchestrator.contracts.planning_decisions import UnsupportedPlanningPackage
     from agent_orchestrator.runtime.role_templates import (
-        PLANNER_HIERARCHICAL_V7,
-        PLANNER_HIERARCHICAL_V14,
+        PLANNER_HIERARCHICAL,
         PLANNING_DECISION_PACKAGE_VERSION,
     )
 
-    assert _Pinned(PLANNER_HIERARCHICAL_V7.prompt_version, package_version=PLANNING_DECISION_PACKAGE_VERSION).choose() is (
-        PLANNER_HIERARCHICAL_V14
-    )
+    current = PLANNING_DECISION_PACKAGE_VERSION
+    for pin in (None, "planner-v4", "planner-hierarchical-v7"):
+        for bound in ("planner-hierarchical-v11", PLANNER_HIERARCHICAL.prompt_version):
+            assert _Pinned(pin, package_version=current, bound_prompt=bound).choose() is (
+                PLANNER_HIERARCHICAL)
     with pytest.raises(UnsupportedPlanningPackage):
-        _Pinned(PLANNER_HIERARCHICAL_V7.prompt_version, package_version=4).choose()
-
-
-def test_the_current_package_serves_v14_whatever_prompt_the_binding_names() -> None:
-    """2026-10-01 HTN 精简片 A：第 9 版规划包只配 v14（一个包一份提示词）。
-
-    此前（第 8 版包）v11/v12/v13 同配一个包，已绑旧版的任务重放时沿用旧版；第 9 版不再
-    有并列提示词，绑定里写的旧版本名不再起作用。
-    """
-
-    from agent_orchestrator.runtime.role_templates import (
-        PLANNER_HIERARCHICAL_V14,
-        PLANNING_DECISION_PACKAGE_VERSION,
-    )
-
-    for bound in ("planner-hierarchical-v11", "planner-hierarchical-v13", "planner-hierarchical-v14"):
-        assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION,
-                       bound_prompt=bound).choose() is PLANNER_HIERARCHICAL_V14
-    assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION).choose() is PLANNER_HIERARCHICAL_V14
+        _Pinned(None, package_version=4).choose()
 
 
 # ======================================================================================
@@ -4609,9 +4585,9 @@ def test_the_facts_section_quotes_an_observation_the_read_set_checker_accepts(
         observer_id="observer-1",
     )
     world.semantics.insert_observation(world.mission.id, record)
-    entries = recorded_facts(world.semantics.list_observations(world.mission.id))
-    assert [item["read_set_entry"]["id"] for item in entries] == ["obsrec-facts-1"]
-    quoted = entries[0]["read_set_entry"]
+    entries, _ = fact_rows(world.semantics.list_observations(world.mission.id))
+    assert [item["observation_ref"]["id"] for item in entries] == ["obsrec-facts-1"]
+    quoted = entries[0]["observation_ref"]
     item = ReadItem(
         kind=ReadItemKind.FACT,
         id=quoted["id"],
@@ -4693,25 +4669,22 @@ def test_a_plan_revision_re_opens_the_look(world: World) -> None:
     ) == frozenset({"plan.ready#alpha"})
 
 
-def test_the_facts_section_carries_references_and_never_an_inference(world: World) -> None:
-    """Review P2-12: the section hands over what was observed, not what follows.
-
-    Mutation M24 — add an ``inferred_holds`` field to every entry — used to leave the
-    whole suite green.  A conclusion computed here would be this package deciding the
-    question the refinement round decides, with no record that it did, so the set of
-    fields an entry may carry is now checked rather than merely intended.
-    """
-
-    from agent_orchestrator.planning.htn.planner_package import (
-        FACT_ENTRY_FIELDS,
-        refuse_fact_inference,
-    )
+def test_a_fact_row_states_what_was_observed_and_the_snapshots_reading(world: World) -> None:
+    """The row carries the observation, the reference a decision quotes, and the
+    evidence snapshot's own reading of it.  Without a snapshot the reading is stated as
+    unknown rather than guessed."""
 
     _record_look(world, "plan.ready#alpha", at_ms=10, identity="obsrec-guard")
-    entries = recorded_facts(world.semantics.list_observations(world.mission.id))
-    assert entries and all(set(item) <= FACT_ENTRY_FIELDS for item in entries)
-    with pytest.raises(ContractError, match="inference"):
-        refuse_fact_inference([{**entries[0], "inferred_holds": True}])
+    observations = world.semantics.list_observations(world.mission.id)
+    entries, omitted = fact_rows(observations)
+    assert omitted == 0 and set(entries[0]) == {
+        "observation_ref", "proposition_key", "polarity", "availability", "truth", "coverage",
+        "observer", "times"}
+    assert (entries[0]["availability"], entries[0]["truth"]) == ("recorded", "UNKNOWN")
+    read, _ = fact_rows(observations, state_of=lambda key: ("AVAILABLE", "TRUE"))
+    assert (read[0]["availability"], read[0]["truth"]) == ("AVAILABLE", "TRUE")
+    kept, dropped = fact_rows(observations, limit=0)
+    assert kept == () and dropped == 1
 
 
 def test_the_quoted_read_set_entry_is_computed_by_the_checker(world: World) -> None:
@@ -4727,10 +4700,10 @@ def test_the_quoted_read_set_entry_is_computed_by_the_checker(world: World) -> N
 
     _record_look(world, "plan.ready#alpha", at_ms=10, identity="obsrec-checker")
     checker = SemanticReadSetChecker(world.store, world.semantics, mission_id=world.mission.id)
-    entries = recorded_facts(
+    entries, _ = fact_rows(
         world.semantics.list_observations(world.mission.id), read_item=checker.read_item
     )
-    quoted = entries[0]["read_set_entry"]
+    quoted = entries[0]["observation_ref"]
     assert quoted == checker.read_item(ReadItemKind.FACT, "obsrec-checker").to_json()
     verdict = checker.verify(
         SemanticReadSet(
@@ -4767,8 +4740,8 @@ def test_only_the_newest_observation_of_a_proposition_is_offered(world: World) -
                 observer_id="observer-1",
             ),
         )
-    entries = recorded_facts(world.semantics.list_observations(world.mission.id))
-    assert [item["read_set_entry"]["id"] for item in entries] == ["obsrec-new"]
+    entries, _ = fact_rows(world.semantics.list_observations(world.mission.id))
+    assert [item["observation_ref"]["id"] for item in entries] == ["obsrec-new"]
 
 
 # ======================================================================================

@@ -176,20 +176,11 @@ def test_the_worker_template_never_asks_the_model_for_a_system_bound_field() -> 
     assert "declared_output_ports" in instructions
 
 
-#: The sha256 of every shipped prompt whose bytes a replayable Mission depends on.
-#: Frozen **here**, as literals, for the reason the third-round review found the hard
-#: way: the previous guard compared the templates against ``git show HEAD:``, and the
-#: moment the hierarchical worker was committed ``HEAD`` became the new file — so the
-#: test was comparing the templates with themselves, went permanently red on the
-#: ``hasattr`` line, and the invariant it stood for ("a shipped prompt never changes
-#: its bytes") had no guard left at all.  A digest in the test file cannot move with
-#: the tree, needs no ``git`` to check, and says exactly which byte changed when it
-#: fails.  This is the same technique the migration checksums use.
-#:
-#: **Changing a value here is never the fix for a failing assertion.**  An Attempt
-#: freezes its ``prompt_version`` and replays on those bytes (§26.3); editing a
-#: shipped template in place silently rewrites the past.  A new wording is a new
-#: version, registered beside the old one, with its own line below.
+#: The sha256 of the prompts this slice depends on, as literals: a digest in the test
+#: file cannot move with the tree, needs no ``git`` to check, and says exactly which
+#: byte changed when it fails.  The DAG-mode templates are here because the
+#: hierarchical Worker must not have touched them; the hierarchical Worker's own line
+#: is regenerated whenever its (single) prompt is changed.
 FROZEN_PROMPT_DIGESTS: dict[str, tuple[str, str]] = {
     # name: (prompt_version, sha256 of instructions)
     "WORKER": ("worker-v3", "c587ce55ff9a01e38ba5b362f8bb9de518b99404f712e63409f871d2d3f0d285"),
@@ -197,123 +188,10 @@ FROZEN_PROMPT_DIGESTS: dict[str, tuple[str, str]] = {
     "PLANNER": ("planner-v4", "13537f0abf6322c7075af9b5ddb3c0b7316c0271830311f49c3d6c195f5c9aad"),
     "CRITIC": ("critic-v3", "427fb096fc0c4cf6acc67358cd631d3f3c4c39ce2fea60b768a529f6290b7120"),
     "CRITIC_V2": ("critic-v2", "8eb51a32c06bfa16da88e4e89a28f48b50ce2e06969aec467abd803078a1c5ce"),
-    # review P1-2: v1 stays frozen because pinned Attempts replay on it; v2 is what a
-    # new hierarchical Mission gets, and the only difference is the sentence D3 made
-    # untrue ("且下游确有消费者").
-    "WORKER_HIERARCHICAL_V1": (
-        "worker-hierarchical-v1",
-        "e82e74aff9b37d4746da0e982b38855e3cb639efe848fb1a15116a18023e7de2",
-    ),
-    "WORKER_HIERARCHICAL_V2": (
-        "worker-hierarchical-v2",
-        "120372b8a49162ab1d96c6cf2725d6fcf7adec1988c7c8646f378c21649870b7",
-    ),
-    # P2.3t: v3 = v2 plus "report missing tests as a finding".  v2 keeps its bytes.
-    "WORKER_HIERARCHICAL_V3": (
-        "worker-hierarchical-v3",
-        "ed827cf56debe82de0fdf5604ce8ba570b84a3500ecc63beba89e4ba01efc19d",
-    ),
-    # P2.3s+t+u merge: v4 carries t's finding sentence and u's "do not rewrite
-    # existing files; put the suggestion in the report".  v3 keeps t's bytes.
-    "WORKER_HIERARCHICAL_V4": (
-        "worker-hierarchical-v4",
-        "d59d78049330d71d8a837f709b7b72003275be3999e36f8c3b20ce2ea6d61c52",
-    ),
-    # NEXT-TG-1.0 §11: v5 = v4 plus the Skill tools and one paragraph on using them.
+    # the hierarchical Worker: one prompt (HTN 精简 片 C); its digest moves with it
     "WORKER_HIERARCHICAL": (
         "worker-hierarchical-v5",
         "dc176cf841c8cc3250f2bae1bed554be0f0af909acba86aa17db445996720cbb",
-    ),
-    # P2.3g: the synthesiser's v1 is what the Grok episode ran on and stays pinnable;
-    # v2 spells the codec's field list.  The hierarchical Planner's v3 is frozen for
-    # the same reason, and v4 is v3 minus "write a <method_proposal> instead".
-    "METHOD_SYNTHESIZER_V1": (
-        "method-synthesizer-v1",
-        "9341ab10390015fb45d528d95dac0af5b29658f0ee9b70060369d607f8f0ae32",
-    ),
-    "METHOD_SYNTHESIZER_V2": (
-        "method-synthesizer-v2",
-        "27ccb23492ef00b73404735a03f51439d2bf0eb1339a6a6b4320950ee8beaccb",
-    ),
-    # P2.3i: v3 = v2 plus "schema_feedback may carry the admission protocol's refusal
-    # lines, and here is what may change on one"; v2 keeps its bytes above.
-    # P2.3i: v3 (protocol refusals travel in schema_feedback); P2.3j merge: the default
-    # is v4, revised from v3 with ``review_feedback``.  v3 keeps its bytes.
-    "METHOD_SYNTHESIZER_V3": (
-        "method-synthesizer-v3",
-        "a38309fdb328c929d6ddefa37ff4de294628f0f508dfad82c7a27bb1cd0e6c9c",
-    ),
-    "METHOD_SYNTHESIZER_V4": (
-        "method-synthesizer-v4",
-        "8d457abe7a74d614642ac7e2446e656aea9c46e4a7f509820353dd04f93f39b6",
-    ),
-    # P2.3k / N1: v5 = v4 plus "the step that explains the change must be fed the
-    # change through an input port; operators list the latest version only".
-    "METHOD_SYNTHESIZER_V5": (
-        "method-synthesizer-v5",
-        "6973e125b9cc3b02b8af77190a9b0ff4b5a1ddd3cdfe8cc1f60900304fe21e6b",
-    ),
-    # P2.3m: v6 = v5 plus "a code-change method must contain a write/patch step;
-    # read_only_leaf_needs_write in review_feedback".
-    "METHOD_SYNTHESIZER_V6": (
-        "method-synthesizer-v6",
-        "75a8a4a1a888e2ac165d16a711df9e981ad44da92c15b652bbc29bbc97774c42",
-    ),
-    # P2.3t: v7 = v6 plus "read-only verify must not write files; added tests
-    # come from a write-step tests port".
-    "METHOD_SYNTHESIZER_V7": (
-        "method-synthesizer-v7",
-        "4aa25e682ede38479a09a2a8d00da023aaed617e32384e7da85c44641a4e2f9b",
-    ),
-    # 2026-09-26: v8 asks for one step per independent deliverable.
-    "METHOD_SYNTHESIZER_V8": (
-        "method-synthesizer-v8",
-        "f239da18fa85a82ce99e70c58802a83df4db78917eab299b69f2d18f8b7eacf7",
-    ),
-    # 2026-09-26: v9 — a dependency orders steps, it never merges them; one step per file.
-    "METHOD_SYNTHESIZER": (
-        "method-synthesizer-v9",
-        "fa9f72c402b21221e60498813a257f064b6a6243a445cf18c47500c35163f74a",
-    ),
-    "PLANNER_HIERARCHICAL_V3": (
-        "planner-hierarchical-v3",
-        "ba244a12bf504051d7ebc954f462cf23f9c7734dff980c539187834a0a670acb",
-    ),
-    "PLANNER_HIERARCHICAL_V4": (
-        "planner-hierarchical-v4",
-        "5ae3b39acf9326888e20bab934848ed6e1d21482884ccda932ac693b31122223",
-    ),
-    # P2.3j: the repair-round Planner prompt.  v5 reads ``rejected_refinements`` and
-    # knows the retire_method + refine repair.
-    "PLANNER_HIERARCHICAL_V5": (
-        "planner-hierarchical-v5",
-        "2517d5fe727ba27ffffa105d72e786e72109893c342e56adebeaa033794f7608",
-    ),
-    # P2.3n: v6 = v5 plus "an APPLICABLE applicability row is a usable method,
-    # including a just-admitted synthesised one".  v5 keeps its bytes above.
-    "PLANNER_HIERARCHICAL_V6": (
-        "planner-hierarchical-v6",
-        "b13d16f7d1d5aaa8919d983e93b7639105446bd6d95bd73d05353571a9a185a6",
-    ),
-    # P2.3q: v7 splits rejected_by_read_only_leaf from rejected_by_root_review.
-    "PLANNER_HIERARCHICAL_V7": (
-        "planner-hierarchical-v7",
-        "5b87b9624fbf4a4e1c31e6d9c4a765de2ac4ec689b5d708000b427676cb50f15",
-    ),
-    # H1-E closes H0's first two freeze gaps: v1 and v2 were registered and
-    # replayable but absent from this table.  Digests match H0's prompt-digests.json.
-    "PLANNER_HIERARCHICAL_V1": (
-        "planner-hierarchical-v1",
-        "2acb2294fca09f55c30831ffd43dd7eae5685af72daa4c85de8759b440e43830",
-    ),
-    "PLANNER_HIERARCHICAL": (
-        "planner-hierarchical-v2",
-        "f8a8bba7221bfcc1c33d8b3f71517678bced6c905c7dbfdcee1558f0374a0387",
-    ),
-    # H1-E (V2 plan §9, §41): the planning-decision-protocol Planner prompt.
-    "PLANNER_HIERARCHICAL_V8": (
-        "planner-hierarchical-v8",
-        "d0e564b55acc179b341fd62163e5789a44a46a315bde88c331a5c6133cf39ab5",
     ),
 }
 
@@ -366,64 +244,37 @@ def test_a_shipped_prompt_keeps_its_bytes(name: str) -> None:
 
 
 def test_the_frozen_digests_cover_the_prompts_this_slice_depends_on() -> None:
-    """A digest table nobody extends stops guarding what the deployment added.
-
-    The hierarchical worker is the one this slice introduced, and it is in the table;
-    the four DAG-mode templates it must not have touched are in it too.
-    """
+    """The hierarchical worker is in the table; so are the DAG-mode templates it must
+    not have touched."""
 
     assert {"WORKER", "WORKER_V2", "WORKER_HIERARCHICAL"} <= set(FROZEN_PROMPT_DIGESTS)
-    assert "WORKER_HIERARCHICAL_V1" in FROZEN_PROMPT_DIGESTS, (
-        "a superseded version is still replayed by every Attempt that pinned it"
-    )
-    assert "WORKER_HIERARCHICAL_V2" in FROZEN_PROMPT_DIGESTS, (
-        "worker-hierarchical-v2 stays pinnable after later hierarchical Worker versions"
-    )
-    assert "WORKER_HIERARCHICAL_V3" in FROZEN_PROMPT_DIGESTS, (
-        "worker-hierarchical-v3 keeps P2.3t's bytes after the P2.3u merge added v4"
-    )
-    assert "WORKER_HIERARCHICAL_V4" in FROZEN_PROMPT_DIGESTS, (
-        "worker-hierarchical-v4 keeps its bytes after v5 added the Skill tools"
-    )
     assert {"PLANNER", "CRITIC", "CRITIC_V2"} <= set(FROZEN_PROMPT_DIGESTS)
     assert FROZEN_PROMPT_DIGESTS["WORKER_HIERARCHICAL"][0] == WORKER_HIERARCHICAL_VERSION
     assert WORKER.prompt_version == "worker-v3"
     assert WORKER_V2.prompt_version == "worker-v2"
 
 
-def test_the_hierarchical_worker_version_is_registered_and_pinnable() -> None:
-    """P2.3d / defect D1 widened this set; what it must never hold is unchanged.
-
-    It used to be a one-element frozenset, and that was the defect's other half:
-    ``_hierarchical_worker_template`` treated "not in this set" as "replace with the
-    code-domain prompt", so an AppWorld Worker holding ``worker-appworld-v3`` lost its
-    domain tools and its domain words on every hierarchical Mission.
-    """
+def test_the_hierarchical_worker_versions_are_the_current_one_and_the_domain_ones() -> None:
+    """``_hierarchical_worker_template`` treats "not in this set" as "replace with the
+    domain's hierarchical prompt", so a domain's own hierarchical Worker has to be in
+    it, and a DAG-mode version must never be."""
 
     versions = registered_versions()
     assert WORKER_HIERARCHICAL_VERSION in versions["worker"]
     assert HIERARCHICAL_WORKER_VERSIONS == frozenset(
         {
             WORKER_HIERARCHICAL_VERSION,
-            "worker-hierarchical-v4",
-            "worker-hierarchical-v3",
-            "worker-hierarchical-v2",
-            "worker-hierarchical-v1",
             "worker-appworld-hierarchical-v1",
             "worker-drone-sim-hierarchical-v1",
         }
-    ), "every version a deployment may pin, superseded ones included"
+    )
     assert "worker-v3" not in HIERARCHICAL_WORKER_VERSIONS, (
         "a DAG-mode pin must not be honoured in the hierarchical mode: worker-v3 "
         "never asks for outputs, and every leaf would then be refused as unclaimed"
     )
-    assert "worker-appworld-v3" not in HIERARCHICAL_WORKER_VERSIONS, (
-        "the AppWorld DAG-mode prompt is not a hierarchical one either: it never asks "
-        "for outputs, and a pin naming it belongs to the other mode"
-    )
+    assert "worker-appworld-v3" not in HIERARCHICAL_WORKER_VERSIONS
 
 
-# ============================================== the paths a claim is checked against
 def test_a_claim_is_checked_against_the_files_this_envelope_declares() -> None:
     """Part 2d smoke, round 1 — a real defect, kept as a test.
 
@@ -635,12 +486,10 @@ def test_a_dag_mode_pin_is_honoured_on_a_legacy_mission(tmp_path) -> None:
 def test_no_hierarchical_worker_prompt_makes_the_claim_conditional_on_a_consumer() -> None:
     """The words the Worker reads and the rule Acceptance applies are one rule.
 
-    ``worker-hierarchical-v1`` says a port must be claimed when it is ``required=true``
-    **and has a downstream consumer**.  That was true when the port set *was* "consumed
-    by a DataRequirement" — and D3 is precisely the change that made it false: the
-    finalizer's port has no consumer by construction, is declared anyway, and a leaf
-    that skips it is refused with ``OUTPUT_PORT_UNCLAIMED``.  The code-domain path is
-    the one that lost ten episodes, and its Worker was reading the older rule.
+    An earlier wording said a port must be claimed when it is ``required=true`` **and
+    has a downstream consumer**.  The finalizer's port has no consumer by construction,
+    is declared anyway, and a leaf that skips it is refused with
+    ``OUTPUT_PORT_UNCLAIMED``.
 
     The context package carries no "has a consumer" field either
     (``declared_output_ports_for`` gives port/required/cardinality/schema), so the
@@ -649,7 +498,6 @@ def test_no_hierarchical_worker_prompt_makes_the_claim_conditional_on_a_consumer
 
     from agent_orchestrator.governance.domains import DOMAINS
     from agent_orchestrator.runtime.role_templates import (
-        TEMPLATE_VERSIONS,
         WORKER_HIERARCHICAL,
         hierarchical_worker_for_domain,
     )
@@ -668,6 +516,3 @@ def test_no_hierarchical_worker_prompt_makes_the_claim_conditional_on_a_consumer
     for version, text in selected.items():
         # The AppWorld text is written without the spaces the code-domain one uses.
         assert "required=true的端口必须被认领" in text.replace(" ", ""), version
-    # v1 is kept registered and frozen: an Attempt replays on the bytes it pinned, so
-    # the old wording has to stay readable — it just is not what a new Mission gets.
-    assert "下游确有消费者" in TEMPLATE_VERSIONS["worker"]["worker-hierarchical-v1"].instructions

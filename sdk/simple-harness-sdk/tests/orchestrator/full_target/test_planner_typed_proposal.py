@@ -463,19 +463,6 @@ def test_the_hierarchical_prompt_is_not_one_of_the_frozen_texts():
     )
 
 
-def test_the_hierarchical_prompt_names_both_blocks_and_the_bound_fields():
-    text = PLANNER_HIERARCHICAL.instructions
-    assert PLAN_REVISION_PROPOSAL_TAG in text and METHOD_PROPOSAL_TAG in text
-    assert "manager_epoch" in text and "registry_status" in text
-    assert TASK_GRAPH_PROPOSAL_TAG not in text
-
-
-def test_the_hierarchical_prompt_names_every_operation_the_codec_accepts():
-    text = PLANNER_HIERARCHICAL.instructions
-    for op in ("refine", "retire_method", "bind_shared_goal", "propose_successor"):
-        assert op in text, op
-
-
 def test_the_hierarchical_planner_asks_for_no_tools():
     """It proposes; it does not act.  A tool on this template would be a way to run
     work without going through a plan revision at all."""
