@@ -1,4 +1,4 @@
-最后更新：2026-10-02 CST（HTN 精简改造 片 D：其余越位，SDK opt.122）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版；逐步记录见同目录 `HTN-片D-实施记录.md`。
+最后更新：2026-10-02 CST（HTN 精简改造 片 D：其余越位，SDK opt.122、opt.123）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版；逐步记录见同目录 `HTN-片D-实施记录.md`。
 - **判停之前先问规划器一次**：`RepairTriggerSource.NO_DISPATCHABLE_WORK`。`Orchestrator._confirm_and_stop_stalled` 在停滞确认之后、判失败之前调用 `planning_repair_requests.request_planner_for_stall`，记一条 `PlanningRepairRequested`（幂等键 `stalled:<任务号>:<计划版本号>`，范围是整个计划），主循环回头再转一轮，由 `_resume_planning_services` 开出规划轮。请求里只有事实：`withheld`（哪些步骤被哪道闸挡住）、`admitted_not_dispatched`、`outstanding_obligations`，以及最终审查 / 组合审查没有结论或被打回时的 `final_review` / `composition_review` / `root_review`。同一版计划问过之后又停在原地才以 `NO_DISPATCHABLE_WORK` 结束，停机报告 `planner_asked` 写明请求编号与规划轮有没有开出来。计划换版本后旧请求由系统了结（`superseded_revision_requests`，与"目标还没有做法"的请求同一处理）。有名字的停机（最终审查修复次数用完）排在前面，不受影响。
 - **"审查的回复用完了"两种结局都算**：`_exhausted_reviews` 同时读 `AssuranceReviewFormatExhausted`（回复一直解码不了）与 `AssuranceReviewImportRejected`（第二次回复能解码但不能采用，如引用了没展示的证据）；`_final_review_unreadable_detail` 覆盖最终审查、组合审查、操作结果审查三类。操作结果审查以后一种方式结束时不再被当成合法等待；新做法审阅以后一种方式结束时规划器直接拿到原因。
 - **保证通道上文档任务以最终审查的结论为准**（`verification/mission_coverage.py`）：`mission_coverage(..., assured=True)` 对文字要求只做秩序检查——引用能解析、资料当前、声称可用、评估可用、"不确定"附说明——没过记 `FAIL`，否则 `PASS` / `INCONCLUSIVE` / `UNCLAIMED`；不确定占比不再给出 `insufficient`。`document_judgment`（这一条最终算谁的）与 `coverage_objection`（提交时的秩序）是判定、留存判定重看、提交三处共用的一条规则：秩序检查没过 → 不满足（`judge=document_order_check`）；否则取已认证根结论里的评级（`judge=assurance_review`）。`cite:` 要求仍由覆盖结果判。不走保证通道的旧平面模式（`assured=False`）行为不变：字面相等、占比阈值、"证据不足"停机只剩它在用。
@@ -6,6 +6,7 @@
 - 规划器提示词 `planner-hierarchical-v16`（仍只有一份）：补了"没有可派发的工作"请求各字段的说明。
 - **Host**：自动模式确认完成要求时，"是不是操作"只认 `action:` 前缀，词表 `_OPERATION_WORDS` 删除（`deskpet/orchestration/service.py`）；设置项 `assurance_profile` 删除，新任务一律走保证通道（`deskpet/orchestration/assurance.py`），状态接口不再返回该字段。前端文档页补三个标签。
 - 没有做：SDK 里不走保证通道的旧根审阅员（`_collect_root_review`）与裁判 Critic——几百条 SDK 测试建在"不装保证通道"的世界上，并入旧分层旁路清理；旧平面模式的文档验收口径。
+- **一个任务的数据读不了只影响它自己**（opt.123，片 D 真机暴露）：上一条改了登记在执行图文档身份里的源文件，库里旧任务的执行图文档从此读不了（开发期不兼容旧数据）。保证层的收尾评估去读旧任务的执行图时抛出契约错误，原来只接"提交被拒"，异常冲出保证层轮询和主循环，所有任务每一轮都失败。现在 `AssuranceCloseoutConsumer._root_resolution` 把读不回计划（`assurance_tick.MISSION_DATA_ERRORS`：契约错误、计划完整性错误、存储错误）如实记成 `ROOT_NETWORK_UNAVAILABLE`、未就绪；`AssuranceTick.tick` 对每一项工作接住这三类错误，按原有的持久重试上限再看（原因 `MISSION_DATA_UNREADABLE`），别的任务照常。旧文档不迁移、不回落。
 - 验证：相关定向测试、变异、独立核验、真机，见实施记录。
 
 最后更新：2026-10-02 CST（HTN 精简改造 片 C：规划包与提示词收口，SDK opt.121）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版；逐步记录见同目录 `HTN-片C-实施记录.md`。
