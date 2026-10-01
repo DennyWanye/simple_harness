@@ -118,6 +118,64 @@ def stale_evidence_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: 
     return produced
 
 
+#: 片 B：计划里有目标还没有做法 → 每个计划版本一条请求，幂等键是这个前缀加计划版本号。
+OPEN_GOALS_PREFIX = "open-goals:"
+
+
+def superseded_open_goal_requests(pending: Any, plan_revision: int) -> list[str]:
+    """待处理的"目标还没有做法"请求里，属于旧计划版本的那些（请求编号）。
+
+    这种请求说的是"第 N 版计划里这些目标没有做法"。计划已经到了别的版本，这句话就过时了：
+    还开着的目标由新版本自己的请求去说，不让两条请求指着同一个目标。
+    """
+    current = OPEN_GOALS_PREFIX + str(int(plan_revision))
+    return [str(row["request_id"]) for row in pending
+            if str(row.get("source_key", "")).startswith(OPEN_GOALS_PREFIX)
+            and row.get("source_key") != current]
+
+
+def open_goal_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: set[str]) -> bool:
+    """片 B：当前计划里有目标还没有做法 → 一条通用请求把规划器叫来（每个计划版本一条）。
+
+    此前这是主循环里一条专用入口（"展开未细化目标"），自己记事件、自己开规划轮。现在与
+    步骤失败、证据失效走同一条路：请求里只有事实（哪几个目标、什么类型），选做法、提做法
+    还是问人由规划器定；规划器为其中任何一个目标提交了做法，这条请求就算处理了，剩下的
+    目标由新计划版本的请求接着问。第一份计划之前的根目标不归这里（那是规划的起点）。
+    """
+    from ..contracts.htn import TaskForm
+
+    store = handler.store
+    active = dispatch.semantics().active_plan_revision(mission.id)
+    if active is None:
+        return False
+    revision = int(active.revision)
+    produced = False
+    for request_id in superseded_open_goal_requests(pending_requests(store, mission.id), revision):
+        append_hierarchical_event(store, ADDRESSED, mission.id, key="system:" + request_id,
+            payload={"decision_id": None, "decision_type": "SYSTEM_SUPERSEDED", "status": "COMMITTED",
+                     "subject_key": None, "repair_request_ids": [request_id],
+                     "superseded_by_plan_revision": revision})
+        produced = True
+    source_key = OPEN_GOALS_PREFIX + str(revision)
+    if source_key in seen:
+        return produced
+    network = dispatch.network(mission.id)
+    open_goals = [spec for spec in network.occurrences
+                  if spec.form is TaskForm.COMPOUND
+                  and network.adopted_instance_for(spec.occurrence_id) is None]
+    if not open_goals:
+        return produced
+    tasks = tuple(str(spec.task_id) for spec in open_goals)
+    detail = {"reason": "goal_has_no_method", "open_goals": [
+        {"task_id": str(spec.task_id), "occurrence_id": str(spec.occurrence_id),
+         "goal_type": str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)}
+        for spec in open_goals]}
+    return record_request(
+        dispatch, mission.id, event_type="GoalUnrefined", trigger_refs=tasks, source_key=source_key,
+        detail=detail, scope=tasks + tuple(str(spec.occurrence_id) for spec in open_goals),
+        new_work=tasks) or produced
+
+
 def settle_addressed_requests(handler: Any, dispatch: Any, mission: Any) -> bool:
     """架构方案 B 前置 2（用户 2026-09-29 决定）：修复请求由**系统**消费的出口。
 
@@ -231,9 +289,11 @@ def step_failure_facts(events: Any, event: Any) -> dict[str, Any]:
 
 def record_request(dispatch: Any, mission_id: str, *, event_type: str,
                    trigger_refs: tuple[str, ...], source_key: str,
-                   detail: dict[str, Any], scope: tuple[str, ...] | None = None) -> bool:
+                   detail: dict[str, Any], scope: tuple[str, ...] | None = None,
+                   new_work: tuple[str, ...] = ()) -> bool:
     """``scope``：这条请求是"关于"哪些步骤的；不给就按触发引用推（该步骤及其上级目标）。
-    关于整个任务的请求（最终审查打回）由调用方给出全部步骤——任何一步上的计划改动都算处理了它。"""
+    关于整个任务的请求（最终审查打回）由调用方给出全部步骤——任何一步上的计划改动都算处理了它。
+    ``new_work``：这条请求要的是还不存在的工作（没有做法的目标）；只有计划改动能了结它。"""
     store = dispatch.store
     with store.transaction():
         if any(e.type == REQUESTED and e.payload.get("source_key") == source_key
@@ -244,7 +304,10 @@ def record_request(dispatch: Any, mission_id: str, *, event_type: str,
             {"type": event_type, "trigger_refs": trigger_refs,
              "payload": {"context": detail}}, mission_id=mission_id,
             plan_revision=int(network.plan_revision))
-        impact = analyze_impact(request, **read_repair_impact_indexes(store, network, mission_id))
+        indexes = read_repair_impact_indexes(store, network, mission_id)
+        # 要的是还不存在的工作时，没有任何已有成果受影响：不把上级目标和兄弟步骤报成"待重新验收"。
+        impact = (analyze_impact(new_work=new_work, **indexes) if new_work
+                  else analyze_impact(request, **indexes))
         append_hierarchical_event(store, REQUESTED, mission_id, key=source_key,
             payload={"source_key": source_key, "request_id": request.request_id,
                      "request": request.to_json(), "impact": impact.to_json(),
@@ -321,6 +384,7 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     produced |= settle_addressed_requests(handler, dispatch, mission)
     produced |= source_change_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
     produced |= stale_evidence_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
+    produced |= open_goal_triggers(handler, dispatch, mission, seen=seen)
     events = tuple(store.iter_events(mission.id))
     for event in events:
         source_key = "event:" + event.idempotency_key

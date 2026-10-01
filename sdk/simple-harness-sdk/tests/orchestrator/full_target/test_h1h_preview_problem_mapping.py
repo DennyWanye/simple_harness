@@ -75,7 +75,7 @@ def test_p10_unmapped_current_delta_is_rejected_instead_of_silently_allowed(
 ) -> None:
     """A future DeltaProblemKind has the same outcome as this removed current mapping."""
 
-    kind = DeltaProblemKind.NOT_REDUCIBLE
+    kind = DeltaProblemKind.PORT_UNBINDABLE
     monkeypatch.delitem(_DELTA_KIND_TO_CODE, kind)
 
     with pytest.raises(ContractError, match="unmapped delta problem"):

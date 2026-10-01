@@ -25,6 +25,13 @@ exactly this.  Refusing it would make the honest failure permanent instead of ma
 the plan run.  The bound needs no counter: one round per plan revision, so a
 refinement that succeeds moves the revision on and one that does not leaves the
 Mission to its ordinary stall.
+
+HTN 精简片 B（2026-10-01）：主循环里的专用入口 ``_refine_open_compounds`` 已删除。
+"计划里有目标还没有做法"现在由 ``planning_repair_requests.open_goal_triggers``（经
+``collect_triggers``）记一条通用 ``PlanningRepairRequested``（触发源 ``GOAL_UNREFINED``，
+幂等键 ``open-goals:<计划版本号>``），再由 ``_resume_planning_services`` 开一轮规划器。
+本文件测的几件事不变，只是改走这条路：同一计划版本只问一次、重启不重问、预算不够时
+任务可见地停下（阶段名 ``planning_service_resume``）。
 """
 
 from __future__ import annotations
@@ -55,6 +62,10 @@ from agent_orchestrator.contracts import MissionStatus, MissionStopReason  # noq
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
 from agent_orchestrator.graph.eligibility import ReadinessReason  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
+from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: E402
+    REQUESTED,
+    collect_triggers,
+)
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
@@ -171,9 +182,39 @@ def _nested_world(tmp_path, *, key: str, tokens: int | None = None) -> World:
     return world
 
 
+def _ask_round(loop: Orchestrator, mission_id: str) -> bool:
+    """The new path's one step: record the generic request, then open a Planner round.
+
+    Returns whether a Planner round was opened (what ``_refine_open_compounds`` used to
+    answer).  Recording the request alone is not a round.
+    """
+
+    mission = loop.store.get_mission(mission_id)
+    assert mission is not None
+    collect_triggers(loop, mission)
+    return loop._resume_planning_services(loop.store.get_mission(mission_id))
+
+
+def _open_goal_requests(loop: Orchestrator, mission_id: str) -> list[str]:
+    return [
+        str(event.payload.get("source_key"))
+        for event in loop.store.list_events(mission_id)
+        if event.type == REQUESTED
+        and str(event.payload.get("source_key", "")).startswith("open-goals:")
+    ]
+
+
 def _cycle(
-    world: World, evidence: Path, *, rounds: int = 1, settle_between: bool = False
+    world: World,
+    evidence: Path,
+    *,
+    rounds: int = 1,
+    settle_between: bool = False,
+    whole_cycle: bool = False,
 ) -> dict[str, Any]:
+    """``whole_cycle`` runs ``loop._cycle()`` instead of the two calls, for the cases
+    whose ending (a budget stop) is decided by ``_cycle_inner``'s own ``except``."""
+
     config = OrchestratorConfig(
         evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5,
     )
@@ -184,9 +225,10 @@ def _cycle(
             loop.install_hierarchical(planning=world.env)
             moved: list[bool] = []
             for _ in range(rounds):
-                mission = loop.store.get_mission(world.mission.id)
-                assert mission is not None
-                moved.append(await loop._refine_open_compounds(mission))
+                if whole_cycle:
+                    moved.append(await loop._cycle())
+                else:
+                    moved.append(_ask_round(loop, world.mission.id))
                 if settle_between:
                     # Review P1-3: the guard under test is the *per-revision* mark, and
                     # while the first round's intent is still PENDING the separate
@@ -205,6 +247,7 @@ def _cycle(
                 "report": dict(final.final_report or {}),
                 "next_ordinal": loop._next_planning_ordinal(world.mission.id),
                 "events": [item.type for item in loop.store.list_events(world.mission.id)],
+                "open_goal_requests": _open_goal_requests(loop, world.mission.id),
                 "intents": [
                     item
                     for item in loop.store.list_intents(
@@ -254,11 +297,17 @@ def test_the_committed_plan_really_holds_an_unrefined_compound(tmp_path) -> None
 
 
 def test_an_unrefined_nested_compound_reopens_the_planner(nested) -> None:
-    """**Mutation**: delete the ``elif`` in ``_cycle_inner`` and M3-r2 comes back."""
+    """**Mutation**: drop ``open_goal_triggers`` from ``collect_triggers`` and M3-r2 comes back.
+
+    片 B：问规划器的是一条通用请求（``open-goals:1``），不再是专用入口。
+    """
 
     world, evidence = nested
     outcome = _cycle(world, evidence)
     assert outcome["moved"] == [True]
+    assert outcome["open_goal_requests"] == ["open-goals:1"]
+    assert "PlanningServiceResumed" in outcome["events"]
+    assert "HierarchicalRefinementRequested" not in outcome["events"]
     assert [item.config["ordinal"] for item in outcome["intents"]] == [1]
 
 
@@ -268,6 +317,8 @@ def test_the_same_revision_is_not_put_to_the_planner_twice(nested) -> None:
     world, evidence = nested
     outcome = _cycle(world, evidence, rounds=3)
     assert outcome["moved"] == [True, False, False]
+    assert outcome["open_goal_requests"] == ["open-goals:1"]
+    assert outcome["events"].count("PlanningServiceResumed") == 1
     assert len(outcome["intents"]) == 1
 
 
@@ -282,6 +333,7 @@ def test_a_fully_refined_plan_asks_for_nothing(tmp_path) -> None:
     world.store.close()
     outcome = _cycle(world, evidence, rounds=2)
     assert outcome["moved"] == [False, False]
+    assert outcome["open_goal_requests"] == []
     assert outcome["intents"] == []
 
 
@@ -293,13 +345,15 @@ def test_a_fully_refined_plan_asks_for_nothing(tmp_path) -> None:
 def test_the_revision_is_not_reopened_once_the_first_round_has_settled(tmp_path) -> None:
     """The per-revision mark, with the "one question at a time" check taken away.
 
-    **Mutation M11** (survived the first round of tests): delete
-    ``self._refinement_rounds[mission.id] = revision`` from ``_refine_open_compounds``.
-    ``test_the_same_revision_is_not_put_to_the_planner_twice`` stayed green because its
-    three calls all happen while the first round's intent is still PENDING, so the
-    *other* guard answered.  In the real loop the intent settles the moment the Planner
-    replies — and without the mark the same revision is then asked again every cycle,
-    an unbounded Planner loop held back only by the budget.
+    **Mutation M11** (survived the first round of tests): in the old entry, delete the
+    per-revision mark.  ``test_the_same_revision_is_not_put_to_the_planner_twice``
+    stayed green because its three calls all happen while the first round's intent is
+    still PENDING, so the *other* guard answered.  In the real loop the intent settles
+    the moment the Planner replies — and without the mark the same revision is then
+    asked again every cycle, an unbounded Planner loop held back only by the budget.
+
+    片 B：这个"标记"现在是两件落库的事实——幂等键 ``open-goals:<版本>`` 的请求只记
+    一条，``PlanningServiceResumed`` 只为它开一轮。
     """
 
     world = _nested_world(tmp_path, key="p23d-nested-settled")
@@ -307,6 +361,8 @@ def test_the_revision_is_not_reopened_once_the_first_round_has_settled(tmp_path)
     world.store.close()
     outcome = _cycle(world, evidence, rounds=3, settle_between=True)
     assert outcome["moved"] == [True, False, False]
+    assert outcome["open_goal_requests"] == ["open-goals:1"]
+    assert outcome["events"].count("PlanningServiceResumed") == 1
     # One *created* intent even though every round found the compound still unrefined.
     assert outcome["next_ordinal"] == 2
 
@@ -320,13 +376,18 @@ def test_a_refinement_round_that_cannot_be_funded_stops_the_mission_visibly(tmp_
     ``_start_planning`` has caught it since step 6; the two rounds P2.3d added had not,
     so the runner's episode died with a traceback, no ``MissionFailed`` and an
     unreadable ``mission_status``.
+
+    片 B：规划轮由 ``_resume_planning_services`` 开，预算不够由 ``_cycle_inner`` 的
+    ``except BudgetExhausted`` 接住，所以这里跑整轮 ``_cycle``。停下任务本身算这一轮有进展，
+    "没开出规划轮"改由"没有 ``PlanningServiceResumed``、没有规划意图"来断言。
     """
 
     world = _nested_world(tmp_path, key="p23d-nested-broke", tokens=100)
     evidence = Path(tmp_path) / "evidence"
     world.store.close()
-    outcome = _cycle(world, evidence)
-    assert outcome["moved"] == [False], "an unfundable round is not progress"
+    outcome = _cycle(world, evidence, whole_cycle=True)
+    assert outcome["open_goal_requests"] == ["open-goals:1"]
+    assert "PlanningServiceResumed" not in outcome["events"], "an unfundable round is not opened"
     assert outcome["status"] is MissionStatus.FAILED
     assert outcome["stop_reason"] == str(MissionStopReason.BUDGET_EXHAUSTED)
     assert not outcome["intents"], "nothing was dispatched"
@@ -335,7 +396,10 @@ def test_a_refinement_round_that_cannot_be_funded_stops_the_mission_visibly(tmp_
 def test_a_restarted_process_does_not_ask_the_same_revision_again(tmp_path) -> None:
     """Review P2-5: the bound must survive the process that set it.
 
-    ``self._refinement_rounds`` is a dict on the Orchestrator instance.  The runner
+    片 B：边界现在全在库里（``open-goals:<版本>`` 请求 + ``PlanningServiceResumed``），
+    新进程读同一个库既不再记第二条请求，也不再开第二轮。
+
+    (Old wording) ``self._refinement_rounds`` was a dict on the Orchestrator instance.  The runner
     gives each episode its own process, but a crash-and-resume — or a second instance
     over the same library — would find the mark gone and spend another Planner round on
     a question that was already asked.  The bound is a fact about the *plan revision*,
@@ -353,8 +417,7 @@ def test_a_restarted_process_does_not_ask_the_same_revision_again(tmp_path) -> N
         async with Orchestrator(config, RoleScriptedProvider({"planner": []})) as first:
             world.env.semantics = HtnStore(first.store)
             first.install_hierarchical(planning=world.env)
-            mission = first.store.get_mission(world.mission.id)
-            asked = await first._refine_open_compounds(mission)
+            asked = _ask_round(first, world.mission.id)
             for item in first.store.list_intents(
                 "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
             ):
@@ -365,16 +428,24 @@ def test_a_restarted_process_does_not_ask_the_same_revision_again(tmp_path) -> N
             world.env.semantics = HtnStore(second.store)
             second.install_hierarchical(planning=world.env)
             mission = second.store.get_mission(world.mission.id)
-            again = await second._refine_open_compounds(mission)
+            recorded_again = collect_triggers(second, mission)
+            again = second._resume_planning_services(second.store.get_mission(world.mission.id))
+            events = [item.type for item in second.store.list_events(world.mission.id)]
             return {
                 "asked": asked,
+                "recorded_again": recorded_again,
                 "again": again,
+                "open_goal_requests": _open_goal_requests(second, world.mission.id),
+                "resumed": events.count("PlanningServiceResumed"),
                 "next_ordinal": second._next_planning_ordinal(world.mission.id),
             }
 
     outcome = asyncio.run(case())
     assert outcome["asked"] is True
+    assert outcome["recorded_again"] is False, "the request for this revision is already on file"
     assert outcome["again"] is False, "the revision was already put to the Planner"
+    assert outcome["open_goal_requests"] == ["open-goals:1"]
+    assert outcome["resumed"] == 1
     assert outcome["next_ordinal"] == 2
 
 
@@ -469,10 +540,13 @@ def test_an_active_mission_that_cannot_fund_a_refinement_round_fails_as_a_missio
     evidence = Path(tmp_path) / "evidence"
     assert world.store.get_mission(world.mission.id).status is MissionStatus.ACTIVE
     world.store.close()
-    outcome = _cycle(world, evidence)
-    assert outcome["moved"] == [False]
+    outcome = _cycle(world, evidence, whole_cycle=True)
+    assert outcome["open_goal_requests"] == ["open-goals:1"]
+    assert "PlanningServiceResumed" not in outcome["events"], "an unfundable round is not opened"
+    assert not outcome["intents"], "nothing was dispatched"
     assert outcome["status"] is MissionStatus.FAILED
     assert outcome["stop_reason"] == str(MissionStopReason.BUDGET_EXHAUSTED)
     assert "planning_failure" not in outcome["report"], "it did not fail at planning"
-    assert outcome["report"]["detail"]["phase"] == "compound_refinement"
+    # 片 B：规划轮由通用的 ``_resume_planning_services`` 开，阶段名随之改为它的。
+    assert outcome["report"]["detail"]["phase"] == "planning_service_resume"
     assert "MissionFailed" in outcome["events"]

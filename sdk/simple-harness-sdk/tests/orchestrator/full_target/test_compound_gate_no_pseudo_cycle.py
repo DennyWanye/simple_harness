@@ -700,53 +700,6 @@ def test_validate_delta_says_when_it_could_not_check_preconditions() -> None:
     assert DeltaProblemKind.NOT_CHECKED in report.kinds
 
 
-def test_validate_delta_says_when_it_could_not_check_reducibility() -> None:
-    env, _, _, bundle = outer_only()
-    report = validate_delta(
-        bundle.delta,
-        bundle.network,
-        BUDGET,
-        network=bundle.network,
-        methods={"gate.outer": outer_method()},
-        snapshot=env.snapshot(),
-        predicates=env.predicates,
-    )
-    assert any(
-        "reducibility" in problem.detail for problem in report.of_kind(DeltaProblemKind.NOT_CHECKED)
-    )
-
-
-def test_a_compound_no_method_can_refine_is_not_reducible() -> None:
-    env, _, _, bundle = outer_only()
-    report = validate_delta(
-        bundle.delta,
-        bundle.network,
-        BUDGET,
-        network=bundle.network,
-        registry=env.registry,
-        methods={"gate.outer": outer_method()},
-        snapshot=env.snapshot(),
-        predicates=env.predicates,
-    )
-    assert DeltaProblemKind.NOT_REDUCIBLE in report.kinds
-
-
-def test_registering_a_method_for_the_child_makes_it_reducible() -> None:
-    env, _, _, bundle = outer_only()
-    env.admit(inner_method())
-    report = validate_delta(
-        bundle.delta,
-        bundle.network,
-        BUDGET,
-        network=bundle.network,
-        registry=env.registry,
-        methods={"gate.outer": outer_method()},
-        snapshot=env.snapshot(),
-        predicates=env.predicates,
-    )
-    assert DeltaProblemKind.NOT_REDUCIBLE not in report.kinds
-
-
 def test_a_refuted_precondition_is_classified_not_just_reported() -> None:
     from agent_orchestrator.planning.htn.validation import PreconditionClass
 

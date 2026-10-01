@@ -71,13 +71,16 @@ def _ledger(loop, mission_id: str) -> dict[str, int]:
 
 
 async def _slow_entrances(loop, mission) -> list[bool]:
-    """§7.1 列出的每个"何时再规划"入口各敲一次（不跑执行器）。"""
+    """§7.1 列出的每个"何时再规划"入口各敲一次（不跑执行器）。
+
+    HTN 精简片 B：原专用入口"展开未细化目标"已删除，"计划里有目标还没有做法"现在
+    由 ``collect_triggers`` 里的通用请求负责，所以这里少敲一个入口、不少一条路径。
+    """
 
     current = loop.store.get_mission(mission.id)
     return [
         collect_triggers(loop, current),
         loop._resume_planning_services(current),
-        await loop._refine_open_compounds(current),
         await loop._retry_deferred_planning(),
         await loop._retry_deferred_repair(),
     ]

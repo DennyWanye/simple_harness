@@ -1,3 +1,12 @@
+最后更新：2026-10-01 夜 CST（HTN 精简改造 片 B：中间目标，SDK opt.115）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版与 `中间目标判据-试验结论.md`；逐步记录见同目录 `HTN-片B-实施记录.md`。
+- **目标类型带层级，层数上限由类型结构保证**：`TaskTypeSpec.refinement_level`（只有目标类型能有；不带层级的类型正文与哈希不变）。做法注册检查（`planning/htn/registry._check_structure`）：做法的目标类型在第 L 层时，它里面的子目标必须是更深一层的类型，否则以 `UNBOUNDED_RECURSION` 拒收——同层、更浅、没有层级的都不行，互相嵌套出环在注册时就被拒。不另写层数计数器。Host（`deskpet/orchestration/hierarchical.planning_world`）注册 `desktop.user-goal`（0 层）、`desktop.sub-goal-1`、`desktop.sub-goal-2`；两个子目标类型不声明判据、不声明端口。
+- **交给中间目标的要求保持原编号**：中间目标的类型不声明判据，它负责哪几条要求由上级做法用链接交给它，编号与用户要求相同。注册检查拒收"链接到子目标步骤却换了编号"的做法。
+- **中间目标的做法：覆盖完整、归属唯一**（秩序检查，两处同一口径）：提做法时（`planning_method_proposal._coverage_problems`，问题以 `SUBGOAL_COVERAGE` 开头逐条列出）与计划提交时（`planning/htn/completion_scopes.compile_completion_scopes`）。漏了交给它的要求、链接了没交给它的要求、有步骤没落到任何要求上，都拒收。
+- **"目标还没有做法"是通用请求的一种触发源**：`RepairTriggerSource.GOAL_UNREFINED`；`planning_repair_requests.open_goal_triggers`（由 `collect_triggers` 每轮调用）在当前计划有目标没有做法时记一条 `PlanningRepairRequested`，幂等键 `open-goals:<计划版本号>`，请求里只有事实（哪几个目标、各是什么类型），影响范围只写"要新做的工作"。规划器在其中任一目标上提交做法即了结；计划到了别的版本，旧版本的请求由系统了结（`SYSTEM_SUPERSEDED`）。同一计划版本只问一次。主循环专用入口 `_refine_open_compounds`、事件 `HierarchicalRefinementRequested`、内存标记 `_refinement_rounds`、`CommitService.record_refinement_requested` 全部删除。
+- **写做法的材料**（`HierarchicalDispatch.method_proposal_context`）：`criterion_evidence` 在类型声明的要求之外加上分给这个目标实例的要求（带用户原文）；新增 `subgoal_types`——比这个目标更深一层的子目标类型（类型引用、层级、参数）。规划器提示词（当前这一份，原地修改）补了相应的事实与秩序说明和一个带子目标的完整示例，写明"是否需要中间目标由你判断"。
+- **删掉一条过时规则**：计划预检的"可约性"检查（库里没有做法的子目标 → 整份计划结构无效，`DeltaProblemKind.NOT_REDUCIBLE`）。规划器现在可以自己为目标提做法，没有库做法的子目标只是规划的前沿。
+- 验证：见实施记录"测试"一节。
+
 最后更新：2026-10-01 晚 CST（HTN 精简改造 片 A：编排 Agent 判断 + 自己提做法 + 审阅闸门，SDK opt.114）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版；逐步记录见同目录 `HTN-片A-实施记录.md`。
 - **选做法、提做法都由规划器判断**：程序只按能力与类型把跑不了的做法筛掉（`planning/htn/method_selection.filter_candidates`、`HierarchicalDispatch.method_candidates`），每个还没有做法的目标都开一轮规划器。删掉两条程序代答（只有一个候选时直接替它采用、同一组候选问过一次就回"无变更"）、选择策略档位与选择调用账本、部署配置里的选择策略项。非模型故障的原地重做保留，来源如实标为 `system_infrastructure_retry`（`planning_selection.infrastructure_retry`）。
 - **方法合成器的运行路径整条删除**：发起、收回复、重问、合成轮次记录、"跳过规划器"记录、"合成成功多给一次规划机会"全部删掉；"要不要新做法"的四个程序判定（需要做法的目标清单、空规划器跳过、值得合成的拒绝分类、取证是否饱和）一并删掉。做法草案的解码与结构检查（纯函数）保留，规划器这条路在用；合成器提示词模板与角色清单留到片 C。

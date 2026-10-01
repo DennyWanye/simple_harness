@@ -43,6 +43,8 @@ EVENT_TRIGGER_MAP: dict[str, RepairTriggerSource] = {
     "runtimeunavailable": RepairTriggerSource.RUNTIME_UNAVAILABLE,
     "requirements_update": RepairTriggerSource.REQUIREMENTS_UPDATE,
     "requirementsupdated": RepairTriggerSource.REQUIREMENTS_UPDATE,
+    "goal_unrefined": RepairTriggerSource.GOAL_UNREFINED,
+    "goalunrefined": RepairTriggerSource.GOAL_UNREFINED,
 }
 
 

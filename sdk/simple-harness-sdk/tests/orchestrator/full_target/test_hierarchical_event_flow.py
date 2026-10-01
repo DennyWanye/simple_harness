@@ -77,10 +77,13 @@ from agent_orchestrator.orchestrator import hierarchical_dispatch as module  # n
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
     ARTIFACT_MERGE_NOT_APPLICABLE,
     MANAGEMENT_NOT_APPLICABLE,
-    REFINEMENT_REQUESTED,
     SERVICE_INTENT_REHANDED_OFF,
     CommitService,
     MissionSpec,
+)
+from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: E402
+    ADDRESSED as PLANNING_REPAIR_ADDRESSED,
+    REQUESTED as PLANNING_REPAIR_REQUESTED,
 )
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
@@ -1368,7 +1371,11 @@ NEW_EVENT_TYPES = frozenset(
         ROOT_REVIEW_UNREADABLE,
         ROOT_REVIEW_CUT_BUDGET_SPENT,
         MANAGEMENT_NOT_APPLICABLE,
-        REFINEMENT_REQUESTED,
+        # HTN 精简片 B：原专用细化入口的 ``HierarchicalRefinementRequested`` 已删除，
+        # "计划里有目标还没有做法"改走通用规划请求，它留下的是下面三种事件。
+        PLANNING_REPAIR_REQUESTED,
+        "PlanningServiceResumed",
+        PLANNING_REPAIR_ADDRESSED,
         SERVICE_INTENT_REHANDED_OFF,
         # P2.3k / N3: the legacy artifact merge the Mission Judge does not run on a
         # hierarchical Mission, written down once with what the tree kept instead.
@@ -1493,6 +1500,10 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     ``_request_method_synthesis`` / ``_create_synthesizer_intent`` /
     ``_collect_synthesizer`` 三处询问随之消失；新增 ``_planning_still_owed``
     （任务是否还欠着规划）一处。
+
+    2026-10-01 HTN 精简片 B（计数 23→22）：第十七处 ``_refine_open_compounds`` 整条删除，
+    "计划里有目标还没有做法"改由 ``planning_repair_requests.open_goal_triggers`` 记一条通用
+    规划请求（它经 ``collect_triggers`` 拿到的已经是分层调度，不再询问模式）。
     """
 
     del tmp_path
@@ -1501,7 +1512,7 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     from agent_orchestrator.orchestrator import event_handler
 
     source = inspect.getsource(event_handler)
-    assert source.count("self._new_mode(mission)") == 23
+    assert source.count("self._new_mode(mission)") == 22
     assert "is_hierarchical(mission)" in inspect.getsource(event_handler.Orchestrator._new_mode)
 
 

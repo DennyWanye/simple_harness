@@ -144,9 +144,15 @@ def review_reply(verdict: str = "ACCEPT", *, limitation: str = "") -> str:
 @asynccontextmanager
 async def assured_loop(root: Path, provider: Any, *, key: str = "assured-loop", approve_method_policy: bool = True,
                        library: tuple[Any, ...] = (), success_criteria: tuple[str, ...] = ("the report is written",),
+                       env_factory: Any = None, root_type: str = "plan.goal", host_policies: bool = False,
                        **config: Any):
     """``library`` methods are registered the way a deployment registers its own: admitted,
-    with no trial scope — the review gate is not about them."""
+    with no trial scope — the review gate is not about them.
+
+    ``env_factory`` / ``root_type`` swap in another planning world (sub-goal types, more
+    criteria).  ``host_policies`` makes :func:`run_until` stand in for the Host's policy
+    projector: before every cycle it approves the "new method" review policy for each goal
+    of the plan that has none yet, the way the desktop Host does after a plan commit."""
     cfg = OrchestratorConfig(evidence_root=Path(root) / "root", max_concurrency=3,
                              test_timeout_seconds=60, **config)
 
@@ -165,13 +171,13 @@ async def assured_loop(root: Path, provider: Any, *, key: str = "assured-loop", 
             idempotency_key=key, allowed_tools=TOOLS,
             budget=Budget(max_tokens=2_000_000, max_attempts=12),
             orchestration_semantics_version="hierarchical"))
-        env = _env(mission.id)
-        binding = task_binding(env, "plan.goal", task_id=ROOT_TASK, obligation=ROOT_DUTY,
+        env = (env_factory or _env)(mission.id)
+        binding = task_binding(env, root_type, task_id=ROOT_TASK, obligation=ROOT_DUTY,
                                parameters={"subject": "alpha"})
         htn = HtnStore(loop.store)
         ObligationStore(loop.store).register(
             Obligation(obligation_id=ROOT_DUTY, mission_id=mission.id,  # type: ignore[arg-type]
-                       requirement_refs=("req-1",), goal_signature_id="plan.goal"),
+                       requirement_refs=("req-1",), goal_signature_id=root_type),
             recursion_fuel=8)
         loop.commit.admit_obligation_demand(
             mission.id, ROOT_DUTY, principal=PRINCIPAL.principal_id,  # type: ignore[arg-type]
@@ -195,17 +201,35 @@ async def assured_loop(root: Path, provider: Any, *, key: str = "assured-loop", 
         env.semantics = htn
         loop.install_hierarchical(planning=env)
         auto_grant(loop)
+        world = SimpleNamespace(loop=loop, store=loop.store, commit=loop.commit, mission=mission,
+                                env=env, provider=provider, htn=htn, host_policies=host_policies,
+                                approved_policies=set())
         if approve_method_policy:
-            requirements_ref, subject_ref, mapping = lossless_planning_subject_mapping(
-                loop.commit, mission_id=mission.id, task_id=ROOT_TASK)
-            loop.commit.approve_assurance_check_policy(
-                tenant_id=TENANT, mission_id=mission.id,
-                command_id="host-check-policy:method-plan:" + ROOT_TASK, principal=PRINCIPAL,
-                requirements_ref=requirements_ref, planning_subject=subject_ref, purpose="METHOD_PLAN",
-                candidate_mapping=mapping, approval_source="HOST_LOSSLESS_AUTO")
+            approve_method_policies(world)
         await loop._try_planner_intent(mission.id, ordinal=1)
-        yield SimpleNamespace(loop=loop, store=loop.store, commit=loop.commit, mission=mission,
-                              env=env, provider=provider, htn=htn)
+        yield world
+
+
+def approve_method_policies(world: Any) -> None:
+    """What the Host's projector does: the lossless METHOD_PLAN policy for every goal Task."""
+
+    from agent_orchestrator.assurance.codec import AssuranceError
+
+    for binding in world.htn.list_task_semantics(world.mission.id, form="compound"):
+        task_id = str(binding.task_id)
+        if task_id in world.approved_policies:
+            continue
+        try:
+            requirements_ref, subject_ref, mapping = lossless_planning_subject_mapping(
+                world.commit, mission_id=world.mission.id, task_id=task_id)
+        except AssuranceError:
+            continue  # nothing to review a method for this goal against (yet)
+        world.commit.approve_assurance_check_policy(
+            tenant_id=TENANT, mission_id=world.mission.id,
+            command_id="host-check-policy:method-plan:" + task_id, principal=PRINCIPAL,
+            requirements_ref=requirements_ref, planning_subject=subject_ref, purpose="METHOD_PLAN",
+            candidate_mapping=mapping, approval_source="HOST_LOSSLESS_AUTO")
+        world.approved_policies.add(task_id)
 
 
 def event_types(world: Any) -> list[str]:
@@ -220,6 +244,8 @@ async def run_until(world: Any, done, *, cycles: int = 400) -> bool:
     for _ in range(cycles):
         if done(world):
             return True
+        if getattr(world, "host_policies", False):
+            approve_method_policies(world)
         await world.loop._cycle()
         await asyncio.sleep(0.01)
     return done(world)

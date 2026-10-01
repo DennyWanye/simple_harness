@@ -288,10 +288,19 @@ class TaskTypeSpec:
     preconditions: tuple[Any, ...] = ()
     effect_identity: str | None = None
     domain: str | None = None
+    #: 目标类型在第几层（HTN 精简 片 B）。做法里只能放**更深一层**的子目标，所以分解的层数
+    #: 上限就是注册了几层类型，不需要另写计数器。``None`` = 这个类型不参与分层。
+    refinement_level: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.task_type_ref, VersionedRef):
             raise ContractError("task_type.task_type_ref must be a VersionedRef")
+        if self.refinement_level is not None:
+            level = self.refinement_level
+            if isinstance(level, bool) or not isinstance(level, int) or not 0 <= level <= 8:
+                raise ContractError("task_type.refinement_level must be an integer from 0 to 8")
+            if enum_of(TaskForm, self.form, "task_type.form") is not TaskForm.COMPOUND:
+                raise ContractError("only a compound task type sits on a refinement level")
         object.__setattr__(self, "form", enum_of(TaskForm, self.form, "task_type.form"))
         if not isinstance(self.goal_signature, GoalSignature):
             raise ContractError("task_type.goal_signature must be a GoalSignature")
@@ -412,6 +421,8 @@ class TaskTypeSpec:
             "preconditions": [item.to_json() for item in self.preconditions],
             "effect_identity": self.effect_identity,
             "domain": self.domain,
+            # written only when set: an unlevelled type keeps the exact body it had
+            **({} if self.refinement_level is None else {"refinement_level": self.refinement_level}),
         }
 
     @classmethod
@@ -436,6 +447,7 @@ class TaskTypeSpec:
                 "preconditions",
                 "effect_identity",
                 "domain",
+                "refinement_level",
             ),
         )
 
@@ -484,6 +496,7 @@ class TaskTypeSpec:
             preconditions=parse_conditions(data.get("preconditions", ()), f"{name}.preconditions"),
             effect_identity=data.get("effect_identity"),
             domain=data.get("domain"),
+            refinement_level=data.get("refinement_level"),
         )
 
 
@@ -1845,6 +1858,41 @@ def _check_structure(
                 "every step of this recursive method re-expands its own goal type; no "
                 "expansion makes progress",
             )
+
+    # 分层（片 B）：目标类型声明了层级时，做法里的子目标必须是更深一层的类型。层数上限
+    # 因此就是注册了几层类型；互相嵌套出环（第 1 层 → 第 2 层 → 第 1 层）在这里拒收。
+    # 这是有界展开的秩序检查，不判断"该不该再拆一层"。
+    owner = policy.task_types.resolve(method.goal_type_ref)
+    if owner is not None and owner.refinement_level is not None:
+        handed_down = {
+            link.child_step: link for link in method.composition.criterion_links
+            if link.child_step is not None
+            and link.child_criterion_id is not None
+            and link.child_criterion_id != link.parent_criterion_id
+        }
+        for step_spec in method.steps:
+            child = policy.task_types.resolve(step_spec.task_type_ref)
+            if child is None or child.form is not TaskForm.COMPOUND:
+                continue
+            if child.refinement_level is None or child.refinement_level <= owner.refinement_level:
+                refuse(
+                    RejectionCode.UNBOUNDED_RECURSION,
+                    f"step {step_spec.local_id!r} is a goal of type {step_spec.task_type_ref.id!r} "
+                    f"(level {child.refinement_level}); a method for a level-"
+                    f"{owner.refinement_level} goal may only contain goals of a deeper level, "
+                    "otherwise nothing bounds how deep the decomposition goes",
+                )
+            renamed = handed_down.get(step_spec.local_id)
+            if renamed is not None:
+                # 交给子目标的要求保持原编号：子目标按"分给它的要求"审，换了编号审阅员
+                # 就看不到用户的原话，两条要求也无法交给同一个子目标。
+                refuse(
+                    RejectionCode.MALFORMED_DEFINITION,
+                    f"criterion {renamed.parent_criterion_id!r} is handed to the sub-goal step "
+                    f"{step_spec.local_id!r} as {renamed.child_criterion_id!r}; a requirement "
+                    "handed to a sub-goal keeps its identifier (write the same id as "
+                    "child_criterion_id)",
+                )
 
     # Acyclic partial order, over declared ORDER plus the ordering DATA implies.
     pairs = [(order.before, order.after) for order in method.ordering]

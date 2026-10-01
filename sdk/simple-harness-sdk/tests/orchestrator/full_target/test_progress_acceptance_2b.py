@@ -43,6 +43,7 @@ from agent_orchestrator.contracts import MissionStatus  # noqa: E402
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
 from agent_orchestrator.graph.eligibility import ReadinessReason  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
+from agent_orchestrator.orchestrator.planning_repair_requests import collect_triggers  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
@@ -52,10 +53,12 @@ from agent_orchestrator.testing.fixtures import (  # noqa: E402
 )
 
 #: 主编排再规划的全部入口留下的痕迹；FAST 路径上一个都不应出现。
+#: HTN 精简片 B：专用细化入口（``HierarchicalRefinementRequested``）已删除，"目标还没有
+#: 做法"改走通用请求，痕迹是请求 / 恢复 / 了结三种事件。
 PLANNING_TRACES = (
-    "HierarchicalRefinementRequested",
     "PlanningServiceResumed",
     "PlanningRepairRequested",
+    "PlanningRepairAddressed",
     "MethodSynthesisRoundRecorded",
     "PlanningRejected",
 )
@@ -349,7 +352,9 @@ def test_a_branch_that_needs_structural_planning_does_not_block_the_independent_
 
     async def body(loop, mission):
         tasks = _by_type_loop(loop, mission.id)
-        assert await loop._refine_open_compounds(mission) is True  # SLOW：请求原细化入口
+        # SLOW：片 B 起"目标还没有做法"走通用请求——先记请求，再为它开一轮规划。
+        assert collect_triggers(loop, mission) is True
+        assert loop._resume_planning_services(loop.store.get_mission(mission.id)) is True
         in_flight = [i for i in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
                      if i.mission_id == mission.id and i.kind == "plan"]
         assert len(in_flight) == 1
@@ -358,8 +363,9 @@ def test_a_branch_that_needs_structural_planning_does_not_block_the_independent_
         assert len(loop.store.list_attempts(tasks["plan.leaf"])) == 1
         assert loop.store.list_attempts(tasks["plan.subgoal"]) == []  # 复合目标不起 Worker
         assert loop.store.list_attempts(tasks["plan.review"]) == []
-        # 同一修订上再问一次不产生第二个规划轮。
-        assert await loop._refine_open_compounds(loop.store.get_mission(mission.id)) is False
+        # 同一修订上再问一次不产生第二条请求，也不产生第二个规划轮。
+        assert collect_triggers(loop, loop.store.get_mission(mission.id)) is False
+        assert loop._resume_planning_services(loop.store.get_mission(mission.id)) is False
         assert _plan_intent_count(loop.store, mission.id) == 1
 
     _open_loop(world, tmp_path, body)

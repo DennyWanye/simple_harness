@@ -75,7 +75,6 @@ HDDL_FRAGMENT = "strips-typed-partial-order"
 class DeltaProblemKind(StrEnum):
     """One value per class of semantic defect.  Structural ones keep their own kinds."""
 
-    NOT_REDUCIBLE = "not_reducible"
     PORT_UNBINDABLE = "port_unbindable"
     PRECONDITION_FALSE = "precondition_false"
     PRECONDITION_UNKNOWN = "precondition_unknown"
@@ -140,7 +139,6 @@ class DeltaReport:
     refinement_report: ProjectionReport
     preconditions: tuple[PreconditionVerdict, ...] = ()
     unbound_ports: tuple[tuple[str, str], ...] = ()
-    irreducible_occurrences: tuple[OccurrenceId, ...] = ()
     pending_compounds: tuple[str, ...] = ()
     structural_check_complete: bool = False
     decomposition_complete: bool = False
@@ -227,7 +225,11 @@ def validate_delta(
     now_ms: int | None = None,
     taskgraph_contract: bool = False,
 ) -> DeltaReport:
-    """Reducibility, port bindability, precondition class, root coverage and size.
+    """Port bindability, precondition class, root coverage and size.
+
+    片 B（2026-10-01）：此前这里还有一条"可约性"检查——计划里的子目标如果库里一个做法都
+    没有，就判整份计划结构无效（"之后什么都改变不了它"）。规划器现在可以自己为目标提做法，
+    没有库做法的子目标只是规划的前沿，这条检查删除；``registry`` 不再被读取。
 
     Every optional argument is an input the check *needs*; without it the matching
     check reports ``NOT_CHECKED`` rather than passing.  A report that silently
@@ -279,75 +281,21 @@ def validate_delta(
             )
         )
 
-    irreducible = _check_reducibility(delta, merged, registry, problems)
     unbound = _check_ports(delta, merged, problems)
     verdicts = _check_preconditions(delta, methods, snapshot, predicates, problems, now_ms=now_ms)
     _check_coverage(delta, merged, problems, pending_roots=frozenset(pending) if taskgraph_contract else frozenset())
-    del catalog
+    del catalog, registry
     return DeltaReport(
         problems=tuple(sorted(problems, key=lambda item: (str(item.kind), item.detail))),
         projection_report=projection_report,
         refinement_report=refinement_report,
         preconditions=verdicts,
         unbound_ports=unbound,
-        irreducible_occurrences=irreducible,
         pending_compounds=pending,
         structural_check_complete=not any(problem.kind in {ProblemKind.PARTIAL_CHECK, ProblemKind.BOUND_REACHED}
             for problem in (*projection_report.problems, *refinement_report.problems)),
         decomposition_complete=not pending,
     )
-
-
-def _check_reducibility(
-    delta: ProposedPlanDelta,
-    merged: TaskNetworkSnapshot,
-    registry: MethodRegistry | None,
-    problems: list[DeltaProblem],
-) -> tuple[OccurrenceId, ...]:
-    """A compound occurrence no method could ever refine is a dead end, not a frontier.
-
-    Left unrefined on purpose is fine — that is the planning frontier.  Having *no
-    retrievable method at all* for its goal type is different: nothing later in the
-    run can change it, and a plan that contains one can never close.
-    """
-
-    if registry is None:
-        problems.append(
-            DeltaProblem(
-                kind=DeltaProblemKind.NOT_CHECKED,
-                detail="reducibility was not checked: no method registry was supplied",
-            )
-        )
-        return ()
-    irreducible: list[OccurrenceId] = []
-    for spec in delta.occurrences:
-        if spec.form is not TaskForm.COMPOUND:
-            continue
-        if merged.adopted_instance_for(spec.occurrence_id) is not None:
-            continue
-        binding = merged.binding_for_task(spec.task_id)
-        goal_type_id = binding.goal_signature.signature_id
-        offered = [
-            candidate
-            for candidate in registry.method_refs()
-            if (definition := registry.definition(candidate)) is not None
-            and definition.goal_type_ref.id == goal_type_id
-            and registry.retrievable(candidate, mission_id=merged.mission_id)
-        ]
-        if offered:
-            continue
-        irreducible.append(spec.occurrence_id)
-        problems.append(
-            DeltaProblem(
-                kind=DeltaProblemKind.NOT_REDUCIBLE,
-                detail=(
-                    f"compound occurrence {spec.occurrence_id!s} has goal signature "
-                    f"{goal_type_id!r}, for which this mission can retrieve no method"
-                ),
-                subjects=(str(spec.occurrence_id),),
-            )
-        )
-    return tuple(irreducible)
 
 
 def _check_ports(

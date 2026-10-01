@@ -49,7 +49,7 @@ def test_the_current_package_is_paired_with_exactly_this_prompt() -> None:
 def test_every_example_in_the_prompt_decodes() -> None:
     examples = _examples()
     assert [item["decision_type"] for item in examples] == [
-        "REFINE", "PROPOSE_METHOD", "REPAIR", "REQUEST_HUMAN"]
+        "REFINE", "PROPOSE_METHOD", "PROPOSE_METHOD", "REPAIR", "REQUEST_HUMAN"]
     for document in examples:
         PlanningDecisionEnvelopeV1.from_json(document)
     proposal = MethodProposal.from_json(examples[1]["payload"]["method_proposal"])
@@ -77,3 +77,21 @@ def test_the_prompt_no_longer_says_the_program_chooses_or_synthesises() -> None:
     assert "没有替你选" in PROMPT and "PROPOSE_METHOD" in PROMPT
     # a proposed method is adopted only after its independent review passed
     assert "review.outcome=PASSED" in PROMPT and "METHOD_NOT_AUTHORIZED" in PROMPT
+
+
+def test_the_prompt_explains_sub_goals_as_facts_and_order_rules_only() -> None:
+    """片 B：提示词讲清"目标还没有做法"的请求、子目标类型从哪里抄、交给子目标的要求保持
+    原编号、中间目标的做法恰好覆盖分到的要求——都是事实与秩序；要不要拆出中间目标由规划器判断。"""
+    for needed in ("trigger_source 为 GOAL_UNREFINED", "subgoal_types", "SUBGOAL_COVERAGE", "open_goals"):
+        assert needed in PROMPT, needed
+    assert "是否需要中间目标由你判断" in PROMPT
+    # the sub-goal example: a compound step, its requirement handed down under the same id
+    examples = _examples()
+    assert [item["decision_type"] for item in examples] == [
+        "REFINE", "PROPOSE_METHOD", "PROPOSE_METHOD", "REPAIR", "REQUEST_HUMAN"]
+    nested = MethodProposal.from_json(examples[2]["payload"]["method_proposal"]).method
+    compound = [step.local_id for step in nested.steps if str(step.form) == "compound"]
+    assert compound == ["organise"]
+    handed = [(link.parent_criterion_id, link.child_criterion_id)
+              for link in nested.composition.criterion_links if link.child_step == "organise"]
+    assert handed and all(parent == child for parent, child in handed)

@@ -214,7 +214,6 @@ from .action_commits import (
 )
 from .commit_service import (
     GLOBAL_ACCOUNT,
-    REFINEMENT_REQUESTED,
     SERVICE_INTENT_REHANDED_OFF,
     CommitRejected,
     CommitService,
@@ -543,11 +542,6 @@ class Orchestrator:
         self._deferred: dict[str, float] = {}  # task_id → first time it waited for a profile
         # review P0-1: a Planner whose pool is cooling down waits too: mission_id → (since, ordinal)
         self._deferred_planning: dict[str, tuple[float, int]] = DeferredPlanning()
-        #: P2.3d / defect D5-B: the plan revision whose unrefined compounds this
-        #: process has already put to the Planner, per Mission.  One round per
-        #: revision: a successful refinement moves the revision on, and one that
-        #: fails leaves it where it was, so the same question is never asked twice.
-        self._refinement_rounds: dict[str, int] = {}
         #: P2.3f: when this process first saw a service turn blocked on an unknown
         #: Provider outcome, per ``intent_id:replays``.  In memory on purpose: the
         #: bound is a *wait*, and a restarted process starting the wait again costs at
@@ -3703,16 +3697,6 @@ class Orchestrator:
                     continue
                 if await self._start_planning(mission):
                     progressed = True
-            elif await self._refine_open_compounds(mission):
-                busy.add(mission.id)
-                # P2.3d / defect D5-B: a Mission used to be planned exactly once.  A
-                # Planner that proposed a *nested* compound left it at
-                # ``CompoundPhaseChanged{planning_ready, NEEDS_REFINEMENT}`` and nothing
-                # ever asked for a method for it, so its primitives stayed in
-                # ``WAITING_ORDER`` and the Mission stopped with
-                # ``hierarchical_no_dispatchable_work`` — a plan deeper than one level
-                # could be proposed and could never run.
-                progressed = True
         if await self._retry_deferred_planning():
             progressed = True
         if await self._retry_deferred_repair():
@@ -4173,101 +4157,6 @@ class Orchestrator:
                 f"mission {mission.id} stopped in planning: budget_exhausted ({error.dimension})"
             )
         return True
-
-    async def _refine_open_compounds(self, mission: Mission) -> bool:
-        """Ask the Planner for a method for a compound this plan has not refined yet.
-
-        P2.3d / defect D5-B.  ``_start_planning`` is the only caller of
-        ``begin_planning`` and it runs once, while the Mission is CREATED; after the
-        first ``PlanRevisionCommitted`` the Mission is ACTIVE and the Planner was never
-        asked anything again.  §6.3's decomposition is recursive by construction, so a
-        proposal with a nested compound was accepted, recorded as
-        ``NEEDS_REFINEMENT``, and then hung for ever.
-
-        The bound is **one refinement round per plan revision**, which needs no counter
-        of its own: a round that succeeds commits a new revision and a round that does
-        not leaves the revision where it was, so a Planner that cannot refine the goal
-        is asked once and the Mission then goes idle with its stall recorded — rather
-        than circling on the same question.
-        """
-
-        from ..contracts.htn import TaskForm
-
-        new_mode = self._new_mode(mission)
-        if new_mode is None or mission.status in TERMINAL_MISSION:
-            return False
-        if self._has_pending_planning_waits(mission.id):
-            return False
-        active = new_mode.semantics().active_plan_revision(mission.id)
-        if active is None:
-            return False  # nothing is committed yet; ``_start_planning`` owns that
-        revision = int(active.revision)
-        if self._refinement_round_asked(mission.id, revision):
-            return False
-        if any(
-            intent.kind == "plan" and intent.mission_id == mission.id
-            for intent in self.store.list_intents(
-                "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
-            )
-        ):
-            return False  # a planning round is already out; one question at a time
-        try:
-            network = new_mode.network(mission.id)
-        except (GraphIntegrityError, StoreError):
-            return False  # plan integrity is decided on its own path, not here
-        # A compound occurrence with no adopted method instance is one nobody has refined.  ``ReadinessReason``'s
-        # ``NEEDS_REFINEMENT`` is deliberately *not* it — §18.5 constraint 4 makes every
-        # compound answer that, refined or not, so that a legacy status can never walk
-        # one into the Worker path.
-        open_compounds = [
-            spec
-            for spec in network.occurrences
-            if spec.form is TaskForm.COMPOUND
-            and network.adopted_instance_for(spec.occurrence_id) is None
-        ]
-        if not open_compounds:
-            # In memory only: "this revision has nothing open" is a fact this process
-            # can re-derive at any time, and writing an event for every finished plan
-            # would put a row in the log for every cycle of every healthy Mission.  The
-            # *ask*, below, is what needs to outlive the process.
-            self._refinement_rounds[mission.id] = revision
-            return False
-        ordinal = self._next_planning_ordinal(mission.id)
-        # Review P2-5: recorded **before** the intent, so a crash between the two ends
-        # up asking nothing rather than asking twice, and recorded in the log rather
-        # than on this instance, so a resumed Mission reads the same answer.
-        self.commit.record_refinement_requested(
-            mission.id,
-            plan_revision=revision,
-            ordinal=ordinal,
-            open_goals=[str(spec.task_id) for spec in open_compounds],
-        )
-        self._refinement_rounds[mission.id] = revision
-        self._note(
-            f"mission {mission.id}: plan revision {revision} still holds "
-            f"{len(open_compounds)} unrefined compound goal(s); asking the Planner again "
-            f"(ordinal {ordinal})"
-        )
-        return await self._planner_round_on_committed_plan(
-            mission.id, ordinal=ordinal, phase="compound_refinement"
-        )
-
-    def _refinement_round_asked(self, mission_id: str, revision: int) -> bool:
-        """Has this plan revision already been put back to the Planner? (D5-B's bound)
-
-        The in-memory dict is a cache in front of the log, not the answer: it saves
-        reading the events on the cycles where a healthy plan has nothing open, and it
-        is allowed to be empty — a fresh process falls through to the log and gets the
-        same answer the process that wrote it would have given.
-        """
-
-        if self._refinement_rounds.get(mission_id) == revision:
-            return True
-        key = f"{REFINEMENT_REQUESTED}:{mission_id}:refine:{int(revision)}"
-        asked = any(event.idempotency_key == key for event in self.store.list_events(mission_id))
-        if asked:
-            self._refinement_rounds[mission_id] = revision
-        return asked
 
     def _planning_rejections(self, mission_id: str) -> list[dict[str, Any]]:
         """Durable feedback for the next proposal (D3-2'): the recorded rejections."""

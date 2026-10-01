@@ -188,6 +188,9 @@ def compile_completion_scopes(
     reviewed_content: dict[str, set[str]] = {key: set() for key in occurrences}
     local_review_ids: dict[str, set[str]] = {key: set() for key in occurrences}
     linked_leaves: set[str] = set()
+    #: 片 B：occurrence → 上级做法用链接分给它的要求；occurrence → 它的做法往下链接出去的要求。
+    handed_to: dict[str, set[str]] = {key: set() for key in occurrences}
+    handed_on: dict[str, set[str]] = {key: set() for key in occurrences}
     effect_linked: set[str] = set()
     seen_pairs: set[tuple[str, str, str]] = set()
     authoritative_flat = tuple(flattened) or tuple(plan.obligation_coverage)
@@ -277,6 +280,8 @@ def compile_completion_scopes(
                 assert local_parent is not None
                 source_occurrence = local_parent
             leaf_criterion_id = str(item.leaf_criterion_id)
+            handed_on[source_occurrence].add(criterion_id)
+            handed_to[occurrence_id].add(leaf_criterion_id)
             if leaf_criterion_id in content_keys and leaf_criterion_id != criterion_id:
                 raise _fail(
                     f"leaf criterion {leaf_criterion_id!r} collides with another Spec criterion"
@@ -305,6 +310,32 @@ def compile_completion_scopes(
                 f"criterion coverage names {unresolved}, which has no Spec-rooted ancestor link"
             )
         pending = deferred
+
+    # 片 B（秩序：覆盖完整、归属唯一）：要求是上级做法分下来的中间目标，它采用的做法必须恰好
+    # 把这些要求链接下去，每一步都落到某条要求上。漏一条，没被链接的那一步会按它类型的一揽子
+    # 声明去审全部要求；多一条，同一条要求就同时归了两处。
+    roots_set = set(roots)
+    for occurrence_id in sorted(occurrences):
+        if occurrence_id in roots_set or not children[occurrence_id] or not handed_to[occurrence_id]:
+            continue
+        missing = sorted(handed_to[occurrence_id] - handed_on[occurrence_id])
+        if missing:
+            raise _fail(
+                f"SUBGOAL_COVERAGE: goal {occurrence_id!r} was handed {missing} and its method "
+                "links no step to them"
+            )
+        foreign = sorted(handed_on[occurrence_id] - handed_to[occurrence_id])
+        if foreign:
+            raise _fail(
+                f"SUBGOAL_COVERAGE: the method of goal {occurrence_id!r} links {foreign}, which "
+                "were not handed to that goal"
+            )
+        idle = sorted(children[occurrence_id] - linked_leaves)
+        if idle:
+            raise _fail(
+                f"SUBGOAL_COVERAGE: step(s) {idle} of goal {occurrence_id!r} are linked to no "
+                "requirement handed to that goal"
+            )
 
     # Task criteria describe that Task's own review range.  In a multi-node adopted
     # Method they do not replace the Method's parent->leaf coverage mapping.  A

@@ -960,6 +960,8 @@ PLANNER_HIERARCHICAL_V14 = RoleTemplate(
         "  - repair_requests：真实发生的失败和程序算出的影响范围。context 里是事实：哪个事件、"
         "审阅员的全部意见（findings）、这一步第几次失败（step_failures）、连续几次是同样的失败"
         "（consecutive_identical）、已经修过几次和上限。它不是已经执行的修复，也不替你下结论。"
+        "trigger_source 为 GOAL_UNREFINED 的请求说的是另一件事：当前计划里有目标还没有做法"
+        "（context.open_goals 列出是哪几个、各是什么类型），请为它们选做法或提出新做法，一轮处理一个。"
         "unknown_coverage 或 unresolved_operations 没解决时不能声称修复完成。\n"
         "  - human_answers：用户已经回答过的问题。先看这里，答过的不要再问。\n"
         "  - views：九类事实视图（goals、obligations、plans、methods、facts、accepted_results、"
@@ -1017,8 +1019,13 @@ PLANNER_HIERARCHICAL_V14 = RoleTemplate(
         "材料在 method_proposal_contexts 里与 subject_key 对应的那一条 request 中：\n"
         "  goal_type_ref：目标类型，method.goal_type_ref 照抄它；\n"
         "  goal_signature：目标签名，其中 parameter_schema_ref、output_schema_ref、coverage_criteria 要照抄；\n"
-        "  criterion_evidence：每条要求的编号和原文——做法必须让每一条要求都落到某个步骤上；\n"
+        "  criterion_evidence：这个目标要负责的每条要求的编号和原文——做法必须让每一条要求都落到某个步骤上。"
+        "中间目标的 coverage_criteria 是空的，它负责的就是这里列出的、上级做法交给它的要求；\n"
         "  operators：这台机器上真实可用的步骤类型（task_type_ref、参数、输入输出端口、required_capabilities）；\n"
+        "  subgoal_types：这个目标的做法里可以放的子目标类型（没有就是 []）。子目标是一个 form 为 compound 的"
+        "步骤：一组步骤合起来才算完成一部分要求、值得先单独审一次再往下做时，可以把这部分交给一个子目标，"
+        "它自己的做法之后单独规划（系统会用 GOAL_UNREFINED 请求再叫你）。是否需要中间目标由你判断；"
+        "能放的层数由 subgoal_types 决定，列表为空就只能用 operators 里的步骤；\n"
         "  rejected_methods：已有做法各自为什么不适用；\n"
         "  new_method_identity：新做法该用的 method_id 与 method_version（重新提出时版本号会变，照抄）。\n"
         "method 的字段名必须与下面完全一致，不能少、不能改名、不能多写：\n"
@@ -1027,16 +1034,23 @@ PLANNER_HIERARCHICAL_V14 = RoleTemplate(
         "  applicable_when / exploration_assumptions / expected_effects：条件数组，没有就写 []；\n"
         "  required_capabilities：字符串数组，没有就写 []；basis_refs：没有就写 []；\n"
         "  steps：数组，每个步骤恰好六个键：local_id（能看出这一步职责的英文短名）、"
-        "task_type_ref（照抄 operators 里那一条的 {id, version, content_hash}）、form（照抄该类型的 form）、"
+        "task_type_ref（照抄 operators 或 subgoal_types 里那一条的 {id, version, content_hash}）、"
+        "form（照抄该类型的 form）、"
         "arguments（对象：参数名或输入端口名 → 值表达式；值表达式只有五种："
         "{\"op\":\"parameter\",\"name\":目标参数名}、{\"op\":\"output\",\"step\":上游 local_id,\"port\":上游输出端口名}、"
         "{\"op\":\"constant\",\"value\":…}、{\"op\":\"object\",\"fields\":{…}}、{\"op\":\"array\",\"items\":[…]}）、"
-        "required_capabilities（照抄该类型的）、obligation_relation（写 refines_parent）；\n"
+        "required_capabilities（照抄该类型的；子目标步骤写 []）、obligation_relation（写 refines_parent）。"
+        "子目标步骤的 arguments 按 subgoal_types 里该类型的 parameters 写，"
+        "用 {\"op\":\"constant\",\"value\":\"…\"} 写清这个子目标自己要达成什么；\n"
         "  ordering：[{\"before\":local_id,\"after\":local_id}]，必须无环，没有先后就写 []；\n"
         "  composition：恰好四个键：criterion_links（数组，每条四个键：parent_criterion_id（照抄 "
-        "coverage_criteria 里的一条）、child_step、child_criterion_id、evidence_requirement"
+        "criterion_evidence 里的一个编号）、child_step、child_criterion_id、evidence_requirement"
         "（一句话说明凭什么算覆盖））、outputs（没有就写 {}）、finalizer_step（收尾步骤的 local_id 或 null）、"
-        "independent_review_required 固定写 true。coverage_criteria 里每一条都要有链接。\n"
+        "independent_review_required 固定写 true。criterion_evidence 里每一条都要有链接。"
+        "child_step 是子目标步骤时，child_criterion_id 必须与 parent_criterion_id 相同"
+        "（要求原样交给子目标，一个子目标可以接多条）。"
+        "为中间目标写做法时，只能链接 criterion_evidence 里列出的要求，一条不能少、一条不能多，"
+        "每个步骤至少被一条要求链接。\n"
         "\n子结构字段（逐项写全；某个列表写不全就让它为 []，空列表永远合法）：\n"
         "  - 引用四元组：kind、id、semantic_revision（整数）、content_hash，整个对象从 visible_refs 照抄。"
         "reason_refs、wait_for 是这种对象的数组。\n"
@@ -1087,6 +1101,30 @@ PLANNER_HIERARCHICAL_V14 = RoleTemplate(
         '"outputs":{},"finalizer_step":"deliver","independent_review_required":true},"basis_refs":[]},'
         '"rationale":"collect 取得结果，deliver 真正送出并出具回执，两条要求各落在一步上。"}},'
         '"uncertainties":[],"alternatives":[],"replan_triggers":[]}\n'
+        "提出一个带子目标的新做法（前两条要求交给子目标 organise，第三条由 summarise 完成）：\n"
+        '{"schema_version":1,"decision_type":"PROPOSE_METHOD","subject_key":"subject-root",'
+        '"rationale":"前两份材料要先整理并单独审过，再据此写总结。","reason_refs":[],"assumptions":[],'
+        '"payload":{"method_proposal":{"method":{"schema_version":1,"method_id":"proposed-89abcdef0123456789abcdef",'
+        '"method_version":1,"goal_type_ref":{"id":"dom.goal","version":1,"content_hash":"__HASH__"},'
+        '"parameter_schema_ref":{"id":"dom.goal.params","version":1,"content_hash":"__HASH__"},'
+        '"output_schema_ref":{"id":"dom.goal.outputs","version":1,"content_hash":"__HASH__"},'
+        '"applicable_when":[],"exploration_assumptions":[],'
+        '"steps":[{"local_id":"organise","task_type_ref":{"id":"dom.sub-goal-1","version":1,"content_hash":"__HASH__"},'
+        '"form":"compound","arguments":{"goal":{"op":"constant","value":"整理资料：提取规则并逐条核对引用"}},'
+        '"required_capabilities":[],"obligation_relation":"refines_parent"},'
+        '{"local_id":"summarise","task_type_ref":{"id":"dom.deliver","version":1,"content_hash":"__HASH__"},'
+        '"form":"primitive","arguments":{"subject":{"op":"parameter","name":"subject"}},'
+        '"required_capabilities":["dom.send"],"obligation_relation":"refines_parent"}],'
+        '"ordering":[{"before":"organise","after":"summarise"}],"required_capabilities":[],"expected_effects":[],'
+        '"composition":{"criterion_links":[{"parent_criterion_id":"c-user-1","child_step":"organise",'
+        '"child_criterion_id":"c-user-1","evidence_requirement":"子目标完成后规则清单已写出"},'
+        '{"parent_criterion_id":"c-user-2","child_step":"organise","child_criterion_id":"c-user-2",'
+        '"evidence_requirement":"子目标完成后核对结果已写出"},'
+        '{"parent_criterion_id":"c-user-3","child_step":"summarise","child_criterion_id":"c-summary",'
+        '"evidence_requirement":"summarise 步骤写出的总结逐条概括了规则"}],'
+        '"outputs":{},"finalizer_step":"summarise","independent_review_required":true},"basis_refs":[]},'
+        '"rationale":"整理与核对合成一个中间目标先审，总结在它之后。"}},'
+        '"uncertainties":[],"alternatives":[],"replan_triggers":[]}\n'
         "用后继步骤修复：\n"
         '{"schema_version":1,"decision_type":"REPAIR","subject_key":"subject-step-1",'
         '"rationale":"已完成的这一步引用了旧版资料，用同一类型的后继步骤按新版重做。","reason_refs":[],'
@@ -1108,7 +1146,8 @@ PLANNER_HIERARCHICAL_V14 = RoleTemplate(
         "例如 /uncertainties/0/affects 表示第 1 条 uncertainties 的 affects 字段），detail 说明错在哪里。"
         "planning_rejected 里是历次被拒的原因。新做法被拒时 problems 是逐条的问题清单："
         "以拒绝码开头的（例如 PORT_UNAVAILABLE、UNKNOWN_TASK_TYPE、ROOT_COVERAGE_GAP、ORDERING_CYCLE、"
-        "METHOD_IDENTITY_TAKEN、PUBLISH_SOURCE_AMBIGUOUS）是注册检查的原话，只改它点名的引用或形状——"
+        "METHOD_IDENTITY_TAKEN、PUBLISH_SOURCE_AMBIGUOUS、SUBGOAL_COVERAGE、UNBOUNDED_RECURSION）"
+        "是注册检查的原话，只改它点名的引用或形状——"
         "输入端口名必须是该步骤类型声明的，{\"op\":\"output\"} 引用的端口必须是上游类型声明的输出端口，"
         "criterion_links 与 ordering 只能引用你自己 steps 里的 local_id——其余保持不变。"
         "METHOD_NOT_AUTHORIZED 表示你要采用的做法还没有通过独立审阅。"

@@ -234,6 +234,7 @@ class Env:
         effect_identity: str | None = None,
         domain: str | None = None,
         set_port: bool = False,
+        level: int | None = None,
     ) -> TaskTypeSpec:
         parameter_schema = f"{identifier}.params"
         self.register_schema(parameter_schema, parameters)
@@ -284,6 +285,7 @@ class Env:
             preconditions=parse_conditions(list(preconditions), "preconditions"),
             effect_identity=effect_identity,
             domain=domain,
+            refinement_level=level,
         )
         self.catalog.register(spec)
         return spec

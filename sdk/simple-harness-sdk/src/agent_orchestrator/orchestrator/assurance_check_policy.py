@@ -443,10 +443,38 @@ def planning_subject_criteria(store: Any, mission_id: str, binding: Any, require
 
     One definition for the three readers that must agree — the policy approval, the
     lossless mapping a deployment derives for it, and the METHOD_PLAN review package:
-    the requirements criteria this goal's signature covers.
+    the requirements criteria this goal's signature covers, plus the ones the current
+    plan handed to this goal instance (a sub-goal's type declares none of its own).
     """
     covered = set(binding.goal_signature.coverage_criteria)
+    covered.update(assigned_criterion_ids(store, mission_id, str(binding.task_id)))
     return tuple(item for item in requirements.criteria if item.criterion_id in covered)
+
+
+def assigned_criterion_ids(store: Any, mission_id: str, task_id: str) -> tuple[str, ...]:
+    """分给这个目标实例的要求：它在当前计划完成范围里的内容要求（HTN 精简 片 B）。
+
+    中间目标的类型不声明判据——它负责哪几条要求，是上级做法用链接分给它的，记在当前计划
+    为它推导的完成范围里。目标不在当前计划里（还没有计划、或它不是计划成员）就是空。
+    """
+    active = HtnStore(store).active_plan_revision(mission_id)
+    if active is None:
+        return ()
+    rows = store.connection.execute(
+        "SELECT occurrence_id FROM plan_memberships WHERE mission_id=? AND revision=? "
+        "AND task_id=? LIMIT 2", (mission_id, int(active.revision), str(task_id))).fetchall()
+    if len(rows) != 1:
+        return ()
+    from ..contracts.operation_completion import PlanRevisionPinV1
+    from .operation_completion import OperationCompletionError
+
+    try:
+        scope = OperationCompletionReader(store).read_scope(
+            mission_id, PlanRevisionPinV1(revision=int(active.revision), snapshot_hash=active.snapshot_hash),
+            str(rows[0][0]))
+    except OperationCompletionError:
+        return ()
+    return tuple(scope.content_criterion_ids)
 
 
 def lossless_planning_subject_mapping(

@@ -45,7 +45,7 @@ handled, because §18.5 calls that corruption and not a legacy fallback.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
@@ -2919,6 +2919,15 @@ class HierarchicalDispatch:
                  "evidence_requirement": (synthesis_statement(statements[item["id"]])
                                           if item["id"] in statements else item["evidence_requirement"])}
                 for item in request.criterion_evidence))
+        # 片 B：中间目标的类型不声明判据，它负责的是上级做法分给它的要求（原编号、用户原话）。
+        from .assurance_check_policy import assigned_criterion_ids
+        listed = {item["id"] for item in request.criterion_evidence}
+        handed = [item for item in assigned_criterion_ids(self.store, mission_id, str(goal_task_id))
+                  if item in statements and item not in listed]
+        if handed:
+            request = replace(request, criterion_evidence=tuple(request.criterion_evidence) + tuple(
+                {"id": item, "evidence_requirement": synthesis_statement(statements[item])}
+                for item in handed))
         fresh_id = "proposed-" + content_hash_of({"goal_task_id": str(goal_task_id)})[:24]
         occupied = [int(item.contract.method_version) for item in self.semantics().list_methods()
                     if item.contract.method_id == fresh_id]
@@ -2929,7 +2938,39 @@ class HierarchicalDispatch:
         # its re-ask feedback) say nothing true here.
         for name in ("output_tag", "role_prompt_version", "schema_feedback", "review_feedback"):
             document.pop(name, None)
+        document["subgoal_types"] = self._subgoal_types(world, signature)
         return document
+
+    @staticmethod
+    def _subgoal_types(world: Any, signature: Any) -> list[dict[str, Any]]:
+        """片 B：这个目标的做法里可以放的子目标类型——比它更深一层的那些。
+
+        层数上限由类型的层级保证（注册检查拒收同层或更浅的子目标），这里只是把"能放什么"
+        如实告诉规划器；要不要再拆一层由它判断。目标类型没有层级，或没有更深的类型，就是空。
+        """
+
+        owner = next((spec for spec in world.catalog.task_types()
+                      if spec.goal_signature.signature_id == signature.signature_id
+                      and int(spec.goal_signature.version) == int(signature.version)), None)
+        if owner is None or owner.refinement_level is None:
+            return []
+        rows = []
+        for spec in sorted(world.catalog.task_types(), key=lambda item: (item.refinement_level or 0,
+                                                                         item.task_type_ref.id)):
+            if (spec.form is not TaskForm.COMPOUND or spec.refinement_level is None
+                    or spec.refinement_level <= owner.refinement_level):
+                continue
+            rows.append({
+                "task_type_ref": spec.task_type_ref.to_json(), "form": str(spec.form),
+                "level": int(spec.refinement_level), "statement": spec.goal_signature.statement,
+                "parameter_schema_ref": (None if spec.parameter_schema_ref is None
+                                         else spec.parameter_schema_ref.to_json()),
+                "parameters": [field.to_json() for field in getattr(
+                    None if spec.parameter_schema_ref is None
+                    else world.schemas.resolve(spec.parameter_schema_ref), "fields", ())],
+                "input_ports": [port.port_key for port in spec.input_ports],
+                "output_ports": [port.port_key for port in spec.output_ports]})
+        return rows
 
     # ------------------------------------------------- rejected refinements (P2.3j)
     def retired_methods(self, mission_id: str) -> tuple[dict[str, Any], ...]:
@@ -3382,11 +3423,15 @@ class HierarchicalDispatch:
             now_ms=moment,
         )
 
-    def _publish_source_steps(self, mission_id: str, method: Any) -> list[str]:
+    def _publish_source_steps(self, mission_id: str, method: Any,
+                              share: Collection[str] | None = None) -> list[str]:
         """Publish targets whose ``file:`` criterion is not linked to exactly one step.
 
         The Host puts ``file:X`` in front of every ``action:file_publish.publish:X``
-        (``c-user-<n>`` names the Mission's n-th criterion, as for ``_coarse_file_steps``).
+        (``c-user-<n>`` names the Mission's n-th criterion).
+
+        ``share``（片 B）：这份做法的目标负责的要求编号。给了就只查其中的 ``file:`` 要求——
+        要发布的文件归别的目标或步骤时，这份做法既不该、也不能（覆盖检查会判越界）链接它。
         """
         from .action_commits import parse_action_criterion
 
@@ -3406,7 +3451,10 @@ class HierarchicalDispatch:
             source = f"file:{parsed[2]}"
             if source not in criteria:
                 continue
-            linked = sorted(steps.get(f"c-user-{criteria.index(source) + 1}", ()))
+            source_id = f"c-user-{criteria.index(source) + 1}"
+            if share is not None and source_id not in share:
+                continue
+            linked = sorted(steps.get(source_id, ()))
             if len(linked) != 1:
                 unclear.append(f"{parsed[2]} 链接到 {len(linked)} 个步骤"
                                + (f"（{'、'.join(linked)}）" if linked else ""))

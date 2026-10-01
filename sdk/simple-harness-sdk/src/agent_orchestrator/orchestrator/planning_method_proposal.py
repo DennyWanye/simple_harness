@@ -7,6 +7,7 @@
 * 草案是为这次规划的目标写的（目标签名一致）；
 * 编号不撞车：同一个做法编号与版本已经有不同的定义、或属于别的任务的试用范围，就不能用；
 * 发布来源唯一：任务要求里要发布的文件，它的"写出该文件"要求必须恰好链接到一个步骤；
+* 中间目标的做法恰好覆盖分给这个目标的要求，每一步都落到某条要求上（片 B）；
 * 注册协议的结构检查（端口存在、无环、每条要求都有链接、能力与参数类型等）。
 
 被拒时把每一条可修正的问题原样列出来（``MethodProposalRefused.problems``），规划器据此改。
@@ -66,6 +67,51 @@ def _identity_problems(dispatch: Any, mission_id: str, method: Any) -> list[str]
             f"method_version={next_version} or a new method_id"]
 
 
+def _coverage_problems(dispatch: Any, mission_id: str, binding: Any, method: Any) -> list[str]:
+    """中间目标的做法：恰好覆盖分给这个目标的要求，每一步都落到某条要求上（片 B）。
+
+    秩序检查（覆盖完整、归属唯一），不判断拆得好不好。只管要求是由上级做法分下来的目标；
+    类型自己声明判据的目标（根目标）由注册协议的覆盖检查管。
+    """
+    from .assurance_check_policy import assigned_criterion_ids
+
+    if binding.goal_signature.coverage_criteria:
+        return []
+    assigned = set(assigned_criterion_ids(dispatch.store, mission_id, str(binding.task_id)))
+    if not assigned:
+        return []
+    return subgoal_coverage_problems(
+        assigned, [(link.parent_criterion_id, link.child_step) for link in method.composition.criterion_links],
+        [step.local_id for step in method.steps])
+
+
+def subgoal_coverage_problems(assigned: Any, links: Any, steps: Any) -> list[str]:
+    """``links`` are ``(parent criterion id, step)`` pairs; ``steps`` the method's step names."""
+
+    assigned = {str(item) for item in assigned}
+    linked = {str(parent) for parent, _ in links}
+    answering = {str(step) for _, step in links if step is not None}
+    problems: list[str] = []
+    missing = sorted(assigned - linked)
+    if missing:
+        problems.append(
+            f"SUBGOAL_COVERAGE: requirement(s) {', '.join(missing)} were handed to this goal and "
+            "no step of the method is linked to them; every requirement handed to the goal needs "
+            "a criterion link")
+    foreign = sorted(linked - assigned)
+    if foreign:
+        problems.append(
+            f"SUBGOAL_COVERAGE: requirement(s) {', '.join(foreign)} are not among the ones handed "
+            f"to this goal ({', '.join(sorted(assigned))}); a method answers only for its own goal's share")
+    idle = [str(step) for step in steps if str(step) not in answering]
+    if idle:
+        problems.append(
+            "SUBGOAL_COVERAGE: step(s) " + ", ".join(repr(item) for item in idle) + " are linked to "
+            "no requirement; every step of a sub-goal's method answers for at least one of the "
+            "requirements handed to the goal")
+    return problems
+
+
 def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -> tuple[Any, Any, Any]:
     world = dispatch.require_planning_world()
     if proposals_for(dispatch.store, mission_id, str(subject["task_id"])) >= MAX_METHOD_PROPOSALS_PER_GOAL:
@@ -82,9 +128,14 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
             "GOAL_MISMATCH: method.goal_type_ref must be the goal type of the planning subject "
             f"({binding.goal_signature.signature_id})",))
     problems = _identity_problems(dispatch, mission_id, proposal.method)
+    from .assurance_check_policy import assigned_criterion_ids
+    # 发布来源唯一只查这个目标自己负责的要求：类型声明的，加上上级做法分给这个实例的。
+    share = set(binding.goal_signature.coverage_criteria) | set(
+        assigned_criterion_ids(dispatch.store, mission_id, str(binding.task_id)))
     problems += ["PUBLISH_SOURCE_AMBIGUOUS: " + item + "；每个要发布的文件对应的 file: 要求必须恰好"
                  "链接到一个步骤（写出这个文件的那一步），发布本身由系统完成"
-                 for item in dispatch._publish_source_steps(mission_id, proposal.method)]
+                 for item in dispatch._publish_source_steps(mission_id, proposal.method, share)]
+    problems += _coverage_problems(dispatch, mission_id, binding, proposal.method)
     if problems:
         raise MethodProposalRefused(tuple(problems))
     # Candidate admission mutates only an isolated registry. Persist/install the
