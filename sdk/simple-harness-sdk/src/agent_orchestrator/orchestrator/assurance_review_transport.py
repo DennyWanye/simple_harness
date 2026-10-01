@@ -174,6 +174,31 @@ def operation_task_id(store: Any, mission_id: str, package: Any) -> str:
     return str(row[0])
 
 
+def review_budget_subject(store: Any, mission_id: str, package: Any, owner_task_id: str) -> str:
+    """Whose budget account one assured review is reserved against: the Mission id or a Task id.
+
+    One definition for the two readers that must agree — the invocation writer below and
+    the accounting recovery that later re-binds the reservation.
+
+    * MISSION / MISSION_PLANNING purposes: the Mission.
+    * COMPOSITION (``PARENT_COMPOUND_TASK``): the Mission as well.  A compound goal holds no
+      tokens of its own by design — its share is handed to its steps when it is refined —
+      so reserving on the compound's Task account can never succeed (片 B 真机第 4 局：
+      ``BudgetExhausted … remaining 0``，中间目标永远出不了结论).  The root's final review
+      is funded the same way.
+    * OPERATION_TASK: the operation's own Task — the leaf that prepared it.  The subject's
+      owner Task is the effect owner's Scope Task, usually the root compound, whose budget
+      is 0 by design (real run 2026-09-27: BudgetExhausted on the root account, every round).
+    * everything else: the review's owner Task.
+    """
+    if package.account in {ReviewAccount.MISSION, ReviewAccount.MISSION_PLANNING,
+                           ReviewAccount.PARENT_COMPOUND_TASK}:
+        return mission_id
+    if package.account is ReviewAccount.OPERATION_TASK:
+        return operation_task_id(store, mission_id, package)
+    return owner_task_id
+
+
 def ensure_review_invocation(
     commit: CommitService,
     *,
@@ -213,16 +238,8 @@ def ensure_review_invocation(
         raise AssuranceError("REVIEW_SERVICE_RESERVATION_INVALID")
     owner_task_id = body["subject"]["owner_task_ref"]["id"]
     purpose = body["subject"]["purpose"]
-    if package.account in {ReviewAccount.MISSION, ReviewAccount.MISSION_PLANNING}:
-        account_id = mission_account(mission_id)
-    elif package.account is ReviewAccount.OPERATION_TASK:
-        # The operation's own Task — the leaf that prepared it — as on the legacy
-        # reviewer path.  The subject's owner Task is the effect owner's Scope Task,
-        # usually the root compound, whose budget is 0 by design (real run
-        # 2026-09-27: BudgetExhausted on the root account, every round).
-        account_id = task_account(operation_task_id(commit.store, mission_id, package))
-    else:
-        account_id = task_account(owner_task_id)
+    subject = review_budget_subject(commit.store, mission_id, package, owner_task_id)
+    account_id = mission_account(mission_id) if subject == mission_id else task_account(subject)
     invocation_config = dict(config)
     if "message" not in invocation_config or "agent_config" not in invocation_config:
         raise AssuranceError("REVIEW_RUNTIME_CONFIG_REQUIRED")

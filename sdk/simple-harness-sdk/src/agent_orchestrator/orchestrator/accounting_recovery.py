@@ -66,14 +66,11 @@ def _account_subject(commit, intent, task_id):
             commit, AssuranceReader(commit.store, tenant_id=mission.tenant_id,
                                     mission_id=mission.id), intent.intent_id)
         package = HtnStore(commit.store).get_review_package(binding.to_json()["package_ref"]["id"])
-        if package.account in {ReviewAccount.MISSION, ReviewAccount.MISSION_PLANNING}:
-            return mission.id
-        _require(task_id == binding.to_json()["subject"]["owner_task_ref"]["id"], "review account owner")
-        if package.account is ReviewAccount.OPERATION_TASK:
-            # Same rule as the invocation writer: the operation's producer Task.
-            from .assurance_review_transport import operation_task_id
-            return operation_task_id(commit.store, mission.id, package)
-        return task_id
+        # Same rule as the invocation writer, by the same function.
+        from .assurance_review_transport import review_budget_subject
+        if package.account not in {ReviewAccount.MISSION, ReviewAccount.MISSION_PLANNING}:
+            _require(task_id == binding.to_json()["subject"]["owner_task_ref"]["id"], "review account owner")
+        return review_budget_subject(commit.store, mission.id, package, task_id)
     return intent.mission_id if intent.kind == "manager" else (task_id or intent.mission_id)
 
 
