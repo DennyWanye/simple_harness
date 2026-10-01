@@ -29,7 +29,7 @@ Mission to its ordinary stall.
 HTN 精简片 B（2026-10-01）：主循环里的专用入口 ``_refine_open_compounds`` 已删除。
 "计划里有目标还没有做法"现在由 ``planning_repair_requests.open_goal_triggers``（经
 ``collect_triggers``）记一条通用 ``PlanningRepairRequested``（触发源 ``GOAL_UNREFINED``，
-幂等键 ``open-goals:<计划版本号>``），再由 ``_resume_planning_services`` 开一轮规划器。
+幂等键 ``open-goals:<任务号>:<计划版本号>``），再由 ``_resume_planning_services`` 开一轮规划器。
 本文件测的几件事不变，只是改走这条路：同一计划版本只问一次、重启不重问、预算不够时
 任务可见地停下（阶段名 ``planning_service_resume``）。
 """
@@ -196,8 +196,10 @@ def _ask_round(loop: Orchestrator, mission_id: str) -> bool:
 
 
 def _open_goal_requests(loop: Orchestrator, mission_id: str) -> list[str]:
+    """The requests' keys with the Mission id taken out (``open-goals:<mission>:<revision>``),
+    so the assertions below read as "the request for revision N"."""
     return [
-        str(event.payload.get("source_key"))
+        str(event.payload.get("source_key")).replace(f"{mission_id}:", "")
         for event in loop.store.list_events(mission_id)
         if event.type == REQUESTED
         and str(event.payload.get("source_key", "")).startswith("open-goals:")

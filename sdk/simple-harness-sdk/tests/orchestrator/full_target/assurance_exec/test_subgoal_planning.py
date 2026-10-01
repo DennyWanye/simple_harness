@@ -52,6 +52,7 @@ def _open_goal_context(package: dict) -> dict:
 def test_a_goal_without_a_method_reaches_the_planner_as_a_generic_request_and_is_reviewed_on_its_share(tmp_path):
     contract = inner()
     seen: list[dict] = []
+    package_mission: list[str] = []
 
     def propose(request):
         seen.append(package_of(request))
@@ -62,11 +63,12 @@ def test_a_goal_without_a_method_reaches_the_planner_as_a_generic_request_and_is
             "planner": [refine_step(method_id="sg.outer"), propose, refine_with_step(contract)],
             REVIEWER: [review_of("c-user-1", "c-user-2")]})
         async with assured_loop(tmp_path, provider, library=(outer(),), **WORLD) as world:
+            package_mission.append(world.mission.id)
             assert await run_until(world, lambda w: plan_revision(w) == 2)
 
             # one generic request for the first plan revision; the dedicated entry is gone
             [request] = open_goal_requests(world)
-            assert request.payload["source_key"] == "open-goals:1"
+            assert request.payload["source_key"] == f"open-goals:{world.mission.id}:1"
             assert not events_of(world, "HierarchicalRefinementRequested")
             network = world.loop._new_mode(world.mission).network(world.mission.id)
             part = next(spec for spec in network.occurrences
@@ -82,7 +84,8 @@ def test_a_goal_without_a_method_reaches_the_planner_as_a_generic_request_and_is
 
             # what the Planner was shown when it wrote the sub-goal's method
             package = seen[0]
-            assert [row["source_key"] for row in package["repair_requests"]] == ["open-goals:1"]
+            assert [row["source_key"] for row in package["repair_requests"]] == [
+                f"open-goals:{package_mission[0]}:1"]
             context = _open_goal_context(package)["request"]
             assert context["criterion_evidence"] == [
                 {"id": "c-user-1", "evidence_requirement": STATEMENTS[0]},
@@ -117,7 +120,7 @@ def test_each_plan_revision_asks_once_and_three_levels_are_reached_through_the_s
                                 **WORLD) as world:
             assert await run_until(world, lambda w: plan_revision(w) == 3)
             assert [event.payload["source_key"] for event in open_goal_requests(world)] == [
-                "open-goals:1", "open-goals:2"]
+                f"open-goals:{world.mission.id}:1", f"open-goals:{world.mission.id}:2"]
             assert scopes(world)["sg.part-deeper/deeper"] == ["c-user-1"]
             assert scopes(world)["sg.write/only"] == ["c-user-1"]
     asyncio.run(case())
@@ -204,16 +207,16 @@ def test_a_stale_request_left_pending_is_retired_in_the_loop(tmp_path):
             dispatch = world.loop._new_mode(world.mission)
             goal = open_goal_requests(world)[0].payload["request"]["context"]["open_goals"][0]["task_id"]
             assert record_request(dispatch, world.mission.id, event_type="GoalUnrefined",
-                                  trigger_refs=(goal,), source_key="open-goals:0",
+                                  trigger_refs=(goal,), source_key=f"open-goals:{world.mission.id}:0",
                                   detail={"reason": "goal_has_no_method"}, new_work=(goal,))
             stale = next(row["request_id"] for row in pending_requests(world.store, world.mission.id)
-                         if row["source_key"] == "open-goals:0")
+                         if row["source_key"] == f"open-goals:{world.mission.id}:0")
             await world.loop._cycle()
             retired = [event.payload for event in events_of(world, "PlanningRepairAddressed")
                        if stale in event.payload["repair_request_ids"]]
             assert [item["decision_type"] for item in retired] == ["SYSTEM_SUPERSEDED"]
             assert [row["source_key"] for row in pending_requests(world.store, world.mission.id)] == [
-                "open-goals:1"]
+                f"open-goals:{world.mission.id}:1"]
     asyncio.run(case())
 
 
@@ -222,12 +225,12 @@ def test_a_request_about_an_older_plan_revision_is_retired_by_the_system():
     自己的请求去说，不让两条请求指着同一个目标。别的请求不动。"""
     from agent_orchestrator.orchestrator.planning_repair_requests import superseded_open_goal_requests
 
-    pending = [{"request_id": "r1", "source_key": "open-goals:1"},
-               {"request_id": "r2", "source_key": "open-goals:2"},
+    pending = [{"request_id": "r1", "source_key": "open-goals:m1:1"},
+               {"request_id": "r2", "source_key": "open-goals:m1:2"},
                {"request_id": "r3", "source_key": "event:step-failed"}]
-    assert superseded_open_goal_requests(pending, 2) == ["r1"]
-    assert superseded_open_goal_requests(pending, 3) == ["r1", "r2"]
-    assert superseded_open_goal_requests(pending[2:], 3) == []
+    assert superseded_open_goal_requests(pending, "m1", 2) == ["r1"]
+    assert superseded_open_goal_requests(pending, "m1", 3) == ["r1", "r2"]
+    assert superseded_open_goal_requests(pending[2:], "m1", 3) == []
 
 
 def test_the_first_plan_is_not_asked_for_through_a_request(tmp_path):
@@ -339,4 +342,26 @@ def test_a_sub_goal_whose_review_cannot_be_opened_says_why(tmp_path, monkeypatch
             assert "SOME_REASON" in deferred.payload["reason"]
             assert deferred.payload["goal_type"] == "sg.part"
             assert deferred.task_id == deferred.payload["task_id"]
+    asyncio.run(case())
+
+
+def test_another_missions_request_in_the_same_store_does_not_swallow_this_one(tmp_path):
+    """片 B 真机第 2、3 局：请求的幂等键原先只有"open-goals:<计划版本号>"，没带任务号。同一个库里
+    第一个任务占了"第 1 版"的键之后，后面每个任务的第 1 版请求都撞键、写不进去——规划器永远
+    不会被叫来，循环还每轮自称有进展。单元测试每条用新库，所以只有真机暴露。"""
+    from agent_orchestrator.orchestrator.hierarchical_dispatch import append_hierarchical_event
+
+    async def case():
+        provider = RoleScriptedProvider({"planner": [refine_step(method_id="sg.outer")]})
+        async with assured_loop(tmp_path, provider, library=(outer(), inner()), **WORLD) as world:
+            # an earlier Mission of this store already recorded "its" first-revision request
+            with world.store.transaction():
+                append_hierarchical_event(
+                    world.store, "PlanningRepairRequested", "mission-earlier", key="open-goals:1",
+                    payload={"source_key": "open-goals:1", "request_id": "earlier",
+                             "request": {"trigger_source": "GOAL_UNREFINED"}, "impact": {}})
+            assert await run_until(world, lambda w: open_goal_requests(w))
+            [request] = open_goal_requests(world)
+            assert request.mission_id == world.mission.id
+            assert world.mission.id in request.payload["source_key"]
     asyncio.run(case())

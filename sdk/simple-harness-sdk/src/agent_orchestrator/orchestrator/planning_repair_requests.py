@@ -118,17 +118,23 @@ def stale_evidence_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: 
     return produced
 
 
-#: 片 B：计划里有目标还没有做法 → 每个计划版本一条请求，幂等键是这个前缀加计划版本号。
+#: 片 B：计划里有目标还没有做法 → 每个计划版本一条请求，幂等键是这个前缀加任务号和计划版本号。
+#: 任务号必须在键里：事件的幂等键是全库唯一的，只写版本号的话，同一个库里第一个任务占了
+#: "第 1 版"之后，后面每个任务的第 1 版请求都撞键写不进去（片 B 真机第 2、3 局）。
 OPEN_GOALS_PREFIX = "open-goals:"
 
 
-def superseded_open_goal_requests(pending: Any, plan_revision: int) -> list[str]:
+def open_goals_key(mission_id: str, plan_revision: int) -> str:
+    return f"{OPEN_GOALS_PREFIX}{mission_id}:{int(plan_revision)}"
+
+
+def superseded_open_goal_requests(pending: Any, mission_id: str, plan_revision: int) -> list[str]:
     """待处理的"目标还没有做法"请求里，属于旧计划版本的那些（请求编号）。
 
     这种请求说的是"第 N 版计划里这些目标没有做法"。计划已经到了别的版本，这句话就过时了：
     还开着的目标由新版本自己的请求去说，不让两条请求指着同一个目标。
     """
-    current = OPEN_GOALS_PREFIX + str(int(plan_revision))
+    current = open_goals_key(mission_id, plan_revision)
     return [str(row["request_id"]) for row in pending
             if str(row.get("source_key", "")).startswith(OPEN_GOALS_PREFIX)
             and row.get("source_key") != current]
@@ -150,13 +156,13 @@ def open_goal_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: set[s
         return False
     revision = int(active.revision)
     produced = False
-    for request_id in superseded_open_goal_requests(pending_requests(store, mission.id), revision):
+    for request_id in superseded_open_goal_requests(pending_requests(store, mission.id), mission.id, revision):
         append_hierarchical_event(store, ADDRESSED, mission.id, key="system:" + request_id,
             payload={"decision_id": None, "decision_type": "SYSTEM_SUPERSEDED", "status": "COMMITTED",
                      "subject_key": None, "repair_request_ids": [request_id],
                      "superseded_by_plan_revision": revision})
         produced = True
-    source_key = OPEN_GOALS_PREFIX + str(revision)
+    source_key = open_goals_key(mission.id, revision)
     if source_key in seen:
         return produced
     network = dispatch.network(mission.id)

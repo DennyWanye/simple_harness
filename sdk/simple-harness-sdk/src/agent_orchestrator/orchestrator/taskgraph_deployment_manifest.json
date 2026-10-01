@@ -1,5 +1,5 @@
 {
-  "deployment_id": "7187263037436a645aa3a5f9c1a0d82a8511b67a9a8c08d639bd51d2560d68bc",
+  "deployment_id": "650243582cddc0e0ab1d15ba3ca4c5ae5988aa88e2300bfb385c993fd905e0a5",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -261,7 +261,7 @@
     "agent_orchestrator/orchestrator/planning_method_proposal.py": "b135a0a95c50555df07b36b57054b6c4122a33678fa86af5d946e004768065b8",
     "agent_orchestrator/orchestrator/planning_protocol_binding.py": "af56aa6abeb00490461a1005411822a41225f8fce78d641dd8e038850247c746",
     "agent_orchestrator/orchestrator/planning_repair_continuations.py": "01510b57d3a3deb4259b4676a56398374131487a4b6b0bc8b5bf31960c20016d",
-    "agent_orchestrator/orchestrator/planning_repair_requests.py": "52e44367fe6e8832a16959008f6cde24ed850a4e5c2cef18f3157ac8cfbe4129",
+    "agent_orchestrator/orchestrator/planning_repair_requests.py": "d111e3e660e9fff91cecdfed052466e8fea2159c8c4fa37606b3cc0c1ee5b9a0",
     "agent_orchestrator/orchestrator/planning_retry.py": "1adb463213c21db133c1ba6b437212e82833a85801a8c8c7b0a0b683be696e25",
     "agent_orchestrator/orchestrator/planning_runtime_block.py": "f3d5289af118c9fedb54ebcf95c212c0bd583bce7d848979253106ab7f995a80",
     "agent_orchestrator/orchestrator/planning_selection.py": "e2ae674e5c5bc52cee9415df22fcceb6cc2214c0511d5699dcb27b13f48e9435",
@@ -475,7 +475,7 @@
     "agent_orchestrator/verification/scoped_acceptance.py": "3985c8e4f39dda431c4a1eefe685b4522706929c398f0ad751d7633643186d00",
     "agent_orchestrator/verification/scoped_composition.py": "1f3734a3b0a02364526b2f298939e9dffff54c92a7dbf4bec3cde7f458dec42d",
     "agent_orchestrator/verification/verifier_router.py": "54e77ceeb4c13ab47ab986b6326f84d83d418b66e6c132e05cb2f73dd1186a5d",
-    "agent_orchestrator/version.py": "83dc9bee203f6cb6474f66112047691b6a0bdd1f297e6a8b4aad3227cde2413c",
+    "agent_orchestrator/version.py": "8a65817d159545690e3138f626d20950bb68fad29a097398852107f39b5d89b2",
     "simple_harness/__init__.py": "27bdb10ed441a6b231520cf222a009c75af3635a51b73db54251de6fcec2dd1b",
     "simple_harness/agents/__init__.py": "19ec48c922870a37bc0ad0580c75f97eacc98c59980bab62cd16d96839a03ca6",
     "simple_harness/agents/arp/__init__.py": "9f68be0f87b2fa155f7980bbc9be19dacc008b2f3ec1268b1f36f1ade42d21cf",
@@ -707,7 +707,7 @@
     "simple_harness/tools/runtime_catalog.py": "d5b69cf5bfe81df82cb936e0c6085a2e66e4c597413159ced974b15afb2fbcd2",
     "simple_harness/tools/schema.py": "c582e7b9e9da66428580a2c8495e32a0bd39a6cd250fc42a2aae48d0bdfe39fb",
     "simple_harness/tools/sidecar.py": "40248ff1e49bc3d410bbc852f62591890f358c4fcef80f15cd5c67ed51230393",
-    "simple_harness/version.py": "8b3ea2c260a68eabd6b8f9e6efe614a7a15e56ff3e6b0c1a0eeda85d07ad9d1c",
+    "simple_harness/version.py": "9cf0a56a0095130465be8a272fb4200204a9033d9b6f62fade7ce5872ac18932",
     "simple_harness/workflow/__init__.py": "a94748ba3dc727c9f4cbdb78c21afc356ec4fc4272161dbc291db30af12e8025",
     "simple_harness/workflow/adapters.py": "a412322b8575638206cb03410a1cea2b1c14a30bb6c21f5579c65faa33359032",
     "simple_harness/workflow/checkpoint.py": "df380364085afc819e047998355978c6f2e18c6943ebddace481c722e5298886",
