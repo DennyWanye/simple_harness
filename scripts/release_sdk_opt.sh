@@ -61,8 +61,11 @@ uv run --frozen python -m pytest -q -p no:cacheprovider tests/sdk_adapters/test_
 cd "$REPO"
 git add -A backend/pyproject.toml backend/uv.lock backend/deskpet/sdk_adapters/sdk_candidate.py backend/vendor
 git commit -qm "Host 钉 SDK opt.$NEW"
-if git diff HEAD~2 --name-only | xargs grep -lE "sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA|EC|OPENSSH) PRIVATE" 2>/dev/null; then
-  echo "发现疑似密钥，未推送"; exit 1
+# 密钥扫描：只看这次发布改动且仍存在的文件；"task-<编号>" 里的 sk- 不算（前面不能是字母）。
+HITS=$(git diff HEAD~2 --name-only --diff-filter=d -z \
+  | xargs -0 grep -lE "(^|[^A-Za-z])sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA|EC|OPENSSH) PRIVATE" 2>/dev/null || true)
+if [ -n "$HITS" ]; then
+  echo "发现疑似密钥，未推送："; echo "$HITS"; exit 1
 fi
 git push -q origin main
 git log --oneline -2
