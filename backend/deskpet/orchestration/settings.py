@@ -82,12 +82,6 @@ class OrchestrationSettings:
     # A shadow observation that exceeds this is recorded as a timeout and dropped;
     # the production plan is unaffected.  None means no Host-side bound.
     decision_shadow_timeout_seconds: float | None = None
-    # Assurance 1.1 (plan §13/§16): which new planning-decision Missions take the
-    # assured lane. "on" (the default since the 2026-09-23 verified delivery)
-    # assures every one; "off" is the explicit opt-out that keeps the original
-    # lane. The Host always passes its own selection point, so the SDK's default
-    # selection never decides for a Host Mission.
-    assurance_profile: str = "on"
     # 2026-09-25 user decision: task/session data is kept forever for audit; the Settings
     # page only reminds the user once ``<user_data>/data/agent-orchestrator`` passes this.
     storage_warn_bytes: int = 5 * 1024**3
@@ -102,13 +96,6 @@ class OrchestrationSettings:
     # e.g. "deepseek-ai/DeepSeek-V4.1-Flash").  Declared by the deployment, never guessed:
     # an undeclared echo keeps usage untrusted, which only ever over-counts.
     response_model_aliases: str = ""
-
-
-def _assurance_profile(value: Any) -> str:
-    if not isinstance(value, str):
-        return "on"
-    normalised = value.strip().lower()
-    return normalised if normalised in ("on", "off") else "on"
 
 
 def _thinking(value: Any) -> str:
@@ -201,7 +188,6 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         strict_taskgraph=raw.get("strict_taskgraph", True) is not False,
         decision_mode=_decision_mode(raw.get("decision_mode")),
         decision_shadow_timeout_seconds=_shadow_timeout(raw.get("decision_shadow_timeout_seconds")),
-        assurance_profile=_assurance_profile(raw.get("assurance_profile")),
         storage_warn_bytes=_bounded_int(raw.get("storage_warn_bytes"), 5 * 1024**3, 1024**2, 1024**5),
         deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),
         thinking=_thinking(raw.get("thinking")),

@@ -27,6 +27,7 @@ const LABELS: Record<string, string> = {
   stale_source: "来源已失效", revoked: "已撤销", superseded: "已替代", not_current: "非当前版本",
   verification_passed: "通过交付判定", mission_criteria_unmet: "成功条件未全部满足",
   STRUCTURAL: "结构或执行条件，需实际检查判定", rule_check: "规则检查", document_coverage: "文档覆盖核验",
+  UNCLAIMED: "没有结论指向这一条，由最终审查判定", assurance_review: "最终审查", document_order_check: "引用与资料检查未过",
 };
 const label = (value: unknown) => value == null ? "尚未判定" : LABELS[asText(value)] ? `${LABELS[asText(value)]}（${asText(value)}）` : asText(value);
 const judgmentLabel = (value: unknown): string => {

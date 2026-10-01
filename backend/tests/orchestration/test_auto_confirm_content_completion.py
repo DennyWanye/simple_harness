@@ -3,7 +3,8 @@
 A new Mission waited in CREATED for the person to confirm its completion
 requirements and looked stuck.  Content-only requirements (no ``action:`` criterion)
 are now confirmed by the Host, recorded as HOST_AUTO_PERMISSION; anything with an
-operation, and manual mode, keep the button.
+operation, and manual mode, keep the button.  An operation is a criterion carrying the
+structured ``action:`` prefix — nothing else (片 D 第 4 项，2026-10-02).
 """
 
 from __future__ import annotations
@@ -66,22 +67,20 @@ def test_an_operation_manual_mode_or_an_approved_spec_keeps_the_button():
         assert _run(fake) == 0
 
 
-def test_a_plain_words_publish_criterion_keeps_the_button():
-    # 2026-09-27 真机：「NOTES.md 已发布到授权的发布目录」被当成内容自动确认，发布被静默丢掉。
-    for criteria in (("写 NOTES.md", "NOTES.md 已发布到授权的发布目录"), ("upload report.pdf to the share",),
-                     ("Deploy the site",)):
+def test_only_the_structured_prefix_marks_an_operation():
+    """HTN 精简 片 D 第 4 项（2026-10-02）：一条要求是内容还是操作，只认主 Agent 整理任务时写好的
+    结构化前缀 ``action:``。此前 Host 另用一张词表（发布、上传、发送、deploy……）去猜白话要求
+    是不是操作——那是程序在判语义：写"说明如何发布"的文档任务会被挡住等人点确认。词表删除；
+    白话要求与别的文字要求一样按内容确认，它满足与否由最终审查判。"""
+    import deskpet.orchestration.service as service_module
+
+    assert not hasattr(service_module, "_OPERATION_WORDS")
+    for criteria in (("写 NOTES.md", "NOTES.md 里说明如何发布到授权的发布目录"),
+                     ("upload report.pdf to the share",), ("Deploy the site",)):
         fake, calls = _service(criteria=criteria)
-        assert _run(fake) == 0
-        assert not [c for c in calls if c[0] == "approve_operation_completion_spec"]
-    # the workspace's own statements are checked too, not only the mission's raw lines
-    fake, calls = _service()
-    original = fake._call
-
-    def call(method, *args):
-        result = original(method, *args)
-        if method == "snapshot":
-            result["snapshot"]["operation_workspace"]["criteria"][1]["statement"] = "把结果推送到群里"
-        return result
-
-    fake._call = call
+        assert _run(fake) == 1
+        assert [c for c in calls if c[0] == "approve_operation_completion_spec"]
+    # the structured prefix keeps the button wherever it stands in the list
+    fake, calls = _service(criteria=("写 NOTES.md", "  action:file_publish.publish:NOTES.md"))
     assert _run(fake) == 0
+    assert not [c for c in calls if c[0] == "approve_operation_completion_spec"]

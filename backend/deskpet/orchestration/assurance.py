@@ -89,16 +89,13 @@ def install_assurance(service: Any, orchestrator: Any) -> Any:
         return None
     from .hierarchical import root_requirements
 
-    profile = service.settings.assurance_profile
     notices: deque[dict[str, Any]] = service._assurance_notices
 
     def select_profile(spec: Any) -> Any:
-        # The single Host selection point: "on" assures every planning-decision
-        # Mission of this tenant (the default); "off" is the explicit opt-out that
-        # keeps the original lane. Both are passed, so the SDK default never decides.
-        if profile == "on":
-            return AssurancePolicy()
-        return None
+        # The single Host selection point: every planning-decision Mission of this
+        # tenant is assured. There is no opt-out (片 D 第 6 项, 2026-10-02): the lane
+        # without Assurance was only reachable through one, and it is gone.
+        return AssurancePolicy()
 
     def notify(payload: Mapping[str, Any]) -> None:
         # At-least-once local status transport: the change pump re-reads the
@@ -111,7 +108,7 @@ def install_assurance(service: Any, orchestrator: Any) -> Any:
         tenant_id=service.tenant_id,
         principal=service._principal,
         requirements=lambda mission, spec: root_requirements(mission, service._principal),
-        select_profile=select_profile if profile in ("on", "off") else None,
+        select_profile=select_profile,
         notify_transport=notify,
         host_fingerprint=host_fingerprint(),
         # Projects each frozen Scope's check policy right before its first review

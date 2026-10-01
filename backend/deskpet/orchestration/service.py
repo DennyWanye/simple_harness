@@ -23,7 +23,6 @@ from collections import deque
 import json
 import logging
 import os
-import re
 import secrets
 import sys
 from collections.abc import Awaitable, Callable, Iterator, Mapping
@@ -53,14 +52,6 @@ from .runtime_profile import (
 from .settings import OrchestrationSettings
 
 logger = logging.getLogger(__name__)
-
-#: Words that make a completion criterion an outward operation rather than content,
-#: so auto mode leaves its confirmation to the person (user decision 2026-09-26).
-#: Over-matching only means one more confirmation click; under-matching loses an effect.
-_OPERATION_WORDS = re.compile(
-    r"发布|上传|发送|部署|推送|上线|发到|寄出|提交到|publish|upload|deploy|send\b|post\s+to|push\s+to",
-    re.IGNORECASE,
-)
 
 TENANT = "local-desktop"
 WORKSPACE_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list")
@@ -912,11 +903,12 @@ class OrchestrationService:
         behalf, never as a person's click.  Anything with an operation, manual
         mode, or an unreadable mode keeps the button.
 
-        2026-09-27: "an operation" is not only an ``action:`` line.  A person writes
-        "NOTES.md 已发布到授权的发布目录" in plain words; confirming that as content
-        silently dropped the publish.  A criterion that names an outward operation
-        (:data:`_OPERATION_WORDS`) keeps the button — waiting once too often is
-        visible, confirming an operation away is not.
+        2026-10-02 (HTN 精简 片 D 第 4 项): "an operation" is exactly a criterion with
+        the structured ``action:`` prefix, which the main Agent writes when it puts the
+        task together.  The Host used to guess from words (发布、上传、deploy……) whether
+        a plain sentence meant an operation; that was the program judging meaning, and
+        it is gone.  A plain-words criterion is content, and whether it is met is the
+        final review's conclusion.
         """
         if self._permission_mode_reader is None or self._control is None or self._orchestrator is None:
             return 0
@@ -934,8 +926,7 @@ class OrchestrationService:
         for (mission_id,) in rows:
             mission = store.get_mission(str(mission_id))
             if mission is None or any(
-                str(c).strip().startswith("action:") or _OPERATION_WORDS.search(str(c))
-                for c in mission.success_criteria
+                str(c).strip().startswith("action:") for c in mission.success_criteria
             ):
                 continue
             try:
@@ -948,8 +939,6 @@ class OrchestrationService:
             ref = dict(workspace["requirements_ref"])
             key = f"{mission.id}:{ref.get('revision')}:{ref.get('content_hash')}"
             if key in self._auto_completion_done:
-                continue
-            if any(_OPERATION_WORDS.search(str(c.get("statement") or "")) for c in workspace.get("criteria") or ()):
                 continue
             content = [str(c["id"]) for c in workspace.get("criteria") or () if c.get("required") is True]
             if not content:
@@ -1249,7 +1238,6 @@ class OrchestrationService:
             "test_scenario": self._test_scenario,
             "diagnostics_available": self._diagnostics_available,
             "assurance_available": self._assurance is not None,
-            "assurance_profile": self.settings.assurance_profile,
             "assurance_notices": len(self._assurance_notices),
             "storage_over_warn": bool(self._storage.over_warn),
             "context_profiles": self._context_profiles(),

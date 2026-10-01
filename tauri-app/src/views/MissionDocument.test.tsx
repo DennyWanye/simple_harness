@@ -86,6 +86,17 @@ describe("P33-45 formal document report", () => {
     expect(screen.getByText("实际判定：满足 · 文档覆盖核验（document_coverage）")).toBeTruthy();
   });
 
+  it("names the final review as the judge of a text requirement and the order check when it fails", () => {
+    setup({ ...document, result: "verification_passed", criteria: [
+      { text: "逐条概括全部规则", verdict: "PASS", final_judgment: { met: true, judge: "assurance_review" } },
+      { text: "末尾附核对结论", verdict: "UNCLAIMED", final_judgment: { met: false, judge: "assurance_review" } },
+      { text: "引用原文", verdict: "FAIL", final_judgment: { met: false, judge: "document_order_check", verdict: "FAIL" } },
+    ] });
+    expect(screen.getByText("实际判定：满足 · 最终审查（assurance_review）")).toBeTruthy();
+    expect(screen.getByText("覆盖归类：没有结论指向这一条，由最终审查判定（UNCLAIMED）")).toBeTruthy();
+    expect(screen.getByText("实际判定：未满足 · 引用与资料检查未过（document_order_check）")).toBeTruthy();
+  });
+
   it("shows readable criteria/source labels and keeps complete raw records collapsed", () => {
     setup({ ...document, criteria: [{ ordinal: 1, text: "世界事实", verdict: "FAIL", excluded_claim_ids: ["claim0"] }], diagnostics: [{ reason: "raw diagnostic detail" }] });
     expect(screen.getByText("世界事实")).toBeTruthy();

@@ -39,10 +39,10 @@ async def test_assured_lane_reads_through_fixed_caller_and_survives_rebuild(orch
     from agent_orchestrator.storage.assurance_store import AssuranceStore
     from agent_orchestrator.storage.htn_store import HtnStore
 
-    service = await _service(orchestration_root, principal, assurance_profile="on")
+    service = await _service(orchestration_root, principal)
     try:
         status = service.status()
-        assert status["assurance_available"] is True and status["assurance_profile"] == "on"
+        assert status["assurance_available"] is True
         created = await handle(service, "mission_create", {"request_id": "c1", **notes_request("assured-ws")})
         assert created["payload"]["ok"] is True, created
         mission_id = created["payload"]["data"]["mission_id"]
@@ -102,34 +102,28 @@ async def test_assured_lane_reads_through_fixed_caller_and_survives_rebuild(orch
 
 
 @pytest.mark.asyncio
-async def test_profile_off_keeps_the_original_lane_and_refuses_assured_reads(orchestration_root, principal):
+async def test_there_is_no_opt_out_of_the_assured_lane(orchestration_root, principal):
+    """HTN 精简 片 D 第 6 项（2026-10-02）：不走保证通道的旧审阅路径，在产品里只剩"把保证通道
+    关掉"这一个入口（设置项 ``assurance_profile: off``）。保证通道是默认且唯一的通道，开关删除：
+    设置里不再有这一项，写了也不起作用，新任务一律走保证通道。"""
+    import dataclasses
+
     from agent_orchestrator.storage.assurance_store import AssuranceStore
-
-    # Explicit opt-out (the default is "on" since the verified 2026-09-23 delivery).
-    service = await _service(orchestration_root, principal, assurance_profile="off")
-    try:
-        assert service.status()["assurance_profile"] == "off"
-        assert service.status()["assurance_available"] is True
-        created = await handle(service, "mission_create", {"request_id": "c1", **notes_request("plain-ws")})
-        mission_id = created["payload"]["data"]["mission_id"]
-        assert AssuranceStore(service._orchestrator.store).lane(mission_id) == "COMPLETION_V1"
-        response = await handle(service, "mission_assurance_snapshot", {"request_id": "s1", **_snapshot(mission_id)})
-        assert response["payload"]["ok"] is False
-        assert response["payload"]["error_code"] == "PROFILE_UNBOUND", response
-        assert response["payload"]["assurance_error"]["code"] == "PROFILE_UNBOUND"
-    finally:
-        await service.close()
-
-
-def test_settings_parse_assurance_profile():
     from deskpet.orchestration.settings import load_settings
 
-    # Default ON since the verified 2026-09-23 delivery; only an explicit "off" opts out.
-    assert load_settings({}).assurance_profile == "on"
-    assert load_settings({"assurance_profile": "ON"}).assurance_profile == "on"
-    assert load_settings({"assurance_profile": "off"}).assurance_profile == "off"
-    assert load_settings({"assurance_profile": "shadow"}).assurance_profile == "on"
-    assert load_settings({"assurance_profile": 1}).assurance_profile == "on"
+    assert "assurance_profile" not in {f.name for f in dataclasses.fields(OrchestrationSettings)}
+    settings = load_settings({"assurance_profile": "off"})
+    service = OrchestrationService(orchestration_root, settings, provider=notes_provider(missions=2),
+                                   principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    await service.start()
+    try:
+        status = service.status()
+        assert status["assurance_available"] is True and "assurance_profile" not in status
+        created = await handle(service, "mission_create", {"request_id": "c1", **notes_request("plain-ws")})
+        mission_id = created["payload"]["data"]["mission_id"]
+        assert AssuranceStore(service._orchestrator.store).lane(mission_id) == "ASSURANCE_1_1"
+    finally:
+        await service.close()
 
 
 @pytest.mark.asyncio
@@ -139,7 +133,7 @@ async def test_check_policy_projection_is_replay_safe_and_needs_a_frozen_scope(o
     freezes a Scope there is nothing to project; the projection never raises."""
     from deskpet.orchestration.assurance import project_check_policies
 
-    service = await _service(orchestration_root, principal, assurance_profile="on")
+    service = await _service(orchestration_root, principal)
     try:
         created = await handle(service, "mission_create", {"request_id": "c1", **notes_request("policy-ws")})
         assert created["payload"]["ok"] is True, created
@@ -166,7 +160,7 @@ async def test_check_policy_projector_is_installed_into_the_sdk_review_runtime(o
     now calls the Host projector right before preparing a review."""
     from deskpet.orchestration.assurance import project_check_policies
 
-    service = await _service(orchestration_root, principal, assurance_profile="on")
+    service = await _service(orchestration_root, principal)
     try:
         runtime = service._orchestrator._assurance_reviews
         projector = runtime._check_policy_projector
