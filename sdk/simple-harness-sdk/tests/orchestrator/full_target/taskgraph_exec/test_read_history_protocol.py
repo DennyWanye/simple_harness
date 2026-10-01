@@ -82,7 +82,9 @@ def test_repeated_enable_reads_original_receipt_without_renewing_permission(tmp_
             receipt = world.graph.policy.enable_taskgraph_contract(mission, 'enable:tg-enable-replay')
             assert receipt == store.get_receipt('enable:tg-enable-replay')
             assert store.last_event_seq(mission) == before
-            assert world.provider.calls == 0  # Original deterministic method selection.
+            # 片 A（2026-10-01）起做法由规划器选：建好第一份计划恰好问了规划器一次；
+            # 重复启用只读回原回执，不会再多问。
+            assert world.provider.calls == 1
     asyncio.run(case())
 
 

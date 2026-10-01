@@ -25,6 +25,7 @@ class TaskGraphConvergenceWakeups:
         Restart needs no in-memory registration. Outstanding leases/retries are
         recovered by the existing pump. BLOCKED deliveries require explicit repair;
         a periodic wake must not silently give a failed consumer five more retries.
+        A job whose Mission has ended is not woken at all.
         """
         _integer(now_ms, "now_ms")
         if type(limit) is not int or not 1 <= limit <= 256:
@@ -34,6 +35,11 @@ class TaskGraphConvergenceWakeups:
             jobs = db.execute(
                 "SELECT j.* FROM taskgraph_convergence_jobs j "
                 "WHERE j.mission_id=? AND j.state IN ('FENCED','WAITING','READY') "
+                # 2026-10-01：已终止的任务不会再提交计划，它的收敛作业没有可以等的东西。真机库里
+                # 一个已取消任务的作业被这样唤醒了一万三千多次，每次都重读它的全部执行会话，
+                # 把主循环拖到每轮一两分钟。作业与围栏原样留着，只是不再安排唤醒。
+                "AND EXISTS (SELECT 1 FROM missions m WHERE m.mission_id=j.mission_id "
+                "AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED')) "
                 "AND NOT EXISTS (SELECT 1 FROM taskgraph_followups f WHERE f.mission_id=j.mission_id "
                 "AND f.kind='CONVERGE' AND f.subject_key=j.job_id AND f.delivery_state<>'ACKED') "
                 "ORDER BY j.updated_at,j.job_id", (mission_id,)).fetchall()
