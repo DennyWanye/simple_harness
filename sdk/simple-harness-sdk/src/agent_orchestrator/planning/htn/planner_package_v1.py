@@ -109,10 +109,9 @@ class PlanView(_View):
     pending_primitives: tuple[Any, ...]
     order_summary: Mapping[str, Any]
     data_summary: Mapping[str, Any]
-    rejected_refinements: tuple[Any, ...]
     _required: ClassVar[frozenset[str]] = frozenset(
         {"plan_revision", "adopted_methods", "open_compounds", "pending_primitives",
-         "order_summary", "data_summary", "rejected_refinements"}
+         "order_summary", "data_summary"}
     )
 
 
@@ -335,7 +334,6 @@ def collect_planner_views(legacy: Mapping[str, Any]) -> dict[str, tuple[Any, ...
         plan_revision=int(plan.get("plan_revision", 0)), adopted_methods=tuple(plan.get("adopted_methods", ())),
         open_compounds=tuple(plan.get("open_compound_goals", ())), pending_primitives=tuple(plan.get("committed_primitives", ())),
         order_summary={"root_occurrences": tuple(plan.get("root_occurrences", ()))}, data_summary={},
-        rejected_refinements=tuple(legacy.get("rejected_refinements", ())),
     )
     methods = tuple(
         MethodView(
@@ -343,7 +341,7 @@ def collect_planner_views(legacy: Mapping[str, Any]) -> dict[str, tuple[Any, ...
             goal_signature={"id": str(row.get("goal_signature_id", ""))}, registry_status=str(row.get("registry_status", "UNKNOWN")),
             applicability={}, precondition_summary={}, capabilities=tuple(str(x) for x in row.get("required_capabilities", ())),
             schema={"parameter_schema_ref": row.get("parameter_schema_ref")}, steps=tuple(row.get("steps", ())),
-            rejected_reasons=tuple(x for x in ("root_review",) if row.get("rejected_by_root_review")) + tuple(x for x in ("read_only_leaf",) if row.get("rejected_by_read_only_leaf")),
+            rejected_reasons=tuple(dict(x) for x in row.get("rejected_reasons", ()) if isinstance(x, Mapping)),
         ) for row in legacy.get("method_library", ()) if isinstance(row, Mapping)
     )
     facts = tuple(
@@ -359,7 +357,7 @@ def collect_planner_views(legacy: Mapping[str, Any]) -> dict[str, tuple[Any, ...
     )
     failures = tuple(
         FailureView(source=str(row.get("source", "planning")), reason=str(row.get("reason", row.get("status", ""))), attempt_review_ref=dict(row.get("attempt_review_ref", {})), repeat_count=int(row.get("repeat_count", 1)), last_seen=row.get("last_seen"), findings=tuple(row.get("findings", ())))
-        for row in (*legacy.get("planning_rejected", ()), *legacy.get("failures", ()), *legacy.get("rejected_refinements", ())) if isinstance(row, Mapping)
+        for row in (*legacy.get("planning_rejected", ()), *legacy.get("failures", ())) if isinstance(row, Mapping)
     )
     operators = legacy.get("operators", {}) if isinstance(legacy.get("operators", {}), Mapping) else {}
     available = {str(x) for x in operators.get("available_capabilities", ())}

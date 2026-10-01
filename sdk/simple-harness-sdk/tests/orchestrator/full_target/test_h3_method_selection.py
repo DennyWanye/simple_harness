@@ -74,34 +74,8 @@ def test_h3_policy_matrix_and_new_protocol_default() -> None:
         evidence_epoch=2,
         policy=MethodSelectionPolicyV1(mode=SelectionPolicyMode.ALWAYS_MODEL),
     )
-    legacy = select_method(
-        [_candidate("a"), _candidate("b")],
-        plan_revision=1,
-        evidence_epoch=2,
-        policy=MethodSelectionPolicyV1(mode=SelectionPolicyMode.ALWAYS_MODEL),
-        legacy=True,
-    )
     assert deterministic.route is SelectionRoute.DETERMINISTIC
     assert always.route is SelectionRoute.MODEL_REFINE
-    assert legacy.route is SelectionRoute.DETERMINISTIC
-
-
-def test_h3_legacy_entry_keeps_cardinality_behavior_unchanged() -> None:
-    """The production adapter's legacy fence ignores a new-policy override."""
-
-    for candidates, expected in (
-        ((), SelectionRoute.EVIDENCE_OR_SYNTHESIS),
-        ((_candidate("one"),), SelectionRoute.DETERMINISTIC),
-        ((_candidate("a"), _candidate("b")), SelectionRoute.DETERMINISTIC),
-    ):
-        result = select_method(
-            candidates,
-            plan_revision=1,
-            evidence_epoch=2,
-            policy=MethodSelectionPolicyV1.new_protocol(),
-            legacy=True,
-        )
-        assert result.route is expected
 
 
 def test_h3_selection_identity_is_idempotent_across_restart() -> None:

@@ -351,25 +351,6 @@ def test_a_non_format_rejection_does_not_reuse_the_request_id(tmp_path) -> None:
     )
 
 
-def test_a_legacy_round_never_gains_a_format_retry(tmp_path) -> None:
-    """A legacy Mission has no §34 request row, so the ladder is untouched for it."""
-
-    store = Store.open(tmp_path / "orchestrator.db")
-    mission = _mission(store, protocol="legacy-plan-proposal-v1")
-    orchestrator = _orchestrator(store)
-    intent = _intent("legacy-planner-2", ordinal=2, mission_id=mission.id)
-
-    assert (
-        orchestrator._planning_request_retry_id(
-            intent=intent, mission=mission, new_mode=_Mode()
-        )
-        is None
-    )
-    assert orchestrator._format_retry_exhausted(
-        intent=intent, reason="proposal_unreadable", mission=mission
-    ) is False
-
-
 def test_the_unreadable_refusal_reports_the_retry_it_still_has(tmp_path) -> None:
     """The durable refusal says whether this round was the retry or the end of it."""
 
@@ -517,7 +498,6 @@ def test_the_admission_context_reports_this_rounds_remaining_format_retries(
             "max_planning_attempts": 3,
             "max_root_review_repairs": 1,
             "method_selection_policy": "MODEL_ON_MULTIPLE",
-            "hierarchical_repair_enabled": True,
         },
     )()
 
@@ -642,13 +622,22 @@ def test_the_http_field_reaches_the_mission_spec_and_its_binding(tmp_path) -> No
         PLANNING_DECISION_V1
     )
 
-    # An omitted key is the legacy default and writes no binding at all.
-    legacy = spec_from_request(
+    # An omitted key is the same default; only a flat-mode charter writes no binding.
+    default = spec_from_request(
         "tenant",
-        {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-legacy"},
+        {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-default"},
     )
-    legacy_mission, _ = service.create_mission(legacy)
-    assert planning_protocol_for_mission(store, legacy_mission.id) is None
+    default_mission, _ = service.create_mission(default)
+    assert planning_protocol_for_mission(store, default_mission.id)["protocol_version"] == (
+        PLANNING_DECISION_V1
+    )
+    flat = spec_from_request(
+        "tenant",
+        {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-flat",
+         "orchestration_semantics_version": "legacy"},
+    )
+    flat_mission, _ = service.create_mission(flat)
+    assert planning_protocol_for_mission(store, flat_mission.id) is None
 
     # A present-but-unknown value is refused at the door, as a real error.
     with pytest.raises(MissionRequestError):
@@ -669,34 +658,6 @@ def test_the_http_field_reaches_the_mission_spec_and_its_binding(tmp_path) -> No
                 "planning_protocol_version": 4,
             },
         )
-
-
-def test_a_legacy_round_never_writes_a_planning_decision_event(tmp_path) -> None:
-    """§37: a legacy Mission must gain no ``PlanningDecision*`` event at all.
-
-    The legacy reply is evaluated through the *same* collector the new protocol uses,
-    so the isolation is the branch inside it and not a missing call.
-    """
-
-    store = Store.open(tmp_path / "orchestrator.db")
-    mission = _mission(store, protocol="legacy-plan-proposal-v1")
-    orchestrator = _orchestrator(store)
-    intent = _intent("legacy-planner-1", ordinal=1, mission_id=mission.id)
-    object.__setattr__(intent, "mission_id", mission.id)
-    store.insert_intent(intent)
-
-    # A legacy Mission has no request row, so the new-protocol collector refuses to
-    # evaluate at all — which is exactly the isolation being pinned.
-    from agent_orchestrator.contracts.models import ContractError
-
-    with pytest.raises(ContractError):
-        _evaluate(orchestrator, mission, intent, _UNREADABLE)
-
-    assert [
-        event
-        for event in store.list_events(mission.id)
-        if event.type.startswith("PlanningDecision")
-    ] == []
 
 
 @pytest.mark.parametrize(

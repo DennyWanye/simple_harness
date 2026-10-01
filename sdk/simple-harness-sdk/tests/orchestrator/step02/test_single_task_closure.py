@@ -59,6 +59,7 @@ def spec(key="m1", **overrides):
         workspace_seed=SEED,
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 

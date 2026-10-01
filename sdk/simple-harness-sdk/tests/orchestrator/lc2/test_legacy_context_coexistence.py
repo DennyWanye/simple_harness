@@ -374,6 +374,7 @@ def test_old_completed_mission_and_new_capacities_survive_cold_open(tmp_path):
                     idempotency_key="completed",
                     allowed_tools=("workspace_write_file",),
                     budget=Budget(max_tokens=4_000_000, max_attempts=12),
+                    orchestration_semantics_version="legacy",
                 )
             )
             await asyncio.wait_for(orch.run(), 15)
@@ -505,6 +506,7 @@ def test_old_mission_without_dispatch_has_no_proven_historical_default(tmp_path)
                     tenant_id="lc2",
                     idempotency_key="no-prior-dispatch",
                     budget=Budget(max_tokens=4_000_000, max_attempts=12),
+                    orchestration_semantics_version="legacy",
                 )
             )
             assert orch._selected_profile(mission.id) is None

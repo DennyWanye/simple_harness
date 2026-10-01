@@ -183,6 +183,7 @@ def test_new_synthesizer_request_cannot_reuse_source_success_as_own_verification
                 budget=Budget(max_tokens=200_000, max_attempts=12),
                 workspace_seed=COMPARE_SEED, untrusted_sources=("docs/",),
                 synthesis=COMPARE_SYNTHESIS,
+                orchestration_semantics_version="legacy",
             ))
             await asyncio.wait_for(orch.run(), 60)
             assert orch.commit.domain_for(mission.id).id == "code-v1"

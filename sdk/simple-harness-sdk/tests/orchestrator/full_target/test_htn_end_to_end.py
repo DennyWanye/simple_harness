@@ -152,7 +152,7 @@ from agent_orchestrator.planning.htn.observers import (  # noqa: E402
     unavailable,
 )
 from agent_orchestrator.planning.htn.planner_package import (  # noqa: E402
-    HIERARCHICAL_PACKAGE_VERSION,
+    HIERARCHICAL_DECISION_PACKAGE_VERSION,
     applicability_reports,
     hierarchical_planner_package,
     method_library,
@@ -164,7 +164,12 @@ from agent_orchestrator.storage import acceptance_receipt_schema, schema  # noqa
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
 from agent_orchestrator.storage.store import Store, StoreError  # noqa: E402
-from agent_orchestrator.testing.fixtures import plan_revision_proposal_step  # noqa: E402
+from scripted_plans import (  # noqa: E402
+    apply_scripted_plan,
+    approve_content_only_completion,
+    detach_completion_protocol,
+    plan_revision_proposal_step,
+)
 
 TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
 ROOT_TASK = "task-root"
@@ -297,7 +302,7 @@ class World:
         return _proposal_text(self.contract, **changes)
 
     def plan(self, text: str | None = None, *, command_id: str = "cmd-a"):
-        return self.dispatch.apply_planner_reply(
+        return apply_scripted_plan(self.dispatch,
             self.mission.id,
             text if text is not None else self.reply(),
             principal=self.principal,
@@ -401,7 +406,12 @@ def build_world(
     tools: tuple[str, ...] = TOOLS,
     max_runtime_seconds: int | None = None,
     task_max_tokens: int | None = None,
+    bound: bool = False,
 ) -> World:
+    """``bound=True`` keeps the Mission on its planning-protocol binding and confirms a
+    CONTENT_ONLY completion mapping — the world a real ``Orchestrator`` loop accepts.
+    The default detaches it (see ``scripted_plans.detach_completion_protocol``)."""
+
     path = Path(tmp_path) / name
     service = CommitService(Store.open(path), task_max_tokens=task_max_tokens)
     mission, _ = service.create_mission(
@@ -414,6 +424,8 @@ def build_world(
             max_runtime_seconds=max_runtime_seconds,
         )
     )
+    if mode == HIERARCHICAL_SEMANTICS and not bound:
+        detach_completion_protocol(service.store, mission.id)
     env = _env(mission.id)
     contract = _outer()
     receipt = env.admit(contract)
@@ -439,6 +451,8 @@ def build_world(
         HtnStore(service.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
+        if bound:
+            approve_content_only_completion(service, mission, binding, command_id=f"approve-{key}")
     # The real loop calls this before it creates the first Planner intent, and
     # PLANNING is the state the activation rule moves *out of* — so a fixture that
     # skipped it would be testing a transition the deployment never makes.  Both modes,
@@ -1131,8 +1145,8 @@ def test_the_package_states_its_own_version_and_output_contract(world: World) ->
     package = hierarchical_planner_package(
         world.mission, world.network(), registry=world.env.registry
     )
-    assert package["package_version"] == HIERARCHICAL_PACKAGE_VERSION
-    assert package["output_contract"] == "<plan_revision_proposal>{json}</plan_revision_proposal>"
+    assert package["package_version"] == HIERARCHICAL_DECISION_PACKAGE_VERSION
+    assert package["output_contract"] == "<planning_decision>{json}</planning_decision>"
     assert package["mode"] == "hierarchical"
 
 
@@ -1237,77 +1251,29 @@ def test_a_legacy_prompt_pin_does_not_reach_the_hierarchical_branch() -> None:
 
     Every code-domain deployment freezes ``prompt_versions["planner"]`` to a DAG
     Planner version, and ``template_for`` honours a pin for any template of the same
-    *role* — so the hierarchical branch was handed the legacy prompt while holding
-    the hierarchical package.  That is the half-mode §18.5 rule 1 forbids, and it is
-    what made every real-model round come back ``proposal_unreadable``.
+    *role* — so the hierarchical branch was handed the flat-mode prompt while holding
+    the hierarchical package.  A pin only selects among the prompts written against
+    the package this build assembles; anything else falls back to the bound prompt.
 
     Part 2d (review P2-21) drives the real chooser instead of reading its source.
     """
 
+    from agent_orchestrator.contracts.planning_decisions import UnsupportedPlanningPackage
     from agent_orchestrator.runtime.role_templates import (
         PLANNER,
-        PLANNER_HIERARCHICAL_V7,
+        PLANNER_HIERARCHICAL_V13,
+        PLANNING_DECISION_PACKAGE_VERSION,
     )
 
-    # P2.3g: the unpinned default of package 2 was v4 (v3 minus the sentence that told
-    # the Planner to write a ``<method_proposal>``).  P2.3j: package 3 carries
-    # ``rejected_refinements`` and v5 introduced the section.  P2.3n: v6 is an
-    # APPLICABLE row is usable.  P2.3q: v7 splits the two rejection flags.
-    assert _Pinned(PLANNER.prompt_version).choose() is PLANNER_HIERARCHICAL_V7
-    assert _Pinned(None).choose() is PLANNER_HIERARCHICAL_V7
-
-
-def test_a_pin_from_an_older_package_version_does_not_apply_to_this_package() -> None:
-    """Review P1-8: the prompt and the package are chosen together, now in code.
-
-    ``planner-hierarchical-v2`` is a hierarchical prompt, so the old membership test
-    honoured the pin — and handed the model a prompt that says "this package gives
-    you no observation ids, never write kind=fact" together with a package whose
-    ``facts`` section is the only place a legal fact entry can be copied from.  A pin
-    only selects among the prompts written against the package this build assembles.
-    """
-
-    from agent_orchestrator.runtime.role_templates import (
-        HIERARCHICAL_PLANNER_PACKAGE_VERSION,
-        HIERARCHICAL_PLANNER_VERSIONS,
-        HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE,
-        PLANNER_HIERARCHICAL,
-        PLANNER_HIERARCHICAL_V1,
-        PLANNER_HIERARCHICAL_V3,
-        PLANNER_HIERARCHICAL_V4,
-        PLANNER_HIERARCHICAL_V5,
-        PLANNER_HIERARCHICAL_V6,
-        PLANNER_HIERARCHICAL_V7,
-        hierarchical_planner_versions,
-    )
-
-    # v1 and v2 belong to package 1; v3 and v4 to package 2 (P2.3g).  P2.3j: package 3
-    # adds ``rejected_refinements``; v5 introduced the section, v6 (P2.3n) names
-    # APPLICABLE, v7 (P2.3q) splits the two rejection flags.  A pin on any older
-    # hierarchical version falls back to v7.  A pin on v5/v6 is still honoured.
-    assert _Pinned(PLANNER_HIERARCHICAL_V1.prompt_version).choose() is PLANNER_HIERARCHICAL_V7
-    assert _Pinned(PLANNER_HIERARCHICAL.prompt_version).choose() is PLANNER_HIERARCHICAL_V7
-    assert _Pinned(PLANNER_HIERARCHICAL_V3.prompt_version).choose() is PLANNER_HIERARCHICAL_V7
-    assert _Pinned(PLANNER_HIERARCHICAL_V4.prompt_version).choose() is PLANNER_HIERARCHICAL_V7
-    assert _Pinned(PLANNER_HIERARCHICAL_V5.prompt_version).choose() is PLANNER_HIERARCHICAL_V5
-    assert _Pinned(PLANNER_HIERARCHICAL_V6.prompt_version).choose() is PLANNER_HIERARCHICAL_V6
-    assert _Pinned(PLANNER_HIERARCHICAL_V7.prompt_version).choose() is PLANNER_HIERARCHICAL_V7
-    assert hierarchical_planner_versions() == frozenset(
-        {
-            PLANNER_HIERARCHICAL_V5.prompt_version,
-            PLANNER_HIERARCHICAL_V6.prompt_version,
-            PLANNER_HIERARCHICAL_V7.prompt_version,
-        }
-    )
-    assert HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE[2] == frozenset(
-        {PLANNER_HIERARCHICAL_V3.prompt_version, PLANNER_HIERARCHICAL_V4.prompt_version}
-    )
-    # the mode-level set is still the union of every group, and nothing is orphaned
-    assert (
-        frozenset().union(*HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE.values())
-        == HIERARCHICAL_PLANNER_VERSIONS
-    )
-    assert HIERARCHICAL_PLANNER_PACKAGE_VERSION in HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE
+    current = PLANNING_DECISION_PACKAGE_VERSION
+    assert _Pinned(PLANNER.prompt_version, package_version=current,
+                   bound_prompt="planner-hierarchical-v13").choose() is PLANNER_HIERARCHICAL_V13
+    assert _Pinned(None, package_version=current,
+                   bound_prompt="planner-hierarchical-v13").choose() is PLANNER_HIERARCHICAL_V13
+    # 2026-10-01: a hierarchical Mission with no binding was created under the removed
+    # proposal-text protocol; it gets no prompt at all.
+    with pytest.raises(UnsupportedPlanningPackage, match="removed"):
+        _Pinned(None).choose()
 
 
 def test_new_planning_decision_mission_selects_the_current_prompt_even_when_legacy_pin_is_frozen() -> None:
@@ -1537,8 +1503,14 @@ def test_a_run_over_a_hierarchical_mission_does_not_complete_it_without_a_resolu
             # round.  A fixture that skipped it would leave the Mission in CREATED and
             # the loop would start planning a plan that is already committed.
             service.begin_planning(mission.id)
+            approve_content_only_completion(
+                service,
+                mission,
+                semantics.task_semantics_of(mission.id, ROOT_TASK),
+                command_id="approve-run",
+            )
             dispatch = orchestrator.install_hierarchical(planning=env)
-            assert dispatch.apply_planner_reply(
+            assert apply_scripted_plan(dispatch,
                 mission.id,
                 _proposal_text(contract),
                 principal=PlanPrincipal("manager-1", "mission", 0),
@@ -4972,7 +4944,7 @@ def _stalled(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS):
     # legacy Mission has no plan to commit through this entry at all (§18.5 rule 1),
     # so it is built and left exactly as the legacy world builds it.
     world = (
-        committed(evidence, key=f"p23c-stall-{mode}", mode=mode, demand=False)
+        committed(evidence, key=f"p23c-stall-{mode}", mode=mode, demand=False, bound=True)
         if mode == HIERARCHICAL_SEMANTICS
         else build_world(evidence, key=f"p23c-stall-{mode}", mode=mode)
     )

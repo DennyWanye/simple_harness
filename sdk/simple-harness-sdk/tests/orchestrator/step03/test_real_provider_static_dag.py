@@ -59,6 +59,7 @@ def test_real_static_dag_closure(tmp_path):
         allowed_tools=tuple(str(t) for t in DEMO_DAG_SPEC["allowed_tools"]),
         budget=Budget(max_tokens=1_500_000, max_attempts=12),
         workspace_seed=TEXTKIT_SEED,
+        orchestration_semantics_version="legacy",
     )
 
     async def case():

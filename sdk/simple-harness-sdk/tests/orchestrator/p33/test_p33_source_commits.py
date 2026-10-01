@@ -138,6 +138,7 @@ def e_scenes(tmp_path, monkeypatch):
                     domain=domain,
                     budget=Budget(max_tokens=120_000, max_attempts=40),
                     conflict_reserve_tokens=15_000,
+                    orchestration_semantics_version="legacy",
                 )
             )
         assert commit_module.resolve_domain is resolve_domain

@@ -93,8 +93,9 @@ def spec_from_request(
     if synthesis is not None and not isinstance(synthesis, Mapping):
         raise MissionRequestError("synthesis must be an object (a fixed synthesis Task template)")
     # §8.1: the charter names the wire.  An *omitted* key keeps the MissionSpec default
-    # (legacy); a present value — including a non-string or an unknown name — is handed to
-    # the constructor so ``checked_planning_protocol`` refuses it, like every other field.
+    # (hierarchical mode, current protocol); a present value — including a non-string or
+    # an unknown name — is handed to the constructor so ``checked_planning_protocol``
+    # refuses it, like every other field.
     protocol_kwargs: dict[str, Any] = {}
     if "orchestration_semantics_version" in request:
         protocol_kwargs["orchestration_semantics_version"] = request["orchestration_semantics_version"]

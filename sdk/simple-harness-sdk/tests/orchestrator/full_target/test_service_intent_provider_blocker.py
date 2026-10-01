@@ -42,6 +42,7 @@ if str(_HTN_FIXTURES) not in sys.path:
 
 import test_evidence_saturation as saturation  # noqa: E402
 import test_htn_end_to_end as e2e  # noqa: E402
+from decision_loop import auto_grant, refine_step  # noqa: E402
 
 from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
@@ -81,6 +82,8 @@ def _config(evidence: Path, **overrides: Any) -> OrchestratorConfig:
         "test_timeout_seconds": 60,
         "max_planning_attempts": 2,
         "stall_seconds": LIMIT,
+        # the scripted Planner is the subject here: always ask the model
+        "method_selection_policy": "ALWAYS_MODEL",
     }
     values.update(overrides)
     return OrchestratorConfig(**values)
@@ -89,8 +92,8 @@ def _config(evidence: Path, **overrides: Any) -> OrchestratorConfig:
 def _plain_world(tmp_path, *, key: str):
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = e2e.build_world(evidence, key=key)
-    adopt = e2e._proposal_text(world.contract)
+    world = e2e.build_world(evidence, key=key, bound=True)
+    adopt = refine_step()
     world.store.close()
     return world, adopt, evidence
 
@@ -157,6 +160,7 @@ def test_a_planner_turn_blocked_on_an_unknown_outcome_is_rehanded_off_once_and_a
         async with Orchestrator(_config(evidence), provider, poll_interval=0.02) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await _run_until_done_or(loop, seconds=10.0)
@@ -232,6 +236,7 @@ def test_a_second_unknown_outcome_ends_the_planner_round_through_the_ladder(tmp_
         async with Orchestrator(config, provider, poll_interval=0.02) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await _run_until_done_or(loop, seconds=10.0)
@@ -271,60 +276,6 @@ def test_a_second_unknown_outcome_ends_the_planner_round_through_the_ladder(tmp_
 # ======================================================================================
 # 2. the MethodSynthesizer: UNANSWERED, and the wait it caused ends
 # ======================================================================================
-
-
-def test_a_synthesizer_blocked_twice_is_recorded_unanswered_and_ends_the_wait(
-    tmp_path,
-) -> None:
-    """P2.3d made a spent ladder *wait* for a synthesis round.  That wait has to end.
-
-    Both Planner rungs are refused quickly; the synthesiser's executor is unknown
-    twice.  The round is recorded ``UNANSWERED`` (not ``UNREADABLE`` — nobody read
-    anything) and ``_after_synthesis_round`` ends the Mission the same way a refused
-    proposal would: ``method_synthesis_refused``.
-    """
-
-    world, invented, config = saturation_world(tmp_path, key="p23f-synth-twice")
-    del invented
-    provider = RoleScriptedProvider(
-        {
-            "planner": ["nothing to propose", "still nothing"],
-            "method_synthesizer": [_transport_loss, _transport_loss],
-        }
-    )
-
-    async def case() -> dict[str, Any]:
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            mission_id = world.mission.id
-            await loop._try_planner_intent(mission_id, ordinal=1)
-            returned = await _run_until_done_or(loop, seconds=12.0)
-            final = loop.store.get_mission(mission_id)
-            return {
-                "returned": returned,
-                "types": [item.type for item in _events(loop, mission_id)],
-                "rehandoffs": _rehandoffs(loop, mission_id),
-                "synthesis": [
-                    dict(item.payload)
-                    for item in _events(loop, mission_id)
-                    if item.type == "MethodSynthesisRoundRecorded"
-                ],
-                "status": final.status,
-                "report": dict(final.final_report or {}),
-                "roles": dict(provider.by_role),
-            }
-
-    outcome = asyncio.run(case())
-    assert outcome["returned"] is True, outcome["types"]
-    assert [item["role"] for item in outcome["rehandoffs"]] == ["method_synthesizer"], (
-        outcome["rehandoffs"]
-    )
-    assert outcome["roles"].get("method_synthesizer") == 2, outcome["roles"]
-    assert outcome["synthesis"] and outcome["synthesis"][0]["admitted"] is False
-    assert outcome["synthesis"][0]["verdict"] == "UNANSWERED", outcome["synthesis"]
-    assert outcome["status"] is MissionStatus.FAILED, outcome["types"]
-    assert outcome["report"]["planning_failure"]["reason"] == "method_synthesis_refused"
 
 
 def saturation_world(tmp_path, *, key: str):
@@ -389,6 +340,7 @@ def test_a_critic_turn_blocked_on_an_unknown_outcome_is_rehanded_off_and_answers
         async with Orchestrator(_config(evidence), provider, poll_interval=0.02) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             subject = f"{mission_id}:critic-p23f:1"
             intent = await _critic_intent(loop, mission_id, subject=subject)
@@ -427,6 +379,7 @@ def test_a_critic_blocked_twice_is_handed_back_to_the_runners_did_not_answer_pat
         async with Orchestrator(_config(evidence), provider, poll_interval=0.02) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             subject = f"{mission_id}:critic-p23f:1"
             intent = await _critic_intent(loop, mission_id, subject=subject)
@@ -482,6 +435,7 @@ def test_a_legacy_mission_is_not_rehanded_off(tmp_path) -> None:
         async with Orchestrator(_config(evidence), provider, poll_interval=0.02) as loop:
             mission = await loop.submit_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal="legacy goal",
                     success_criteria=("file:a.md",),
                     tenant_id="tenant-p23f",

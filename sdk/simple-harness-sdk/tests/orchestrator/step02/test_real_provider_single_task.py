@@ -59,6 +59,7 @@ def test_real_single_task_closure(tmp_path):
         ),
         budget=Budget(max_tokens=600_000, max_attempts=3),
         workspace_seed=DEMO_SEED,
+        orchestration_semantics_version="legacy",
     )
 
     async def case():

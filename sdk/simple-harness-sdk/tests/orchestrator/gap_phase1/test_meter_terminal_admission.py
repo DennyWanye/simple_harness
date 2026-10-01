@@ -124,6 +124,7 @@ def test_pre_handoff_budget_refusal_stops_actual_orchestrator_without_retry(tmp_
                     "meter-terminal-admission",
                     allowed_tools=("workspace_list", "workspace_write_file"),
                     budget=Budget(max_tokens=400000, max_attempts=10),
+                    orchestration_semantics_version="legacy",
                 )
             )
             planning = orch.commit.begin_planning(mission.id)

@@ -67,7 +67,6 @@ def enum_of(kind: Any, value: object, name: str) -> Any:
 
 PLANNING_DECISION_SCHEMA_VERSION = 1
 PLANNING_DECISION_V1 = "planning-decision-v1"
-LEGACY_PLANNING_PROTOCOL = "legacy-plan-proposal-v1"
 PLANNING_DECISION_CODEC_VERSION = "planning-decision-codec-v1"
 
 MAX_PD_RATIONALE_CHARS = 4_000
@@ -2167,7 +2166,6 @@ __all__ = (
     "H1_DECISION_ENABLEMENT",
     "H3_DECISION_ENABLEMENT",
     "HumanOptionV1",
-    "LEGACY_PLANNING_PROTOCOL",
     "MAX_PD_ALTERNATIVES",
     "MAX_PD_ARGUMENTS",
     "MAX_PD_ASSUMPTIONS",

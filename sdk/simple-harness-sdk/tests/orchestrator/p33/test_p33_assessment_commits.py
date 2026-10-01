@@ -109,6 +109,7 @@ def submitted(tmp_path, monkeypatch):
                         idempotency_key=f"assessment-{count}",
                         domain=domain,
                         budget=Budget(max_tokens=20_000, max_attempts=3),
+                        orchestration_semantics_version="legacy",
                     )
                 )
                 if prior is None
@@ -510,7 +511,8 @@ def test_schema9_readonly_and_upgrade_do_not_backfill_assessments(tmp_path, monk
         old = Store.open(path)
         mission, _ = CommitService(old).create_mission(
             MissionSpec(
-                goal="old", success_criteria=("file:x",), tenant_id="t", idempotency_key="old"
+                goal="old", success_criteria=("file:x",), tenant_id="t", idempotency_key="old",
+                orchestration_semantics_version="legacy"
             )
         )
         old.close()

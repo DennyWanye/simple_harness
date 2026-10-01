@@ -152,19 +152,15 @@ def assemble_runtime_views(*, store: Any, mission: Any, network: Any, world: Any
     # the current subject or method instance. No required reference is discarded.
     duty_refs = [{"kind": "obligation", "id": str(d.obligation_id), "semantic_revision": 1,
                   "content_hash": content_hash_of(d.to_json())} for d in duties.list_obligations(mission.id)]
-    from .planning_protocol_binding import planning_protocol_for_mission
     from .planning_graph_repairs import graph_repair_sources
-    protocol = planning_protocol_for_mission(store, mission.id)
-    h4 = protocol is not None and int(protocol["package_version"]) >= 7
-    sharing_candidates = graph_repair_sources(store, network) if h4 else ()
+    sharing_candidates = graph_repair_sources(store, network)
     refs = _sorted_unique_refs(package, _merge_authorities(_network_authorities(network), [*authorities, *duty_refs]))
-    if h4:
-        extra_refs = [ref for row in sharing_candidates for ref in (row["task_ref"], row["resolution_ref"]) if ref is not None]
-        # H4 can retry/cancel/share within an adopted method that was never
-        # rejected. The legacy ref collector only exposes rejected refinements.
-        extra_refs.extend(ref for ref in authorities if ref["kind"] == "method_instance")
-        refs = sorted({(ref["kind"], ref["id"], ref["semantic_revision"], ref["content_hash"]): ref
-                       for ref in (*refs, *extra_refs)}.values(), key=lambda ref: (ref["kind"], ref["id"]))
+    extra_refs = [ref for row in sharing_candidates for ref in (row["task_ref"], row["resolution_ref"]) if ref is not None]
+    # A repair can retry/cancel/share within an adopted method that was never
+    # rejected.
+    extra_refs.extend(ref for ref in authorities if ref["kind"] == "method_instance")
+    refs = sorted({(ref["kind"], ref["id"], ref["semantic_revision"], ref["content_hash"]): ref
+                   for ref in (*refs, *extra_refs)}.values(), key=lambda ref: (ref["kind"], ref["id"]))
     formal = PlannerPackageAssemblerV1.assemble(package, visible_refs=refs, views=views)
     result = dict(package)
     from .planning_repair_requests import pending_requests
@@ -172,32 +168,28 @@ def assemble_runtime_views(*, store: Any, mission: Any, network: Any, world: Any
     if dispatch is not None:
         result["method_selection"] = choices
     if (choices and choices[0]["route"] == "MODEL_REFINE"
-            and not result["repair_requests"] and not result.get("rejected_refinements")):
+            and not result["repair_requests"]):
         # One model selection spends one occurrence's frozen identity. Other
         # goals remain visible context, but cannot consume this call's authority.
         result["planning_subjects"] = [subject for subject in result["planning_subjects"]
             if subject["occurrence_id"] == choices[0]["occurrence_id"]]
-    from ..contracts.planning_decisions import H4_DECISION_ENABLEMENT, V14_DECISION_ENABLEMENT
-    from .planning_protocol_binding import planning_protocol_for_mission
-    protocol = planning_protocol_for_mission(store, mission.id)
-    h4 = protocol is not None and int(protocol["package_version"]) >= 7
-    enablement = H4_DECISION_ENABLEMENT if h4 else V14_DECISION_ENABLEMENT
-    if h4:
-        result["active_method_instances"] = [
-            {"method_instance_ref": ref,
-             "child_bindings": [child.to_json() for child in instance.child_bindings]}
-            for instance in network.method_instances if instance.instance_id in network.adopted_instance_ids
-            for ref in authorities if ref["kind"] == "method_instance" and ref["id"] == str(instance.instance_id)
-        ]
-        result["sharing_candidates"] = list(sharing_candidates)
-        result["data_rebind_candidates"] = [{"requirement": edge.to_json(), "expected_requirement_hash": content_hash_of(edge.to_json())}
-                                             for edge in network.data_requirements]
-        result["successor_types"] = [spec.to_json() for spec in world.catalog.task_types()]
-        result["compensation_candidates"] = [
-            {"action_key": action["action_key"], "action_hash": content_hash_of(action),
-             "connector": action["connector"], "operation": action["operation"], "target": action["target"]}
-            for action in store.list_actions(mission.id) if action["state"] == "SUCCEEDED"
-        ][-16:]
+    from ..contracts.planning_decisions import H4_DECISION_ENABLEMENT
+    enablement = H4_DECISION_ENABLEMENT
+    result["active_method_instances"] = [
+        {"method_instance_ref": ref,
+         "child_bindings": [child.to_json() for child in instance.child_bindings]}
+        for instance in network.method_instances if instance.instance_id in network.adopted_instance_ids
+        for ref in authorities if ref["kind"] == "method_instance" and ref["id"] == str(instance.instance_id)
+    ]
+    result["sharing_candidates"] = list(sharing_candidates)
+    result["data_rebind_candidates"] = [{"requirement": edge.to_json(), "expected_requirement_hash": content_hash_of(edge.to_json())}
+                                         for edge in network.data_requirements]
+    result["successor_types"] = [spec.to_json() for spec in world.catalog.task_types()]
+    result["compensation_candidates"] = [
+        {"action_key": action["action_key"], "action_hash": content_hash_of(action),
+         "connector": action["connector"], "operation": action["operation"], "target": action["target"]}
+        for action in store.list_actions(mission.id) if action["state"] == "SUCCEEDED"
+    ][-16:]
     # 2026-09-25: the model sees legal decision types and legal repair kinds, never the
     # internal ``REPAIR/<kind>`` enablement keys (they are not decision types).
     from ..contracts.planning_decisions import exposed_enablement
@@ -217,7 +209,7 @@ def assemble_runtime_views(*, store: Any, mission: Any, network: Any, world: Any
         if getattr(world, "observers", None) is not None
         and world.observers.observer_for(s.predicate_ref.id) is not None]
     from ..runtime.role_templates import PLANNING_DECISION_PACKAGE_LABEL
-    result.update(package_version=PLANNING_DECISION_PACKAGE_LABEL if h4 else FORMAL_PACKAGE_LABEL, views=formal.views_json(),
+    result.update(package_version=PLANNING_DECISION_PACKAGE_LABEL, views=formal.views_json(),
                   visible_refs=list(formal.visible_refs), truncated=formal.truncated,
                   omitted_counts=dict(formal.omitted_counts or {}))
     # Count loss that already occurred in the compatibility collector as well as

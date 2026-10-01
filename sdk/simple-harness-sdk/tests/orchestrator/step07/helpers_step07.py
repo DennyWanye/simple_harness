@@ -73,6 +73,7 @@ def spec(key="s7", **overrides):
         budget=Budget(max_tokens=300_000, max_attempts=12),
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 

@@ -98,7 +98,7 @@ def test_every_scenario_is_implemented_and_an_unknown_one_is_a_usage_error(tmp_p
 def test_mission_create_validates_and_is_idempotent(tmp_path, capsys):
     evidence = Path(tmp_path) / "evidence"
     spec_path = Path(tmp_path) / "spec.json"
-    spec_path.write_text(json.dumps({"goal": "x", "success_criteria": [], "idempotency_key": "k"}))
+    spec_path.write_text(json.dumps({"goal": "x", "success_criteria": [], "idempotency_key": "k", "orchestration_semantics_version": "legacy"}))
     import pytest
 
     from agent_orchestrator.api.missions import MissionRequestError
@@ -121,7 +121,7 @@ def test_mission_create_validates_and_is_idempotent(tmp_path, capsys):
             {
                 "goal": "x",
                 "success_criteria": ["file:a.py"],
-                "idempotency_key": "k",
+                "idempotency_key": "k", "orchestration_semantics_version": "legacy",
                 "budget": {"max_attempts": 1},
             }
         )

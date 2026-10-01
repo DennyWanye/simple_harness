@@ -1,0 +1,690 @@
+{
+  "写法一_全声明": {
+    "sub_type_declares": [
+      "c-user-1",
+      "c-user-2",
+      "c-user-3"
+    ],
+    "outer_links": [
+      [
+        "c-user-1",
+        "part",
+        "c-user-1"
+      ],
+      [
+        "c-user-2",
+        "part",
+        "c-user-2"
+      ],
+      [
+        "c-user-3",
+        "tail",
+        "c-user-3"
+      ]
+    ],
+    "inner_links": [
+      [
+        "c-user-1",
+        "a",
+        "c-user-1"
+      ],
+      [
+        "c-user-2",
+        "b",
+        "c-user-2"
+      ]
+    ],
+    "1a_注册_根做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "1b_注册_中间目标做法": {
+      "ok": false,
+      "error": "RuntimeError: ROOT_COVERAGE_GAP: the composition covers none of criteria c-user-3 of goal type 'trial.subgoal'"
+    }
+  },
+  "写法二_不声明": {
+    "sub_type_declares": [],
+    "outer_links": [
+      [
+        "c-user-1",
+        "part",
+        "c-user-1"
+      ],
+      [
+        "c-user-2",
+        "part",
+        "c-user-2"
+      ],
+      [
+        "c-user-3",
+        "tail",
+        "c-user-3"
+      ]
+    ],
+    "inner_links": [
+      [
+        "c-user-1",
+        "a",
+        "c-user-1"
+      ],
+      [
+        "c-user-2",
+        "b",
+        "c-user-2"
+      ]
+    ],
+    "1a_注册_根做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "1b_注册_中间目标做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "2a_提交_根做法": {
+      "ok": true,
+      "value": "plan revision 1"
+    },
+    "2a+_根做法提交后_中间目标被分到的判据（此时要为它提做法）": {
+      "ok": true,
+      "value": {
+        "scope_criteria": [
+          "c-user-1",
+          "c-user-2"
+        ],
+        "其中属于用户要求的": [
+          "c-user-1",
+          "c-user-2"
+        ]
+      }
+    },
+    "4+_新做法审阅_判据加上实例被分到的要求（试验补丁）": {
+      "ok": true,
+      "value": {
+        "criteria": [
+          {
+            "id": "c-user-1",
+            "statement": "写出 notes/a.md，列三条要点"
+          },
+          {
+            "id": "c-user-2",
+            "statement": "写出 notes/b.md，给出两个例子"
+          }
+        ],
+        "审阅范围": "该中间目标自己的完成范围"
+      }
+    },
+    "2b_提交_中间目标做法": {
+      "ok": true,
+      "value": "plan revision 2"
+    },
+    "3a_完成范围_各步负责的判据": {
+      "ok": true,
+      "value": {
+        "trial.write:d1150e": [
+          "c-user-1"
+        ],
+        "trial.write:13b98f": [
+          "c-user-3"
+        ],
+        "trial.subgoal:9d1764": [
+          "c-user-1",
+          "c-user-2"
+        ],
+        "trial.write:058ee1": [
+          "c-user-2"
+        ],
+        "trial.goal:k-root": [
+          "c-user-1",
+          "c-user-2",
+          "c-user-3"
+        ]
+      }
+    },
+    "3b_组合审阅_中间目标的判据": {
+      "ok": true,
+      "value": [
+        {
+          "id": "c-user-1",
+          "statement": "写出 notes/a.md，列三条要点"
+        },
+        {
+          "id": "c-user-2",
+          "statement": "写出 notes/b.md，给出两个例子"
+        }
+      ]
+    },
+    "4_新做法审阅_中间目标做法的判据": {
+      "ok": false,
+      "error": "AssuranceError: SOURCE_UNAVAILABLE: method covers no requirements criterion"
+    }
+  },
+  "写法三_一个本地判据": {
+    "sub_type_declares": [
+      "c-sub"
+    ],
+    "outer_links": [
+      [
+        "c-user-1",
+        "part",
+        "c-sub"
+      ],
+      [
+        "c-user-2",
+        "part",
+        "c-sub"
+      ],
+      [
+        "c-user-3",
+        "tail",
+        "c-user-3"
+      ]
+    ],
+    "inner_links": [
+      [
+        "c-sub",
+        "a",
+        "c-part-a"
+      ],
+      [
+        "c-sub",
+        "b",
+        "c-part-b"
+      ]
+    ],
+    "1a_注册_根做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "1b_注册_中间目标做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "2a_提交_根做法": {
+      "ok": false,
+      "error": "CompletionScopeCompilationError: OP_COMPLETION_SCOPE_UNRESOLVED: local criterion 'c-sub' at 'occ-61061e9ab9cefa3e6a33e57c4f8f8cc6' has multiple parent mappings"
+    }
+  },
+  "写法三对照_本地判据只承接一条": {
+    "sub_type_declares": [
+      "c-sub"
+    ],
+    "outer_links": [
+      [
+        "c-user-1",
+        "part",
+        "c-sub"
+      ],
+      [
+        "c-user-2",
+        "tail",
+        "c-user-2"
+      ],
+      [
+        "c-user-3",
+        "tail",
+        "c-user-3"
+      ]
+    ],
+    "inner_links": [
+      [
+        "c-sub",
+        "a",
+        "c-part-a"
+      ],
+      [
+        "c-sub",
+        "b",
+        "c-part-b"
+      ]
+    ],
+    "1a_注册_根做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "1b_注册_中间目标做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "2a_提交_根做法": {
+      "ok": true,
+      "value": "plan revision 1"
+    },
+    "2a+_根做法提交后_中间目标被分到的判据（此时要为它提做法）": {
+      "ok": true,
+      "value": {
+        "scope_criteria": [
+          "c-sub"
+        ],
+        "其中属于用户要求的": []
+      }
+    },
+    "4+_新做法审阅_判据加上实例被分到的要求（试验补丁）": {
+      "ok": false,
+      "error": "AssuranceError: SOURCE_UNAVAILABLE: method covers no requirements criterion"
+    },
+    "2b_提交_中间目标做法": {
+      "ok": true,
+      "value": "plan revision 2"
+    },
+    "3a_完成范围_各步负责的判据": {
+      "ok": true,
+      "value": {
+        "trial.write:8a7f16": [
+          "c-user-2",
+          "c-user-3"
+        ],
+        "trial.write:fdf303": [
+          "c-part-a"
+        ],
+        "trial.subgoal:eabdf1": [
+          "c-sub"
+        ],
+        "trial.write:626924": [
+          "c-part-b"
+        ],
+        "trial.goal:k-root": [
+          "c-user-1",
+          "c-user-2",
+          "c-user-3"
+        ]
+      }
+    },
+    "3b_组合审阅_中间目标的判据": {
+      "ok": true,
+      "value": [
+        {
+          "id": "c-sub",
+          "statement": "c-sub is covered by the accepted children of occ-7af4815a205046135fc1783e2eeabdf1"
+        }
+      ]
+    },
+    "4_新做法审阅_中间目标做法的判据": {
+      "ok": false,
+      "error": "AssuranceError: SOURCE_UNAVAILABLE: method covers no requirements criterion"
+    }
+  },
+  "写法二_漏覆盖一条": {
+    "sub_type_declares": [],
+    "outer_links": [
+      [
+        "c-user-1",
+        "part",
+        "c-user-1"
+      ],
+      [
+        "c-user-2",
+        "part",
+        "c-user-2"
+      ],
+      [
+        "c-user-3",
+        "tail",
+        "c-user-3"
+      ]
+    ],
+    "inner_links": [
+      [
+        "c-user-1",
+        "a",
+        "c-user-1"
+      ]
+    ],
+    "1a_注册_根做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "1b_注册_中间目标做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "2a_提交_根做法": {
+      "ok": true,
+      "value": "plan revision 1"
+    },
+    "2a+_根做法提交后_中间目标被分到的判据（此时要为它提做法）": {
+      "ok": true,
+      "value": {
+        "scope_criteria": [
+          "c-user-1",
+          "c-user-2"
+        ],
+        "其中属于用户要求的": [
+          "c-user-1",
+          "c-user-2"
+        ]
+      }
+    },
+    "4+_新做法审阅_判据加上实例被分到的要求（试验补丁）": {
+      "ok": true,
+      "value": {
+        "criteria": [
+          {
+            "id": "c-user-1",
+            "statement": "写出 notes/a.md，列三条要点"
+          },
+          {
+            "id": "c-user-2",
+            "statement": "写出 notes/b.md，给出两个例子"
+          }
+        ],
+        "审阅范围": "该中间目标自己的完成范围"
+      }
+    },
+    "2b_提交_中间目标做法": {
+      "ok": true,
+      "value": "plan revision 2"
+    },
+    "3a_完成范围_各步负责的判据": {
+      "ok": true,
+      "value": {
+        "trial.write:13b98f": [
+          "c-user-3"
+        ],
+        "trial.write:e775ff": [
+          "c-user-1"
+        ],
+        "trial.write:28831a": [
+          "c-user-1",
+          "c-user-2",
+          "c-user-3"
+        ],
+        "trial.subgoal:9d1764": [
+          "c-user-1",
+          "c-user-2",
+          "c-user-3"
+        ],
+        "trial.goal:k-root": [
+          "c-user-1",
+          "c-user-2",
+          "c-user-3"
+        ]
+      }
+    },
+    "3b_组合审阅_中间目标的判据": {
+      "ok": true,
+      "value": [
+        {
+          "id": "c-user-1",
+          "statement": "写出 notes/a.md，列三条要点"
+        },
+        {
+          "id": "c-user-2",
+          "statement": "写出 notes/b.md，给出两个例子"
+        },
+        {
+          "id": "c-user-3",
+          "statement": "写出 README.md，概述前两份并指向它们"
+        }
+      ]
+    },
+    "4_新做法审阅_中间目标做法的判据": {
+      "ok": false,
+      "error": "AssuranceError: SOURCE_UNAVAILABLE: method covers no requirements criterion"
+    }
+  },
+  "写法二_链接了没分给它的要求": {
+    "sub_type_declares": [],
+    "outer_links": [
+      [
+        "c-user-1",
+        "part",
+        "c-user-1"
+      ],
+      [
+        "c-user-2",
+        "part",
+        "c-user-2"
+      ],
+      [
+        "c-user-3",
+        "tail",
+        "c-user-3"
+      ]
+    ],
+    "inner_links": [
+      [
+        "c-user-1",
+        "a",
+        "c-user-1"
+      ],
+      [
+        "c-user-2",
+        "b",
+        "c-user-2"
+      ],
+      [
+        "c-user-3",
+        "b",
+        "c-user-3"
+      ]
+    ],
+    "1a_注册_根做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "1b_注册_中间目标做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "2a_提交_根做法": {
+      "ok": true,
+      "value": "plan revision 1"
+    },
+    "2a+_根做法提交后_中间目标被分到的判据（此时要为它提做法）": {
+      "ok": true,
+      "value": {
+        "scope_criteria": [
+          "c-user-1",
+          "c-user-2"
+        ],
+        "其中属于用户要求的": [
+          "c-user-1",
+          "c-user-2"
+        ]
+      }
+    },
+    "4+_新做法审阅_判据加上实例被分到的要求（试验补丁）": {
+      "ok": true,
+      "value": {
+        "criteria": [
+          {
+            "id": "c-user-1",
+            "statement": "写出 notes/a.md，列三条要点"
+          },
+          {
+            "id": "c-user-2",
+            "statement": "写出 notes/b.md，给出两个例子"
+          }
+        ],
+        "审阅范围": "该中间目标自己的完成范围"
+      }
+    },
+    "2b_提交_中间目标做法": {
+      "ok": true,
+      "value": "plan revision 2"
+    },
+    "3a_完成范围_各步负责的判据": {
+      "ok": true,
+      "value": {
+        "trial.write:db1c7e": [
+          "c-user-1"
+        ],
+        "trial.write:13b98f": [
+          "c-user-3"
+        ],
+        "trial.subgoal:9d1764": [
+          "c-user-1",
+          "c-user-2",
+          "c-user-3"
+        ],
+        "trial.write:cf3b8f": [
+          "c-user-2",
+          "c-user-3"
+        ],
+        "trial.goal:k-root": [
+          "c-user-1",
+          "c-user-2",
+          "c-user-3"
+        ]
+      }
+    },
+    "3b_组合审阅_中间目标的判据": {
+      "ok": true,
+      "value": [
+        {
+          "id": "c-user-1",
+          "statement": "写出 notes/a.md，列三条要点"
+        },
+        {
+          "id": "c-user-2",
+          "statement": "写出 notes/b.md，给出两个例子"
+        },
+        {
+          "id": "c-user-3",
+          "statement": "写出 README.md，概述前两份并指向它们"
+        }
+      ]
+    },
+    "4_新做法审阅_中间目标做法的判据": {
+      "ok": false,
+      "error": "AssuranceError: SOURCE_UNAVAILABLE: method covers no requirements criterion"
+    }
+  },
+  "同类型嵌套自身": {
+    "sub_type_declares": [],
+    "outer_links": [
+      [
+        "c-user-1",
+        "part",
+        "c-user-1"
+      ],
+      [
+        "c-user-2",
+        "part",
+        "c-user-2"
+      ],
+      [
+        "c-user-3",
+        "tail",
+        "c-user-3"
+      ]
+    ],
+    "inner_links": [],
+    "1a_注册_根做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "1b_注册_中间目标做法": {
+      "ok": false,
+      "error": "RuntimeError: UNBOUNDED_RECURSION: a recursive method needs at least one applicability condition to act as a termination guard; without one every expansion re-expands the same goal"
+    }
+  },
+  "按层注册类型_三层": {
+    "sub_type_declares": [],
+    "outer_links": [
+      [
+        "c-user-1",
+        "part",
+        "c-user-1"
+      ],
+      [
+        "c-user-2",
+        "part",
+        "c-user-2"
+      ],
+      [
+        "c-user-3",
+        "tail",
+        "c-user-3"
+      ]
+    ],
+    "inner_links": [],
+    "1a_注册_根做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "1b_注册_中间目标做法": {
+      "ok": true,
+      "value": "admitted"
+    },
+    "2a_提交_根做法": {
+      "ok": true,
+      "value": "plan revision 1"
+    },
+    "2a+_根做法提交后_中间目标被分到的判据（此时要为它提做法）": {
+      "ok": true,
+      "value": {
+        "scope_criteria": [
+          "c-user-1",
+          "c-user-2"
+        ],
+        "其中属于用户要求的": [
+          "c-user-1",
+          "c-user-2"
+        ]
+      }
+    },
+    "4+_新做法审阅_判据加上实例被分到的要求（试验补丁）": {
+      "ok": true,
+      "value": {
+        "criteria": [
+          {
+            "id": "c-user-1",
+            "statement": "写出 notes/a.md，列三条要点"
+          },
+          {
+            "id": "c-user-2",
+            "statement": "写出 notes/b.md，给出两个例子"
+          }
+        ],
+        "审阅范围": "该中间目标自己的完成范围"
+      }
+    },
+    "2b_提交_中间目标做法": {
+      "ok": true,
+      "value": "plan revision 2"
+    },
+    "3a_完成范围_各步负责的判据": {
+      "ok": true,
+      "value": {
+        "trial.write:778ac5": [
+          "c-user-2"
+        ],
+        "trial.subgoal-l2:a43259": [
+          "c-user-1"
+        ],
+        "trial.write:13b98f": [
+          "c-user-3"
+        ],
+        "trial.subgoal:9d1764": [
+          "c-user-1",
+          "c-user-2"
+        ],
+        "trial.goal:k-root": [
+          "c-user-1",
+          "c-user-2",
+          "c-user-3"
+        ]
+      }
+    },
+    "3b_组合审阅_中间目标的判据": {
+      "ok": true,
+      "value": [
+        {
+          "id": "c-user-1",
+          "statement": "写出 notes/a.md，列三条要点"
+        },
+        {
+          "id": "c-user-2",
+          "statement": "写出 notes/b.md，给出两个例子"
+        }
+      ]
+    },
+    "4_新做法审阅_中间目标做法的判据": {
+      "ok": false,
+      "error": "AssuranceError: SOURCE_UNAVAILABLE: method covers no requirements criterion"
+    }
+  }
+}

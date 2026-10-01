@@ -54,16 +54,10 @@ class PlanningLanePolicy:
 
 
 def planning_policy_for_mission(store: Any, mission_id: str) -> PlanningLanePolicy:
-    from ..storage.planning_decision_store import PlanningDecisionStore
-    binding = PlanningDecisionStore(store).get_mission_protocol(mission_id)
-    if binding is not None and int(binding["package_version"]) >= 7:
-        from ..contracts.planning_decisions import H4_DECISION_ENABLEMENT
-        return PlanningLanePolicy(policy_version="planning-lane-policy-v3",
-            allowed_decisions=tuple(key for key, value in H4_DECISION_ENABLEMENT.items() if value.executable))
-    if binding is not None and int(binding["package_version"]) >= 6:
-        return PlanningLanePolicy(policy_version="planning-lane-policy-v2",
-                                  allowed_decisions=(*PLANNING_DECISIONS, "REQUEST_EVIDENCE", "REQUEST_HUMAN", "PROPOSE_METHOD"))
-    return PlanningLanePolicy()
+    del store, mission_id  # one policy: every hierarchical Mission runs the current protocol
+    from ..contracts.planning_decisions import H4_DECISION_ENABLEMENT
+    return PlanningLanePolicy(policy_version="planning-lane-policy-v3",
+        allowed_decisions=tuple(key for key, value in H4_DECISION_ENABLEMENT.items() if value.executable))
 
 
 @dataclass(frozen=True, slots=True)

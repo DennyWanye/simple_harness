@@ -83,6 +83,7 @@ def env(tmp_path):
             tenant_id="one",
             idempotency_key="source-mission",
             domain=DOC_DOMAIN,
+            orchestration_semantics_version="legacy",
         )
     )
     api = MissionControlV1(host, tenant_id="one", principal=Principal("person-one"))
@@ -543,6 +544,7 @@ def test_code_missions_and_commit_without_cas_keep_old_behavior(env):
             tenant_id="one",
             idempotency_key="code",
             domain=CODE_DOMAIN,
+            orchestration_semantics_version="legacy",
         )
     )
     before = e.store.snapshot(mission.id)
@@ -569,6 +571,7 @@ def test_schema8_readonly_snapshot_has_no_sources_and_needs_no_optional_fields(
                 success_criteria=("file:x",),
                 tenant_id="one",
                 idempotency_key="legacy",
+                orchestration_semantics_version="legacy",
             )
         )
         legacy.close()
@@ -701,6 +704,7 @@ def test_memory_store_requires_explicit_cas_instead_of_writing_cwd(tmp_path, mon
                 tenant_id="one",
                 idempotency_key="memory",
                 domain=DOC_DOMAIN,
+                orchestration_semantics_version="legacy",
             )
         )
         with pytest.raises(SourceCommitError, match="explicit CAS"):

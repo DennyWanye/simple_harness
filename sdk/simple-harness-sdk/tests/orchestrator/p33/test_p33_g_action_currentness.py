@@ -87,6 +87,7 @@ def scene(e_scenes, profile):
             tenant_id=s.mission.tenant_id,
             idempotency_key="unrelated-source-owner",
             domain=DOC_DOMAIN,
+            orchestration_semantics_version="legacy",
         )
     )
     s.api.register_source(

@@ -474,6 +474,7 @@ def spec(key, **overrides):
         untrusted_sources=("docs/",),
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 

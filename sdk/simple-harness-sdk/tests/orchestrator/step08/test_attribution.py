@@ -189,6 +189,7 @@ def test_s8_01_a_failed_mission_has_no_success_path_and_every_token_is_explorati
         ),
         budget=Budget(max_tokens=300_000, max_attempts=4),
         workspace_seed=DEMO_SEED,
+        orchestration_semantics_version="legacy",
     )
 
     async def case():

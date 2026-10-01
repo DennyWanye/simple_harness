@@ -79,7 +79,7 @@ def _run(tmp_path, body, **config_overrides):  # type: ignore[no-untyped-def]
                 {
                     "goal": "写一份 NOTES.md，列出三个要点",
                     "success_criteria": ["file:NOTES.md"],
-                    "idempotency_key": "k-registry",
+                    "idempotency_key": "k-registry", "orchestration_semantics_version": "legacy",
                     "budget": {"max_tokens": 200_000, "max_attempts": 4},
                     "workspace_seed": {"docs/brief.md": "资料"},
                 }

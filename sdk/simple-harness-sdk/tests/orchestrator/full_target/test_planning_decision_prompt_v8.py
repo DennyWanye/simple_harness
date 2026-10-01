@@ -109,8 +109,8 @@ POINT_PHRASES: list[tuple[str, list[str]]] = [
         ["REQUEST_EVIDENCE", "DECLARE_BLOCKED", "NO_CHANGE"],
     ),
     (
-        "8 被拒的展开用一个 REPAIR/REPLACE_METHOD",
-        ["rejected_refinements", "REPAIR", "REPLACE_METHOD"],
+        "8 换做法用一个 REPAIR/REPLACE_METHOD，已细化目标的事实在 refined_goals_under_repair",
+        ["refined_goals_under_repair", "rejected_reasons", "REPAIR", "REPLACE_METHOD"],
     ),
     ("9 无可用方法用 DECLARE_BLOCKED 交系统合成", ["DECLARE_BLOCKED", "合成"]),
     ("10 不输出内部思维链", ["思维链"]),
@@ -190,7 +190,6 @@ def test_package_four_is_new_and_the_default_package_stays_three() -> None:
     assert role_templates.HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE[5] == frozenset(
         {"planner-hierarchical-v8"}
     )
-    assert role_templates.HIERARCHICAL_PLANNER_PACKAGE_VERSION == 3
     assert role_templates.HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE[4] == frozenset(
         {"planner-hierarchical-v8"}
     )
@@ -261,19 +260,3 @@ def test_v8_itself_is_in_the_frozen_table_with_its_live_digest() -> None:
     assert _digest(role_templates.PLANNER_HIERARCHICAL_V8) == digest
 
 
-def test_the_prompt_document_carries_the_code_text_verbatim() -> None:
-    """``plans/llm-native-htn/H1/prompt-v8.md`` must not drift from the code.
-
-    The doc is the human-readable record of the shipped words; the fenced block it
-    carries has to equal ``PLANNER_HIERARCHICAL_V8.instructions`` byte for byte, or
-    the two accounts of the same prompt disagree.
-    """
-
-    import re
-
-    doc = (REPO_ROOT / "plans" / "llm-native-htn" / "H1" / "prompt-v8.md").read_text(
-        encoding="utf-8"
-    )
-    match = re.search(r"```text\n(.*?)```\n", doc, re.S)
-    assert match is not None, "prompt-v8.md lost its verbatim prompt block"
-    assert match.group(1) == role_templates.PLANNER_HIERARCHICAL_V8.instructions

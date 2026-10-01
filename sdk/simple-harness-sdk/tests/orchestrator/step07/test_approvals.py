@@ -50,6 +50,7 @@ def _spec(key="s7", criteria=("file:CHANGE.md", SET_NEW_UI)):
         allowed_tools=tuple(TOOLS),
         budget=Budget(max_tokens=300_000, max_attempts=8),
         workspace_seed={"docs/NOTE.md": NOTE},
+        orchestration_semantics_version="legacy",
     )
 
 
@@ -436,6 +437,7 @@ def test_s7_01_waiting_never_reruns_the_tests_or_the_judge(tmp_path, monkeypatch
         allowed_tools=tuple(TOOLS),
         budget=Budget(max_tokens=300_000, max_attempts=8),
         workspace_seed={"tests/test_ok.py": "def test_ok():\n    assert True\n"},
+        orchestration_semantics_version="legacy",
     )
 
     async def case():

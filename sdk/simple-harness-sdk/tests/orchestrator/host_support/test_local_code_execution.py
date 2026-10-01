@@ -64,6 +64,7 @@ def _spec(key, *, criteria=("file:NOTES.md",), tools=TOOLS3):
         idempotency_key=key,
         allowed_tools=tuple(tools),
         budget=Budget(max_tokens=300_000, max_attempts=6),
+        orchestration_semantics_version="legacy",
     )
 
 

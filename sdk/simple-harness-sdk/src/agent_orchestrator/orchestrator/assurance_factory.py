@@ -68,7 +68,7 @@ class AssuranceMissionFactory:
         (isolated candidates, seams) every such Mission is; the production
         installer passes the single default selection point.
         """
-        if spec.planning_protocol_version != PLANNING_DECISION_V1:
+        if spec.bound_planning_protocol != PLANNING_DECISION_V1:
             return False
         return self.selector is None or bool(self.selector(spec))
 
@@ -79,7 +79,7 @@ class AssuranceMissionFactory:
         self.require_creation_root()
         if (
             mission.tenant_id != self.tenant_id
-            or spec.planning_protocol_version != PLANNING_DECISION_V1
+            or spec.bound_planning_protocol != PLANNING_DECISION_V1
         ):
             raise AssuranceError("ASSURANCE_CREATION_PROTOCOL_MISMATCH")
         revision = self.requirements(mission, spec)
@@ -184,7 +184,7 @@ def record_mission_creation(
     if commit._assurance_factory is not None and commit._assurance_factory.selects(spec):
         commit._assurance_factory.create(mission, spec, event)
         return
-    lane = "COMPLETION_V1" if spec.planning_protocol_version == PLANNING_DECISION_V1 else "LEGACY"
+    lane = "COMPLETION_V1" if spec.bound_planning_protocol == PLANNING_DECISION_V1 else "LEGACY"
     source_hash = fingerprint(event.to_json())
     body = {
         "schema_version": 1,
@@ -192,7 +192,7 @@ def record_mission_creation(
         "lane": lane,
         "creation_event_id": event.id,
         "creation_event_hash": source_hash,
-        "planning_protocol_version": spec.planning_protocol_version,
+        "planning_protocol_version": spec.bound_planning_protocol,
     }
     receipt = _receipt(
         commit, "creation-contract:" + mission.id, "MissionCreationClassified", mission.id, body

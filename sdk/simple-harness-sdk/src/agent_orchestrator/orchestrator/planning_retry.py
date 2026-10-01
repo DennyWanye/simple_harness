@@ -20,9 +20,8 @@ RETRY_AUTHORIZED = "PlanningRetryAuthorized"
 
 
 def _enabled(store: Any, mission_id: str) -> bool:
-    protocol = PlanningDecisionStore(store).get_mission_protocol(mission_id)
-    return bool(protocol and protocol["protocol_version"] == "planning-decision-v1"
-                and int(protocol["package_version"]) >= 7)
+    """Only a hierarchical Mission (the one that holds a protocol binding) repairs."""
+    return PlanningDecisionStore(store).get_mission_protocol(mission_id) is not None
 
 
 def retry_binding(store: Any, mission_id: str, task_id: str,

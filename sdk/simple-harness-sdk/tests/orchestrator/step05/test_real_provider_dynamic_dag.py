@@ -67,6 +67,7 @@ def test_real_dynamic_dag_closure(tmp_path):
         allowed_tools=tuple(str(t) for t in RECORDER_SPEC["allowed_tools"]),
         budget=Budget(max_tokens=2_000_000, max_attempts=24),
         workspace_seed=RECORDER_SEED,
+        orchestration_semantics_version="legacy",
     )
 
     async def case():

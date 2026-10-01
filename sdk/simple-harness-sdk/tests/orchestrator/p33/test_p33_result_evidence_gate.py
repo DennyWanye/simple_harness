@@ -54,6 +54,7 @@ def running(tmp_path):
                 idempotency_key=domain,
                 domain=domain,
                 budget=Budget(max_tokens=20_000, max_attempts=3),
+                orchestration_semantics_version="legacy",
             )
         )
         planning = service.begin_planning(mission.id)

@@ -41,7 +41,7 @@ def _request(key, **overrides):
     request = {
         "goal": "写一份 NOTES.md，列出三个要点",
         "success_criteria": ["file:NOTES.md"],
-        "idempotency_key": key,
+        "idempotency_key": key, "orchestration_semantics_version": "legacy",
         "budget": {"max_tokens": 200_000, "max_attempts": 4},
     }
     request.update(overrides)
@@ -73,6 +73,7 @@ def test_create_is_idempotent_and_binds_like_submit(tmp_path):
                 idempotency_key="b",
                 allowed_tools=TOOLS3,
                 budget=Budget(max_tokens=200_000, max_attempts=4),
+                orchestration_semantics_version="legacy",
             )
         )
         store = orchestrator.store

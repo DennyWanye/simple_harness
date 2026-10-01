@@ -49,6 +49,7 @@ def spec(key, **overrides):
         workspace_seed=RECORDER_SEED,
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 
@@ -410,6 +411,7 @@ def test_p2_4_the_single_task_path_records_graph_version_and_ready_at(tmp_path):
                         "run_tests",
                     ),
                     budget=Budget(max_tokens=100_000, max_attempts=3),
+                    orchestration_semantics_version="legacy",
                 )
             )
             await orchestrator.run()

@@ -64,12 +64,6 @@ class MethodSelectionPolicyV1:
     def new_protocol(cls) -> MethodSelectionPolicyV1:
         return cls()
 
-    @classmethod
-    def legacy(cls) -> MethodSelectionPolicyV1:
-        # The legacy planner has no model selection phase.  Keeping a policy
-        # value for it makes the boundary explicit without changing old bytes.
-        return cls(mode=SelectionPolicyMode.DETERMINISTIC)
-
     def to_json(self) -> dict[str, Any]:
         return {"schema_version": self.schema_version, "mode": str(self.mode)}
 
@@ -300,16 +294,14 @@ def select_method(
     plan_revision: int,
     evidence_epoch: int,
     policy: MethodSelectionPolicyV1 | Mapping[str, Any] | None = None,
-    legacy: bool = False,
     ledger: SelectionCallLedger | None = None,
     subject_id: str | None = None,
 ) -> MethodSelectionResultV1:
     """Route one method selection opportunity according to H3 §49.
 
     Zero applicable methods goes to evidence/synthesis.  One applicable method
-    takes the deterministic fast path.  With two or more, the new protocol uses
-    one ``REFINE`` call unless policy is ``DETERMINISTIC``.  Legacy callers are
-    deterministic regardless of any accidental new-policy value.
+    takes the deterministic fast path.  With two or more, one ``REFINE`` call is
+    used unless policy is ``DETERMINISTIC``.
     """
 
     normalized = normalize_candidates(candidates)
@@ -321,21 +313,6 @@ def select_method(
         resolved = policy
     else:
         resolved = MethodSelectionPolicyV1.from_json(policy)
-    if legacy:
-        route = (
-            SelectionRoute.DETERMINISTIC
-            if applicable
-            else SelectionRoute.EVIDENCE_OR_SYNTHESIS
-        )
-        selected = applicable[0].method_id if applicable else None
-        return MethodSelectionResultV1(
-            route,
-            normalized,
-            applicable,
-            identity,
-            selected,
-            "legacy",
-        )
     if not applicable:
         return MethodSelectionResultV1(
             SelectionRoute.EVIDENCE_OR_SYNTHESIS,

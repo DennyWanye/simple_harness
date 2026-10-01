@@ -121,7 +121,7 @@ async def production_install(report):
             assert not pending(store, assured.id)
             again, created_again = commit.create_mission(spec)
             assert again.id == assured.id and not created_again
-            legacy, _ = commit.create_mission(MissionSpec(goal='legacy', success_criteria=('c',), tenant_id='tenant', idempotency_key='legacy-1'))
+            legacy, _ = commit.create_mission(MissionSpec(goal='legacy', success_criteria=('c',), tenant_id='tenant', idempotency_key='legacy-1', orchestration_semantics_version="legacy"))
             unselected, _ = commit.create_mission(MissionSpec(goal='v1 unselected', success_criteria=('c',), tenant_id='tenant',
                 idempotency_key='completion-1', orchestration_semantics_version='hierarchical', planning_protocol_version='planning-decision-v1'))
             lanes = {'assured': AssuranceStore(store).lane(assured.id), 'legacy': AssuranceStore(store).lane(legacy.id),

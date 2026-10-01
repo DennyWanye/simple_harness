@@ -720,11 +720,11 @@ PLANNER_HIERARCHICAL_V8 = RoleTemplate(
         "  - REFINE：为一个 open 的 compound 目标采用一个已注册方法。payload 形如 "
         "{\"method_ref\":四元组,\"bindings\":{参数名:值}}，"
         "method_ref 必须能在 visible_refs 里找到同一条。\n"
-        "  - REPAIR：payload.repair_kind = REPLACE_METHOD 时表示「退掉一个被拒的方法实例、采用一个替代方法」。"
-        "若输入里 rejected_refinements 非空，说明根评审拒绝了该目标当前采用的方法实例："
-        "用一个 REPAIR 决定表达修复，payload.repair_kind = \"REPLACE_METHOD\"，"
-        "rejected_method_instance 与 replacement_method_ref 都从 visible_refs 照抄——"
-        "不要拆成两个顶层决定，也不要用别的 repair_kind 代替。\n"
+        "  - REPAIR：payload.repair_kind = REPLACE_METHOD 时表示「退掉一个已采用的方法实例、采用一个替代方法」，"
+        "用一个 REPAIR 决定表达，rejected_method_instance 与 replacement_method_ref 都从 visible_refs 照抄，"
+        "不要拆成两个顶层决定。修复请求指向的、已经细化过的目标列在 plan.refined_goals_under_repair"
+        "（含目标参数与当前采用的方法实例）。method_library 条目里的 rejected_reasons 列出该方法在本计划里"
+        "被采用后又被退役的记录与当时的理由，是否再用由你判断。\n"
         "  - DECLARE_BLOCKED：当你找不到任何可用方法、也证明不了目标能推进时用这个类型，"
         "在 payload.blockers 里写清 code 与 detail；系统据此决定是否进入方法合成轮，"
         "你不需要也不能自己合成方法，也不要直接宣布 Mission 失败。\n"
@@ -927,24 +927,9 @@ HIERARCHICAL_PLANNER_VERSIONS: frozenset[str] = frozenset(
     }
 )
 
-#: The hierarchical Planner **package** this build assembles.
-#:
-#: P2.3c part 2d, review P1-8: "the prompt and the package are chosen together or
-#: not at all" was written in the chooser's comment but not enforced — a pin naming
-#: ``planner-hierarchical-v2`` passed the membership test above and produced the v2
-#: prompt against the v3 package.  v2 tells the model *"this package gives you no
-#: observation ids, so never write kind=fact"*, while the v3 package carries a
-#: ``facts`` section; that pairing is exactly the ``READ_SET_UNRESOLVED`` the part-2c
-#: smoke spent two rounds on.  Bump this number whenever the package changes in a way
-#: a prompt can be wrong about, and list the prompts written against it below.
-HIERARCHICAL_PLANNER_PACKAGE_VERSION = 3
-
-#: H1 (§9, addendum §7.1): the *new* planning-decision protocol rides on integer
-#: package version 5, whose in-package string label is
-#: ``planner-package-hierarchical-v6`` (v4/v5 remains a historical pairing).
-#: A new-protocol task selects package 5 explicitly, while a default task with no
-#: charter field keeps the old protocol on ``HIERARCHICAL_PLANNER_PACKAGE_VERSION``
-#: (still 3) with the same bytes as 0.12.2 (§8.1–§8.2).
+#: The integer version of the planning-decision package this build assembles.  Bump it
+#: whenever the package changes in a way a prompt can be wrong about, and list the
+#: prompts written against it below.
 PLANNING_DECISION_PACKAGE_VERSION = 8
 
 #: The in-package string label of the *current* planning-decision package.  Defined
@@ -1007,7 +992,7 @@ assert PLANNING_DECISION_PROMPT_VERSION in HIERARCHICAL_PLANNER_VERSIONS_BY_PACK
 
 
 def hierarchical_planner_versions(
-    package_version: int = HIERARCHICAL_PLANNER_PACKAGE_VERSION,
+    package_version: int = PLANNING_DECISION_PACKAGE_VERSION,
 ) -> frozenset[str]:
     """The prompt versions a pin may select while this package version is built."""
 
@@ -1878,7 +1863,6 @@ __all__ = (
     "ROOT_REVIEWER_V3",
     "ROOT_REVIEWER_V3_VERSION",
     "PLAN_REVISION_PROPOSAL_TAG",
-    "HIERARCHICAL_PLANNER_PACKAGE_VERSION",
     "PLANNING_DECISION_PACKAGE_VERSION",
     "PLANNING_DECISION_PACKAGE_LABEL",
     "PLANNING_DECISION_PROMPT_VERSION",

@@ -57,7 +57,6 @@ _HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
 if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
-import test_evidence_saturation as saturation  # noqa: E402
 import test_hierarchical_event_flow as flow  # noqa: E402
 import test_htn_deployment_wiring as wiring  # noqa: E402
 import test_method_synthesis as synth  # noqa: E402
@@ -65,11 +64,7 @@ import test_service_intent_provider_blocker as blocker  # noqa: E402
 from htn_world import method, out, param, ref, step  # noqa: E402
 
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
-from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
-from agent_orchestrator.contracts.resolution import ReviewAccount  # noqa: E402
-from agent_orchestrator.contracts.state_machines import MissionStopReason  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
-    MAX_SYNTHESIS_ASKS,
     Orchestrator,
 )
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
@@ -546,120 +541,6 @@ def _run(tmp_path, *, key: str, synthesizer_steps: list[Any], planner_steps: lis
     return asyncio.run(case())
 
 
-def test_a_correctable_refusal_is_asked_once_more_and_the_corrected_reply_is_adopted(tmp_path):
-    """The C1 shape end to end: refused for a port, asked again with the protocol's
-    line, admitted, adopted — on the same anchor, ordinal 2, same planning account.
-
-    **Mutation**: drop ``PORT_UNAVAILABLE`` from ``CORRECTABLE_REJECTIONS`` → red
-    (concluded REJECTED on ask 1, no second request, no commit); record the first ask
-    before the second is open → still green here, red in the budget test below.
-    """
-
-    outcome = _run(
-        tmp_path,
-        key="p23i-reask-admitted",
-        synthesizer_steps=[
-            method_proposal_step(_slipped().to_json()),
-            method_proposal_step(_corrected().to_json()),
-        ],
-        planner_steps=[
-            "nothing to propose",
-            "still nothing",
-            saturation._adopt(_corrected().method_ref()),
-        ],
-    )
-    assert outcome["roles"].get("method_synthesizer") == 2, outcome["roles"]
-    assert outcome["unreadable"] == [], "the reply was read; this is the other door"
-    assert len(outcome["rejected"]) == 1, outcome["types"]
-    first = outcome["rejected"][0]
-    assert first["ordinal"] == 1 and first["verdict"] == "REJECTED"
-    assert first["method_id"] == "plan.outer.free"
-    assert first["problems"] == [PLAN_SLIP]
-    assert outcome["synthesis"] == [
-        {
-            **outcome["synthesis"][0],
-            "admitted": True,
-            "asks": 2,
-            "verdict": "TRIAL_ADMITTED",
-            "method_id": "plan.outer.free",
-            "retry_refused": "",
-        }
-    ], outcome["synthesis"]
-    mission_id = outcome["mission_id"]
-    assert [item[0] for item in outcome["synth_intents"]] == [
-        f"{mission_id}:synthesizer:task-root:1",
-        f"{mission_id}:synthesizer:task-root:2",
-    ]
-    assert [item[3] for item in outcome["synth_intents"]] == [1, 2]
-    assert [item[1] for item in outcome["synth_intents"]] == ["FAILED", "SETTLED"]
-    assert {item[2] for item in outcome["synth_intents"]} == {str(ReviewAccount.MISSION_PLANNING)}
-    # the second ask carried the protocol's line, verbatim, and the first carried none
-    first_package, second_package = outcome["synth_requests"]
-    assert first_package["schema_feedback"] == []
-    assert second_package["schema_feedback"][0] == PLAN_SLIP
-    assert "注册协议" in second_package["schema_feedback"][-1]
-    assert second_package["role_prompt_version"] == METHOD_SYNTHESIZER_VERSION
-    assert outcome["committed"], outcome["types"]
-    assert outcome["status"] is not MissionStatus.PLANNING
-
-
-def test_a_refusal_the_model_cannot_correct_concludes_the_round_on_the_spot(tmp_path):
-    """**Mutation**: ``rejection_is_correctable`` returning True for everything → red."""
-
-    outcome = _run(
-        tmp_path,
-        key="p23i-uncorrectable",
-        synthesizer_steps=[method_proposal_step(_uncorrectable().to_json())],
-        planner_steps=["nothing to propose", "still nothing"],
-    )
-    assert outcome["roles"].get("method_synthesizer") == 1, outcome["roles"]
-    assert outcome["rejected"] == [] and outcome["unreadable"] == []
-    assert len(outcome["synthesis"]) == 1
-    record = outcome["synthesis"][0]
-    assert record["admitted"] is False and record["verdict"] == "REJECTED"
-    assert record["asks"] == 1 and record["retry_refused"] == ""
-    assert record["problems"][0].startswith("UNKNOWN_CAPABILITY: ")
-    assert len(outcome["synth_intents"]) == 1
-    assert outcome["status"] is MissionStatus.FAILED, outcome["types"]
-    assert outcome["stop_reason"] == str(MissionStopReason.PLANNING_FAILED)
-    # Under ``run()`` the Planner's ladder and the synthesis round race; whichever
-    # ends last names the stop, and both names are honest.  What is pinned is that
-    # neither is "budget" and nobody was asked twice.
-    assert outcome["report"]["planning_failure"]["reason"] in {
-        "method_synthesis_refused",
-        "proposal_unreadable",
-    }
-
-
-def test_a_second_refusal_concludes_the_round_with_two_asks_and_nobody_is_asked_a_third_time(
-    tmp_path,
-):
-    """**Mutation**: ``MAX_SYNTHESIS_ASKS = 3`` → red (a third request, ``asks: 3``)."""
-
-    outcome = _run(
-        tmp_path,
-        key="p23i-refused-twice",
-        synthesizer_steps=[
-            method_proposal_step(_slipped().to_json()),
-            method_proposal_step(_slipped().to_json()),
-        ],
-        planner_steps=["nothing to propose", "still nothing"],
-    )
-    assert MAX_SYNTHESIS_ASKS == 2
-    assert outcome["roles"].get("method_synthesizer") == 2, outcome["roles"]
-    assert [item["ordinal"] for item in outcome["rejected"]] == [1]
-    assert len(outcome["synthesis"]) == 1
-    record = outcome["synthesis"][0]
-    assert record["admitted"] is False and record["verdict"] == "REJECTED"
-    assert record["asks"] == 2 and record["retry_refused"] == ""
-    assert record["problems"] == [PLAN_SLIP]
-    assert len(outcome["synth_intents"]) == 2
-    assert len(outcome["synth_requests"]) == 2
-    assert outcome["synth_requests"][1]["schema_feedback"][0] == PLAN_SLIP
-    assert outcome["status"] is MissionStatus.FAILED, outcome["types"]
-    assert outcome["report"]["planning_failure"]["reason"] == "method_synthesis_refused"
-
-
 def _starve_the_second_ask(loop: Orchestrator) -> None:
     """Make the reservation for ask 2 (and only ask 2) exceed the Mission's account."""
 
@@ -687,53 +568,6 @@ def _starve_the_second_ask(loop: Orchestrator) -> None:
             loop._reservation = original_reservation  # type: ignore[method-assign]
 
     loop._create_synthesizer_intent = create  # type: ignore[method-assign]
-
-
-@pytest.mark.parametrize(
-    ("name", "first_reply", "verdict"),
-    [
-        ("rejected", method_proposal_step(_slipped().to_json()), "REJECTED"),
-        ("unreadable", reply("grok_synthesizer_round1"), "UNREADABLE"),
-    ],
-    ids=["rejected", "unreadable"],
-)
-def test_a_second_ask_the_mission_cannot_afford_stops_it_for_the_budget_and_says_so(
-    tmp_path, name: str, first_reply: str, verdict: str
-):
-    """Verification P2.3g P2-1, both doors.
-
-    No "asked again" record precedes the reservation; the round is concluded on the
-    reply it has with ``retry_refused`` in its own field; the Mission stops
-    ``budget_exhausted`` — the budget's words, not "the synthesis was refused" — and
-    ``run()`` returns instead of carrying a ``BudgetExhausted`` out of ``_cycle()``.
-    **Mutation**: fold ``except BudgetExhausted`` into the generic refusal → red
-    (``method_synthesis_refused``); record the first ask before opening the second →
-    red (a ``MethodSynthesisReply*`` row exists).
-    """
-
-    outcome = _run(
-        tmp_path,
-        key=f"p23i-budget-{name}",
-        synthesizer_steps=[first_reply],
-        planner_steps=["nothing to propose", "still nothing"],
-        tweak=_starve_the_second_ask,
-    )
-    assert outcome["roles"].get("method_synthesizer") == 1, outcome["roles"]
-    assert outcome["rejected"] == [] and outcome["unreadable"] == [], outcome["types"]
-    assert len(outcome["synthesis"]) == 1
-    record = outcome["synthesis"][0]
-    assert record["admitted"] is False and record["verdict"] == verdict
-    assert record["asks"] == 1
-    assert record["retry_refused"].startswith("budget_exhausted: budget exhausted on ")
-    assert "retry not asked" not in " ".join(record["problems"])
-    assert len(outcome["synth_intents"]) == 1
-    assert outcome["status"] is MissionStatus.FAILED, outcome["types"]
-    assert outcome["stop_reason"] == str(MissionStopReason.BUDGET_EXHAUSTED)
-    failure = outcome["report"]["planning_failure"]
-    assert failure["reason"] == "budget_exhausted", failure
-    assert failure["phase"] == "method_synthesis" and failure["ordinal"] == 2
-    assert failure["goal_task_id"] == "task-root" and failure["dimension"] == "tokens"
-    assert failure["requested"] == 10**9 and failure["remaining"] < 10**9
 
 
 def test_the_second_ask_is_opened_before_the_first_is_written_down_and_the_gate_is_one_predicate():
@@ -830,51 +664,6 @@ def test_v2_keeps_its_bytes_stays_registered_and_is_still_pinnable():
     assert request.to_json()["role_prompt_version"] == "method-synthesizer-v9"
 
 
-def test_a_synthesizer_turn_that_never_replied_is_asked_once_more(tmp_path):
-    """Desktop 2026-09-27: the first ask waited for a provider slot past its turn
-    deadline and the Mission failed on the spot (``method_synthesis_refused``, zero
-    attempts).  A turn that delivered no reply is not an answer; it is asked once more.
-
-    **Mutation**: drop the turn-failed branch → red (one ask, round refused)."""
-
-    from dataclasses import replace as _replace
-
-    from simple_harness.agents.contracts import AgentTurnState
-
-    def fail_first_turn(loop):
-        original = loop._collect_synthesizer
-        seen = {"n": 0}
-
-        async def collect(intent, result, mission, text):
-            seen["n"] += 1
-            if seen["n"] == 1:
-                result = _replace(result, state=AgentTurnState.FAILED, public_output=None,
-                                  error={"reason_code": "deadline"})
-                text = ""
-            return await original(intent, result, mission, text)
-
-        loop._collect_synthesizer = collect
-
-    outcome = _run(
-        tmp_path,
-        key="synth-turn-failed-reask",
-        synthesizer_steps=[
-            method_proposal_step(_corrected().to_json()),
-            method_proposal_step(_corrected().to_json()),
-        ],
-        planner_steps=[
-            "nothing to propose",
-            "still nothing",
-            saturation._adopt(_corrected().method_ref()),
-        ],
-        tweak=fail_first_turn,
-    )
-    assert [item["block_defect"] for item in outcome["unreadable"]] == ["turn_failed"], outcome["synthesis"]
-    assert outcome["synthesis"][0]["admitted"] is True and outcome["synthesis"][0]["asks"] == 2
-    assert "没有得到模型回复" in outcome["synth_requests"][1]["schema_feedback"][0]
-    assert outcome["committed"], outcome["types"]
-
-
 def _fail_turns(count):
     """Make the first ``count`` synthesizer turns end without a reply (provider error)."""
     from dataclasses import replace as _replace
@@ -898,44 +687,3 @@ def _fail_turns(count):
     return tweak
 
 
-def test_synthesizer_turns_without_a_reply_do_not_use_up_its_asks(tmp_path):
-    """2026-09-29 真机（技能评估任务）：方法合成两次都以服务商报错结束（工具调用解析失败），
-    两次询问就此用完、整个任务失败。与规划器一致：没有回复的回合不算一次回答，原地再问，
-    宽限 6 次；第一次真正的回答仍按"第一问"对待。
-
-    **Mutation**: count a turn without a reply as an ask → red (round refused after two)."""
-
-    outcome = _run(
-        tmp_path,
-        key="synth-turn-failed-grace",
-        synthesizer_steps=[
-            method_proposal_step(_corrected().to_json()),
-            method_proposal_step(_corrected().to_json()),
-            method_proposal_step(_corrected().to_json()),
-        ],
-        planner_steps=[
-            "nothing to propose",
-            "still nothing",
-            saturation._adopt(_corrected().method_ref()),
-        ],
-        tweak=_fail_turns(2),
-    )
-    assert [item["block_defect"] for item in outcome["unreadable"]] == ["turn_failed", "turn_failed"], outcome["synthesis"]
-    assert outcome["synthesis"][0]["admitted"] is True, outcome["synthesis"]
-    assert outcome["committed"], outcome["types"]
-    third = [row for row in outcome["synth_intents"] if row[3] == 3]
-    assert third, outcome["synth_intents"]
-
-
-def test_synthesizer_turn_failures_beyond_the_grace_count_again(tmp_path):
-    """The grace is bounded: a provider that stays broken still ends the round."""
-
-    outcome = _run(
-        tmp_path,
-        key="synth-turn-failed-grace-spent",
-        synthesizer_steps=[method_proposal_step(_corrected().to_json()) for _ in range(9)],
-        planner_steps=["nothing to propose", "still nothing", "still nothing"],
-        tweak=_fail_turns(99),
-    )
-    assert outcome["synthesis"] and outcome["synthesis"][0]["admitted"] is False
-    assert max(row[3] for row in outcome["synth_intents"]) == 8  # 6 forgiven + 2 asks

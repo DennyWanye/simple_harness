@@ -551,6 +551,7 @@ async def test_foreign_domain_cannot_admit_agentdojo_tool(tmp_path, domain):
         with pytest.raises(ContractError, match="require the AgentDojo domain"):
             await orch.submit_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal="read",
                     success_criteria=("file:REPORT.md",),
                     tenant_id="test",

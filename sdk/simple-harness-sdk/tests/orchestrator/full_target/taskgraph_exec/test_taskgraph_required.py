@@ -207,6 +207,7 @@ def test_an_ineligible_mission_is_never_marked(tmp_path):
             from agent_orchestrator.contracts import Budget
             from agent_orchestrator.orchestrator.commit_service import MissionSpec
             legacy, _ = loop.commit.create_mission(MissionSpec(
+                orchestration_semantics_version="legacy",
                 goal="旧式平铺任务", success_criteria=("有说明",), tenant_id="tenant-legacy",
                 idempotency_key="tg-legacy", allowed_tools=("workspace_read_file",),
                 budget=Budget(max_tokens=10_000, max_attempts=2)))

@@ -50,7 +50,6 @@ from agent_orchestrator.planning.decision_codec import (
 )
 from agent_orchestrator.planning.htn.registry import MethodProposal
 from agent_orchestrator.planning.htn.seed_methods.loader import fill_content_hashes
-from agent_orchestrator.planning.planner import parse_plan_proposal
 from agent_orchestrator.runtime.output_blocks import BlockError
 
 HASH_A = "a" * 64
@@ -361,13 +360,6 @@ def test_the_old_block_alone_is_a_missing_decision_not_an_envelope() -> None:
     # C-N9: only the legacy tag -> block_missing, never auto-decoded as an envelope.
     legacy = f"<{LEGACY_PLAN_BLOCK_TAG}>{{}}</{LEGACY_PLAN_BLOCK_TAG}>"
     assert _code_of(legacy) == REJECTION.DECISION_BLOCK_MISSING
-
-
-def test_the_old_parser_still_reports_block_missing_for_the_new_block() -> None:
-    # C-N10: parse_plan_proposal is untouched and still says block_missing.
-    with pytest.raises(ContractError) as caught:
-        parse_plan_proposal(_block(_envelope()), mission_id="mission-1")
-    assert "block_missing" in str(caught.value)
 
 
 def test_a_fact_reason_ref_is_malformed() -> None:

@@ -179,56 +179,10 @@ def graph_proposal_step(tasks: Sequence[dict[str, Any]]) -> str:
     return "<task_graph_proposal>" + body + "</task_graph_proposal>"
 
 
-# ------------------------------------------------- the two hierarchical-mode blocks
-# §18.5 C8: P2.1/P2.3 need the *typed* Planner output deterministically, so the two
-# new tag blocks are scripted here beside the DAG ones.  They are plain strings, like
-# ``proposal_step`` above, so nothing about the existing script protocol changes: a
-# script step is still a string or a callable of one ``ProviderRequest``.
-#
+# ------------------------------------------------- the hierarchical-mode method block
 # Deliberately unvalidated.  A fixture that refused a malformed block could not be
 # used to test the parser's refusals, so shaping the JSON is the caller's business
-# and ``extras`` exists precisely to script a block that *must* be rejected (an
-# authority field the model may not write, a stale revision, a missing key).
-
-
-def plan_revision_proposal_step(
-    *,
-    proposal_id: str = "prop-1",
-    expected_plan_revision: int = 0,
-    read_set: Sequence[Mapping[str, Any]] = (),
-    operations: Sequence[Mapping[str, Any]] = (),
-    rationale: str = "脚本化提案",
-    trigger_refs: Sequence[Mapping[str, Any]] = (),
-    running_work_policy: str = "retain_if_bindings_unchanged",
-    schema_version: Any = 1,
-    extras: Mapping[str, Any] | None = None,
-    drop: Sequence[str] = (),
-) -> str:
-    """One scripted ``<plan_revision_proposal>`` block (§18.3 ``plan-revision-proposal-v1``).
-
-    ``mission_id`` is *never* written: which Mission a proposal belongs to is decided
-    by the request that produced it, and ``parse_plan_proposal`` refuses a block that
-    names one.  A test that wants that refusal passes it through ``extras``.
-    """
-
-    body: dict[str, Any] = {
-        "schema_version": schema_version,
-        "proposal_id": proposal_id,
-        "expected_plan_revision": expected_plan_revision,
-        "trigger_refs": [dict(ref) for ref in trigger_refs],
-        "read_set": [dict(item) for item in read_set],
-        "operations": [dict(operation) for operation in operations],
-        "rationale": rationale,
-        "running_work_policy": running_work_policy,
-    }
-    body.update({key: value for key, value in dict(extras or {}).items()})
-    for key in drop:
-        body.pop(key, None)
-    return (
-        "<plan_revision_proposal>"
-        + json.dumps(body, ensure_ascii=False)
-        + "</plan_revision_proposal>"
-    )
+# and ``extras`` exists precisely to script a block that *must* be rejected.
 
 
 def method_proposal_step(
@@ -341,7 +295,6 @@ __all__ = (
     "graph_proposal_step",
     "method_proposal_step",
     "package_of",
-    "plan_revision_proposal_step",
     "proposal_step",
     "role_of",
 )
@@ -1596,6 +1549,7 @@ def policy_spec(goal: str, tenant_id: str, idempotency_key: str):  # type: ignor
     from ..orchestrator.commit_service import MissionSpec
 
     return MissionSpec(
+        orchestration_semantics_version="legacy",
         goal=goal,
         success_criteria=("pytest:tests/test_parse_kv.py",),
         tenant_id=tenant_id,

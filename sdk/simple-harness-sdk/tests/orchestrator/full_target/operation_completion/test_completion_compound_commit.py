@@ -16,6 +16,7 @@ _FULL_TARGET = Path(__file__).resolve().parents[1]
 if str(_FULL_TARGET) not in sys.path:
     sys.path.insert(0, str(_FULL_TARGET))
 
+from scripted_plans import apply_scripted_plan  # noqa: E402
 from test_htn_end_to_end import HIERARCHICAL_SEMANTICS, ROOT_DUTY, ROOT_TASK, build_world
 from test_nested_compound_composition import _inner, _outer, _task_of
 from test_nested_compound_refinement import _proposal
@@ -234,7 +235,7 @@ def completed_nested_world(tmp_path, *, package_version=6, with_reuse_consumer=F
             contract, env.registry.registration(contract.method_ref())
         )
 
-    first = world.dispatch.apply_planner_reply(
+    first = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(
             outer,
@@ -255,7 +256,7 @@ def completed_nested_world(tmp_path, *, package_version=6, with_reuse_consumer=F
     inner_spec = next(item for item in first_network.occurrences if str(item.task_id) == inner_task)
     # This is deliberately *not* a Spec amendment.  `c-sub` remains the actual
     # intermediate local identity and `c-leaf-verified` stays leaf-local.
-    second = world.dispatch.apply_planner_reply(
+    second = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(
             inner,

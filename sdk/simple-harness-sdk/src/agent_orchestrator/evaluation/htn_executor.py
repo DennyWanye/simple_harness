@@ -98,8 +98,10 @@ class RuntimeEpisodeExecutor:
         elif run.scenario.kind != ScenarioKind.NORMAL:
             assert self.interventions is not None
             intervention = self.interventions(run, root)
+        if run.arm == FourArm.H_NATIVE_NO_REPAIR:
+            # 2026-10-01：修复开关已删除（修复恒开），不再有"关掉修复"的对照臂可跑。
+            raise ContractError("the no-repair ablation arm was removed together with the repair switch")
         config = replace(self.config, evidence_root=root / "runtime",
-            hierarchical_repair_enabled=run.arm != FourArm.H_NATIVE_NO_REPAIR,
             planning_backend=self.solver if run.arm == FourArm.H_SOLVER else None,
             planning_backend_limits=self.solver_limits if run.arm == FourArm.H_SOLVER else None)
         context = H8MeterContext(manifest, run, lambda counts: None)

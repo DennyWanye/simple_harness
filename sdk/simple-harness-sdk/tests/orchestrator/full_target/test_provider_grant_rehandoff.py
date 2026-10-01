@@ -24,6 +24,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_service_intent_provider_blocker as blocker  # noqa: E402
+from decision_loop import auto_grant  # noqa: E402
 
 from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
 from agent_orchestrator.contracts.state_machines import MissionStopReason  # noqa: E402
@@ -117,6 +118,7 @@ def test_a_transport_unknown_grant_is_released_before_rehandoff_and_the_mission_
         async with _open_loop(evidence, provider) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await blocker._run_until_done_or(loop, seconds=10.0)
@@ -166,6 +168,7 @@ def test_persistent_provider_unknown_stops_as_runtime_unavailable_and_releases_t
         async with _open_loop(evidence, provider, max_planning_attempts=1) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await blocker._run_until_done_or(loop, seconds=10.0)
@@ -232,6 +235,7 @@ def test_give_up_keeps_unknown_calls_on_the_ledger_and_does_not_settle_them_as_z
         async with _open_loop(evidence, provider, max_planning_attempts=1) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await blocker._run_until_done_or(loop, seconds=10.0)
@@ -283,6 +287,7 @@ def test_a_later_reconciled_unknown_call_is_imported_and_conservation_still_hold
         async with _open_loop(evidence, provider, max_planning_attempts=1) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await blocker._run_until_done_or(loop, seconds=10.0)

@@ -67,6 +67,7 @@ def _spec(criteria=("pytest:tests/test_parse_kv.py",)):
             allowed_tools=TOOLS,
             budget=Budget(max_tokens=200_000, max_attempts=4),
             workspace_seed=DEMO_SEED,
+            orchestration_semantics_version="legacy",
         )
 
     return build

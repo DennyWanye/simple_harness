@@ -120,6 +120,7 @@ def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(
             )
             mission, _ = commit.create_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal="Read a tool response without concealing protocol errors",
                     success_criteria=("file:report.md",),
                     tenant_id="protocol-test",
@@ -346,6 +347,7 @@ async def _exercise_priced_length_recovery(tmp_path, *, task_cost_micros: int) -
         )
         mission, _ = commit.create_mission(
             MissionSpec(
+                orchestration_semantics_version="legacy",
                 goal="Recover a truncated tool response within the original task budget",
                 success_criteria=("file:report.md",),
                 tenant_id="length-protocol-test",

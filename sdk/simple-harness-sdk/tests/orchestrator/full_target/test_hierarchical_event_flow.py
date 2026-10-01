@@ -91,8 +91,6 @@ from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E40
     PLAN_INTEGRITY_FAILED,
     PLANNER_SKIPPED_FOR_SYNTHESIS,
     RECOMPILABLE_REFUSALS,
-    REPAIR_COMPILE_DEFERRED,
-    REPAIR_COMPILE_RESUMED,
     SYNTHESIS_REPLY_REJECTED,
     SYNTHESIS_REPLY_UNREADABLE,
     SYNTHESIS_ROUND_RECORDED,
@@ -125,8 +123,13 @@ from agent_orchestrator.testing.fixtures import (  # noqa: E402
     DEMO_SEED,
     RoleScriptedProvider,
     demo_single_task_provider,
-    plan_revision_proposal_step,
     proposal_step,
+)
+from scripted_plans import (  # noqa: E402
+    apply_scripted_plan,
+    approve_content_only_completion,
+    detach_completion_protocol,
+    plan_revision_proposal_step,
 )
 from simple_harness.agents import AgentTurnState  # noqa: E402
 
@@ -227,7 +230,7 @@ class World:
         return _proposal_text(self.contract, **changes)
 
     def plan(self, text: str | None = None, *, command_id: str = "cmd-a"):
-        return self.dispatch.apply_planner_reply(
+        return apply_scripted_plan(self.dispatch,
             self.mission.id,
             text if text is not None else self.reply(),
             principal=self.principal,
@@ -272,6 +275,8 @@ def _proposal_text(contract: Any, **changes: Any) -> str:
 def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23b", **kwargs) -> World:
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
     mission, _ = service.create_mission(_spec(key, mode=mode))
+    if mode == HIERARCHICAL_SEMANTICS:
+        detach_completion_protocol(service.store, mission.id)
     env = _env(mission.id)
     contract = _outer()
     receipt = env.admit(contract)
@@ -395,12 +400,6 @@ def test_the_read_back_network_keeps_the_root_as_the_only_root(tmp_path):
     world.plan()
     network = world.dispatch.network(world.mission.id)
     assert [str(item) for item in network.root_occurrence_ids] == [ROOT_TASK]
-
-
-def test_a_reply_without_the_typed_block_is_a_contract_error(tmp_path):
-    world = _world(tmp_path)
-    with pytest.raises(ContractError):
-        world.plan("这是一段自然语言回复，没有任何标签块。")
 
 
 def test_a_reply_claiming_an_authority_field_is_refused_at_the_boundary(tmp_path):
@@ -594,39 +593,6 @@ def test_a_plan_commit_does_not_advance_the_integer_graph_version(tmp_path):
     assert world.plan().committed
     after = world.store.get_mission(world.mission.id)
     assert int((after.final_report or {}).get("graph_version") or 1) == before
-
-
-def test_a_malformed_block_produces_a_bounded_repair_hint(tmp_path):
-    """§18.5 C8: the parse failure carries the one instruction the repair needs."""
-
-    del tmp_path
-    from agent_orchestrator.contracts.models import ContractError as _ContractError
-    from agent_orchestrator.planning.planner import parse_plan_proposal
-    from agent_orchestrator.runtime.output_blocks import BlockError, repair_hint
-    from agent_orchestrator.runtime.role_templates import PLAN_REVISION_PROPOSAL_TAG
-
-    with pytest.raises(_ContractError) as caught:
-        parse_plan_proposal(
-            "<plan_revision_proposal>{ not json </plan_revision_proposal>", mission_id="m"
-        )
-    cause = caught.value.__cause__
-    assert isinstance(cause, BlockError)
-    hint = repair_hint(cause, PLAN_REVISION_PROPOSAL_TAG)
-    assert PLAN_REVISION_PROPOSAL_TAG in hint
-
-
-def test_the_event_handler_puts_the_repair_hint_into_the_planning_rejection(tmp_path):
-    del tmp_path
-    import inspect
-
-    from agent_orchestrator.orchestrator import event_handler
-
-    source = inspect.getsource(event_handler.Orchestrator._collect_plan_hierarchical)
-    assert 'detail["repair_hint"] = repair_hint(cause, PLAN_REVISION_PROPOSAL_TAG)' in source
-    # P2.3d / defect D2c: the hint belongs to the *unreadable* branch, and the branch
-    # beside it is the one a readable-but-refused proposal takes.
-    assert 'reason = "proposal_unreadable"' in source
-    assert "reason = PROPOSAL_NOT_GROUNDED" in source
 
 
 def test_a_second_identical_reply_does_not_produce_a_second_revision(tmp_path):
@@ -1215,6 +1181,7 @@ def _legacy_events(tmp_path, *, install: bool) -> list[tuple[str, str]]:
                 orchestrator.install_hierarchical()
             mission = await orchestrator.submit_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal=str(DEMO_PROPOSAL["root_goal"]),
                     success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
                     tenant_id="tenant-p23b-legacy",
@@ -1286,6 +1253,7 @@ def _single_task_case() -> tuple[Any, MissionSpec, int]:
     return (
         demo_single_task_provider(),
         MissionSpec(
+            orchestration_semantics_version="legacy",
             goal=str(DEMO_PROPOSAL["root_goal"]),
             success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
             tenant_id="tenant-p23b-explode",
@@ -1310,6 +1278,7 @@ def _static_dag_case() -> tuple[Any, MissionSpec, int]:
     return (
         demo_static_dag_provider(),
         MissionSpec(
+            orchestration_semantics_version="legacy",
             goal=str(DEMO_DAG_SPEC["goal"]),
             success_criteria=tuple(DEMO_DAG_SPEC["success_criteria"]),
             tenant_id="tenant-p23b-explode",
@@ -1334,6 +1303,7 @@ def _dynamic_dag_case() -> tuple[Any, MissionSpec, int]:
     return (
         demo_dynamic_dag_provider(),
         MissionSpec(
+            orchestration_semantics_version="legacy",
             goal=str(RECORDER_SPEC["goal"]),
             success_criteria=tuple(RECORDER_SPEC["success_criteria"]),
             tenant_id="tenant-p23b-explode",
@@ -1416,8 +1386,6 @@ NEW_EVENT_TYPES = frozenset(
         ARTIFACT_MERGE_NOT_APPLICABLE,
         # P2.3q: the empty-Planner shortcut (evidence saturated, nothing applies).
         PLANNER_SKIPPED_FOR_SYNTHESIS,
-        REPAIR_COMPILE_DEFERRED,
-        REPAIR_COMPILE_RESUMED,
     }
 )
 
@@ -1451,7 +1419,7 @@ def test_the_new_event_type_list_is_the_one_the_modules_declare(tmp_path):
 def test_the_mode_switch_defaults_to_legacy_for_a_mission_without_the_opt_in(tmp_path):
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
     mission, _ = service.create_mission(
-        MissionSpec(goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="d")
+        MissionSpec(orchestration_semantics_version="legacy", goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="d")
     )
     assert is_hierarchical(mission) is False
 
@@ -1507,10 +1475,6 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     refuses unconditionally, so opening the round spends a model call and a manager
     allowance on a question whose answer is fixed (defect D4).  Asking the mode there is
     what keeps the legacy management loop on the Missions it can actually help.
-    ``_repair_after_root_review`` is deliberately **not** a seventeenth: like
-    ``_ask_root_reviewer`` it is reached only through ``_advance_root_review``, which has
-    already asked, and is handed the answer.
-
     P2.3d adds the seventeenth, ``_refine_open_compounds``: a compound goal the plan has
     not refined is a hierarchical notion with no legacy counterpart, and asking the mode
     there is what keeps the extra Planner round off a Mission that has no plan revisions
@@ -1849,6 +1813,25 @@ def _seed_hierarchical(orchestrator: Orchestrator, *, key: str, roots: int = 1):
     return mission, env, contract
 
 
+def _commit_scripted_plan(orchestrator: Orchestrator, mission: Any, contract: Any) -> None:
+    """Put the scripted root refinement on a loop Mission's board without a model round."""
+
+    binding = HtnStore(orchestrator.store).task_semantics_of(mission.id, ROOT_TASK)
+    orchestrator.commit.begin_planning(mission.id)
+    approve_content_only_completion(
+        orchestrator.commit, mission, binding, command_id=f"approve-{mission.id}"
+    )
+    dispatch = orchestrator._new_mode(orchestrator.store.get_mission(mission.id))
+    outcome = apply_scripted_plan(
+        dispatch,
+        mission.id,
+        _proposal_text(contract),
+        principal=PlanPrincipal("manager-1", "mission", 0),
+        command_id="cmd-loop",
+    )
+    assert outcome.committed, outcome.last_reason
+
+
 def _drive(tmp_path, planner_steps: Sequence[Any], probe, *, key: str = "orch", roots: int = 1):
     """Run one Orchestrator to idle, then hand the probe the store it wrote."""
 
@@ -1863,91 +1846,6 @@ def _drive(tmp_path, planner_steps: Sequence[Any], probe, *, key: str = "orch", 
 
 def _events(orchestrator: Orchestrator, mission_id: str, kind: str) -> list[Any]:
     return [item for item in orchestrator.store.list_events(mission_id) if item.type == kind]
-
-
-def test_the_handler_commits_a_scripted_hierarchical_planner_reply(tmp_path):
-    """The reply is committed; how the cycle then ends is decision 2's business.
-
-    Part 2d: this world has no demand admitted for its occurrences, so once the plan
-    is on the board the loop goes idle with everything withheld, confirms that across
-    one more cycle and ends the execution cycle with ``NO_DISPATCHABLE_WORK`` (§15: a
-    Mission is a bounded cycle).  The property this test is about is the commit, so it
-    asserts the commit — and that if the Mission did end, it ended for *that* reason
-    and not for a planning or verification failure.
-    """
-
-    def probe(orchestrator, mission, env, contract) -> None:
-        del env, contract
-        assert _events(orchestrator, mission.id, PLAN_REVISION_COMMITTED), orchestrator.progress_log
-        final = orchestrator.store.get_mission(mission.id)
-        if final.status is MissionStatus.FAILED:
-            assert final.final_report["stop_reason"] == "no_dispatchable_work"
-
-    _drive(tmp_path, [_proposal_text(_outer())], probe)
-
-
-def test_the_handler_advances_the_compound_phase_after_committing(tmp_path):
-    """The commit and the phase pass are one round, not two cycles apart."""
-
-    def probe(orchestrator, mission, env, contract) -> None:
-        del env, contract
-        kinds = [item.type for item in orchestrator.store.list_events(mission.id)]
-        assert COMPOUND_PHASE_CHANGED in kinds
-        assert kinds.index(PLAN_REVISION_COMMITTED) < kinds.index(COMPOUND_PHASE_CHANGED)
-
-    _drive(tmp_path, [_proposal_text(_outer())], probe)
-
-
-def test_the_handler_settles_the_planner_intent_after_a_commit(tmp_path):
-    def probe(orchestrator, mission, env, contract) -> None:
-        del env, contract
-        open_intents = orchestrator.store.list_intents(
-            "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
-        )
-        assert [item for item in open_intents if item.mission_id == mission.id] == []
-
-    _drive(tmp_path, [_proposal_text(_outer())], probe)
-
-
-def test_a_malformed_block_reaches_the_planning_rejection_with_its_repair_hint(tmp_path):
-    bad = "<plan_revision_proposal>{ this is not json </plan_revision_proposal>"
-
-    def probe(orchestrator, mission, env, contract) -> None:
-        del env, contract
-        rejections = _events(orchestrator, mission.id, "PlanningRejected")
-        assert rejections, orchestrator.progress_log
-        assert rejections[0].payload["reason"] == "proposal_unreadable"
-        detail = rejections[0].payload["detail"]
-        assert detail["block_defect"] == "invalid_json"
-        assert "plan_revision_proposal" in detail["repair_hint"]
-
-    _drive(tmp_path, [bad, bad], probe, key="orch-bad")
-
-
-def test_a_malformed_block_rides_the_existing_attempt_ladder(tmp_path):
-    """§18.5 C8: bounded repair, no extra request — two scripted turns, then a stop."""
-
-    bad = "<plan_revision_proposal>{ nope </plan_revision_proposal>"
-
-    def probe(orchestrator, mission, env, contract) -> None:
-        del env, contract
-        assert len(_events(orchestrator, mission.id, "PlanningRejected")) == 2
-        assert orchestrator.store.get_mission(mission.id).status is MissionStatus.FAILED
-
-    _drive(tmp_path, [bad, bad], probe, key="orch-bad2")
-
-
-def test_a_refused_plan_commit_reaches_the_planning_rejection(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale([], until=99))
-
-    def probe(orchestrator, mission, env, contract) -> None:
-        del env, contract
-        assert _events(orchestrator, mission.id, PLAN_COMMIT_REFUSED)
-        rejections = _events(orchestrator, mission.id, "PlanningRejected")
-        assert rejections and rejections[0].payload["reason"] == "plan_commit_refused"
-        assert rejections[0].payload["detail"]["reason"] == "READ_SET_STALE"
-
-    _drive(tmp_path, [_proposal_text(_outer())] * 2, probe, key="orch-refused")
 
 
 def test_a_damaged_plan_stops_that_mission_through_the_planner_branch(tmp_path):
@@ -1984,93 +1882,6 @@ def _planner_intent(orchestrator: Orchestrator, mission_id: str):
         )
         if item.mission_id == mission_id
     )
-
-
-class _CommittedTurn:
-    """A planner turn that committed; its text is whatever the case hands in."""
-
-    state = AgentTurnState.COMMITTED
-    turn_id = "turn-committed"
-    error: dict[str, Any] | None = None
-    public_output = None
-    usage_refs: tuple[Any, ...] = ()
-
-
-def _reject_reason(tmp_path, *, text: str, key: str) -> tuple[str, dict[str, Any]]:
-    """Hand ``_collect_plan_hierarchical`` one committed reply; report how it was filed."""
-
-    holder: dict[str, Any] = {}
-
-    async def case() -> None:
-        async with _orchestrator(tmp_path, []) as orchestrator:
-            mission, _env, _contract = _seed_hierarchical(orchestrator, key=key)
-            orchestrator.commit.begin_planning(mission.id)
-            await orchestrator._try_planner_intent(mission.id, ordinal=1)
-            current = orchestrator.store.get_mission(mission.id)
-            new_mode = orchestrator._new_mode(current)
-            assert new_mode is not None
-            await orchestrator._collect_plan_hierarchical(
-                _planner_intent(orchestrator, mission.id),
-                _CommittedTurn(),
-                current,
-                text,
-                new_mode,
-            )
-            rejections = _events(orchestrator, mission.id, "PlanningRejected")
-            assert rejections, "a refused round is recorded"
-            holder["reason"] = rejections[0].payload["reason"]
-            holder["detail"] = rejections[0].payload["detail"]
-
-    asyncio.run(case())
-    return str(holder["reason"]), dict(holder["detail"])
-
-
-def test_a_reply_with_no_readable_block_is_unreadable(tmp_path):
-    """P2.3d / defect D2c: ``proposal_unreadable`` keeps meaning what its name says."""
-
-    reason, detail = _reject_reason(tmp_path, text="I will refine the root goal.", key="d2c-a")
-    assert reason == "proposal_unreadable"
-    assert detail["block_defect"]
-    assert detail["repair_hint"]
-
-
-def test_a_readable_block_refused_on_its_content_is_not_grounded(tmp_path):
-    """The six L3 planning failures of the Grok run were filed under the wrong code.
-
-    The Planner *did* emit a well-formed ``<plan_revision_proposal>``; it named a
-    method whose preconditions do not hold here.  Recording that as "the model cannot
-    write the block" sent anybody reading the event log looking for a formatting
-    problem that was not there — and, because the message is also what the next
-    proposal is given as feedback, told the model to fix its formatting too.
-
-    **Mutation**: collapse the two branches back into one reason and this goes red
-    while ``test_a_reply_with_no_readable_block_is_unreadable`` stays green, which is
-    the asymmetry the split exists for.
-    """
-
-    contract = _outer()
-    reference = contract.method_ref()
-    refine = {
-        "op": "refine",
-        "goal_id": ROOT_TASK,
-        "obligation_id": ROOT_DUTY,
-        "method_ref": {
-            "id": reference.method_id,
-            "version": reference.version,
-            "content_hash": reference.content_hash,
-        },
-        "bindings": {},
-    }
-    # Two refinements in one round: a perfectly readable block the plan contract
-    # refuses on its content ("one refinement per round").
-    reason, detail = _reject_reason(
-        tmp_path,
-        text=_proposal_text(contract, operations=[refine, refine]),
-        key="d2c-b",
-    )
-    assert reason == "proposal_not_grounded"
-    assert "block_defect" not in detail
-    assert detail["error"]
 
 
 def test_a_turn_that_did_not_commit_is_a_planning_rejection(tmp_path):
@@ -2176,9 +1987,9 @@ def test_the_decide_branch_stops_one_mission_on_a_damaged_plan(tmp_path):
     """Guard 3: the terminal judgement never raises out of the shared loop."""
 
     async def case() -> None:
-        async with _orchestrator(tmp_path, [_proposal_text(_outer())]) as orchestrator:
-            mission, _env, _contract = _seed_hierarchical(orchestrator, key="orch-decide")
-            await orchestrator.run()
+        async with _orchestrator(tmp_path, []) as orchestrator:
+            mission, _env, contract = _seed_hierarchical(orchestrator, key="orch-decide")
+            _commit_scripted_plan(orchestrator, mission, contract)
             assert HtnStore(orchestrator.store).active_plan_revision(mission.id) is not None
             _corrupt_plan(orchestrator.store, mission.id)
             _insert_display_task(orchestrator.store, mission.id, "task-display")
@@ -2195,9 +2006,9 @@ def test_the_dispatch_branch_stops_one_mission_on_a_missing_binding(tmp_path):
     """Guard 4: a Task with no meaning stops the Mission, it does not end the run."""
 
     async def case() -> None:
-        async with _orchestrator(tmp_path, [_proposal_text(_outer())]) as orchestrator:
-            mission, _env, _contract = _seed_hierarchical(orchestrator, key="orch-dispatch")
-            await orchestrator.run()
+        async with _orchestrator(tmp_path, []) as orchestrator:
+            mission, _env, contract = _seed_hierarchical(orchestrator, key="orch-dispatch")
+            _commit_scripted_plan(orchestrator, mission, contract)
             task = _insert_display_task(orchestrator.store, mission.id, "task-unbound")
             active = _force_active(orchestrator, mission.id)
             assert await orchestrator._next_attempt(active, task, []) is True
@@ -2249,6 +2060,7 @@ def test_one_damaged_mission_does_not_take_another_down_with_it(tmp_path):
             damaged, _env, _contract = _seed_hierarchical(orchestrator, key="pair-damaged", roots=2)
             healthy = await orchestrator.submit_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal=str(DEMO_PROPOSAL["root_goal"]),
                     success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
                     tenant_id="tenant-p23b-pair",
@@ -2407,6 +2219,7 @@ def test_the_report_duration_pairs_are_the_ones_the_golden_actually_produces(tmp
         async with Orchestrator(config, demo_single_task_provider()) as orchestrator:
             mission = await orchestrator.submit_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal=str(DEMO_PROPOSAL["root_goal"]),
                     success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
                     tenant_id="tenant-p23c-duration",

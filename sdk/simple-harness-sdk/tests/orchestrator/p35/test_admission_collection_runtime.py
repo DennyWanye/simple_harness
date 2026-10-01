@@ -66,6 +66,7 @@ def test_a_missing_usage_report_is_bounded_and_never_pauses_the_task(tmp_path):
                 MissionSpec(
                     "Write the full original deliverable", ("file:answer.txt",), "test", "admission",
                     allowed_tools=("workspace_list", "workspace_write_file"), budget=Budget(max_tokens=400000, max_attempts=10),
+                    orchestration_semantics_version="legacy",
                 )
             )
             planning = orch.commit.begin_planning(mission.id)
@@ -126,6 +127,7 @@ def test_actual_guard_denial_stops_or_waits_without_another_attempt(tmp_path, re
                     "admission",
                     allowed_tools=("workspace_list", "workspace_write_file"),
                     budget=Budget(max_tokens=400000, max_attempts=10),
+                    orchestration_semantics_version="legacy",
                 )
             )
             planning = orch.commit.begin_planning(mission.id)
@@ -243,6 +245,7 @@ def test_one_empty_reply_does_not_pause_the_task(tmp_path):
                 MissionSpec(
                     "Write the full original deliverable", ("file:answer.txt",), "test", "admission",
                     allowed_tools=("workspace_list", "workspace_write_file"), budget=Budget(max_tokens=400000, max_attempts=10),
+                    orchestration_semantics_version="legacy",
                 )
             )
             planning = orch.commit.begin_planning(mission.id)

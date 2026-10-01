@@ -60,6 +60,7 @@ def test_authenticated_read_cannot_cross_tenant_and_has_no_side_effects(tmp_path
         async with enabled_world(tmp_path, key='tg-tenant-read') as world:
             await world.commit_seed()
             foreign, _ = world.loop.commit.create_mission(MissionSpec(
+                orchestration_semantics_version="legacy",
                 goal='Foreign Mission', success_criteria=('kept isolated',), tenant_id='other-tenant',
                 idempotency_key='foreign-tg-read', budget=Budget(max_tokens=10000, max_attempts=2)))
             before = world.loop.store.last_event_seq(foreign.id)

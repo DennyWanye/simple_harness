@@ -968,12 +968,6 @@ class OperationCompletionStore:
         outcome scope and are deliberately excluded from historical content reuse.
         """
         current = self.list_scoped_contributions(scope.mission_id, scope.scope_id)
-        protocol = self._store.connection.execute(
-            "SELECT package_version FROM mission_planning_protocols WHERE mission_id=?",
-            (scope.mission_id,),
-        ).fetchone()
-        if protocol is None or int(protocol[0]) < 7:
-            return current
         _, scope_kind, _, _ = _completion_contracts()
         rows = self._store.connection.execute(
             "SELECT * FROM operation_completion_scopes WHERE mission_id=? AND occurrence_id=? "

@@ -114,7 +114,7 @@ async def terminal_notice_on_production_install(report):
             assert created and AssuranceStore(store).lane(assured.id) == 'ASSURANCE_1_1'
             assert not commit.assured_closeout_pending(assured.id)
             legacy, _ = commit.create_mission(MissionSpec(goal='legacy', success_criteria=('c',), tenant_id='tenant',
-                                                          idempotency_key='legacy-1'))
+                                                          idempotency_key='legacy-1', orchestration_semantics_version="legacy"))
             # Original terminal writer on the assured lane: the NOTIFY request is part of the write.
             cancelled = commit.cancel_mission(assured.id)
             final = events_of(store, assured.id, 'MissionCancelled')[0]

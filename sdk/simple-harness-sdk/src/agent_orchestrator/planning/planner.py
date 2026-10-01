@@ -9,11 +9,8 @@ the Commit Service checks (§24 step 3) — the Planner cannot write the Task DA
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
 
 from ..contracts import ContractError
-from ..contracts.htn import PlanProposal
 from ..graph.task_graph import TaskGraphProposal
 from ..orchestrator.commit_service import TaskProposal
 from ..planning.htn.registry import MethodProposal
@@ -21,7 +18,6 @@ from ..runtime.output_blocks import BlockError, extract_block
 from .unknown_fields import decode_dropping_unknown
 from ..runtime.role_templates import (
     METHOD_PROPOSAL_TAG,
-    PLAN_REVISION_PROPOSAL_TAG,
     TASK_GRAPH_PROPOSAL_TAG,
     TASK_PROPOSAL_TAG,
 )
@@ -49,38 +45,6 @@ SYSTEM_BOUND_FIELDS = frozenset(
         "authored_by",
     }
 )
-
-
-#: P2.3g.  The ``BlockError`` reason for a Planner reply that carries a
-#: ``<method_proposal>`` block and no ``<plan_revision_proposal>``.  In the Grok
-#: acceptance episode H-L3-C1 two rounds were filed ``block_missing`` for this, and
-#: the repair hint the next round was given said "no block found" — which was false
-#: (a block was there) and unhelpful (the model wrote the other role's block again).
-PROPOSAL_WRONG_BLOCK = "proposal_wrong_block"
-
-#: P2.3g.  The ``rationale`` prefix a Planner writes when no registered method is
-#: usable for the goal it was asked about.  The plan contract refuses an empty
-#: ``operations`` list (``proposal.operations must not be empty``), so the explicit
-#: refusal is read *here*, before the codec, and surfaces as its own exception.
-NO_APPLICABLE_METHOD = "no_applicable_method"
-
-
-class NoApplicableMethodDeclared(ContractError):
-    """The Planner said, in the agreed shape, that no registered method applies.
-
-    Not a malformed block and not a grounding failure: a well-formed
-    ``<plan_revision_proposal>`` whose ``operations`` is ``[]``.  The caller records
-    it under its own reason code and lets the synthesis path decide what to do — the
-    Planner has answered, it just has nothing to refine with.
-    """
-
-    def __init__(self, rationale: str, *, proposal_id: str) -> None:
-        super().__init__(
-            f"plan revision proposal {proposal_id!r} has no operations and declares "
-            f"{NO_APPLICABLE_METHOD}: {rationale[:300]}"
-        )
-        self.rationale = rationale
-        self.proposal_id = proposal_id
 
 
 def parse_task_proposal(text: str) -> TaskProposal:
@@ -113,62 +77,6 @@ def parse_task_graph_proposal(text: str) -> TaskGraphProposal:
     return TaskGraphProposal.from_json(raw)
 
 
-def _refuse_authority_claims(payload: Mapping[str, Any], where: str) -> None:
-    """Refuse a block that fills in a field the system binds.
-
-    Only the *structural* keys are inspected — the block's own fields, its
-    ``read_set`` entries and each operation's own fields.  A method parameter that
-    happens to be called ``scope`` inside ``bindings`` is a value, not a claim, and
-    refusing it would make the contract depend on a domain's vocabulary.
-    """
-
-    claimed = sorted(SYSTEM_BOUND_FIELDS & set(payload))
-    if claimed:
-        raise ContractError(
-            f"{where} sets {claimed}, which the system binds; a model proposes the shape "
-            "of the work, never its authority (§18.5)"
-        )
-
-
-def parse_plan_proposal(text: str, *, mission_id: str) -> PlanProposal:
-    """Strict parse of the Planner's ``<plan_revision_proposal>`` block (§18.3, C8).
-
-    ``mission_id`` is supplied by the caller and not read from the block: which
-    Mission a proposal belongs to is decided by the request that produced it, so a
-    block naming one is refused rather than believed.
-    """
-
-    try:
-        raw = extract_block(text, PLAN_REVISION_PROPOSAL_TAG)
-    except BlockError as error:
-        if error.reason == "block_missing" and f"<{METHOD_PROPOSAL_TAG}>" in text:
-            # P2.3g: the other role's block.  Reported under its own reason so the
-            # rejection and the repair hint say what actually happened.
-            wrong = BlockError(
-                PROPOSAL_WRONG_BLOCK,
-                f"a <{METHOD_PROPOSAL_TAG}> block was given where a "
-                f"<{PLAN_REVISION_PROPOSAL_TAG}> was required",
-            )
-            raise ContractError(f"plan revision proposal unreadable: {wrong}") from wrong
-        raise ContractError(f"plan revision proposal unreadable: {error}") from error
-    _refuse_authority_claims(raw, "plan revision proposal")
-    operations = raw.get("operations")
-    if isinstance(operations, list) and not operations:
-        # P2.3g: the explicit "no method applies" answer.  Read before the codec,
-        # which refuses an empty operations list as malformed; the rationale is kept
-        # verbatim so the record says what the Planner said.
-        raise NoApplicableMethodDeclared(
-            str(raw.get("rationale", "")), proposal_id=str(raw.get("proposal_id", ""))
-        )
-    for index, item in enumerate(raw.get("read_set") or ()):
-        if isinstance(item, Mapping):
-            _refuse_authority_claims(item, f"plan revision proposal read_set[{index}]")
-    for index, item in enumerate(raw.get("operations") or ()):
-        if isinstance(item, Mapping):
-            _refuse_authority_claims(item, f"plan revision proposal operations[{index}]")
-    return PlanProposal.from_json({**raw, "mission_id": mission_id})
-
-
 def parse_method_proposal(text: str) -> MethodProposal:
     """Strict parse of a ``<method_proposal>`` block into a registry submission (§7.3).
 
@@ -186,12 +94,8 @@ def parse_method_proposal(text: str) -> MethodProposal:
 
 
 __all__ = (
-    "NO_APPLICABLE_METHOD",
-    "PROPOSAL_WRONG_BLOCK",
     "SYSTEM_BOUND_FIELDS",
-    "NoApplicableMethodDeclared",
     "parse_method_proposal",
-    "parse_plan_proposal",
     "parse_task_graph_proposal",
     "parse_task_proposal",
 )

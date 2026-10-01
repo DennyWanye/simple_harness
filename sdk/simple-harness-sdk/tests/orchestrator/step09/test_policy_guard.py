@@ -67,6 +67,7 @@ def _recorder(key, **overrides):
         workspace_seed=RECORDER_SEED,
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 
@@ -173,6 +174,7 @@ def test_s9_06_a_worker_that_writes_policy_files_changes_nothing(tmp_path):
                     idempotency_key="worker-policy",
                     allowed_tools=TOOLS,
                     budget=Budget(max_tokens=100_000, max_attempts=2),
+                    orchestration_semantics_version="legacy",
                 )
             )
             await orch.run()

@@ -45,6 +45,7 @@ def test_non_document_planner_dispatch_explains_cumulative_budget(tmp_path, doma
                 allowed_tools=("workspace_write_file", "workspace_read_file"),
                 budget=Budget(max_tokens=4_000_000, max_attempts=12),
                 domain=domain, runtime_profile_id="default",
+                orchestration_semantics_version="legacy",
             ))
             orch.commit.begin_planning(mission.id)
             intent = await orch._create_planner_intent(mission.id, ordinal=1)

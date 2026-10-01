@@ -46,6 +46,7 @@ def spec(key: str, **overrides) -> MissionSpec:
         workspace_seed=TEXTKIT_SEED,
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 

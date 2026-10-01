@@ -71,6 +71,7 @@ def test_real_knowledge_sharing_closure(tmp_path):
         untrusted_sources=("docs/",),
         synthesis={**COMPARE_SYNTHESIS, "budget": {"max_tokens": 300_000, "max_attempts": 2}},
         conflict_reserve_tokens=300_000,
+        orchestration_semantics_version="legacy",
     )
 
     async def case():

@@ -27,6 +27,7 @@ if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
 from htn_world import method, param, step  # noqa: E402
+from scripted_plans import apply_scripted_plan  # noqa: E402
 from test_htn_end_to_end import (  # noqa: E402
     HIERARCHICAL_SEMANTICS,
     ROOT_DUTY,
@@ -37,11 +38,10 @@ from test_htn_end_to_end import (  # noqa: E402
 )
 from test_nested_compound_refinement import _proposal  # noqa: E402
 
-from agent_orchestrator.contracts import MissionStatus, TaskStatus  # noqa: E402
+from agent_orchestrator.contracts import TaskStatus  # noqa: E402
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
 from agent_orchestrator.contracts.resolution import CriterionVerdict  # noqa: E402
 from agent_orchestrator.contracts.semantic_base import content_hash_of  # noqa: E402
-from agent_orchestrator.contracts.state_machines import MissionStopReason  # noqa: E402
 from agent_orchestrator.graph.eligibility import ReadinessReason  # noqa: E402
 from agent_orchestrator.orchestrator.composition_review import (  # noqa: E402
     COMPOSITION_LOCAL_CRITERION,
@@ -50,7 +50,6 @@ from agent_orchestrator.orchestrator.composition_review import (  # noqa: E402
 )
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
-    ROOT_REVIEW_CUT,
     CompoundPhase,
     OccurrenceOutcome,
 )
@@ -146,7 +145,7 @@ def _world(tmp_path, *, key: str) -> World:
         HtnStore(world.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
-    first = world.dispatch.apply_planner_reply(
+    first = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(
             outer,
@@ -163,7 +162,7 @@ def _world(tmp_path, *, key: str) -> World:
     assess = _task_of(world, "plan.subgoal")
     network = world.network()
     assess_spec = next(spec for spec in network.occurrences if str(spec.task_id) == assess)
-    second = world.dispatch.apply_planner_reply(
+    second = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(
             inner,
@@ -311,34 +310,6 @@ def test_the_fixture_really_parks_the_successor_on_waiting_order(tmp_path) -> No
     world.store.close()
 
 
-def test_a_two_level_plan_runs_to_completed_after_the_inner_compound_resolves(tmp_path) -> None:
-    """True ``Orchestrator.run()``.  Before the fix this is ``no_dispatchable_work``.
-
-    Path pinned: inner leaf already accepted (the M3-r0 moment) → inner compound
-    composition resolution → ORDER successor (revert) dispatched → root
-    MISSION_FINAL reviewer ACCEPT → COMPLETED.  The system does not fill PASS.
-    """
-
-    world = _world(tmp_path, key="p23l-n7-e2e")
-    outcome = _run(world, tmp_path, cycles=400)
-    assert outcome["status"] is MissionStatus.COMPLETED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: {outcome['report']} "
-        f"types={outcome['types']} readiness={outcome['readiness']} "
-        f"progress={outcome['progress'][-12:]}"
-    )
-    inner = [item for item in outcome["resolutions"] if item.get("is_mission_root") is not True]
-    root = [item for item in outcome["resolutions"] if item.get("is_mission_root") is True]
-    assert inner, f"the inner compound formed no GoalResolution: {outcome['resolutions']}"
-    assert root, f"the root never resolved: {outcome['resolutions']}"
-    assert outcome["roles"].get("worker") >= 1, (
-        f"the ORDER successor was never dispatched: {outcome['roles']}"
-    )
-    assert outcome["roles"].get("root_reviewer") == 1, outcome["roles"]
-    assert ROOT_REVIEW_CUT in outcome["types"], outcome["types"]
-    assert "MissionFailed" not in outcome["types"]
-    assert outcome["stop_reason"] != str(MissionStopReason.NO_DISPATCHABLE_WORK)
-
-
 def _assembly(world: World) -> CompositionAcceptanceAssembly:
     return CompositionAcceptanceAssembly(
         world.store, world.service, dispatch=world.dispatch
@@ -438,7 +409,7 @@ def test_accepted_children_do_not_mix_sibling_acceptances_on_a_shared_duty(
         HtnStore(world.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
-    first = world.dispatch.apply_planner_reply(
+    first = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(outer, goal_id=ROOT_TASK, obligation_id=ROOT_DUTY, revision=0, proposal_id="o"),
         principal=world.principal,
@@ -449,7 +420,7 @@ def test_accepted_children_do_not_mix_sibling_acceptances_on_a_shared_duty(
     assess = _task_of(world, "plan.subgoal")
     network = world.network()
     assess_spec = next(spec for spec in network.occurrences if str(spec.task_id) == assess)
-    second = world.dispatch.apply_planner_reply(
+    second = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(
             inner,
@@ -579,7 +550,7 @@ def _bare_world(tmp_path, *, key: str) -> World:
         HtnStore(world.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
-    first = world.dispatch.apply_planner_reply(
+    first = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(outer, goal_id=ROOT_TASK, obligation_id=ROOT_DUTY, revision=0, proposal_id="o"),
         principal=world.principal,
@@ -590,7 +561,7 @@ def _bare_world(tmp_path, *, key: str) -> World:
     assess = _task_of(world, "plan.bare")
     network = world.network()
     assess_spec = next(spec for spec in network.occurrences if str(spec.task_id) == assess)
-    second = world.dispatch.apply_planner_reply(
+    second = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(
             inner,

@@ -193,6 +193,7 @@ def test_failed_origin_actual_independent_verification_and_downstream_scope(tmp_
                     domain=DOC_DOMAIN,
                     allowed_tools=("workspace_read_file", "workspace_write_file"),
                     budget=Budget(max_tokens=300000, max_attempts=20),
+                    orchestration_semantics_version="legacy",
                 )
             )
             api = MissionControlV1(orch, tenant_id="tenant", principal=Principal("source-importer"))

@@ -29,7 +29,7 @@ def test_a_general_mission_carries_sources_into_the_worker_workspace(tmp_path):
             control = MissionControlV1(orch, tenant_id="tenant-5", principal=Principal("main-agent"))
             receipt = control.create_with_sources({
                 "mission": {"goal": "根据纪要整理待办", "success_criteria": ["file:a.md"],
-                            "idempotency_key": "general-with-source"},
+                            "idempotency_key": "general-with-source", "orchestration_semantics_version": "legacy"},
                 "sources": [{"path": "sources/纪要.md", "content": NOTES, "kind": "text/markdown"}],
             })
             mission = orch.store.get_mission(receipt["mission_id"])

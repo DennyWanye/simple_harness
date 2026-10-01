@@ -162,6 +162,7 @@ async def setup(tmp_path, *, compare=True, missing=False, document=False, on_syn
         "compare",
         allowed_tools=("workspace_read_file", "workspace_write_file"),
         budget=Budget(max_tokens=100000, max_attempts=12),
+        orchestration_semantics_version="legacy",
     )
     if compare:
         spec = replace(spec, search_policy_version_id=version)

@@ -30,6 +30,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_service_intent_provider_blocker as blocker  # noqa: E402
+from decision_loop import auto_grant, content_critic_step  # noqa: E402
 from test_htn_end_to_end import ROOT_DUTY  # noqa: E402
 from test_provider_grant_rehandoff import (  # noqa: E402
     HELD,
@@ -118,6 +119,7 @@ def test_consecutive_after_handoff_unknowns_stop_even_when_the_ladder_has_rungs(
         async with _open_loop(evidence, provider, max_planning_attempts=3) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await blocker._run_until_done_or(loop, seconds=10.0)
@@ -201,7 +203,7 @@ def test_n_minus_one_after_handoff_unknown_then_recovery_completes(tmp_path) -> 
         {
             "planner": [_unclassified, adopt],
             "worker": (leaf + review) * 4,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 8,
+            "critic": [content_critic_step()] * 8,
             "root_reviewer": [_accepting_reviewer] * 3,
         }
     )
@@ -210,6 +212,7 @@ def test_n_minus_one_after_handoff_unknown_then_recovery_completes(tmp_path) -> 
         async with _open_loop(evidence, provider, max_planning_attempts=3) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             _admit_root(loop, mission_id)
             await loop._try_planner_intent(mission_id, ordinal=1)
@@ -249,6 +252,7 @@ def test_a_legacy_mission_is_not_stopped_by_the_consecutive_bound(tmp_path) -> N
         ) as loop:
             mission = await loop.submit_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal="legacy goal",
                     success_criteria=("file:a.md",),
                     tenant_id="tenant-p23p",
@@ -302,6 +306,7 @@ def test_a_worker_leaf_consecutive_after_handoff_unknowns_stop_as_runtime_unavai
         async with _open_loop(evidence, provider, max_planning_attempts=3) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             _admit_root(loop, mission_id)
             await loop._try_planner_intent(mission_id, ordinal=1)
@@ -349,6 +354,7 @@ def test_after_handoff_unknown_keeps_error_class_and_http_status_on_the_ledger(
         async with _open_loop(evidence, provider, max_planning_attempts=3) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await blocker._run_until_done_or(loop, seconds=10.0)

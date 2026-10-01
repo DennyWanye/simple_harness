@@ -275,6 +275,9 @@ def _mission(tmp_path, key: str = "k"):
             orchestration_semantics_version="hierarchical",
         )
     )
+    from scripted_plans import detach_completion_protocol
+
+    detach_completion_protocol(service.store, mission.id)
     return service, mission
 
 
@@ -1141,7 +1144,9 @@ def _both_lane_world(tmp_path):
     _say(world, semantics, mission.id, "code.repo-checked-out", {"repository": REPOSITORY})
     _say(world, semantics, mission.id, "code.test-is-failing", {"test": FAILING_TEST})
     dispatch = HierarchicalDispatch(service.store, service, planning=world)
-    outcome = dispatch.apply_planner_reply(
+    from scripted_plans import apply_scripted_plan
+
+    outcome = apply_scripted_plan(dispatch,
         mission.id,
         # P2.3h: the fix methods moved to version 2 (their criterion_links changed).
         _refine_text("code.fix-by-patch", version=2),
@@ -1183,7 +1188,7 @@ def _say(world, semantics, mission_id: str, predicate: str, arguments: dict) -> 
 
 
 def _refine_text(method_id: str, version: int = 1) -> str:
-    from agent_orchestrator.testing.fixtures import plan_revision_proposal_step
+    from scripted_plans import plan_revision_proposal_step
 
     reference = ref(method_id, version)
     return plan_revision_proposal_step(

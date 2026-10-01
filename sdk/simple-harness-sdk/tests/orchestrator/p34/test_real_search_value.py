@@ -341,6 +341,7 @@ def mission_spec(budget_profile="original-v2"):
             "budget": {"max_tokens": synthesis_budget.max_tokens,
                        "max_attempts": synthesis_budget.max_attempts},
         },
+        orchestration_semantics_version="legacy",
     )
 
 

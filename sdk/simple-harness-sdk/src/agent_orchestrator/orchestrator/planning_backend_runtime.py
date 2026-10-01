@@ -11,35 +11,50 @@ from ..planning.htn.backend_port import BackendStatus, CandidatePlanWitness, Pla
 from .hierarchical_dispatch import append_hierarchical_event
 
 
-def bind_deployment(handler: Any, mission_id: str) -> None:
-    """Freeze native/solver selection before the first request, including recovery."""
+def deployment_identity(handler: Any) -> dict[str, Any]:
+    """What this process plans with: native or solver, its limits, the selection policy."""
     backend = handler._config.planning_backend
     limits = handler._config.planning_backend_limits
     if (backend is None) != (limits is None):
         raise ContractError("solver deployment requires both backend and limits")
     from ..planning.htn.method_selection import SelectionPolicyMode
     selection_policy = str(SelectionPolicyMode(handler._config.method_selection_policy))
-    identity = {"backend_id": "native" if backend is None else backend.backend_id,
-                "limits": None if limits is None else limits.to_json(),
-                "repair_enabled": handler._config.hierarchical_repair_enabled,
-                "method_selection_policy": selection_policy}
+    return {"backend_id": "native" if backend is None else backend.backend_id,
+            "limits": None if limits is None else limits.to_json(),
+            "method_selection_policy": selection_policy}
+
+
+def frozen_deployment_conflict(handler: Any, mission_id: str) -> str | None:
+    """Why the deployment this Mission froze is not this process's, or ``None``.
+
+    A Mission freezes its planning deployment at its first round.  One frozen under
+    another identity (a different policy or backend, or an identity an older build
+    wrote) is not replanned here: the loop stops it by name at its entry
+    (``Orchestrator._refuse_unsupported_contract``) instead of letting the mismatch
+    raise out of ``run()`` on its next round.
+    """
+    identity = deployment_identity(handler)
+    for event in handler.store.iter_events(mission_id):
+        if event.type == "PlanningDeploymentBound" and dict(event.payload) != identity:
+            return ("planning deployment differs from this Mission's frozen deployment: "
+                    f"frozen {dict(event.payload)!r}, this process {identity!r}")
+        if event.type == "PlanningBackendBound" and (
+            event.payload.get("backend_id") != identity["backend_id"]
+            or event.payload.get("limits") != identity["limits"]
+        ):
+            return "planning backend differs from this Mission's frozen deployment"
+    return None
+
+
+def bind_deployment(handler: Any, mission_id: str) -> None:
+    """Freeze native/solver selection before the first request, including recovery."""
+    identity = deployment_identity(handler)
     with handler.store.transaction():
-        bound = False
-        for event in handler.store.iter_events(mission_id):
-            if event.type == "PlanningDeploymentBound":
-                original = dict(event.payload)
-                # Older native deployments used this default before the field
-                # was serialized. Compare with that default, preserving old bytes.
-                original.setdefault("method_selection_policy", "MODEL_ON_MULTIPLE")
-                if original != identity:
-                    raise ContractError("planning deployment differs from this Mission's frozen deployment")
-                bound = True
-            if event.type == "PlanningBackendBound" and (
-                event.payload.get("backend_id") != identity["backend_id"]
-                or event.payload.get("limits") != identity["limits"]
-            ):
-                raise ContractError("planning backend differs from this Mission's frozen deployment")
-        if not bound:
+        conflict = frozen_deployment_conflict(handler, mission_id)
+        if conflict is not None:
+            raise ContractError(conflict)
+        if not any(event.type == "PlanningDeploymentBound"
+                   for event in handler.store.iter_events(mission_id)):
             append_hierarchical_event(handler.store, "PlanningDeploymentBound", mission_id,
                                       key=mission_id, payload=identity)
 

@@ -93,7 +93,7 @@ async def planner(orch, key, *, profile=None, sources=False):
                 "goal": "Read the original source and write NOTES.md",
                 "success_criteria": ["file:NOTES.md"],
                 "domain": DOC_DOMAIN,
-                "idempotency_key": key,
+                "idempotency_key": key, "orchestration_semantics_version": "legacy",
                 "budget": {"max_tokens": 4_000_000, "max_attempts": 12},
             },
             sources=[{"path": SOURCE, "content": SOURCE_TEXT, "kind": "markdown"}],
@@ -108,6 +108,7 @@ async def planner(orch, key, *, profile=None, sources=False):
                 idempotency_key=key,
                 budget=Budget(max_tokens=4_000_000, max_attempts=12),
                 runtime_profile_id=profile,
+                orchestration_semantics_version="legacy",
             )
         )
     orch.commit.begin_planning(mission.id)

@@ -159,6 +159,7 @@ def test_real_code_verified_target_survives_same_mission_document_attribution_at
                 idempotency_key="o5",
                 domain=CODE_DOMAIN,
                 budget=Budget(max_tokens=40000, max_attempts=6),
+                orchestration_semantics_version="legacy",
             )
         )
         planning = commit.begin_planning(mission.id)

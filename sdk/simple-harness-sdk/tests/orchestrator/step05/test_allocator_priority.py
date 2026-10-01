@@ -205,6 +205,7 @@ def test_the_score_is_frozen_on_the_attempt_and_the_conflict_tier_is_kept_in_the
                     allowed_tools=tuple(RECORDER_SPEC["allowed_tools"]),
                     budget=Budget(max_tokens=300_000, max_attempts=16),
                     workspace_seed=RECORDER_SEED,
+                    orchestration_semantics_version="legacy",
                 )
             )
             await orchestrator.run()

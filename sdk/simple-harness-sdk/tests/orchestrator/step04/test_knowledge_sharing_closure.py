@@ -47,6 +47,7 @@ def spec(key):
         untrusted_sources=("docs/",),
         synthesis=COMPARE_SYNTHESIS,
         conflict_reserve_tokens=20_000,
+        orchestration_semantics_version="legacy",
     )
 
 

@@ -443,6 +443,7 @@ def test_foreign_domain_cannot_use_are_tools(tmp_path, domain):
             with pytest.raises(ContractError):
                 await orch.submit_mission(
                     MissionSpec(
+                        orchestration_semantics_version="legacy",
                         goal="read",
                         success_criteria=("file:REPORT.md",),
                         tenant_id="test",

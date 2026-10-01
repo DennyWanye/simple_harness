@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from scripted_plans import detach_completion_protocol
 
 from agent_orchestrator.contracts import Budget, ContractError
 from agent_orchestrator.contracts.evidence_state import (
@@ -641,6 +642,8 @@ def build_world(tmp_path: Any, *, mode: str = HIERARCHICAL_SEMANTICS, key: str =
             orchestration_semantics_version=mode,
         )
     )
+    if mode == HIERARCHICAL_SEMANTICS:
+        detach_completion_protocol(service.store, mission.id)
     semantics = HtnStore(service.store)
     duties = ObligationStore(service.store)
     manifest_hash = semantics.insert_input_manifest(mission.id, LEAF_TASK, {"inputs": []})

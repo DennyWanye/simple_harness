@@ -338,6 +338,7 @@ async def crash(root, external, marker):
                 allowed_tools=TOOLS,
                 workspace_seed=APPROVAL_SEED,
                 budget=Budget(max_tokens=300_000, max_attempts=8, max_tool_calls=20),
+                orchestration_semantics_version="legacy",
             )
         )
         await orch.run()

@@ -827,6 +827,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
 # ------------------------------------------------------------------ derived cases (D8-8')
 def _spec_from_json(data: Mapping[str, Any]) -> MissionSpec:
     return MissionSpec(
+        orchestration_semantics_version="legacy",
         goal=str(data["goal"]),
         success_criteria=tuple(data["success_criteria"]),
         tenant_id=str(data["tenant_id"]),

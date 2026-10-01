@@ -244,8 +244,8 @@ async def execute_hierarchical(
         or config.max_concurrent_model_calls != manifest.physical_slots
     ):
         raise ContractError("hierarchical deployment differs from frozen model/concurrency")
-    if config.hierarchical_repair_enabled != (run.arm != FourArm.H_NATIVE_NO_REPAIR):
-        raise ContractError("no-repair ablation must be frozen before Mission creation")
+    if run.arm == FourArm.H_NATIVE_NO_REPAIR:
+        raise ContractError("the no-repair ablation arm was removed together with the repair switch")
     if (config.planning_backend is not None) != (run.arm == FourArm.H_SOLVER):
         raise ContractError("solver arm must use its actual planning backend")
     if config.planning_backend is not None and (

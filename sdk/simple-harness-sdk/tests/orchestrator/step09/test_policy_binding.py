@@ -54,6 +54,7 @@ def _spec(key):
         allowed_tools=TOOLS,
         budget=Budget(max_tokens=300_000, max_attempts=4),
         workspace_seed=DEMO_SEED,
+        orchestration_semantics_version="legacy",
     )
 
 

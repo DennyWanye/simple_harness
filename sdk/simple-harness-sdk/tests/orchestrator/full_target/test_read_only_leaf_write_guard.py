@@ -36,14 +36,11 @@ from test_read_only_rewrite_bound import (  # noqa: E402
     SEED,
     SEED_COLLECTOR,
     TOOLS,
-    _accepting_reviewer,
     _four_step,
     _write_and_envelope,
 )
 
 from agent_orchestrator.artifacts.workspace import WorkspaceManager  # noqa: E402
-from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
-from agent_orchestrator.contracts.state_machines import MissionStopReason  # noqa: E402
 from agent_orchestrator.governance.policies import effective_tools  # noqa: E402
 from agent_orchestrator.orchestrator.commit_service import mission_account  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
@@ -60,7 +57,6 @@ from agent_orchestrator.runtime.tool_gateway import (  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
     RoleScriptedProvider,
-    critic_step,
 )
 from simple_harness.contracts import CallId  # noqa: E402
 from simple_harness.tools import ToolCall  # noqa: E402
@@ -412,50 +408,6 @@ def _run(world: _CodeWorld, tmp_path, provider: RoleScriptedProvider) -> dict[st
     return asyncio.run(case())
 
 
-def test_a_verify_leaf_that_tries_to_rewrite_source_then_writes_a_report_completes(
-    tmp_path,
-) -> None:
-    """The fifth-batch shape: verify calls write on product source, the tool
-    refuses, the Worker writes REPORT.md instead, the leaf is accepted, the
-    Mission completes, and ``read_only_leaf_rewrote_workspace`` never fires."""
-
-    world = _world(tmp_path, key="p23u-e2e")
-    worker = _TryRewriteThenReport()
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 40,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 16,
-            "root_reviewer": [_accepting_reviewer],
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    reasons = [
-        item.payload.get("reason")
-        for item in outcome["events"]
-        if item.type == "ResultRejected"
-    ]
-    assert "read_only_leaf_rewrote_workspace" not in reasons, (
-        reasons,
-        outcome["types"],
-        outcome["status"],
-        outcome["stop_reason"],
-    )
-    assert outcome["refused_writes"], (
-        "the verify leaf must have been refused at the write tool",
-        outcome["types"][-24:],
-        outcome["status"],
-    )
-    assert NEW_COLLECTOR not in outcome["collector_bytes"]
-    assert outcome["collector_bytes"] in {PATCHED_COLLECTOR, SEED_COLLECTOR, ""}
-    assert outcome["status"] is MissionStatus.COMPLETED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: {outcome['report'].get('detail')} "
-        f"types={outcome['types'][-24:]}"
-    )
-    assert str(outcome["stop_reason"]) == str(MissionStopReason.VERIFICATION_PASSED)
-    assert outcome["conservation"]["holds"] is True
-    assert outcome["verify_attempts"] == 1, outcome["verify_attempts"]
-
-
 # ======================================================================================
 # 5. Prompt: a new hierarchical Worker version; v2 bytes stay frozen
 # ======================================================================================
@@ -623,45 +575,6 @@ class _RewriteReportOnRetry:
                 ),
             ]
         raise AssertionError(f"unexpected leaf goal: {goal!r}")
-
-
-def test_a_read_only_retry_after_verification_failed_may_rewrite_its_report(
-    tmp_path,
-) -> None:
-    """P1-1: first verify writes REPORT.md then fails code_test (verification_failed);
-    retry still rewrites REPORT.md and still cannot rewrite seed/overlay source."""
-
-    world = _world(tmp_path, key="p23u-retry-report")
-    worker = _RewriteReportOnRetry()
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 40,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 16,
-            "root_reviewer": [_accepting_reviewer],
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    records = outcome["verify_records"]
-    assert records[1]["retry_of"] == records[0]["id"], records
-    assert "# verify round 2" in records[1]["report"], records[1]["report"]
-    assert NEW_COLLECTOR not in records[1]["collector"]
-    assert records[1]["collector"] in {PATCHED_COLLECTOR, SEED_COLLECTOR, ""}
-    report_refused = [
-        call
-        for call in outcome["refused_writes"]
-        if str((call.get("arguments") or {}).get("path") or "").endswith("REPORT.md")
-        or str((call.get("arguments") or {}).get("path")) == REPORT
-    ]
-    assert report_refused == [], report_refused
-    collector_refused = [
-        call
-        for call in outcome["refused_writes"]
-        if COLLECTOR in str((call.get("arguments") or {}).get("path") or "")
-    ]
-    assert collector_refused, (
-        "retry must still be refused when rewriting overlay/seed source",
-        outcome["refused_writes"],
-    )
 
 
 # ======================================================================================

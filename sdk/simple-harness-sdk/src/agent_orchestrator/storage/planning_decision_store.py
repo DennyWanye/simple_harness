@@ -556,6 +556,18 @@ class PlanningDecisionStore:
         ).fetchone()
         return None if row is None else _decision_row(row)
 
+    def committed_decision_for_intent(self, intent_id: str) -> dict[str, Any] | None:
+        """The decision the request answered by ``intent_id`` ended COMMITTED with."""
+
+        intent = identifier(intent_id, "planning_requests.intent_id")
+        row = self._store.connection.execute(
+            f"SELECT {','.join('d.' + column + ' AS ' + column for column in _DECISION_COLUMNS)}"
+            " FROM planning_decisions d JOIN planning_requests r ON r.request_id = d.request_id"
+            " WHERE r.intent_id = ? AND d.status = ? ORDER BY d.created_at DESC, d.rowid DESC LIMIT 1",
+            (intent, str(PlanningDecisionStatus.COMMITTED)),
+        ).fetchone()
+        return None if row is None else _decision_row(row)
+
     def latest_planning_decision(self, mission_id: str) -> dict[str, Any] | None:
         """The Mission's most recent decision row (any request), or ``None``."""
 

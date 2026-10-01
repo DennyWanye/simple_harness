@@ -70,6 +70,8 @@ def _command(key: str, **overrides):
         "success_criteria": ["file:NOTES.md"],
         "idempotency_key": key,
         "budget": {"max_tokens": 200_000, "max_attempts": 4},
+        # this file drives the flat mode's scripted graph proposal end to end
+        "orchestration_semantics_version": "legacy",
     }
     command.update(overrides)
     return command

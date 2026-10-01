@@ -27,6 +27,8 @@ for _path in (_HERE, _HERE / "fixtures" / "htn"):
         sys.path.insert(0, str(_path))
 
 from htn_world import method, out, param, step  # noqa: E402
+from scripted_plans import apply_scripted_plan  # noqa: E402
+from decision_loop import content_critic_step  # noqa: E402
 from test_htn_end_to_end import (  # noqa: E402
     HIERARCHICAL_SEMANTICS,
     ROOT_DUTY,
@@ -45,7 +47,6 @@ from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
     RoleScriptedProvider,
-    critic_step,
     envelope_step,
     package_of,
 )
@@ -87,7 +88,7 @@ def _commit(world: World, contract, *, extra=()) -> None:
         receipt = env.admit(item)
         assert receipt.admitted, receipt.problems
         HtnStore(world.store).register_method(item, env.registry.registration(item.method_ref()))
-    outcome = world.dispatch.apply_planner_reply(
+    outcome = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(contract, goal_id=ROOT_TASK, obligation_id=ROOT_DUTY, revision=0,
                   proposal_id="prop-2b"),
@@ -135,7 +136,7 @@ def _abc_world(tmp_path, *, key: str) -> World:
 
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = build_world(evidence, key=key, mode=HIERARCHICAL_SEMANTICS)
+    world = build_world(evidence, key=key, mode=HIERARCHICAL_SEMANTICS, bound=True)
     _plan_types(world.env)
     contract = method(
         "plan.abc",
@@ -157,7 +158,7 @@ def _abc_world(tmp_path, *, key: str) -> World:
 #: 按任务目标给每个 Attempt 一份脚本：写一个文件，交回声明了端口的结果信封。
 _LEAF_FILES = {
     "goal plan.leaf": ("result.json", {"result": "result.json"}),
-    "goal plan.act": ("verdict.json", {}),
+    "goal plan.act": ("verdict.json", {"verdict": "verdict.json"}),
     "goal plan.review": ("a.md", {"verdict": "a.md"}),
 }
 
@@ -189,7 +190,7 @@ def _run_abc(world: World, tmp_path) -> dict[str, Any]:
     worker = _ByGoalWorker()
     provider = RoleScriptedProvider({
         "worker": [worker] * 12,
-        "critic": [critic_step(verdict="PASS", criteria_met=True)] * 6,
+        "critic": [content_critic_step()] * 6,
         "root_reviewer": [_accepting_reviewer] * 2,
     })
 
@@ -273,7 +274,7 @@ def _branch_world(tmp_path, *, key: str, with_compound: bool) -> World:
 
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = build_world(evidence, key=key, mode=HIERARCHICAL_SEMANTICS)
+    world = build_world(evidence, key=key, mode=HIERARCHICAL_SEMANTICS, bound=True)
     _plan_types(world.env)
     steps = [
         _leaf("a", "plan.leaf"),

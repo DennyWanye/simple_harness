@@ -94,7 +94,7 @@ def _planning(service, *, profile=None, **overrides):
                 idempotency_key="doc-mission",
                 domain=DOC_DOMAIN,
                 budget=Budget(max_tokens=100_000, max_attempts=12),
-                **overrides,
+                **{"orchestration_semantics_version": "legacy", **overrides},
             )
         )
     assert domains.resolve_domain(DOC_DOMAIN) is current

@@ -67,6 +67,7 @@ def _service(tmp_path):
     tools = ("workspace_read_file", "workspace_write_file", "workspace_list", "appworld_execute")
     service = CommitService(Store.open(tmp_path / "core.db"))
     mission, _ = service.create_mission(MissionSpec(
+        orchestration_semantics_version="legacy",
         goal="Complete the public AppWorld task", success_criteria=("file:REPORT.md",),
         tenant_id="appworld-evaluation", idempotency_key="run", allowed_tools=tools,
         budget=Budget(max_tokens=100_000, max_attempts=6), domain="appworld-v1",
@@ -258,6 +259,7 @@ def test_host_receipt_cannot_cross_code_v3_or_are_domain(tmp_path, independent_e
     assert resolve_domain(ARE_DOMAIN).version == "1"
     service = CommitService(Store.open(tmp_path / f"{domain}.db"))
     mission, _ = service.create_mission(MissionSpec(
+        orchestration_semantics_version="legacy",
         goal="Other domain", success_criteria=("file:REPORT.md",),
         tenant_id="other", idempotency_key="run",
         allowed_tools=("workspace_write_file",),

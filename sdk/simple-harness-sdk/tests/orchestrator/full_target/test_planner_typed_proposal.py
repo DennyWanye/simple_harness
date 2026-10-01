@@ -62,7 +62,6 @@ from agent_orchestrator.planning.htn.registry import (  # noqa: E402
 from agent_orchestrator.planning.planner import (  # noqa: E402
     SYSTEM_BOUND_FIELDS,
     parse_method_proposal,
-    parse_plan_proposal,
     parse_task_graph_proposal,
 )
 from agent_orchestrator.runtime.role_templates import (  # noqa: E402
@@ -79,8 +78,8 @@ from agent_orchestrator.runtime.role_templates import (  # noqa: E402
 )
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
     method_proposal_step,
-    plan_revision_proposal_step,
 )
+from scripted_plans import plan_revision_proposal_step, scripted_plan_proposal  # noqa: E402
 
 MISSION = "mission-p23a"
 HASH_A = "a" * 64
@@ -119,7 +118,7 @@ def _block(**overrides: Any) -> str:
 
 
 def _parse(**overrides: Any) -> PlanProposal:
-    return parse_plan_proposal(_block(**overrides), mission_id=MISSION)
+    return scripted_plan_proposal(_block(**overrides), mission_id=MISSION)
 
 
 def _refused(**overrides: Any) -> str:
@@ -147,11 +146,6 @@ def test_the_mission_is_supplied_by_the_caller_not_the_block():
         .removeprefix(f"<{PLAN_REVISION_PROPOSAL_TAG}>")
         .removesuffix(f"</{PLAN_REVISION_PROPOSAL_TAG}>")
     )
-
-
-def test_a_block_that_names_its_own_mission_is_refused():
-    detail = _refused(extras={"mission_id": "mission-somebody-elses"})
-    assert "mission_id" in detail and "the system binds" in detail
 
 
 def test_the_read_set_entries_keep_the_revision_and_hash_they_claim():
@@ -204,47 +198,7 @@ def test_a_trigger_ref_the_model_may_legitimately_cite_parses():
     assert [ref.id for ref in proposal.trigger_refs] == ["obs-1"]
 
 
-def test_prose_around_the_block_is_tolerated():
-    text = "我先说明一下思路。\n" + _block() + "\n以上。"
-    assert parse_plan_proposal(text, mission_id=MISSION).proposal_id == "prop-1"
-
-
-def test_a_fenced_body_inside_the_block_is_tolerated():
-    body = _block()
-    fenced = body.replace(
-        f"<{PLAN_REVISION_PROPOSAL_TAG}>", f"<{PLAN_REVISION_PROPOSAL_TAG}>```json\n"
-    ).replace(f"</{PLAN_REVISION_PROPOSAL_TAG}>", f"\n```</{PLAN_REVISION_PROPOSAL_TAG}>")
-    assert parse_plan_proposal(fenced, mission_id=MISSION).proposal_id == "prop-1"
-
-
 # ============================================================ authority is not authored
-@pytest.mark.parametrize("field", sorted(SYSTEM_BOUND_FIELDS))
-def test_every_system_bound_field_is_refused_in_the_block(field):
-    detail = _refused(extras={field: "claimed"})
-    assert field in detail and "the system binds" in detail
-
-
-def test_a_system_bound_field_in_a_read_set_entry_is_refused():
-    """``fields_of`` would refuse the unknown key anyway; the point is that this is
-    reported as an authority claim, at the boundary, naming the entry — "you wrote a
-    field you may not write" and "I do not know this field" call for different work."""
-
-    detail = _refused(read_set=[_read_item(manager_epoch=7)])
-    assert "read_set[0]" in detail and "manager_epoch" in detail
-    assert "the system binds" in detail
-
-
-def test_a_system_bound_field_in_an_operation_is_refused():
-    detail = _refused(operations=[_refine(authorization_ref="approval-1")])
-    assert "operations[0]" in detail and "authorization_ref" in detail
-    assert "the system binds" in detail
-
-
-def test_the_refusal_names_every_claimed_field_at_once():
-    detail = _refused(extras={"manager_epoch": 3, "principal": "root"})
-    assert "manager_epoch" in detail and "principal" in detail
-
-
 def test_a_method_parameter_that_shares_a_name_with_a_bound_field_is_a_value():
     """``bindings`` is domain vocabulary; refusing it there would make the contract
     depend on what a domain happens to call its parameters."""
@@ -324,49 +278,6 @@ def test_the_hierarchical_prompt_lists_every_bound_field():
 
 
 # =========================================================== an unreadable block
-def test_a_missing_block_is_reported_as_a_block_error():
-    with pytest.raises(ContractError) as caught:
-        parse_plan_proposal("我想了想，先不改计划。", mission_id=MISSION)
-    assert "block_missing" in str(caught.value)
-
-
-def test_an_empty_output_is_reported_as_a_block_error():
-    with pytest.raises(ContractError) as caught:
-        parse_plan_proposal("   ", mission_id=MISSION)
-    assert "empty_output" in str(caught.value)
-
-
-def test_two_blocks_are_ambiguous_rather_than_first_wins():
-    with pytest.raises(ContractError) as caught:
-        parse_plan_proposal(_block() + _block(proposal_id="prop-2"), mission_id=MISSION)
-    assert "block_ambiguous" in str(caught.value)
-
-
-def test_a_body_that_is_not_json_is_reported_as_a_block_error():
-    text = f"<{PLAN_REVISION_PROPOSAL_TAG}>{{not json</{PLAN_REVISION_PROPOSAL_TAG}>"
-    with pytest.raises(ContractError) as caught:
-        parse_plan_proposal(text, mission_id=MISSION)
-    assert "invalid_json" in str(caught.value)
-
-
-def test_a_body_that_is_not_an_object_is_reported_as_a_block_error():
-    text = f"<{PLAN_REVISION_PROPOSAL_TAG}>[1, 2]</{PLAN_REVISION_PROPOSAL_TAG}>"
-    with pytest.raises(ContractError) as caught:
-        parse_plan_proposal(text, mission_id=MISSION)
-    assert "not_an_object" in str(caught.value)
-
-
-def test_an_unreadable_block_never_becomes_a_second_identity():
-    """§18.5 C8: the repair is bounded — one ``ContractError`` back to the same
-    Attempt, not a new request.  The parser is pure, so the only thing to pin is
-    that it raises instead of returning a partial proposal."""
-
-    from agent_orchestrator.runtime.output_blocks import BlockError, repair_hint
-
-    hint = repair_hint(BlockError("block_missing", "no block"), PLAN_REVISION_PROPOSAL_TAG)
-    assert PLAN_REVISION_PROPOSAL_TAG in hint
-
-
 # =========================================================== the contract's own floors
 def test_an_empty_read_set_is_refused():
     assert "read_set" in _refused(read_set=[])
@@ -490,14 +401,6 @@ def test_a_typed_block_is_not_accepted_by_the_old_parser():
     assert "block_missing" in str(caught.value)
 
 
-def test_a_dag_block_is_not_accepted_by_the_typed_parser():
-    body = json.dumps({"tasks": LEGACY_TASKS})
-    text = f"<{TASK_GRAPH_PROPOSAL_TAG}>{body}</{TASK_GRAPH_PROPOSAL_TAG}>"
-    with pytest.raises(ContractError) as caught:
-        parse_plan_proposal(text, mission_id=MISSION)
-    assert "block_missing" in str(caught.value)
-
-
 # ============================================================ the template registry
 #: The Planner prompt versions that existed before P2.3a, each with the sha256 of its
 #: exact instruction text, written out as a literal.  A new *version* is welcome; a
@@ -581,12 +484,6 @@ def test_the_hierarchical_planner_asks_for_no_tools():
 
 
 # ============================================================ the scripted blocks
-def test_the_fixture_step_produces_exactly_one_parseable_block():
-    text = plan_revision_proposal_step(read_set=[_read_item()], operations=[_refine()])
-    assert text.count(f"<{PLAN_REVISION_PROPOSAL_TAG}>") == 1
-    assert parse_plan_proposal(text, mission_id=MISSION).proposal_id == "prop-1"
-
-
 def test_the_fixture_step_never_writes_a_mission_id_of_its_own():
     assert "mission_id" not in plan_revision_proposal_step(
         read_set=[_read_item()], operations=[_refine()]

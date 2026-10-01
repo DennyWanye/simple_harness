@@ -189,6 +189,7 @@ def test_a_synthesis_template_asking_for_tests_is_refused_at_the_door(tmp_path):
             "success_criteria": ["pytest:tests/test_all.py"],
             "verification_policy": ["format_check", "rule_check", "code_test"],
         },
+        orchestration_semantics_version="legacy",
     )
 
     async def run():

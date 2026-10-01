@@ -40,6 +40,11 @@ if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
 from htn_world import Env, method, out, param, root_network, step, task_binding  # noqa: E402
+from scripted_plans import detach_completion_protocol  # noqa: E402
+
+from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
+    CommitService as _PlainCommitService,
+)
 
 from agent_orchestrator.contracts import Budget, ContractError  # noqa: E402
 from agent_orchestrator.contracts.evidence_state import (  # noqa: E402
@@ -223,6 +228,10 @@ class World:
 def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23a") -> World:
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
     mission, _ = service.create_mission(_spec(key, mode=mode))
+    if mode == HIERARCHICAL_SEMANTICS and type(service) is _PlainCommitService:
+        # A fixture that substitutes its own CommitService (the assured seams patch
+        # this module's name) keeps the binding its Mission was created with.
+        detach_completion_protocol(service.store, mission.id)
     env = _env(mission.id)
     contract = _outer()
     receipt = env.admit(contract)
@@ -370,6 +379,7 @@ def test_the_legacy_branch_never_reaches_the_semantic_store(tmp_path, monkeypatc
 def test_the_server_side_default_is_legacy(tmp_path):
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
     spec = MissionSpec(
+        orchestration_semantics_version="legacy",
         goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="default"
     )
     assert spec.orchestration_semantics_version == LEGACY_SEMANTICS
@@ -382,6 +392,7 @@ def test_the_default_does_not_change_the_mission_spec_hash(tmp_path):
 
     del tmp_path
     spec = MissionSpec(
+        orchestration_semantics_version="legacy",
         goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="hash"
     )
     assert SEMANTICS_KEY not in spec.to_json()

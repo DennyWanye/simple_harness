@@ -59,8 +59,8 @@ from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
     RoleScriptedProvider,
-    plan_revision_proposal_step,
 )
+from scripted_plans import apply_scripted_plan, plan_revision_proposal_step  # noqa: E402
 
 
 def _nested_outer():
@@ -140,6 +140,8 @@ def _nested_world(tmp_path, *, key: str, tokens: int | None = None) -> World:
         evidence,
         key=key,
         mode=HIERARCHICAL_SEMANTICS,
+        # the refinement entry opens a real Planner request, so the world stays bound
+        bound=True,
         **({} if tokens is None else {"tokens": tokens}),
     )
     env = world.env
@@ -157,7 +159,7 @@ def _nested_world(tmp_path, *, key: str, tokens: int | None = None) -> World:
         HtnStore(world.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
-    outcome = world.dispatch.apply_planner_reply(
+    outcome = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(outer, goal_id=ROOT_TASK, obligation_id=ROOT_DUTY, revision=0,
                   proposal_id="prop-outer"),
@@ -173,7 +175,9 @@ def _cycle(
     world: World, evidence: Path, *, rounds: int = 1, settle_between: bool = False
 ) -> dict[str, Any]:
     config = OrchestratorConfig(
-        evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5
+        evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5,
+        # the round under test is one that asks the Planner model (and reserves for it)
+        method_selection_policy="ALWAYS_MODEL",
     )
 
     async def case() -> dict[str, Any]:
@@ -344,7 +348,9 @@ def test_a_restarted_process_does_not_ask_the_same_revision_again(tmp_path) -> N
     evidence = Path(tmp_path) / "evidence"
     world.store.close()
     config = OrchestratorConfig(
-        evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5
+        evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5,
+        # the round under test is one that asks the Planner model (and reserves for it)
+        method_selection_policy="ALWAYS_MODEL",
     )
 
     async def case() -> dict[str, Any]:
@@ -417,6 +423,8 @@ def _mixed_world(tmp_path, *, key: str, tokens: int | None = None) -> World:
         evidence,
         key=key,
         mode=HIERARCHICAL_SEMANTICS,
+        # the refinement entry opens a real Planner request, so the world stays bound
+        bound=True,
         **({} if tokens is None else {"tokens": tokens}),
     )
     env = world.env
@@ -434,7 +442,7 @@ def _mixed_world(tmp_path, *, key: str, tokens: int | None = None) -> World:
         HtnStore(world.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
-    outcome = world.dispatch.apply_planner_reply(
+    outcome = apply_scripted_plan(world.dispatch,
         world.mission.id,
         _proposal(
             outer, goal_id=ROOT_TASK, obligation_id=ROOT_DUTY, revision=0,

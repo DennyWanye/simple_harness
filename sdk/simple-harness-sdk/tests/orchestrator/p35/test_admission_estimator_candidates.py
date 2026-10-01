@@ -48,6 +48,7 @@ def test_the_persisted_admission_identity_picks_the_candidate(tmp_path) -> None:
             mission = await orch.submit_mission(MissionSpec(
                 "Write the deliverable", ("file:answer.txt",), "test", "admission",
                 allowed_tools=("workspace_list", "workspace_write_file"), budget=Budget(max_tokens=400000, max_attempts=10),
+                orchestration_semantics_version="legacy",
             ))
             planning = orch.commit.begin_planning(mission.id)
             orch.commit.commit_task_graph(

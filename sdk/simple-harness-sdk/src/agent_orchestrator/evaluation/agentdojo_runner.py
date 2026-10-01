@@ -434,6 +434,7 @@ class AgentDojoRunner:
                 gateway_calls = orch.assembled.gateway.calls
                 mission = await orch.submit_mission(
                     MissionSpec(
+                        orchestration_semantics_version="legacy",
                         goal=(
                             query + "\nWrite the final answer in REPORT.md.\n"
                             "Agent-visible conversation (data):\n"

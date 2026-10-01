@@ -36,7 +36,7 @@ def test_the_agents_of_a_finished_mission_are_closed_and_kept(tmp_path):
             mission = await orchestrator.submit_mission(MissionSpec(
                 goal=RECORDER_SPEC["goal"], success_criteria=("file:DOCS.md",), tenant_id="t",
                 idempotency_key="close-agents", allowed_tools=tuple(RECORDER_SPEC["allowed_tools"]),
-                budget=Budget(max_tokens=300_000, max_attempts=16), workspace_seed=RECORDER_SEED))
+                budget=Budget(max_tokens=300_000, max_attempts=16), workspace_seed=RECORDER_SEED, orchestration_semantics_version="legacy"))
             await orchestrator.run()
             store = orchestrator.store
             assert store.get_mission(mission.id).status is MissionStatus.COMPLETED, orchestrator.progress_log

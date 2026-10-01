@@ -52,19 +52,14 @@ _HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
 if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
-import test_evidence_saturation as saturation  # noqa: E402
-import test_hierarchical_event_flow as flow  # noqa: E402
-import test_htn_end_to_end as e2e  # noqa: E402
 import test_method_synthesis as synth  # noqa: E402
 import test_service_intent_provider_blocker as blocker  # noqa: E402
 from htn_world import method, param, ref, step  # noqa: E402
 
 from agent_orchestrator.contracts.htn import MethodContract, TaskForm  # noqa: E402
-from agent_orchestrator.contracts.models import ContractError, MissionStatus  # noqa: E402
-from agent_orchestrator.contracts.resolution import ReviewAccount  # noqa: E402
+from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.contracts.state_machines import TERMINAL_MISSION  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
-    MAX_SYNTHESIS_ASKS,
     Orchestrator,
 )
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
@@ -77,15 +72,10 @@ from agent_orchestrator.planning.htn.synthesis import (  # noqa: E402
     SynthesisReplyUnreadable,
     synthesis_schema_feedback,
 )
-from agent_orchestrator.planning.planner import (  # noqa: E402
-    NO_APPLICABLE_METHOD,
-    PROPOSAL_WRONG_BLOCK,
-    NoApplicableMethodDeclared,
-    parse_method_proposal,
-    parse_plan_proposal,
-)
-from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.runtime.output_blocks import BlockError, repair_hint  # noqa: E402
+from agent_orchestrator.planning.planner import parse_method_proposal  # noqa: E402
+
+NO_APPLICABLE_METHOD = "no_applicable_method"
+PROPOSAL_WRONG_BLOCK = "proposal_wrong_block"
 from agent_orchestrator.runtime.role_templates import (  # noqa: E402
     HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE,
     METHOD_PROPOSAL_TAG,
@@ -107,7 +97,6 @@ from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
     RoleScriptedProvider,
     method_proposal_step,
-    plan_revision_proposal_step,
     role_of,
 )
 from simple_harness import MessageRole  # noqa: E402
@@ -474,77 +463,6 @@ def _last_user_text(request: Any) -> str:
     return ""
 
 
-def test_a_reply_the_codec_cannot_read_is_asked_once_more_with_the_problems_attached(tmp_path):
-    """The episode's synthesiser reply, then a legal one: the round is admitted.
-
-    Same anchor (``…:synthesizer:task-root:2``), ordinal +1, the first reply written
-    down as ``MethodSynthesisReplyUnreadable`` with the codec's words, the second ask's
-    request carrying those words as ``schema_feedback``, both asks on the Mission's
-    planning account, and the round concluded ``admitted`` with ``asks == 2``.
-    **Mutation**: ``MAX_SYNTHESIS_ASKS = 1`` → red (concluded UNREADABLE on ask 1);
-    ``schema_feedback`` not handed to the request → red (second package carries none).
-    """
-
-    outcome = _synthesis_flow(
-        tmp_path,
-        key="p23g-retry-admitted",
-        synthesizer_steps=[
-            reply("grok_synthesizer_round1"),
-            method_proposal_step(saturation._free_method().to_json()),
-        ],
-        planner_steps=[
-            "nothing to propose",
-            "still nothing",
-            saturation._adopt(saturation._free_method().method_ref()),
-        ],
-    )
-    assert outcome["roles"].get("method_synthesizer") == 2, outcome["roles"]
-    assert len(outcome["unreadable"]) == 1, outcome["types"]
-    first = outcome["unreadable"][0]
-    assert first["ordinal"] == 1 and first["block_defect"] == "schema"
-    assert first["problems"][0].startswith("method_proposal.method is missing required fields")
-    assert outcome["synthesis"] == [
-        {**outcome["synthesis"][0], "admitted": True, "asks": 2, "verdict": "TRIAL_ADMITTED"}
-    ], outcome["synthesis"]
-    subjects = [item[0] for item in outcome["synth_intents"]]
-    mission_id = outcome["mission_id"]
-    assert subjects == [
-        f"{mission_id}:synthesizer:task-root:1",
-        f"{mission_id}:synthesizer:task-root:2",
-    ], subjects
-    assert [item[3] for item in outcome["synth_intents"]] == [1, 2]
-    assert {item[2] for item in outcome["synth_intents"]} == {str(ReviewAccount.MISSION_PLANNING)}
-    assert [item[1] for item in outcome["synth_intents"]] == ["FAILED", "SETTLED"]
-    # the second ask carried the codec's words, the first carried none
-    second = json.loads(_last_user_text(outcome["synth_requests"][1]))
-    first_package = json.loads(_last_user_text(outcome["synth_requests"][0]))
-    assert first_package["schema_feedback"] == []
-    assert second["schema_feedback"][0] == first["problems"][0]
-    assert second["goal_type_ref"] and second["method_shape"]["method"] == list(
-        METHOD_SHAPE["method"]
-    )
-    assert outcome["committed"], outcome["types"]
-
-
-def test_a_second_unreadable_reply_concludes_the_round_and_nobody_is_asked_a_third_time(tmp_path):
-    outcome = _synthesis_flow(
-        tmp_path,
-        key="p23g-retry-twice",
-        synthesizer_steps=[reply("grok_synthesizer_round1"), "还是没有方法。"],
-        planner_steps=["nothing to propose", "still nothing"],
-    )
-    assert MAX_SYNTHESIS_ASKS == 2
-    assert outcome["roles"].get("method_synthesizer") == 2, outcome["roles"]
-    assert len(outcome["unreadable"]) == 1
-    assert outcome["synthesis"] and outcome["synthesis"][0]["admitted"] is False
-    assert outcome["synthesis"][0]["verdict"] == "UNREADABLE"
-    assert outcome["synthesis"][0]["asks"] == 2
-    assert "block_missing" in outcome["synthesis"][0]["problems"][0]
-    assert len(outcome["synth_intents"]) == 2
-    assert outcome["status"] is MissionStatus.FAILED, outcome["types"]
-    assert outcome["report"]["planning_failure"]["reason"] == "method_synthesis_refused"
-
-
 def test_the_retry_is_bounded_by_a_constant_read_off_the_intents_ordinal():
     source = inspect.getsource(Orchestrator._collect_synthesizer)
     # 2026-09-29: the bound counts real answers (a turn without a reply is forgiven)
@@ -562,111 +480,6 @@ def test_the_retry_is_bounded_by_a_constant_read_off_the_intents_ordinal():
 # ======================================================================================
 # 3. the Planner never proposes a method
 # ======================================================================================
-
-
-@pytest.mark.parametrize("name", ["grok_planner_round2", "grok_planner_round3"])
-def test_a_planner_reply_carrying_the_other_roles_block_is_the_wrong_block(name: str):
-    with pytest.raises(ContractError) as caught:
-        parse_plan_proposal(reply(name), mission_id="m")
-    cause = caught.value.__cause__
-    assert isinstance(cause, BlockError) and cause.reason == PROPOSAL_WRONG_BLOCK
-    assert PROPOSAL_WRONG_BLOCK in str(caught.value)
-    hint = repair_hint(cause, PLAN_REVISION_PROPOSAL_TAG)
-    assert "Planner" in hint and "不提方法" in hint
-    assert NO_APPLICABLE_METHOD in hint and PLAN_REVISION_PROPOSAL_TAG in hint
-    # a reply with neither block keeps its old name
-    with pytest.raises(ContractError) as plain:
-        parse_plan_proposal("我想了想，先不改计划。", mission_id="m")
-    assert plain.value.__cause__.reason == "block_missing"
-
-
-def test_the_wrong_block_is_filed_under_its_own_reason_and_the_hint_reaches_the_next_round(
-    tmp_path,
-):
-    """Round 2 of the episode, then a legal adoption: the second package carries the hint.
-
-    **Mutation**: remove the ``<method_proposal>`` check in ``parse_plan_proposal`` and
-    the reason falls back to ``proposal_unreadable`` with a "no block found" hint.
-    """
-
-    holder: dict[str, Any] = {}
-    contract = e2e._outer()
-    provider = RoleScriptedProvider(
-        {"planner": [reply("grok_planner_round2"), e2e._proposal_text(contract)]}
-    )
-    config = OrchestratorConfig(
-        evidence_root=Path(tmp_path) / "evidence", max_concurrency=1, test_timeout_seconds=60
-    )
-
-    async def case() -> None:
-        async with Orchestrator(config, provider) as orchestrator:
-            mission, _env, _contract = flow._seed_hierarchical(orchestrator, key="p23g-wrong-block")
-            await orchestrator.run()
-            rejections = flow._events(orchestrator, mission.id, "PlanningRejected")
-            holder["rejections"] = [dict(item.payload) for item in rejections]
-            holder["committed"] = flow._events(orchestrator, mission.id, "PlanRevisionCommitted")
-            holder["requests"] = [
-                _last_user_text(request)
-                for request in provider.requests
-                if role_of(request) == "planner"
-            ]
-
-    asyncio.run(case())
-    first = holder["rejections"][0]
-    assert first["reason"] == PROPOSAL_WRONG_BLOCK, holder["rejections"]
-    assert first["detail"]["block_defect"] == PROPOSAL_WRONG_BLOCK
-    assert "不提方法" in first["detail"]["repair_hint"]
-    assert holder["committed"], "the adoption after the hint went through"
-    requests = holder["requests"]
-    assert len(requests) == 2, len(requests)
-    assert PROPOSAL_WRONG_BLOCK not in requests[0]
-    assert PROPOSAL_WRONG_BLOCK in requests[1] and "不提方法" in requests[1]
-
-
-def test_an_empty_operations_proposal_is_the_planners_explicit_no_method_answer(tmp_path):
-    """The shape v4 prescribes is read before the codec and filed under its own reason."""
-
-    text = plan_revision_proposal_step(
-        proposal_id="p-none",
-        operations=[],
-        read_set=[
-            {"kind": "task", "id": "task-root", "semantic_revision": 1, "content_hash": "a" * 64}
-        ],
-        rationale="no_applicable_method: 三个方法都要先观察到 test-is-failing",
-    )
-    with pytest.raises(NoApplicableMethodDeclared) as caught:
-        parse_plan_proposal(text, mission_id="m")
-    assert caught.value.rationale.startswith("no_applicable_method: ")
-    assert caught.value.proposal_id == "p-none"
-    assert isinstance(caught.value, ContractError)
-    reason, detail = flow._reject_reason(tmp_path, text=text, key="p23g-no-method")
-    assert reason == NO_APPLICABLE_METHOD
-    assert detail == {"proposal_id": "p-none", "rationale": caught.value.rationale}
-    assert "repair_hint" not in detail and "block_defect" not in detail
-
-
-def test_v4_never_tells_the_planner_to_propose_a_method_and_v3_keeps_its_bytes():
-    v3 = PLANNER_HIERARCHICAL_V3.instructions
-    v4 = PLANNER_HIERARCHICAL_V4.instructions
-    assert "改为只输出一个 <method_proposal>" in v3
-    assert "改为只输出一个 <method_proposal>" not in v4
-    assert "你永远不提出方法" in v4 and PROPOSAL_WRONG_BLOCK in v4
-    assert NO_APPLICABLE_METHOD in v4 and "operations 写空数组 []" in v4
-    assert v4.count(f"<{PLAN_REVISION_PROPOSAL_TAG}>") >= 1
-    assert hashlib.sha256(v3.encode("utf-8")).hexdigest() == (
-        "ba244a12bf504051d7ebc954f462cf23f9c7734dff980c539187834a0a670acb"
-    )
-    assert PLANNER_HIERARCHICAL_V4.prompt_version == PLANNER_HIERARCHICAL_V4_VERSION
-    assert TEMPLATE_VERSIONS["planner"][PLANNER_HIERARCHICAL_V4_VERSION] is PLANNER_HIERARCHICAL_V4
-    # P2.3j: v3 and v4 stay registered (replayable) under package 2; the current
-    # package is 3.  P2.3n: the unpinned default moved from v5 to v6; v5 stays a
-    # pin of this package.
-    assert PLANNER_HIERARCHICAL_V4_VERSION in HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE[2]
-    assert PLANNER_HIERARCHICAL_V3.prompt_version in HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE[2]
-    assert PLANNER_HIERARCHICAL_V4_VERSION not in hierarchical_planner_versions()
-    assert "return PLANNER_HIERARCHICAL_V7" in inspect.getsource(
-        Orchestrator._hierarchical_planner_template
-    )
 
 
 # ======================================================================================

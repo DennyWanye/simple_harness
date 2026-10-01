@@ -126,6 +126,7 @@ def scenes(tmp_path, monkeypatch):
                     idempotency_key="d-oracle",
                     domain=domain,
                     budget=Budget(max_tokens=200_000, max_attempts=20),
+                    orchestration_semantics_version="legacy",
                 )
             )
         assert commit_module.resolve_domain is resolve_domain

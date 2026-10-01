@@ -51,6 +51,7 @@ def spec(key: str = "g-1", **overrides: Any) -> MissionSpec:
         budget=Budget(max_tokens=200_000, max_attempts=12),
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 

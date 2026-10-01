@@ -238,6 +238,7 @@ def spec(key, **overrides):
         synthesis=COMPARE_SYNTHESIS,
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 

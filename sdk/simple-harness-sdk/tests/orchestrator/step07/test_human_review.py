@@ -47,6 +47,7 @@ def _spec(key, criteria=("file:REPORT.md",)):
         allowed_tools=tuple(TOOLS),
         budget=Budget(max_tokens=300_000, max_attempts=8),
         workspace_seed=SEED,
+        orchestration_semantics_version="legacy",
     )
 
 
@@ -546,6 +547,7 @@ def _compare_spec(key):
         workspace_seed=COMPARE_SEED,
         untrusted_sources=("docs/",),
         conflict_reserve_tokens=20_000,
+        orchestration_semantics_version="legacy",
     )
 
 

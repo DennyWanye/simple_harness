@@ -27,6 +27,7 @@ SPEC = MissionSpec(
     idempotency_key="graph-1",
     allowed_tools=TOOLS,
     budget=Budget(max_tokens=100_000, max_attempts=3),
+    orchestration_semantics_version="legacy",
 )
 
 

@@ -32,7 +32,7 @@ def _request(key: str, **extra):
     return {
         "goal": "Write NOTES.md",
         "success_criteria": ["file:NOTES.md"],
-        "idempotency_key": key,
+        "idempotency_key": key, "orchestration_semantics_version": "legacy",
         "budget": {"max_tokens": 2_000_000, "max_attempts": 4},
         **extra,
     }
@@ -130,7 +130,8 @@ def test_public_create_freezes_profile_and_keeps_omitted_hash(tmp_path):
             assert changed.value.code == "conflict"
             assert (
                 MissionSpec(
-                    goal="x", success_criteria=("file:x",), tenant_id="t", idempotency_key="k"
+                    goal="x", success_criteria=("file:x",), tenant_id="t", idempotency_key="k",
+                    orchestration_semantics_version="legacy"
                 )
                 .to_json()
                 .get("runtime_profile_id")
@@ -212,6 +213,7 @@ def test_source_and_submit_paths_validate_selection(tmp_path):
                         tenant_id="tenant",
                         idempotency_key="submit-missing",
                         runtime_profile_id="missing",
+                        orchestration_semantics_version="legacy",
                     )
                 )
             assert len(orch.store.list_missions()) == 1
@@ -225,6 +227,7 @@ def test_source_and_submit_paths_validate_selection(tmp_path):
                         allowed_tools=orch.config.deployment_policy.allowed_tools,
                         budget=Budget(max_tokens=2_000_000, max_attempts=4),
                         runtime_profile_id="default",
+                        orchestration_semantics_version="legacy",
                     )
                 )
 
@@ -243,6 +246,7 @@ def test_bare_commit_cannot_bypass_profile_binding(tmp_path):
                     tenant_id="tenant",
                     idempotency_key="bare",
                     runtime_profile_id=LONG,
+                    orchestration_semantics_version="legacy",
                 )
             )
         assert store.list_missions() == []

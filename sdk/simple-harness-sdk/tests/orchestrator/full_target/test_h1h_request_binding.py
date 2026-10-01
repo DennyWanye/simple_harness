@@ -129,30 +129,6 @@ def test_new_protocol_request_binding_uses_the_sealed_package_and_prompt(tmp_pat
     assert binding.intent_id == intent.intent_id
 
 
-def test_legacy_request_does_not_gain_a_decision_binding(tmp_path) -> None:
-    store = Store.open(tmp_path / "orchestrator.db")
-    mission = _mission(store, protocol="legacy-plan-proposal-v1")
-    intent = _intent("legacy-request-1")
-    object.__setattr__(intent, "mission_id", mission.id)
-    orchestrator = object.__new__(Orchestrator)
-    orchestrator._store = store
-    # This protocol seam bypasses full runtime assembly but still journals real
-    # raw bytes in the same content-addressed store used by production.
-    orchestrator._assembled = SimpleNamespace(
-        workspaces=SimpleNamespace(artifact_store=ArtifactStore(store.path.parent / "artifacts"))
-    )
-
-    orchestrator._bind_hierarchical_planning_request(
-        intent=intent,
-        mission=mission,
-        new_mode=_Mode(),
-        package=_package(),
-        template=SimpleNamespace(prompt_version="planner-hierarchical-v8", instructions="prompt"),
-    )
-
-    assert PlanningDecisionStore(store).get_planning_request(intent.intent_id) is None
-
-
 def test_new_protocol_unreadable_reply_writes_new_and_legacy_events(tmp_path) -> None:
     """H1-H: a decode refusal keeps the legacy rejection ledger and adds its new event."""
 

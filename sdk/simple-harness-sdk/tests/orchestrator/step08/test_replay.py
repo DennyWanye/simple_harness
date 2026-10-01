@@ -88,6 +88,7 @@ def _spec(key, **overrides):
         workspace_seed=DEMO_SEED,
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 

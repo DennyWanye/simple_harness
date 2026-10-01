@@ -18,6 +18,14 @@ from .repair_impact import read_repair_impact_indexes
 
 REQUESTED = "PlanningRepairRequested"
 ADDRESSED = "PlanningRepairAddressed"
+#: 一步的失败事件 → 修复请求的触发源类型。请求只带事实，由规划器决定重试、换做法、补步骤
+#: 还是问人。
+STEP_FAILURE_SOURCES = {"ResultRejected": "WorkerRejected", "VerificationFailed": "VerifierAcceptanceRejected",
+                        "AttemptLost": "WorkerRejected", "AttemptTimedOut": "WorkerRejected",
+                        # 2026-09-29 真机第十、十一局：步骤如实报告"卡住"（缺上游文件）后尝试进"等重试"，
+                        # 却没人问规划器，几秒后判"没有可派发的工作"、整局失败。如实的卡住/失败/没进展
+                        # 报告也交给规划器（带上步骤自己的说明）。
+                        "OutcomeRecorded": "WorkerRejected"}
 #: 架构方案 B（2026-09-30）：一次资料变更没影响到任何在跑的尝试或引用它的已通过结果，
 #: 只记这一条（不发修复请求），下一轮不再重算。
 SOURCE_CHANGE_ASSESSED = "SourceChangeAssessed"
@@ -179,9 +187,53 @@ def settle_addressed_requests(handler: Any, dispatch: Any, mission: Any) -> bool
     return produced
 
 
+def failure_fingerprint(event_type: str, payload: Any) -> str:
+    """同一步的两次失败是不是"同一个失败"：去掉每次都变的东西（耗时、工作区路径）后的指纹。
+
+    验收失败按"哪一层 + 具体问题"算（``verification_failure_fingerprint``）；其余失败按
+    事件类型、原因和涉及路径算。只用来如实报告"连续几次一样"，不据此替规划器做任何决定。
+    """
+    from .occurrence_tasks import verification_failure_fingerprint
+
+    body = dict(payload or {})
+    if event_type == "VerificationFailed":
+        return verification_failure_fingerprint(body.get("failures") or ())
+    detail = body.get("detail") if isinstance(body.get("detail"), dict) else {}
+    return content_hash_of({"event_type": event_type, "reason": body.get("reason"),
+                            "outcome": body.get("outcome"),
+                            "paths": sorted(str(item) for item in detail.get("paths") or ())})
+
+
+def _is_step_failure(event: Any) -> bool:
+    if event.type not in STEP_FAILURE_SOURCES or not event.task_id:
+        return False
+    return (event.type != "OutcomeRecorded"
+            or event.payload.get("outcome") in {"blocked", "failure", "no_progress"})
+
+
+def step_failure_facts(events: Any, event: Any) -> dict[str, Any]:
+    """这一步到这次为止失败了几次、连续几次是同一个失败、失败指纹（片 0 第 2 步，2026-10-01）。
+
+    此前"只读步骤越权改文件"和"同一步反复同样失败"到次数就由 Harness 取消步骤、退掉做法再开
+    专用规划轮；现在只把这三个事实放进请求，规划器自己判断重试还有没有意义。
+    """
+    history = [e for e in events if _is_step_failure(e) and e.task_id == event.task_id
+               and int(e.seq or 0) <= int(event.seq or 0)]
+    fingerprint = failure_fingerprint(event.type, event.payload)
+    identical = 0
+    for earlier in reversed(history):
+        if failure_fingerprint(earlier.type, earlier.payload) != fingerprint:
+            break
+        identical += 1
+    return {"step_failures": len(history), "consecutive_identical": identical,
+            "failure_fingerprint": fingerprint}
+
+
 def record_request(dispatch: Any, mission_id: str, *, event_type: str,
                    trigger_refs: tuple[str, ...], source_key: str,
-                   detail: dict[str, Any]) -> bool:
+                   detail: dict[str, Any], scope: tuple[str, ...] | None = None) -> bool:
+    """``scope``：这条请求是"关于"哪些步骤的；不给就按触发引用推（该步骤及其上级目标）。
+    关于整个任务的请求（最终审查打回）由调用方给出全部步骤——任何一步上的计划改动都算处理了它。"""
     store = dispatch.store
     with store.transaction():
         if any(e.type == REQUESTED and e.payload.get("source_key") == source_key
@@ -196,7 +248,8 @@ def record_request(dispatch: Any, mission_id: str, *, event_type: str,
         append_hierarchical_event(store, REQUESTED, mission_id, key=source_key,
             payload={"source_key": source_key, "request_id": request.request_id,
                      "request": request.to_json(), "impact": impact.to_json(),
-                     "trigger_scope": trigger_scope(store, network, mission_id, trigger_refs)})
+                     "trigger_scope": (sorted(scope) if scope is not None
+                                       else trigger_scope(store, network, mission_id, trigger_refs))})
     return True
 
 
@@ -253,14 +306,9 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     dispatch = handler._new_mode(mission)
     if dispatch is None:
         return False
-    from .planning_protocol_binding import planning_protocol_for_mission
-    binding = planning_protocol_for_mission(handler.store, mission.id)
-    if binding is None or int(binding["package_version"]) < 6 or binding["protocol_version"] != "planning-decision-v1":
-        return False
     store = handler.store
     produced = False
     active_tasks = {str(spec.task_id) for spec in dispatch.network(mission.id).occurrences}
-    h4 = int(binding["package_version"]) >= 7
     seen = {e.payload.get("source_key") for e in store.iter_events(mission.id) if e.type == REQUESTED}
     from .failure_classes import classify_failure
 
@@ -269,25 +317,19 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
         attempt = store.get_attempt(attempt_id) if attempt_id else None
         return {} if attempt is None or not attempt.failure else {
             "failure_class": classify_failure(attempt.failure)}
-    sources = {"ResultRejected": "WorkerRejected", "VerificationFailed": "VerifierAcceptanceRejected",
-               "HierarchicalRootReviewRejected": "VerifierAcceptanceRejected"}
-    if h4:
-        sources.update({"AttemptLost": "WorkerRejected", "AttemptTimedOut": "WorkerRejected"})
-    # 2026-09-29 真机第十、十一局：步骤如实报告"卡住"（缺上游文件）后尝试进"等重试"，却没人
-    # 问规划器，几秒后判"没有可派发的工作"、整局失败。如实的卡住/失败/没进展报告也交给
-    # 规划器（带上步骤自己的说明），由它决定重排、补步骤或重试。
-    sources["OutcomeRecorded"] = "WorkerRejected"
+    sources = STEP_FAILURE_SOURCES
     produced |= settle_addressed_requests(handler, dispatch, mission)
     produced |= source_change_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
     produced |= stale_evidence_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
-    for event in tuple(store.iter_events(mission.id)):
+    events = tuple(store.iter_events(mission.id))
+    for event in events:
         source_key = "event:" + event.idempotency_key
         if event.type not in sources or source_key in seen:
             continue
         if (event.type == "OutcomeRecorded"
                 and event.payload.get("outcome") not in {"blocked", "failure", "no_progress"}):
             continue
-        if h4 and event.task_id and event.task_id not in active_tasks:
+        if event.task_id and event.task_id not in active_tasks:
             continue
         if (event.type in {"AttemptLost", "AttemptTimedOut"}
                 and event.payload.get("reason") in {"runtime_unavailable", "provider_outcome_unknown"}):
@@ -297,13 +339,14 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
         produced |= record_request(dispatch, mission.id, event_type=sources[event.type],
             trigger_refs=refs, source_key=source_key,
             detail={"source_event": event.idempotency_key, "event_type": event.type,
-                    "detail": dict(event.payload), **failure_class(event.attempt_id)})
+                    "detail": dict(event.payload), **failure_class(event.attempt_id),
+                    **({"occurrence": step_failure_facts(events, event)} if event.task_id else {})})
     htn = dispatch.semantics()
     for state in ("PENDING", "RECHECKING"):
         for dirty in htn.list_dirty(mission.id, state=state):
             # A committed repair already revoked these execution rights. Its
             # internal recheck marker is not a new evidence failure to replan.
-            if h4 and dirty.reason == "dispatch_generation_revoked":
+            if dirty.reason == "dispatch_generation_revoked":
                 continue
             source_key = "dirty:" + content_hash_of({k: v for k, v in asdict(dirty).items() if k != "state"})
             if source_key not in seen:
@@ -318,7 +361,7 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
                 trigger_refs=(mission.id,), source_key=source_key,
                 detail={"requirements": revision.to_json(), "content_hash": content_hash_of(revision.to_json())})
     for task in store.list_tasks(mission.id):
-        if h4 and task.id not in active_tasks:
+        if task.id not in active_tasks:
             continue
         for attempt in store.list_attempts(task.id):
             failure = attempt.failure
@@ -330,33 +373,32 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     # A committed retry is bound to the exact task/plan/input/operation read.
     # If it becomes stale before dispatch, reopen a system request; silently
     # retaining the old addressed trigger would leave the Task blocked forever.
-    if int(binding["package_version"]) >= 7:
-        from .planning_retry import RETRY_AUTHORIZED, pending_retry_permit, retry_decision_required
-        permits = [e for e in store.iter_events(mission.id) if e.type == RETRY_AUTHORIZED]
-        for task in store.list_tasks(mission.id):
-            if task.id not in active_tasks or not retry_decision_required(store, mission.id, task.id):
-                continue
-            latest = max(store.list_attempts(task.id), key=lambda item: item.ordinal)
-            previous = next((e for e in reversed(permits) if e.payload.get("task_id") == task.id
-                             and e.payload.get("failed_attempt_id") == latest.id), None)
-            if previous is None or pending_retry_permit(store, mission.id, task.id) is not None:
-                continue
-            from ..runtime.planning_operations import StoreOperationReader, build_operation_snapshot, SourceUnavailable
-            try:
-                operations = build_operation_snapshot(mission.id, reader=StoreOperationReader(store))
-                operation_state = operations.read_digest
-            except SourceUnavailable as error:
-                operation_state = error.reason
-            current = htn.task_semantics_of(mission.id, task.id)
-            retry_state = {"previous_decision": previous.payload["decision_id"], "attempt_id": latest.id,
-                     "task_version": task.version, "plan_revision": int(dispatch.network(mission.id).plan_revision),
-                     "binding_hash": None if current is None else content_hash_of(current.to_json()),
-                     "operation_state": operation_state}
-            source_key = "retry_stale:" + content_hash_of(retry_state)
-            if source_key not in seen:
-                produced |= record_request(dispatch, mission.id, event_type="WorkerRejected",
-                    trigger_refs=(latest.id, task.id), source_key=source_key,
-                    detail={"reason": "committed_retry_binding_changed", **retry_state})
+    from .planning_retry import RETRY_AUTHORIZED, pending_retry_permit, retry_decision_required
+    permits = [e for e in store.iter_events(mission.id) if e.type == RETRY_AUTHORIZED]
+    for task in store.list_tasks(mission.id):
+        if task.id not in active_tasks or not retry_decision_required(store, mission.id, task.id):
+            continue
+        latest = max(store.list_attempts(task.id), key=lambda item: item.ordinal)
+        previous = next((e for e in reversed(permits) if e.payload.get("task_id") == task.id
+                         and e.payload.get("failed_attempt_id") == latest.id), None)
+        if previous is None or pending_retry_permit(store, mission.id, task.id) is not None:
+            continue
+        from ..runtime.planning_operations import StoreOperationReader, build_operation_snapshot, SourceUnavailable
+        try:
+            operations = build_operation_snapshot(mission.id, reader=StoreOperationReader(store))
+            operation_state = operations.read_digest
+        except SourceUnavailable as error:
+            operation_state = error.reason
+        current = htn.task_semantics_of(mission.id, task.id)
+        retry_state = {"previous_decision": previous.payload["decision_id"], "attempt_id": latest.id,
+                 "task_version": task.version, "plan_revision": int(dispatch.network(mission.id).plan_revision),
+                 "binding_hash": None if current is None else content_hash_of(current.to_json()),
+                 "operation_state": operation_state}
+        source_key = "retry_stale:" + content_hash_of(retry_state)
+        if source_key not in seen:
+            produced |= record_request(dispatch, mission.id, event_type="WorkerRejected",
+                trigger_refs=(latest.id, task.id), source_key=source_key,
+                detail={"reason": "committed_retry_binding_changed", **retry_state})
     return produced
 
 
@@ -374,12 +416,8 @@ def repair_goal_occurrences(store: Any, network: Any) -> tuple[str, ...]:
     the current instance, impact, accepted work, and operation state at admission.
     """
     from ..contracts.htn import TaskForm
-    from .planning_protocol_binding import planning_protocol_for_mission
 
     mission_id = str(network.mission_id)
-    protocol = planning_protocol_for_mission(store, mission_id)
-    if protocol is None or int(protocol["package_version"]) < 7:
-        return ()
     affected = {str(item) for row in pending_requests(store, mission_id)
                 for group in ("revalidate", "supersede", "new_work")
                 for item in row["impact"].get(group, ())}

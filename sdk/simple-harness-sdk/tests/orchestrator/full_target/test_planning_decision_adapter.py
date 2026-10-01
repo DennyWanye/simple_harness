@@ -45,7 +45,7 @@ from agent_orchestrator.planning.decision_adapter import (
     adapt_admitted_decision,
 )
 from agent_orchestrator.planning.decision_admission import AdmittedPlanningDecision
-from agent_orchestrator.planning.planner import parse_plan_proposal
+from agent_orchestrator.contracts.htn import PlanProposal
 from simple_harness.contracts import canonical_json
 
 HASH_A = "a" * 64
@@ -135,10 +135,7 @@ def _assert_equivalent(
         "rationale": admitted.decision.rationale,
         "running_work_policy": running_work_policy,
     }
-    old = parse_plan_proposal(
-        _old_text(old_json),
-        mission_id=context.mission_id,
-    )
+    old = PlanProposal.from_json({**old_json, "mission_id": context.mission_id})
     assert canonical_json(old.to_json()) == canonical_json(outcome.proposal.to_json())
 
 

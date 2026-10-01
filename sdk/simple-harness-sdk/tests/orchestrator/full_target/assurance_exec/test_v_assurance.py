@@ -427,6 +427,7 @@ def _run(root, checks):
         async with deployment(root) as world:
             assured, _ = world.commit.create_mission(spec("assured-v"))
             legacy, _ = world.commit.create_mission(MissionSpec(
+                orchestration_semantics_version="legacy",
                 goal="legacy", success_criteria=("c",), tenant_id=TENANT, idempotency_key="legacy-v"))
             assert AssuranceStore(world.store).lane(assured.id) == "ASSURANCE_1_1"
             assert AssuranceStore(world.store).lane(legacy.id) != "ASSURANCE_1_1"

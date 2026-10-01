@@ -54,6 +54,7 @@ def frozen_service(request, tmp_path, monkeypatch):
                     idempotency_key="frozen",
                     domain=profile.id,
                     budget=Budget(max_tokens=100_000, max_attempts=12),
+                    orchestration_semantics_version="legacy",
                 )
             )
         planning = service.begin_planning(mission.id)
@@ -183,6 +184,7 @@ def test_doc5_empty_single_policy_cannot_bypass_the_floor(tmp_path, monkeypatch,
                     idempotency_key="empty",
                     domain=domains.DOC_DOMAIN,
                     budget=Budget(max_tokens=100_000, max_attempts=12),
+                    orchestration_semantics_version="legacy",
                 )
             )
         assert domains.resolve_domain(domains.DOC_DOMAIN).version == "9"

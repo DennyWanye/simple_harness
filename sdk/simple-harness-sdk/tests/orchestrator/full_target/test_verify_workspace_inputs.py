@@ -42,7 +42,6 @@ from test_inspect_leaf_patch_input import (  # noqa: E402
     _rebound,
 )
 from test_read_only_rewrite_bound import (  # noqa: E402
-    _accepting_reviewer,
     _four_step,
 )
 
@@ -51,15 +50,13 @@ from agent_orchestrator.artifacts.bound_workspace import (  # noqa: E402
     overlay_bound_producer_files,
 )
 from agent_orchestrator.artifacts.versioning import UpstreamInput  # noqa: E402
-from agent_orchestrator.contracts.models import Artifact, MissionStatus  # noqa: E402
-from agent_orchestrator.contracts.state_machines import MissionStopReason  # noqa: E402
+from agent_orchestrator.contracts.models import Artifact  # noqa: E402
 from agent_orchestrator.orchestrator.commit_service import mission_account  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
     RoleScriptedProvider,
-    critic_step,
     envelope_step,
 )
 
@@ -413,52 +410,6 @@ def _run(world: _CodeWorld, tmp_path, provider: RoleScriptedProvider) -> dict[st
             }
 
     return asyncio.run(case())
-
-
-def test_fix_by_patch_verify_leaf_reaches_completed_on_the_prelaid_patch(tmp_path) -> None:
-    """The C3 shape, end to end: patch accepted, verify workspace carries the
-    patched source, ``rule_check`` / ``code_test`` pass, root review ACCEPT,
-    Mission COMPLETED.  Before the fix this is the ``not a recorded workspace
-    file`` failure."""
-
-    world = _world(tmp_path, key="p23o-c3-e2e")
-    worker = _C3Worker()
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 40,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 16,
-            "root_reviewer": [_accepting_reviewer],
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    problems = [
-        problem
-        for item in outcome["events"]
-        if item.type == "VerificationFailed"
-        for failure in item.payload.get("failures") or []
-        for problem in (failure.get("detail") or {}).get("problems") or [failure.get("summary")]
-    ]
-    assert NOT_RECORDED not in problems, (
-        problems,
-        outcome["status"],
-        outcome["stop_reason"],
-        outcome["types"][-24:],
-    )
-    assert WINDOW in outcome["verify_inputs"], outcome["verify_inputs"]
-    assert PATCH_DIFF in outcome["verify_inputs"], outcome["verify_inputs"]
-    assert outcome["status"] is MissionStatus.COMPLETED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: {outcome['report'].get('detail')} "
-        f"types={outcome['types'][-20:]}"
-    )
-    assert str(outcome["stop_reason"]) == str(MissionStopReason.VERIFICATION_PASSED)
-    assert outcome["conservation"]["holds"] is True
-    layer_names = {item.get("layer") for item in outcome["verify_layers"]}
-    assert "rule_check" in layer_names and "code_test" in layer_names
-    assert all(
-        item.get("status") == "PASS"
-        for item in outcome["verify_layers"]
-        if item.get("layer") in {"rule_check", "code_test"}
-    ), outcome["verify_layers"]
 
 
 def test_inspect_at_2_still_receives_the_patch_port_after_overlay(tmp_path) -> None:

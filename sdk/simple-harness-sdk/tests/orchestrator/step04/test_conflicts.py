@@ -293,6 +293,7 @@ def spec(key, **overrides):
         conflict_reserve_tokens=20_000,
     )
     base.update(overrides)
+    base.setdefault("orchestration_semantics_version", "legacy")
     return MissionSpec(**base)
 
 

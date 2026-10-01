@@ -400,6 +400,7 @@ def test_content_legacy_compatibility(tmp_path):
     async def legacy():
         async with deployment(tmp_path / "legacy") as world:
             created = world.commit.create_mission(MissionSpec(
+                orchestration_semantics_version="legacy",
                 goal="legacy report", success_criteria=("a report exists",), tenant_id=TENANT,
                 idempotency_key="legacy-e08"))
             mission = created[0] if isinstance(created, tuple) else created

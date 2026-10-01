@@ -38,27 +38,17 @@ from test_read_only_rewrite_bound import (  # noqa: E402
     PATCHED_COLLECTOR,
     SEED,
     TOOLS,
-    _accepting_reviewer,
     _four_step,
     _LeafWorker,
     _write_and_envelope,
 )
 from test_root_review_repair_library import (  # noqa: E402
     C1_FINDING,
-    _drive,
-    _judge_critic,
-    _planner_replaces,
-    _reviewer,
-    _seeded,
 )
 from test_synthesis_rejection_reask import (  # noqa: E402
     SYNTHESIS_REPLY_REJECTED,
 )
 
-from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
-from agent_orchestrator.contracts.state_machines import (  # noqa: E402
-    MissionStopReason,
-)
 from agent_orchestrator.orchestrator.commit_service import mission_account  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
     ROOT_REVIEW_REPAIRS_EXHAUSTED,
@@ -67,20 +57,12 @@ from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
     SYNTHESIS_ROUND_RECORDED,
 )
-from agent_orchestrator.planning.htn.registry import (  # noqa: E402
-    SYNTHESIS_TESTS_PORT_REASON,
-    AdmissionVerdict,
-    RejectionCode,
-    evidence_requires_added_tests,
-)
 from agent_orchestrator.planning.htn.seed_methods.loader import seed_content_hash  # noqa: E402
 from agent_orchestrator.planning.htn.world import build_planning_world  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
     RoleScriptedProvider,
-    critic_step,
-    method_proposal_step,
     package_of,
 )
 
@@ -382,16 +364,6 @@ def test_overlay_drops_new_tests_written_by_a_read_only_leaf() -> None:
     assert TESTS_PATH not in {item.path for item in overlay}
 
 
-def test_added_tests_evidence_is_detected_from_c1_wording() -> None:
-    assert evidence_requires_added_tests(
-        "tests covering the user goal must be added or turned from red to green and pass"
-    )
-    assert evidence_requires_added_tests("c-contract-tests-pass")
-    assert not evidence_requires_added_tests(
-        "the report shows the named failing test was run on the patched revision and now passes"
-    )
-
-
 def test_the_synthesis_request_carries_criterion_evidence() -> None:
     from agent_orchestrator.planning.htn.synthesis import MethodSynthesizer
 
@@ -427,7 +399,7 @@ def test_the_synthesis_request_carries_criterion_evidence() -> None:
     ids = {item["id"] for item in evidence}
     assert "c-contract-tests-pass" in ids, evidence
     blob = " ".join(item["evidence_requirement"] for item in evidence)
-    assert evidence_requires_added_tests(blob, *ids)
+    assert "tests" in blob
     apply_offer = next(
         item for item in payload["operators"] if item["task_type_ref"]["id"] == "code.apply-patch"
     )
@@ -454,17 +426,17 @@ def _admit(env, body: dict[str, Any]):
     )
 
 
-def test_a_method_that_needs_added_tests_without_a_tests_port_is_correctably_refused() -> None:
+def test_a_method_whose_criteria_mention_added_tests_is_not_refused_for_lacking_a_tests_port() -> None:
+    """片 0 第 3 步（2026-10-01）：判据里出现"新增测试"之类的词，不再由程序强制要求测试端口。
+
+    此前注册检查在判据文字里找关键词（"新增测试""contract test"……），找到就要求做法里有
+    写类型步骤声明 ``tests`` 输出端口并被验证步骤接上，否则拒收。这是程序在假装理解语义：
+    桌面没有这个端口，用户目标一写这几个字整局就规划不出来。测试写没写、够不够由审阅员判。
+    """
+
     env = build_planning_world("p23t-admit", domains=("code",))
     receipt = _admit(env, _missing_tests_method("code.fix-by-patch-then-verify.no-tests"))
-    assert receipt.verdict is AdmissionVerdict.REJECTED, receipt.problems
-    assert any(item.code is RejectionCode.ROOT_COVERAGE_GAP for item in receipt.problems)
-    assert any(
-        getattr(item, "reason", "") == SYNTHESIS_TESTS_PORT_REASON for item in receipt.problems
-    )
-    from agent_orchestrator.planning.htn.synthesis import rejection_is_correctable
-
-    assert rejection_is_correctable(receipt) is True
+    assert receipt.admitted, receipt.problems
 
 
 def test_a_method_that_declares_and_binds_the_tests_port_is_admitted() -> None:
@@ -476,33 +448,6 @@ def test_a_method_that_declares_and_binds_the_tests_port_is_admitted() -> None:
 # ======================================================================================
 # 2. True Orchestrator.run()
 # ======================================================================================
-
-
-def test_a_method_with_a_tests_port_reaches_completed(tmp_path) -> None:
-    """(a) criterion requires tests → write step declares tests → verify is
-    read-only and consumes that port → root review ACCEPT → COMPLETED."""
-
-    world = _world(tmp_path, key="p23t-a", method=_tests_method("code.fix-by-patch-then-verify.a"))
-    apply_id = _task_of(world.dispatch, world.mission.id, "code.apply-patch")
-    declared = world.dispatch.declared_output_ports_for(world.mission.id, apply_id)
-    assert any(item.get("port") == "tests" for item in declared), declared
-    worker = _TestsWorker(mode="clean", claim_tests=True)
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 40,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 16,
-            "root_reviewer": [_accepting_reviewer],
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    assert outcome["status"] is MissionStatus.COMPLETED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: "
-        f"{(outcome['report'] or {}).get('detail')} types={outcome['types'][-24:]}"
-    )
-    assert str(outcome["stop_reason"]) == str(MissionStopReason.VERIFICATION_PASSED)
-    assert TESTS_PATH in outcome["verify_inputs"], outcome["verify_inputs"]
-    assert worker.verify_attempts == 1
-    assert outcome["conservation"]["holds"] is True
 
 
 def _rejecting_reviewer(request: Any) -> str:
@@ -537,80 +482,6 @@ def _rejecting_reviewer(request: Any) -> str:
     )
 
 
-def test_a_missing_tests_port_is_reasked_and_then_adopted() -> None:
-    """(b) first synthesizer reply lacks the tests port → correctable → second admits.
-
-    The reask loop itself is P2.3i's ``rejection_is_correctable`` path; this test
-    is the new reason that path must fire for C1.
-    """
-
-    from agent_orchestrator.planning.htn.synthesis import (
-        MethodSynthesizer,
-        rejection_is_correctable,
-    )
-
-    env = build_planning_world("p23t-b", domains=("code",))
-    synthesizer = MethodSynthesizer(env.registry, env.catalog)
-    slipped = synthesizer.accept_response(
-        method_proposal_step(_missing_tests_method("code.fix-by-patch-then-verify.b-miss")),
-        policy=env.policy(),
-    )
-    assert slipped.verdict is AdmissionVerdict.REJECTED, slipped.problems
-    assert rejection_is_correctable(slipped) is True
-    assert any(
-        getattr(item, "reason", "") == SYNTHESIS_TESTS_PORT_REASON for item in slipped.problems
-    )
-    adopted = synthesizer.accept_response(
-        method_proposal_step(_tests_method("code.fix-by-patch-then-verify.b-ok")),
-        policy=env.policy(),
-    )
-    assert adopted.admitted, adopted.problems
-
-
-def test_two_root_review_rejects_stop_with_the_named_reason(tmp_path) -> None:
-    """(c) two REJECT → named stop, no hanging admitted_not_dispatched, conservation."""
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    world = _seeded(evidence, key="p23t-c", alt=True, free_text=True)
-    world.store.close()
-    provider = RoleScriptedProvider(
-        {
-            "root_reviewer": [_reviewer("FAIL", finding=C1_FINDING["detail"])] * 4,
-            "planner": [_planner_replaces] * 4,
-            "critic": [_judge_critic],
-        }
-    )
-    outcome = _drive(world, evidence, provider, cycles=60, max_planning_attempts=1)
-    assert outcome["status"] is MissionStatus.FAILED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: {outcome['types']}"
-    )
-    assert outcome["stop_reason"] == ROOT_REVIEW_REPAIRS_EXHAUSTED, outcome["stop_reason"]
-    detail = (outcome["report"] or {}).get("detail") or {}
-    hanging = detail.get("admitted_not_dispatched") or []
-    assert hanging == [], hanging
-    ready = [
-        task_id
-        for task_id, status in (
-            (task.id, str(task.status))
-            for event in outcome["events"]
-            for task in []
-        )
-    ]
-    del ready
-
-    # Conservation and cancellation are on the Orchestrator that _drive opened;
-    # re-read the report flags written at fail_mission.
-    assert (outcome["report"] or {}).get("budget_conserved") is True or detail.get(
-        "confirmed_after_one_more_cycle"
-    ) is True
-    events = outcome["events"]
-    cancelled = [item for item in events if item.type == "TaskCancelled"]
-    assert "MissionFailed" in outcome["types"]
-    assert outcome["types"].count("HierarchicalRootReviewRejected") == 2
-    assert cancelled or hanging == []
-
-
 def test_a_legacy_mission_keeps_no_dispatchable_work_and_no_tests_port(tmp_path) -> None:
     """(d) DAG-mode Missions do not grow the named stop."""
 
@@ -628,6 +499,7 @@ def test_a_legacy_mission_keeps_no_dispatchable_work_and_no_tests_port(tmp_path)
         async with Orchestrator(config, provider, poll_interval=0.02) as loop:
             mission = await loop.submit_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal="legacy goal",
                     success_criteria=("file:a.md",),
                     tenant_id="t",

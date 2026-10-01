@@ -174,6 +174,7 @@ def scene(tmp_path):
             success_criteria=("file:good.md", "file:missing.md"),
             idempotency_key="fragment",
             budget=Budget(max_tokens=200_000, max_attempts=20),
+            orchestration_semantics_version="legacy",
         )
     )
     planning = commit.begin_planning(mission.id)

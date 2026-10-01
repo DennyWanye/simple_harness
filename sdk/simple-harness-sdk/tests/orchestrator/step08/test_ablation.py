@@ -54,6 +54,7 @@ def _spec(key, criteria=("pytest:tests/test_parse_kv.py",)):
         allowed_tools=TOOLS,
         budget=Budget(max_tokens=300_000, max_attempts=4),
         workspace_seed=DEMO_SEED,
+        orchestration_semantics_version="legacy",
     )
 
 
@@ -146,6 +147,7 @@ def test_s8_04_without_the_blackboard_no_knowledge_is_retrieved_or_used(tmp_path
         budget=Budget(max_tokens=200_000, max_attempts=12),
         workspace_seed=COMPARE_SEED,
         untrusted_sources=("docs/",),
+        orchestration_semantics_version="legacy",
     )
 
     async def case():

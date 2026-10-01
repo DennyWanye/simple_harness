@@ -118,6 +118,7 @@ def source_mission(e, *, revoked=False, ended=False):
             tenant_id="another-tenant",
             idempotency_key="document",
             domain=DOC_DOMAIN,
+            orchestration_semantics_version="legacy",
         )
     )
     receipt = e.service.register_source(
@@ -225,6 +226,7 @@ def test_document_domain_without_registered_sources_already_reserves_storage(env
             tenant_id="doc",
             idempotency_key="empty-document",
             domain=DOC_DOMAIN,
+            orchestration_semantics_version="legacy",
         )
     )
     publisher = ObservedPublisher(e.roots[1], e.tmp / "changed-ledger")

@@ -44,35 +44,24 @@ from test_inspect_leaf_patch_input import (  # noqa: E402
     _CodeWorld,
 )
 from test_read_only_leaf_policy import _binding, _File  # noqa: E402
-from test_root_review_repair_library import (  # noqa: E402
-    _planner_declines,
-)
 
 from agent_orchestrator.contracts.htn import SideEffectKind  # noqa: E402
-from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
 from agent_orchestrator.contracts.state_machines import (  # noqa: E402
     TERMINAL_MISSION,
-    MissionStopReason,
 )
 from agent_orchestrator.orchestrator.commit_service import mission_account  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
-from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
-    READ_ONLY_REWRITE_REPAIR_REASON,
-)
 from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
-    MAX_READ_ONLY_REWRITE_REJECTIONS,
     read_only_rewrites,
 )
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
     RoleScriptedProvider,
-    critic_step,
     envelope_step,
-    method_proposal_step,
     package_of,
-    plan_revision_proposal_step,
 )
+from scripted_plans import plan_revision_proposal_step  # noqa: E402
 
 SEED_COLLECTOR = "def record(self, name, value):\n    self._samples.append(value)\n"
 PATCHED_COLLECTOR = (
@@ -437,10 +426,6 @@ def _run(
 # ======================================================================================
 
 
-def test_the_ask_bound_is_the_existing_constant() -> None:
-    assert MAX_READ_ONLY_REWRITE_REJECTIONS == 2
-
-
 def test_a_rewrite_that_matches_an_accepted_artifact_is_not_a_new_write() -> None:
     """r0: verify re-applied the accepted patch.  Same path, same hash → not refused."""
 
@@ -472,176 +457,8 @@ def test_a_rewrite_to_a_new_hash_is_still_refused() -> None:
 # ======================================================================================
 
 
-def test_a_verify_leaf_that_reapplies_the_accepted_patch_is_collected(tmp_path) -> None:
-    """r0's shape: verify's rewrite == apply-patch's accepted files → collected, not refused."""
-
-    world = _world(tmp_path, key="p23m-match")
-    worker = _LeafWorker(mode="match")
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 40,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 12,
-            "root_reviewer": [_accepting_reviewer],
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    reasons = [
-        item.payload.get("reason")
-        for item in outcome["events"]
-        if item.type == "ResultRejected"
-    ]
-    assert "read_only_leaf_rewrote_workspace" not in reasons, (
-        reasons,
-        outcome["types"],
-        outcome["progress"][-16:],
-    )
-    assert "ResultSubmitted" in outcome["types"]
-    assert outcome["types"].count("AcceptanceCommitted") >= 3, outcome["types"]
-
-
-def test_two_new_rewrites_escalate_to_planning_with_named_feedback(tmp_path) -> None:
-    """Genuine new writes, twice → PlanningRejected{read_only_leaf_needs_write}
-    → synthesis carrying that feedback and a method that still has apply-patch.
-    The verify leaf is not attempted a third time.  P2.3n: the Planner adopts the
-    round-2 method (a new plan revision), so the Mission continues; later leaf
-    failures are not this test's subject."""
-
-    world = _world(tmp_path, key="p23m-escalate")
-    worker = _LeafWorker(
-        mode="new",
-        rewrite_limit=2,
-        workspace_root=Path(tmp_path) / "evidence" / "workspaces",
-    )
-    invented = _four_step("code.fix-by-patch-then-verify.repair", suffix="-v2")
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 80,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 20,
-            "planner": [_planner_declines, _planner_picks_named("repair")],
-            "method_synthesizer": [method_proposal_step(invented)],
-            "root_reviewer": [_accepting_reviewer],
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    rejections = [
-        item
-        for item in outcome["events"]
-        if item.type == "ResultRejected"
-        and item.payload.get("reason") == "read_only_leaf_rewrote_workspace"
-    ]
-    assert len(rejections) == MAX_READ_ONLY_REWRITE_REJECTIONS, [
-        (item.task_id, item.payload) for item in rejections
-    ]
-    repairs = [
-        item
-        for item in outcome["events"]
-        if item.type == "PlanningRejected"
-        and item.payload.get("reason") == READ_ONLY_REWRITE_REPAIR_REASON
-    ]
-    assert repairs, outcome["types"]
-    synth = [item for item in outcome["events"] if item.type == "MethodSynthesisRoundRecorded"]
-    assert synth and synth[0].payload.get("admitted") is True, [item.payload for item in synth]
-    assert outcome["roles"].get("method_synthesizer", 0) >= 1
-    first_verify = [
-        ordinal
-        for task_id, ordinal, _status in outcome["attempts"]
-        if any(
-            event.task_id == task_id and event.type == "ResultRejected"
-            for event in rejections
-        )
-    ]
-    assert first_verify == [1, 2], outcome["attempts"]
-    revisions = [
-        int(item.payload["plan_revision"])
-        for item in outcome["events"]
-        if item.type == "PlanRevisionCommitted"
-    ]
-    assert 2 in revisions, revisions
-
-
-def test_persistent_rewrites_stop_with_the_named_reason_and_release_reservations(
-    tmp_path,
-) -> None:
-    """The leaf keeps rewriting; planning cannot replace the method.  Stop is named,
-    not budget_exhausted, reservations are released, conservation holds."""
-
-    world = _world(tmp_path, key="p23m-bounded")
-    worker = _LeafWorker(
-        mode="new",
-        workspace_root=Path(tmp_path) / "evidence" / "workspaces",
-    )
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 80,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 12,
-            "planner": [_planner_declines] * 8,
-            "method_synthesizer": ["not a method proposal"] * 4,
-            "root_reviewer": [_accepting_reviewer] * 2,
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    assert outcome["status"] is MissionStatus.FAILED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: {outcome['report']} "
-        f"types={outcome['types']} roles={outcome['roles']}"
-    )
-    assert outcome["stop_reason"] != str(MissionStopReason.BUDGET_EXHAUSTED), (
-        outcome["stop_reason"],
-        outcome["report"],
-    )
-    assert outcome["stop_reason"] != str(MissionStopReason.NO_DISPATCHABLE_WORK), (
-        outcome["stop_reason"],
-        outcome["report"],
-    )
-    assert outcome["stop_reason"] == str(MissionStopReason.PLANNING_FAILED)
-    detail = outcome["report"].get("detail") or {}
-    blob = json.dumps(detail, ensure_ascii=False)
-    assert READ_ONLY_REWRITE_REPAIR_REASON in blob or "read_only_leaf_needs_write" in blob, (
-        detail
-    )
-    rejections = [
-        item
-        for item in outcome["events"]
-        if item.type == "ResultRejected"
-        and item.payload.get("reason") == "read_only_leaf_rewrote_workspace"
-    ]
-    assert len(rejections) == MAX_READ_ONLY_REWRITE_REJECTIONS, len(rejections)
-    assert outcome["conservation"]["holds"] is True, outcome["conservation"]
-    assert outcome["conservation"]["reserved"] == 0, outcome["conservation"]
-    assert not outcome["conservation"]["held_reservations"], outcome["conservation"]
-
-
 # ======================================================================================
 # 3. Prompt: a code-change method must include a write step
 # ======================================================================================
 
 
-def test_the_prompt_v6_requires_a_write_step_and_v5_is_frozen() -> None:
-    from agent_orchestrator.runtime.role_templates import (
-        METHOD_SYNTHESIZER,
-        METHOD_SYNTHESIZER_V5,
-        METHOD_SYNTHESIZER_V5_VERSION,
-        METHOD_SYNTHESIZER_VERSION,
-        template_for,
-    )
-
-    assert METHOD_SYNTHESIZER.prompt_version == METHOD_SYNTHESIZER_VERSION
-    assert METHOD_SYNTHESIZER_VERSION == "method-synthesizer-v9"  # 2026-09-26: v8 beside v7
-    v6 = METHOD_SYNTHESIZER.instructions
-    v5 = METHOD_SYNTHESIZER_V5.instructions
-    for sentence in (
-        "repo.write",
-        "read_only_leaf_needs_write",
-        "只读叶",
-        "apply-patch",
-    ):
-        assert sentence in v6, sentence
-        assert sentence not in v5, sentence
-    assert METHOD_SYNTHESIZER_V5.prompt_version == METHOD_SYNTHESIZER_V5_VERSION
-    assert hashlib.sha256(v5.encode("utf-8")).hexdigest() == (
-        "6973e125b9cc3b02b8af77190a9b0ff4b5a1ddd3cdfe8cc1f60900304fe21e6b"
-    )
-    assert (
-        template_for(METHOD_SYNTHESIZER, {"method_synthesizer": METHOD_SYNTHESIZER_V5_VERSION})
-        is METHOD_SYNTHESIZER_V5
-    )
-    assert "c-change-explained" in v6

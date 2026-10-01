@@ -322,6 +322,7 @@ class AREOrchestratorRunner:
                 public_input = _visible(notifications, state)
                 mission = await orch.submit_mission(
                     MissionSpec(
+                        orchestration_semantics_version="legacy",
                         goal=(
                             "Handle the agent-visible ARE messages and write the final answer "
                             "in REPORT.md. "

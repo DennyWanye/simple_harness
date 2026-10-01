@@ -38,6 +38,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from scripted_plans import apply_scripted_plan  # noqa: E402
 from test_htn_deployment_wiring import (  # noqa: E402
     ROOT_DUTY as CODE_ROOT_DUTY,
 )
@@ -1075,7 +1076,7 @@ def test_planning_on_such_a_store_takes_version_two_and_refuses_version_one(tmp_
     # refuses it the way it refuses any unadmitted method (§7.3) — the loop's collector
     # turns that into ``PlanningRejected``; here the refusal itself is the assertion.
     with pytest.raises(CompilationRefused, match="unregistered"):
-        world.dispatch.apply_planner_reply(
+        apply_scripted_plan(world.dispatch,
             world.mission.id,
             _refine_text("code.fix-by-patch", version=1),
             principal=PlanPrincipal("manager-1", "mission", 0),

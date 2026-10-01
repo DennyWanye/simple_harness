@@ -1019,9 +1019,7 @@ class ActionCommitsMixin:
                 except StoreConflict:
                     reason = "taskgraph_target_fenced"
             protocol = planning_protocol_for_mission(self._store, str(action["mission_id"]))
-            needs_planning_link = (
-                protocol is not None and protocol["protocol_version"] == "planning-decision-v1"
-            ) or bool(action.get("planning_origin"))
+            needs_planning_link = protocol is not None or bool(action.get("planning_origin"))
             if reason is None and needs_planning_link:
                 from .planning_repair_continuations import planning_repair_stop_gate
 

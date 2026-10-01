@@ -31,7 +31,8 @@ from agent_orchestrator.contracts.planning_decisions import (
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import deployed_layers
 from agent_orchestrator.orchestrator.commit_service import Reservation
-from agent_orchestrator.orchestrator.event_handler import ROOT_REVIEW_REPAIR_REASON, Orchestrator
+from agent_orchestrator.orchestrator.event_handler import Orchestrator
+from agent_orchestrator.orchestrator.planning_repair_requests import record_request
 from agent_orchestrator.planning.decision_codec import serialize_planning_decision
 from agent_orchestrator.planning.htn import evidence_round
 from agent_orchestrator.planning.htn.observers.code import code_observers
@@ -44,9 +45,10 @@ from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 
 def _repair_reply(package: dict, *, instance_id: str) -> str:
+    # the refined goal the pending repair request is about, as the package shows it
     rejected = next(
-        item for item in package["rejected_refinements"]
-        if item["rejected_method_instance_id"] == instance_id
+        item for item in package["plan"]["refined_goals_under_repair"]
+        if item["adopted_method_instance_id"] == instance_id
     )
     alternatives = [
         item for item in package["applicability"]
@@ -168,22 +170,19 @@ def test_deferred_replace_method_cold_resume_reuses_frozen_decision_without_llm(
                 mission.id, requirements.revision, requirements.content_hash()
             ) is not None
 
-            first.commit.record_planning_rejected(
-                mission.id,
-                ordinal=2,
-                reason=ROOT_REVIEW_REPAIR_REASON,
-                key=f"{mission.id}:root-review-repair:1",
-                detail={
-                    "plan_revision": 1,
-                    "package_id": "pkg-deferred-repair",
-                    "repair_round": 1,
-                    "max_root_review_repairs": 1,
-                    "findings": [{"severity": "blocker", "criterion_id": "root", "detail": "replace method"}],
-                    "occurrence_id": str(root),
-                    "method_instance_id": instance_id,
-                    "method_ref": adopted.method_ref.to_json(),
-                },
-            )
+            # The final review sent the task back: an ordinary repair request about
+            # the whole plan, which is what makes the root's alternatives visible.
+            assert record_request(
+                dispatch, mission.id, event_type="VerifierAcceptanceRejected",
+                trigger_refs=(str(network.occurrence(root).task_id),),
+                source_key="root-review:rec-deferred-repair",
+                scope=tuple(sorted({str(spec.occurrence_id) for spec in network.occurrences}
+                                   | {str(spec.task_id) for spec in network.occurrences})),
+                detail={"source": "root_review", "record_id": "rec-deferred-repair",
+                        "package_id": "pkg-deferred-repair", "verdict": "REWORK",
+                        "findings": [{"criterion_id": "root", "verdict": "FAIL",
+                                      "limitations": ["replace method"]}],
+                        "repair_round": 1, "max_repairs": 1})
 
             children = [
                 first.store.get_task(str(spec.task_id))
@@ -320,6 +319,8 @@ def test_deferred_replace_method_cold_resume_reuses_frozen_decision_without_llm(
                 "mission_id": mission.id,
                 "intent_id": repair_intent.intent_id,
                 "decision_id": deferred["decision_id"],
+                "instance_id": instance_id,
+                "old_method_ref": adopted.method_ref.to_json(),
                 "raw_hash": deferred["raw_output_hash"],
                 "raw_ref": deferred["raw_artifact_ref"],
                 "canonical_hash": deferred["canonical_hash"],
@@ -367,5 +368,34 @@ def test_deferred_replace_method_cold_resume_reuses_frozen_decision_without_llm(
             unrelated = resumed.store.get_task(frozen["unrelated_task_id"])
             assert unrelated is not None and unrelated.to_json() == frozen["unrelated"]
             assert resumed_provider.calls == 0
+
+            # HTN 精简 片 0 第 2、4 步：换做法的决定处理了那条最终审查的修复请求；被换掉的
+            # 做法在做法库里只有一个字段说明"被退役过 + 原因"——规划器当时写的理由和它处理的
+            # 请求——不再是按原因分开的两个标记。
+            from agent_orchestrator.orchestrator.planning_repair_requests import pending_requests
+            from agent_orchestrator.planning.htn.planner_package import method_library
+
+            assert pending_requests(resumed.store, mission.id) == []
+            [retired] = resumed.hierarchical.retired_methods(mission.id)
+            assert retired["method_ref"] == frozen["old_method_ref"]
+            assert retired["retired_instance_id"] == frozen["instance_id"]
+            assert retired["retired_at_plan_revision"] == 2
+            assert retired["decision_id"] == frozen["decision_id"]
+            assert retired["rationale"]
+            assert retired["requests"] == [{"trigger_source": "VERIFIER_ACCEPTANCE_REJECT",
+                                            "source_key": "root-review:rec-deferred-repair"}]
+            network = resumed.hierarchical.network(mission.id)
+            signature = str(network.binding_for_occurrence(
+                network.root_occurrence_ids[0]).goal_signature.signature_id)
+            library = method_library(world.registry, [signature],
+                                     retired=resumed.hierarchical.retired_methods(mission.id),
+                                     mission_id=mission.id)
+            marked = {row["method_id"]: row["rejected_reasons"] for row in library}
+            old_id = frozen["old_method_ref"]["method_id"]
+            assert [item["retired_instance_id"] for item in marked[old_id]] == [frozen["instance_id"]]
+            assert "method_ref" not in marked[old_id][0]
+            assert all(reasons == [] for method_id, reasons in marked.items() if method_id != old_id)
+            assert not any("rejected_by_root_review" in row or "rejected_by_read_only_leaf" in row
+                           for row in library)
 
     asyncio.run(case())

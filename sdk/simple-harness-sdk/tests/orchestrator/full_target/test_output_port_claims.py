@@ -313,7 +313,7 @@ FROZEN_PROMPT_DIGESTS: dict[str, tuple[str, str]] = {
     # H1-E (V2 plan §9, §41): the planning-decision-protocol Planner prompt.
     "PLANNER_HIERARCHICAL_V8": (
         "planner-hierarchical-v8",
-        "90c8b9f0551b98e299f1c11f90930f2b77b46e83397caaaa0f99617381c93e1c",
+        "d0e564b55acc179b341fd62163e5789a44a46a315bde88c331a5c6133cf39ab5",
     ),
 }
 

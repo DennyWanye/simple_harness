@@ -403,24 +403,6 @@ def read_only_existing_paths(
     return tuple(sorted(path for path in paths if path))
 
 
-#: P2.3m.  How many times one occurrence may be refused
-#: ``read_only_leaf_rewrote_workspace`` before the named feedback goes to planning
-#: instead of another Attempt.  Same bound as ``MAX_SYNTHESIS_ASKS`` /
-#: ``MAX_ROOT_REVIEW_ASKS`` / ``evidence_saturation_rounds``: one retry, then the
-#: honest next layer.  Not a config item.
-MAX_READ_ONLY_REWRITE_REJECTIONS = 2
-#: How many planning repair rounds one Mission may open for this reason.  Same
-#: shape as ``max_root_review_repairs``'s default, as a constant so nothing is
-#: added to the policy snapshot.
-MAX_READ_ONLY_REWRITE_REPAIRS = 1
-#: P2.3v.  How many consecutive *identical* verification failures one occurrence
-#: may retry before the named feedback goes to planning.  One more than the
-#: read-only rewrite bound: the first two retries are still the leaf's, the
-#: third is the honest next layer.  Not a config item.
-MAX_IDENTICAL_VERIFICATION_FAILURES = 3
-#: How many planning repair rounds one Mission may open for this reason.
-MAX_IDENTICAL_VERIFICATION_REPAIRS = 1
-
 _TIMING = re.compile(r"\bin\s+\d+(?:\.\d+)?s\b")
 _WORKSPACE_PATH = re.compile(r"(?:/[\w.-]+)*/workspaces/[\w.:-]+/")
 _PYTEST_EXC = re.compile(r"^E\s+(\w+(?:Error|Exception|Warning)): ", re.M)
@@ -642,10 +624,6 @@ __all__ = (
     "MIN_TOKEN_SHARE",
     "Materialisation",
     "OccurrenceTask",
-    "MAX_READ_ONLY_REWRITE_REJECTIONS",
-    "MAX_READ_ONLY_REWRITE_REPAIRS",
-    "MAX_IDENTICAL_VERIFICATION_FAILURES",
-    "MAX_IDENTICAL_VERIFICATION_REPAIRS",
     "verification_failure_fingerprint",
     "occurrence_criteria",
     "occurrence_policy",

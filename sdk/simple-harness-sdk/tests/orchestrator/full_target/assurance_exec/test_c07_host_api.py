@@ -90,6 +90,7 @@ def test_snapshot_review_use_check_contracts_and_errors(tmp_path):
         control = MissionControlV1(orch, tenant_id=TENANT, principal=PRINCIPAL)
         assured, created = commit.create_mission(_spec("assured-1"))
         legacy, _ = commit.create_mission(MissionSpec(
+            orchestration_semantics_version="legacy",
             goal="legacy", success_criteria=("c",), tenant_id=TENANT, idempotency_key="legacy-1"))
         assert created
 

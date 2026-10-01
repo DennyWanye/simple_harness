@@ -41,11 +41,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_htn_deployment_wiring import _task_of  # noqa: E402
 from test_read_only_rewrite_bound import (  # noqa: E402
     _accepting_reviewer,
-    _four_step,
-    _planner_picks_named,
-)
-from test_root_review_repair_library import (  # noqa: E402
-    _planner_declines,
 )
 from test_verify_workspace_inputs import (  # noqa: E402
     NOT_RECORDED,
@@ -57,7 +52,6 @@ from test_verify_workspace_inputs import (  # noqa: E402
     WINDOW,
     _write_and_envelope,
 )
-from test_verify_workspace_inputs import _world as _c3_world  # noqa: E402
 
 from agent_orchestrator.artifacts.bound_workspace import (  # noqa: E402
     UnifiedDiffApplyError,
@@ -66,19 +60,12 @@ from agent_orchestrator.artifacts.bound_workspace import (  # noqa: E402
 )
 from agent_orchestrator.contracts import Budget  # noqa: E402
 from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
-from agent_orchestrator.contracts.state_machines import (  # noqa: E402
-    MissionStopReason,
-)
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
     MissionSpec,
     mission_account,
 )
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
-from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
-    REPEATED_VERIFICATION_FAILURE_REASON,
-)
 from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
-    MAX_IDENTICAL_VERIFICATION_FAILURES,
     verification_failure_fingerprint,
 )
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
@@ -87,9 +74,7 @@ from agent_orchestrator.testing.fixtures import (  # noqa: E402
     DEMO_PROPOSAL,
     DEMO_SEED,
     RoleScriptedProvider,
-    critic_step,
     envelope_step,
-    method_proposal_step,
     package_of,
 )
 
@@ -99,10 +84,6 @@ NO_CLAIMS = "no claims were submitted"
 # ======================================================================================
 # 1. Constants and the fingerprint
 # ======================================================================================
-
-
-def test_the_identical_failure_bound_is_three() -> None:
-    assert MAX_IDENTICAL_VERIFICATION_FAILURES == 3
 
 
 def test_the_fingerprint_is_layer_plus_problems_not_timing() -> None:
@@ -469,134 +450,6 @@ def _run(
 # ======================================================================================
 
 
-def test_apply_leaf_that_only_delivers_a_diff_prelays_the_patched_source(tmp_path) -> None:
-    """Producer accepts ``patch.diff`` only.  Downstream verify still starts from
-    the patched ``stats/window.py`` and the Mission COMPLETED."""
-
-    world = _c3_world(tmp_path, key="p23v-diff-only")
-    worker = _SwitchWorker(apply_mode="diff-only")
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 40,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 16,
-            "root_reviewer": [_accepting_reviewer],
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    assert WINDOW in outcome["apply_paths"], outcome["apply_paths"]
-    assert WINDOW in outcome["verify_inputs"], outcome["verify_inputs"]
-    assert outcome["status"] is MissionStatus.COMPLETED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: {outcome['report'].get('detail')} "
-        f"types={outcome['types'][-24:]}"
-    )
-
-
-def test_root_review_reject_then_new_apply_records_the_same_source_path(tmp_path) -> None:
-    """(a) REJECT → retire+refine → new apply writes the retired apply's bytes
-    and lists them → recorded / prelaid on verify → COMPLETED."""
-
-    world = _c3_world(tmp_path, key="p23v-switch")
-    worker = _SwitchWorker()
-    invented = _four_step("code.fix-by-patch.p23v-repair", suffix="-v2")
-    admitted = world.dispatch.apply_synthesizer_reply(
-        world.mission.id, method_proposal_step(invented)
-    )
-    assert admitted.admitted, admitted.problems
-
-    def _pick_repair(request: Any) -> str:
-        package = package_of(request)
-        if not package.get("rejected_refinements"):
-            return _planner_declines(request)
-        try:
-            return _planner_picks_named("p23v-repair")(request)
-        except AssertionError:
-            return _planner_declines(request)
-
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 80,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 24,
-            "planner": [_pick_repair] * 6,
-            "root_reviewer": [_RejectThenAccept()] * 6,
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    assert "HierarchicalRootReviewRejected" in outcome["types"], outcome["types"]
-    revisions = [
-        int(item.payload["plan_revision"])
-        for item in outcome["events"]
-        if item.type == "PlanRevisionCommitted"
-    ]
-    assert 2 in revisions, revisions
-    assert WINDOW in outcome["apply_paths"], outcome["apply_paths"]
-    problems = [
-        problem
-        for item in outcome["events"]
-        if item.type == "VerificationFailed"
-        for failure in item.payload.get("failures") or []
-        for problem in (failure.get("detail") or {}).get("problems") or [failure.get("summary")]
-    ]
-    assert NOT_RECORDED not in problems, problems
-    assert outcome["status"] is MissionStatus.COMPLETED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: {outcome['report'].get('detail')} "
-        f"types={outcome['types'][-24:]} roles={outcome['roles']}"
-    )
-    assert WINDOW in outcome["verify_inputs"], outcome["verify_inputs"]
-
-
-def test_identical_rule_check_failures_escalate_instead_of_burning_attempts(
-    tmp_path,
-) -> None:
-    """(b) Inject the same rule_check failure N times → planning, named stop,
-    not ``budget_exhausted``.  Reservations released, conservation holds."""
-
-    world = _c3_world(tmp_path, key="p23v-bound")
-    worker = _SwitchWorker(apply_mode="empty-claims")
-    provider = RoleScriptedProvider(
-        {
-            "worker": [worker] * 80,
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 16,
-            "planner": [_planner_declines] * 8,
-            "method_synthesizer": ["not a method proposal"] * 4,
-            "root_reviewer": [_accepting_reviewer] * 2,
-        }
-    )
-    outcome = _run(world, tmp_path, provider)
-    assert outcome["status"] is MissionStatus.FAILED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: {outcome['report']} "
-        f"types={outcome['types']} roles={outcome['roles']}"
-    )
-    assert outcome["stop_reason"] == str(MissionStopReason.PLANNING_FAILED), (
-        outcome["stop_reason"],
-        outcome["report"],
-    )
-    blob = json.dumps(outcome["report"].get("detail") or {}, ensure_ascii=False)
-    repairs = [
-        item
-        for item in outcome["events"]
-        if item.type == "PlanningRejected"
-        and item.payload.get("reason") == REPEATED_VERIFICATION_FAILURE_REASON
-    ]
-    assert repairs, (outcome["types"], blob)
-    assert REPEATED_VERIFICATION_FAILURE_REASON in blob or repairs, blob
-    assert worker.apply_attempts == MAX_IDENTICAL_VERIFICATION_FAILURES, worker.apply_attempts
-    assert outcome["apply_attempts"] == MAX_IDENTICAL_VERIFICATION_FAILURES, outcome[
-        "apply_attempts"
-    ]
-    assert outcome["conservation"]["holds"] is True, outcome["conservation"]
-    assert outcome["conservation"]["reserved"] == 0, outcome["conservation"]
-    failed = [
-        item
-        for item in outcome["events"]
-        if item.type == "VerificationFailed"
-        for failure in item.payload.get("failures") or []
-        if failure.get("layer") == "rule_check"
-        and NO_CLAIMS
-        in str((failure.get("detail") or {}).get("problems") or failure.get("summary"))
-    ]
-    assert len(failed) == MAX_IDENTICAL_VERIFICATION_FAILURES, len(failed)
-
-
 def test_legacy_identical_failures_do_not_open_a_planning_repair(tmp_path) -> None:
     """(c) A legacy Mission still retries a failed verification and never emits
     ``PlanningRejected{repeated_verification_failure}``.  The demo script fails
@@ -617,6 +470,7 @@ def test_legacy_identical_failures_do_not_open_a_planning_repair(tmp_path) -> No
         async with Orchestrator(config, provider, poll_interval=0.02) as loop:
             mission = await loop.submit_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal=str(DEMO_PROPOSAL["root_goal"]),
                     success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
                     tenant_id="tenant-p23v-legacy",
@@ -651,4 +505,4 @@ def test_legacy_identical_failures_do_not_open_a_planning_repair(tmp_path) -> No
     assert outcome["status"] is MissionStatus.COMPLETED, outcome
     assert outcome["failed"] >= 1, outcome
     assert outcome["attempts"] >= 2, outcome
-    assert REPEATED_VERIFICATION_FAILURE_REASON not in outcome["reasons"], outcome
+    assert "repeated_verification_failure" not in outcome["reasons"], outcome

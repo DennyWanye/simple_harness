@@ -90,7 +90,7 @@ def test_mission_bound_to_a_historical_package_fails_loudly(tmp_path: Path) -> N
                     "UPDATE mission_planning_protocols SET package_version=7, prompt_version='planner-hierarchical-v10'"
                     " WHERE mission_id=?", (mission.id,))
             assert store.get_mission_protocol(mission.id)["package_version"] == 7
-            with pytest.raises(ContractError, match="unsupported planning package version"):
+            with pytest.raises(ContractError, match="package 7; this build serves only"):
                 loop._hierarchical_planner_template(mission.id)
             # ...and the orchestrator stops *that* Mission instead of raising out of the loop
             # (a stale library must not take every other Mission down with it).

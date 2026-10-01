@@ -265,6 +265,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
     started = time.time()
     if step == 2:
         spec = MissionSpec(
+            orchestration_semantics_version="legacy",
             goal="在隔离工作区实现字符串解析函数 parse_kv，并通过给定测试",
             success_criteria=("pytest:tests/test_parse_kv.py", "实现应处理空字符串"),
             tenant_id=args.tenant,
@@ -280,6 +281,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
         )
     elif step == 5:
         spec = MissionSpec(
+            orchestration_semantics_version="legacy",
             goal=str(RECORDER_SPEC["goal"]),
             success_criteria=tuple(str(c) for c in RECORDER_SPEC["success_criteria"]),
             tenant_id=args.tenant,
@@ -290,6 +292,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
         )
     elif step == 4:
         spec = MissionSpec(
+            orchestration_semantics_version="legacy",
             goal=str(COMPARE_SPEC["goal"]),
             success_criteria=tuple(str(c) for c in COMPARE_SPEC["success_criteria"]),
             tenant_id=args.tenant,
@@ -306,6 +309,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
         )
     else:
         spec = MissionSpec(
+            orchestration_semantics_version="legacy",
             goal=str(DEMO_DAG_SPEC["goal"]),
             success_criteria=tuple(str(c) for c in DEMO_DAG_SPEC["success_criteria"]),
             tenant_id=args.tenant,
@@ -489,6 +493,7 @@ def _demo_multi_mission(args: argparse.Namespace) -> int:
     if real:
         specs = [
             MissionSpec(
+                orchestration_semantics_version="legacy",
                 goal="阅读 spec/INPUT.md 与 tests/test_recorder.py，写出输入分析 analysis.md，再写一份文档检查 DOCS.md（核对分析与测试是否一致）。tests/ 下文件不可修改。",
                 success_criteria=("file:analysis.md", "file:DOCS.md"),
                 tenant_id=args.tenant,
@@ -498,6 +503,7 @@ def _demo_multi_mission(args: argparse.Namespace) -> int:
                 workspace_seed=RECORDER_SEED,
             ),
             MissionSpec(
+                orchestration_semantics_version="legacy",
                 goal="在隔离工作区实现字符串解析函数 parse_kv，并通过 tests/test_parse_kv.py；tests/ 下文件不可修改。",
                 success_criteria=("pytest:tests/test_parse_kv.py",),
                 tenant_id=args.tenant,
@@ -510,6 +516,7 @@ def _demo_multi_mission(args: argparse.Namespace) -> int:
     else:
         specs = [
             MissionSpec(
+                orchestration_semantics_version="legacy",
                 goal=str(RECORDER_SPEC["goal"]),
                 success_criteria=("file:DOCS.md",),
                 tenant_id=args.tenant,
@@ -732,6 +739,7 @@ def _demo_approval_action(args: argparse.Namespace) -> int:
         **(REAL_KNOBS if real else {}),
     )
     spec = MissionSpec(
+        orchestration_semantics_version="legacy",
         goal=str(APPROVAL_SPEC["goal"]),
         success_criteria=tuple(str(c) for c in APPROVAL_SPEC["success_criteria"]),
         tenant_id=args.tenant,
@@ -852,6 +860,7 @@ def _evaluation_cases(args: argparse.Namespace, names: list[str]) -> tuple[Any, 
 
     def parse_kv(tenant: str, key: str) -> MissionSpec:
         return MissionSpec(
+            orchestration_semantics_version="legacy",
             goal="在隔离工作区实现字符串解析函数 parse_kv(text) -> dict（按 ; 分隔、= 分键值），并通过 tests/test_parse_kv.py；tests/ 下文件不可修改。",
             success_criteria=("pytest:tests/test_parse_kv.py",),
             tenant_id=tenant,
@@ -863,6 +872,7 @@ def _evaluation_cases(args: argparse.Namespace, names: list[str]) -> tuple[Any, 
 
     def textkit(tenant: str, key: str) -> MissionSpec:
         return MissionSpec(
+            orchestration_semantics_version="legacy",
             goal=str(DEMO_DAG_SPEC["goal"]),
             success_criteria=tuple(str(c) for c in DEMO_DAG_SPEC["success_criteria"]),
             tenant_id=tenant,

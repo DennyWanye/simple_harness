@@ -62,7 +62,6 @@ from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
 from agent_orchestrator.contracts.semantic_base import content_hash_of  # noqa: E402
 from agent_orchestrator.planning.htn.planner_package import (  # noqa: E402
     HIERARCHICAL_DECISION_PACKAGE_VERSION,
-    HIERARCHICAL_PACKAGE_VERSION,
     MAX_VISIBLE_REFS,
     hierarchical_planner_package,
     package_hash,
@@ -164,7 +163,7 @@ def stub_package(**kwargs: Any) -> dict[str, Any]:
 
 
 def decision_package(**kwargs: Any) -> dict[str, Any]:
-    return stub_package(planning_protocol=PLANNING_DECISION_V1, **kwargs)
+    return stub_package(**kwargs)
 
 
 def empty_package(**sections: Any) -> dict[str, Any]:
@@ -311,7 +310,6 @@ def wide_world(count: int, *, obligations: bool = True) -> tuple[dict[str, Any],
         _Mission(),
         network,
         registry=None,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     return package, authorities
@@ -346,65 +344,9 @@ def method_entry(index: int, *, version: int = 1) -> dict[str, Any]:
 # ======================================================================================
 
 
-def test_the_legacy_stub_package_is_byte_identical_to_the_previous_build() -> None:
-    assert package_hash(stub_package()) == GOLDEN_STUB_WORLD_SHA256
-
-
-def test_the_legacy_fixture_world_package_is_byte_identical_to_the_previous_build(
-    tmp_path: Any,
-) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-pkg")
-    package = e2e.hierarchical_planner_package(
-        world.mission, world.network(), registry=world.env.registry
-    )
-    assert package["package_version"] == HIERARCHICAL_PACKAGE_VERSION
-    assert package_hash(package) == GOLDEN_FIXTURE_WORLD_SHA256
-
-
-def test_the_legacy_package_never_grows_a_decision_field(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-pkg")
-    package = e2e.hierarchical_planner_package(
-        world.mission, world.network(), registry=world.env.registry
-    )
-    assert not (DECISION_ONLY_FIELDS & set(package))
-    assert package["output_contract"] == "<plan_revision_proposal>{json}</plan_revision_proposal>"
-    assert package["package_version"] == "planner-package-hierarchical-v4"
-
-
-def test_an_unknown_protocol_name_is_refused() -> None:
-    with pytest.raises(ContractError, match="planning_protocol"):
-        stub_package(planning_protocol="planning-decision-v2")
-
-
 # ======================================================================================
 # 2. the new fields, present and correctly typed (§38, §39, §16)
 # ======================================================================================
-
-
-def test_the_decision_package_grows_exactly_the_decision_fields() -> None:
-    legacy = stub_package()
-    decided = decision_package()
-    assert set(decided) - set(legacy) == DECISION_ONLY_FIELDS
-    assert set(legacy) - set(decided) == set()
-
-
-def test_the_decision_package_preserves_every_legacy_section(tmp_path: Any) -> None:
-    """§38: the new fields are *added*; nothing the old package carried moves."""
-
-    world = e2e.build_world(tmp_path, key="p23c-pkg")
-    legacy = e2e.hierarchical_planner_package(
-        world.mission, world.network(), registry=world.env.registry
-    )
-    decided = e2e.hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
-    )
-    for name in legacy:
-        if name in {"output_contract", "package_version"}:
-            continue
-        assert decided[name] == legacy[name], f"{name} moved"
 
 
 def test_the_decision_package_states_the_protocol_and_its_enabled_types() -> None:
@@ -490,7 +432,6 @@ def test_subject_keys_are_unique_and_stable_across_two_builds(tmp_path: Any) -> 
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
     )["planning_subjects"]
     first, second = build(), build()
     assert first == second, "same request, same subjects"
@@ -505,7 +446,6 @@ def test_every_subject_carries_exactly_the_section_19_keys(tmp_path: Any) -> Non
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
     )["planning_subjects"]
     for item in subjects:
         assert set(item) == {
@@ -525,7 +465,6 @@ def test_subject_keys_cover_every_occurrence_on_the_board(tmp_path: Any) -> None
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
     )
     subjects = {item["occurrence_id"] for item in package["planning_subjects"]}
     assert subjects == {str(item.occurrence_id) for item in world.network().occurrences}
@@ -537,7 +476,6 @@ def test_a_committed_plan_still_yields_unique_subject_keys(tmp_path: Any) -> Non
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
     )
     keys = [item["subject_key"] for item in package["planning_subjects"]]
     assert len(keys) == len(set(keys)) == len(world.network().occurrences)
@@ -686,73 +624,6 @@ def test_a_fact_entry_is_written_as_an_observation() -> None:
     assert PlanningRefKind.OBSERVATION.value == "observation"
 
 
-def test_a_rejected_refinement_exposes_the_method_it_named() -> None:
-    package = empty_package(
-        rejected_refinements=[
-            {
-                "occurrence_id": "occ-1",
-                "goal_id": "task-1",
-                "obligation_id": "obl-1",
-                "rejected_method_instance_id": "mi-1",
-                "rejected_method_ref": {
-                    "method_id": "m-0009",
-                    "version": 1,
-                    "content_hash": "9" * 64,
-                },
-                "plan_revision": 1,
-            }
-        ]
-    )
-    refs = [dict(item) for item in visible_refs_from_hierarchical_package(package)]
-    expected = {
-        "kind": "method",
-        "id": "m-0009",
-        "semantic_revision": 1,
-        "content_hash": "9" * 64,
-    }
-    assert expected in refs
-
-
-def test_a_rejected_refinement_uses_the_instance_kind_when_the_wire_has_it() -> None:
-    """Addendum §1: ``method_instance`` (instance_id / plan_revision / parameters_digest).
-
-    The kind member arrives with the H1-A envelope slice, not this one, so the
-    collector degrades to the method ref on a build that lacks it — this test pins
-    whichever behaviour the enum on this build actually offers.
-    """
-
-    package = empty_package(
-        rejected_refinements=[
-            {
-                "occurrence_id": "occ-1",
-                "goal_id": "task-1",
-                "obligation_id": "obl-1",
-                "rejected_method_instance_id": "mi-1",
-                "rejected_method_ref": {
-                    "method_id": "m-0009",
-                    "version": 1,
-                    "content_hash": "9" * 64,
-                },
-                "plan_revision": 3,
-                "parameters_digest": "e" * 64,
-            }
-        ]
-    )
-    refs = [dict(item) for item in visible_refs_from_hierarchical_package(package)]
-    has_instance_kind = hasattr(PlanningRefKind, "METHOD_INSTANCE")
-    assert ("method_instance" in {item["kind"] for item in refs}) is has_instance_kind
-    if has_instance_kind:
-        assert {
-            "kind": "method_instance",
-            "id": "mi-1",
-            "semantic_revision": 3,
-            "content_hash": "e" * 64,
-        } in refs
-    else:
-        # Coarser but correct: only the method ref, and no invented hash.
-        assert all(item["kind"] == "method" for item in refs)
-
-
 def test_an_accepted_result_exposes_its_acceptance_ref() -> None:
     package = empty_package(
         accepted_results=[
@@ -880,7 +751,6 @@ def test_a_caller_obligation_sharing_a_task_id_is_not_dropped() -> None:
         _Mission(),
         network,
         registry=None,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=[authority("obligation", shared, 1, obligation_hash)],
     )
     emitted = {(item["kind"], item["id"]): dict(item) for item in package["visible_refs"]}
@@ -900,31 +770,6 @@ def test_an_authority_row_with_only_one_kind_does_not_answer_for_the_other() -> 
     )
     authorities = [authority("task", "shared", 1, "a" * 64)]
     assert [item["kind"] for item in refs_of(package, authorities)] == ["task"]
-
-
-def test_rejected_method_instance_uses_collector_authority_without_changing_legacy_shape() -> None:
-    """The new decision package exposes the instance ref from a side authority row."""
-
-    package = empty_package(
-        rejected_refinements=[
-            {
-                "rejected_method_instance_id": "mi-1",
-                "plan_revision": 2,
-                "rejected_method_ref": {
-                    "method_id": "plan.outer",
-                    "version": 1,
-                    "content_hash": "a" * 64,
-                },
-            }
-        ]
-    )
-    refs = by_key(package, [authority("method_instance", "mi-1", 2, "b" * 64)])
-    assert refs[("method_instance", "mi-1")] == {
-        "kind": "method_instance",
-        "id": "mi-1",
-        "semantic_revision": 2,
-        "content_hash": "b" * 64,
-    }
 
 
 def test_the_authority_sidecar_order_does_not_change_the_refs() -> None:
@@ -1119,7 +964,6 @@ def test_a_malformed_authority_row_does_not_crash_the_builder(tmp_path: Any) -> 
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     assert "task" in {item["kind"] for item in package["visible_refs"]}
@@ -1150,7 +994,6 @@ def test_every_collected_ref_is_a_valid_planning_ref(tmp_path: Any) -> None:
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
     )
     for item in package["visible_refs"]:
         PlanningRefV1.from_json(item)
@@ -1259,7 +1102,6 @@ def test_a_caller_supplied_ref_can_push_the_package_over_the_cap() -> None:
         _Mission(),
         _WideNetwork(MAX_VISIBLE_REFS),
         registry=None,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     # MAX_VISIBLE_REFS task refs plus one obligation ref: exactly one is dropped.
@@ -1278,7 +1120,6 @@ def test_the_built_decision_package_exposes_the_collector_output(tmp_path: Any) 
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     assert omitted_of(package, authorities) == 0
@@ -1302,7 +1143,6 @@ def test_the_production_path_task_hash_is_the_bindings_own_digest(tmp_path: Any)
         world.mission,
         network,
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
     )
     emitted = {(item["kind"], item["id"]): dict(item) for item in package["visible_refs"]}
     for spec in network.occurrences:
@@ -1338,7 +1178,6 @@ def test_a_task_ref_revision_is_the_binding_not_the_plan_revision() -> None:
         _Mission(),
         network,
         registry=None,
-        planning_protocol=PLANNING_DECISION_V1,
     )
     emitted = {(item["kind"], item["id"]): dict(item) for item in package["visible_refs"]}
     ref = emitted[("task", str(binding.task_id))]
@@ -1363,7 +1202,6 @@ def test_a_task_ref_revision_comes_from_the_binding_even_past_one(tmp_path: Any)
         _Mission(),
         network,
         registry=None,
-        planning_protocol=PLANNING_DECISION_V1,
     )
     emitted = {(item["kind"], item["id"]): dict(item) for item in package["visible_refs"]}
     ref = emitted[("task", str(binding.task_id))]
@@ -1380,7 +1218,6 @@ def test_the_built_task_ref_carries_the_bindings_authoritative_hash(tmp_path: An
         world.mission,
         network,
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
     )
     emitted = by_key(package, task_authorities(network))
     for spec in network.occurrences:
@@ -1400,7 +1237,6 @@ def test_the_built_package_omits_a_ref_it_cannot_attest(tmp_path: Any) -> None:
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
     )
     # The package body has no obligation digest, so the string cannot be resolved and
     # the caller was handed no authority row for it either.
@@ -1422,7 +1258,6 @@ def test_a_supplied_obligation_authority_reaches_visible_refs(tmp_path: Any) -> 
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     assert by_key(package, authorities)[("obligation", "obl-root")] == {
@@ -1438,14 +1273,13 @@ def test_a_supplied_obligation_authority_reaches_visible_refs(tmp_path: Any) -> 
 def test_the_package_body_never_carries_a_sixth_field() -> None:
     """Ruling 2026-09-19 06:30: authorities travel as an argument, not as a key.
 
-    The decision package adds exactly V2 §38's five fields — no ``authoritative_refs``
-    and no ``visible_refs_omitted`` (the caller reads the latter from the helper), so
-    the top-level key set is the legacy one plus those five and nothing else.
+    The decision package carries V2 §38's five fields and neither ``authoritative_refs``
+    nor ``visible_refs_omitted`` (the caller reads the latter from the helper).
     """
 
     authorities = [authority("obligation", "obl-root", 1, "b" * 64)]
     package = decision_package(authoritative_refs=authorities)
-    assert set(package) - set(stub_package()) == DECISION_ONLY_FIELDS
+    assert DECISION_ONLY_FIELDS <= set(package)
     assert DECISION_ONLY_FIELDS == {
         "planning_protocol",
         "planning_subjects",
@@ -1473,7 +1307,6 @@ def test_the_legacy_and_decision_packages_share_a_task_hash_source(tmp_path: Any
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     stored = sqlite3.connect(world.path).execute(
@@ -1498,7 +1331,6 @@ def test_the_caller_authority_order_does_not_move_the_package(tmp_path: Any) -> 
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=refs,
     )
     forward, backward = build(rows), build(list(reversed(rows)))
@@ -1521,7 +1353,6 @@ def test_duplicate_authority_keys_are_order_independent(tmp_path: Any) -> None:
         world.mission,
         network,
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=refs,
     )
     # Same (kind,id), same revision, differing hash: only a hash-aware key is stable,
@@ -1570,7 +1401,6 @@ def test_a_caller_row_cannot_override_the_builders_task_digest(tmp_path: Any) ->
         world.mission,
         network,
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=[bogus],
     )
     emitted = {(item["kind"], item["id"]): dict(item) for item in package["visible_refs"]}
@@ -1598,7 +1428,6 @@ def test_caller_authority_revisions_sort_numerically_not_as_strings() -> None:
         _Mission(),
         network,
         registry=None,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=[
             authority("obligation", shared, 10, "a" * 64),
             authority("obligation", shared, 2, "a" * 64),
@@ -1615,7 +1444,6 @@ def test_the_caller_authority_rows_are_plain_quadruples(tmp_path: Any) -> None:
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     # The caller's rows are the same §17 shape as the refs they resolve to.
@@ -1638,7 +1466,6 @@ def test_the_builder_reads_task_authority_from_the_network_not_the_entry(tmp_pat
         world.mission,
         network,
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     binding = network.binding_for_occurrence("task-root")
@@ -1658,7 +1485,6 @@ def test_the_sealed_text_never_renders_the_authority_list(tmp_path: Any) -> None
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     sealed = _seal(package)
@@ -1757,7 +1583,6 @@ def test_the_helpers_hash_the_built_package_sections(tmp_path: Any) -> None:
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
         authoritative_refs=authorities,
     )
     assert package_hash(package) == package_hash(json.loads(json.dumps(package)))
@@ -1784,7 +1609,6 @@ def test_visible_refs_are_only_kind_id_revision_and_hash(tmp_path: Any) -> None:
         world.mission,
         world.network(),
         registry=world.env.registry,
-        planning_protocol=PLANNING_DECISION_V1,
     )
     for item in package["visible_refs"]:
         assert set(item) == {"kind", "id", "semantic_revision", "content_hash"}

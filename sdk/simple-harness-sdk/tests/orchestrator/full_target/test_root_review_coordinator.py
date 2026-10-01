@@ -1064,12 +1064,32 @@ def test_a_reviewer_that_answered_is_never_asked_again(cut: World, tmp_path) -> 
     import asyncio
 
     async def case():
+        from agent_orchestrator.orchestrator.planning_repair_requests import pending_requests
+
         async with _orchestrator(tmp_path) as loop:
             loop.install_hierarchical(planning=cut.env)
             mission = loop.store.get_mission(cut.mission.id)
-            return await loop._advance_root_review(mission, loop._new_mode(mission))
+            reviewers_before = [
+                item.intent_id for item in loop.store.list_intents(
+                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
+                if str(item.config.get("role", "")) == "root_reviewer"
+            ]
+            first = await loop._advance_root_review(mission, loop._new_mode(mission))
+            second = await loop._advance_root_review(mission, loop._new_mode(mission))
+            reviewers_after = [
+                item.intent_id for item in loop.store.list_intents(
+                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
+                if str(item.config.get("role", "")) == "root_reviewer"
+            ]
+            return first, second, reviewers_before == reviewers_after, [
+                row["source_key"] for row in pending_requests(loop.store, mission.id)]
 
-    assert asyncio.run(case()) is False
+    first, second, nobody_asked_again, requests = asyncio.run(case())
+    # 2026-10-01: the rejection goes to the Planner as one ordinary repair request
+    # (whatever the findings were); the reviewer itself is not put the question again.
+    assert first is True and second is False
+    assert nobody_asked_again
+    assert len(requests) == 1 and requests[0].startswith("root-review:")
     assert events(cut, ROOT_REVIEW_REJECTED), "the refusal is the record, not a retry"
 
 

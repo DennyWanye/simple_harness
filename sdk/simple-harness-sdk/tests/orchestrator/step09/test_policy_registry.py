@@ -92,6 +92,7 @@ def _spec(key):
         tenant_id="t-9",
         idempotency_key=key,
         budget=Budget(max_tokens=10_000, max_attempts=2),
+        orchestration_semantics_version="legacy",
     )
 
 
@@ -138,7 +139,7 @@ def test_params_are_resolved_whitelisted_and_content_addressed(tmp_path):
 
 
 def test_the_task_identity_ignores_who_asked_and_under_which_key():
-    a = {"goal": "g", "success_criteria": ["file:x"], "tenant_id": "t1", "idempotency_key": "k1"}
+    a = {"goal": "g", "success_criteria": ["file:x"], "tenant_id": "t1", "idempotency_key": "k1", "orchestration_semantics_version": "legacy"}
     b = {**a, "tenant_id": "t2", "idempotency_key": "eval:p:s:c:1"}
     assert task_identity_hash(a) == task_identity_hash(b)
     assert task_identity_hash(a) != task_identity_hash({**a, "goal": "other"})

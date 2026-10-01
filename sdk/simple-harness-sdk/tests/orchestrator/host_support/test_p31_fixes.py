@@ -282,7 +282,8 @@ def _spec(key, *, budget=None):
         tenant_id="tenant-floor",
         idempotency_key=key,
         allowed_tools=TOOLS3,
-        budget=budget or Budget(max_attempts=6),  # tokens unbounded, as the native run
+        budget=budget or Budget(max_attempts=6),
+        orchestration_semantics_version="legacy",  # tokens unbounded, as the native run
     )
 
 
@@ -473,6 +474,7 @@ def _recorder_spec(key):
         allowed_tools=tuple(RECORDER_SPEC["allowed_tools"]),
         budget=Budget(max_tokens=300_000, max_attempts=16),
         workspace_seed=RECORDER_SEED,
+        orchestration_semantics_version="legacy",
     )
 
 

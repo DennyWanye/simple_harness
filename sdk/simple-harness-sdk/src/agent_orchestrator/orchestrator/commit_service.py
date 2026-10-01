@@ -57,7 +57,7 @@ from ..contracts.models import (
     jsonable,
     sha256_hex,
 )
-from ..contracts.planning_decisions import LEGACY_PLANNING_PROTOCOL, PLANNING_DECISION_V1
+from ..contracts.planning_decisions import PLANNING_DECISION_V1
 from ..governance.budgets import AccountSnapshot, BudgetError, BudgetLedger, UsageFact
 from ..governance.domains import (
     CODE_DOMAIN,
@@ -258,13 +258,22 @@ class MissionSpec:
     domain: str = CODE_DOMAIN  # P3.3 (D1): the domain profile this Mission freezes
     search_policy_version_id: str | None = None
     runtime_profile_id: str | None = None
-    # §18.5 rule 1: the server-side default is ``legacy``.  Only a Mission that asks
-    # for the hierarchical semantics in so many words requires semantic bindings.
-    orchestration_semantics_version: str = LEGACY_SEMANTICS
-    planning_protocol_version: str = LEGACY_PLANNING_PROTOCOL
+    # 2026-10-01: the default is the hierarchical mode on the one planning protocol.
+    # The flat mode is still served, but only for a spec that names it in so many words.
+    orchestration_semantics_version: str = HIERARCHICAL_SEMANTICS
+    planning_protocol_version: str = PLANNING_DECISION_V1
 
     def __post_init__(self) -> None:
         checked_planning_protocol(self.planning_protocol_version)
+
+    @property
+    def bound_planning_protocol(self) -> str | None:
+        """The planning protocol this Mission is created under; None for a flat Mission,
+        which has no Planner rounds and so no protocol."""
+
+        if self.orchestration_semantics_version == LEGACY_SEMANTICS:
+            return None
+        return self.planning_protocol_version
 
     def to_json(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -294,10 +303,9 @@ class MissionSpec:
         if self.runtime_profile_id is not None:
             data["runtime_profile_id"] = self.runtime_profile_id
         if self.orchestration_semantics_version != LEGACY_SEMANTICS:
-            # like ``domain`` above: the default must not change ``spec_hash``, or a
-            # Host re-sending the same request after upgrading gets a MissionConflict
+            # The planning protocol belongs to the hierarchical mode: a flat-mode
+            # charter names neither, a hierarchical one names both.
             data[SEMANTICS_KEY] = self.orchestration_semantics_version
-        if self.planning_protocol_version != LEGACY_PLANNING_PROTOCOL:
             data["planning_protocol_version"] = self.planning_protocol_version
         return data
 
@@ -878,11 +886,12 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     raise MissionConflict(
                         f"mission {mission.id} already exists with a different specification"
                     )
-                conflict = planning_protocol_replay_conflict(
-                    self._store, mission.id, spec.planning_protocol_version
-                )
-                if conflict is not None:
-                    raise MissionConflict(conflict)
+                if semantics_version == HIERARCHICAL_SEMANTICS:
+                    conflict = planning_protocol_replay_conflict(
+                        self._store, mission.id, spec.planning_protocol_version
+                    )
+                    if conflict is not None:
+                        raise MissionConflict(conflict)
                 from .assurance_factory import validate_creation_replay
                 validate_creation_replay(self, mission)
                 return mission, False
@@ -972,7 +981,7 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 domain_version=domain.version,
                 snapshot=domain.to_json(),
             )
-            if spec.planning_protocol_version == PLANNING_DECISION_V1:
+            if semantics_version == HIERARCHICAL_SEMANTICS:
                 bind_planning_protocol(self._store, mission_id, spec.planning_protocol_version)
             self._reserve_mission_system_pools(mission)
             creation_event = self._emit(

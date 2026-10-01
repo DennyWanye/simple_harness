@@ -62,7 +62,7 @@ def _not_models_fault(request: Mapping[str, Any], context: Mapping[str, Any]) ->
 
 
 def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
-    if package.get("rejected_refinements") or package.get("planning_rejected"):
+    if package.get("planning_rejected"):
         return None
     # 审阅 2026-09-28：包里是整个任务的全部待处理请求，两步同时失败时不止一条——挑第一条
     # 非模型原因的原地处理，其余留给后续几轮。
@@ -116,7 +116,7 @@ def local_decision(package: Mapping[str, Any]) -> dict[str, Any] | None:
         return retry
     # 2026-09-28 真机：同一原生决定被准入拒绝后，下一轮原样再生成、再被拒，三轮耗尽规划
     # 次数。这一问已有被拒记录时交给模型（它能看到拒绝原因），不再原样重复。
-    if package.get("repair_requests") or package.get("rejected_refinements") or package.get("planning_rejected"):
+    if package.get("repair_requests") or package.get("planning_rejected"):
         return None
     choices = package.get("method_selection", ())
     if not choices:
@@ -200,8 +200,7 @@ def awaits_authority(store: Any, intent: Any) -> bool:
     with store.read_view():
         decisions = PlanningDecisionStore(store)
         protocol = decisions.get_mission_protocol(intent.mission_id)
-        if (protocol is None or protocol["protocol_version"] != "planning-decision-v1"
-                or int(protocol["package_version"]) < 6):
+        if protocol is None:  # a flat-mode Mission has no planning protocol
             return False
         request = decisions.get_planning_request_for_intent(intent.intent_id)
         return request is not None and PlanningAdmissionStore(store).get_request_binding(request.request_id) is None

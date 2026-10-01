@@ -32,6 +32,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_service_intent_provider_blocker as blocker  # noqa: E402
+from decision_loop import auto_grant  # noqa: E402
 from test_after_handoff_unknown_bounded import _invocation_diagnostics  # noqa: E402
 from test_htn_end_to_end import ROOT_DUTY  # noqa: E402
 from test_provider_grant_rehandoff import (  # noqa: E402
@@ -155,12 +156,13 @@ def test_wall_clock_after_handoff_unknown_releases_grants_and_keeps_unknown_on_t
     Diagnostics must unwrap ``UnknownProviderUsage`` to the transport class.
     """
 
-    from test_htn_end_to_end import _proposal_text, build_world
+    from decision_loop import refine_step
+    from test_htn_end_to_end import build_world
 
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = build_world(evidence, key="p23r-wall", max_runtime_seconds=2)
-    adopt = _proposal_text(world.contract)
+    world = build_world(evidence, key="p23r-wall", max_runtime_seconds=2, bound=True)
+    adopt = refine_step()
     world.store.close()
     provider = RoleScriptedProvider(
         {
@@ -176,6 +178,7 @@ def test_wall_clock_after_handoff_unknown_releases_grants_and_keeps_unknown_on_t
         ) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             _admit_root(loop, mission_id)
             await loop._try_planner_intent(mission_id, ordinal=1)
@@ -242,6 +245,7 @@ def test_admission_denied_budget_exhausted_releases_grants(tmp_path) -> None:
         async with _open_loop(evidence, provider, max_planning_attempts=3) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             _admit_root(loop, mission_id)
             await loop._try_planner_intent(mission_id, ordinal=1)
@@ -273,6 +277,7 @@ def test_planning_failed_has_no_hanging_reservation(tmp_path) -> None:
         async with _open_loop(evidence, provider, max_planning_attempts=1) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await blocker._run_until_done_or(loop, seconds=8.0)
@@ -311,6 +316,7 @@ def test_runtime_unavailable_exports_usage_fully_known_distinct_from_conservatio
         ) as loop:
             world.env.semantics = HtnStore(loop.store)
             loop.install_hierarchical(planning=world.env)
+            auto_grant(loop)
             mission_id = world.mission.id
             await loop._try_planner_intent(mission_id, ordinal=1)
             returned = await blocker._run_until_done_or(loop, seconds=10.0)
@@ -347,6 +353,7 @@ def test_a_legacy_mission_does_not_gain_usage_fully_known_on_the_report(tmp_path
         ) as loop:
             mission = await loop.submit_mission(
                 MissionSpec(
+                    orchestration_semantics_version="legacy",
                     goal="legacy goal",
                     success_criteria=("file:a.md",),
                     tenant_id="tenant-p23r",

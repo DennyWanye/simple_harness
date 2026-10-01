@@ -132,6 +132,7 @@ def test_actual_provider_gets_valid_example_but_missing_file_still_fails(
                     "case",
                     allowed_tools=("workspace_write_file",),
                     budget=Budget(max_tokens=100000, max_attempts=2),
+                    orchestration_semantics_version="legacy",
                 )
             )
             async with asyncio.timeout(10):

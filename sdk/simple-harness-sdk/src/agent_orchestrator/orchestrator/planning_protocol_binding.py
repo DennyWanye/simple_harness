@@ -1,7 +1,14 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""The durable H1 planning-protocol binding for a Mission."""
+"""The durable planning-protocol binding of a hierarchical Mission.
+
+2026-10-01: there is one planning protocol (``planning-decision-v1``) and one package
+version.  The proposal-text protocol and every historical package pairing are gone
+(development phase, no old-data compatibility), so a hierarchical Mission whose
+library row is missing or names anything else is refused by name — see
+:func:`current_planning_protocol` — never served on a fallback path.
+"""
 
 from __future__ import annotations
 
@@ -12,8 +19,8 @@ from simple_harness.contracts import canonical_json
 
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import (
-    LEGACY_PLANNING_PROTOCOL,
     PLANNING_DECISION_V1,
+    UnsupportedPlanningPackage,
 )
 from ..runtime.role_templates import (
     hierarchical_planner_pairing_is_valid,
@@ -23,10 +30,10 @@ from ..runtime.role_templates import (
 from ..storage.planning_decision_store import PlanningDecisionStore
 from ..storage.store import Store
 
-#: The package/prompt pair every binding shares (the frozen v4 package, the v8 planner
-#: prompt).  The protocol *name* is not part of this constant: it is the argument of
-#: :func:`binding_document`, so there is exactly one place that assembles the three-field
-#: document and no value here can be silently shadowed by an override.
+#: The package/prompt pair every binding shares.  The protocol *name* is not part of
+#: this constant: it is the argument of :func:`binding_document`, so there is exactly
+#: one place that assembles the three-field document and no value here can be silently
+#: shadowed by an override.
 PLANNING_PROTOCOL_BINDING: dict[str, Any] = {
     "package_version": PLANNING_DECISION_PACKAGE_VERSION,
     # derived from the pairing table, so the binding can never name a prompt the
@@ -35,10 +42,13 @@ PLANNING_PROTOCOL_BINDING: dict[str, Any] = {
 }
 
 
-#: The two wire names a Mission charter may name (§8.1).  Nothing else is accepted:
-#: the switch is part of the frozen charter, so a typo must fail at the door rather
-#: than silently leave a Mission on the legacy protocol.
-PLANNING_PROTOCOLS = frozenset({LEGACY_PLANNING_PROTOCOL, PLANNING_DECISION_V1})
+#: The wire names a Mission charter may name (§8.1).  Nothing else is accepted: the
+#: name is part of the frozen charter, so a typo must fail at the door.
+PLANNING_PROTOCOLS = frozenset({PLANNING_DECISION_V1})
+
+#: The proposal-text protocol removed on 2026-10-01.  Only its *name* survives, so
+#: the door can say why it refuses it instead of calling it unknown.
+REMOVED_PROPOSAL_PROTOCOL = "legacy-plan-proposal-v1"
 
 
 def checked_planning_protocol(protocol_version: object) -> str:
@@ -50,6 +60,11 @@ def checked_planning_protocol(protocol_version: object) -> str:
     before it reaches ``spec_hash`` or the library.
     """
 
+    if protocol_version == REMOVED_PROPOSAL_PROTOCOL:
+        raise ContractError(
+            f"planning protocol {REMOVED_PROPOSAL_PROTOCOL!r} was removed; "
+            f"the only planning protocol is {PLANNING_DECISION_V1!r}"
+        )
     if not isinstance(protocol_version, str) or protocol_version not in PLANNING_PROTOCOLS:
         raise ContractError(f"unknown planning protocol version {protocol_version!r}")
     return protocol_version
@@ -60,9 +75,7 @@ def binding_document(protocol_version: str) -> dict[str, Any]:
 
     The single assembly point: the digest, the storage write and the replay comparison all
     describe the same document, so a package or prompt bump cannot update one and miss the
-    others.  The protocol name is always taken from the argument — never from a constant —
-    or two different wires could digest to the same ``binding_hash`` while the row's
-    ``protocol_version`` column says otherwise.
+    others.
     """
 
     return {
@@ -91,36 +104,56 @@ def bind_planning_protocol(store: Store, mission_id: str, protocol_version: str)
 
 
 def planning_protocol_for_mission(store: Store, mission_id: str) -> dict[str, Any] | None:
-    """Read a Mission's persisted binding; an absent row means legacy.
+    """Read a Mission's persisted binding row, or ``None`` when it has none.
 
-    The read goes through the storage module's own reader, which is the documented gate
-    for ``mission_planning_protocols``: this function stays a thin, side-effect-free
-    adapter, so the table keeps exactly one reader and one writer (P2-3 of the
-    independent review).  Recovery callers reconstruct a ``Store`` with ``Store.open``
-    (or hold one already), so no raw-connection shim is offered.
+    Only a hierarchical Mission is bound; a flat-mode Mission has no planning protocol
+    at all.  The read goes through the storage module's own reader, which is the
+    documented gate for ``mission_planning_protocols``.
     """
 
     return PlanningDecisionStore(store).get_mission_protocol(mission_id)
 
 
+def current_planning_protocol(store: Store, mission_id: str) -> dict[str, Any]:
+    """The binding of a hierarchical Mission, which must be the one this build serves.
+
+    A missing row means the Mission was created under the removed proposal-text
+    protocol; another protocol name or package version means a contract this build no
+    longer has.  Both are refused by name (:class:`UnsupportedPlanningPackage`), so the
+    Mission stops loudly instead of running on a path that no longer exists.
+    """
+
+    stored = planning_protocol_for_mission(store, mission_id)
+    if stored is None:
+        raise UnsupportedPlanningPackage(
+            f"mission {mission_id} has no planning-protocol binding: it was created under "
+            f"the removed {REMOVED_PROPOSAL_PROTOCOL!r} protocol"
+        )
+    if (
+        stored["protocol_version"] != PLANNING_DECISION_V1
+        or int(stored["package_version"]) != PLANNING_DECISION_PACKAGE_VERSION
+    ):
+        raise UnsupportedPlanningPackage(
+            f"mission {mission_id} is bound to planning protocol "
+            f"{stored['protocol_version']!r}/package {stored['package_version']}; this build "
+            f"serves only {PLANNING_DECISION_V1!r}/package {PLANNING_DECISION_PACKAGE_VERSION}"
+        )
+    return stored
+
+
 def planning_protocol_replay_conflict(
     store: Store, mission_id: str, protocol_version: str
 ) -> str | None:
-    """Return a replay conflict, keeping protocol invariants out of the hot file.
+    """Return a replay conflict for a hierarchical Mission, or ``None``.
 
     A Mission replays idempotently only when the wire it asks for is the wire that is
-    durably bound: no row means legacy, and a row means that exact binding document is
-    the Mission's identity (§8.2).  The comparison is made against the request's
-    ``binding_hash`` so a Mission bound to a different package or prompt of the same
-    protocol name is a conflict too, not just a Mission bound to another name.
+    durably bound (§8.2).  The stored pair and its digest are validated as well, so a
+    row that was tampered with is a conflict too, not just one bound to another name.
     """
 
     checked = checked_planning_protocol(protocol_version)
     stored = planning_protocol_for_mission(store, mission_id)
-    expected = binding_document(checked)
-    if stored is None:  # absent means legacy: nobody may bind it after the fact
-        if checked == LEGACY_PLANNING_PROTOCOL:
-            return None
+    if stored is None:
         return f"mission {mission_id} has no durable planning protocol binding"
     # A software upgrade does not rebind an existing Mission to a new prompt.
     # Validate the stored pair and its digest; the caller only chooses the protocol.
@@ -133,7 +166,7 @@ def planning_protocol_replay_conflict(
         return (
             f"mission {mission_id} is durably bound to protocol"
             f" {stored['protocol_version']!r}/package {stored['package_version']}, not"
-            f" {checked!r}/package {expected['package_version']}"
+            f" {checked!r}/package {PLANNING_PROTOCOL_BINDING['package_version']}"
         )
     return None
 
@@ -141,9 +174,11 @@ def planning_protocol_replay_conflict(
 __all__ = (
     "PLANNING_PROTOCOL_BINDING",
     "PLANNING_PROTOCOLS",
+    "REMOVED_PROPOSAL_PROTOCOL",
     "binding_document",
     "bind_planning_protocol",
     "checked_planning_protocol",
+    "current_planning_protocol",
     "planning_protocol_binding_hash",
     "planning_protocol_for_mission",
     "planning_protocol_replay_conflict",

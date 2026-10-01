@@ -306,6 +306,7 @@ async def _orchestrated(
     ) as orch:
         mission = await orch.submit_mission(
             MissionSpec(
+                orchestration_semantics_version="legacy",
                 goal=episode.agent.instruction + "\n" + PUBLIC_GUIDANCE,
                 success_criteria=("file:REPORT.md",),
                 tenant_id="appworld-evaluation",

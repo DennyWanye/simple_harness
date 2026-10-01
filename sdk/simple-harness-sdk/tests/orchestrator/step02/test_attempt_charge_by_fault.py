@@ -38,6 +38,7 @@ SPEC = MissionSpec(
     idempotency_key="mission-charge",
     allowed_tools=("workspace_read_file", "workspace_write_file", "run_tests"),
     budget=Budget(max_tokens=1_000_000, max_attempts=12, max_cost_micros=None),
+    orchestration_semantics_version="legacy",
 )
 PROPOSAL = TaskProposal(
     goal="写 wordfreq.py",

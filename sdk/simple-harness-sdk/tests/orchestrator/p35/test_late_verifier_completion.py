@@ -99,6 +99,7 @@ def test_late_verifier_completion_preserves_winner_and_real_errors(
                 allowed_tools=tuple(RECORDER_SPEC["allowed_tools"]),
                 budget=Budget(max_tokens=300_000, max_attempts=16),
                 workspace_seed=RECORDER_SEED,
+                orchestration_semantics_version="legacy",
             ))
             real_hold = orch._hold_lease
 

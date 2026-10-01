@@ -406,9 +406,8 @@ class PlanCommitsMixin:
         if not command.delta.binding_rewrites:
             return
         from ..storage.planning_decision_store import PlanningDecisionStore
-        protocol = PlanningDecisionStore(self._store).get_mission_protocol(command.mission_id)
-        if protocol is None or protocol["protocol_version"] != "planning-decision-v1" or int(protocol["package_version"]) < 7:
-            raise PlanCommitRejected("DECISION_NOT_ENABLED_IN_PHASE", "binding rewrites require H4")
+        if PlanningDecisionStore(self._store).get_mission_protocol(command.mission_id) is None:
+            raise PlanCommitRejected("DECISION_NOT_ENABLED_IN_PHASE", "binding rewrites require a planning-protocol binding")
         revoked = {str(item) for item in command.superseded_occurrences} | self._retired_children(semantics, command)
         control_fields = {"contract_revision", "occurrence_binding", "adopted_method_instance_id", "input_binding_revision", "dispatch_generation"}
         # Accepted work keeps its immutable Task/result lineage. Changing its

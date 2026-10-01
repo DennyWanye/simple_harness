@@ -43,6 +43,7 @@ SPEC = MissionSpec(
     idempotency_key="mission-1",
     allowed_tools=("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests"),
     budget=Budget(max_tokens=10_000, max_attempts=2, max_cost_micros=None),
+    orchestration_semantics_version="legacy",
 )
 PROPOSAL = TaskProposal(
     goal="实现 parse_kv(text) -> dict",

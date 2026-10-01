@@ -69,6 +69,10 @@ from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
     method_proposal_step,
+)
+from scripted_plans import (  # noqa: E402
+    apply_scripted_plan,
+    approve_content_only_completion,
     plan_revision_proposal_step,
 )
 
@@ -178,6 +182,15 @@ class _CodeWorld:
             ),
         )
         self.service.begin_planning(self.mission.id)
+        if db_name is not None:
+            # A world a real ``Orchestrator`` loop runs keeps its protocol binding, so
+            # it needs the person's confirmed completion mapping before the plan lands.
+            approve_content_only_completion(
+                self.service,
+                self.mission,
+                self.semantics.task_semantics_of(self.mission.id, ROOT_TASK),
+                command_id=f"approve-{key}",
+            )
         _say(self.world, self.semantics, self.mission.id, "code.repo-checked-out", {
             "repository": REPOSITORY
         })
@@ -187,7 +200,7 @@ class _CodeWorld:
         )
         assert receipt.admitted, receipt.problems
         reference = receipt.method_ref
-        outcome = self.dispatch.apply_planner_reply(
+        outcome = apply_scripted_plan(self.dispatch,
             self.mission.id,
             plan_revision_proposal_step(
                 proposal_id="prop-synth",

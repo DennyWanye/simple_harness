@@ -149,7 +149,6 @@ class OrchestratorConfig:
     # step 5 (D5-2 / D5-6 / D5-7 / D5-8 / D5-15)
     planning_backend: PlanningBackend | None = field(default=None, repr=False, compare=False, kw_only=True)
     planning_backend_limits: PlanningLimits | None = field(default=None, kw_only=True)
-    hierarchical_repair_enabled: bool = field(default=True, kw_only=True)
     method_selection_policy: str = field(default="MODEL_ON_MULTIPLE", kw_only=True)
     dynamic_graph: bool = True  # False: no Manager decisions; non-candidate outcomes just retry
     max_graph_depth: int = 6
@@ -290,7 +289,6 @@ class OrchestratorConfig:
         return {
             "planning": {
                 "method_selection_policy": self.method_selection_policy,
-                "repair_enabled": self.hierarchical_repair_enabled,
                 "backend_id": None if self.planning_backend is None else self.planning_backend.backend_id,
                 "limits": None if self.planning_backend_limits is None else self.planning_backend_limits.to_json(),
             },

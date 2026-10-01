@@ -64,7 +64,7 @@ async def execute_method_cohort(*, executor: RuntimeEpisodeExecutor, manifest: H
     """
     validate_code_cohort(scenarios)
     config = replace(executor.config, evidence_root=runtime_root,
-                     planning_backend=None, planning_backend_limits=None, hierarchical_repair_enabled=True)
+                     planning_backend=None, planning_backend_limits=None)
     if not config.orchestrator_db.is_file():
         raise ContractError("H6 must use the existing candidate admission runtime")
     if source_fingerprint(executor.checkout) != manifest.source_fingerprint:

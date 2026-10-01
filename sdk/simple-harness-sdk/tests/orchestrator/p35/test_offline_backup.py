@@ -145,6 +145,7 @@ def test_required_source_cas_missing_refuses_before_publication(source, tmp_path
                     tenant_id="source-owner",
                     idempotency_key="backup-source",
                     domain=DOC_DOMAIN,
+                    orchestration_semantics_version="legacy",
                 )
             )
             api = MissionControlV1(

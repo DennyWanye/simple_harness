@@ -75,7 +75,7 @@ async def execute_method_source(*, executor: RuntimeEpisodeExecutor, manifest: H
         raise ContractError("H6 source differs from frozen deployment")
     runtime = root / "runtime"
     config = replace(executor.config, evidence_root=runtime, planning_backend=None,
-                     planning_backend_limits=None, hierarchical_repair_enabled=True)
+                     planning_backend_limits=None)
     if config.orchestrator_db.exists() or (root / "physical-meter.json").exists():
         raise ContractError("H6 source requires a fresh runtime; preserve prior evidence")
     write_evidence(root, "source-experiment.json", {

@@ -22,7 +22,6 @@ import pytest
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
     H1_DECISION_ENABLEMENT,
-    LEGACY_PLANNING_PROTOCOL,
     MAX_PD_ALTERNATIVES,
     MAX_PD_ARGUMENTS,
     MAX_PD_ASSUMPTIONS,
@@ -192,7 +191,6 @@ def test_wire_identity_constants_are_pinned() -> None:
     # protocol identity without touching any codec; pin every one literally.
     assert PLANNING_DECISION_SCHEMA_VERSION == 1
     assert PLANNING_DECISION_V1 == "planning-decision-v1"
-    assert LEGACY_PLANNING_PROTOCOL == "legacy-plan-proposal-v1"
     assert PLANNING_DECISION_CODEC_VERSION == "planning-decision-codec-v1"
 
 
