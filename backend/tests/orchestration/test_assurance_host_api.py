@@ -144,9 +144,15 @@ async def test_check_policy_projection_is_replay_safe_and_needs_a_frozen_scope(o
         created = await handle(service, "mission_create", {"request_id": "c1", **notes_request("policy-ws")})
         assert created["payload"]["ok"] is True, created
         mission_id = created["payload"]["data"]["mission_id"]
-        assert project_check_policies(service) == 0
+        # 2026-10-01 (HTN 精简 片 A): the one thing there is to project before any Scope
+        # exists is the root goal's METHOD_PLAN policy — the Planner proposes its own
+        # method for it, and that method's independent review needs the policy first.
+        assert project_check_policies(service) == 1
         assert project_check_policies(service, mission_id) == 0
-        assert service._assurance_policy_scopes == set()
+        assert service._assurance_policy_scopes == {f"method-plan:desktop-root-{mission_id}:1:r1"}
+        row = service._orchestrator.store.connection.execute(
+            "SELECT COUNT(*) FROM assurance_criterion_policies WHERE mission_id=?", (mission_id,)).fetchone()
+        assert row[0] == 1
         # The loop hook is the same function and never fails the loop.
         assert service._project_assurance_policies() == 0
     finally:

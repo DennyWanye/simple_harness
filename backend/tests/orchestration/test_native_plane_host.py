@@ -27,8 +27,26 @@ from simple_harness.agents.arp.strict import digest
 from ._support import notes_provider, notes_request
 
 
-def _service(root, principal, **settings):  # type: ignore[no-untyped-def]
-    return OrchestrationService(root, OrchestrationSettings(**settings), provider=notes_provider(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+def _service(root, principal, *, provider=None, **settings):  # type: ignore[no-untyped-def]
+    return OrchestrationService(root, OrchestrationSettings(**settings), provider=provider or notes_provider(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+
+
+def _asking_planner():  # type: ignore[no-untyped-def]
+    """A scripted Planner on the default hierarchical lane: it asks the person one blocking
+    question, so the Mission stays in PLANNING with exactly one planning Session."""
+    import json
+
+    from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of
+
+    def ask(request):  # type: ignore[no-untyped-def]
+        subject = package_of(request)["planning_subjects"][0]["subject_key"]
+        body = {"schema_version": 1, "decision_type": "REQUEST_HUMAN", "subject_key": subject,
+                "rationale": "fixture", "reason_refs": [], "assumptions": [],
+                "payload": {"question": "fixture question", "options": [], "blocking": True},
+                "uncertainties": [], "alternatives": [], "replan_triggers": []}
+        return "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
+
+    return RoleScriptedProvider({"planner": [ask]})
 
 
 def _request(verb: str, *, subject_id: str, payload, command_id=None, expected_revision=None, request_id="r"):  # type: ignore[no-untyped-def]
@@ -144,7 +162,7 @@ async def test_a_non_deepseek_deployment_without_a_counter_is_refused_as_only_de
 async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch_link_is_checked(orchestration_root, principal):
     from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key
 
-    service = _service(orchestration_root, principal)
+    service = _service(orchestration_root, principal, provider=_asking_planner())
     await service.start()
     try:
         evaluation = Pin("evaluation", "skill-eval:demo@1:0123456789abcdef:cmd-trial-1", 1, digest({"demo": 1}))
@@ -163,9 +181,9 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
         # The evaluation Mission runs on the native pool: once the person approves the
         # completion spec (the Host's planning gate), the loop plans it through an Agent the
         # native plane created from the claimed dispatch intent, and the first provider
-        # request is metered by the certified counter.  (The scripted provider knows no
-        # synthesizer role, so planning itself stops there: fixture migration is the
-        # Assurance handoff's item ③, not this seam.)
+        # request is metered by the certified counter.  (2026-10-01: the first planning
+        # Session is the Planner's own — there is no method synthesizer any more.  The
+        # scripted Planner asks the person a blocking question, so planning waits there.)
         from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
         from agent_orchestrator.storage.htn_store import HtnStore
 
@@ -179,6 +197,14 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
                          "mode": "CONTENT_ONLY", "content_criterion_ids": [c.criterion_id for c in requirements.criteria], "effects": []},
         })
         assert approved["authority"]["kind"] == "USER_CONFIRMED"
+        await asyncio.wait_for(loop.run(max_cycles=10), timeout=240)  # opens the Planner request
+        # the Host's per-round duties, as its loop would run them: the planning authority
+        # the person (auto permission) grants this request, and the strict TaskGraph
+        for pending in service._call("pending_planning_authorizations"):
+            service._call("planning_authorization", {
+                "operation": "issue", "mission_id": mission_id, "request_id": pending["request_id"],
+                "command_id": "grant-eval-" + pending["request_id"], "approval_source": "HOST_AUTO_PERMISSION"})
+        await service._host_duties()  # binds the strict TaskGraph the granted request waits for
         await asyncio.wait_for(loop.run(max_cycles=40), timeout=240)
         assert loop.store.get_mission(mission_id).status.value == "PLANNING"
         pool = loop.assembled.pool("deepseek-native-256k-v1")
@@ -189,20 +215,20 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
         assert len(intents) == 1 and intents[0][0] == "BOUND" and "dispatch-intent:intent-plan-" in intents[0][1]
         metered = connection.execute("SELECT input_charge, input_budget FROM arp_context_requests").fetchall()
         assert len(metered) == 1 and 0 < metered[0][0] < metered[0][1]
-        # MISSION mode (NEXT-TG-1.0 §10): the method synthesizer's Session was created from the exact
+        # MISSION mode (NEXT-TG-1.0 §10): the Planner's Session was created from the exact
         # sources the SDK reader derived from its dispatch intent, and the frozen request
         # was re-checked and carries them.
         from simple_harness.agents.arp import mission_sources, store as arp_store
         session = arp_store.read_live_session(connection, sessions[0][0])
         record = mission_sources.read_record(connection, session.session_id)
-        assert record["sources"]["source_kind"] == "method_synthesizer" and record["sources"]["mission_id"] == mission_id
-        assert record["sources"]["input_manifest"] == {"not_applicable": "method_synthesizer_has_no_worker_attempt"}
+        assert record["sources"]["source_kind"] == "planner" and record["sources"]["mission_id"] == mission_id
+        assert record["sources"]["input_manifest"] == {"not_applicable": "planner_has_no_worker_attempt"}
         [frozen] = [arp_store.read_context_by_request_key(connection, str(r[0])).manifest
                     for r in connection.execute("SELECT original_request_key FROM arp_context_requests")]
         assert mission_sources.record_pin(session.session_id, record).to_json() in frozen["authority_refs"]
         assert frozen["owner_contract_ref"]["id"].endswith("owner-mode:MISSION")
         tasks = loop.store.list_tasks(mission_id)
-        assert tasks == []  # the fixture provider has no synthesizer script (see above)
+        assert tasks == []  # the Planner asked the person; nothing is planned yet
 
         # Dispatch link: an unrelated Mission is refused and a missing task is refused (the
         # success path needs a planned task: it is exercised on the real-model runs).

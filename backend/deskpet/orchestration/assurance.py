@@ -265,4 +265,72 @@ def project_check_policies(service: Any, mission_id: str | None = None) -> int:
         root_scope = mission_final_scope_id(orchestrator, mid)
         if root_scope is not None:
             approved += approve(mid, root_scope, "MISSION_FINAL")
+    approved += _project_method_plan_policies(service, mission_id, unassured)
+    return approved
+
+
+def _project_method_plan_policies(service: Any, mission_id: str | None, unassured: set[str]) -> int:
+    """Approve the METHOD_PLAN check policy for every goal a method may be proposed for.
+
+    2026-10-01 (HTN 精简 片 A): the Planner proposes its own methods, and a proposed
+    method is adopted only after its independent review.  That review is prepared
+    inside the Planner decision's own transaction, where this projector cannot run,
+    so the policy has to be there *before* the Planner is asked: from Mission creation
+    for the root goal (no plan and no Scope exist yet), and from the commit of the plan
+    that introduced it for a sub-goal.  The policy is approved on the exact goal Task
+    (its contract revision and hash), by the SDK's own lossless mapping of the
+    requirements that goal covers; the Host adds nothing and drops nothing.
+    """
+    from agent_orchestrator.orchestrator.assurance_check_policy import (
+        lossless_planning_subject_mapping,
+    )
+    from agent_orchestrator.storage.assurance_store import AssuranceStore
+    from agent_orchestrator.storage.htn_store import HtnStore
+
+    orchestrator = service._orchestrator
+    store = orchestrator.store
+    done: set[str] = service._assurance_policy_scopes
+    sql = ("SELECT mission_id FROM missions WHERE status NOT IN ('COMPLETED','FAILED','CANCELLED')")
+    args: tuple[Any, ...] = ()
+    if mission_id is not None:
+        sql += " AND mission_id=?"
+        args = (mission_id,)
+    approved = 0
+    for (mid,) in store.connection.execute(sql + " ORDER BY created_at, mission_id", args).fetchall():
+        mid = str(mid)
+        if mid in unassured:
+            continue
+        try:
+            if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
+                unassured.add(mid)
+                continue
+        except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
+            unassured.add(mid)
+            continue
+        htn = HtnStore(store)
+        requirements = htn.latest_requirements_revision(mid)
+        # The policy is approved against one requirements revision; a revised requirements
+        # document needs its own approval, so the revision is part of what "done" means.
+        revision = 0 if requirements is None else int(requirements.revision)
+        for binding in htn.list_task_semantics(mid, form="compound"):
+            key = f"method-plan:{binding.task_id}:{int(binding.contract_revision)}:r{revision}"
+            if key in done:
+                continue
+            try:
+                requirements_ref, subject_ref, mapping = lossless_planning_subject_mapping(
+                    orchestrator.commit, mission_id=mid, task_id=str(binding.task_id))
+                service._call("approve_assurance_check_policy", {
+                    "mission_id": mid, "command_id": f"host-check-policy:{key}",
+                    "requirements_ref": requirements_ref.to_json(),
+                    "planning_subject": subject_ref.to_json(),
+                    "candidate_mapping": [policy.to_json() for policy in mapping],
+                    "purpose": "METHOD_PLAN", "approval_source": "HOST_LOSSLESS_AUTO"})
+            except Exception as error:  # noqa: BLE001 - one goal must never stop the round
+                if key not in service._assurance_policy_warned:  # retried every round; said once
+                    service._assurance_policy_warned.add(key)
+                    logger.warning("assurance METHOD_PLAN check policy not projected for %s: %s: %s",
+                                   binding.task_id, type(error).__name__, error)
+                continue
+            done.add(key)
+            approved += 1
     return approved

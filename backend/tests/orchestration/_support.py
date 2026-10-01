@@ -27,10 +27,10 @@ WORKSPACE_TOOLS = ["workspace_read_file", "workspace_write_file", "workspace_lis
 
 #: 脚本化旧协议通道（2026-09-30 测试清理）。
 #: NEXT-TG-1.0（2026-09-27 起）Host 默认部署对每个新 Mission 走分层规划：
-#: planning-decision-v1 + 方法合成器 + 完成要求确认 + 严格执行图 + Assurance。
-#: 本文件的脚本化 Provider 只会旧的 ``<task_graph_proposal>`` 协议（没有
-#: method_synthesizer 角色），在默认部署下 Mission 停在 CREATED（等确认）或
-#: method_synthesis_refused。Host 只在显式夹具通道（``test_scenario is not None``，
+#: planning-decision-v1 + 完成要求确认 + 严格执行图 + Assurance（2026-10-01 起没有方法
+#: 合成器，做法由规划器自己选或自己提）。
+#: 本文件的脚本化 Provider 只会旧的 ``<task_graph_proposal>`` 协议，在默认部署下
+#: Mission 停在 CREATED（等确认）或因规划器回复读不懂而规划失败。Host 只在显式夹具通道（``test_scenario is not None``，
 #: 见 service._install_hierarchical：“explicit historical fixture lanes keep their old
 #: protocol”）保留旧协议；传入的 provider 原样使用。测服务机制（排空、幂等、并发、
 #: 审批、投影、重启恢复）而非规划协议的用例走这个通道。分层默认路径的脚本化端到端

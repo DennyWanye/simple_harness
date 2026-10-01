@@ -212,6 +212,7 @@ class OrchestrationService:
         self._assurance: Any = None
         self._assurance_notices: deque[dict[str, Any]] = deque(maxlen=256)
         self._assurance_policy_scopes: set[str] = set()  # Scopes whose check policy this Host approved
+        self._assurance_policy_warned: set[str] = set()  # goals whose refused projection was already logged
         self._assurance_unassured_missions: set[str] = set()  # Missions outside the assured lane
         # 2026-09-25 UI 全量点击：自动模式下每轮"授权本轮规划"都要人点，不点任务就一直卡着。
         # 读当前权限模式（每轮现读；读不到按手动处理，照旧等人点）。
