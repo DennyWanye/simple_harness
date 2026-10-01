@@ -7,20 +7,12 @@ from agent_orchestrator.api.operation_workspace import operation_workspace
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.artifacts.store import ArtifactStore
 from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 
 from test_scoped_content_commit import _mixed_world
 
 
 def test_workspace_returns_the_committed_spec_without_mutating_the_tenant_store(tmp_path) -> None:
     world, requirements, approved, *_ = _mixed_world(tmp_path, with_output=True)
-    PlanningDecisionStore(world.store).bind_mission_protocol(
-        world.mission.id,
-        protocol_version="planning-decision-v1",
-        package_version=6,
-        prompt_version="planner-hierarchical-v9",
-        binding_hash="a" * 64,
-    )
     loop = SimpleNamespace(
         store=world.store,
         commit=world.service,

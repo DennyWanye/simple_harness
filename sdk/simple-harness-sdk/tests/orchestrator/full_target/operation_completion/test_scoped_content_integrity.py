@@ -19,7 +19,6 @@ if str(_HERE) not in sys.path:
 from test_completion_plan_commit import _admitted_single_root  # noqa: E402
 from test_completion_spec_approval import (  # noqa: E402
     _api,
-    _bind_new_protocol,
     _command,
     _criterion,
 )
@@ -128,8 +127,7 @@ def _write_counts(world) -> tuple[int, int, int, int, int]:
 def _required_check_world(tmp_path):
     """Build the real approved Spec before Plan Commit with one named root check."""
 
-    world = _world(tmp_path, key="scoped-content-required-check")
-    _bind_new_protocol(world)
+    world = _world(tmp_path, key="scoped-content-required-check", confirm_completion=False)
     report = dataclasses.replace(
         _criterion("criterion-report"),
         required_evidence_policy=RequiredEvidencePolicy(required_check_ids=("security-scan",)),

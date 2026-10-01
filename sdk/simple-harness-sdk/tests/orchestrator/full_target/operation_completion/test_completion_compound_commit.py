@@ -21,20 +21,15 @@ from test_htn_end_to_end import HIERARCHICAL_SEMANTICS, ROOT_DUTY, ROOT_TASK, bu
 from test_nested_compound_composition import _inner, _outer, _task_of
 from test_nested_compound_refinement import _proposal
 
-from agent_orchestrator.api.operation_completion import OperationCompletionApi
 from agent_orchestrator.artifacts.store import ArtifactStore
 from agent_orchestrator.contracts import Artifact, ClaimProposal, ResultEnvelope
 from agent_orchestrator.contracts.htn import TaskForm
 from agent_orchestrator.contracts.operation_completion import PlanRevisionPinV1
 from agent_orchestrator.contracts.resolution import (
-    Criterion,
     CriterionExpr,
-    CriterionOrigin,
-    EvaluationKind,
-    RequirementClass,
     RequirementsRevision,
 )
-from agent_orchestrator.governance.permissions import Principal
+from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
 from agent_orchestrator.orchestrator.commit_service import Reservation
 from agent_orchestrator.orchestrator.completion_status import read_occurrence_completion
 from agent_orchestrator.orchestrator.composition_review import CompositionAcceptanceAssembly
@@ -42,69 +37,36 @@ from agent_orchestrator.orchestrator.operation_completion import OperationComple
 from agent_orchestrator.orchestrator.scoped_composition_review import read_compound_projection
 from agent_orchestrator.runtime.output_blocks import PortClaim
 from agent_orchestrator.storage.htn_store import HtnStore
-from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 
 
-def _approved_root_only_spec(world, *, package_version=6) -> RequirementsRevision:
-    """Bind the real protocol and approve only the actual root requirement."""
+def _approved_root_only_spec(world) -> RequirementsRevision:
+    """The real protocol binding and the approved root-only requirement, as read back.
 
-    if package_version == 7:
-        from agent_orchestrator.orchestrator.planning_protocol_binding import bind_planning_protocol
-        bind_planning_protocol(world.store, world.mission.id, "planning-decision-v1")
-    else:
-        PlanningDecisionStore(world.store).bind_mission_protocol(
-            world.mission.id,
-            protocol_version="planning-decision-v1",
-            package_version=6,
-            prompt_version="planner-hierarchical-v9",
-            binding_hash="a" * 64,
-        )
-    requirements = RequirementsRevision(
-        revision_id="nested-root-requirements-1",  # type: ignore[arg-type]
-        mission_id=world.mission.id,
-        revision=1,
-        criteria=(
-            Criterion(
-                criterion_id="c-root",
-                revision=1,
-                origin=CriterionOrigin.USER_EXPLICIT,
-                statement="the mission root is satisfied",
-                requirement_class=RequirementClass.REQUIRED_OUTCOME,
-                evaluation_kind=EvaluationKind.SEMANTIC,
-            ),
+    带协议绑定的世界里（``build_world`` 的默认），建任务时就绑定了当前这一版规划协议，
+    用户也已经通过生产接口确认了只含根判据 ``c-root`` 的纯内容要求；这里不再另绑一次
+    （另绑会被"任务不许换协议"拒绝），只把已确认的那一版读回来并核对它确实只含根判据。
+    """
+
+    from agent_orchestrator.orchestrator.planning_protocol_binding import (
+        current_planning_protocol,
+    )
+
+    binding = current_planning_protocol(world.store, world.mission.id)
+    assert binding["protocol_version"] == "planning-decision-v1"
+    requirements = HtnStore(world.store).latest_requirements_revision(world.mission.id)
+    assert requirements is not None and int(requirements.revision) == 1
+    assert [str(item.criterion_id) for item in requirements.criteria] == ["c-root"]
+    assert requirements.success_expression == CriterionExpr("c-root")
+    spec = OperationCompletionReader(world.store).read_requirements(
+        world.mission.id,
+        TypedRef(
+            kind=TypedRefKind.REQUIREMENTS,
+            id=str(requirements.revision_id),
+            revision=int(requirements.revision),
+            content_hash=requirements.content_hash(),
         ),
-        success_expression=CriterionExpr("c-root"),
-        authority_subject="authenticated-user-confirmation",
     )
-    HtnStore(world.store).insert_requirements_revision(requirements)
-    OperationCompletionApi(
-        world.service,
-        tenant_id=world.mission.tenant_id,
-        principal=Principal("human-completion-fixture"),
-    ).approve(
-        {
-            "mission_id": world.mission.id,
-            "command_id": "approve-nested-root-only",
-            "expected_requirements_ref": {
-                "kind": "requirements",
-                "id": str(requirements.revision_id),
-                "revision": 1,
-                "content_hash": requirements.content_hash(),
-            },
-            "proposal": {
-                "schema_version": 1,
-                "mission_id": world.mission.id,
-                "requirements_ref": {
-                    "id": str(requirements.revision_id),
-                    "revision": 1,
-                    "content_hash": requirements.content_hash(),
-                },
-                "mode": "CONTENT_ONLY",
-                "content_criterion_ids": ["c-root"],
-                "effects": [],
-            },
-        }
-    )
+    assert tuple(spec.content_criterion_ids) == ("c-root",), spec
     return requirements
 
 
@@ -182,8 +144,11 @@ def _accept_leaf_through_core(world, task, *, tmp_path: Path):
     return accepted, attempt, stored
 
 
-def completed_nested_world(tmp_path, *, package_version=6, with_reuse_consumer=False):
+def completed_nested_world(tmp_path, *, package_version=None, with_reuse_consumer=False):
     """OC2: the second refinement retains local `c-sub` authority.
+
+    ``package_version`` is kept for existing callers and no longer chooses anything:
+    a bound Mission is bound at creation to the package this build serves.
 
     The first plan is legal: the root's ``c-root`` is carried to the inner
     compound, where the Method declares local ``c-sub`` review.  The second
@@ -192,8 +157,9 @@ def completed_nested_world(tmp_path, *, package_version=6, with_reuse_consumer=F
     adding ``c-sub`` to the approved root Spec.
     """
 
+    del package_version
     world = build_world(tmp_path, key="oc2-nested-local-chain", mode=HIERARCHICAL_SEMANTICS)
-    requirements = _approved_root_only_spec(world, package_version=package_version)
+    requirements = _approved_root_only_spec(world)
     env = world.env
     env.register_type(
         "plan.subgoal",

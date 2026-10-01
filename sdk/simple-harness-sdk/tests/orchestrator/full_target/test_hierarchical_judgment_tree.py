@@ -230,46 +230,37 @@ def _complete_leaf(
     now_ms: int,
     port_version: int = 1,
 ) -> None:
-    """A Worker's PASS as the loop leaves it: the legacy ``accept_result`` lifecycle
-    (Task COMPLETED with its ``accepted_artifacts``) plus the hierarchical ``Acceptance``
-    with the declared port claimed.  Both files are the leaf's; only the port file is
-    indexed as an accepted output — exactly what C3's leaves did with ``REPORT.md``."""
+    """A Worker's PASS as the loop leaves it: the Task COMPLETED with its
+    ``accepted_artifacts`` plus the hierarchical ``Acceptance`` with the declared port
+    claimed.  Both files are the leaf's; only the port file is indexed as an accepted
+    output — exactly what C3's leaves did with ``REPORT.md``.
 
-    port_artifact = _stored_file(
+    带协议绑定的世界里验收要一条真实的、已验证的结果，所以走枢纽的 ``_accept_leaf``：
+    按生产顺序开一次尝试、把两份文件作为这次结果的产出存进内容库、只把端口文件认领到
+    声明的端口上，结果提交后步骤行就是 COMPLETED。产出字节由枢纽夹具生成，这条测试只看
+    "哪个路径归哪一步"，不看字节内容。"""
+
+    from agent_orchestrator.runtime.output_blocks import PortClaim
+
+    del port_data, report  # 字节由枢纽夹具按产出编号生成
+    port = world.dispatch.declared_output_ports_for(world.mission.id, task_id)
+    assert len(port) == 1, port
+    e2e._accept_leaf(
         world,
-        task_id,
-        artifact_id=f"artifact-{task_id}-port",
-        path=port_path,
-        data=port_data,
-        version=port_version,
-    )
-    report_artifact = _stored_file(
-        world,
-        task_id,
-        artifact_id=f"artifact-{task_id}-report",
-        path=REPORT,
-        data=report,
-        version=report_version,
+        task_id=task_id,
+        result_id=f"result-{task_id}",
+        artifacts=(
+            e2e._Artifact(f"artifact-{task_id}-port", port_path, version=str(port_version)),
+            e2e._Artifact(f"artifact-{task_id}-report", REPORT, version=str(report_version)),
+        ),
+        now_ms=now_ms,
+        port_claims=(PortClaim(port_key=port[0]["port"], path=port_path),),
     )
     task = world.store.get_task(task_id)
-    assert task is not None
-    # READY → ACTIVE → VERIFYING → COMPLETED: the lifecycle ``accept_result`` closes,
-    # stepped through the same transition table, then stored in one update.
-    completed = next_task(
-        next_task(next_task(task, TaskStatus.ACTIVE), TaskStatus.VERIFYING),
-        TaskStatus.COMPLETED,
-        accepted_result_id=f"result-{task_id}",
-        accepted_artifacts=(port_artifact.id, report_artifact.id),
-    )
-    world.store.update_task(completed, expected_version=task.version)
-    _accept_with(
-        world.service,
-        world.dispatch,
-        world.mission.id,
-        task_id,
-        artifacts=(port_artifact, report_artifact),
-        now_ms=now_ms,
-    )
+    assert task is not None and task.status is TaskStatus.COMPLETED
+    assert set(task.accepted_artifacts) == {
+        f"artifact-{task_id}-port", f"artifact-{task_id}-report"
+    }
 
 
 def _two_leaves_wrote_report(tmp_path, *, key: str) -> World:

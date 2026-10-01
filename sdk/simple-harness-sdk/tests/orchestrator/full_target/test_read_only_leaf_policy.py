@@ -168,13 +168,16 @@ def test_the_c3_plans_read_only_leaves_are_materialised_without_code_test(tmp_pa
             ("verify", "code.verify-tests"),
         )
     }
+    # Every leaf of a Mission on the completion protocol also carries the content
+    # review layer; what this test is about is the deterministic ``code_test`` layer.
     for step in ("facts", "reproduce"):
         assert "code_test" not in policies[step], (step, policies[step])
-        assert policies[step] == ("format_check", "rule_check"), (step, policies[step])
-    assert policies["patch"] == ("format_check", "rule_check", "code_test")
+        assert policies[step] == ("format_check", "rule_check", "critic_review"), (
+            step, policies[step])
+    assert policies["patch"] == ("format_check", "rule_check", "code_test", "critic_review")
     # Verification P1-2: ``verify`` is ``external_read`` too, but it is the step the
     # plan's criterion_links point at — the deterministic layer stays on it.
-    assert policies["verify"] == ("format_check", "rule_check", "code_test")
+    assert policies["verify"] == ("format_check", "rule_check", "code_test", "critic_review")
 
 
 def test_a_criterion_linked_leaf_keeps_code_test_whatever_its_side_effect_says() -> None:

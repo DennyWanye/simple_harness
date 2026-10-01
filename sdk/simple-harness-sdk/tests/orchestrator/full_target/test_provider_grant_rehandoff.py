@@ -124,14 +124,21 @@ def test_a_transport_unknown_grant_is_released_before_rehandoff_and_the_mission_
             returned = await blocker._run_until_done_or(loop, seconds=10.0)
             intent = loop.store.get_intent_for_subject(f"{mission_id}:planner:1")
             assert intent is not None
+            # 任务判停前会再问一次规划器（``planner:2``）；那是另一轮、另一个问题。
+            # 这条测的是 ``planner:1`` 这一轮，重新交接和调用次数只算它自己的。
             return {
                 "returned": returned,
                 "types": [item.type for item in blocker._events(loop, mission_id)],
-                "rehandoffs": blocker._rehandoffs(loop, mission_id),
+                "rehandoffs": [
+                    item for item in blocker._rehandoffs(loop, mission_id)
+                    if item["subject_id"] == f"{mission_id}:planner:1"
+                ],
                 "grants": _grants(loop),
                 "conservation": _conservation(loop, mission_id),
                 "status": loop.store.get_mission(mission_id).status,
-                "planner_calls": provider.by_role.get("planner", 0),
+                "planner_calls": sum(
+                    len(states) for states in blocker._invocation_states(loop, intent).values()
+                ),
                 "intent_state": intent.state,
             }
 

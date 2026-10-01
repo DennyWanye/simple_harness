@@ -53,7 +53,7 @@ def test_a02_never_authorized_request_is_authorization_required_and_writes_nothi
     """
 
     world = _world(tmp_path, key="h1h-a02-missing-grant")
-    _, _, admission = _setup(world, dispatchable=True)
+    _, _, admission = _setup(world)
     before = _write_counts(world)
 
     world.store.connection.execute(
@@ -346,7 +346,7 @@ def test_a03_wrong_bound_principal_or_scope_is_refused_without_leak_or_writes(
     tmp_path, principal_changes: dict[str, str], reason: str
 ) -> None:
     world = _world(tmp_path, key="h1h-a03-wrong-principal")
-    _, _, admission = _setup(world, dispatchable=True)
+    _, _, admission = _setup(world)
     before = _write_counts(world)
     other = dataclasses.replace(world.principal, **principal_changes)
 

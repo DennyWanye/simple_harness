@@ -140,7 +140,7 @@ def test_the_systems_own_retry_is_recorded_as_such_and_not_as_a_planner_choice(t
     from agent_orchestrator.orchestrator.planning_selection import SYSTEM_RETRY_ORIGIN, dispatch_local
 
     assert SYSTEM_RETRY_ORIGIN == "system_infrastructure_retry"
-    world = e2e.build_world(tmp_path, key="system-retry-origin", bound=True)
+    world = e2e.build_world(tmp_path, key="system-retry-origin")
     collected: list[str] = []
 
     async def collect(intent, result, mission, text, dispatch):

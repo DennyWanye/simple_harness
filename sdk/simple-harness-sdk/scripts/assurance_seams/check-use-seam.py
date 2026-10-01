@@ -81,7 +81,7 @@ def refused(call,expected):
 with TemporaryDirectory(prefix='assurance-check-binding-') as temp:
     root=Path(temp).resolve()
     # Only fixture creation collaborators are changed; actual plan/scope/Attempt writers run.
-    with patch.object(plans,'CommitService',FixtureCommit),patch.object(approval,'_bind_new_protocol',lambda _:None),patch.object(approval,'_requirements',lambda w:HtnStore(w.store).get_requirements_revision(w.mission.id,1)):
+    with patch.object(plans,'CommitService',FixtureCommit),patch.object(approval,'_requirements',lambda w:HtnStore(w.store).get_requirements_revision(w.mission.id,1)):
         world,req,_,task,stored,artifact=_mixed_world(root,accept_result=False,with_output=True)
     store,commit=world.store,world.service
     scope_row=store.connection.execute('SELECT * FROM operation_completion_scopes WHERE mission_id=?',(world.mission.id,)).fetchone()

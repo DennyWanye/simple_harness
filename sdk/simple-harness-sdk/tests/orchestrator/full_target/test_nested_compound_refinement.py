@@ -152,7 +152,6 @@ def _nested_world(tmp_path, *, key: str, tokens: int | None = None) -> World:
         key=key,
         mode=HIERARCHICAL_SEMANTICS,
         # the refinement entry opens a real Planner request, so the world stays bound
-        bound=True,
         **({} if tokens is None else {"tokens": tokens}),
     )
     env = world.env
@@ -493,7 +492,6 @@ def _mixed_world(tmp_path, *, key: str, tokens: int | None = None) -> World:
         key=key,
         mode=HIERARCHICAL_SEMANTICS,
         # the refinement entry opens a real Planner request, so the world stays bound
-        bound=True,
         **({} if tokens is None else {"tokens": tokens}),
     )
     env = world.env

@@ -1,5 +1,5 @@
 {
-  "deployment_id": "0416094daed178de1c98a76badde70e42c3b65b0b085710c172e83b9adfcc49d",
+  "deployment_id": "8a2c0f4502a3ee2cf3e19cbd129cb0df4ef43998d033292c0a4f06ef556c3525",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -235,7 +235,7 @@
     "agent_orchestrator/orchestrator/event_handler.py": "87a5c234f3b48ae8b538eb5f89a330c8b1766b273de3d9ca6b97ea5c22727755",
     "agent_orchestrator/orchestrator/failure_classes.py": "d067ff08e9fc2bfc5c03576f403ef9edd991a059463672db0ab3ee207f595c93",
     "agent_orchestrator/orchestrator/fragment_commits.py": "f5c67c2322add28ba49660b30c42b879ebf48abf328e7c272bcec57697fe4e86",
-    "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "fbdd900d54b4a2a85287dfd70415112ded51c8bf3a6b858b4c0d17571123dd7a",
+    "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "49a31d1205ceabd8fef0202e46b3e9ca7e2427428fcf20c39dec13ac96431f5e",
     "agent_orchestrator/orchestrator/human_commits.py": "488a8abd6da7a3e256a04ca891b4dfd986121d62649c3904582fc1b063a8a1f6",
     "agent_orchestrator/orchestrator/leaf_acceptance.py": "ca358210756a6d4fef40d8b98a8a90a5b5fb0ef857cb0959911ae348d8c5d596",
     "agent_orchestrator/orchestrator/method_plan_reviews.py": "4210c8f82dc3b2a51ad3c5fa1ae65800a00d02b32d9e0da1743c4941346e31cd",
@@ -272,7 +272,7 @@
     "agent_orchestrator/orchestrator/repair_impact.py": "c00cae21bff37ea5c3d6bfcbc69cec177264ef3d006eb0d94fb1332dd2d72f95",
     "agent_orchestrator/orchestrator/resolution_commits.py": "9531af977b1639f147bdb92357019a0e4e2767a190d719b3a1cd8d599b31b8e8",
     "agent_orchestrator/orchestrator/review_adjudication.py": "0ba606ca0854ad80d92cd29dca1d38543489a13cab00ff0410a327320c3efd02",
-    "agent_orchestrator/orchestrator/root_review.py": "3af874747e20859eadfad8c01ddaef7858f6a00952e635d0b2bcd87999837576",
+    "agent_orchestrator/orchestrator/root_review.py": "0c310d42e347820d127b9d2dc756df02acdeb6f2a96f829d421ecc6ea95e127e",
     "agent_orchestrator/orchestrator/scoped_composition_review.py": "6bc8f0efb469a65425065fa14ccf0308392c611a96a821dee1e0faeb09c1e53f",
     "agent_orchestrator/orchestrator/scoped_content_review.py": "e20990d549930456e39833c12e2cd14baeee3cba540bbd43760faa7ec5d42953",
     "agent_orchestrator/orchestrator/selection_commits.py": "bb57ef289c6b757884a3854282e7e7089029898fd77d46395050cd6a2ebcac69",

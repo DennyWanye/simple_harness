@@ -81,7 +81,7 @@ def refused(call,expected):
 with TemporaryDirectory(prefix='assurance-check-binding-') as temp:
     root=Path(temp).resolve()
     # Only fixture creation collaborators are changed; actual plan/scope/Attempt writers run.
-    with patch.object(plans,'CommitService',FixtureCommit),patch.object(approval,'_bind_new_protocol',lambda _:None),patch.object(approval,'_requirements',lambda w:HtnStore(w.store).get_requirements_revision(w.mission.id,1)):
+    with patch.object(plans,'CommitService',FixtureCommit),patch.object(approval,'_requirements',lambda w:HtnStore(w.store).get_requirements_revision(w.mission.id,1)):
         world,req,_,task,stored,artifact=_mixed_world(root,accept_result=False,with_output=True)
     store,commit=world.store,world.service
     scope_row=store.connection.execute('SELECT * FROM operation_completion_scopes WHERE mission_id=?',(world.mission.id,)).fetchone()
@@ -147,7 +147,7 @@ with TemporaryDirectory(prefix='assurance-check-binding-') as temp:
     other_root=root/'deter'
     other_root.mkdir()
     criterion_mode[0]=EvaluationKind.DETERMINISTIC
-    with patch.object(plans,'CommitService',FixtureCommit),patch.object(approval,'_bind_new_protocol',lambda _:None),patch.object(approval,'_requirements',lambda w:HtnStore(w.store).get_requirements_revision(w.mission.id,1)):
+    with patch.object(plans,'CommitService',FixtureCommit),patch.object(approval,'_requirements',lambda w:HtnStore(w.store).get_requirements_revision(w.mission.id,1)):
         other,other_req,_,_,_,_=_mixed_world(other_root,accept_result=False,with_output=True)
     other_scope=other.store.connection.execute('SELECT * FROM operation_completion_scopes WHERE mission_id=?',(other.mission.id,)).fetchone()
     refused(lambda:other.service.approve_assurance_check_policy(**{**policy_command,

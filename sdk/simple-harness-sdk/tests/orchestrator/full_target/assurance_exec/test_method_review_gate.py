@@ -33,11 +33,12 @@ from _assured_loop import (
     review_reply,
     run_until,
 )
-from scripted_plans import apply_scripted_plan, plan_revision_proposal_step
+from admitted_plans import compile_scripted
+from scripted_plans import plan_revision_proposal_step, scripted_plan_proposal
 
 from agent_orchestrator.contracts import TERMINAL_MISSION
 from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.orchestrator.plan_commits import PlanPrincipal
+from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected, PlanPrincipal
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of
@@ -165,11 +166,17 @@ def test_adopting_a_method_whose_review_is_still_out_is_refused_inside_the_plan_
                              "method_ref": {"id": reference.method_id, "version": reference.version,
                                             "content_hash": reference.content_hash},
                              "bindings": {"subject": "alpha"}}])
-            outcome = apply_scripted_plan(
-                world.loop._new_mode(world.mission), world.mission.id, text,
-                principal=PlanPrincipal("manager-1", "mission", 0), command_id="cmd-unreviewed")
-            assert not outcome.committed
-            assert outcome.last_reason == "METHOD_NOT_AUTHORIZED"
+            # 审阅员这一轮还挂着，带准入的入口会先看到"有工作没收敛"；这条测的是提交核心
+            # 自己的那道检查，所以把编译好的命令直接交给提交核心。
+            dispatch = world.loop._new_mode(world.mission)
+            principal = PlanPrincipal("manager-1", "mission", 0)
+            proposal = scripted_plan_proposal(text, mission_id=world.mission.id)
+            command = dispatch.build_command(
+                world.mission.id, proposal, compile_scripted(dispatch, world.mission.id, proposal),
+                principal=principal, command_id="cmd-unreviewed", source={})
+            with pytest.raises(PlanCommitRejected) as refused:
+                world.commit.commit_plan_revision(command, principal)
+            assert refused.value.reason == "METHOD_NOT_AUTHORIZED"
             assert not events_of(world, "PlanRevisionCommitted")
             provider.release.set()
             await _spin(world, 5)

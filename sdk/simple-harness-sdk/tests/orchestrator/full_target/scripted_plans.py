@@ -6,7 +6,7 @@
 The Planner's wire format is the planning Decision; what the compiler and the commit
 consume is the typed :class:`PlanProposal` the decision adapter produces.  A test that
 is about the compile/commit half scripts that typed proposal directly, as JSON, and
-hands it to :meth:`HierarchicalDispatch.apply_plan_proposal` — no model text is parsed
+commits it under a planning admission (:mod:`admitted_plans`) — no model text is parsed
 anywhere in production for it.
 """
 
@@ -76,21 +76,29 @@ def apply_scripted_plan(
     source: Mapping[str, Any] | None = None,
     owner: str | None = None,
 ) -> Any:
-    """Compile and commit one scripted proposal through the production dispatch."""
+    """Compile one scripted proposal and commit it under a planning admission.
 
-    return dispatch.apply_plan_proposal(
+    See :mod:`admitted_plans`: the plan is compiled with the compiler's own functions
+    and committed through ``commit_planning_revision``, the only entry a plan revision
+    has.  ``owner`` is accepted for the callers that name the loop's owner; a scripted
+    commit holds no lease.
+    """
+
+    from admitted_plans import apply_admitted_plan
+
+    del owner
+    return apply_admitted_plan(
+        dispatch,
         mission_id,
         scripted_plan_proposal(text, mission_id=mission_id),
         principal=principal,
         command_id=command_id,
         source=source,
-        owner=owner,
-        proposal_text=text,
     )
 
 
 def approve_content_only_completion(service: Any, mission: Any, binding: Any, *,
-                                    command_id: str) -> Any:
+                                    command_id: str, delivery: str | None = None) -> Any:
     """Publish and confirm the root's requirement contract (CONTENT_ONLY).
 
     A hierarchical Mission cannot publish a dispatchable plan without an approved
@@ -104,6 +112,10 @@ def approve_content_only_completion(service: Any, mission: Any, binding: Any, *,
     from agent_orchestrator.storage.htn_store import HtnStore
 
     requirements = root_requirements(mission.id, binding, revision=1)
+    if delivery is not None:  # the goal declares a delivery contract
+        import dataclasses
+
+        requirements = dataclasses.replace(requirements, delivery_contract_ref=delivery)
     HtnStore(service.store).insert_requirements_revision(requirements)
     reference = {
         "id": str(requirements.revision_id),
@@ -130,28 +142,152 @@ def approve_content_only_completion(service: Any, mission: Any, binding: Any, *,
     return requirements
 
 
-def detach_completion_protocol(store: Any, mission_id: str) -> None:
-    """Take a hierarchical fixture Mission off the completion protocol (a test seam).
+def seed_verified_result(
+    service: Any,
+    dispatch: Any,
+    mission_id: str,
+    task_id: str,
+    *,
+    result_id: str,
+    layers: Sequence[Any],
+    items: Sequence[Any] = (),
+    claims: Sequence[Any] = (),
+    now_ms: int = 1_000_000,
+    complete_row: bool = True,
+    bodies: Mapping[str, bytes] | None = None,
+) -> tuple[Any, ...]:
+    """One real, verified result for a leaf, written in the production order.
 
-    DEBT (2026-10-01, "验收双路径"): about a hundred sites still branch on
-    ``uses_completion_protocol`` — "does this Mission hold a planning-protocol binding" —
-    and the fixtures of roughly ninety test files exercise the shared plan / readiness /
-    DATA / resolution mechanics on the branch *without* one.  Production can no longer
-    create such a Mission (every hierarchical Mission is bound at creation, and the loop
-    stops an unbound one by name), so this seam removes the row for those fixtures until
-    they are migrated to the completion protocol and the other branch is deleted.
-    A Mission detached here must never be run through ``Orchestrator.run``.
+    A Mission on the completion protocol accepts only a stored, verified result: an
+    Attempt whose inputs are the frozen manifest's upstream outputs, the result it
+    handed back (real bytes in the content store, each claimed for a declared port),
+    one verification record per layer, then the result and its outputs marked
+    verified and the Attempt closed.  ``items`` carry ``id`` / ``path`` / ``version``;
+    ``bodies`` gives the bytes of an item by id (a small default otherwise).  Returns
+    the stored artifacts, in order.  A result id is seeded once.
     """
 
-    store.connection.execute(
-        "DELETE FROM mission_planning_protocols WHERE mission_id = ?", (mission_id,)
+    import hashlib
+
+    from agent_orchestrator.artifacts.versioning import manifest_upstream_inputs
+    from agent_orchestrator.contracts import (
+        Artifact,
+        AttemptStatus,
+        ClaimProposal,
+        ResultEnvelope,
+        TaskStatus,
     )
+    from agent_orchestrator.orchestrator.commit_service import Reservation
+    from agent_orchestrator.orchestrator.state_machine import next_attempt, next_task
+
+    store = service.store
+    if store.get_result(result_id) is not None:
+        return tuple(store.get_artifact(item.id) for item in items)
+    # The loop re-issues input witnesses before every dispatch; a step that consumes an
+    # earlier output has its input manifest frozen by that.
+    network = dispatch.network(mission_id)
+    dispatch.issue_input_witnesses(mission_id, network, now_ms=now_ms)
+    spec = next(item for item in network.occurrences if str(item.task_id) == task_id)
+    manifest = dispatch.resolved_inputs(mission_id, network, spec).manifest
+    upstream = (
+        ()
+        if manifest is None or not manifest.is_frozen
+        else dispatch.overlay_attempt_inputs(
+            mission_id,
+            manifest_upstream_inputs(manifest, dispatch.target_rules_for(task_id), network=network),
+        )
+    )
+    attempt, intent = service.create_attempt(
+        task_id,
+        role="worker",
+        model="fixture-worker",
+        prompt_version="fixture-worker-v1",
+        context_version="fixture-v1",
+        reservation=Reservation(tokens=1_000, cost_micros=0),
+        intent_config={"message": "do the leaf"},
+        input_hash="a" * 64,
+        inputs=tuple(item.to_json() for item in upstream),
+    )
+    turn = f"turn-{result_id}"
+    service.claim_intent(intent.intent_id, owner="fixture-orchestrator", lease_seconds=60)
+    service.record_agent_created(intent.intent_id, agent_id="agent-worker", expected_turn_id=turn)
+    service.record_submitted(intent.intent_id, receipt={"turn_id": turn, "seq": 1})
+    cas = service._source_artifact_store
+    files = []
+    for item in items:
+        body = (bodies or {}).get(item.id)
+        if body is None:
+            body = f"{item.id}:{item.path}\n".encode()
+        digest = cas.put_bytes(body)
+        files.append(
+            Artifact(
+                id=item.id,
+                mission_id=mission_id,
+                task_id=task_id,
+                attempt_id=attempt.id,
+                type="file",
+                path=item.path,
+                version=int(item.version),
+                content_hash=hashlib.sha256(body).hexdigest(),
+                size_bytes=len(body),
+                produced_by="agent-worker",
+                storage_uri=str(cas.path_for(digest)),
+            )
+        )
+    service.record_result(
+        attempt.id,
+        turn_id=turn,
+        artifacts=tuple(files),
+        usage_refs=(),
+        port_claims=tuple(claims),
+        envelope=ResultEnvelope(
+            id=result_id,
+            mission_id=mission_id,
+            task_id=task_id,
+            attempt_id=attempt.id,
+            outcome="candidate",
+            summary="leaf done",
+            claims=(ClaimProposal(content="leaf done", confidence=0.9),),
+            evidence=(),
+            artifacts=tuple(item.path for item in files),
+            proposed_tasks=(),
+            used_knowledge=(),
+            risks=(),
+            cost={},
+        ),
+    )
+    # The loop closes the dispatch once the turn's result is collected.
+    service.settle_intent(intent.intent_id, "SETTLED")
+    service.start_verification(result_id)
+    for layer in layers:
+        service.record_verification_layer(
+            result_id, layer=layer.layer, status=layer.status, detail={"producer": "fixture"}
+        )
+    store.set_result_verification(result_id, state="DONE", verdict="PASS")
+    for item in files:
+        store.update_artifact_verification(item.id, "VERIFIED")
+    current = store.get_attempt(attempt.id)
+    store.update_attempt(
+        next_attempt(current, AttemptStatus.COMPLETED), expected_version=current.version
+    )
+    if complete_row:
+        row = store.get_task(task_id)
+        store.update_task(
+            next_task(
+                row,
+                TaskStatus.COMPLETED,
+                accepted_result_id=result_id,
+                accepted_artifacts=tuple(item.id for item in files),
+            ),
+            expected_version=row.version,
+        )
+    return tuple(store.get_artifact(item.id) for item in files)
 
 
 __all__ = (
     "apply_scripted_plan",
     "approve_content_only_completion",
-    "detach_completion_protocol",
     "plan_revision_proposal_step",
     "scripted_plan_proposal",
+    "seed_verified_result",
 )

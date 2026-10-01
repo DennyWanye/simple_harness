@@ -44,7 +44,7 @@ def _wakes(store, mission_id: str) -> int:
 
 
 def test_a_waiting_job_of_a_live_mission_is_woken(tmp_path):
-    world = build_world(tmp_path, key="wake-live", bound=True)
+    world = build_world(tmp_path, key="wake-live")
     store, mission_id = world.service.store, world.mission.id
     _waiting_job(store, mission_id)
     wakeups = TaskGraphConvergenceWakeups(TaskGraphFollowupStore(store), interval_ms=5_000)
@@ -53,7 +53,7 @@ def test_a_waiting_job_of_a_live_mission_is_woken(tmp_path):
 
 
 def test_a_waiting_job_of_a_cancelled_mission_is_not_woken_and_keeps_its_fence(tmp_path):
-    world = build_world(tmp_path, key="wake-terminal", bound=True)
+    world = build_world(tmp_path, key="wake-terminal")
     store, mission_id = world.service.store, world.mission.id
     _waiting_job(store, mission_id)
     world.service.cancel_mission(mission_id)

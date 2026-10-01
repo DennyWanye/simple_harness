@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 _HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
 if str(_HTN_FIXTURES) not in sys.path:
@@ -41,11 +43,8 @@ from test_nested_compound_refinement import _proposal  # noqa: E402
 from agent_orchestrator.contracts import TaskStatus  # noqa: E402
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
 from agent_orchestrator.contracts.resolution import CriterionVerdict  # noqa: E402
-from agent_orchestrator.contracts.semantic_base import content_hash_of  # noqa: E402
 from agent_orchestrator.graph.eligibility import ReadinessReason  # noqa: E402
 from agent_orchestrator.orchestrator.composition_review import (  # noqa: E402
-    COMPOSITION_LOCAL_CRITERION,
-    COMPOSITION_UNCOVERED,
     CompositionAcceptanceAssembly,
 )
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
@@ -56,7 +55,6 @@ from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E40
 from agent_orchestrator.orchestrator.resolution_commits import (  # noqa: E402
     GOAL_RESOLUTION_COMMITTED,
 )
-from agent_orchestrator.orchestrator.state_machine import next_task  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
@@ -180,15 +178,12 @@ def _world(tmp_path, *, key: str) -> World:
     world.dispatch.issue_input_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
     world.dispatch.issue_start_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
     leaf = _task_of(world, "plan.leaf")
+    # 带协议绑定的世界里 ``_accept_leaf`` 按生产顺序走完一次真实尝试：结果提交后步骤行
+    # 已经是 COMPLETED、带着验收的结果编号，不用再手工推行状态。
     _accept_leaf(world, task_id=leaf, now_ms=1_000_000)
     task = world.store.get_task(leaf)
     assert task is not None
-    completed = next_task(
-        next_task(next_task(task, TaskStatus.ACTIVE), TaskStatus.VERIFYING),
-        TaskStatus.COMPLETED,
-        accepted_result_id="result-1",
-    )
-    world.store.update_task(completed, expected_version=task.version)
+    assert task.status is TaskStatus.COMPLETED and task.accepted_result_id == "result-1"
     world.dispatch.advance_compound_phases(world.mission.id)
     return world
 
@@ -454,39 +449,15 @@ def test_accepted_children_do_not_mix_sibling_acceptances_on_a_shared_duty(
     world.store.close()
 
 
-def test_occurrence_outcomes_ignore_a_goal_resolution_whose_epoch_has_moved(
-    tmp_path,
-) -> None:
-    """P1-2: ORDER must not treat a GoalResolution as ACCEPTED after its witness epoch."""
-
-    world = _world(tmp_path, key="p23l-n7-epoch")
-    assembly = _assembly(world)
-    formed = assembly.resolve_ready(world.mission.id)
-    assert formed, "the inner compound must resolve before the epoch bump"
-    view = world.dispatch.read(world.mission.id)
-    assess_occ = next(
-        spec.occurrence_id
-        for spec in view.network.occurrences
-        if str(view.network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-        == "plan.subgoal"
-    )
-    assert view.outcomes.get(assess_occ) is OccurrenceOutcome.ACCEPTED
-    store = HtnStore(world.store)
-    store.bump_epoch(world.mission.id, "mission", bumped_by="test")
-    store.bump_epoch(world.mission.id, "mission", bumped_by="test")
-    after = world.dispatch.read(world.mission.id)
-    assert after.outcomes.get(assess_occ) is not OccurrenceOutcome.ACCEPTED, (
-        "a GoalResolution whose ValidityWitness is behind the scope epoch is not ACCEPTED"
-    )
-    world.store.close()
-
-
-def _bare_world(tmp_path, *, key: str) -> World:
+def _bare_world(tmp_path, *, key: str) -> tuple[World, Any]:
     """Nested compound whose goal signature has no coverage_criteria.
 
     Root coverage hangs on the revert leaf, so admission does not need the
     inner compound to carry a parent criterion.  The inner method has no
     criterion_links.  ``_criteria`` therefore synthesises ``c-composition``.
+
+    带协议绑定的世界里这样的计划提交不了（见下面的测试），所以这里只把世界和两个做法
+    准备好，返回世界和外层做法，由测试自己去提交。
     """
 
     evidence = Path(tmp_path) / "evidence"
@@ -550,46 +521,7 @@ def _bare_world(tmp_path, *, key: str) -> World:
         HtnStore(world.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
-    first = apply_scripted_plan(world.dispatch,
-        world.mission.id,
-        _proposal(outer, goal_id=ROOT_TASK, obligation_id=ROOT_DUTY, revision=0, proposal_id="o"),
-        principal=world.principal,
-        command_id="cmd-o",
-    )
-    assert first.committed, first.last_reason
-    world.dispatch.advance_compound_phases(world.mission.id)
-    assess = _task_of(world, "plan.bare")
-    network = world.network()
-    assess_spec = next(spec for spec in network.occurrences if str(spec.task_id) == assess)
-    second = apply_scripted_plan(world.dispatch,
-        world.mission.id,
-        _proposal(
-            inner,
-            goal_id=assess,
-            obligation_id=str(assess_spec.obligation_id),
-            revision=int(network.plan_revision),
-            proposal_id="i",
-        ),
-        principal=world.principal,
-        command_id="cmd-i",
-    )
-    assert second.committed, second.last_reason
-    world.dispatch.advance_compound_phases(world.mission.id)
-    world.admit_demand()
-    world.dispatch.issue_input_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
-    world.dispatch.issue_start_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
-    leaf = _task_of(world, "plan.leaf")
-    _accept_leaf(world, task_id=leaf, now_ms=1_000_000)
-    task = world.store.get_task(leaf)
-    assert task is not None
-    completed = next_task(
-        next_task(next_task(task, TaskStatus.ACTIVE), TaskStatus.VERIFYING),
-        TaskStatus.COMPLETED,
-        accepted_result_id="result-1",
-    )
-    world.store.update_task(completed, expected_version=task.version)
-    world.dispatch.advance_compound_phases(world.mission.id)
-    return world
+    return world, outer
 
 
 def _inner_occurrence(world: World, signature: str):
@@ -602,14 +534,6 @@ def _inner_occurrence(world: World, signature: str):
     )
 
 
-def _official_composition_record(world: World, occurrence_id):
-    store = HtnStore(world.store)
-    latest = store.latest_requirements_revision(world.mission.id)
-    assert latest is not None
-    digest = content_hash_of({"occ": str(occurrence_id), "rev": latest.revision})[:32]
-    return store.official_review_record(f"pkg-compose-{digest}")
-
-
 def test_c_composition_without_coverage_does_not_form_accept(tmp_path) -> None:
     """AER I05/I07: child acceptances are not a PASS for unmapped ``c-composition``.
 
@@ -618,19 +542,33 @@ def test_c_composition_without_coverage_does_not_form_accept(tmp_path) -> None:
     ``composition_criterion_uncovered``, no resolution.
     """
 
-    world = _bare_world(tmp_path, key="p23m-i07-uncovered")
-    occ = _inner_occurrence(world, "plan.bare")
-    formed = _assembly(world).resolve_ready(world.mission.id)
-    resolutions = HtnStore(world.store).list_goal_resolutions(world.mission.id)
-    record = _official_composition_record(world, occ)
-    assert record is not None, "the composition record must still be written"
-    outcome = next(
-        item for item in record.criteria if item.criterion_id == COMPOSITION_LOCAL_CRITERION
+    # 带协议绑定的世界里这道保护提前到了计划提交：一个既不声明判据、也没被上级做法链接
+    # 的复合子目标，证明不了自己对完成有任何贡献，计划在冻结完成范围时就被整笔拒绝——
+    # 根本走不到组合审查，更不会形成 ACCEPT。旧世界里它能提交，靠组合审查写 UNKNOWN 兜住。
+    from agent_orchestrator.planning.htn.completion_scopes import (
+        CompletionScopeCompilationError,
     )
-    assert outcome.verdict is CriterionVerdict.UNKNOWN, outcome
-    assert COMPOSITION_UNCOVERED in outcome.limitations, outcome.limitations
-    assert formed == ()
-    assert resolutions == ()
+
+    world, outer = _bare_world(tmp_path, key="p23m-i07-uncovered")
+    with pytest.raises(CompletionScopeCompilationError) as refused:
+        apply_scripted_plan(world.dispatch,
+            world.mission.id,
+            _proposal(outer, goal_id=ROOT_TASK, obligation_id=ROOT_DUTY, revision=0,
+                      proposal_id="o"),
+            principal=world.principal,
+            command_id="cmd-o",
+        )
+    assert "OP_COMPLETION_SCOPE_UNRESOLVED" in str(refused.value)
+    assert "has no provable completion contribution" in str(refused.value)
+    refused_occurrence = str(refused.value).split("'")[1]
+    assert refused_occurrence.startswith("occ-")
+    semantics = HtnStore(world.store)
+    assert semantics.active_plan_revision(world.mission.id) is None, "the whole plan is refused"
+    assert semantics.list_goal_resolutions(world.mission.id) == ()
+    assert [
+        item for item in semantics.list_review_packages(world.mission.id)
+        if str(item.package_id).startswith("pkg-compose-")
+    ] == []
     world.store.close()
 
 

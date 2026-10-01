@@ -9,7 +9,6 @@ from dataclasses import replace
 import pytest
 
 from test_plan_commits import _world
-from test_h1i_production_entry import _approve_root_content_only_spec
 
 from agent_orchestrator.contracts.htn import (
     CancelBranchOperation,
@@ -24,7 +23,6 @@ from agent_orchestrator.contracts.models import ContractError, sha256_hex
 from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
 from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected
-from agent_orchestrator.orchestrator.planning_protocol_binding import bind_planning_protocol
 from agent_orchestrator.orchestrator.repair_impact import read_repair_impact_indexes
 from agent_orchestrator.planning.htn.graph_repair import (
     compile_cancel,
@@ -41,15 +39,6 @@ def _committed(tmp_path):
 
 
 def _commit_world(world):
-    bind_planning_protocol(world.store, world.mission.id, "planning-decision-v1")
-    _approve_root_content_only_spec(
-        world.service,
-        world.mission,
-        world.binding,
-        command_id="approve-h4-graph-repair-completion",
-    )
-    world.command = replace(world.command, delta=replace(world.command.delta,
-        read_set=replace(world.command.delta.read_set, requirements_revision=1)))
     world.commit()
     return world, HierarchicalDispatch(world.store, world.service)
 
@@ -340,6 +329,7 @@ def test_cancel_optional_branch_preserves_required_work_and_releases_only_its_de
     draft = ground_method(world.binding, contract, {}, report, catalog=world.env.catalog, schemas=world.env.schemas)
     bundle = compile_refinement_bundle(draft, root_network(world.env, world.binding), method=contract,
         catalog=world.env.catalog, schemas=world.env.schemas, registry=world.env.registry,
+        requirements_revision=world.command.delta.read_set.requirements_revision,
         slot_authorizations={"optional": TypedRef(TypedRefKind.SOURCE, authority.id,
             authority.semantic_revision, authority.content_hash)})
     world.command = replace(world.command, delta=replace(bundle.delta,

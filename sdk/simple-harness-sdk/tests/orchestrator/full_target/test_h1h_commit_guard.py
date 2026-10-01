@@ -4,7 +4,6 @@ import dataclasses
 import hashlib
 
 import pytest
-from test_h1i_production_entry import _approve_root_content_only_spec
 from test_htn_store import envelope
 from test_plan_commits import _world
 
@@ -25,7 +24,6 @@ from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected
 from agent_orchestrator.orchestrator.planning_admission_commits import (
     PlanningCommitAdmission,
 )
-from agent_orchestrator.orchestrator.planning_protocol_binding import bind_planning_protocol
 from agent_orchestrator.planning.plan_preview import _source_snapshot_payload
 from agent_orchestrator.runtime.planning_operations import (
     OperationEffect,
@@ -39,19 +37,10 @@ from agent_orchestrator.storage.planning_decision_store import PlanningDecisionS
 from simple_harness.contracts import canonical_json
 
 
-def _setup(world, *, command=None, bind_protocol: bool = True, dispatchable: bool = False):
-    if bind_protocol:
-        bind_planning_protocol(world.store, world.mission.id, PLANNING_DECISION_V1)
+def _setup(world, *, command=None):
+    """The world is bound and its root requirements confirmed when it is built."""
+
     command = command or world.command
-    if dispatchable:
-        requirements = _approve_root_content_only_spec(
-            world.service, world.mission, world.binding,
-            command_id="approve-completion-guard-positive-control",
-        )
-        command = dataclasses.replace(command, delta=dataclasses.replace(
-            command.delta, read_set=dataclasses.replace(
-                command.read_set, requirements_revision=int(requirements.revision))))
-        world.command = command
     request = PlanningRequestBinding(
         request_id="request-h1h-guard",
         mission_id=world.mission.id,
@@ -126,7 +115,7 @@ def _plan_revision_count(world) -> int:
 
 def test_a05_expired_grant_is_rechecked_inside_commit_and_rolls_back(tmp_path) -> None:
     world = _world(tmp_path, key="h1h-a05")
-    _, _, admission = _setup(world, dispatchable=True)
+    _, _, admission = _setup(world)
     before_events = tuple(world.store.list_events(world.mission.id))
     before_changes = world.store.connection.total_changes
     world.store._clock = lambda: (admission.authority.expires_at_ms + 1) / 1000
@@ -145,24 +134,8 @@ def test_a05_expired_grant_is_rechecked_inside_commit_and_rolls_back(tmp_path) -
 
 def test_a08_replay_returns_original_receipt_after_revoke_without_new_revision(tmp_path) -> None:
     world = _world(tmp_path, key="h1h-a08")
-    bind_planning_protocol(world.store, world.mission.id, PLANNING_DECISION_V1)
-    requirements = _approve_root_content_only_spec(
-        world.service,
-        world.mission,
-        world.binding,
-        command_id="approve-completion-h1h-a08",
-    )
-    command = dataclasses.replace(
-        world.command,
-        delta=dataclasses.replace(
-            world.command.delta,
-            read_set=dataclasses.replace(
-                world.command.read_set,
-                requirements_revision=int(requirements.revision),
-            ),
-        ),
-    )
-    api, grant, admission = _setup(world, command=command, bind_protocol=False)
+    command = world.command
+    api, grant, admission = _setup(world, command=command)
     first = world.service.commit_planning_revision(
         command,
         world.principal,
@@ -188,7 +161,7 @@ def test_a08_replay_returns_original_receipt_after_revoke_without_new_revision(t
 
 def test_o08_new_action_after_preview_is_detected_by_complete_set_reread(tmp_path) -> None:
     world = _world(tmp_path, key="h1h-o08")
-    _, _, admission = _setup(world, dispatchable=True)
+    _, _, admission = _setup(world)
     world.store.put_action(
         {
             "mission_id": world.mission.id,

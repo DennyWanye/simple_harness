@@ -270,13 +270,10 @@ def _mission(tmp_path, key: str = "k"):
             tenant_id="t",
             idempotency_key=key,
             allowed_tools=(),
-            budget=Budget(max_tokens=200_000, max_attempts=4),
+            budget=Budget(max_tokens=200_000, max_attempts=12),
             orchestration_semantics_version="hierarchical",
         )
     )
-    from scripted_plans import detach_completion_protocol
-
-    detach_completion_protocol(service.store, mission.id)
     return service, mission
 
 
@@ -1091,19 +1088,23 @@ def _both_lane_world(tmp_path):
         ),
         recursion_fuel=8,
     )
-    semantics.put_task_semantics(
-        mission.id,
-        TaskSemanticBindingV1(
-            task_id=TaskRef(ROOT_TASK),
-            obligation_id=ObligationId(ROOT_DUTY),
-            contract_revision=1,
-            contract_hash=content_hash_of([ROOT_TASK, GOAL_TYPE]),
-            form=TaskForm.COMPOUND,
-            goal_signature=spec.goal_signature,
-            typed_parameters={"repository": REPOSITORY, "failing_test": FAILING_TEST},
-            requirement_refs=tuple(spec.goal_signature.coverage_criteria),
-            semantic_scope="mission",
-        ),
+    root_binding = TaskSemanticBindingV1(
+        task_id=TaskRef(ROOT_TASK),
+        obligation_id=ObligationId(ROOT_DUTY),
+        contract_revision=1,
+        contract_hash=content_hash_of([ROOT_TASK, GOAL_TYPE]),
+        form=TaskForm.COMPOUND,
+        goal_signature=spec.goal_signature,
+        typed_parameters={"repository": REPOSITORY, "failing_test": FAILING_TEST},
+        requirement_refs=tuple(spec.goal_signature.coverage_criteria),
+        semantic_scope="mission",
+    )
+    semantics.put_task_semantics(mission.id, root_binding)
+    from scripted_plans import approve_content_only_completion
+
+    # 带协议绑定的任务：根要求先确认（纯内容），计划提交才能冻结完成范围。
+    approve_content_only_completion(
+        service, mission, root_binding, command_id="approve-both-lanes"
     )
     service.begin_planning(mission.id)
     _say(world, semantics, mission.id, "code.repo-checked-out", {"repository": REPOSITORY})
@@ -1211,24 +1212,32 @@ def _accept(service, dispatch, mission_id: str, task_id: str):
 
     declared = dispatch.declared_output_ports_for(mission_id, task_id)
     items = tuple(
-        _Artifact(f"artifact-{index}", f"out/{item['port']}.json")
+        _Artifact(f"artifact-{task_id}-{index}", f"out/{item['port']}.json")
         for index, item in enumerate(declared)
     )
     claims = tuple(
         PortClaim(port_key=item["port"], path=items[index].path)
         for index, item in enumerate(declared)
     )
+    from scripted_plans import seed_verified_result
+
+    layers = (
+        LayerOutcome("schema_check", "PASS"),
+        LayerOutcome("rule_check", "PASS"),
+        LayerOutcome("critic_review", "PASS"),
+    )
+    # 带协议绑定的任务只验收一条真实的、已验证的结果。
+    stored = seed_verified_result(
+        service, dispatch, mission_id, task_id,
+        result_id=f"result-{task_id}", layers=layers, items=items, claims=claims,
+    )
     assembly = LeafAcceptanceAssembly(service.store, service, dispatch=dispatch)
     return assembly.accept(
         mission_id,
         task_id,
         result_id=f"result-{task_id}",
-        layers=(
-            LayerOutcome("schema_check", "PASS"),
-            LayerOutcome("rule_check", "PASS"),
-            LayerOutcome("critic_review", "PASS"),
-        ),
-        artifacts=items,
+        layers=layers,
+        artifacts=stored,
         producer_agent_ids=("agent-worker",),
         reviewer_agent_id="agent-critic",
         now_ms=1_000_000,

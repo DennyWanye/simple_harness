@@ -144,7 +144,6 @@ def build_world(root, *, content_only=False, requirements_fn=None, approve_polic
         commit_class = type('CustomFixtureCommit', (commit_class,), {'REQUIREMENTS': staticmethod(requirements_fn)})
     with patch.object(plans, 'CommitService', commit_class), \
          patch.object(scoped, '_command', command), \
-         patch.object(approval, '_bind_new_protocol', lambda _: None), \
          patch.object(approval, '_requirements', lambda w: HtnStore(w.store).get_requirements_revision(w.mission.id, 1)):
         world, req, _, task, stored, artifact = _mixed_world(root, accept_result=False, with_output=True)
     store, commit = world.store, world.service

@@ -61,6 +61,21 @@ def test_baseline_must_be_frozen_before_work_and_exact_replay_stays_valid(tmp_pa
         reopened.close()
 
 
+def _settle_worker_turns(world) -> None:
+    """带协议绑定的世界里，每一步都是一次真实尝试，开尝试时预留了额度。生产里这一轮结束
+    后主循环会导入这一轮的用量、结清预留（``settle_subject``）；这里按同样的顺序把
+    夹具开过的每次尝试结清，否则评估会如实看到"还有没结清的服务调用"。"""
+
+    for task in world.store.list_tasks(world.mission.id):
+        for attempt in world.store.list_attempts(task.id):
+            world.service.import_usage(
+                attempt.id,
+                world.mission.id,
+                (UsageFact(attempt.id, 80, 20, None, unknown=False),),
+            )
+            world.service.settle_subject(attempt.id, world.mission.id, task_id=task.id)
+
+
 def _frozen_real_trial(tmp_path, *, key: str):
     """Freeze before work, then finish one Mission through the original real chain."""
 
@@ -97,6 +112,7 @@ def _frozen_real_trial(tmp_path, *, key: str):
     assert outcome.committed, outcome.last_reason
     world.admit_demand()
     e2e._ready_for_root(world)
+    _settle_worker_turns(world)
     resolution = e2e._offer_root(world)
     assert resolution.committed, (resolution.reason, resolution.detail)
     completed = world.service.judge_mission(

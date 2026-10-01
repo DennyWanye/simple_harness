@@ -39,8 +39,6 @@ from test_htn_end_to_end import (  # noqa: E402
     _accept_every_child,
     _accept_leaf,
     _Artifact,
-    _assembly,
-    _passing_layers,
     _review_task,
     _revoke,
     committed,
@@ -531,66 +529,111 @@ def test_the_mission_duty_is_terminal_once_the_root_is_resolved(cut: World) -> N
 # ======================================================================================
 
 
-def _accept_one_more_leaf(world: World) -> None:
-    """A second acceptance of the review leaf — the shape part 2d's P1-7 describes."""
-
-    _assembly(world).accept(
-        world.mission.id,
-        _review_task(world),
-        result_id="result-review-2",
-        layers=_passing_layers(),
-        artifacts=(_Artifact("artifact-review-2", "out/verdict.json"),),
-        producer_agent_ids=("agent-worker",),
-        reviewer_agent_id="agent-critic",
-        now_ms=NOW_MS + 100_000,
-        # P2.3d / defect D3: the finalizer's own port is declared even with no
-        # downstream edge, so an acceptance that claims none of them is refused.
-        port_claims=(PortClaim(port_key="verdict", path="out/verdict.json"),),
-    )
+# 带协议绑定的世界（生产唯一会出现的世界）里，旧世界用来"让世界在切包之后动起来"的那一招
+# ——对已经验收过的叶子再验收一次，且每次叶子验收都另发一版要求——两半都不存在了：已经有
+# 验收结果的步骤不会再开新的尝试，要求在建任务时就确认、只有用户改它才会变。所以下面这组
+# 重切测试改用带绑定世界里真实会让切包过期的事：管理范围被重新打开（``_churn``，见第 6 节）、
+# 终审两次调用被重启打断用完（``_exhaust_final_review``），以及用户改了要求。
 
 
-def test_a_leaf_accepted_after_the_cut_makes_the_package_stale(cut: World) -> None:
-    _accept_one_more_leaf(cut)
+def test_a_leaf_cannot_be_accepted_again_after_the_cut_so_the_package_stays_live(
+    cut: World,
+) -> None:
+    """原名 ``test_a_leaf_accepted_after_the_cut_makes_the_package_stale``。
+
+    旧世界里切包之后还能对复查叶子再验收一次，于是贡献集和要求版本都动了，包过期。带协议
+    绑定的世界里这件事在第一步就被拒：这一步已经有验收结果，不会再开新的尝试——结果都
+    记录不上，更到不了验收；切包时的世界没有动，包仍然是活的、没有任何过期理由。
+    """
+
+    from agent_orchestrator.orchestrator.commit_service import CommitRejected
+
+    before = coordinator(cut).live_package(cut.mission.id)
+    assert before is not None
+    with pytest.raises(CommitRejected, match="accepted preparation waits for completion"):
+        _accept_leaf(
+            cut,
+            task_id=_review_task(cut),
+            result_id="result-review-2",
+            artifacts=(_Artifact("artifact-review-2", "out/verdict.json"),),
+            now_ms=NOW_MS + 100_000,
+            port_claims=(PortClaim(port_key="verdict", path="out/verdict.json"),),
+        )
+    assert cut.store.get_result("result-review-2") is None
     state = coordinator(cut).state(cut.mission.id)
-    assert state.status is RootReviewStatus.RECUT_REQUIRED
-    assert "REQUIREMENTS_MOVED" in state.stale_reasons
+    assert state.status is RootReviewStatus.AWAITING_REVIEW
+    assert state.stale_reasons == ()
+    assert coordinator(cut).live_package(cut.mission.id) == before
 
 
 def test_the_stale_package_is_exactly_what_the_root_commit_would_refuse(cut: World) -> None:
-    """The re-cut rule is not a second opinion: it is the commit's own refusal, earlier."""
+    """The re-cut rule is not a second opinion: it is the commit's own refusal, earlier.
+
+    带协议绑定的世界里，要求一变（只有用户改它才会变），协调器读状态和根结论提交读到的是
+    同一道拒绝、同一句话："要求已经变了"——两边都不会对着旧要求下结论，也什么都不写。
+    """
+
+    from test_htn_end_to_end import _final_criterion
+
+    from agent_orchestrator.contracts.resolution import (
+        CriterionExpr,
+        RequirementsRevision,
+        RequirementsRevisionId,
+    )
+    from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
 
     review(cut)
-    _accept_one_more_leaf(cut)
-    outcome = offer_root(cut)
-    assert not outcome.committed
-    assert outcome.reason == "READ_SET_STALE"
-    assert coordinator(cut).state(cut.mission.id).status is RootReviewStatus.RECUT_REQUIRED
+    package = coordinator(cut).live_package(cut.mission.id)
+    assert package is not None
+    cut.semantics.insert_requirements_revision(
+        RequirementsRevision(
+            revision_id=RequirementsRevisionId("req-amended"),
+            mission_id=cut.mission.id,
+            revision=int(package.binding.requirements_revision) + 1,
+            criteria=(_final_criterion("c-amended"),),
+            success_expression=CriterionExpr("c-amended"),
+        )
+    )
+    with pytest.raises(OperationCompletionError, match="requirements have changed") as by_state:
+        coordinator(cut).state(cut.mission.id)
+    with pytest.raises(OperationCompletionError, match="requirements have changed") as by_commit:
+        offer_root(cut)
+    assert by_state.value.code == by_commit.value.code
+    assert cut.semantics.adopted_goal_resolution(cut.mission.id, ROOT_DUTY) is None
 
 
 def test_a_recut_supersedes_the_old_package_with_a_record(cut: World) -> None:
     first = coordinator(cut).live_package(cut.mission.id)
     assert first is not None
-    _accept_one_more_leaf(cut)
+    _churn(cut)
     second = coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
     assert str(second.package_id) != str(first.package_id)
     retired = events(cut, ROOT_REVIEW_SUPERSEDED)
     assert [item.payload["package_id"] for item in retired] == [str(first.package_id)]
-    assert "REQUIREMENTS_MOVED" in retired[0].payload["reasons"]
+    assert "SCOPE_EPOCH_MOVED" in retired[0].payload["reasons"]
     # The retired anchor is still *stored* — an anchor is never rewritten — it is
     # simply no longer the one this Mission resolves from.
     assert cut.semantics.get_review_package(str(first.package_id)) == first
     assert coordinator(cut).live_package(cut.mission.id) == second
 
 
-def test_the_recut_binds_the_new_revision_and_the_new_contributions(cut: World) -> None:
+def test_the_recut_binds_the_revision_and_the_contributions_in_force(cut: World) -> None:
+    """原名 ``test_the_recut_binds_the_new_revision_and_the_new_contributions``。
+
+    重切绑的是**当时在用的**要求版本和贡献集。旧世界里叶子验收会另发一版要求，所以这里
+    曾断言"版本变大"；带协议绑定的世界里要求只在用户修改时才变，重切绑的就是建任务时确认
+    的那一版（与上一个包同一版），贡献集是当前有效的验收。
+    """
+
     first = coordinator(cut).live_package(cut.mission.id)
     assert first is not None
-    _accept_one_more_leaf(cut)
+    _churn(cut)
     second = coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
-    assert int(second.binding.requirements_revision) > int(first.binding.requirements_revision)
     latest = cut.semantics.latest_requirements_revision(cut.mission.id)
     assert latest is not None
     assert int(second.binding.requirements_revision) == int(latest.revision)
+    assert int(second.binding.requirements_revision) == int(first.binding.requirements_revision)
+    assert second.requirements_content_hash == latest.content_hash()
     assert {str(item.id) for item in second.child_acceptance_refs} == {
         str(item.acceptance_id)
         for item in cut.semantics.list_acceptances(cut.mission.id)
@@ -600,39 +643,61 @@ def test_the_recut_binds_the_new_revision_and_the_new_contributions(cut: World) 
 
 
 def test_the_root_resolves_after_a_recut_and_a_second_review(cut: World) -> None:
-    """The whole repair path, end to end: stale → re-cut → review again → resolved."""
+    """The whole repair path, end to end: stale → re-cut → review again → resolved.
 
-    review(cut)
-    _accept_one_more_leaf(cut)
-    assert offer_root(cut).reason == "READ_SET_STALE"
+    带协议绑定的世界里用的过期原因是"终审两次调用被重启打断用完"（2026-09-29 真机第七局
+    一类）：旧包没有结论，根结论拒绝；重切、再审一次，根结论就从新包形成。
+    """
+
+    first = coordinator(cut).live_package(cut.mission.id)
+    assert first is not None
+    _exhaust_final_review(cut, first, interrupted=True)
+    assert coordinator(cut).state(cut.mission.id).status is RootReviewStatus.RECUT_REQUIRED
+    assert offer_root(cut).reason == "ROOT_REVIEW_RECORD_MISSING"
     coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
     review(cut, turn="turn-final-2")
     outcome = offer_root(cut)
     assert outcome.committed, f"{outcome.reason}: {outcome.detail}"
     second = coordinator(cut).live_package(cut.mission.id)
     assert second is not None
+    assert str(second.package_id) != str(first.package_id)
     stored = cut.semantics.adopted_goal_resolution(cut.mission.id, ROOT_DUTY)
     assert stored is not None
     assert int(stored.requirements_version) == int(second.binding.requirements_revision)
+    assert str(stored.review_receipt_id) == str(
+        cut.semantics.official_review_record(str(second.package_id)).record_id
+    )
 
 
-def test_a_recut_carries_the_licence_over_the_new_support(cut: World) -> None:
+def test_a_recut_takes_a_new_licence_in_the_new_epoch(cut: World) -> None:
+    """原名 ``test_a_recut_carries_the_licence_over_the_new_support``。
+
+    许可是对着一份支撑、在一个管理范围周期里取的（§11.5, I19）。带协议绑定的世界里切包
+    之后支撑（验收集）不会再长，旧世界那条"支撑变多 → 新许可"到不了；真实会发生的是范围
+    被重新打开——旧周期的许可全部作废，重切必须在新周期里取一张新的，而不是沿用旧的。
+    """
+
     before = {
         item.witness_id
         for item in cut.semantics.list_validity_witnesses(cut.mission.id)
         if item.purpose is WitnessPurpose.ACCEPT and item.consumer_ref.id == ROOT_TASK
     }
-    _accept_one_more_leaf(cut)
+    _churn(cut)
     coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
-    after = {
-        item.witness_id
+    licences = [
+        item
         for item in cut.semantics.list_validity_witnesses(cut.mission.id)
         if item.purpose is WitnessPurpose.ACCEPT and item.consumer_ref.id == ROOT_TASK
-    }
+    ]
+    after = {item.witness_id for item in licences}
     assert after > before, (
-        "a licence is taken over a support; more support is a new licence, not a reuse "
-        "of the old TRUE (§11.5, I19)"
+        "a licence is taken in one scope epoch; a re-opened scope is a new licence, not a "
+        "reuse of the old TRUE (§11.5, I19)"
     )
+    current = cut.semantics.epoch(cut.mission.id, "mission")
+    assert [int(item.scope_epoch) for item in licences if item.witness_id not in before] == [
+        current
+    ]
 
 
 # ======================================================================================
@@ -803,7 +868,7 @@ def test_mutant_a_recut_that_leaves_the_old_package_live_resolves_from_the_wrong
         "_supersede",
         lambda self, mission_id, package, *, reasons: None,
     )
-    _accept_one_more_leaf(cut)
+    _churn(cut)
     second = coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
     assert events(cut, ROOT_REVIEW_SUPERSEDED) == [], "the mutant is in place"
     stored = cut.semantics.list_review_packages(cut.mission.id, purpose=ReviewPurpose.MISSION_FINAL)

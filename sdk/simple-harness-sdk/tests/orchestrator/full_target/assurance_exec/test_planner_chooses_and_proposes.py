@@ -203,7 +203,7 @@ def test_the_three_proposal_bound_holds_off_the_assured_lane_too(tmp_path):
 
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = e2e.build_world(evidence, key="proposal-bound-plain-lane", bound=True)
+    world = e2e.build_world(evidence, key="proposal-bound-plain-lane")
     world.store.close()
     drafts = [e2e._outer(f"plan.draft-{n}") for n in (1, 2, 3, 4)]
     provider = RoleScriptedProvider({"planner": [propose_step(item) for item in drafts]})

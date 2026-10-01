@@ -40,7 +40,7 @@ if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
 from htn_world import Env, method, out, param, root_network, step, task_binding  # noqa: E402
-from scripted_plans import detach_completion_protocol  # noqa: E402
+from scripted_plans import approve_content_only_completion  # noqa: E402
 
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
     CommitService as _PlainCommitService,
@@ -61,6 +61,7 @@ from agent_orchestrator.contracts.htn import (  # noqa: E402
     RunningWorkPolicy,
     ScopeEpochRead,
     SupportSetRead,
+    TaskBindingRewrite,
     TaskForm,
 )
 from agent_orchestrator.contracts.obligations import (  # noqa: E402
@@ -225,13 +226,11 @@ class World:
         )
 
 
-def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23a") -> World:
+def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23a",
+           confirm_completion: bool = True) -> World:
+    """``confirm_completion=False``：留给自己发布并确认完成要求的夹具（它们测的就是确认本身）。"""
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
     mission, _ = service.create_mission(_spec(key, mode=mode))
-    if mode == HIERARCHICAL_SEMANTICS and type(service) is _PlainCommitService:
-        # A fixture that substitutes its own CommitService (the assured seams patch
-        # this module's name) keeps the binding its Mission was created with.
-        detach_completion_protocol(service.store, mission.id)
     env = _env(mission.id)
     contract = _outer()
     receipt = env.admit(contract)
@@ -258,10 +257,15 @@ def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23a") -
         HtnStore(service.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
+        if confirm_completion and type(service) is _PlainCommitService:
+            # 带协议绑定的世界：根要求在建任务时确认（纯内容），计划提交才能冻结完成范围。
+            # 自带 CommitService 的夹具（保证通道的接缝会换掉这个名字）自己确认。
+            approve_content_only_completion(service, mission, binding, command_id=f"approve-{key}")
     report = assess_method(
         binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
     )
     draft = ground_method(binding, contract, {}, report, catalog=env.catalog, schemas=env.schemas)
+    confirmed = HtnStore(service.store).latest_requirements_revision(mission.id)
     bundle = compile_refinement_bundle(
         draft,
         network,
@@ -269,6 +273,8 @@ def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23a") -
         catalog=env.catalog,
         schemas=env.schemas,
         registry=env.registry,
+        # 读集引用的是这个任务当前确认的那一版要求。
+        requirements_revision=0 if confirmed is None else int(confirmed.revision),
     )
     command = CommitPlanCommand(
         command_id="cmd-1",
@@ -1135,8 +1141,31 @@ def test_retiring_a_method_under_the_retain_policy_is_refused(tmp_path):
 def _second_revision(
     world: World, *, superseded=(), retired=(), command_id: str = "cmd-2"
 ) -> CommitPlanCommand:
-    """A do-nothing second revision on top of the first, for the in-flight tests."""
+    """A do-nothing second revision on top of the first, for the in-flight tests.
 
+    A replaced occurrence stays in the plan with its execution right withdrawn, so the
+    candidate network and the delta carry the Task's rewritten control binding — the
+    same shape the graph-repair compiler produces.
+    """
+
+    replaced_tasks = {
+        str(spec.task_id)
+        for spec in world.bundle.network.occurrences
+        if spec.occurrence_id in set(superseded)
+    }
+    rewrites, bindings = [], []
+    for binding in world.bundle.network.task_bindings:
+        if str(binding.task_id) not in replaced_tasks:
+            bindings.append(binding)
+            continue
+        stored = world.semantics.task_semantics_of(world.mission.id, str(binding.task_id))
+        moved = dataclasses.replace(
+            stored,
+            contract_revision=int(stored.contract_revision) + 1,
+            dispatch_generation=int(stored.dispatch_generation) + 1,
+        )
+        rewrites.append(TaskBindingRewrite(content_hash_of(stored.to_json()), moved))
+        bindings.append(moved)
     delta = dataclasses.replace(
         world.command.delta,
         delta_id="delta-second",
@@ -1148,8 +1177,11 @@ def _second_revision(
         referenced_occurrences=tuple(
             spec.occurrence_id for spec in world.command.delta.occurrences
         ),
+        binding_rewrites=tuple(rewrites),
     )
-    network = dataclasses.replace(world.bundle.network, plan_revision=2)
+    network = dataclasses.replace(
+        world.bundle.network, plan_revision=2, task_bindings=tuple(bindings)
+    )
     return dataclasses.replace(
         world.command,
         command_id=command_id,
@@ -2484,9 +2516,11 @@ def test_mutation_a_read_set_check_that_passes_unknown_subjects_is_caught(tmp_pa
         world.mission.id,
         dataclasses.replace(world.binding, contract_revision=2, contract_hash=HEX_OTHER),
     )
-    world.commit()
-    with pytest.raises(AssertionError):
-        assert world.semantics.list_plan_revisions(world.mission.id) == ()
+    # The mutant no longer names the stale read; the commit runs on until the frozen
+    # completion scope finds the Task contract it was compiled against is gone.
+    with pytest.raises(Exception) as caught:  # noqa: PT011
+        world.commit()
+    assert not isinstance(caught.value, PlanCommitRejected)
 
 
 def test_mutation_a_two_step_activation_is_caught(tmp_path, monkeypatch):
@@ -2524,7 +2558,11 @@ def test_mutation_a_revocation_that_does_not_move_the_generation_is_caught(tmp_p
         "_revoke_running_work",
         lambda self, semantics, command, revocation_targets=None: {},
     )
-    world.commit(_second_revision(world, superseded=(target.occurrence_id,)))
+    # The plan carries the rewritten binding the mutant never stored, so the frozen
+    # completion scope refuses the commit; either way the generation did not move.
+    with pytest.raises(Exception) as caught:  # noqa: PT011
+        world.commit(_second_revision(world, superseded=(target.occurrence_id,)))
+    assert not isinstance(caught.value, PlanCommitRejected)
     after = world.semantics.task_semantics_of(world.mission.id, str(target.task_id))
     with pytest.raises(AssertionError):
         assert int(after.dispatch_generation) == int(before.dispatch_generation) + 1

@@ -54,8 +54,8 @@ from agent_orchestrator.orchestrator.accepted_outputs import (  # noqa: E402
     declared_output_ports,
     output_ports_in_revision,
 )
-from agent_orchestrator.orchestrator.resolution_commits import (  # noqa: E402
-    ResolutionCommitRejected,
+from agent_orchestrator.orchestrator.operation_completion import (  # noqa: E402
+    OperationCompletionError,
 )
 from agent_orchestrator.runtime.output_blocks import PortClaim  # noqa: E402
 
@@ -163,9 +163,13 @@ def test_a_finalizer_that_claims_no_port_is_refused(live: World) -> None:
     Worker can act on.  Leaving it empty is what happened instead: the acceptance
     passed silently with ``accepted_outputs: []`` and the root reviewer — correctly —
     rejected a criterion with no readable proof.
+
+    带协议绑定的世界里这道拒绝更早：结果在**记录时**就因为要求的端口没人认领被拒，验收
+    根本到不了，复查步骤什么都不写。
     """
 
-    with pytest.raises(ResolutionCommitRejected) as refused:
+    _accept_leaf(live)  # 复查步骤读上一步的产出，上一步先验收
+    with pytest.raises(OperationCompletionError) as refused:
         _accept_leaf(
             live,
             task_id=_review_task(live),
@@ -173,12 +177,21 @@ def test_a_finalizer_that_claims_no_port_is_refused(live: World) -> None:
             artifacts=(_Artifact("artifact-2", "out/verdict.json"),),
             port_claims=(),
         )
-    assert refused.value.reason == "OUTPUT_PORT_UNCLAIMED"
-    assert "verdict" in str(refused.value)
-    assert live.semantics.list_acceptance_outputs(live.mission.id) == ()
+    assert refused.value.code == "OP_COMPLETION_PORT_CLAIMS_UNAVAILABLE"
+    assert "required output port is unclaimed" in str(refused.value)
+    assert live.store.get_result("result-review") is None
+    assert [
+        item for item in live.semantics.list_acceptances(live.mission.id)
+        if str(item.task_id) == _review_task(live)
+    ] == []
+    assert [
+        row for row in live.semantics.list_acceptance_outputs(live.mission.id)
+        if row["producer_task_ref"] == _review_task(live)
+    ] == []
 
 
 def test_a_finalizer_that_claims_its_port_is_accepted_and_indexed(live: World) -> None:
+    _accept_leaf(live)  # 复查步骤读上一步的产出，上一步先验收
     receipt = _accept_leaf(
         live,
         task_id=_review_task(live),
@@ -186,7 +199,10 @@ def test_a_finalizer_that_claims_its_port_is_accepted_and_indexed(live: World) -
         artifacts=(_Artifact("artifact-2", "out/verdict.json"),),
         port_claims=(PortClaim(port_key="verdict", path="out/verdict.json"),),
     )
-    rows = live.semantics.list_acceptance_outputs(live.mission.id)
+    rows = [
+        row for row in live.semantics.list_acceptance_outputs(live.mission.id)
+        if row["producer_task_ref"] == _review_task(live)
+    ]
     assert [(row["output_port"], row["artifact_id"]) for row in rows] == [
         ("verdict", "artifact-2")
     ]
@@ -252,6 +268,14 @@ def three_step(tmp_path) -> World:
 
 
 def test_a_step_neither_consumed_nor_linked_still_declares_no_port(three_step: World) -> None:
+    """边界：既没被消费也没被链接的一步。
+
+    "消费或链接才算声明"这条规则本身（不带 ``own_ports`` 的网络读者）照旧不给它端口；
+    但带协议绑定的世界里（生产唯一会出现的世界），每一步都欠它**自己**声明的必需端口
+    （2026-09-29 真机第十二局定的规则，见下一条测试）——所以生产读者告诉这一步的端口，
+    恰好是它自己契约里的 ``finding``，不多不少，也不会把别人的端口算到它头上。
+    """
+
     audit = next(
         str(spec.task_id)
         for spec in three_step.network().occurrences
@@ -261,7 +285,12 @@ def test_a_step_neither_consumed_nor_linked_still_declares_no_port(three_step: W
         == "plan.audit"
     )
     assert declared_output_ports(three_step.network(), _occurrence(three_step, audit)) == {}
-    assert three_step.dispatch.declared_output_ports_for(three_step.mission.id, audit) == ()
+    told = three_step.dispatch.declared_output_ports_for(three_step.mission.id, audit)
+    assert [(item["port"], item["required"]) for item in told] == [("finding", True)]
+    assert set(_rows_ports(three_step, audit)) == {"finding"}
+    assert dict(_rows_ports(three_step, audit)) == dict(
+        declared_output_ports(three_step.network(), _occurrence(three_step, audit), own_ports=True)
+    ), "生产的两个读者在协议世界里给同一个答案"
 
 
 def test_under_the_completion_protocol_a_step_declares_its_own_ports(three_step: World) -> None:
@@ -386,9 +415,15 @@ def test_a_criterion_link_to_a_non_finalizer_step_declares_that_steps_ports(
     assert "note" in _rows_ports(linked, _probe_task(linked)), (
         "the step owes its unconsumed required port because the root criterion reads it"
     )
-    # The finalizer is not criterion-linked in this plan, so its own unconsumed port is
-    # exactly what it was before D3: nobody's.
-    assert "verdict" not in _rows_ports(linked, _review_task(linked))
+    # The finalizer is not criterion-linked in this plan, so under the bare
+    # "consumed or linked" rule its own unconsumed port is exactly what it was before
+    # D3: nobody's.
+    network = linked.network()
+    assert "verdict" not in declared_output_ports(network, review)
+    assert "note" in declared_output_ports(network, probe), "linked: owed under the bare rule"
+    # 带协议绑定的世界里每一步都欠自己的必需端口，所以生产读者给复查步骤的是它自己的
+    # ``verdict``——不是因为它是收尾步骤（它没被链接），而是因为它自己的契约声明了它。
+    assert set(_rows_ports(linked, _review_task(linked))) == {"verdict"}
 
 
 def test_an_optional_port_of_a_criterion_linked_step_is_not_owed(linked: World) -> None:

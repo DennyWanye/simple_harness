@@ -92,7 +92,6 @@ from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E40
     DISPATCH_INTERCEPTED,
     PLAN_COMMIT_REFUSED,
     PLAN_INTEGRITY_FAILED,
-    RECOMPILABLE_REFUSALS,
     CompoundPhase,
     HierarchicalDispatch,
     PlanIntegrityError,
@@ -127,7 +126,6 @@ from agent_orchestrator.testing.fixtures import (  # noqa: E402
 from scripted_plans import (  # noqa: E402
     apply_scripted_plan,
     approve_content_only_completion,
-    detach_completion_protocol,
     plan_revision_proposal_step,
 )
 from simple_harness.agents import AgentTurnState  # noqa: E402
@@ -274,8 +272,6 @@ def _proposal_text(contract: Any, **changes: Any) -> str:
 def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23b", **kwargs) -> World:
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
     mission, _ = service.create_mission(_spec(key, mode=mode))
-    if mode == HIERARCHICAL_SEMANTICS:
-        detach_completion_protocol(service.store, mission.id)
     env = _env(mission.id)
     contract = _outer()
     receipt = env.admit(contract)
@@ -298,6 +294,8 @@ def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23b", *
             recursion_fuel=FUEL,
         )
         HtnStore(service.store).put_task_semantics(mission.id, binding)
+        # 带协议绑定的任务：根要求先确认（纯内容），计划提交才能冻结完成范围。
+        approve_content_only_completion(service, mission, binding, command_id=f"approve-{key}")
         HtnStore(service.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
@@ -310,43 +308,6 @@ def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23b", *
         dispatch=HierarchicalDispatch(service.store, service, planning=env, **kwargs),
         principal=PlanPrincipal("manager-1", "mission", 0),
     )
-
-
-def _stale(compile_calls: list[Any], *, until: int = 1):
-    """A ``compile_refinement_bundle`` wrapper that poisons the first ``until`` reads.
-
-    The poison is a read-set item the store cannot possibly agree with, which is
-    exactly what a genuinely stale read looks like to ``_check_read_set``.  The
-    wrapper records the ``current`` network it was handed, so the suite can prove
-    the recompilation happened against a *re-read* snapshot and not the old one.
-    """
-
-    import dataclasses
-
-    from agent_orchestrator.contracts.htn import ReadItem, ReadItemKind
-
-    real = module.compile_refinement_bundle
-
-    def wrapper(draft, current, **kwargs):
-        compile_calls.append(current)
-        compilation = real(draft, current, **kwargs)
-        if len(compile_calls) > until:
-            return compilation
-        poisoned = dataclasses.replace(
-            compilation.delta.read_set,
-            method_revisions=(
-                ReadItem(
-                    kind=ReadItemKind.METHOD,
-                    id="plan.outer",
-                    semantic_revision=1,
-                    content_hash=HEX_OTHER,
-                ),
-            ),
-        )
-        delta = dataclasses.replace(compilation.delta, read_set=poisoned)
-        return dataclasses.replace(compilation, delta=delta)
-
-    return wrapper
 
 
 # ====================================================================== one plan round
@@ -408,26 +369,6 @@ def test_a_reply_claiming_an_authority_field_is_refused_at_the_boundary(tmp_path
     assert "manager_epoch" in str(caught.value)
 
 
-def test_a_proposal_with_two_operations_is_refused_rather_than_partly_applied(tmp_path):
-    world = _world(tmp_path)
-    reference = world.contract.method_ref()
-    refine = {
-        "op": "refine",
-        "goal_id": ROOT_TASK,
-        "obligation_id": ROOT_DUTY,
-        "method_ref": {
-            "id": reference.method_id,
-            "version": reference.version,
-            "content_hash": reference.content_hash,
-        },
-        "bindings": {},
-    }
-    with pytest.raises(ContractError) as caught:
-        world.plan(world.reply(operations=[refine, refine]))
-    assert "one refinement per round" in str(caught.value)
-    assert world.events(PLAN_REVISION_COMMITTED) == []
-
-
 def test_a_legacy_mission_is_not_an_entry_point_for_the_assembly(tmp_path):
     world = _world(tmp_path, mode=LEGACY_SEMANTICS, key="legacy-door")
     with pytest.raises(ContractError) as caught:
@@ -441,142 +382,6 @@ def test_a_deployment_without_a_planning_world_refuses_visibly(tmp_path):
     with pytest.raises(ContractError) as caught:
         world.plan()
     assert "PlanningWorld" in str(caught.value)
-
-
-# ============================================================ the bounded recompilation
-def test_a_stale_read_set_is_recompiled_once_and_then_commits(tmp_path, monkeypatch):
-    world = _world(tmp_path)
-    calls: list[Any] = []
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale(calls, until=1))
-    outcome = world.plan()
-    assert outcome.committed, outcome.refusals
-    assert [item.reason for item in outcome.refusals] == ["READ_SET_STALE"]
-    assert len(calls) == 2
-
-
-def test_the_recompilation_uses_a_freshly_read_snapshot(tmp_path, monkeypatch):
-    world = _world(tmp_path)
-    calls: list[Any] = []
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale(calls, until=1))
-    world.plan()
-    assert calls[0] is not calls[1]  # two distinct reads, not the cached one
-
-
-def test_a_successful_recompilation_appends_no_refusal_event(tmp_path, monkeypatch):
-    world = _world(tmp_path)
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale([], until=1))
-    world.plan()
-    assert world.events(PLAN_COMMIT_REFUSED) == []
-
-
-def test_a_refusal_that_survives_the_bound_records_plan_commit_refused(tmp_path, monkeypatch):
-    world = _world(tmp_path)
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale([], until=99))
-    outcome = world.plan()
-    assert not outcome.committed
-    events = world.events(PLAN_COMMIT_REFUSED)
-    assert len(events) == 1
-    assert events[0].payload["reason"] == "READ_SET_STALE"
-    assert events[0].payload["attempts"] == 2
-
-
-def test_the_bound_stops_the_round_and_does_not_keep_retrying(tmp_path, monkeypatch):
-    world = _world(tmp_path)
-    calls: list[Any] = []
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale(calls, until=99))
-    world.plan()
-    assert len(calls) == 2  # the default bound, not three and not forever
-
-
-def test_the_bound_is_configurable_and_respected(tmp_path, monkeypatch):
-    world = _world(tmp_path, compile_attempts=3)
-    calls: list[Any] = []
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale(calls, until=99))
-    world.plan()
-    assert len(calls) == 3
-
-
-def test_nothing_is_written_when_the_round_is_refused(tmp_path, monkeypatch):
-    world = _world(tmp_path)
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale([], until=99))
-    world.plan()
-    assert world.semantics.active_plan_revision(world.mission.id) is None
-    assert world.events(PLAN_REVISION_COMMITTED) == []
-
-
-def test_the_refusal_record_states_that_nothing_was_rebased(tmp_path, monkeypatch):
-    world = _world(tmp_path)
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale([], until=99))
-    world.plan()
-    assert world.events(PLAN_COMMIT_REFUSED)[0].payload["rebased"] is False
-
-
-def test_the_round_never_calls_the_legacy_graph_change_path(tmp_path, monkeypatch):
-    world = _world(tmp_path)
-
-    def _explode(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("a hierarchical proposal reached the legacy graph change path")
-
-    monkeypatch.setattr(CommitService, "commit_graph_change", _explode, raising=False)
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale([], until=99))
-    world.plan()
-    assert not world.plan(command_id="cmd-b").committed
-
-
-def test_a_non_recompilable_refusal_stops_after_one_attempt(tmp_path, monkeypatch):
-    """A cancelled Mission is not something compiling again can fix (§9.4)."""
-
-    world = _world(tmp_path)
-    world.service.cancel_mission(world.mission.id)
-    calls: list[Any] = []
-    real = module.compile_refinement_bundle
-
-    def wrapper(draft, current, **kwargs):
-        calls.append(current)
-        return real(draft, current, **kwargs)
-
-    monkeypatch.setattr(module, "compile_refinement_bundle", wrapper)
-    outcome = world.plan()
-    assert [item.reason for item in outcome.refusals] == ["MISSION_NOT_WRITABLE"]
-    assert len(calls) == 1
-    assert outcome.refusals[0].recompilable is False
-
-
-def test_the_recompilable_set_does_not_contain_an_identity_refusal(tmp_path):
-    del tmp_path
-    assert "PRINCIPAL_MISMATCH" not in RECOMPILABLE_REFUSALS
-    assert "SCOPE_NOT_AUTHORIZED" not in RECOMPILABLE_REFUSALS
-    assert "SEMANTICS_NOT_HIERARCHICAL" not in RECOMPILABLE_REFUSALS
-    assert "MISSING_SEMANTIC_BINDING" not in RECOMPILABLE_REFUSALS
-
-
-def test_a_structural_refusal_against_the_plan_is_recompilable(tmp_path):
-    """``PLAN_NOT_PRESERVED`` compares the increment with the plan it came from."""
-
-    del tmp_path
-    assert "PLAN_NOT_PRESERVED" in RECOMPILABLE_REFUSALS
-    assert "STRUCTURE_INVALID" in RECOMPILABLE_REFUSALS
-
-
-def test_a_defect_in_the_compiled_delta_itself_is_not_recompilable(tmp_path):
-    """A newer snapshot does not make a non-commit-ready delta ready."""
-
-    del tmp_path
-    assert "DELTA_NOT_COMMIT_READY" not in RECOMPILABLE_REFUSALS
-    assert "OR_NOT_RESOLVED" not in RECOMPILABLE_REFUSALS
-
-
-def test_every_recompilable_reason_is_one_the_commit_service_can_raise(tmp_path):
-    """The classification may not name a refusal that does not exist."""
-
-    del tmp_path
-    import inspect
-    import re
-
-    from agent_orchestrator.orchestrator import plan_commits
-
-    raised = set(re.findall(r'PlanCommitRejected\(\s*"([A-Z_]+)"', inspect.getsource(plan_commits)))
-    assert RECOMPILABLE_REFUSALS <= raised, RECOMPILABLE_REFUSALS - raised
 
 
 def test_a_plan_commit_does_not_advance_the_integer_graph_version(tmp_path):
@@ -598,16 +403,14 @@ def test_a_second_identical_reply_does_not_produce_a_second_revision(tmp_path):
     """Re-refining an already refined goal is refused by the compiler, not committed.
 
     The idempotency of one *command* is P2.3a's property.  What this slice has to
-    hold is the round above it: the same reply delivered twice recompiles against
-    the *new* snapshot, where the occurrences it wants already exist, and that is a
-    structural refusal — never a second plan revision that duplicates the work.
+    hold is the round above it: the same reply delivered twice compiles against the
+    *new* snapshot, where the goal it names is no longer open, and that is a refusal
+    — never a second plan revision that duplicates the work.
     """
-
-    from agent_orchestrator.planning.htn.compiler import CompilationRefused
 
     world = _world(tmp_path)
     assert world.plan().committed
-    with pytest.raises(CompilationRefused):
+    with pytest.raises(ContractError, match="exactly one open occurrence"):
         world.plan(command_id="cmd-b")
     assert len(world.events(PLAN_REVISION_COMMITTED)) == 1
     assert world.semantics.active_plan_revision(world.mission.id).revision == 1
@@ -838,114 +641,76 @@ def test_accepting_only_one_child_does_not_unlock_the_root_review(tmp_path):
 
 
 def _accept_children(world: World, *, limit: int | None = None) -> list[str]:
-    """Record a CURRENT Acceptance (with its review chain) for the child occurrences.
+    """Accept the child occurrences through the real chain, producers first.
 
-    The package and the record are not decoration: AER §6.1 makes an Acceptance
-    point at the official review that produced it, and the schema enforces it.  A
-    test that faked the acceptance row would be testing a state the system cannot
-    reach.
+    A Mission on the completion protocol counts an Acceptance only when it came out
+    of a stored, verified result judged against the frozen completion scope — a
+    hand-written acceptance row is a state the system cannot reach, so each child is
+    delivered and accepted the way the loop does it.
     """
 
-    from agent_orchestrator.contracts.resolution import (
-        Acceptance,
-        AllExpr,
-        CheckExecution,
-        Criterion,
-        CriterionExpr,
-        CriterionOrigin,
-        CriterionOutcome,
-        CriterionVerdict,
-        EvaluationKind,
-        RequirementClass,
-        ReviewBinding,
-        ReviewPackage,
-        ReviewPurpose,
-        ReviewRecord,
-        ReviewVerdict,
+    from dataclasses import dataclass as _dataclass
+
+    from scripted_plans import seed_verified_result
+
+    from agent_orchestrator.orchestrator.leaf_acceptance import (
+        LayerOutcome,
+        LeafAcceptanceAssembly,
     )
-    from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
+    from agent_orchestrator.runtime.output_blocks import PortClaim
 
-    def binding_for(task_id: str) -> ReviewBinding:
-        return ReviewBinding(
-            mission_id=world.mission.id,
-            obligation_id=ROOT_DUTY,
-            subject_ref=TypedRef(
-                kind=TypedRefKind.TASK, id=task_id, revision=1, content_hash=HEX_A
-            ),
-            requirements_revision=0,
-            input_manifest_hash=HEX_A,
-            policy_ref=TypedRef(
-                kind=TypedRefKind.REQUIREMENTS, id="policy-1", revision=1, content_hash=HEX_A
-            ),
-        )
+    @_dataclass(frozen=True)
+    class _Delivered:
+        id: str
+        path: str
+        version: int = 1
 
-    def criterion() -> Criterion:
-        return Criterion(
-            criterion_id="c-1",
-            revision=1,
-            origin=CriterionOrigin.POLICY_REQUIRED,
-            statement="the child produced its declared output",
-            requirement_class=RequirementClass.REQUIRED_OUTCOME,
-            evaluation_kind=EvaluationKind.SEMANTIC,
-        )
-
-    def chain(task_id: str) -> str:
-        package_id = f"pkg-{task_id}"
-        record_id = f"rev-{task_id}"
-        world.semantics.insert_review_package(
-            ReviewPackage(
-                package_id=package_id,  # type: ignore[arg-type]
-                purpose=ReviewPurpose.TASK_CONTENT,
-                binding=binding_for(task_id),
-                criteria=(criterion(),),
-                success_expression=AllExpr((CriterionExpr("c-1"),)),
-            )
-        )
-        world.semantics.insert_review_record(
-            ReviewRecord(
-                record_id=record_id,  # type: ignore[arg-type]
-                package_id=package_id,  # type: ignore[arg-type]
-                purpose=ReviewPurpose.TASK_CONTENT,
-                binding=binding_for(task_id),
-                reviewer_agent_id="independent-agent",
-                reviewer_turn_id=f"turn-{task_id}",
-                evidence_manifest_hash=HEX_A,
-                criteria=(
-                    CriterionOutcome(
-                        criterion_id="c-1",
-                        verdict=CriterionVerdict.PASS,
-                        check_execution=CheckExecution.SUCCEEDED,
-                    ),
-                ),
-                verdict=ReviewVerdict.ACCEPT,
-            ),
-            official=True,
-        )
-        return record_id
-
+    layers = (
+        LayerOutcome("schema_check", "PASS"),
+        LayerOutcome("rule_check", "PASS"),
+        LayerOutcome("critic_review", "PASS"),
+    )
     network = world.dispatch.network(world.mission.id)
-    children = [
-        spec
-        for spec in network.occurrences
-        if spec.occurrence_id not in set(network.root_occurrence_ids)
-    ]
+    consumers = {edge.consumer_occurrence for edge in network.data_requirements}
+    children = sorted(
+        (
+            spec
+            for spec in network.occurrences
+            if spec.occurrence_id not in set(network.root_occurrence_ids)
+        ),
+        key=lambda item: (item.occurrence_id in consumers, str(item.occurrence_id)),
+    )
+    assembly = LeafAcceptanceAssembly(world.store, world.service, dispatch=world.dispatch)
     accepted: list[str] = []
-    for index, spec in enumerate(sorted(children, key=lambda item: str(item.occurrence_id))):
+    for index, spec in enumerate(children):
         if limit is not None and index >= limit:
             break
-        record_id = chain(str(spec.task_id))
-        world.semantics.insert_acceptance(
-            Acceptance(
-                acceptance_id=f"acc-{spec.task_id}",  # type: ignore[arg-type]
-                mission_id=world.mission.id,
-                task_id=spec.task_id,
-                obligation_id=spec.obligation_id,
-                requirements_revision=1,
-                contract_revision=1,
-                input_manifest_hash=HEX_A,
-                review_record_id=record_id,  # type: ignore[arg-type]
-                accepted_at_ms=1_000,
-            )
+        task_id = str(spec.task_id)
+        now_ms = 1_000_000 + index * 100_000
+        declared = world.dispatch.declared_output_ports_for(world.mission.id, task_id)
+        items = tuple(
+            _Delivered(f"artifact-{task_id}-{item['port']}", f"out/{item['port']}.json")
+            for item in declared
+        )
+        claims = tuple(
+            PortClaim(port_key=item["port"], path=items[position].path)
+            for position, item in enumerate(declared)
+        )
+        stored = seed_verified_result(
+            world.service, world.dispatch, world.mission.id, task_id,
+            result_id=f"result-{task_id}", layers=layers, items=items, claims=claims,
+            now_ms=now_ms,
+        )
+        assembly.accept(
+            world.mission.id,
+            task_id,
+            result_id=f"result-{task_id}",
+            layers=layers,
+            artifacts=stored,
+            producer_agent_ids=("agent-worker",),
+            reviewer_agent_id="agent-critic",
+            now_ms=now_ms,
+            port_claims=claims,
         )
         accepted.append(str(spec.occurrence_id))
     return accepted
@@ -1584,28 +1349,6 @@ def test_attempt_inputs_returns_the_recorded_upstream_input_shape(tmp_path):
 # "the property it breaks" is explicit rather than implied by a large try/except pile.
 
 
-def _witness_retry_is_bounded(world: World, monkeypatch) -> None:
-    calls: list[Any] = []
-    monkeypatch.setattr(module, "compile_refinement_bundle", _stale(calls, until=99))
-    outcome = world.plan()
-    assert not outcome.committed
-    assert len(calls) == 2
-
-
-def _witness_terminal_mission_is_not_retried(world: World, monkeypatch) -> None:
-    world.service.cancel_mission(world.mission.id)
-    calls: list[Any] = []
-    real = module.compile_refinement_bundle
-
-    def wrapper(draft, current, **kwargs):
-        calls.append(current)
-        return real(draft, current, **kwargs)
-
-    monkeypatch.setattr(module, "compile_refinement_bundle", wrapper)
-    world.plan()
-    assert len(calls) == 1
-
-
 def _witness_compound_is_intercepted(world: World, monkeypatch) -> None:
     del monkeypatch
     assert world.plan().committed
@@ -1647,24 +1390,6 @@ def _witness_missing_binding_is_corruption(world: World, monkeypatch) -> None:
     )
     with pytest.raises(GraphIntegrityError):
         world.dispatch.network(world.mission.id)
-
-
-def _mutant_retry_bound_raised(monkeypatch) -> None:
-    original = module.HierarchicalDispatch.__post_init__
-
-    def patched(self) -> None:
-        original(self)
-        self.compile_attempts = 7
-
-    monkeypatch.setattr(module.HierarchicalDispatch, "__post_init__", patched)
-
-
-def _mutant_every_refusal_is_recompilable(monkeypatch) -> None:
-    monkeypatch.setattr(
-        module,
-        "RECOMPILABLE_REFUSALS",
-        frozenset({"READ_SET_STALE", "MISSION_NOT_WRITABLE", "PRINCIPAL_MISMATCH"}),
-    )
 
 
 def _mutant_form_gate_off(monkeypatch) -> None:
@@ -1709,12 +1434,6 @@ def _mutant_unbound_membership_is_dropped(monkeypatch) -> None:
 
 
 MUTANTS = [
-    ("the retry bound is raised to seven", _mutant_retry_bound_raised, _witness_retry_is_bounded),
-    (
-        "a terminal Mission counts as recompilable",
-        _mutant_every_refusal_is_recompilable,
-        _witness_terminal_mission_is_not_retried,
-    ),
     (
         "the compound form gate is switched off",
         _mutant_form_gate_off,
@@ -1758,7 +1477,7 @@ def test_a_plan_commit_rejected_is_not_swallowed_into_a_committed_outcome(tmp_pa
 
     world = _world(tmp_path)
 
-    def _always_refuse(self, command, principal):
+    def _always_refuse(self, command, principal, **kwargs):
         raise PlanCommitRejected("READ_SET_STALE", "mutant")
 
     monkeypatch.setattr(CommitService, "commit_plan_revision", _always_refuse)

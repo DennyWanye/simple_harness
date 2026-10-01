@@ -139,7 +139,7 @@ def _abc_world(tmp_path, *, key: str) -> World:
 
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = build_world(evidence, key=key, mode=HIERARCHICAL_SEMANTICS, bound=True)
+    world = build_world(evidence, key=key, mode=HIERARCHICAL_SEMANTICS)
     _plan_types(world.env)
     contract = method(
         "plan.abc",
@@ -277,7 +277,7 @@ def _branch_world(tmp_path, *, key: str, with_compound: bool) -> World:
 
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = build_world(evidence, key=key, mode=HIERARCHICAL_SEMANTICS, bound=True)
+    world = build_world(evidence, key=key, mode=HIERARCHICAL_SEMANTICS)
     _plan_types(world.env)
     steps = [
         _leaf("a", "plan.leaf"),

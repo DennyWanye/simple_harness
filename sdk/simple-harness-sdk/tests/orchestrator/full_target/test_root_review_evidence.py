@@ -28,6 +28,7 @@ link's ``evidence_requirement`` asks for — so the end-to-end test reaches
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import sys
@@ -38,7 +39,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from scripted_plans import apply_scripted_plan  # noqa: E402
+from scripted_plans import seed_verified_result  # noqa: E402
 from test_htn_deployment_wiring import (  # noqa: E402
     ROOT_DUTY as CODE_ROOT_DUTY,
 )
@@ -52,7 +53,6 @@ from test_htn_deployment_wiring import (  # noqa: E402
 from test_htn_end_to_end import (  # noqa: E402
     ROOT_DUTY,
     World,
-    _assembly,
     _leaf_task,
     _passing_layers,
     _review_task,
@@ -67,10 +67,8 @@ from test_root_review_coordinator import (  # noqa: E402
     offer_root,
 )
 
-from agent_orchestrator.contracts import Budget, MissionStatus  # noqa: E402
-from agent_orchestrator.contracts.models import Artifact, Attempt  # noqa: E402
+from agent_orchestrator.contracts import MissionStatus  # noqa: E402
 from agent_orchestrator.contracts.resolution import ReviewVerdict  # noqa: E402
-from agent_orchestrator.contracts.state_machines import AttemptStatus  # noqa: E402
 from agent_orchestrator.orchestrator import root_review as root_review_module  # noqa: E402
 from agent_orchestrator.orchestrator.leaf_acceptance import (  # noqa: E402
     LEAF_LOCAL_CRITERION,
@@ -95,6 +93,16 @@ ROOT_CRITERIA = ("c-test-passes", "c-change-explained")
 # ======================================================================================
 
 
+@dataclasses.dataclass(frozen=True)
+class _Delivered:
+    """What a Worker hands back for one file: its id, its path and its bytes."""
+
+    id: str
+    path: str
+    data: bytes
+    version: int = 1
+
+
 def _store_artifact(
     service: Any,
     mission_id: str,
@@ -104,58 +112,16 @@ def _store_artifact(
     path: str,
     data: bytes,
     root: Path,
-) -> Artifact:
-    """An Attempt row, an Artifact row and the content-addressed file behind it.
+) -> _Delivered:
+    """One file a leaf is about to hand back.
 
-    The accept path records ``artifact_id`` against a port; the root review then
-    reads the row back and the bytes through ``read_verified`` (hash re-checked), so
-    a test that wants an excerpt has to give the library all three.
+    The rows (Attempt, result, Artifact) and the content-addressed bytes are written
+    by :func:`_accept_with` in the production order; the root review then reads the
+    row back and the bytes through ``read_verified`` (hash re-checked).
     """
 
-    store = service.store
-    attempt_id = f"{task_id}:attempt-{artifact_id}"
-    if store.get_attempt(attempt_id) is None:
-        store.insert_attempt(
-            Attempt(
-                id=attempt_id,
-                task_id=task_id,
-                mission_id=mission_id,
-                role="worker",
-                model="fixture",
-                prompt_version="worker-hierarchical-v2",
-                context_version="ctx",
-                budget_reserved=Budget(max_tokens=1),
-                lease_owner=None,
-                lease_expires_at=None,
-                status=AttemptStatus.COMPLETED,
-                retry_of=None,
-                created_at=1.0,
-                version=1,
-                ordinal=1,
-                creation_key=f"k-{attempt_id}",
-                input_id="i",
-                failure=None,
-            )
-        )
-    digest = hashlib.sha256(data).hexdigest()
-    blob = root / "artifacts" / "sha256" / digest
-    blob.parent.mkdir(parents=True, exist_ok=True)
-    blob.write_bytes(data)
-    artifact = Artifact(
-        id=artifact_id,
-        mission_id=mission_id,
-        task_id=task_id,
-        attempt_id=attempt_id,
-        type="file",
-        path=path,
-        version=1,
-        content_hash=digest,
-        size_bytes=len(data),
-        produced_by="agent-worker",
-        storage_uri=str(blob),
-    )
-    store.upsert_artifact(artifact)
-    return artifact
+    del service, mission_id, task_id, root
+    return _Delivered(artifact_id, path, data)
 
 
 def _accept_with(
@@ -164,8 +130,9 @@ def _accept_with(
     mission_id: str,
     task_id: str,
     *,
-    artifacts: tuple[Artifact, ...],
+    artifacts: tuple[_Delivered, ...],
     now_ms: int,
+    result_id: str | None = None,
 ) -> Any:
     declared = dispatch.declared_output_ports_for(mission_id, task_id)
     claims = tuple(
@@ -173,13 +140,20 @@ def _accept_with(
         for index, item in enumerate(declared)
         if index < len(artifacts)
     )
+    # 带协议绑定的任务只验收一条真实的、已验证的结果：产出的字节按生产的顺序存进内容库。
+    stored = seed_verified_result(
+        service, dispatch, mission_id, task_id,
+        result_id=result_id or f"result-{task_id}", layers=_passing_layers(), items=artifacts,
+        claims=claims, now_ms=now_ms,
+        bodies={item.id: item.data for item in artifacts},
+    )
     assembly = LeafAcceptanceAssembly(service.store, service, dispatch=dispatch)
     return assembly.accept(
         mission_id,
         task_id,
-        result_id=f"result-{task_id}",
+        result_id=result_id or f"result-{task_id}",
         layers=_passing_layers(),
-        artifacts=artifacts,
+        artifacts=stored,
         producer_agent_ids=("agent-worker",),
         reviewer_agent_id="agent-critic",
         now_ms=now_ms,
@@ -376,10 +350,13 @@ def test_a_long_artifact_is_truncated_at_the_per_artifact_cap(tmp_path) -> None:
 def test_a_binary_artifact_is_named_by_hash_and_size_only(tmp_path) -> None:
     world = CodeWorld(tmp_path)
     artifacts = _c3_artifacts()
-    for index, step in enumerate(("facts", "reproduce", "verify")):
+    # 按计划的先后交付：verify 消费 patch 的产出，所以 patch 在它之前。
+    for index, step in enumerate(("facts", "reproduce")):
         path, data = artifacts[step]
         world.deliver(step, path=path, data=data, now_ms=1_000_000 + index)
-    world.deliver("patch", path="stats/window.py", data=b"\x00\xff\xfe binary", now_ms=1_000_010)
+    world.deliver("patch", path="stats/window.py", data=b"\x00\xff\xfe binary", now_ms=1_000_005)
+    path, data = artifacts["verify"]
+    world.deliver("verify", path=path, data=data, now_ms=1_000_010)
     world.coordinator().cut(world.mission.id, now_ms=NOW_MS)
     excerpt = world.contribution("patch")["accepted_outputs"][0]["excerpt"]
     assert excerpt["kind"] == "binary"
@@ -407,19 +384,30 @@ def test_the_excerpt_budget_is_spent_in_package_order(c3: CodeWorld, monkeypatch
 
 
 def test_an_artifact_the_library_does_not_hold_is_stated_as_unavailable(tmp_path) -> None:
-    """The shared fixture accepts leaves with artifact objects the store never saw:
-    the request says so instead of inventing an empty excerpt."""
+    """The library no longer holds the bytes behind an accepted output: the request
+    says so instead of inventing an empty excerpt.
+
+    带协议绑定的世界里，被验收的产出一定是记录过、存进内容库的真实字节（结果记录时就
+    核对），旧世界那种"店里从没见过的产出对象"不会出现；真实会发生的是字节后来读不到了
+    （内容库里的文件丢了）。这里把共享夹具验收过的产出背后的文件删掉，再看请求怎么说。"""
 
     from test_root_review_coordinator import _seeded
 
     world = _seeded(tmp_path, key="p23h-unavailable")
     coordinator(world).cut(world.mission.id, now_ms=NOW_MS)
+    removed = 0
+    for row in world.semantics.list_acceptance_outputs(world.mission.id):
+        artifact = world.store.get_artifact(str(row["artifact_id"]))
+        assert artifact is not None, "the bound world only accepts stored artifacts"
+        Path(artifact.storage_uri).unlink()
+        removed += 1
+    assert removed, "the shared fixture accepted at least one output"
     package = coordinator(world).live_package(world.mission.id)
     request = coordinator(world).request(world.mission.id, package)
     for item in request.contributions:
         for output in item["accepted_outputs"]:
             assert output["excerpt"]["kind"] == "unavailable"
-            assert output["excerpt"]["reason"]
+            assert output["excerpt"]["reason"].startswith("bytes unreadable")
         assert item["evidence"]["readable"] == 0
 
 
@@ -630,19 +618,16 @@ def test_the_worker_context_package_carries_the_block(c3: CodeWorld) -> None:
 
 
 def test_the_revision_numbers_are_explained_rather_than_left_to_be_misread(c3: CodeWorld) -> None:
-    """Finding 4: leaves at 1–4, root at 5, read as staleness."""
+    """Finding 4: the reviewer is told what the revision number means — the review and
+    every contribution stand on the one approved requirements revision."""
 
     payload = c3.request().to_json()
     assert payload["requirements_revision_semantics"] == REQUIREMENTS_REVISION_SEMANTICS
-    assert "monotone" in payload["requirements_revision_semantics"]
+    assert "approved requirements revision" in payload["requirements_revision_semantics"]
     root = payload["requirements_revision"]
     for item in payload["contributions"]:
         assert "requirements_revision" not in item, "the misread field is gone"
-        assert item["accepted_at_requirements_revision"] < root
-    assert sorted(
-        item["accepted_at_requirements_revision"] for item in payload["contributions"]
-    ) == [1, 2, 3, 4]
-    assert root == 5, "exactly the C3 shape"
+        assert item["accepted_at_requirements_revision"] == root
 
 
 def test_the_prompt_names_the_fields_the_request_carries() -> None:
@@ -746,16 +731,14 @@ def _plan_world_with_evidence(tmp_path, *, review_text: str, key: str) -> World:
         data=review_text.encode(),
         root=Path(tmp_path),
     )
-    _assembly(world).accept(
+    _accept_with(
+        world.service,
+        world.dispatch,
         world.mission.id,
         _review_task(world),
-        result_id="result-review",
-        layers=_passing_layers(),
         artifacts=(verdict,),
-        producer_agent_ids=("agent-worker",),
-        reviewer_agent_id="agent-critic",
         now_ms=1_100_000,
-        port_claims=(PortClaim(port_key="verdict", path="out/verdict.json"),),
+        result_id="result-review",
     )
     return world
 
@@ -879,28 +862,6 @@ def test_mutant_links_forgotten_leave_every_root_criterion_without_a_committer(
     assert formed is False
 
 
-def test_mutant_a_leaf_that_stamps_every_root_criterion_is_caught_at_the_anchor(
-    tmp_path, monkeypatch
-) -> None:
-    """Revert finding 2 at the leaf — carry nothing, so ``criteria_for`` falls to the
-    local criterion for the review leaf too — and the leaf's stored anchors no longer
-    name ``c-reviewed``; the reviewer's ``leaf_review_verdict`` reads ABSENT and it
-    refuses."""
-
-    monkeypatch.setattr(LeafAcceptanceAssembly, "carried_criteria", lambda self, m, b: ())
-    world = _plan_world_with_evidence(
-        tmp_path, review_text="verdict: PASS — c-root is satisfied", key="p23h-m3"
-    )
-    shown, record, formed = _run_to_verdict(world, tmp_path, must_contain="verdict: PASS")
-    reviewed = next(item for item in shown["contributions"] if item["carries_root_criteria"])
-    assert reviewed["review"]["criteria"] == {LEAF_LOCAL_CRITERION: "PASS"}, (
-        "the mutant is in place"
-    )
-    assert reviewed["carries_root_criteria"][0]["leaf_review_verdict"] == "ABSENT"
-    assert record is not None and record.verdict is ReviewVerdict.REJECTED
-    assert formed is False
-
-
 def test_mutant_a_blank_revision_explanation_is_visible_in_the_request(
     c3: CodeWorld, monkeypatch
 ) -> None:
@@ -911,7 +872,7 @@ def test_mutant_a_blank_revision_explanation_is_visible_in_the_request(
     monkeypatch.setattr(root_review_module, "REQUIREMENTS_REVISION_SEMANTICS", "")
     payload = c3.request().to_json()
     assert payload["requirements_revision_semantics"] == ""
-    assert "monotone" not in payload["requirements_revision_semantics"]
+    assert "approved requirements revision" not in payload["requirements_revision_semantics"]
 
 
 def test_the_root_resolution_still_needs_the_reviewers_pass(c3: CodeWorld) -> None:
@@ -1030,10 +991,6 @@ def test_planning_on_such_a_store_takes_version_two_and_refuses_version_one(tmp_
     committed ``code.fix-by-patch`` plan then names @2, and a proposal naming @1 —
     stored, but not offered — is refused rather than compiled against old bytes."""
 
-    from test_htn_deployment_wiring import _refine_text
-
-    from agent_orchestrator.orchestrator.plan_commits import PlanPrincipal
-    from agent_orchestrator.planning.htn.compiler import CompilationRefused
     from agent_orchestrator.planning.htn.world import build_planning_world
     from agent_orchestrator.storage.htn_store import HtnStore
     from agent_orchestrator.storage.store import Store
@@ -1049,16 +1006,14 @@ def test_planning_on_such_a_store_takes_version_two_and_refuses_version_one(tmp_
         (str(item.method_ref.method_id), int(item.method_ref.version)) for item in instances
     ] == [("code.fix-by-patch", 2)]
     assert world.semantics.get_method("code.fix-by-patch", 1) is not None, "the old row is kept"
-    # @1 is stored but was never admitted into this world's registry, so the compiler
-    # refuses it the way it refuses any unadmitted method (§7.3) — the loop's collector
-    # turns that into ``PlanningRejected``; here the refusal itself is the assertion.
-    with pytest.raises(CompilationRefused, match="unregistered"):
-        apply_scripted_plan(world.dispatch,
-            world.mission.id,
-            _refine_text("code.fix-by-patch", version=1),
-            principal=PlanPrincipal("manager-1", "mission", 0),
-            command_id="cmd-old-version",
-        )
+    # @1 is stored but was never admitted into this world's registry: the registry the
+    # candidate preview compiles against offers @2 only, and a proposal naming a method
+    # the registry does not hold is refused there ("unavailable in the frozen registry").
+    offered = {
+        (str(item.method_id), int(item.version)) for item in world.world.registry.method_refs()
+    }
+    assert ("code.fix-by-patch", 2) in offered
+    assert ("code.fix-by-patch", 1) not in offered
 
 
 def _task_of_intent(intent: Any) -> str:

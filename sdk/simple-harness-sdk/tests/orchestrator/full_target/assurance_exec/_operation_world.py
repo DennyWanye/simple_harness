@@ -33,7 +33,6 @@ from test_completion_spec_approval import (  # noqa: E402
     HASH_C,
     ROOT_DUTY,
     _api,
-    _bind_new_protocol,
     _criterion,
     _requirements_ref,
 )
@@ -127,8 +126,8 @@ class OperationWorld:
         self.connectors = {"file_publish": self.publish}
         self.deployment = DeploymentPolicy(enabled_connectors=("file_publish",))
         self.profiles = BuiltinOperationProfiles(self.connectors)
-        world = _world(tmp_path, key=key)
-        _bind_new_protocol(world)
+        # 这个世界自己发布并确认要求（带效果的那一版）。
+        world = _world(tmp_path, key=key, confirm_completion=False)
         self.world = world
         self.store, self.commit = world.store, world.service
         self.requirements = insert_requirements(world, self.effects)

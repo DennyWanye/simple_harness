@@ -161,7 +161,7 @@ def test_wall_clock_after_handoff_unknown_releases_grants_and_keeps_unknown_on_t
 
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = build_world(evidence, key="p23r-wall", max_runtime_seconds=2, bound=True)
+    world = build_world(evidence, key="p23r-wall", max_runtime_seconds=2)
     adopt = refine_step()
     world.store.close()
     provider = RoleScriptedProvider(

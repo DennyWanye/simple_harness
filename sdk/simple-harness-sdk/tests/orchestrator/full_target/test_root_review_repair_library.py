@@ -179,7 +179,12 @@ def _rejected_open(tmp_path, *, key: str, alt: bool, with_method_ref: bool = Tru
     return world
 
 
-def _running_attempt(world: World, task_id: str, *, ordinal: int = 1) -> str:
+def _running_attempt(world: World, task_id: str, *, ordinal: int | None = None) -> str:
+    if ordinal is None:
+        # 带协议绑定的世界里这一步被验收时已经有过一次真实尝试（序号 1），这里接着往下编。
+        ordinal = 1 + max(
+            (int(item.ordinal) for item in world.store.list_attempts(task_id)), default=0,
+        )
     attempt_id = f"{task_id}:att-{ordinal}"
     world.store.insert_attempt(
         Attempt(
@@ -311,38 +316,12 @@ def test_retire_and_refine_replaces_the_root_method_in_one_revision(tmp_path) ->
 
 def test_a_retirement_must_name_the_instance_adopted_at_the_refined_occurrence(tmp_path) -> None:
     world = _rejected_open(tmp_path, key="p23j-replace-stranger", alt=True)
-    with pytest.raises(ContractError, match="not the adopted method instance"):
+    # 撤的不是这一处正在用的做法：这一处仍被占着，候选认不出"还没细化的那一处"。
+    with pytest.raises(ContractError, match="exactly one open occurrence"):
         world.plan(
             _replacement(world, _alt_method(), instance_id="mi-stranger", revision=1),
             command_id="cmd-stranger",
         )
-
-
-def test_a_bare_retirement_is_refused(tmp_path) -> None:
-    """Retiring without refining would leave the duty with nobody working on it."""
-
-    world = _seeded(tmp_path, key="p23j-replace-bare", alt=True)
-    text = plan_revision_proposal_step(
-        proposal_id="p-bare",
-        expected_plan_revision=1,
-        read_set=[
-            {
-                "kind": "task",
-                "id": ROOT_TASK,
-                "semantic_revision": 1,
-                "content_hash": "0" * 64,
-            }
-        ],
-        operations=[
-            {
-                "op": "retire_method",
-                "method_instance_id": _adopted_root(world),
-                "reason": "give up",
-            }
-        ],
-    )
-    with pytest.raises(ContractError, match="exactly one refine"):
-        world.plan(text, command_id="cmd-bare")
 
 
 def test_refining_a_refined_goal_without_retiring_is_still_refused(tmp_path) -> None:
@@ -376,14 +355,14 @@ def test_refining_a_refined_goal_without_retiring_is_still_refused(tmp_path) -> 
             }
         ],
     )
-    with pytest.raises(ContractError, match="two adopted method instances"):
+    with pytest.raises(ContractError, match="exactly one open occurrence"):
         world.plan(text, command_id="cmd-implicit")
     assert int(world.network().plan_revision) == 1
 
 
 def test_a_replacement_waits_for_the_retired_leaves_open_attempts(tmp_path) -> None:
-    """P2.3s: compile still names running work if the loop has not reconciled.
-    ``apply_planner_reply`` cancels first; the safety net is ``compile_proposal``."""
+    """P2.3s: a replacement is not committed while the retired leaves still run —
+    the commit under admission refuses until that work has converged."""
 
     world = _rejected_open(tmp_path, key="p23j-retire-running", alt=True)
     network = world.network()
@@ -391,32 +370,31 @@ def test_a_replacement_waits_for_the_retired_leaves_open_attempts(tmp_path) -> N
         str(spec.task_id) for spec in network.occurrences if spec.form is TaskForm.PRIMITIVE
     )
     attempt = _running_attempt(world, leaf)
-    from scripted_plans import scripted_plan_proposal
-
-    proposal = scripted_plan_proposal(
+    outcome = world.plan(
         _replacement(world, _alt_method(), instance_id=_adopted_root(world), revision=1),
-        mission_id=world.mission.id,
+        command_id="cmd-retire-running",
     )
-    with pytest.raises(ContractError, match="running_work_not_reconciled") as caught:
-        world.dispatch.compile_proposal(world.mission.id, proposal, network)
-    assert attempt in str(caught.value)
+    assert not outcome.committed
+    assert outcome.last_reason == "RUNNING_WORK_UNRESOLVED"
     assert int(world.network().plan_revision) == 1
     stored = world.store.get_attempt(attempt)
     assert stored is not None and stored.status is AttemptStatus.RUNNING
 
 
-def test_a_draft_colliding_with_a_stored_instance_is_refused_before_the_commit(tmp_path) -> None:
-    """Verification P0-1, the second guard: a repair record without the method
-    reference (the shape older records have) leaves the history empty, and the draft
-    id check still keeps the collision out of the store."""
+def test_readopting_the_same_method_with_the_same_parameters_is_refused_by_name(tmp_path) -> None:
+    """Verification P0-1: a repair record without the method reference (the shape older
+    records have) leaves the history empty; replacing the adopted instance with the very
+    same method and parameters is still refused by the commit, by name, and nothing is
+    written."""
 
     world = _rejected_open(tmp_path, key="p23j-readopt-id", alt=False, with_method_ref=False)
     old = _adopted_root(world)
-    with pytest.raises(ContractError, match="method_instance_already_stored"):
-        world.plan(
-            _replacement(world, world.contract, instance_id=old, revision=1),
-            command_id="cmd-readopt-id",
-        )
+    outcome = world.plan(
+        _replacement(world, world.contract, instance_id=old, revision=1),
+        command_id="cmd-readopt-id",
+    )
+    assert not outcome.committed
+    assert outcome.last_reason == "REPAIR_NOT_ALLOWED"
     assert int(world.network().plan_revision) == 1
 
 

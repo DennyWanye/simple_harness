@@ -165,7 +165,7 @@ from agent_orchestrator.storage.store import Store, StoreError  # noqa: E402
 from scripted_plans import (  # noqa: E402
     apply_scripted_plan,
     approve_content_only_completion,
-    detach_completion_protocol,
+    seed_verified_result,
     plan_revision_proposal_step,
 )
 
@@ -404,11 +404,10 @@ def build_world(
     tools: tuple[str, ...] = TOOLS,
     max_runtime_seconds: int | None = None,
     task_max_tokens: int | None = None,
-    bound: bool = False,
+    delivery: str | None = None,
 ) -> World:
-    """``bound=True`` keeps the Mission on its planning-protocol binding and confirms a
-    CONTENT_ONLY completion mapping — the world a real ``Orchestrator`` loop accepts.
-    The default detaches it (see ``scripted_plans.detach_completion_protocol``)."""
+    """A hierarchical Mission on its planning-protocol binding, with a confirmed
+    CONTENT_ONLY completion mapping — the world a real ``Orchestrator`` loop accepts."""
 
     path = Path(tmp_path) / name
     service = CommitService(Store.open(path), task_max_tokens=task_max_tokens)
@@ -422,8 +421,6 @@ def build_world(
             max_runtime_seconds=max_runtime_seconds,
         )
     )
-    if mode == HIERARCHICAL_SEMANTICS and not bound:
-        detach_completion_protocol(service.store, mission.id)
     env = _env(mission.id)
     contract = _outer()
     receipt = env.admit(contract)
@@ -449,8 +446,8 @@ def build_world(
         HtnStore(service.store).register_method(
             contract, env.registry.registration(contract.method_ref())
         )
-        if bound:
-            approve_content_only_completion(service, mission, binding, command_id=f"approve-{key}")
+        approve_content_only_completion(
+            service, mission, binding, command_id=f"approve-{key}", delivery=delivery)
     # The real loop calls this before it creates the first Planner intent, and
     # PLANNING is the state the activation rule moves *out of* — so a fixture that
     # skipped it would be testing a transition the deployment never makes.  Both modes,
@@ -706,10 +703,8 @@ def test_a_restart_does_not_charge_the_pool_twice(world: World) -> None:
 def test_a_second_identical_reply_does_not_materialise_a_second_time(world: World) -> None:
     """Re-refining an already refined goal never doubles the board or the budget."""
 
-    from agent_orchestrator.planning.htn.compiler import CompilationRefused
-
     before = {task.id: (task.version, task.budget.max_tokens) for task in world.tasks().values()}
-    with pytest.raises(CompilationRefused):
+    with pytest.raises(ContractError, match="exactly one open occurrence"):
         world.plan(command_id="cmd-b")
     after = {task.id: (task.version, task.budget.max_tokens) for task in world.tasks().values()}
     assert after == before
@@ -834,24 +829,10 @@ def test_the_codec_keeps_provisional_rather_than_defaulting_it(world: World) -> 
     assert accepted_output_from_json(accepted_output_json(output)).provisional is True
 
 
-def test_a_recorded_output_reaches_the_resolver(world: World) -> None:
-    _store_acceptance(world, "acc-leaf")
-    output = _accepted_output(world)
-    world.semantics.insert_acceptance_output(
-        world.mission.id,
-        acceptance_id="acc-leaf",
-        output_port=output.output_port,
-        artifact_id=output.artifact_id,
-        producer_occurrence=str(output.producer_occurrence),
-        producer_task_ref=str(output.producer_task_ref),
-        producer_result_id=output.producer_result_id,
-        support_revision=output.support_revision,
-        content_hash=output.content_hash,
-        source_revision=output.source_revision,
-        document=accepted_output_json(output),
-    )
-    index = world.dispatch.accepted_outputs(world.mission.id, world.network())
-    assert [item.artifact_id for item in index.outputs] == [output.artifact_id]
+def test_a_recorded_output_reaches_the_resolver(live: World) -> None:
+    _accept_leaf(live)
+    index = live.dispatch.accepted_outputs(live.mission.id, live.network())
+    assert [item.artifact_id for item in index.outputs] == ["artifact-1"]
 
 
 def test_an_output_of_an_occurrence_the_plan_dropped_is_not_offered(world: World) -> None:
@@ -1974,6 +1955,19 @@ def _assembly(world: World):
     return LeafAcceptanceAssembly(world.store, world.service, dispatch=world.dispatch)
 
 
+def _seed_verified_result(world: World, task_id: str, result_id: str, layers, items=(), claims=(),
+                          now_ms: int = 1_000_000, complete_row: bool = True) -> None:
+    """带协议绑定的世界里，验收要求结果是一条真实的、已验证的记录：一次尝试、它交回的结果、
+    逐层的校验记录。按生产的写入顺序造出来（同一个结果编号只造一次），做法在共用的
+    ``scripted_plans.seed_verified_result`` 里。"""
+
+    seed_verified_result(
+        world.service, world.dispatch, world.mission.id, task_id,
+        result_id=result_id, layers=layers, items=items, claims=claims,
+        now_ms=now_ms, complete_row=complete_row,
+    )
+
+
 def _accept_leaf(
     world: World,
     *,
@@ -1983,6 +1977,7 @@ def _accept_leaf(
     now_ms: int = 1_000_000,
     port_claims=None,
     task_id: str | None = None,
+    complete_row: bool = True,
 ):
     """Accept one leaf, stating which file went to which declared port.
 
@@ -2007,12 +2002,14 @@ def _accept_leaf(
             for index, item in enumerate(declared)
             if index < len(items)
         )
+    _seed_verified_result(world, leaf, result_id, layers if layers is not None else _passing_layers(),
+                          items=items, claims=claims, now_ms=now_ms, complete_row=complete_row)
     return _assembly(world).accept(
         world.mission.id,
         leaf,
         result_id=result_id,
         layers=layers if layers is not None else _passing_layers(),
-        artifacts=items,
+        artifacts=tuple(world.store.get_artifact(item.id) for item in items),
         producer_agent_ids=("agent-worker",),
         reviewer_agent_id="agent-critic",
         now_ms=now_ms,
@@ -2044,9 +2041,12 @@ def test_a_revoked_leaf_can_be_accepted_again(live: World) -> None:
     acceptances, and the second acceptance is standing on the first one's permission.
     """
 
-    first = _accept_leaf(live)
+    # 步骤行留在"还没完成"的状态：带协议绑定的世界里，已经有验收结果的步骤不会再开新的尝试
+    # （返工靠计划改动）。这条测的是两次验收各有各的许可，行状态不是它的主题。
+    first = _accept_leaf(live, complete_row=False)
     _revoke(live, str(first.acceptance_id))
-    second = _accept_leaf(live, result_id="result-2", now_ms=1_100_000)
+    second = _accept_leaf(live, result_id="result-2", now_ms=1_100_000,
+                          artifacts=(_Artifact("artifact-rework", "out/result.json"),))
     assert str(second.acceptance_id) != str(first.acceptance_id)
     assert live.semantics.get_acceptance(second.acceptance_id).validity is Validity.CURRENT
     # Two acceptances, two licences: each names the acceptance it was taken over.
@@ -2110,29 +2110,15 @@ def test_the_review_anchors_are_frozen_in_the_store_before_the_command(live: Wor
     assert package.requirements_content_hash is not None
 
 
-def test_each_criterion_is_gated_on_the_layers_that_actually_ran(live: World) -> None:
-    from agent_orchestrator.orchestrator.leaf_acceptance import LayerOutcome, check_ids
-
-    layers = (*_passing_layers(), LayerOutcome("action_gate", "ERROR"))
-    assert check_ids(layers) == ("critic_review", "rule_check", "schema_check")
-    _accept_leaf(live, layers=layers)
-    revision = live.semantics.latest_requirements_revision(live.mission.id)
-    assert revision is not None
-    gates = {
-        item.criterion_id: item.required_evidence_policy.required_check_ids
-        for item in revision.criteria
-    }
-    expected = {"critic_review", "rule_check", "schema_check"}
-    assert all(set(value) == expected for value in gates.values())
-
-
 def test_a_failing_layer_is_never_turned_into_an_acceptance(live: World) -> None:
     from agent_orchestrator.orchestrator.leaf_acceptance import LayerOutcome
     from agent_orchestrator.orchestrator.resolution_commits import ResolutionCommitRejected
 
-    with pytest.raises(ResolutionCommitRejected) as refused:
+    from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
+
+    # 结果的校验记录里没有审阅通过：验收在读这份结果的内容时就拒绝，不写任何东西。
+    with pytest.raises((ResolutionCommitRejected, OperationCompletionError)):
         _accept_leaf(live, layers=(LayerOutcome("rule_check", "FAIL"),))
-    assert refused.value.reason == "NOT_ACCEPTABLE"
     assert live.semantics.list_acceptances(live.mission.id) == ()
 
 
@@ -2140,8 +2126,11 @@ def test_a_layer_that_could_not_run_is_not_a_passed_check(live: World) -> None:
     from agent_orchestrator.orchestrator.leaf_acceptance import LayerOutcome
     from agent_orchestrator.orchestrator.resolution_commits import ResolutionCommitRejected
 
-    with pytest.raises(ResolutionCommitRejected):
+    from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
+
+    with pytest.raises((ResolutionCommitRejected, OperationCompletionError)):
         _accept_leaf(live, layers=(LayerOutcome("rule_check", "ERROR"),))
+    assert live.semantics.list_acceptances(live.mission.id) == ()
 
 
 def test_a_compound_goal_is_never_accepted_by_a_review_of_its_own(live: World) -> None:
@@ -2174,59 +2163,18 @@ def test_the_indexed_schema_is_the_edges_and_not_the_producers_claim(live: World
 
 
 def test_an_undeclared_port_is_refused_and_writes_no_acceptance(live: World) -> None:
+    """一步把产出认领到计划没有声明的端口上：结果在记录时就被拒，验收到不了，什么都不写。"""
+    from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
     from agent_orchestrator.orchestrator.resolution_commits import ResolutionCommitRejected
-
-    assembly = _assembly(live)
-    with pytest.raises(ResolutionCommitRejected) as refused:
-        assembly.accept(
-            live.mission.id,
-            _leaf_task(live),
-            result_id="result-2",
-            layers=_passing_layers(),
-            artifacts=(_Artifact("artifact-9", "out/result.json"),),
-            producer_agent_ids=("agent-worker",),
-            reviewer_agent_id="agent-critic",
-            now_ms=1_000_000,
-            # The command is built by the assembly; the refusal is provoked by
-            # renaming the port on the way in, which is what a producer relabelling
-            # its own output looks like from the Commit's side.
-            namespace="workspace",
-        ) if False else _accept_with_port(assembly, live, "verdict")
-    assert refused.value.reason == "OUTPUT_NOT_DECLARED"
-    assert live.semantics.list_acceptances(live.mission.id) == ()
-    assert live.semantics.list_acceptance_outputs(live.mission.id) == ()
-
-
-def _accept_with_port(assembly, world: World, port: str):
-    """Drive the same assembly but state a port the plan does not declare."""
-
-    import agent_orchestrator.orchestrator.leaf_acceptance as module
-
-    original = module.accepted_outputs_for
-
-    def relabelled(ports, **kwargs):
-        outputs = original(ports, **kwargs)
-        return tuple(dataclasses.replace(item, output_port=port) for item in outputs)
-
     from agent_orchestrator.runtime.output_blocks import PortClaim
 
-    module.accepted_outputs_for = relabelled
-    try:
-        return assembly.accept(
-            world.mission.id,
-            _leaf_task(world),
-            result_id="result-2",
-            layers=_passing_layers(),
+    with pytest.raises((ResolutionCommitRejected, OperationCompletionError)):
+        _accept_leaf(
+            live, result_id="result-2",
             artifacts=(_Artifact("artifact-9", "out/result.json"),),
-            producer_agent_ids=("agent-worker",),
-            reviewer_agent_id="agent-critic",
-            now_ms=1_000_000,
-            # An honest claim on the way in; the relabelling above is what renames the
-            # port afterwards, which is a producer relabelling its own output.
-            port_claims=(PortClaim(port_key="result", path="out/result.json"),),
-        )
-    finally:
-        module.accepted_outputs_for = original
+            port_claims=(PortClaim(port_key="verdict", path="out/result.json"),))
+    assert live.semantics.list_acceptances(live.mission.id) == ()
+    assert live.semantics.list_acceptance_outputs(live.mission.id) == ()
 
 
 # ================================================= part 2d, decision 4: declared ports
@@ -2291,10 +2239,11 @@ def test_a_required_consumed_port_nobody_claimed_refuses_the_acceptance(live: Wo
 
     from agent_orchestrator.orchestrator.resolution_commits import ResolutionCommitRejected
 
-    with pytest.raises(ResolutionCommitRejected) as refused:
+    from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
+
+    # 这一步的结果在记录时就被拒：要求的输出端口没人认领。验收根本到不了。
+    with pytest.raises((ResolutionCommitRejected, OperationCompletionError), match="unclaimed"):
         _accept_leaf(live, port_claims=())
-    assert refused.value.reason == "OUTPUT_PORT_UNCLAIMED"
-    assert "result" in str(refused.value)
     assert live.semantics.list_acceptances(live.mission.id) == ()
     assert live.semantics.list_acceptance_outputs(live.mission.id) == ()
 
@@ -2314,6 +2263,7 @@ def test_the_finalizers_port_is_declared_although_no_edge_consumes_it(live: Worl
 
     reported = live.dispatch.declared_output_ports_for(live.mission.id, _review_task(live))
     assert [item["port"] for item in reported] == ["verdict"]
+    _accept_leaf(live)  # the review leaf reads the leaf's result; it is dispatched after it
     _accept_leaf(
         live,
         task_id=_review_task(live),
@@ -2323,6 +2273,7 @@ def test_the_finalizers_port_is_declared_although_no_edge_consumes_it(live: Worl
     )
     assert [
         row["output_port"] for row in live.semantics.list_acceptance_outputs(live.mission.id)
+        if row["producer_task_ref"] == _review_task(live)
     ] == ["verdict"]
 
 
@@ -2379,22 +2330,20 @@ def test_an_artifact_no_claim_names_indexes_nothing(live: World) -> None:
 
     from agent_orchestrator.runtime.output_blocks import PortClaim
 
-    _assembly(live).accept(
-        live.mission.id,
-        _review_task(live),
+    _accept_leaf(live)  # the review leaf reads the leaf's result; it is dispatched after it
+    _accept_leaf(
+        live,
+        task_id=_review_task(live),
         result_id="result-review",
-        layers=_passing_layers(),
         artifacts=(
             _Artifact("artifact-2", "out/verdict.json"),
             _Artifact("artifact-spare", "out/scratch.log"),
         ),
-        producer_agent_ids=("agent-worker",),
-        reviewer_agent_id="agent-critic",
-        now_ms=1_000_000,
         port_claims=(PortClaim(port_key="verdict", path="out/verdict.json"),),
     )
     assert [
         row["artifact_id"] for row in live.semantics.list_acceptance_outputs(live.mission.id)
+        if row["producer_task_ref"] == _review_task(live)
     ] == ["artifact-2"]
 
 
@@ -2765,13 +2714,18 @@ def _outer_that_reads_and_delegates():
             ),
             step("sub", "plan.sub", TaskForm.COMPOUND, {"subject": param("subject")}),
         ),
-        links=(("c-root", "reading", "c-read"),),
+        links=(("c-root", "reading", "c-read"), ("c-root", "sub", "c-root")),
         finalizer="reading",
     )
 
 
-def _inner_that_needs_the_same_reading():
-    """sub → {reading, work}: the child declares the very reading the parent has."""
+def _inner_that_needs_the_same_reading(*, own_reading: bool = False):
+    """sub → {reading, work}: the child declares the very reading the parent has.
+
+    ``own_reading``：读取这一步是不是中间目标自己的一步。上级已经读过、两处共用同一步时，
+    它已经由上级的链接落到要求上（再链接一次就是同一步落到两处）；不共用时（上级没有这次
+    读取，或共享索引被关掉），它是中间目标自己的步骤，必须落到交给中间目标的要求上。
+    """
 
     return method(
         "plan.inner-reads",
@@ -2793,15 +2747,16 @@ def _inner_that_needs_the_same_reading():
                 capabilities=("plan.read",),
             ),
         ),
-        links=(("c-sub", "work", "c-work"),),
+        links=((("c-root", "reading", "c-read"),) if own_reading else ()) + (("c-root", "work", "c-work"),),
         finalizer="work",
     )
 
 
-def _shared_reading_world(tmp_path) -> tuple[World, Any]:
+def _shared_reading_world(tmp_path, *, shared: bool = True) -> tuple[World, Any]:
     world = build_world(tmp_path, key="p23c-g2")
     env = _shared_reading_env(world.mission.id)
-    outer, inner = _outer_that_reads_and_delegates(), _inner_that_needs_the_same_reading()
+    outer = _outer_that_reads_and_delegates()
+    inner = _inner_that_needs_the_same_reading(own_reading=not shared)
     for contract in (outer, inner):
         receipt = env.admit(contract)
         assert receipt.admitted, receipt.problems
@@ -2954,7 +2909,7 @@ def _outer_that_writes_and_delegates():
             ),
             step("sub", "plan.sub", TaskForm.COMPOUND, {"subject": param("subject")}),
         ),
-        links=(("c-root", "work", "c-work"),),
+        links=(("c-root", "work", "c-work"), ("c-root", "sub", "c-root")),
         finalizer="work",
     )
 
@@ -2971,7 +2926,8 @@ def _shared_writing_world(tmp_path) -> World:
 
     world = build_world(tmp_path, key="p23c-g2-write")
     env = _shared_reading_env(world.mission.id)
-    outer, inner = _outer_that_writes_and_delegates(), _inner_that_needs_the_same_reading()
+    outer = _outer_that_writes_and_delegates()
+    inner = _inner_that_needs_the_same_reading(own_reading=True)
     for contract in (outer, inner):
         receipt = env.admit(contract)
         assert receipt.admitted, receipt.problems
@@ -3085,7 +3041,7 @@ def test_mutant_a_dispatch_that_offers_no_index_reads_the_repository_twice(
         "shared_goal_index",
         lambda network, *, catalog, **_: module.SharedGoalIndex(()),
     )
-    world, _ = _shared_reading_world(tmp_path)
+    world, _ = _shared_reading_world(tmp_path, shared=False)
     assert len(_readings(world)) == 2
 
 
@@ -3100,7 +3056,8 @@ def _two_level_env(mission: str) -> Env:
         "plan.sub",
         form=TaskForm.COMPOUND,
         parameters=(("subject", "string"),),
-        criteria=("c-sub",),
+        # 中间目标的类型不声明自己的判据：它负责哪几条要求由上级做法用链接交下来，编号不变。
+        criteria=(),
         domain="plan",
     )
     env.register_type(
@@ -3133,7 +3090,7 @@ def _outer_with_compound():
         # The root's criterion is carried by the *primitive* step: a compound that is
         # later refined leaves the execution projection, and a coverage claim resting
         # on it would be lost the moment round two expands it.
-        links=(("c-root", "leaf", "c-leaf-done"),),
+        links=(("c-root", "leaf", "c-leaf-done"), ("c-root", "sub", "c-root")),
         finalizer="leaf",
     )
 
@@ -3161,7 +3118,7 @@ def _inner_two_leaves():
                 capabilities=("plan.read",),
             ),
         ),
-        links=(("c-sub", "work-a", "c-work"), ("c-sub", "work-b", "c-work")),
+        links=(("c-root", "work-a", "c-work"), ("c-root", "work-b", "c-work")),
         finalizer="work-b",
     )
 
@@ -3294,7 +3251,9 @@ def test_the_conservation_report_accounts_for_every_committed_token(
 # F6 / F4 / F5: the root resolution happy path, executed end to end
 # --------------------------------------------------------------------------------------
 
-ROOT_CRITERION = "c-root-final"
+#: 根目标的判据编号——带协议绑定的世界里，根要求在建任务时就确认了（见 ``build_world``），
+#: 它的判据就是根目标类型声明的这一条。
+ROOT_CRITERION = "c-root"
 ROOT_NOW_MS = 2_000_000
 
 
@@ -3328,6 +3287,9 @@ def _publish_final_requirements(world: World, *, criteria=None, delivery: str | 
     )
 
     latest = world.semantics.latest_requirements_revision(world.mission.id)
+    if criteria is None and latest is not None and latest.delivery_contract_ref == delivery:
+        # 已确认的根要求就是最终审查对着审的那一版；不另发一版（另发会让完成范围过期）。
+        return latest
     revision = 1 if latest is None else int(latest.revision) + 1
     published = RequirementsRevision(
         revision_id=RequirementsRevisionId(f"req-final-{revision}"),
@@ -3341,9 +3303,18 @@ def _publish_final_requirements(world: World, *, criteria=None, delivery: str | 
     return published
 
 
+def _root_subject_ref(world: World) -> TypedRef:
+    """最终审查审的是根目标这一版任务契约：引用取自计划提交时冻结的完成范围，不是占位值
+    （完成状态要拿审查包里的这条引用去和完成范围逐字段对）。"""
+    from agent_orchestrator.orchestrator.completion_status import read_occurrence_completion
+
+    task = read_occurrence_completion(world.store, world.mission.id, ROOT_TASK).scope.task_ref
+    return TypedRef(kind=TypedRefKind.TASK, id=task.id, revision=task.revision,
+                    content_hash=task.content_hash)
+
+
 def _final_package(world: World, requirements):
     from agent_orchestrator.contracts.resolution import (
-        CriterionExpr,
         ReviewBinding,
         ReviewPackage,
         ReviewPackageId,
@@ -3360,7 +3331,7 @@ def _final_package(world: World, requirements):
     binding = ReviewBinding(
         mission_id=world.mission.id,
         obligation_id=ROOT_DUTY,
-        subject_ref=TypedRef(kind=TypedRefKind.TASK, id=ROOT_TASK, revision=1, content_hash=HEX_A),
+        subject_ref=_root_subject_ref(world),
         requirements_revision=int(requirements.revision),
         input_manifest_hash=manifest,
         policy_ref=TypedRef(
@@ -3372,7 +3343,7 @@ def _final_package(world: World, requirements):
         purpose=ReviewPurpose.MISSION_FINAL,
         binding=binding,
         criteria=tuple(requirements.criteria),
-        success_expression=CriterionExpr(ROOT_CRITERION),
+        success_expression=requirements.success_expression,
         requirements_content_hash=requirements.content_hash(),
     )
     world.semantics.insert_review_package(package)
@@ -3457,14 +3428,11 @@ def _accept_every_child(world: World) -> None:
     from agent_orchestrator.runtime.output_blocks import PortClaim
 
     _accept_leaf(world)
-    _assembly(world).accept(
-        world.mission.id,
-        _review_task(world),
+    _accept_leaf(
+        world,
+        task_id=_review_task(world),
         result_id="result-review",
-        layers=_passing_layers(),
         artifacts=(_Artifact("artifact-review", "out/verdict.json"),),
-        producer_agent_ids=("agent-worker",),
-        reviewer_agent_id="agent-critic",
         now_ms=1_100_000,
         port_claims=(PortClaim(port_key="verdict", path="out/verdict.json"),),
     )
@@ -3528,24 +3496,15 @@ def test_the_root_resolution_quotes_the_revision_its_review_was_cut_over(
     assert int(stored.requirements_version) == int(package.binding.requirements_revision)
 
 
-def test_a_leaf_accepted_after_the_root_review_refuses_the_root_resolution(
+def test_requirements_that_moved_after_the_root_review_refuse_the_root_resolution(
     resolvable: World,
 ) -> None:
-    """Review P1-7: a leaf acceptance after the cut invalidates the root review.
+    """Review P1-7: the root review was cut over one revision of the requirements; if the
+    Mission's requirements move after that, the root must not be resolved against a
+    revision the reviewer never saw.  The repair is to cut the root review again.
 
-    ``RequirementsRevision`` is a Mission-level object, but every leaf acceptance
-    publishes one carrying *that leaf's* coverage criteria — so "the Mission's current
-    requirements" is really "the last leaf that happened to be accepted".  The root
-    resolution used to read ``latest_requirements_revision``, and the only reason no
-    test saw it is that ``_ready_for_root`` accepts every child *before* publishing
-    the final revision; the real loop accepts leaves from ``_collect_attempt`` with no
-    ordering relative to the root review at all.  The root then claimed coverage of a
-    criterion nobody had reviewed, which is §21.5's "wrongly declared complete".
-
-    The root now reads the revision its ``ReviewPackage`` was bound to, so the
-    read-set channel can see that the Mission's requirements have moved underneath the
-    review and refuses: the repair is to cut the root review again against the current
-    revision, not to resolve against one the reviewer never saw.
+    (旧世界里每次叶子验收都会另发一版要求，这条当年就是为那个现象写的。带协议绑定的世界里
+    要求只在用户修改时才变；保护照旧在——要求一变，根结论当场拒绝。)
     """
 
     from agent_orchestrator.contracts.resolution import (
@@ -3554,6 +3513,7 @@ def test_a_leaf_accepted_after_the_root_review_refuses_the_root_resolution(
         RequirementsRevisionId,
         ReviewPurpose,
     )
+    from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
 
     package = next(
         item
@@ -3562,21 +3522,23 @@ def test_a_leaf_accepted_after_the_root_review_refuses_the_root_resolution(
         )
     )
     reviewed = int(package.binding.requirements_revision)
-    # Exactly the shape ``leaf_acceptance._requirements`` publishes, one leaf later.
     resolvable.semantics.insert_requirements_revision(
         RequirementsRevision(
-            revision_id=RequirementsRevisionId("req-a-later-leaf"),
+            revision_id=RequirementsRevisionId("req-amended"),
             mission_id=resolvable.mission.id,
             revision=reviewed + 1,
-            criteria=(_final_criterion("c-a-later-leaf"),),
-            success_expression=CriterionExpr("c-a-later-leaf"),
+            criteria=(_final_criterion("c-amended"),),
+            success_expression=CriterionExpr("c-amended"),
         )
     )
 
-    outcome = _offer_root(resolvable)
-    assert not outcome.committed
-    assert outcome.reason == "READ_SET_STALE"
-    assert f"was read at {reviewed}" in outcome.detail
+    try:
+        outcome = _offer_root(resolvable)
+    except OperationCompletionError as refused:
+        assert "requirements have changed" in str(refused)
+    else:
+        assert not outcome.committed
+        assert outcome.reason == "READ_SET_STALE"
     assert resolvable.semantics.adopted_goal_resolution(resolvable.mission.id, ROOT_DUTY) is None
 
 
@@ -3609,42 +3571,36 @@ def test_the_formed_resolution_restates_the_reviews_verdicts(resolvable: World) 
     }
 
 
-def test_a_criterion_the_review_never_judged_is_unknown_and_stops_the_resolution(
-    tmp_path,
-) -> None:
+def test_a_criterion_the_review_never_judged_is_restated_unknown(tmp_path) -> None:
     """Review F4, the part that used to be written as ``PASS`` unconditionally.
 
-    A criterion that is neither a hard constraint nor named by the success expression
-    is not checked by ``_check_resolution_identity`` (it only refuses a *contradiction*
-    and a *missing required* one), so the old code stored an unevidenced ``PASS`` in a
-    permanent record — the exact shape the same function refuses for
-    ``composition_obligation_passed``.  Reading the record instead writes ``UNKNOWN``,
-    and the AER §6.2 formula then refuses the resolution rather than the trigger
-    answering on the reviewer's behalf.
+    A criterion the review record does not mention is restated ``UNKNOWN`` — never an
+    unevidenced ``PASS`` in a permanent record.  The AER §6.2 formula then refuses the
+    resolution (``test_acceptance_rules.py``) rather than the trigger answering on the
+    reviewer's behalf.
     """
 
-    from agent_orchestrator.contracts.resolution import CriterionVerdict
+    import dataclasses as _dc
+
+    from agent_orchestrator.contracts.resolution import AllExpr, CriterionExpr, CriterionVerdict
     from agent_orchestrator.orchestrator.hierarchical_dispatch import _root_criteria
 
     world = committed(tmp_path, key="p23c-root-unknown", demand=True)
-    world.dispatch.issue_input_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
     _accept_every_child(world)
-    requirements = _publish_final_requirements(
-        world, criteria=(_final_criterion(), _final_criterion("c-side-note"))
-    )
-    package = _final_package(world, requirements)
+    confirmed = _publish_final_requirements(world)
+    package = _final_package(world, confirmed)
     record = _final_record(world, package, verdicts={ROOT_CRITERION: CriterionVerdict.PASS})
-    _final_witness(world)
+    widened = _dc.replace(
+        confirmed,
+        criteria=(*confirmed.criteria, _final_criterion("c-side-note")),
+        success_expression=AllExpr(children=(CriterionExpr(ROOT_CRITERION), CriterionExpr("c-side-note"))),
+    )
 
-    restated = {item.criterion_id: item.verdict for item in _root_criteria(requirements, record)}
+    restated = {item.criterion_id: item.verdict for item in _root_criteria(widened, record)}
     assert restated == {
         ROOT_CRITERION: CriterionVerdict.PASS,
         "c-side-note": CriterionVerdict.UNKNOWN,
     }
-    outcome = _offer_root(world)
-    assert outcome.committed is False
-    assert outcome.reason == "NOT_ACCEPTABLE"
-    assert world.semantics.list_goal_resolutions(world.mission.id) == ()
 
 
 def test_a_rejected_review_refuses_the_resolution_rather_than_asserting_the_composition(
@@ -3708,24 +3664,25 @@ def test_the_mission_reaches_completed_only_through_the_resolution(resolvable: W
         resolvable.service.judge_mission(
             resolvable.mission.id, judgments=judgments, summary="too early"
         )
-    assert "ROOT_RESOLUTION_MISSING" in str(caught.value)
-    refusals = resolvable.events(HIERARCHICAL_JUDGMENT_REFUSED)
-    assert refusals and refusals[0].payload["redirect"] == "commit_goal_resolution"
+    # 根目标的完成范围还没满足（没有根结论）：判定被拒，任务状态不动。
+    assert "unmet content or effects" in str(caught.value)
+    assert resolvable.store.get_mission(resolvable.mission.id).status is not MissionStatus.COMPLETED
 
     assert _offer_root(resolvable).committed
     judged = resolvable.service.judge_mission(
         resolvable.mission.id, judgments=judgments, summary="done"
     )
     assert judged.status is MissionStatus.COMPLETED
-    # Neither row ever said so: the compound is still BLOCKED and the leaves are still
-    # READY.  In this mode the Task row is a display index and the Acceptance is the
-    # record that the work was accepted (§18.5), which is what the judgment reads.
+    # The compound row never said so: it is still BLOCKED.  In this mode the Task row is
+    # a display index and the Acceptance is the record that the work was accepted
+    # (§18.5), which is what the judgment reads; the leaves' rows are COMPLETED because
+    # the result commit leaves them so.
     assert resolvable.store.get_task(ROOT_TASK).status is TaskStatus.BLOCKED
     assert {
         task.status
         for task in resolvable.store.list_tasks(resolvable.mission.id)
         if task.id != ROOT_TASK
-    } == {TaskStatus.READY}
+    } == {TaskStatus.COMPLETED}
 
 
 def test_a_leaf_whose_acceptance_was_revoked_stops_the_judgment(resolvable: World) -> None:
@@ -3958,7 +3915,7 @@ class _Trigger:
 def delivered(tmp_path) -> World:
     """A resolvable Mission whose goal declares a delivery contract."""
 
-    world = committed(tmp_path, key="p23c-delivery", demand=True)
+    world = committed(tmp_path, key="p23c-delivery", demand=True, delivery="contract-ship-it")
     _ready_for_root(world, delivery="contract-ship-it")
     return world
 
@@ -4596,9 +4553,15 @@ def test_the_facts_section_quotes_an_observation_the_read_set_checker_accepts(
     )
     checker = SemanticReadSetChecker(world.store, world.semantics, mission_id=world.mission.id)
     verdict = checker.verify(
-        SemanticReadSet(requirements_revision=0, observation_revisions=(item,))
+        SemanticReadSet(requirements_revision=_requirements_revision(world), observation_revisions=(item,))
     )
     assert verdict.stale == () and verdict.unresolved == ()
+
+
+def _requirements_revision(world: World) -> int:
+    """读集里引用的要求版本：这个世界当前确认的那一版。"""
+    latest = world.semantics.latest_requirements_revision(world.mission.id)
+    return 0 if latest is None else int(latest.revision)
 
 
 def _record_look(world: World, key: str, *, at_ms: int, identity: str) -> None:
@@ -4707,7 +4670,7 @@ def test_the_quoted_read_set_entry_is_computed_by_the_checker(world: World) -> N
     assert quoted == checker.read_item(ReadItemKind.FACT, "obsrec-checker").to_json()
     verdict = checker.verify(
         SemanticReadSet(
-            requirements_revision=0,
+            requirements_revision=_requirements_revision(world),
             observation_revisions=(
                 ReadItem(
                     kind=ReadItemKind.FACT,
@@ -4917,7 +4880,7 @@ def _stalled(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, provider: Any = No
     # legacy Mission has no plan to commit through this entry at all (§18.5 rule 1),
     # so it is built and left exactly as the legacy world builds it.
     world = (
-        committed(evidence, key=f"p23c-stall-{mode}", mode=mode, demand=False, bound=True)
+        committed(evidence, key=f"p23c-stall-{mode}", mode=mode, demand=False)
         if mode == HIERARCHICAL_SEMANTICS
         else build_world(evidence, key=f"p23c-stall-{mode}", mode=mode)
     )

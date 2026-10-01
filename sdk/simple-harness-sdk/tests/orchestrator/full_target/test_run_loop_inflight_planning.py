@@ -59,7 +59,7 @@ def test_run_waits_for_an_inflight_planning_intent_however_slow_the_model_is(
 
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = e2e.build_world(evidence, key="p23e-run-exit-held", bound=True)
+    world = e2e.build_world(evidence, key="p23e-run-exit-held")
     world.store.close()
     config = OrchestratorConfig(
         evidence_root=evidence,

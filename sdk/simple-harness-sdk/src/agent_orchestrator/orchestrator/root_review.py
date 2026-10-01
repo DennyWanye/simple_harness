@@ -493,19 +493,14 @@ EXCERPT_BINARY = "binary"
 EXCERPT_UNAVAILABLE = "unavailable"
 EXCERPT_OMITTED = "omitted"
 
-#: P2.3h: the sentence the request carries beside every revision number.  The Grok
-#: C3 reviewer read "acceptances at revisions 1–4, root at 5" as "accepted against an
-#: older requirement" and rated it a major finding; the numbers are one Mission-wide
-#: monotone counter that every published requirements revision advances, so a leaf
-#: accepted earlier always carries a smaller number than the root's.
+#: The sentence the request carries beside every revision number.  A reviewer once read
+#: differing revision numbers as "accepted against an older requirement"; the review and
+#: every contribution stand on the one approved requirements revision, and the request
+#: says so.
 REQUIREMENTS_REVISION_SEMANTICS = (
-    "requirements_revision numbers are one Mission-wide monotone counter: each leaf "
-    "acceptance publishes its own requirements revision (the leaf's own criteria) and "
-    "records the number current at that moment, and the root review's revision is "
-    "published last, so accepted_at_requirements_revision < requirements_revision for "
-    "every contribution is the expected shape and says nothing about staleness; a "
-    "contribution accepted against outdated inputs would have been superseded before "
-    "this package was cut"
+    "This review and its contributions use the approved requirements revision, "
+    "with immutable occurrence completion scopes. Operation outcome evidence "
+    "proves effects separately from content preparation."
 )
 
 
@@ -1422,13 +1417,7 @@ class RootReviewCoordinator:
             contributions=tuple(contributions),
             requirements_revision=int(package.binding.requirements_revision),
             schema_feedback=str(schema_feedback),
-            requirements_revision_semantics=(
-                "This review and its contributions use the approved requirements revision, "
-                "with immutable occurrence completion scopes. Operation outcome evidence "
-                "proves effects separately from content preparation."
-                if uses_completion_protocol(self.store, mission_id)
-                else REQUIREMENTS_REVISION_SEMANTICS
-            ),
+            requirements_revision_semantics=REQUIREMENTS_REVISION_SEMANTICS,
             mission_goal=mission_goal,
             goal_parameters=goal_parameters,
         )

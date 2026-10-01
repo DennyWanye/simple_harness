@@ -6,7 +6,7 @@
 A real ``Orchestrator`` loop needs three things a scripted test has to supply:
 
 * the Mission keeps its protocol binding and holds a confirmed completion mapping —
-  ``build_world(..., bound=True)`` in ``test_htn_end_to_end`` does that;
+  ``build_world(...)`` in ``test_htn_end_to_end`` does that;
 * every Planner request is granted its planning authorization, which is the Host's job
   in a deployment — :func:`auto_grant` stands in for the Host;
 * the Planner answers with a ``<planning_decision>`` built from the package it was

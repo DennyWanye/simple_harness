@@ -88,7 +88,7 @@ def _config(evidence: Path, **overrides: Any) -> OrchestratorConfig:
 def _plain_world(tmp_path, *, key: str):
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    world = e2e.build_world(evidence, key=key, bound=True)
+    world = e2e.build_world(evidence, key=key)
     adopt = refine_step()
     world.store.close()
     return world, adopt, evidence
@@ -162,10 +162,16 @@ def test_a_planner_turn_blocked_on_an_unknown_outcome_is_rehanded_off_once_and_a
             returned = await _run_until_done_or(loop, seconds=10.0)
             intent = loop.store.get_intent_for_subject(f"{mission_id}:planner:1")
             assert intent is not None
+            # 片 D（opt.122）起，任务判停前会再问一次规划器（``planner:2``）；那是另一轮、
+            # 另一个问题。这条测的是 ``planner:1`` 这一轮，计数只算它自己的执行者。
+            executors = set(_invocation_states(loop, intent))
             return {
                 "returned": returned,
                 "types": [item.type for item in _events(loop, mission_id)],
-                "rehandoffs": _rehandoffs(loop, mission_id),
+                "rehandoffs": [
+                    item for item in _rehandoffs(loop, mission_id)
+                    if item["subject_id"] == f"{mission_id}:planner:1"
+                ],
                 "intent_state": intent.state,
                 "creation_key": intent.creation_key,
                 "invocations": _invocation_states(loop, intent),
@@ -181,9 +187,12 @@ def test_a_planner_turn_blocked_on_an_unknown_outcome_is_rehanded_off_once_and_a
                     and item.payload.get("subject_id") == f"{mission_id}:planner:1"
                 ],
                 "status": loop.store.get_mission(mission_id).status,
-                "planner_calls": provider.by_role.get("planner", 0),
+                "planner_calls": sum(
+                    len(states) for states in _invocation_states(loop, intent).values()
+                ),
                 "agents_created": sum(
-                    1 for item in _events(loop, mission_id) if item.type == "AgentCreated"
+                    1 for item in _events(loop, mission_id)
+                    if item.type == "AgentCreated" and item.payload.get("agent_id") in executors
                 ),
             }
 

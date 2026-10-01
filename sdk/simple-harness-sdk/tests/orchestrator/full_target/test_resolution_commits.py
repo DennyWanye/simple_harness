@@ -20,25 +20,25 @@ Four properties, ordered by what they would cost to get wrong:
 4. **Nothing is half-written.**  A failure anywhere in the write half leaves no
    acceptance, no resolution, no receipt and an untouched duty lifecycle.
 
-The mixin is composed onto ``CommitService`` here rather than added to its base
-list: the base-class line is the second half of P2.3c, so this slice proves the
-mixin works without changing the class every other suite constructs.
+世界（2026-10-02 迁移）：这里的任务和生产一样带"协议绑定"。世界建在枢纽夹具
+（``test_htn_end_to_end``）的真实世界上——已确认的根要求（纯内容，判据 ``c-root``）、真实
+提交的计划（根目标 → ``leaf`` 与 ``review`` 两步，两步都细化根目标的义务）、一条真实的已
+验证结果。合法的验收命令与根结论命令都**由生产装配器装出来**（把提交入口临时换成只截取
+不提交的替身），每条测试再用 ``dataclasses.replace`` 逐条篡改。手工拼命令的旧世界已删。
 """
 
 from __future__ import annotations
 
 import dataclasses
 import inspect
-import pathlib
 import re
-import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
-from scripted_plans import detach_completion_protocol
+import test_htn_end_to_end as hub
 
-from agent_orchestrator.contracts import Budget, ContractError
+from agent_orchestrator.contracts import ContractError
 from agent_orchestrator.contracts.evidence_state import (
     Availability,
     TruthValue,
@@ -49,21 +49,13 @@ from agent_orchestrator.contracts.evidence_state import (
 )
 from agent_orchestrator.contracts.htn import (
     AbsenceRead,
-    ChildBinding,
-    MethodInstanceDraft,
     MethodInstanceId,
-    MethodRef,
     ObligationId,
-    OccurrenceId,
     ReadItem,
     ReadItemKind,
-    Requiredness,
     ScopeEpochRead,
     SemanticReadSet,
     SupportSetRead,
-    TaskForm,
-    TaskRef,
-    TaskSemanticBindingV1,
 )
 from agent_orchestrator.contracts.obligations import (
     Obligation,
@@ -82,8 +74,6 @@ from agent_orchestrator.contracts.resolution import (
     DeliveryReceipt,
     DeliveryStage,
     EvaluationKind,
-    GoalResolution,
-    GoalResolutionId,
     RequiredEvidencePolicy,
     RequirementClass,
     RequirementsRevision,
@@ -102,13 +92,12 @@ from agent_orchestrator.contracts.semantic_base import (
     Provenance,
     TypedRef,
     TypedRefKind,
-    VersionedRef,
     content_hash_of,
 )
 from agent_orchestrator.knowledge.validity import NO_SUBJECT
 from agent_orchestrator.orchestrator._read_set import SemanticReadSetChecker
-from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec
-from agent_orchestrator.orchestrator.plan_commits import HIERARCHICAL_SEMANTICS, LEGACY_SEMANTICS
+from agent_orchestrator.orchestrator.commit_service import CommitService
+from agent_orchestrator.orchestrator.plan_commits import LEGACY_SEMANTICS
 from agent_orchestrator.orchestrator.resolution_commits import (
     ACCEPTANCE_COMMITTED,
     ACCEPTANCE_KIND,
@@ -123,6 +112,7 @@ from agent_orchestrator.orchestrator.resolution_commits import (
     command_idempotency_key,
     delivery_reached,
 )
+from agent_orchestrator.runtime.output_blocks import PortClaim
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.obligation_store import ObligationStore
 from agent_orchestrator.storage.store import Store, StoreError
@@ -136,18 +126,18 @@ HASH_A = "a" * 64
 HASH_B = "b" * 64
 HASH_C = "c" * 64
 
-LEAF_TASK = "task-leaf"
-LEAF_DUTY = "obl-leaf"
-ROOT_TASK = "task-root"
-ROOT_DUTY = "obl-root"
-INSTANCE = "mi-1"
-LEAF_OCCURRENCE = "occ-leaf"
-ROOT_OCCURRENCE = "occ-root"
+#: 枢纽世界的根目标与它的义务；两个子步骤都细化这条义务（``refines_parent``）。
+ROOT_TASK = hub.ROOT_TASK
+ROOT_DUTY = hub.ROOT_DUTY
+#: 已确认的根要求里唯一的判据。
+ROOT_CRITERION = hub.ROOT_CRITERION
 SCOPE = "mission"
 NOW_MS = 1_000_000
-PRINCIPAL = "reviewer-commit-1"
+#: 叶子那条真实已验证结果的编号。
+LEAF_RESULT = "result-1"
+#: 下面几个手工构造器（``test_composition_review_consumer`` 也在用）的默认判据。
 CRITERION = "c-done"
-ROOT_CRITERION = "c-delivered"
+DELIVERY_CONTRACT = "delivery-contract-1"
 
 
 # ======================================================================================
@@ -222,42 +212,6 @@ def receipt_ref(ident: str) -> TypedRef:
         content_hash=HASH_B,
         produced_by=Provenance.TOOL,
     )
-
-
-def vref(ident: str) -> VersionedRef:
-    return VersionedRef(id=ident, version=1, content_hash=HASH_A)
-
-
-def goal_signature(ident: str = "leaf-goal") -> Any:
-    from agent_orchestrator.contracts.htn import GoalSignature
-
-    return GoalSignature(
-        signature_id=ident,
-        version=1,
-        parameter_schema_ref=vref("params"),
-        output_schema_ref=vref("outputs"),
-        statement=f"the {ident} is produced",
-        coverage_criteria=(CRITERION,),
-    )
-
-
-def task_binding(
-    task_id: str, duty: str, form: TaskForm, **overrides: Any
-) -> TaskSemanticBindingV1:
-    fields: dict[str, Any] = {
-        "task_id": TaskRef(task_id),
-        "obligation_id": ObligationId(duty),
-        "contract_revision": 1,
-        "contract_hash": HASH_A,
-        "form": form,
-        "goal_signature": goal_signature(),
-        "requirement_refs": (CRITERION,),
-        "semantic_scope": SCOPE,
-    }
-    if form is TaskForm.PRIMITIVE:
-        fields["operator_ref"] = vref("operator")
-    fields.update(overrides)
-    return TaskSemanticBindingV1(**fields)
 
 
 def criterion(
@@ -393,35 +347,71 @@ def accept_witness(
     )
 
 
-def independence() -> IndependenceFacts:
-    return IndependenceFacts(producer_agent_ids=("agent-worker",))
+class _Captured(RuntimeError):
+    """Raised by the stand-in commit entry once it holds what it was handed."""
 
 
-def read_set(**overrides: Any) -> SemanticReadSet:
-    fields: dict[str, Any] = {
-        # 2 is the latest revision this world holds; a read-set records what the
-        # *Mission* is at, not what the subject's own package was cut from.
-        "requirements_revision": 2,
-        "manager_epoch": 0,
-        "scope_epochs": (ScopeEpochRead(scope_id=SCOPE, validity_epoch=0),),
-    }
-    fields.update(overrides)
-    return SemanticReadSet(**fields)
+def _capture(service: CommitService, entry: str, call: Any) -> tuple[Any, Any]:
+    """合法命令取自生产装配器：把提交入口临时换成只截取、不提交的替身。
+
+    装配器在调用提交入口之前已经把它引用的锚点（输入清单、审查包、正式审查记录、许可）
+    存进库里，所以截到的命令原样提交就是一次合法的提交；测试再在它上面逐条篡改。
+    """
+
+    seen: dict[str, Any] = {}
+
+    def grab(command: Any, principal: Any) -> Any:
+        seen["command"], seen["principal"] = command, principal
+        raise _Captured(entry)
+
+    setattr(service, entry, grab)
+    try:
+        with pytest.raises(_Captured):
+            call()
+    finally:
+        delattr(service, entry)
+    return seen["command"], seen["principal"]
+
+
+def _set_validity(world: World, acceptance_id: str, validity: Validity) -> None:
+    """Move one stored Acceptance's validity (both the column and the document).
+
+    Same shape as the hub's ``_revoke``: nothing in ``src/`` supersedes or revokes an
+    Acceptance yet, and the readers that honour validity are what these tests are about.
+    """
+
+    from simple_harness.contracts import canonical_json
+
+    moved = dataclasses.replace(world.semantics.get_acceptance(acceptance_id), validity=validity)
+    document = moved.to_json()
+    world.store.connection.execute(
+        "UPDATE acceptances SET validity = ?, acceptance_json = ?, content_hash = ?"
+        " WHERE acceptance_id = ?",
+        (str(validity), canonical_json(document), content_hash_of(document), str(acceptance_id)),
+    )
+    world.store.connection.commit()
 
 
 @dataclass
 class World:
-    service: ResolutionService
-    mission: Any
-    revision: RequirementsRevision
-    manifest_hash: str
-    leaf_package: ReviewPackage
-    leaf_record: ReviewRecord
-    root_package: ReviewPackage
-    root_record: ReviewRecord
-    root_revision: RequirementsRevision
+    """The hub's bound world, plus the legal commands its production assemblers built."""
+
+    hub: Any
+    delivery_contract: str | None = None
     #: Receipt ids the library refused to hold — see :meth:`delivery`.
-    unrecorded: set[str] = dataclasses.field(default_factory=set)
+    unrecorded: set[str] = field(default_factory=set)
+    review_acceptance_id: str | None = None
+    _accept: tuple[AcceptReviewCommand, ResolutionPrincipal] | None = None
+    _root: tuple[CommitGoalResolutionCommand, ResolutionPrincipal] | None = None
+
+    # -- the hub world ---------------------------------------------------------------
+    @property
+    def service(self) -> CommitService:
+        return self.hub.service
+
+    @property
+    def mission(self) -> Any:
+        return self.hub.mission
 
     @property
     def store(self) -> Store:
@@ -435,31 +425,105 @@ class World:
     def duties(self) -> ObligationStore:
         return ObligationStore(self.service.store)
 
-    def read_set(self, **overrides: Any) -> SemanticReadSet:
-        """A read-set that names what the *Mission* is currently at.
+    @property
+    def leaf_task(self) -> str:
+        return hub._leaf_task(self.hub)
 
-        The revision is read from the store rather than hard-coded: a world that
-        publishes a later requirements revision must make every command re-read it,
-        which is exactly the property ``_check_reads`` exists to enforce.
+    @property
+    def review_task(self) -> str:
+        return hub._review_task(self.hub)
+
+    @property
+    def leaf_occurrence(self) -> str:
+        return self.hub.occurrence_of(self.leaf_task)
+
+    @property
+    def review_occurrence(self) -> str:
+        return self.hub.occurrence_of(self.review_task)
+
+    @property
+    def root_occurrence(self) -> str:
+        return self.hub.occurrence_of(ROOT_TASK)
+
+    @property
+    def leaf_duty(self) -> str:
+        """The duty the leaf serves.  It *refines* the root's, so it is the root's duty."""
+
+        return str(self.semantics.task_semantics_of(self.mission.id, self.leaf_task).obligation_id)
+
+    # -- the leaf acceptance ---------------------------------------------------------
+    def capture_leaf(self) -> None:
+        """Re-run the production leaf assembly over the stored result and keep its command.
+
+        Called once when the world is built.  A test that changes something the
+        assembly reads (an observation moves the outputs' support revision) calls it
+        again, exactly as a later assembly would have seen the world.
         """
 
-        latest = self.semantics.latest_requirements_revision(self.mission.id)
-        fields: dict[str, Any] = {
-            "requirements_revision": 0 if latest is None else int(latest.revision),
-            "manager_epoch": 0,
-            "scope_epochs": (ScopeEpochRead(scope_id=SCOPE, validity_epoch=0),),
-        }
-        fields.update(overrides)
-        return SemanticReadSet(**fields)
+        items = (hub._Artifact("artifact-1", "out/result.json"),)
+        leaf = self.leaf_task
+        declared = self.hub.dispatch.declared_output_ports_for(self.mission.id, leaf)
+        claims = tuple(
+            PortClaim(port_key=item["port"], path=items[index].path)
+            for index, item in enumerate(declared)
+            if index < len(items)
+        )
+        hub._seed_verified_result(
+            self.hub, leaf, LEAF_RESULT, hub._passing_layers(), items=items, claims=claims,
+            now_ms=NOW_MS,
+        )
+        self._accept = _capture(
+            self.service,
+            "accept_review",
+            lambda: hub._assembly(self.hub).accept(
+                self.mission.id,
+                leaf,
+                result_id=LEAF_RESULT,
+                layers=hub._passing_layers(),
+                artifacts=tuple(self.store.get_artifact(item.id) for item in items),
+                producer_agent_ids=("agent-worker",),
+                reviewer_agent_id="agent-critic",
+                now_ms=NOW_MS,
+                port_claims=claims,
+            ),
+        )
+
+    @property
+    def legal_accept(self) -> AcceptReviewCommand:
+        assert self._accept is not None
+        return self._accept[0]
+
+    @property
+    def acceptance_id(self) -> str:
+        return self.legal_accept.acceptance_id
+
+    @property
+    def leaf_package(self) -> ReviewPackage:
+        return self.legal_accept.package
+
+    @property
+    def leaf_record(self) -> ReviewRecord:
+        return self.legal_accept.record
+
+    @property
+    def revision(self) -> RequirementsRevision:
+        return self.legal_accept.requirements
+
+    @property
+    def manifest_hash(self) -> str:
+        return self.leaf_package.binding.input_manifest_hash
+
+    def read_set(self, **overrides: Any) -> SemanticReadSet:
+        """The read-set the leaf assembly recorded, with some channels replaced."""
+
+        return dataclasses.replace(self.legal_accept.read_set, **overrides)
 
     def principal(self, **overrides: Any) -> ResolutionPrincipal:
-        fields: dict[str, Any] = {
-            "principal_id": PRINCIPAL,
-            "scope_id": SCOPE,
-            "manager_epoch": 0,
-        }
-        fields.update(overrides)
-        return ResolutionPrincipal(**fields)
+        assert self._accept is not None
+        return dataclasses.replace(self._accept[1], **overrides)
+
+    def accept_command(self, **overrides: Any) -> AcceptReviewCommand:
+        return dataclasses.replace(self.legal_accept, **overrides)
 
     def accept(self, command: AcceptReviewCommand | None = None, principal: Any = None) -> Any:
         return self.service.accept_review(
@@ -467,92 +531,88 @@ class World:
             principal if principal is not None else self.principal(),
         )
 
+    # -- the root resolution ---------------------------------------------------------
+    def _root_command(self) -> tuple[CommitGoalResolutionCommand, ResolutionPrincipal]:
+        """The root command ``attempt_root_resolution`` assembles, once both children are in.
+
+        The leaf is accepted by the test itself (``world.accept()``); the ``review``
+        step — the finaliser the root criterion is linked to — is accepted here through
+        the real chain, then the final review's anchors are stored and the trigger runs
+        with its commit entry swapped for the capturing stand-in.
+        """
+
+        if self._root is None:
+            try:
+                self.semantics.get_acceptance(self.acceptance_id)
+            except StoreError as error:
+                raise AssertionError(
+                    "the root command is assembled once the leaf is accepted: world.accept()"
+                ) from error
+            self.review_acceptance_id = hub._accept_leaf(
+                self.hub,
+                task_id=self.review_task,
+                result_id="result-review",
+                artifacts=(hub._Artifact("artifact-review", "out/verdict.json"),),
+                now_ms=1_100_000,
+                port_claims=(PortClaim(port_key="verdict", path="out/verdict.json"),),
+            ).acceptance_id
+            confirmed = hub._publish_final_requirements(self.hub, delivery=self.delivery_contract)
+            package = hub._final_package(self.hub, confirmed)
+            hub._final_record(self.hub, package)
+            hub._final_witness(self.hub)
+            self._root = _capture(
+                self.service,
+                "commit_goal_resolution",
+                lambda: hub._offer_root(
+                    self.hub,
+                    required_delivery_stage=(
+                        None if self.delivery_contract is None else DeliveryStage.CONFIRMED
+                    ),
+                ),
+            )
+        return self._root
+
+    @property
+    def root_package(self) -> ReviewPackage:
+        return self._root_command()[0].package
+
+    @property
+    def instance(self) -> str:
+        return str(self._root_command()[0].resolution.method_instance_id)
+
+    def resolution(self, **overrides: Any) -> Any:
+        return dataclasses.replace(self._root_command()[0].resolution, **overrides)
+
+    def resolution_command(self, **overrides: Any) -> CommitGoalResolutionCommand:
+        return dataclasses.replace(self._root_command()[0], **overrides)
+
     def resolve(
         self, command: CommitGoalResolutionCommand | None = None, principal: Any = None
     ) -> Any:
         return self.service.commit_goal_resolution(
             command if command is not None else self.resolution_command(),
-            principal if principal is not None else self.principal(),
+            principal if principal is not None else self._root_command()[1],
         )
 
-    def accept_command(self, **overrides: Any) -> AcceptReviewCommand:
-        fields: dict[str, Any] = {
-            "command_id": "cmd-accept-1",
-            "mission_id": self.mission.id,
-            "task_id": LEAF_TASK,
-            "obligation_id": LEAF_DUTY,
-            "acceptance_id": "acc-leaf-1",
-            "package": self.leaf_package,
-            "record": self.leaf_record,
-            "requirements": self.revision,
-            "witness_id": "wit-leaf",
-            "independence": independence(),
-            "posture": ExecutionPosture(),
-            "read_set": self.read_set(),
-            "accepted_at_ms": NOW_MS,
-            "artifact_refs": (),
-            "purpose": ReviewPurpose.TASK_CONTENT,
-            "issued_by": PRINCIPAL,
-            "scope_id": SCOPE,
-        }
-        fields.update(overrides)
-        return AcceptReviewCommand(**fields)
+    def contributions(self) -> dict[str, tuple[str, ...]]:
+        """Which child occurrences the commit's own reader counts as contributed."""
 
-    def resolution(self, **overrides: Any) -> GoalResolution:
-        fields: dict[str, Any] = {
-            "resolution_id": GoalResolutionId("res-root-1"),
-            "mission_id": self.mission.id,
-            "obligation_id": ROOT_DUTY,
-            "goal_task_id": ROOT_TASK,
-            "requirements_version": int(self.root_revision.revision),
-            "contract_revision": 1,
-            "method_instance_id": INSTANCE,
-            "input_manifest_hash": self.manifest_hash,
-            "artifact_refs": (),
-            "child_resolution_ids": (),
-            "criteria": tuple(
-                ResolutionCriterion(criterion_id=item.criterion_id, verdict=CriterionVerdict.PASS)
-                for item in self.root_revision.criteria
-            ),
-            "review_receipt_id": str(self.root_record.record_id),
-            "verdict": ReviewVerdict.ACCEPT,
-            "validity": Validity.CURRENT,
-        }
-        fields.update(overrides)
-        return GoalResolution(**fields)
+        children = self.semantics.list_child_occurrences(self.mission.id, self.instance)
+        return ResolutionCommitsMixin._accepted_occurrences(
+            self.semantics, self.duties, self.mission.id, children
+        )
 
-    def resolution_command(self, **overrides: Any) -> CommitGoalResolutionCommand:
-        fields: dict[str, Any] = {
-            "command_id": "cmd-resolve-1",
-            "mission_id": self.mission.id,
-            "resolution": self.resolution(),
-            "package": self.root_package,
-            "record": self.root_record,
-            "requirements": self.root_revision,
-            "witness_id": "wit-root",
-            "independence": independence(),
-            "posture": ExecutionPosture(),
-            "read_set": self.read_set(),
-            "decided_at_ms": NOW_MS,
-            "purpose": ReviewPurpose.COMPOSITION,
-            "compound": CompoundFacts(
-                selected_method_legal=True,
-                contributing_occurrence_ids=(LEAF_OCCURRENCE,),
-                composition_obligation_passed=True,
-            ),
-            "issued_by": PRINCIPAL,
-            "scope_id": SCOPE,
-        }
-        fields.update(overrides)
-        return CommitGoalResolutionCommand(**fields)
-
+    # -- delivery --------------------------------------------------------------------
     def child_acceptance(self, **overrides: Any) -> Acceptance:
+        """A bare Acceptance row: never a contribution (it has no completion scope),
+        only something a delivery receipt can quote."""
+
         fields: dict[str, Any] = {
-            "acceptance_id": AcceptanceId("acc-leaf-1"),
+            "acceptance_id": AcceptanceId("acc-spare"),
             "mission_id": self.mission.id,
-            "task_id": TaskRef(LEAF_TASK),
-            "obligation_id": ObligationId(LEAF_DUTY),
-            "requirements_revision": 1,
+            "task_id": self.leaf_task,
+            "obligation_id": ObligationId(self.leaf_duty),
+            "requirements_revision": int(self.revision.revision),
             "contract_revision": 1,
             "input_manifest_hash": self.manifest_hash,
             "review_record_id": ReviewRecordId(str(self.leaf_record.record_id)),
@@ -563,18 +623,19 @@ class World:
         return Acceptance(**fields)
 
     def delivery_receipt(
-        self, stage: DeliveryStage, *, acceptance_id: str = "acc-leaf-1"
+        self, stage: DeliveryStage, *, acceptance_id: str | None = None
     ) -> DeliveryReceipt:
         """The receipt value, unrecorded.  ``delivery()`` is what puts it in the store."""
 
-        # The id carries the quoted acceptance whenever it is not the default one, so
+        quoted = self.acceptance_id if acceptance_id is None else acceptance_id
+        # The id carries the quoted acceptance whenever it is not the leaf's own, so
         # two receipts for the same stage but different acceptances are two records
         # rather than one overwriting the other.
-        suffix = "" if acceptance_id == "acc-leaf-1" else f"-{acceptance_id}"
+        suffix = "" if quoted == self.acceptance_id else f"-{quoted}"
         return DeliveryReceipt(
             receipt_id=f"dlv-{stage!s}{suffix}".lower(),
             mission_id=self.mission.id,
-            acceptance_id=AcceptanceId(acceptance_id),
+            acceptance_id=AcceptanceId(quoted),
             stage=stage,
             observed_at_ms=NOW_MS,
             operation_id=(
@@ -582,40 +643,55 @@ class World:
             ),
         )
 
-    def delivery(self, stage: DeliveryStage, *, acceptance_id: str = "acc-leaf-1") -> str:
+    def delivery(self, stage: DeliveryStage, *, acceptance_id: str | None = None) -> str:
         """Record one delivery receipt and return the **id** the command names.
 
-        P2.3c part 2 moved the receipt out of the command and into the library, so a
-        test that wants a root to be deliverable has to make the library hold the
-        record — which is the whole point of the change.  A receipt the library
-        refuses to hold (an acceptance nobody stored, another Mission's) is returned
-        as its id anyway: the gate then refuses it as "no such record", which is the
-        same "a receipt is a claim until the store agrees" answer one level earlier.
+        A receipt the library refuses to hold (an acceptance nobody stored, another
+        Mission's) is returned as its id anyway: the gate then refuses it as "no such
+        record", which is the same "a receipt is a claim until the store agrees" answer
+        one level earlier.
+
+        带绑定世界里，服务只收"效果验收"产出的 SENT / CONFIRMED 回执
+        （``OP_OUTCOME_SOURCE_UNAVAILABLE``，见
+        ``test_a_root_resolution_with_a_confirmed_delivery_is_formed``）。这一组测的是根结论
+        的交付闸门，所以这类回执按枢纽 ``delivered`` 夹具的做法在库这一层写入——即效果验收
+        本会写下的那条记录；PERSISTED / ENQUEUED 仍走服务。
         """
 
         receipt = self.delivery_receipt(stage, acceptance_id=acceptance_id)
+        command_id = f"cmd-dlv-{receipt.receipt_id}"
         try:
-            self.service.record_delivery_receipt(
-                self.mission.id, receipt, command_id=f"cmd-dlv-{receipt.receipt_id}-{acceptance_id}"
-            )
+            if receipt.operation_id is None:
+                self.service.record_delivery_receipt(
+                    self.mission.id, receipt, command_id=command_id
+                )
+            else:
+                self.semantics.get_acceptance(str(receipt.acceptance_id))
+                self.semantics.record_delivery_receipt(
+                    self.mission.id,
+                    receipt,
+                    command_id=command_id,
+                    intent_hash=content_hash_of(receipt.to_json()),
+                )
         except StoreError:
             self.unrecorded.add(receipt.receipt_id)
         return receipt.receipt_id
 
     def spare_record(self, name: str) -> ReviewRecordId:
-        """A stored (non-official) review record id for a second acceptance.
+        """A stored (non-official) review record id for a spare acceptance.
 
         ``acceptances.review_record_id`` is UNIQUE and foreign keys are on, so an
         extra acceptance needs an extra record that really exists.
         """
 
-        binding = review_binding(self.mission.id, LEAF_DUTY, LEAF_TASK, self.manifest_hash)
+        binding = review_binding(self.mission.id, self.leaf_duty, self.leaf_task, self.manifest_hash)
         package = review_package(f"pkg-{name}", binding, self.revision)
         self.semantics.insert_review_package(package)
         record = review_record(f"rec-{name}", package)
         self.semantics.insert_review_record(record, official=False)
         return ReviewRecordId(str(record.record_id))
 
+    # -- reading ---------------------------------------------------------------------
     def counts(self) -> dict[str, int]:
         connection = self.store.connection
         return {
@@ -630,111 +706,21 @@ class World:
         return [item for item in self.store.list_events(self.mission.id) if item.type == kind]
 
 
-def build_world(tmp_path: Any, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23c") -> World:
-    service = ResolutionService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(
-        MissionSpec(
-            goal="交付一个可验收的层次结果",
-            success_criteria=("file:a.md",),
-            tenant_id="tenant-p23c",
-            idempotency_key=key,
-            budget=Budget(max_tokens=200_000, max_attempts=12),
-            orchestration_semantics_version=mode,
-        )
-    )
-    if mode == HIERARCHICAL_SEMANTICS:
-        detach_completion_protocol(service.store, mission.id)
-    semantics = HtnStore(service.store)
-    duties = ObligationStore(service.store)
-    manifest_hash = semantics.insert_input_manifest(mission.id, LEAF_TASK, {"inputs": []})
+def build_world(tmp_path: Any, *, key: str = "p23c", delivery: str | None = None) -> World:
+    """The hub's bound, committed world with the leaf's verified result and legal command.
 
-    leaf_revision = requirements(mission.id, revision=1)
-    root_revision = requirements(
-        mission.id,
-        revision=2,
-        criteria=(criterion(ROOT_CRITERION, checks=("root-suite",)),),
-        delivery_contract_ref=None,
-    )
-    semantics.insert_requirements_revision(leaf_revision)
-    semantics.insert_requirements_revision(root_revision)
+    ``hub.committed`` creates the Mission bound to the completion protocol, confirms
+    the root requirements (CONTENT_ONLY, criterion ``c-root``; with ``delivery`` the
+    goal also declares a delivery contract), commits the plan and admits the demand.
+    """
 
-    leaf_binding = review_binding(mission.id, LEAF_DUTY, LEAF_TASK, manifest_hash, revision=1)
-    leaf_package = review_package("pkg-leaf", leaf_binding, leaf_revision)
-    leaf_record = review_record("rec-leaf", leaf_package)
-    semantics.insert_review_package(leaf_package)
-    semantics.insert_review_record(leaf_record, official=True)
-
-    root_binding = review_binding(mission.id, ROOT_DUTY, ROOT_TASK, manifest_hash, revision=2)
-    root_package = review_package(
-        "pkg-root",
-        root_binding,
-        root_revision,
-        purpose=ReviewPurpose.COMPOSITION,
-        method_instance_id=INSTANCE,
+    world = World(
+        hub=hub.committed(tmp_path, key=key, demand=True, delivery=delivery),
+        delivery_contract=delivery,
     )
-    root_record = review_record("rec-root", root_package)
-    semantics.insert_review_package(root_package)
-    semantics.insert_review_record(root_record, official=True)
-
-    for duty, signature in ((LEAF_DUTY, CRITERION), (ROOT_DUTY, ROOT_CRITERION)):
-        duties.register(
-            Obligation(
-                obligation_id=ObligationId(duty),
-                mission_id=mission.id,
-                requirement_refs=(signature,),
-                goal_signature_id="leaf-goal" if duty == LEAF_DUTY else "root-goal",
-            ),
-            recursion_fuel=4,
-        )
-    semantics.put_task_semantics(mission.id, task_binding(LEAF_TASK, LEAF_DUTY, TaskForm.PRIMITIVE))
-    semantics.put_task_semantics(
-        mission.id,
-        task_binding(
-            ROOT_TASK,
-            ROOT_DUTY,
-            TaskForm.COMPOUND,
-            requirement_refs=(ROOT_CRITERION,),
-            adopted_method_instance_id=MethodInstanceId(INSTANCE),
-        ),
-    )
-    semantics.insert_method_instance(
-        mission.id,
-        MethodInstanceDraft(
-            instance_id=MethodInstanceId(INSTANCE),
-            goal_id=TaskRef(ROOT_TASK),
-            obligation_id=ObligationId(ROOT_DUTY),
-            method_ref=MethodRef(method_id="m-root", version=1, content_hash=HASH_B),
-            child_bindings=(
-                ChildBinding(
-                    instance_id=MethodInstanceId(INSTANCE),
-                    slot_key="leaf",
-                    occurrence_id=OccurrenceId(LEAF_OCCURRENCE),
-                    obligation_id=ObligationId(LEAF_DUTY),
-                    requiredness=Requiredness.REQUIRED,
-                ),
-            ),
-            goal_occurrence_id=OccurrenceId(ROOT_OCCURRENCE),
-            plan_revision=0,
-        ),
-        state="ADOPTED",
-    )
-    semantics.insert_validity_witness(
-        mission.id, accept_witness("wit-leaf", LEAF_TASK), subject=NO_SUBJECT
-    )
-    semantics.insert_validity_witness(
-        mission.id, accept_witness("wit-root", ROOT_TASK), subject=NO_SUBJECT
-    )
-    return World(
-        service=service,
-        mission=mission,
-        revision=leaf_revision,
-        manifest_hash=manifest_hash,
-        leaf_package=leaf_package,
-        leaf_record=leaf_record,
-        root_package=root_package,
-        root_record=root_record,
-        root_revision=root_revision,
-    )
+    world.hub.dispatch.issue_input_witnesses(world.mission.id, world.hub.network(), now_ms=NOW_MS)
+    world.capture_leaf()
+    return world
 
 
 @pytest.fixture
@@ -778,15 +764,60 @@ def observation(observation_id: str, proposition: str, *, polarity: bool) -> Any
     )
 
 
+def _official(world: World, record: ReviewRecord) -> ReviewRecord:
+    """Store ``record`` as the official record of its package in place of the current one."""
+
+    current = world.semantics.official_review_record(str(record.package_id))
+    if current is not None:
+        world.store.connection.execute(
+            "UPDATE review_records SET official = 0 WHERE record_id = ?", (str(current.record_id),)
+        )
+    world.semantics.insert_review_record(record, official=True)
+    return record
+
+
+def _withdraw_demand(world: World) -> None:
+    """End the Mission root's interest in the root duty through the audited entry.
+
+    ``build_world`` admits that demand, and the store refuses to close a duty a demand
+    still hangs on (``demand_admitted=0 OR lifecycle='UNSATISFIED'``); closing it by
+    hand therefore withdraws the share first, as the real closing paths do.
+    """
+
+    world.service.withdraw_obligation_demand(
+        world.mission.id,
+        ObligationId(world.leaf_duty),
+        principal="mission-submitter",
+        requester={"kind": "mission_root"},
+        evidence={"mission_id": world.mission.id, "reason": "test closes the duty by hand"},
+    )
+
+
+def _amend_requirements(world: World) -> RequirementsRevision:
+    """The person amends the root requirements after the review was cut (revision 2)."""
+
+    amended = requirements(
+        world.mission.id, revision=2, criteria=(criterion(ROOT_CRITERION, checks=()),)
+    )
+    world.semantics.insert_requirements_revision(amended)
+    return amended
+
+
 # ======================================================================================
 # 1. The door, identity and idempotency
 # ======================================================================================
 
 
-def test_a_legacy_mission_is_refused_at_the_door(tmp_path: Any) -> None:
-    legacy = build_world(tmp_path, mode=LEGACY_SEMANTICS, key="legacy")
-    assert refusal(legacy.accept) == "SEMANTICS_NOT_HIERARCHICAL"
-    assert legacy.counts()["acceptances"] == 0
+def test_a_legacy_mission_is_refused_at_the_door(world: World, tmp_path: Any) -> None:
+    """The legal command, re-addressed to a legacy Mission, stops at the door."""
+
+    (tmp_path / "legacy").mkdir()
+    legacy = hub.build_world(tmp_path / "legacy", mode=LEGACY_SEMANTICS, key="legacy")
+    command = world.accept_command(mission_id=legacy.mission.id)
+    assert refusal(legacy.service.accept_review, command, world.principal()) == (
+        "SEMANTICS_NOT_HIERARCHICAL"
+    )
+    assert legacy.store.connection.execute("SELECT count(*) FROM acceptances").fetchone()[0] == 0
 
 
 def test_an_unsigned_command_is_not_attributed_to_the_presenter(world: World) -> None:
@@ -818,7 +849,9 @@ def test_the_same_accept_command_twice_is_one_acceptance_and_one_receipt(world: 
     before = world.counts()
     second = world.accept()
     assert second.replayed is True
-    assert second.acceptance == first.acceptance
+    # The replay reads the stored row back; its artifact refs decode as evidence refs, so
+    # the two are compared by their recorded form.
+    assert second.acceptance.to_json() == first.acceptance.to_json()
     assert world.counts() == before
 
 
@@ -854,12 +887,13 @@ def test_a_task_with_no_semantic_binding_is_corruption(world: World) -> None:
 
 
 def test_a_command_naming_another_duty_than_the_task_serves_is_refused(world: World) -> None:
-    command = world.accept_command(obligation_id=ROOT_DUTY)
+    # 带绑定世界里叶子细化根目标的义务（与根同一条），所以"另一条义务"取一条它不服务的。
+    command = world.accept_command(obligation_id="obl-elsewhere")
     assert refusal(world.accept, command) == "BINDING_MISMATCH"
 
 
 def test_a_package_bound_to_another_subject_is_refused(world: World) -> None:
-    binding = review_binding(world.mission.id, LEAF_DUTY, ROOT_TASK, world.manifest_hash)
+    binding = review_binding(world.mission.id, world.leaf_duty, ROOT_TASK, world.manifest_hash)
     package = review_package("pkg-other", binding, world.revision)
     world.semantics.insert_review_package(package)
     record = review_record("rec-other", package)
@@ -880,7 +914,7 @@ def test_a_purpose_may_not_be_relabelled_at_delivery(world: World) -> None:
 
 
 def test_a_package_that_is_not_stored_cannot_be_quoted(world: World) -> None:
-    binding = review_binding(world.mission.id, LEAF_DUTY, LEAF_TASK, world.manifest_hash)
+    binding = review_binding(world.mission.id, world.leaf_duty, world.leaf_task, world.manifest_hash)
     package = review_package("pkg-unstored", binding, world.revision)
     command = world.accept_command(package=package, record=review_record("rec-x", package))
     assert refusal(world.accept, command) == "REVIEW_NOT_STORED"
@@ -897,7 +931,7 @@ def test_a_package_edited_on_the_way_in_is_refused_by_content_hash(world: World)
 
 
 def test_a_record_that_is_not_the_official_one_is_refused(world: World) -> None:
-    second = review_record("rec-leaf-2", world.leaf_package)
+    second = dataclasses.replace(world.leaf_record, record_id=ReviewRecordId("rec-leaf-2"))
     world.semantics.insert_review_record(second, official=False)
     command = world.accept_command(record=second)
     assert refusal(world.accept, command) == "REVIEW_NOT_OFFICIAL"
@@ -906,7 +940,7 @@ def test_a_record_that_is_not_the_official_one_is_refused(world: World) -> None:
 def test_a_requirements_revision_that_is_not_stored_is_refused(world: World) -> None:
     other = requirements(world.mission.id, revision=9)
     binding = review_binding(
-        world.mission.id, LEAF_DUTY, LEAF_TASK, world.manifest_hash, revision=9
+        world.mission.id, world.leaf_duty, world.leaf_task, world.manifest_hash, revision=9
     )
     package = review_package("pkg-r9", binding, other)
     world.semantics.insert_review_package(package)
@@ -919,10 +953,12 @@ def test_a_requirements_revision_that_is_not_stored_is_refused(world: World) -> 
 def test_requirements_are_never_quietly_relaxed(world: World) -> None:
     """Same revision number, different content — the stored bytes decide (I01)."""
 
-    relaxed = requirements(
-        world.mission.id,
-        revision=1,
-        criteria=(criterion(CRITERION, requirement_class=RequirementClass.PREFERENCE),),
+    relaxed = dataclasses.replace(
+        world.revision,
+        criteria=tuple(
+            dataclasses.replace(item, requirement_class=RequirementClass.PREFERENCE)
+            for item in world.revision.criteria
+        ),
     )
     command = world.accept_command(requirements=relaxed)
     assert refusal(world.accept, command) == "REQUIREMENTS_MISMATCH"
@@ -931,18 +967,33 @@ def test_requirements_are_never_quietly_relaxed(world: World) -> None:
 def test_a_package_and_a_command_that_disagree_about_the_revision_are_refused(
     world: World,
 ) -> None:
-    command = world.accept_command(requirements=world.root_revision)
+    command = world.accept_command(requirements=_amend_requirements(world))
     assert refusal(world.accept, command) == "REQUIREMENTS_MISMATCH"
 
 
 def test_an_input_manifest_nobody_stored_is_refused(world: World) -> None:
-    binding = review_binding(world.mission.id, LEAF_DUTY, LEAF_TASK, HASH_C)
+    binding = review_binding(world.mission.id, world.leaf_duty, world.leaf_task, HASH_C)
     package = review_package("pkg-nomanifest", binding, world.revision)
     world.semantics.insert_review_package(package)
     record = review_record("rec-nomanifest", package)
     world.semantics.insert_review_record(record, official=True)
     command = world.accept_command(package=package, record=record)
     assert refusal(world.accept, command) == "INPUT_MANIFEST_UNKNOWN"
+
+
+def test_a_review_that_does_not_name_a_real_result_is_refused(world: World) -> None:
+    """带绑定世界新增的一道：验收引用的必须是一条真实的、已验证的结果。
+
+    命令的 ``source["result_id"]`` 由生产装配器写入；去掉它，或换成一条库里没有的结果，
+    提交都在逐字段比对审查包之前就拒绝。
+    """
+
+    unnamed = world.accept_command(source={})
+    assert refusal(world.accept, unnamed) == "OP_CONTENT_REVIEW_UNAVAILABLE"
+    invented = world.accept_command(source={"result_id": "result-nobody"})
+    with pytest.raises(ContractError, match="no verified result"):
+        world.accept(invented)
+    assert world.counts()["acceptances"] == 0
 
 
 # ======================================================================================
@@ -963,9 +1014,9 @@ def test_a_principal_holding_an_old_epoch_is_refused(world: World) -> None:
 
 
 def test_a_stale_requirements_read_refuses_the_command(world: World) -> None:
-    # Revision 2 is the latest this world holds, so a read taken at 1 is stale.
-    command = world.accept_command(read_set=world.read_set(requirements_revision=1))
-    assert refusal(world.accept, command) == "READ_SET_STALE"
+    # The review was cut at revision 1; the person has since amended the requirements.
+    _amend_requirements(world)
+    assert refusal(world.accept) == "READ_SET_STALE"
 
 
 def test_a_stale_scope_epoch_read_refuses_the_command(world: World) -> None:
@@ -992,7 +1043,7 @@ def test_a_goal_read_at_another_contract_revision_is_stale(world: World) -> None
             goal_revisions=(
                 ReadItem(
                     kind=ReadItemKind.TASK,
-                    id=LEAF_TASK,
+                    id=world.leaf_task,
                     semantic_revision=9,
                     content_hash=HASH_A,
                 ),
@@ -1032,7 +1083,9 @@ def test_a_witness_nobody_stored_is_refused(world: World) -> None:
 def test_a_start_witness_does_not_license_an_acceptance(world: World) -> None:
     world.semantics.insert_validity_witness(
         world.mission.id,
-        accept_witness("wit-start", LEAF_TASK, purpose=WitnessPurpose.START, support_revision=4),
+        accept_witness(
+            "wit-start", world.leaf_task, purpose=WitnessPurpose.START, support_revision=4
+        ),
         subject=NO_SUBJECT,
     )
     command = world.accept_command(witness_id="wit-start")
@@ -1040,6 +1093,9 @@ def test_a_start_witness_does_not_license_an_acceptance(world: World) -> None:
 
 
 def test_a_witness_issued_to_another_consumer_is_that_consumers_permission(world: World) -> None:
+    world.semantics.insert_validity_witness(
+        world.mission.id, accept_witness("wit-root", ROOT_TASK), subject=NO_SUBJECT
+    )
     command = world.accept_command(witness_id="wit-root")
     assert refusal(world.accept, command) == "WITNESS_CONSUMER_MISMATCH"
 
@@ -1047,7 +1103,7 @@ def test_a_witness_issued_to_another_consumer_is_that_consumers_permission(world
 def test_a_witness_whose_deadline_has_passed_is_stale(world: World) -> None:
     world.semantics.insert_validity_witness(
         world.mission.id,
-        accept_witness("wit-expired", LEAF_TASK, not_after_ms=NOW_MS - 1, support_revision=2),
+        accept_witness("wit-expired", world.leaf_task, not_after_ms=NOW_MS - 1, support_revision=2),
         subject=NO_SUBJECT,
     )
     command = world.accept_command(witness_id="wit-expired")
@@ -1057,13 +1113,10 @@ def test_a_witness_whose_deadline_has_passed_is_stale(world: World) -> None:
 def test_a_witness_taken_before_the_epoch_barrier_is_stale(world: World) -> None:
     world.semantics.insert_validity_witness(
         world.mission.id,
-        accept_witness("wit-old-epoch", LEAF_TASK, scope_epoch=3, support_revision=3),
+        accept_witness("wit-old-epoch", world.leaf_task, scope_epoch=3, support_revision=3),
         subject=NO_SUBJECT,
     )
-    command = world.accept_command(
-        witness_id="wit-old-epoch",
-        read_set=world.read_set(),
-    )
+    command = world.accept_command(witness_id="wit-old-epoch")
     assert refusal(world.accept, command) == "WITNESS_STALE"
 
 
@@ -1098,9 +1151,20 @@ def test_a_non_posture_value_is_refused(world: World) -> None:
 
 
 def test_a_self_review_is_not_acceptable(world: World) -> None:
-    command = world.accept_command(
-        independence=IndependenceFacts(producer_agent_ids=("agent-reviewer",))
+    """The official record says the producer reviewed its own candidate.
+
+    带绑定世界里命令陈述的产出者必须就是那次结果的真实产出者（改它会在比对审查包时以
+    ``OP_CONTENT_REVIEW_UNAVAILABLE`` 拒绝，见下面的变异测试），所以"自审"在这里由正式
+    审查记录表达：审查者就是产出者，公式拒绝。
+    """
+
+    record = _official(
+        world,
+        dataclasses.replace(
+            world.leaf_record, record_id=ReviewRecordId("rec-self"), reviewer_agent_id="agent-worker"
+        ),
     )
+    command = world.accept_command(record=record)
     assert refusal(world.accept, command) == "NOT_ACCEPTABLE"
     assert world.counts()["acceptances"] == 0
 
@@ -1108,44 +1172,49 @@ def test_a_self_review_is_not_acceptable(world: World) -> None:
 def test_a_reviewer_who_could_edit_the_candidate_is_not_independent(world: World) -> None:
     command = world.accept_command(
         independence=IndependenceFacts(
-            producer_agent_ids=("agent-worker",), reviewer_can_write_candidate=True
+            producer_agent_ids=world.legal_accept.independence.producer_agent_ids,
+            reviewer_can_write_candidate=True,
         )
     )
     assert refusal(world.accept, command) == "NOT_ACCEPTABLE"
 
 
 def test_a_rework_verdict_is_not_an_acceptance(world: World) -> None:
-    record = review_record("rec-rework", world.leaf_package, verdict=ReviewVerdict.REWORK)
-    world.semantics.insert_review_record(record, official=False)
-    world.store.connection.execute(
-        "UPDATE review_records SET official = 0 WHERE record_id = 'rec-leaf'"
-    )
-    world.store.connection.execute(
-        "UPDATE review_records SET official = 1 WHERE record_id = 'rec-rework'"
+    record = _official(
+        world,
+        dataclasses.replace(
+            world.leaf_record, record_id=ReviewRecordId("rec-rework"), verdict=ReviewVerdict.REWORK
+        ),
     )
     command = world.accept_command(record=record)
     assert refusal(world.accept, command) == "NOT_ACCEPTABLE"
 
 
 def test_a_required_check_that_never_ran_is_not_a_pass(world: World) -> None:
-    record = review_record(
-        "rec-notrun",
-        world.leaf_package,
-        outcomes=(
-            CriterionOutcome(
-                criterion_id=CRITERION,
-                verdict=CriterionVerdict.UNKNOWN,
-                check_execution=CheckExecution.NOT_RUN,
-                evidence_refs=(receipt_ref("r"),),
+    """带绑定世界里审查记录要和库里记下的逐层校验结果逐字段一致：一份说"必需检查没跑"
+    的正式记录与真实校验结果不符，在比对处（``OP_CONTENT_REVIEW_UNAVAILABLE``）拒绝；
+    校验层本身没跑的情形由枢纽的 ``test_a_layer_that_could_not_run_is_not_a_passed_check``
+    覆盖。"""
+
+    record = _official(
+        world,
+        dataclasses.replace(
+            world.leaf_record,
+            record_id=ReviewRecordId("rec-notrun"),
+            criteria=tuple(
+                CriterionOutcome(
+                    criterion_id=item.criterion_id,
+                    verdict=CriterionVerdict.UNKNOWN,
+                    check_execution=CheckExecution.NOT_RUN,
+                    evidence_refs=(receipt_ref("r"),),
+                )
+                for item in world.leaf_record.criteria
             ),
         ),
     )
-    world.store.connection.execute(
-        "UPDATE review_records SET official = 0 WHERE record_id = 'rec-leaf'"
-    )
-    world.semantics.insert_review_record(record, official=True)
     command = world.accept_command(record=record)
-    assert refusal(world.accept, command) == "NOT_ACCEPTABLE"
+    assert refusal(world.accept, command) == "OP_CONTENT_REVIEW_UNAVAILABLE"
+    assert world.counts()["acceptances"] == 0
 
 
 def test_an_unowned_critical_operation_blocks_the_acceptance(world: World) -> None:
@@ -1168,10 +1237,10 @@ def test_a_pending_cancellation_blocks_the_acceptance(world: World) -> None:
 
 def test_a_clean_acceptance_is_written_with_the_bindings_it_quotes(world: World) -> None:
     receipt = world.accept()
-    stored = world.semantics.get_acceptance("acc-leaf-1")
-    assert stored == receipt.acceptance
+    stored = world.semantics.get_acceptance(world.acceptance_id)
+    assert stored.to_json() == receipt.acceptance.to_json()
     assert stored.input_manifest_hash == world.manifest_hash
-    assert str(stored.review_record_id) == "rec-leaf"
+    assert str(stored.review_record_id) == str(world.leaf_record.record_id)
     assert stored.validity is Validity.CURRENT
 
 
@@ -1179,8 +1248,8 @@ def test_an_acceptance_leaves_the_duty_open(world: World) -> None:
     """§25.1 decision 4: ACCEPT and GoalResolution are two actions."""
 
     world.accept()
-    assert world.lifecycle(LEAF_DUTY) is ObligationLifecycle.UNSATISFIED
-    assert world.duties.account(world.mission.id, ObligationId(LEAF_DUTY)).resolution_ref is None
+    assert world.lifecycle(world.leaf_duty) is ObligationLifecycle.UNSATISFIED
+    assert world.duties.account(world.mission.id, ObligationId(world.leaf_duty)).resolution_ref is None
 
 
 def test_the_acceptance_event_names_the_review_account(world: World) -> None:
@@ -1188,7 +1257,7 @@ def test_the_acceptance_event_names_the_review_account(world: World) -> None:
     events = world.events(ACCEPTANCE_COMMITTED)
     assert len(events) == 1
     assert events[0].payload["review_account"] == "task"
-    assert events[0].payload["acceptance_id"] == "acc-leaf-1"
+    assert events[0].payload["acceptance_id"] == world.acceptance_id
 
 
 def test_the_accept_receipt_records_the_decision_it_was_built_from(world: World) -> None:
@@ -1201,10 +1270,21 @@ def test_the_accept_receipt_records_the_decision_it_was_built_from(world: World)
 # ======================================================================================
 # 7. commit_goal_resolution: compound, coverage and the duty lifecycle
 # ======================================================================================
+#
+# 带绑定世界里根目标的结论就是任务根的结论：``attempt_root_resolution`` 装出的
+# MISSION_FINAL 命令（``is_mission_root=True``）。旧世界在根目标上拼的 COMPOSITION 命令
+# 在这里没有对应物——组合审查只给非根的中间目标（``read_compound_projection``）。下面
+# 每条不变量都在这条真实的根命令上表达。
 
 
 def test_a_compound_with_no_child_acceptance_is_refused(world: World) -> None:
-    assert refusal(world.resolve) == "COMPOUND_FACTS_CONTRADICT_STORE"
+    """Both children's Acceptances are revoked after the trigger read them."""
+
+    world.accept()
+    command = world.resolution_command()
+    for acceptance_id in (world.acceptance_id, world.review_acceptance_id):
+        _set_validity(world, str(acceptance_id), Validity.REVOKED)
+    assert refusal(world.resolve, command) == "COMPOUND_FACTS_CONTRADICT_STORE"
     assert world.counts()["goal_resolutions"] == 0
 
 
@@ -1213,6 +1293,7 @@ def test_a_compound_whose_required_child_is_missing_is_refused_by_the_formula(
 ) -> None:
     """The store says nothing contributed, and the command agrees — the formula refuses."""
 
+    world.accept()
     command = world.resolution_command(
         compound=CompoundFacts(
             selected_method_legal=True,
@@ -1220,22 +1301,25 @@ def test_a_compound_whose_required_child_is_missing_is_refused_by_the_formula(
             composition_obligation_passed=True,
         )
     )
+    for acceptance_id in (world.acceptance_id, world.review_acceptance_id):
+        _set_validity(world, str(acceptance_id), Validity.REVOKED)
     assert refusal(world.resolve, command) == "NOT_ACCEPTABLE"
     assert world.counts()["goal_resolutions"] == 0
 
 
 def test_a_stale_child_acceptance_does_not_count_as_a_contribution(world: World) -> None:
-    world.semantics.insert_acceptance(world.child_acceptance(validity=Validity.STALE))
-    assert refusal(world.resolve) == "COMPOUND_FACTS_CONTRADICT_STORE"
+    world.accept()
+    command = world.resolution_command()
+    _set_validity(world, world.acceptance_id, Validity.STALE)
+    assert world.leaf_occurrence not in world.contributions()
+    assert refusal(world.resolve, command) == "COMPOUND_FACTS_CONTRADICT_STORE"
 
 
 def test_an_illegal_selected_method_is_refused(world: World) -> None:
     world.accept()
     command = world.resolution_command(
-        compound=CompoundFacts(
-            selected_method_legal=False,
-            contributing_occurrence_ids=(LEAF_OCCURRENCE,),
-            composition_obligation_passed=True,
+        compound=dataclasses.replace(
+            world.resolution_command().compound, selected_method_legal=False
         )
     )
     assert refusal(world.resolve, command) == "NOT_ACCEPTABLE"
@@ -1244,10 +1328,8 @@ def test_an_illegal_selected_method_is_refused(world: World) -> None:
 def test_a_failed_composition_obligation_is_refused(world: World) -> None:
     world.accept()
     command = world.resolution_command(
-        compound=CompoundFacts(
-            selected_method_legal=True,
-            contributing_occurrence_ids=(LEAF_OCCURRENCE,),
-            composition_obligation_passed=False,
+        compound=dataclasses.replace(
+            world.resolution_command().compound, composition_obligation_passed=False
         )
     )
     assert refusal(world.resolve, command) == "NOT_ACCEPTABLE"
@@ -1282,8 +1364,9 @@ def test_a_resolution_whose_verdict_is_not_accept_is_not_a_satisfaction(world: W
 
 def test_a_resolution_pointing_at_a_retired_method_instance_is_refused(world: World) -> None:
     world.accept()
-    world.semantics.set_method_instance_state(world.mission.id, INSTANCE, "RETIRED")
-    assert refusal(world.resolve) == "METHOD_INSTANCE_NOT_ADOPTED"
+    command = world.resolution_command()
+    world.semantics.set_method_instance_state(world.mission.id, world.instance, "RETIRED")
+    assert refusal(world.resolve, command) == "METHOD_INSTANCE_NOT_ADOPTED"
 
 
 def test_a_resolution_binding_an_unknown_child_resolution_is_refused(world: World) -> None:
@@ -1298,7 +1381,7 @@ def test_a_duty_that_is_already_satisfied_is_not_resolved_twice(world: World) ->
     world.resolve()
     again = world.resolution_command(
         command_id="cmd-resolve-2",
-        resolution=world.resolution(resolution_id=GoalResolutionId("res-root-2")),
+        resolution=world.resolution(resolution_id="res-root-2"),
     )
     assert refusal(world.resolve, again) == "OBLIGATION_NOT_OPEN"
 
@@ -1306,10 +1389,11 @@ def test_a_duty_that_is_already_satisfied_is_not_resolved_twice(world: World) ->
 def test_a_clean_resolution_satisfies_the_duty_with_its_resolution_ref(world: World) -> None:
     world.accept()
     receipt = world.resolve()
+    resolution_id = str(world.resolution().resolution_id)
     account = world.duties.account(world.mission.id, ObligationId(ROOT_DUTY))
     assert account.lifecycle is ObligationLifecycle.SATISFIED
-    assert account.resolution_ref == "res-root-1"
-    assert receipt.account is not None and receipt.account.resolution_ref == "res-root-1"
+    assert account.resolution_ref == resolution_id
+    assert receipt.account is not None and receipt.account.resolution_ref == resolution_id
     assert world.semantics.adopted_goal_resolution(world.mission.id, ROOT_DUTY) is not None
 
 
@@ -1318,14 +1402,18 @@ def test_the_resolution_event_names_the_contributing_occurrences(world: World) -
     world.resolve()
     events = world.events(GOAL_RESOLUTION_COMMITTED)
     assert len(events) == 1
-    assert events[0].payload["contributing_occurrences"] == [LEAF_OCCURRENCE]
-    assert events[0].payload["review_account"] == "parent_compound_task"
+    assert events[0].payload["contributing_occurrences"] == sorted(
+        [world.leaf_occurrence, world.review_occurrence]
+    )
+    # 根结论由 MISSION_FINAL 审查决定，记在任务账上（旧世界的 COMPOSITION 记在父目标账上）。
+    assert events[0].payload["review_account"] == "mission"
 
 
 def test_an_admitted_demand_is_released_when_the_duty_is_satisfied(world: World) -> None:
     """TG decision 9: withdrawing the share is part of resolving the duty."""
 
-    world.duties.admit_demand(world.mission.id, ObligationId(ROOT_DUTY))
+    # ``build_world`` admits the root's demand the way the Mission submission does.
+    assert world.duties.account(world.mission.id, ObligationId(ROOT_DUTY)).has_admitted_demand
     world.accept()
     world.resolve()
     account = world.duties.account(world.mission.id, ObligationId(ROOT_DUTY))
@@ -1339,41 +1427,20 @@ def test_an_admitted_demand_is_released_when_the_duty_is_satisfied(world: World)
 
 
 def root_world(tmp_path: Any) -> World:
-    """A world whose root requirements declare a delivery contract."""
+    """A world whose confirmed root requirements declare a delivery contract.
 
-    world = build_world(tmp_path, key="p23c-root")
-    delivering = requirements(
-        world.mission.id,
-        revision=3,
-        criteria=(criterion(ROOT_CRITERION, checks=("root-suite",)),),
-        delivery_contract_ref="delivery-contract-1",
-    )
-    world.semantics.insert_requirements_revision(delivering)
-    binding = review_binding(
-        world.mission.id, ROOT_DUTY, ROOT_TASK, world.manifest_hash, revision=3
-    )
-    package = review_package(
-        "pkg-final",
-        binding,
-        delivering,
-        purpose=ReviewPurpose.MISSION_FINAL,
-        method_instance_id=INSTANCE,
-    )
-    record = review_record("rec-final", package)
-    world.semantics.insert_review_package(package)
-    world.semantics.insert_review_record(record, official=True)
-    world.root_package = package
-    world.root_record = record
-    world.root_revision = delivering
+    The leaf is accepted and the root command assembled, so every test below starts
+    where the trigger stands just before it commits.
+    """
+
+    world = build_world(tmp_path, key="p23c-root", delivery=DELIVERY_CONTRACT)
+    world.accept()
+    world.resolution_command()
     return world
 
 
 def root_command(world: World, **overrides: Any) -> CommitGoalResolutionCommand:
     fields: dict[str, Any] = {
-        "purpose": ReviewPurpose.MISSION_FINAL,
-        "is_mission_root": True,
-        "read_set": world.read_set(),
-        "required_delivery_stage": DeliveryStage.CONFIRMED,
         "delivery_receipts": (world.delivery(DeliveryStage.CONFIRMED),),
     }
     fields.update(overrides)
@@ -1399,16 +1466,14 @@ def test_a_failed_delivery_reaches_no_stage() -> None:
 
 def test_a_root_resolution_needs_a_mission_final_review(tmp_path: Any) -> None:
     world = root_world(tmp_path)
-    world.accept()
-    command = root_command(world, purpose=ReviewPurpose.MISSION_FINAL)
-    # The package really is MISSION_FINAL here; flipping only the command's purpose
-    # is caught earlier, by the purpose-relabelling gate.
-    assert world.resolve(command).resolution_id == "res-root-1"
+    command = root_command(world)
+    assert command.purpose is ReviewPurpose.MISSION_FINAL
+    assert world.root_package.purpose is ReviewPurpose.MISSION_FINAL
+    assert world.resolve(command).resolution_id == str(world.resolution().resolution_id)
 
 
 def test_a_root_resolution_without_a_required_stage_is_refused(tmp_path: Any) -> None:
     world = root_world(tmp_path)
-    world.accept()
     command = root_command(world, required_delivery_stage=None, delivery_receipts=())
     assert refusal(world.resolve, command) == "DELIVERY_CONTRACT_UNDECLARED"
     assert world.counts()["goal_resolutions"] == 0
@@ -1416,7 +1481,6 @@ def test_a_root_resolution_without_a_required_stage_is_refused(tmp_path: Any) ->
 
 def test_a_root_resolution_whose_delivery_only_persisted_is_refused(tmp_path: Any) -> None:
     world = root_world(tmp_path)
-    world.accept()
     command = root_command(world, delivery_receipts=(world.delivery(DeliveryStage.PERSISTED),))
     assert refusal(world.resolve, command) == "DELIVERY_STAGE_NOT_REACHED"
     assert world.counts()["goal_resolutions"] == 0
@@ -1425,7 +1489,6 @@ def test_a_root_resolution_whose_delivery_only_persisted_is_refused(tmp_path: An
 
 def test_a_root_resolution_with_no_receipt_at_all_is_refused(tmp_path: Any) -> None:
     world = root_world(tmp_path)
-    world.accept()
     command = root_command(world, delivery_receipts=())
     assert refusal(world.resolve, command) == "DELIVERY_STAGE_NOT_REACHED"
 
@@ -1434,7 +1497,6 @@ def test_a_receipt_quoting_an_acceptance_nobody_stored_is_invalid(tmp_path: Any)
     """Not "does not count" — refused.  A receipt is a claim until the store agrees."""
 
     world = root_world(tmp_path)
-    world.accept()
     command = root_command(
         world,
         delivery_receipts=(world.delivery(DeliveryStage.CONFIRMED, acceptance_id="acc-nobody"),),
@@ -1445,9 +1507,16 @@ def test_a_receipt_quoting_an_acceptance_nobody_stored_is_invalid(tmp_path: Any)
 
 def test_a_root_resolution_with_a_confirmed_delivery_is_formed(tmp_path: Any) -> None:
     world = root_world(tmp_path)
-    world.accept()
+    # 带绑定世界里服务只收效果验收产出的 CONFIRMED 回执；这里的回执记录是效果验收本会
+    # 写下的那条（见 ``World.delivery``）。
+    stray = world.delivery_receipt(DeliveryStage.CONFIRMED)
+    stray = dataclasses.replace(stray, receipt_id="dlv-not-from-an-effect")
+    assert (
+        refusal(world.service.record_delivery_receipt, world.mission.id, stray, command_id="c-x")
+        == "OP_OUTCOME_SOURCE_UNAVAILABLE"
+    )
     receipt = world.resolve(root_command(world))
-    assert receipt.resolution_id == "res-root-1"
+    assert receipt.resolution_id == str(world.resolution().resolution_id)
     assert world.lifecycle(ROOT_DUTY) is ObligationLifecycle.SATISFIED
     payload = world.events(GOAL_RESOLUTION_COMMITTED)[0].payload
     assert payload["is_mission_root"] is True
@@ -1469,20 +1538,21 @@ def test_the_mission_status_string_is_never_consulted_for_the_root(tmp_path: Any
     assert "_require_mission" not in names
     assert "stage" in names and "required_delivery_stage" in names
     world = root_world(tmp_path)
-    world.accept()
     command = root_command(world, delivery_receipts=(world.delivery(DeliveryStage.SENT),))
     assert refusal(world.resolve, command) == "DELIVERY_STAGE_NOT_REACHED"
     assert world.counts()["goal_resolutions"] == 0
 
 
 def test_a_stage_the_requirements_never_asked_for_may_not_be_invented(world: World) -> None:
+    """The confirmed requirements declare no delivery contract; a demanded stage is refused.
+
+    旧世界里这条命令带着一份 COMPOSITION 审查包，先在用途比对处拒绝；带绑定世界的根命令
+    本来就是 MISSION_FINAL，所以拒绝落在交付闸门本身（``DELIVERY_CONTRACT_UNDECLARED``）。
+    """
+
     world.accept()
-    command = world.resolution_command(
-        is_mission_root=True,
-        purpose=ReviewPurpose.MISSION_FINAL,
-        required_delivery_stage=DeliveryStage.CONFIRMED,
-    )
-    assert refusal(world.resolve, command) == "REVIEW_PURPOSE_MISMATCH"
+    command = world.resolution_command(required_delivery_stage=DeliveryStage.CONFIRMED)
+    assert refusal(world.resolve, command) == "DELIVERY_CONTRACT_UNDECLARED"
 
 
 # ======================================================================================
@@ -1496,16 +1566,19 @@ def test_a_failing_event_append_rolls_back_the_acceptance(
     def explode(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("the event store is down")
 
+    before = world.counts()
     monkeypatch.setattr(type(world.service), "_emit", explode)
     with pytest.raises(RuntimeError):
         world.accept()
-    assert world.counts() == {"acceptances": 0, "goal_resolutions": 0, "plan_commit_receipts": 0}
+    assert world.counts() == before
+    assert before["acceptances"] == 0
 
 
 def test_a_failing_receipt_write_rolls_back_the_resolution_and_the_lifecycle(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     world.accept()
+    command = world.resolution_command()
     before = world.counts()
 
     def explode(*args: Any, **kwargs: Any) -> Any:
@@ -1516,14 +1589,17 @@ def test_a_failing_receipt_write_rolls_back_the_resolution_and_the_lifecycle(
     # would leave a satisfied duty with no resolution behind it.
     monkeypatch.setattr(type(world.service), "_emit", explode)
     with pytest.raises(RuntimeError):
-        world.resolve()
+        world.resolve(command)
     assert world.counts() == before
     assert world.lifecycle(ROOT_DUTY) is ObligationLifecycle.UNSATISFIED
 
 
 def test_a_refused_resolution_writes_no_receipt_either(world: World) -> None:
+    world.accept()
+    command = world.resolution_command()
+    _set_validity(world, world.acceptance_id, Validity.REVOKED)
     before = world.counts()
-    refusal(world.resolve)
+    refusal(world.resolve, command)
     assert world.counts() == before
 
 
@@ -1537,29 +1613,33 @@ def test_mutant_accepting_without_the_witness_purpose_check_would_reuse_a_start_
 ) -> None:
     world.semantics.insert_validity_witness(
         world.mission.id,
-        accept_witness("wit-start2", LEAF_TASK, purpose=WitnessPurpose.START, support_revision=5),
+        accept_witness(
+            "wit-start2", world.leaf_task, purpose=WitnessPurpose.START, support_revision=5
+        ),
         subject=NO_SUBJECT,
     )
     real = refusal(world.accept, world.accept_command(witness_id="wit-start2"))
     assert real == "WITNESS_PURPOSE_NOT_ACCEPT"
     # The mutant: treat any stored witness as usable.  The acceptance then succeeds,
     # which is exactly what the real gate must prevent.
-    accept_any = world.semantics.get_validity_witness("wit-leaf")
+    accept_any = world.semantics.get_validity_witness(world.legal_accept.witness_id)
     assert accept_any.purpose is WitnessPurpose.ACCEPT
 
 
 def test_mutant_defaulting_the_independence_facts_is_refused_not_waved_through(
     world: World,
 ) -> None:
-    """Forgetting to look may not become acceptable (AER §5.3)."""
+    """Forgetting to look may not become acceptable (AER §5.3).
+
+    带绑定世界里陈述的独立性事实要和那次结果的真实产出者逐字段一致，所以"谁也没产出"
+    这个最宽松的默认值在比对审查身份时就拒绝（``OP_CONTENT_REVIEW_UNAVAILABLE``），
+    走不到公式。
+    """
 
     permissive = IndependenceFacts()
     assert permissive.producer_agent_ids == ()
-    # The frozen package says ``agent-worker`` produced the candidate; a default
-    # ``IndependenceFacts()`` says nobody did.  That disagreement is a finding, so
-    # the most permissive possible world is refused rather than believed.
     command = world.accept_command(independence=permissive)
-    assert refusal(world.accept, command) == "NOT_ACCEPTABLE"
+    assert refusal(world.accept, command) == "OP_CONTENT_REVIEW_UNAVAILABLE"
     assert world.counts()["acceptances"] == 0
     # The same command with the facts actually gathered is acceptable.
     assert world.accept().acceptance is not None
@@ -1569,38 +1649,38 @@ def test_mutant_moving_the_lifecycle_on_accept_would_close_the_duty_early(
     world: World,
 ) -> None:
     world.accept()
-    assert world.lifecycle(LEAF_DUTY) is ObligationLifecycle.UNSATISFIED
+    assert world.lifecycle(world.leaf_duty) is ObligationLifecycle.UNSATISFIED
+    _withdraw_demand(world)
     world.duties.set_lifecycle(
         world.mission.id,
-        ObligationId(LEAF_DUTY),
+        ObligationId(world.leaf_duty),
         ObligationLifecycle.SATISFIED,
-        resolution_ref="acc-leaf-1",
+        resolution_ref=world.acceptance_id,
     )
-    assert world.lifecycle(LEAF_DUTY) is ObligationLifecycle.SATISFIED
+    assert world.lifecycle(world.leaf_duty) is ObligationLifecycle.SATISFIED
 
 
 def test_mutant_taking_contributions_from_the_command_would_talk_a_child_into_existence(
-    world: World,
+    world: World, tmp_path: Any
 ) -> None:
-    claimed = world.resolution_command(
-        compound=CompoundFacts(
-            selected_method_legal=True,
-            contributing_occurrence_ids=(LEAF_OCCURRENCE,),
-            composition_obligation_passed=True,
-        )
-    )
-    assert refusal(world.resolve, claimed) == "COMPOUND_FACTS_CONTRADICT_STORE"
     world.accept()
-    assert world.resolve(claimed).resolution_id == "res-root-1"
+    claimed = world.resolution_command()
+    _set_validity(world, world.acceptance_id, Validity.REVOKED)
+    assert refusal(world.resolve, claimed) == "COMPOUND_FACTS_CONTRADICT_STORE"
+    # The same claim, in a store that does hold the acceptance, resolves.
+    (tmp_path / "twin").mkdir()
+    twin = build_world(tmp_path / "twin")
+    twin.accept()
+    twin.resolution_command()
+    assert twin.resolve(claimed).resolution_id == str(claimed.resolution.resolution_id)
 
 
 def test_mutant_a_root_gate_that_read_the_mission_row_would_pass_on_a_leaf(
     tmp_path: Any,
 ) -> None:
     world = root_world(tmp_path)
-    world.accept()
     # Every leaf finished and was accepted; the root still needs its delivery stage.
-    assert world.semantics.get_acceptance("acc-leaf-1").validity is Validity.CURRENT
+    assert world.semantics.get_acceptance(world.acceptance_id).validity is Validity.CURRENT
     command = root_command(world, delivery_receipts=(world.delivery(DeliveryStage.ENQUEUED),))
     assert refusal(world.resolve, command) == "DELIVERY_STAGE_NOT_REACHED"
 
@@ -1611,7 +1691,7 @@ def test_mutant_skipping_the_read_set_recheck_would_accept_on_a_stale_read(
     good = world.accept_command()
     stale = world.accept_command(
         command_id="cmd-accept-stale",
-        read_set=world.read_set(requirements_revision=1),
+        read_set=world.read_set(requirements_revision=0),
     )
     assert refusal(world.accept, stale) == "READ_SET_STALE"
     assert world.accept(good).acceptance is not None
@@ -1622,10 +1702,10 @@ def test_mutant_reusing_one_receipt_kind_for_both_actions_would_confuse_a_replay
 ) -> None:
     accepted = world.accept()
     assert accepted.commit.kind == ACCEPTANCE_KIND
-    assert accepted.commit.subject_id == "acc-leaf-1"
+    assert accepted.commit.subject_id == world.acceptance_id
     resolved = world.resolve()
     assert resolved.commit.kind == GOAL_RESOLUTION_KIND
-    assert resolved.commit.subject_id == "res-root-1"
+    assert resolved.commit.subject_id == str(world.resolution().resolution_id)
     # A replay of the accept command may not come back as a resolution receipt.
     assert world.accept().commit.kind == ACCEPTANCE_KIND
 
@@ -1637,7 +1717,6 @@ def test_mutant_reusing_one_receipt_kind_for_both_actions_would_confuse_a_replay
 
 def test_a_receipt_from_another_mission_is_invalid(tmp_path: Any) -> None:
     world = root_world(tmp_path)
-    world.accept()
     foreign = dataclasses.replace(
         world.delivery_receipt(DeliveryStage.CONFIRMED), mission_id="mission-elsewhere"
     )
@@ -1661,7 +1740,6 @@ def test_a_receipt_quoting_a_stale_acceptance_is_invalid_not_skipped(tmp_path: A
     """The review's mutant R9: a STALE acceptance's receipt used to be *skipped*."""
 
     world = root_world(tmp_path)
-    world.accept()
     world.semantics.insert_acceptance(
         world.child_acceptance(
             acceptance_id="acc-stale",
@@ -1681,7 +1759,6 @@ def test_a_receipt_quoting_a_stale_acceptance_is_invalid_not_skipped(tmp_path: A
 
 def test_a_receipt_quoting_a_revoked_acceptance_is_invalid(tmp_path: Any) -> None:
     world = root_world(tmp_path)
-    world.accept()
     world.semantics.insert_acceptance(
         world.child_acceptance(
             acceptance_id="acc-revoked",
@@ -1700,7 +1777,6 @@ def test_a_receipt_quoting_a_duty_outside_the_root_closure_is_invalid(tmp_path: 
     """A receipt for other work does not deliver this goal (AER §6.3)."""
 
     world = root_world(tmp_path)
-    world.accept()
     world.duties.register(
         Obligation(
             obligation_id=ObligationId("obl-unrelated"),
@@ -1732,7 +1808,6 @@ def test_one_invalid_receipt_refuses_even_when_another_would_have_done(
     """An invalid receipt is not scanned past: the caller is claiming something wrong."""
 
     world = root_world(tmp_path)
-    world.accept()
     world.semantics.insert_acceptance(
         world.child_acceptance(
             acceptance_id="acc-stale2",
@@ -1752,9 +1827,10 @@ def test_one_invalid_receipt_refuses_even_when_another_would_have_done(
 
 def test_the_root_duty_closure_is_the_root_plus_its_adopted_children(tmp_path: Any) -> None:
     world = root_world(tmp_path)
-    world.accept()
-    # The leaf duty is inside the closure, which is why the happy root path works.
-    assert world.resolve(root_command(world)).resolution_id == "res-root-1"
+    # The leaf's duty is inside the closure, which is why the happy root path works.
+    assert world.resolve(root_command(world)).resolution_id == str(
+        world.resolution().resolution_id
+    )
 
 
 # ======================================================================================
@@ -1792,6 +1868,9 @@ def test_a_review_resting_on_a_refuted_observation_is_refused(world: World) -> N
 
     first = observation("obs-1", "prop-1", polarity=True)
     world.semantics.insert_observation(world.mission.id, first)
+    # The leaf assembly reads the observation count (the outputs' support revision),
+    # so the legal command is the one it assembles over this world.
+    world.capture_leaf()
     item = ReadItem(
         kind=ReadItemKind.FACT,
         id=first.observation_id,
@@ -1827,7 +1906,7 @@ def test_a_review_resting_on_a_revoked_authority_is_refused(world: World) -> Non
             "request_id": "appr-1",
             "kind": "action",
             "mission_id": world.mission.id,
-            "subject_key": LEAF_TASK,
+            "subject_key": world.leaf_task,
             "state": "GRANTED",
             "version": 1,
         }
@@ -1848,7 +1927,7 @@ def test_a_review_resting_on_a_revoked_authority_is_refused(world: World) -> Non
             "request_id": "appr-1",
             "kind": "action",
             "mission_id": world.mission.id,
-            "subject_key": LEAF_TASK,
+            "subject_key": world.leaf_task,
             "state": "REVOKED",
             "version": 2,
         }
@@ -1866,12 +1945,12 @@ def test_a_review_resting_on_a_revoked_authority_is_refused(world: World) -> Non
 def test_a_review_resting_on_a_re_planned_duty_is_refused(world: World) -> None:
     """The OBLIGATION channel: a duty's shape history is its semantic revision."""
 
-    duty = ObligationId(LEAF_DUTY)
+    duty = ObligationId(world.leaf_duty)
     account = world.duties.account(world.mission.id, duty)
     obligation = world.duties.obligation(world.mission.id, duty)
     item = ReadItem(
         kind=ReadItemKind.OBLIGATION,
-        id=LEAF_DUTY,
+        id=world.leaf_duty,
         semantic_revision=account.shape_changes,
         content_hash=content_hash_of(
             {
@@ -1923,7 +2002,9 @@ def test_an_absence_that_became_false_is_refused(world: World) -> None:
         command_id="cmd-accept-absence",
         acceptance_id="acc-leaf-5",
         read_set=world.read_set(
-            absences=(AbsenceRead(predicate="no_obligation", scope_id=LEAF_DUTY, range_revision=0),)
+            absences=(
+                AbsenceRead(predicate="no_obligation", scope_id=world.leaf_duty, range_revision=0),
+            )
         ),
     )
     caught = refusal_error(world.accept, broken)
@@ -1962,10 +2043,10 @@ def test_the_dispatch_control_channels_of_an_eligibility_read_set_resolve(
 
     item = ReadItem(
         kind=ReadItemKind.TASK,
-        id=f"{LEAF_TASK}#dispatch_generation",
+        id=f"{world.leaf_task}#dispatch_generation",
         semantic_revision=0,
         content_hash=content_hash_of(
-            {"task": LEAF_TASK, "channel": "dispatch_generation", "value": 0}
+            {"task": world.leaf_task, "channel": "dispatch_generation", "value": 0}
         ),
     )
     command = world.accept_command(read_set=world.read_set(goal_revisions=(item,)))
@@ -1975,10 +2056,10 @@ def test_the_dispatch_control_channels_of_an_eligibility_read_set_resolve(
 def test_a_dispatch_control_channel_read_at_the_wrong_value_is_stale(world: World) -> None:
     item = ReadItem(
         kind=ReadItemKind.TASK,
-        id=f"{LEAF_TASK}#dispatch_generation",
+        id=f"{world.leaf_task}#dispatch_generation",
         semantic_revision=4,
         content_hash=content_hash_of(
-            {"task": LEAF_TASK, "channel": "dispatch_generation", "value": 4}
+            {"task": world.leaf_task, "channel": "dispatch_generation", "value": 4}
         ),
     )
     command = world.accept_command(read_set=world.read_set(goal_revisions=(item,)))
@@ -1999,7 +2080,7 @@ def test_every_reason_code_is_upper_snake_case(world: World) -> None:
         (world.resolve, object()),
     ):
         with pytest.raises(ResolutionCommitRejected) as caught:
-            call(command)  # type: ignore[arg-type]
+            call(command, world.principal())  # type: ignore[arg-type]
         seen.add(caught.value.reason)
     seen.update({"BAD_COMMAND", "BAD_PRINCIPAL"})
     for reason in seen:
@@ -2019,7 +2100,7 @@ def test_the_event_key_is_derived_from_the_command_id(world: World) -> None:
     receipt = world.accept()
     event = world.events(ACCEPTANCE_COMMITTED)[0]
     assert event.idempotency_key == command_idempotency_key(
-        world.mission.id, "cmd-accept-1", ACCEPTANCE_COMMITTED
+        world.mission.id, world.legal_accept.command_id, ACCEPTANCE_COMMITTED
     )
     assert receipt.commit.event_id == event.id
 
@@ -2032,7 +2113,11 @@ def test_a_replay_lookup_does_not_read_the_whole_mission(
     P2.3c part 1 had to page the Mission's events because ``plan_commit_receipts`` is
     plan-shaped and ``storage/`` was not its to change; it got the common case down to
     one indexed ``count_events``.  Part 2 owns storage, so ``(mission_id, command_id)``
-    is a primary key and *neither* the first command nor its replay reads the log.
+    is a primary key and the replay reads no log.
+
+    带绑定世界里**首个**命令会读事件：比对审查包时要找回那次结果冻结的输入
+    （``load_completion_result_inputs`` 逐页读任务事件）。那是验收校验本身的读，
+    不是重放查找；重放在校验之前就由键值读返回，所以这里只对重放断言。
     """
 
     calls: list[int] = []
@@ -2042,10 +2127,9 @@ def test_a_replay_lookup_does_not_read_the_whole_mission(
         calls.append(1)
         return real(self, mission_id, **kwargs)
 
+    world.accept()
     monkeypatch.setattr(Store, "list_events", counted)
-    world.accept()
-    assert calls == []
-    world.accept()
+    assert world.accept().replayed is True
     assert calls == []
 
 
@@ -2053,28 +2137,33 @@ def test_a_replay_of_the_wrong_kind_is_a_conflict(world: World) -> None:
     """One command id may not come back as the other action's receipt."""
 
     world.accept()
-    resolution = world.resolution_command(command_id="cmd-accept-1")
+    resolution = world.resolution_command(command_id=world.legal_accept.command_id)
     assert refusal(world.resolve, resolution) == "COMMAND_PAYLOAD_CONFLICT"
 
 
 # ======================================================================================
 # 7b. Review fixes: a contribution needs a live duty, keyed by occurrence
 # ======================================================================================
+#
+# 带绑定世界里必需子步骤细化父目标的义务（``refines_parent``），子步骤的义务就是根目标
+# 自己的义务。所以"子义务已取消 / 被取代"就是这个目标的义务已关闭：结论在清点贡献之前就
+# 以 ``OBLIGATION_NOT_OPEN`` 拒绝，而提交自己的贡献读取也不再把那条验收算进去。
 
 
 def test_an_acceptance_on_a_cancelled_duty_is_not_a_contribution(world: World) -> None:
     world.accept()
+    command = world.resolution_command()
+    assert world.leaf_occurrence in world.contributions()
+    _withdraw_demand(world)
     world.duties.set_lifecycle(
-        world.mission.id, ObligationId(LEAF_DUTY), ObligationLifecycle.CANCELLED
+        world.mission.id, ObligationId(world.leaf_duty), ObligationLifecycle.CANCELLED
     )
-    assert refusal(world.resolve) == "COMPOUND_FACTS_CONTRADICT_STORE"
+    assert world.contributions() == {}
+    assert refusal(world.resolve, command) == "OBLIGATION_NOT_OPEN"
 
 
 def test_an_acceptance_on_a_superseded_duty_is_not_a_contribution(world: World) -> None:
     world.accept()
-    world.duties.set_lifecycle(
-        world.mission.id, ObligationId(LEAF_DUTY), ObligationLifecycle.SUPERSEDED
-    )
     command = world.resolution_command(
         compound=CompoundFacts(
             selected_method_legal=True,
@@ -2082,26 +2171,38 @@ def test_an_acceptance_on_a_superseded_duty_is_not_a_contribution(world: World) 
             composition_obligation_passed=True,
         )
     )
-    assert refusal(world.resolve, command) == "NOT_ACCEPTABLE"
+    _withdraw_demand(world)
+    world.duties.set_lifecycle(
+        world.mission.id, ObligationId(world.leaf_duty), ObligationLifecycle.SUPERSEDED
+    )
+    assert world.contributions() == {}
+    assert refusal(world.resolve, command) == "OBLIGATION_NOT_OPEN"
 
 
 def test_the_event_records_which_acceptance_carried_which_occurrence(world: World) -> None:
     world.accept()
     world.resolve()
     payload = world.events(GOAL_RESOLUTION_COMMITTED)[0].payload
-    assert payload["contributing_acceptances"] == {LEAF_OCCURRENCE: ["acc-leaf-1"]}
+    assert payload["contributing_acceptances"] == {
+        world.leaf_occurrence: [world.acceptance_id],
+        world.review_occurrence: [str(world.review_acceptance_id)],
+    }
 
 
 def test_mutant_ignoring_the_duty_lifecycle_would_count_a_cancelled_contribution(
-    world: World,
+    world: World, tmp_path: Any
 ) -> None:
     world.accept()
-    assert world.resolve().resolution_id == "res-root-1"
+    assert world.resolve().resolution_id == str(world.resolution().resolution_id)
     # The same store with the duty cancelled first refuses, which is the difference
     # the review asked for: an acceptance is not a contribution on a dead duty.
-    other = build_world(pathlib.Path(tempfile.mkdtemp()), key="p23c-cancel")
+    (tmp_path / "cancelled").mkdir()
+    other = build_world(tmp_path / "cancelled", key="p23c-cancel")
     other.accept()
+    command = other.resolution_command()
+    _withdraw_demand(other)
     other.duties.set_lifecycle(
-        other.mission.id, ObligationId(LEAF_DUTY), ObligationLifecycle.CANCELLED
+        other.mission.id, ObligationId(other.leaf_duty), ObligationLifecycle.CANCELLED
     )
-    assert refusal(other.resolve) == "COMPOUND_FACTS_CONTRADICT_STORE"
+    assert other.leaf_occurrence not in other.contributions()
+    assert refusal(other.resolve, command) == "OBLIGATION_NOT_OPEN"

@@ -1229,9 +1229,10 @@ class HierarchicalDispatch:
         """Occurrences whose duty has an *adopted* GoalResolution (§7.2)."""
 
         from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, mission_id) and self.semantics().active_plan_revision(mission_id) is None:
-            # No committed scope/resolution exists for the verified original seed.
-            self.seed_network(mission_id)
+        if self.semantics().active_plan_revision(mission_id) is None:
+            # No plan is committed yet, so nothing has a completion scope or a resolution.
+            if taskgraph_enabled(self.store, mission_id):
+                self.seed_network(mission_id)  # verify the original seed
             return frozenset()
         from .scoped_content_review import uses_completion_protocol
         if uses_completion_protocol(self.store, mission_id):

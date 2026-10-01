@@ -33,7 +33,6 @@ from agent_orchestrator.contracts.resolution import (
 from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.planning_authorization import (
-    PlanningLanePolicy,
     StorePlanningAuthorityReader,
     build_planning_authorization,
 )
@@ -91,16 +90,6 @@ def _requirements(world) -> RequirementsRevision:
     )
     HtnStore(world.store).insert_requirements_revision(requirements)
     return requirements
-
-
-def _bind_new_protocol(world) -> None:
-    PlanningDecisionStore(world.store).bind_mission_protocol(
-        world.mission.id,
-        protocol_version="planning-decision-v1",
-        package_version=6,
-        prompt_version="planner-hierarchical-v9",
-        binding_hash=HASH_A,
-    )
 
 
 def _requirements_ref(requirements: RequirementsRevision) -> TypedRef:
@@ -170,8 +159,8 @@ def _api(world, principal_id: str = "human-confirming") -> OperationCompletionAp
 
 
 def _approval_world(tmp_path):
-    world = _world(tmp_path, key="completion-spec-approval")
-    _bind_new_protocol(world)
+    # 任务创建时就绑定了当前规划协议；完成要求由本文件自己发布并确认。
+    world = _world(tmp_path, key="completion-spec-approval", confirm_completion=False)
     return world, _requirements(world)
 
 

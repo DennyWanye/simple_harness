@@ -119,7 +119,7 @@ class _CodeWorld:
         success_criteria: tuple[str, ...] = ("c",),
         allowed_tools: tuple[str, ...] = (),
         workspace_seed: dict[str, str] | None = None,
-        max_attempts: int = 4,
+        max_attempts: int = 12,  # 每验收一步就是一次真实的尝试
     ) -> None:
         if db_name is None:
             self.service, self.mission = _mission(tmp_path, key=key)
@@ -177,15 +177,14 @@ class _CodeWorld:
             ),
         )
         self.service.begin_planning(self.mission.id)
-        if db_name is not None:
-            # A world a real ``Orchestrator`` loop runs keeps its protocol binding, so
-            # it needs the person's confirmed completion mapping before the plan lands.
-            approve_content_only_completion(
-                self.service,
-                self.mission,
-                self.semantics.task_semantics_of(self.mission.id, ROOT_TASK),
-                command_id=f"approve-{key}",
-            )
+        # Every hierarchical Mission holds its protocol binding, so it needs the
+        # person's confirmed completion mapping before the plan lands.
+        approve_content_only_completion(
+            self.service,
+            self.mission,
+            self.semantics.task_semantics_of(self.mission.id, ROOT_TASK),
+            command_id=f"approve-{key}",
+        )
         _say(self.world, self.semantics, self.mission.id, "code.repo-checked-out", {
             "repository": REPOSITORY
         })
