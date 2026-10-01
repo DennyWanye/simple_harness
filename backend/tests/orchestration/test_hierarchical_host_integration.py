@@ -62,3 +62,28 @@ async def test_host_roots_are_atomic_isolated_and_recoverable(orchestration_root
         assert len(recovered.store.list_missions()) == 2
     finally:
         await service.close()
+
+
+@pytest.mark.asyncio
+async def test_the_desktop_registers_sub_goal_types_by_level(orchestration_root, principal):
+    """HTN 精简 片 B：中间目标按层注册两个类型。类型不声明判据（子目标按上级做法交给它的要求
+    审），层级决定能往下放什么——根目标 0 层，第一层子目标里还能再放第二层，第二层只能放步骤；
+    层数上限就是注册了几层，由 SDK 的注册检查保证。"""
+    service = OrchestrationService(orchestration_root, OrchestrationSettings(),
+        provider=notes_provider(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    await service.start()
+    try:
+        created = service.create_mission(notes_request("htn-levels"))
+        world = service._orchestrator._dispatch_for(created["mission_id"]).require_planning_world()
+        compound = {spec.task_type_ref.id: spec for spec in world.catalog.task_types()
+                    if str(spec.form) == "compound"}
+        assert {name: spec.refinement_level for name, spec in compound.items()} == {
+            "desktop.user-goal": 0, "desktop.sub-goal-1": 1, "desktop.sub-goal-2": 2}
+        for name in ("desktop.sub-goal-1", "desktop.sub-goal-2"):
+            assert compound[name].goal_signature.coverage_criteria == ()
+            assert compound[name].operator_ref is None
+            assert world.schemas.resolve(compound[name].parameter_schema_ref) is not None
+        # the root goal still declares the user's content requirements
+        assert compound["desktop.user-goal"].goal_signature.coverage_criteria
+    finally:
+        await service.close()

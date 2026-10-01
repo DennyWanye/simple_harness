@@ -41,21 +41,36 @@ def planning_world(loop: Any, mission: Any) -> Any:
     preparation_ports = ports
     # These are actual workspace operations available to this deployment. External
     # effects still require an OperationIntent, review and the original connector.
+    # 2026-10-01（HTN 精简 片 B）：中间目标按层注册。类型不声明判据——子目标负责哪几条要求，是
+    # 上级做法用链接交给它的（原编号、用户原话），审阅也按那几条审。层级决定能往下放什么：
+    # 根目标 0 层，第一层子目标的做法里还能放第二层子目标，第二层只能放普通步骤；层数上限
+    # 就是这里注册了几层，由 SDK 的注册检查保证，Host 不另写计数。子目标不声明端口：它下面的
+    # 步骤写进同一个工作区，后续步骤靠先后顺序接着做。
+    levels = {"desktop.user-goal": 0, "desktop.sub-goal-1": 1, "desktop.sub-goal-2": 2}
     for name, form in (("desktop.user-goal", TaskForm.COMPOUND),
+                       ("desktop.sub-goal-1", TaskForm.COMPOUND),
+                       ("desktop.sub-goal-2", TaskForm.COMPOUND),
                        ("desktop.prepare-delivery", TaskForm.PRIMITIVE),
                        ("desktop.continue-delivery", TaskForm.PRIMITIVE)):
         goal_signature = preparation if form is TaskForm.PRIMITIVE else signature
+        level = levels.get(name)
+        if level:
+            goal_signature = GoalSignature(
+                name, 1, params, outputs,
+                "A part of the user's goal; its goal parameter says what this part has to achieve.", ())
         # Add a separately identified consumer type. Previously admitted methods
         # keep the exact prepare-delivery v1 declaration and need no new input.
         input_ports = ()
         if name == "desktop.continue-delivery":
             goal_signature = continuation
             input_ports = (PortSpec("delivery", outputs),)
-        declared_ports = preparation_ports if form is TaskForm.PRIMITIVE else ports
+        declared_ports = preparation_ports if form is TaskForm.PRIMITIVE else (() if level else ports)
         body = {"name": name, "form": str(form), "signature": goal_signature.to_json(),
                 "ports": [p.to_json() for p in declared_ports]}
         if input_ports:
             body["input_ports"] = [p.to_json() for p in input_ports]
+        if level:
+            body["refinement_level"] = level
         ref = VersionedRef(name, 1, content_hash_of(body))
         world.catalog.register(TaskTypeSpec(
             task_type_ref=ref, form=form, goal_signature=goal_signature,
@@ -66,7 +81,7 @@ def planning_world(loop: Any, mission: Any) -> Any:
                 if form is TaskForm.PRIMITIVE else None),
             required_capabilities=("workspace.prepare",) if form is TaskForm.PRIMITIVE else (),
             side_effect_kind=SideEffectKind.LOCAL_WRITE if form is TaskForm.PRIMITIVE else SideEffectKind.NONE,
-            reversible=True, domain="desktop",
+            reversible=True, domain="desktop", refinement_level=level,
         ))
     offered = set(mission.allowed_tools)
     world.records = capability_records(world.catalog, capability_layers={"workspace.prepare": None},
