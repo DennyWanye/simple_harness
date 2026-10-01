@@ -1025,7 +1025,11 @@ PLANNER_HIERARCHICAL_V14 = RoleTemplate(
         "  subgoal_types：这个目标的做法里可以放的子目标类型（没有就是 []）。子目标是一个 form 为 compound 的"
         "步骤：一组步骤合起来才算完成一部分要求、值得先单独审一次再往下做时，可以把这部分交给一个子目标，"
         "它自己的做法之后单独规划（系统会用 GOAL_UNREFINED 请求再叫你）。是否需要中间目标由你判断；"
-        "能放的层数由 subgoal_types 决定，列表为空就只能用 operators 里的步骤；\n"
+        "能放的层数由 subgoal_types 决定，列表为空就只能用 operators 里的步骤。"
+        "子目标对外交付的是它收尾步骤在同名输出端口上的产出：后面的步骤要用子目标里做出来的文件，"
+        "就把自己的输入端口接到子目标步骤的输出端口（{\"op\":\"output\",\"step\":子目标的 local_id,"
+        "\"port\":端口名}），与接普通步骤一样——一步执行时只能看到通过输入端口接进来的上游产出，"
+        "只写先后顺序拿不到文件；\n"
         "  rejected_methods：已有做法各自为什么不适用；\n"
         "  new_method_identity：新做法该用的 method_id 与 method_version（重新提出时版本号会变，照抄）。\n"
         "method 的字段名必须与下面完全一致，不能少、不能改名、不能多写：\n"
@@ -1050,7 +1054,8 @@ PLANNER_HIERARCHICAL_V14 = RoleTemplate(
         "child_step 是子目标步骤时，child_criterion_id 必须与 parent_criterion_id 相同"
         "（要求原样交给子目标，一个子目标可以接多条）。"
         "为中间目标写做法时，只能链接 criterion_evidence 里列出的要求，一条不能少、一条不能多，"
-        "每个步骤至少被一条要求链接。\n"
+        "每个步骤至少被一条要求链接；目标类型声明了输出端口时 finalizer_step 必须写，"
+        "它是这个目标对外交付的那一步，要往外交的文件须经步骤间的端口一路接到它。\n"
         "\n子结构字段（逐项写全；某个列表写不全就让它为 []，空列表永远合法）：\n"
         "  - 引用四元组：kind、id、semantic_revision（整数）、content_hash，整个对象从 visible_refs 照抄。"
         "reason_refs、wait_for 是这种对象的数组。\n"
@@ -1113,7 +1118,8 @@ PLANNER_HIERARCHICAL_V14 = RoleTemplate(
         '"form":"compound","arguments":{"goal":{"op":"constant","value":"整理资料：提取规则并逐条核对引用"}},'
         '"required_capabilities":[],"obligation_relation":"refines_parent"},'
         '{"local_id":"summarise","task_type_ref":{"id":"dom.deliver","version":1,"content_hash":"__HASH__"},'
-        '"form":"primitive","arguments":{"subject":{"op":"parameter","name":"subject"}},'
+        '"form":"primitive","arguments":{"subject":{"op":"parameter","name":"subject"},'
+        '"result":{"op":"output","step":"organise","port":"result"}},'
         '"required_capabilities":["dom.send"],"obligation_relation":"refines_parent"}],'
         '"ordering":[{"before":"organise","after":"summarise"}],"required_capabilities":[],"expected_effects":[],'
         '"composition":{"criterion_links":[{"parent_criterion_id":"c-user-1","child_step":"organise",'

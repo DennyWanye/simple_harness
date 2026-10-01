@@ -1894,6 +1894,29 @@ def _check_structure(
                     "child_criterion_id)",
                 )
 
+        # 子目标对外交付的是收尾步骤的同名产出（片 B）：目标类型声明了输出端口，做法就必须
+        # 写收尾步骤，且那一步的类型声明了这些端口——否则接这个子目标的后续步骤永远等不到数据。
+        # 根目标（第 0 层）的端口没有人接，不在此列。
+        if owner.refinement_level > 0 and owner.output_ports:
+            finalizer = next((item for item in method.steps
+                              if item.local_id == method.composition.finalizer_step), None)
+            published = None if finalizer is None else policy.task_types.resolve(finalizer.task_type_ref)
+            for port in owner.output_ports:
+                if finalizer is None:
+                    refuse(
+                        RejectionCode.PORT_UNAVAILABLE,
+                        f"goal type {method.goal_type_ref.id!r} publishes output port {port.port_key!r}; "
+                        "its method must name a finalizer step (composition.finalizer_step), whose "
+                        "output of the same name is what the goal delivers",
+                    )
+                elif published is not None and published.output_port(port.port_key) is None:
+                    refuse(
+                        RejectionCode.PORT_UNAVAILABLE,
+                        f"goal type {method.goal_type_ref.id!r} publishes output port {port.port_key!r}, "
+                        f"but the finalizer step {finalizer.local_id!r} is of task type "
+                        f"{finalizer.task_type_ref.id!r}, which does not declare it",
+                    )
+
     # Acyclic partial order, over declared ORDER plus the ordering DATA implies.
     pairs = [(order.before, order.after) for order in method.ordering]
     pairs.extend(implied_orderings(method))

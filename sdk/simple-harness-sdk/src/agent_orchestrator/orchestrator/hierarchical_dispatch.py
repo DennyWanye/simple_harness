@@ -1409,7 +1409,11 @@ class HierarchicalDispatch:
         semantics = self.semantics()
         epoch = semantics.epoch(mission_id, scope_id)
         issued: list[ValidityWitness] = []
-        for output in self._recorded_outputs(mission_id, network):
+        recorded = tuple(self._recorded_outputs(mission_id, network))
+        # 片 B：接在中间目标端口上的步骤，见证发给它实际读到的那份验收（收尾步骤的）。
+        delivered = self.goal_port_outputs(mission_id, network, recorded,
+                                           complete=self._complete_goals(mission_id, network))
+        for output in (*recorded, *delivered):
             consumers = {
                 str(network.binding_for_occurrence(item.consumer_occurrence).task_id)
                 for item in network.data_requirements
@@ -1839,9 +1843,12 @@ class HierarchicalDispatch:
                        and ref.content_hash == output.content_hash
                        for ref in contribution.output_artifact_refs):
                     scoped_outputs.append(output)
+            # 片 B：完成的中间目标的端口对到它收尾步骤的产出；它也就成了"已完成的生产者"。
+            done = frozenset(key for key, value in statuses.items() if value.complete)
+            delivered = self.goal_port_outputs(mission_id, network, scoped_outputs, complete=done)
             return AcceptedOutputsIndex(
-                outputs=tuple(scoped_outputs),
-                completed_producers=prepared,
+                outputs=(*scoped_outputs, *delivered),
+                completed_producers=prepared | {item.producer_occurrence for item in delivered},
             )
         settled = self.occurrence_outcomes(mission_id, network) if outcomes is None else outcomes
         completed = frozenset(
@@ -1853,6 +1860,77 @@ class HierarchicalDispatch:
             outputs=tuple(self._recorded_outputs(mission_id, network)),
             completed_producers=completed,
         )
+
+    def goal_port_outputs(
+        self, mission_id: str, network: TaskNetworkSnapshot, outputs: Sequence[Any],
+        *, complete: Collection[Any],
+    ) -> tuple[Any, ...]:
+        """片 B：完成的中间目标对外交付什么——它收尾步骤在同名端口上已验收的产出。
+
+        一步执行时只铺通过输入端口接进来的上游产出；中间目标自己不执行、没有产出，接它端口的
+        后续步骤要的其实是它下面做出来的东西。规则只有一条：目标的端口 = 采用做法的收尾步骤的
+        同名端口（收尾步骤本身是子目标时再往下找）。只有 ``complete`` 里的目标（组合审阅通过、
+        结论已形成）才对外交付，所以后续步骤拿到的一定是审过的那一版。
+
+        返回的是别名：原产出记录原样，只把"生产者"换成这个目标，接它的数据依赖于是按原规则
+        解析、发见证、冻结输入，文件归属仍是真正写出它的那一步。
+        """
+
+        from dataclasses import replace
+
+        if not complete:
+            return ()
+        by_place: dict[tuple[str, str], list[Any]] = {}
+        for item in outputs:
+            by_place.setdefault((str(item.producer_occurrence), str(item.output_port)), []).append(item)
+        roots = {str(item) for item in network.root_occurrence_ids}
+        goals: list[tuple[Any, str, tuple[str, ...]]] = []
+        for spec in network.occurrences:
+            if (spec.form is not TaskForm.COMPOUND or str(spec.occurrence_id) in roots
+                    or spec.occurrence_id not in complete):
+                continue
+            adopted = network.adopted_instance_for(spec.occurrence_id)
+            ports = tuple(str(port.port_key)
+                          for port in network.binding_for_occurrence(spec.occurrence_id).output_ports)
+            if adopted is None or not ports:
+                continue
+            try:
+                contract = self.semantics().get_method(
+                    str(adopted.method_ref.method_id), int(adopted.method_ref.version)).contract
+            except StoreError:
+                continue
+            finalizer = next((str(child.occurrence_id) for child in adopted.child_bindings
+                              if str(child.slot_key) == str(contract.composition.finalizer_step)), None)
+            if finalizer is not None:
+                goals.append((spec.occurrence_id, finalizer, ports))
+        aliases: list[Any] = []
+        moved = True
+        while moved:  # a finalizer that is itself a sub-goal resolves one level per pass
+            moved = False
+            for goal, finalizer, ports in goals:
+                for port in ports:
+                    if (str(goal), port) in by_place or (finalizer, port) not in by_place:
+                        continue
+                    named = [replace(item, producer_occurrence=goal) for item in by_place[(finalizer, port)]]
+                    by_place[(str(goal), port)] = named
+                    aliases.extend(named)
+                    moved = True
+        return tuple(aliases)
+
+    def _complete_goals(self, mission_id: str, network: TaskNetworkSnapshot) -> frozenset[Any]:
+        """The non-root compound occurrences whose completion is recorded (片 B)."""
+
+        from .completion_status import read_occurrence_completion
+        from .scoped_content_review import uses_completion_protocol
+
+        if not uses_completion_protocol(self.store, mission_id):
+            return frozenset()
+        roots = {str(item) for item in network.root_occurrence_ids}
+        return frozenset(
+            spec.occurrence_id for spec in network.occurrences
+            if spec.form is TaskForm.COMPOUND and str(spec.occurrence_id) not in roots
+            and network.binding_for_occurrence(spec.occurrence_id).output_ports
+            and read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id)).complete)
 
     def declared_output_ports_for(
         self, mission_id: str, task_id: str, network: TaskNetworkSnapshot | None = None

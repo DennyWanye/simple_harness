@@ -95,3 +95,11 @@ def test_the_prompt_explains_sub_goals_as_facts_and_order_rules_only() -> None:
     handed = [(link.parent_criterion_id, link.child_criterion_id)
               for link in nested.composition.criterion_links if link.child_step == "organise"]
     assert handed and all(parent == child for parent, child in handed)
+    # the later step takes the sub-goal's result through a port, not through ordering alone
+    from agent_orchestrator.contracts.htn import OutputValue
+    from agent_orchestrator.planning.htn.registry import iter_values
+    consumer = next(step for step in nested.steps if step.local_id == "summarise")
+    read = [node for argument in consumer.arguments.values() for node in iter_values(argument)
+            if isinstance(node, OutputValue)]
+    assert [(node.step, node.port) for node in read] == [("organise", "result")]
+    assert "只写先后顺序拿不到文件" in PROMPT and "finalizer_step 必须写" in PROMPT
