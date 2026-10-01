@@ -83,6 +83,8 @@ async def test_the_desktop_registers_sub_goal_types_by_level(orchestration_root,
             assert compound[name].goal_signature.coverage_criteria == ()
             assert compound[name].operator_ref is None
             assert world.schemas.resolve(compound[name].parameter_schema_ref) is not None
+            # a later step takes what the sub-goal produced through this port (its finalizer's delivery)
+            assert [port.port_key for port in compound[name].output_ports] == ["delivery"]
         # the root goal still declares the user's content requirements
         assert compound["desktop.user-goal"].goal_signature.coverage_criteria
     finally:

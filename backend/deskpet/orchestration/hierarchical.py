@@ -44,8 +44,10 @@ def planning_world(loop: Any, mission: Any) -> Any:
     # 2026-10-01（HTN 精简 片 B）：中间目标按层注册。类型不声明判据——子目标负责哪几条要求，是
     # 上级做法用链接交给它的（原编号、用户原话），审阅也按那几条审。层级决定能往下放什么：
     # 根目标 0 层，第一层子目标的做法里还能放第二层子目标，第二层只能放普通步骤；层数上限
-    # 就是这里注册了几层，由 SDK 的注册检查保证，Host 不另写计数。子目标不声明端口：它下面的
-    # 步骤写进同一个工作区，后续步骤靠先后顺序接着做。
+    # 就是这里注册了几层，由 SDK 的注册检查保证，Host 不另写计数。子目标声明一个 delivery 输出
+    # 端口：一步执行时只铺通过输入端口接进来的上游产出，后面的步骤要用子目标里做出来的文件，
+    # 就接这个端口——SDK 把它对到子目标收尾步骤的 delivery（真机第 5 局：不声明端口时最后一步
+    # 看不到子目标下写出的文件）。
     levels = {"desktop.user-goal": 0, "desktop.sub-goal-1": 1, "desktop.sub-goal-2": 2}
     for name, form in (("desktop.user-goal", TaskForm.COMPOUND),
                        ("desktop.sub-goal-1", TaskForm.COMPOUND),
@@ -64,7 +66,7 @@ def planning_world(loop: Any, mission: Any) -> Any:
         if name == "desktop.continue-delivery":
             goal_signature = continuation
             input_ports = (PortSpec("delivery", outputs),)
-        declared_ports = preparation_ports if form is TaskForm.PRIMITIVE else (() if level else ports)
+        declared_ports = preparation_ports if form is TaskForm.PRIMITIVE else ports
         body = {"name": name, "form": str(form), "signature": goal_signature.to_json(),
                 "ports": [p.to_json() for p in declared_ports]}
         if input_ports:
