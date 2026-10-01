@@ -395,11 +395,14 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         plan the original judge refuses) has no root to resolve: reported as
         ``ROOT_NETWORK_UNAVAILABLE`` and NOT_READY, never repaired here.
         """
+        from .assurance_tick import MISSION_DATA_ERRORS
         from .commit_service import CommitRejected
 
         try:
             network = self.commit._judgment_network(mission)
-        except CommitRejected as error:
+        except (CommitRejected, *MISSION_DATA_ERRORS) as error:
+            # 读不回来有两种：原判定拒绝，或这个任务的执行图文档 / 计划本身读不了（比如按
+            # 旧编解码清单存的旧任务）。都是"根网络不可用"，如实记下，不往外抛。
             return None, [], [], "ROOT_NETWORK_UNAVAILABLE: " + str(error)[:200]
         if network is None:
             raise AssuranceError("CLOSEOUT_ROOT_NETWORK_UNAVAILABLE")

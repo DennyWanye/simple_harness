@@ -16,12 +16,20 @@ from typing import Any, Protocol
 from ..assurance.codec import AssuranceError, integer, text
 from ..assurance.expiry import AssuranceExpiry
 from ..assurance.refs import AssuranceRef
-from ..contracts import Event
+from ..contracts import ContractError, Event
 from ..governance.budgets import BudgetError
+from ..graph.projection_validation import GraphIntegrityError
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import CONSUMERS, AssuranceWorkStore, WorkClaim, WorkTarget
-from ..storage.store import StoreConflict
+from ..storage.store import StoreConflict, StoreError
 from .assurance_clock import observe_assurance_clock
+
+
+#: 一项工作在读**它自己任务**的数据时可能抛出的错误：计划读不回来、执行图文档按现在的编解码
+#: 清单读不了（开发期不兼容旧数据）、库里这一行坏了。这是这个任务自己的事，这一项按持久
+#: 重试上限再看，绝不冲出轮询把别的任务一起带垮（片 D 真机，2026-10-02：冲出去之后主循环
+#: 每一轮都失败，新任务一步都走不了）。
+MISSION_DATA_ERRORS = (ContractError, GraphIntegrityError, StoreError)
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,14 +286,17 @@ class AssuranceTick:
                                 self.work.recheck(claim, now_ms=now_ms)
                         except StoreConflict:
                             pass
-                    except (AssuranceError, BudgetError) as error:
-                        # One unavailable source/reservation must not starve the
-                        # other consumers or prevent later revocation ingestion.
+                    except (AssuranceError, BudgetError, *MISSION_DATA_ERRORS) as error:
+                        # One unavailable source/reservation, or one Mission whose own
+                        # data does not read back, must not starve the other consumers
+                        # or prevent later revocation ingestion.
                         # The same persistent work budget bounds all retries.
                         reason = (
                             error.code
                             if isinstance(error, AssuranceError)
                             else "BUDGET_UNAVAILABLE"
+                            if isinstance(error, BudgetError)
+                            else "MISSION_DATA_UNREADABLE"
                         )
                         try:
                             now_ms = self._settlement_time(claim)
