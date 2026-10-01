@@ -95,15 +95,18 @@ def test_process_exit_at_attempt_boundary_preserves_original_accounting(tmp_path
         assert store.connection.execute(
             "SELECT COUNT(*) FROM dispatch_intents WHERE kind='attempt'").fetchone()[0] == attempt_count
         assert store.connection.execute('SELECT COUNT(*) FROM taskgraph_revision_records').fetchone()[0] == 1
+        # 2026-10-01: the seed plan is the Planner's own choice now (the program no longer
+        # selects a sole candidate for it), so one physical call was made before any Worker.
+        assert all(state == 'succeeded' and handoffs == 1 for _, state, handoffs in before_calls)
         if mode == 'after_reserve':
-            assert before_calls == []
+            assert len(before_calls) == 1
             assert [r[0] for r in store.connection.execute(
                 'SELECT account_id FROM budget_accounts ORDER BY account_id')] == source['before_worker']['account_ids']
             assert [r[0] for r in store.connection.execute(
                 'SELECT reservation_id FROM budget_reservations ORDER BY reservation_id')] == source['before_worker']['reservation_ids']
         else:
-            assert len(before_calls) == 2  # One tool request and the final result envelope.
-            assert all(state == 'succeeded' and handoffs == 1 for _, state, handoffs in before_calls)
+            # The Planner's reply, then one tool request and the final result envelope.
+            assert len(before_calls) == 3
     finally:
         store.close()
     if mode == 'after_reserve':

@@ -424,8 +424,9 @@ def method_plan_package(
     requirements = htn.latest_requirements_revision(mission_id)
     if requirements is None:
         raise AssuranceError("SOURCE_UNAVAILABLE", "requirements")
-    covered = set(binding.goal_signature.coverage_criteria)
-    criteria = tuple(item for item in requirements.criteria if item.criterion_id in covered)
+    from .assurance_check_policy import planning_subject_criteria
+
+    criteria = planning_subject_criteria(store, mission_id, binding, requirements)
     if not criteria:
         raise AssuranceError("SOURCE_UNAVAILABLE", "method covers no requirements criterion")
     owner_task = Pin(str(binding.task_id), int(binding.contract_revision), binding.content_hash())
@@ -438,7 +439,10 @@ def method_plan_package(
             "method_ref": method_ref.to_json(),
             "registration_hash": content_hash_of(stored.registration.to_json()),
         },
-        request_id="assurance-method-plan:" + method_ref.id,
+        # One manifest per exact method: a revised proposal keeps the method id and
+        # takes a new version, and is a different review of a different candidate.
+        request_id=f"assurance-method-plan:{method_ref.id}@{int(method_ref.revision)}:"
+                   f"{method_ref.content_hash[:16]}",
     )
     occurrence_id = None
     scope_ref = None

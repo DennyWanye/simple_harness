@@ -66,7 +66,6 @@ def test_run_waits_for_an_inflight_planning_intent_however_slow_the_model_is(
         max_concurrency=3,
         test_timeout_seconds=60,
         max_planning_attempts=2,
-        method_selection_policy="ALWAYS_MODEL",
     )
     gate = asyncio.Event()
     provider = RoleScriptedProvider({"planner": [refine_step()]}, gate=gate)

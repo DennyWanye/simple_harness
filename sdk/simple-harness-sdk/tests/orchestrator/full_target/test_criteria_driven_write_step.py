@@ -45,17 +45,11 @@ from test_read_only_rewrite_bound import (  # noqa: E402
 from test_root_review_repair_library import (  # noqa: E402
     C1_FINDING,
 )
-from test_synthesis_rejection_reask import (  # noqa: E402
-    SYNTHESIS_REPLY_REJECTED,
-)
 
 from agent_orchestrator.orchestrator.commit_service import mission_account  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
     ROOT_REVIEW_REPAIRS_EXHAUSTED,
     Orchestrator,
-)
-from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
-    SYNTHESIS_ROUND_RECORDED,
 )
 from agent_orchestrator.planning.htn.seed_methods.loader import seed_content_hash  # noqa: E402
 from agent_orchestrator.planning.htn.world import build_planning_world  # noqa: E402
@@ -266,16 +260,6 @@ def _run(
                 "verify_inputs": verify_inputs,
                 "apply_package": apply_package,
                 "roles": dict(provider.by_role),
-                "synthesis": [
-                    dict(item.payload)
-                    for item in events
-                    if item.type == SYNTHESIS_ROUND_RECORDED
-                ],
-                "rejected": [
-                    dict(item.payload)
-                    for item in events
-                    if item.type == SYNTHESIS_REPLY_REJECTED
-                ],
                 "task_status": {
                     task.id: str(task.status) for task in loop.store.list_tasks(mission.id)
                 },

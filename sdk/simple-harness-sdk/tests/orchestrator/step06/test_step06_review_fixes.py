@@ -289,8 +289,9 @@ def test_p1_1_global_pool_exhaustion_in_planning_names_the_global_scope(tmp_path
     )
 
     async def case():
+        # 片 A：max_planning_attempts 默认 2→3；脚本两步，上限钉 2，否则第三问会挂住。
         async with Orchestrator(
-            config(tmp_path, global_budget=Budget(max_tokens=6_000)), provider
+            config(tmp_path, global_budget=Budget(max_tokens=6_000), max_planning_attempts=2), provider
         ) as orchestrator:
             await orchestrator.submit_mission(
                 spec("gp-1", success_criteria=("file:analysis.md",), budget=Budget(max_attempts=4))

@@ -40,6 +40,8 @@ repairs, and collapsing them would tell the proposer nothing about what to do ne
 
 from __future__ import annotations
 
+import json
+
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
@@ -366,6 +368,7 @@ class PlanCommitsMixin:
             self._check_read_set(semantics, command, read_set)
             base, new_revision = self._check_plan_revision(semantics, command)
             self._check_structure(semantics, command)
+            self._check_method_reviews(command)
             self._check_binding_rewrites(semantics, command)
             self._check_resolution_reuses(command)
             obligations = ObligationStore(self._store)
@@ -389,6 +392,29 @@ class PlanCommitsMixin:
             if taskgraph is not None:
                 taskgraph.record_applied(command, receipt)
             return receipt
+
+    def _check_method_reviews(self, command: CommitPlanCommand) -> None:
+        """审阅闸门（片 A 第 6 项）：采用规划器在本任务里提出的做法，须有通过的新做法审阅正式记录。
+
+        只在保证通道上生效——独立审阅只在那里存在。部署自带的库做法没有开过新做法审阅，
+        不归这道闸管。闸门不判断做法好不好，只认正式记录（或人对"判不下来"的裁决）。
+        """
+
+        from ..storage.assurance_store import AssuranceStore
+        from .method_plan_reviews import REVIEW_REQUIRED, unreviewed_proposed_methods
+
+        if not command.delta.method_instances:
+            return
+        if AssuranceStore(self._store).lane(command.mission_id) != "ASSURANCE_1_1":
+            return
+        refused = unreviewed_proposed_methods(self._store, command.mission_id, command.delta.method_instances)
+        if refused:
+            raise PlanCommitRejected(
+                REVIEW_REQUIRED,
+                "a method proposed in this Mission is adopted only after its independent "
+                "review passed (or the person passed it): "
+                + json.dumps(refused, ensure_ascii=False, sort_keys=True),
+            )
 
     def _check_resolution_reuses(self, command: CommitPlanCommand) -> None:
         if not command.delta.resolution_reuses:
@@ -1596,6 +1622,53 @@ class PlanCommitsMixin:
                 },
             )
         return result
+
+    def materialise_planning_subject(self, mission_id: str, spec: OccurrenceSpec) -> bool:
+        """Give a goal that is being planned for its ``Task`` row before any plan names it.
+
+        2026-10-01（HTN 精简 片 A）：根目标的任务行原来只在第一份计划提交时才建。规划器在
+        那之前为根目标提做法，新做法审阅以这个目标为归属任务——审阅绑定、"归属任务是否还
+        活着"的检查都要读任务行，行不存在就开不了审阅（数据库触发器直接拒绝）。
+
+        这里建的就是计划提交会建的同一行（复合目标：BLOCKED、零额度、同样的账户与
+        ``TaskCommitted`` 事件）；之后的计划提交按"已存在的行原样复用"处理它。已有行时什么
+        都不做。必须在调用方的事务里调用。
+        """
+
+        task_id = str(spec.task_id)
+        if self._store.get_task(task_id) is not None:
+            return False
+        semantics = HtnStore(self._store)
+        binding = semantics.task_semantics_of(mission_id, task_id)
+        if binding is None or spec.form is not TaskForm.COMPOUND:
+            raise ContractError(f"planning subject {task_id} is not a compound goal of this Mission")
+        mission = self._require_mission(mission_id)
+        from .commit_service import mission_account, task_account
+        from .scoped_content_review import uses_completion_protocol
+
+        item = occurrence_task(
+            mission, spec, binding,
+            require_content_review=uses_completion_protocol(self._store, mission.id),
+            plan_revision=0,
+            budget=inherit_limits(
+                Budget(max_tokens=COMPOUND_TOKENS, max_attempts=mission.budget.max_attempts),
+                mission.budget),
+            ordinal=len(self._store.list_tasks(mission_id)) + 1,
+            deployed=frozenset(self._deployed_layers).intersection(
+                self.domain_for(mission.id).runs_layers),
+            requirements=semantics.latest_requirements_revision(mission_id),
+            now=self._store.now,
+        )
+        self._store.insert_task(item.task, ordinal=item.ordinal)
+        self._ledger.open_account(
+            account_id=task_account(item.task.id), scope="task",
+            parent_id=mission_account(mission_id), mission_id=mission_id, limits=item.task.budget)
+        self._emit(
+            "TaskCommitted", mission_id, key=item.task.id, task_id=item.task.id,
+            payload={"commit_id": "planning-subject:" + item.task.id, "key": item.occurrence_id,
+                     "dependencies": [], "proposal": item.to_json(),
+                     "source": {"materialised_by": "planning_subject", "plan_revision": 0}})
+        return True
 
     def _activate_for_work(self, mission: Mission, materialised: Materialisation) -> Mission | None:
         """PLANNING → ACTIVE, by the formal rule rather than by a test helper.

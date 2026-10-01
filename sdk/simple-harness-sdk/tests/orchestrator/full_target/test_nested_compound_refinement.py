@@ -176,8 +176,6 @@ def _cycle(
 ) -> dict[str, Any]:
     config = OrchestratorConfig(
         evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5,
-        # the round under test is one that asks the Planner model (and reserves for it)
-        method_selection_policy="ALWAYS_MODEL",
     )
 
     async def case() -> dict[str, Any]:
@@ -349,8 +347,6 @@ def test_a_restarted_process_does_not_ask_the_same_revision_again(tmp_path) -> N
     world.store.close()
     config = OrchestratorConfig(
         evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5,
-        # the round under test is one that asks the Planner model (and reserves for it)
-        method_selection_policy="ALWAYS_MODEL",
     )
 
     async def case() -> dict[str, Any]:

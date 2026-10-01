@@ -20,6 +20,10 @@ severity（BLOCKER/WARNING/INFO）、reason。无法证明时返回 UNKNOWN/INCO
 检查器的 PASS 仅证明其声明的断言，不能代替语义判断，也不能凭空签发权限或效果证明。
 可用只读工具 assurance_find_evidence / assurance_read_evidence 追加取证：只有 complete=true 的
 整段读取结果进入你的后续输入后，其 ev- 标签才可引用；列表与分页片段不构成证据。
+package.purpose 为 METHOD_PLAN 时，候选是一个还没有执行的做法（步骤、先后顺序、每条要求落在哪一步）。
+逐条准则判断：按这个做法执行，这条要求能否被满足并被独立验收。步骤拆得过粗（一步承担多份彼此独立
+的产出，无法逐步完成和验收）、要求没有落到真正产出它的那一步、缺少必要的步骤或先后顺序时判 FAIL，
+并在 limitations 里写明应当怎么改；做法本身还没执行，不要因为"尚无执行证据"判 UNKNOWN。
 """
 
 EVIDENCE_FIND_SCHEMA = "assurance-evidence-find-v1"

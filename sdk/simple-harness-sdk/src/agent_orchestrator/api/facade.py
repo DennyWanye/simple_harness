@@ -152,13 +152,20 @@ class MissionControlV1:
 
         try:
             body = fields(dict(command), {"mission_id", "command_id", "requirements_ref",
-                "completion_scope", "candidate_mapping"},
-                {"result_ref", "purpose", "approval_source", "effect_key"})
+                "candidate_mapping"},
+                {"completion_scope", "planning_subject", "result_ref", "purpose",
+                 "approval_source", "effect_key"})
             purpose = body.get("purpose", "CONTENT")
             # NEXT-TG-1.0 2B: the two operation reviews are approved on the effect
             # owner's Scope like the others (an assured publish was refused
             # CHECK_POLICY_UNRESOLVED at submission — nobody could approve them).
-            if purpose not in ("CONTENT", "MISSION_FINAL", "ACTION_PROPOSAL", "OPERATION_OUTCOME"):
+            # 2026-10-01 (HTN 精简 片 A): METHOD_PLAN is approved on the planning subject
+            # Task instead of a Scope — a method is proposed before any Scope exists.
+            if purpose not in ("CONTENT", "METHOD_PLAN", "MISSION_FINAL", "ACTION_PROPOSAL",
+                               "OPERATION_OUTCOME"):
+                raise AssuranceError("CHECK_POLICY_APPROVAL_INVALID", str(purpose))
+            if (purpose == "METHOD_PLAN") != (body.get("planning_subject") is not None) or (
+                    body.get("completion_scope") is None) != (purpose == "METHOD_PLAN"):
                 raise AssuranceError("CHECK_POLICY_APPROVAL_INVALID", str(purpose))
             # 2026-09-25: the Host says when it is the one approving (recorded as system)
             approval_source = body.get("approval_source", "HUMAN")
@@ -169,7 +176,10 @@ class MissionControlV1:
                 tenant_id=self._tenant, principal=self._principal,
                 mission_id=body["mission_id"], command_id=body["command_id"],
                 requirements_ref=AssuranceRef.from_json(body["requirements_ref"], kinds={"requirements"}),
-                completion_scope=AssuranceRef.from_json(body["completion_scope"], kinds={"completion_scope"}),
+                completion_scope=None if body.get("completion_scope") is None else
+                    AssuranceRef.from_json(body["completion_scope"], kinds={"completion_scope"}),
+                planning_subject=None if body.get("planning_subject") is None else
+                    AssuranceRef.from_json(body["planning_subject"], kinds={"task"}),
                 candidate_mapping=tuple(CriterionPolicy.from_json(row)
                     for row in array(body["candidate_mapping"], minimum=1)),
                 result_ref=None if body.get("result_ref") is None else

@@ -106,7 +106,7 @@ from ..contracts.planning_decisions import (
     PlanningRequestBinding,
     UnsupportedPlanningPackage,
 )
-from ..contracts.resolution import DeliveryStage, ReviewAccount
+from ..contracts.resolution import DeliveryStage
 from ..contracts.semantic_base import content_hash_of
 from ..contracts.state_machines import IllegalTransition
 from ..governance.budgets import BudgetError, BudgetExhausted
@@ -225,8 +225,6 @@ from .commit_service import (
 )
 from .hierarchical_dispatch import (
     MISSION_STALLED,
-    PLANNER_SKIPPED_FOR_SYNTHESIS,
-    SYNTHESIS_ROUND_RECORDED,
     DispatchAdmissions,
     HierarchicalDispatch,
     append_hierarchical_event,
@@ -295,7 +293,7 @@ class DeferredPlanning(dict):
 
 #: ``plan`` intents that are not Planner rounds (NEXT-TG-1.0 §0.6 overlap 3).
 NOT_PLANNER_ROLES = frozenset({
-    "method_synthesizer", "operation_proposal_reviewer", "operation_outcome_reviewer",
+    "operation_proposal_reviewer", "operation_outcome_reviewer",
 })
 from .resolution_commits import ResolutionCommitRejected, eligible_root_receipts
 from .taskgraph_epochs import planning_scope_digest
@@ -314,19 +312,6 @@ ROOT_REVIEW_REPAIRS_EXHAUSTED = "root_review_repairs_exhausted"
 #: (``_DEFINITE_PROVIDER_FAILURES``); this set is what the orchestrator reads off
 #: a FAILED turn so it does not climb the planning ladder or RETRY_WAIT.
 DEFINITE_AUTH_CODES = frozenset({"provider_authentication_failed", "provider_payment_required"})
-
-#: P2.3g.  How many times one MethodSynthesizer round may be asked on the same anchor.
-#: The first real round (Grok, H-L3-C1) answered with a complete method in a shape the
-#: codec does not accept and was concluded ``UNREADABLE`` on the spot; the second ask
-#: carries the codec's problems as ``schema_feedback`` — the same bounded repair the
-#: root reviewer gets (``MAX_ROOT_REVIEW_ASKS``) and the Task Critic gets through
-#: ``critic_schema_retry_feedback``.  A reply that was *read* and refused by the
-#: admission protocol is a conclusion — unless (P2.3i) every problem on it is a
-#: correctable slip of reference or shape (``CORRECTABLE_REJECTIONS`` in
-#: ``planning.htn.synthesis``): the first real round on v2 (Grok, H-L3-C1-r0) was
-#: refused for one undeclared input port the package had spelled out, and that too
-#: is asked once more with the protocol's own lines attached.  The bound is the same.
-MAX_SYNTHESIS_ASKS = 2
 
 FAULT_POINTS = (
     "after_agent_created",
@@ -3177,16 +3162,13 @@ class Orchestrator:
         questions.retire_stale(mission.id)
         if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
             return False
-        if self._synthesis_intents_in_flight(mission.id):
-            return False
         with self.store.transaction():
-            if (questions.pending(mission.id) or self._planner_intents_in_flight(mission.id)
-                    or self._synthesis_intents_in_flight(mission.id)):
+            if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
                 return False
             events = tuple(self.store.iter_events(mission.id))
             resumed = {e.payload.get("service_id", e.payload.get("decision_id"))
                        for e in events if e.type == "PlanningServiceResumed"}
-            service_types = {"PlanningEvidenceRecorded", "PlanningMethodProposed",
+            service_types = {"PlanningEvidenceRecorded", "PlanningMethodProposed", "PlanningMethodReviewed",
                              "PlanningHumanAnswered", "PlanningHumanStale", "PlanningHumanRequested", "PlanningRuntimeBlockWoken",
                              "PlanningRepairRequested"}
             addressed = {request_id for e in events if e.type == "PlanningRepairAddressed"
@@ -3198,6 +3180,10 @@ class Orchestrator:
             def needs_resume(event: Any) -> bool:
                 identity = event.payload.get("decision_id", event.payload.get("request_id"))
                 if service_key(event) in resumed:
+                    return False
+                if event.type == "PlanningMethodProposed" and event.payload.get("assurance_review_key"):
+                    # 片 A 第 7 项：送审的做法不叫醒规划器；它的审阅结论
+                    # （PlanningMethodReviewed）入库后才叫醒。
                     return False
                 # Older receipts used an unqualified ID; match their source too,
                 # so resuming a question never suppresses its later answer.
@@ -3265,6 +3251,9 @@ class Orchestrator:
                 return True
             if self._pending_planning_wait(mission.id) is not None:
                 return True
+            from .method_plan_reviews import awaiting as method_review_awaiting
+            if method_review_awaiting(self.store, mission.id):
+                return True  # 提出的做法还在审：在等，不是卡住
         return False
 
     def _pending_planning_wait(self, mission_id: str) -> Any:
@@ -3488,8 +3477,6 @@ class Orchestrator:
                     event = self._pending_planning_wait(mission.id)
                     if event is None or self._planner_intents_in_flight(mission.id):
                         continue
-                    if self._synthesis_intents_in_flight(mission.id):
-                        continue
                     dispatch = self._dispatch_for(mission.id)
                     if dispatch is None:
                         continue
@@ -3673,8 +3660,12 @@ class Orchestrator:
                 continue
             if mission.id not in due:
                 continue
+            from .method_plan_reviews import advance as advance_method_reviews
             from .planning_repair_requests import collect_triggers
             try:
+                if advance_method_reviews(self, mission):
+                    progressed = True
+                    busy.add(mission.id)
                 if collect_triggers(self, mission):
                     progressed = True
                     busy.add(mission.id)
@@ -3701,9 +3692,6 @@ class Orchestrator:
                 # The durable receipt remains pending until a bound planner is available.
                 pass
             if self._gather_evidence(mission):
-                progressed = True
-                busy.add(mission.id)
-            if await self._request_method_synthesis(mission):
                 progressed = True
                 busy.add(mission.id)
         for mission in self._active_missions():
@@ -3831,149 +3819,6 @@ class Orchestrator:
                 f"mission {mission.id} evidence round recorded {len(recorded)} observation(s)"
             )
         return bool(recorded)
-
-    def _ask_person_about_blockage(self, mission: Mission, intent: Any, decision: Any,
-                                   decision_id: str, context: Any, new_mode: Any) -> bool:
-        """A blockage no method synthesis will take up becomes a question for the person.
-
-        2026-09-29 真机（收口第 6 项）：执行者报"缺外部资料"，修复轮里规划器宣告受阻；方法
-        本身有效，方法合成不接手，宣告受阻又不产生任何动作，任务随后以"没有可派发的工作"
-        失败，用户只看到失败、从没被问过。这里把受阻原因原样登记成一条阻塞式规划问题（与
-        REPAIR/ESCALATE 同一张表、同一条续跑路），任务停在"等人回答"，回答后开下一轮规划。
-        """
-
-        from ..contracts.planning_decisions import RequestHumanDecision
-        from ..storage.planning_human_store import PlanningHumanStore
-
-        try:
-            if new_mode.goals_needing_method(mission.id):
-                return False  # 方法合成这条路还在（已在跑或本轮刚记过），不抢着问人
-        except (GraphIntegrityError, ContractError):
-            return False
-        store = PlanningHumanStore(self.store)
-        if store.pending(mission.id):
-            return False
-        reasons = [str(item.detail or item.code) for item in decision.payload.blockers]
-        question = RequestHumanDecision(
-            "规划器判断这部分工作没法继续：\n"
-            + "\n".join(f"- {reason}" for reason in reasons)
-            + "\n请补充需要的资料或说明（例如提供缺少的数据、告诉它去哪里找），"
-              "也可以说明不做这部分。回答后会按你的说明重新规划。",
-            (), True)
-        with self.store.transaction():
-            row = store.register(
-                decision_id=decision_id, mission_id=mission.id,
-                subject_key=decision.subject_key, payload=question,
-                request_binding={"plan_revision": context.plan_revision,
-                                 "requirements_revision": context.requirements_revision,
-                                 "manager_epoch": new_mode.semantics().epoch(mission.id, "mission")},
-                next_ordinal=int(intent.config.get("ordinal", 1)) + 1)
-            append_hierarchical_event(
-                self.store, "PlanningHumanRequested", mission.id, key=decision_id,
-                payload={"decision_id": decision_id,
-                         "next_ordinal": int(intent.config.get("ordinal", 1)) + 1,
-                         "question_id": decision_id, "state": row["state"],
-                         "origin": "declare_blocked"})
-        self._note(f"blocked declaration {decision_id} asked the person: {'; '.join(reasons)[:300]}")
-        return True
-
-    async def _request_method_synthesis(self, mission: Mission) -> bool:
-        """Ask for a method when an open goal has none that could ever apply.
-
-        P2.3c part 2c, the other half of part 2b's §8 item 5: the synthesiser's intent
-        and its reply were both wired and nothing decided *when* to ask.  The judgment
-        is :meth:`HierarchicalDispatch.goals_needing_method`, which is deliberately
-        narrow — a ``NEEDS_EVIDENCE`` goal is answered by looking, not by inventing a
-        method — and the bound is the intent's own creation key: ``ordinal=1`` for a
-        given goal means exactly one synthesis round per goal per Mission ever, which
-        is what keeps a goal nobody can serve from spending a model call each cycle.
-        """
-
-        if self._has_pending_planning_waits(mission.id):
-            return False
-        new_mode = self._new_mode(mission)
-        if new_mode is None or new_mode.planning is None:
-            return False
-        if mission.status not in {MissionStatus.PLANNING, MissionStatus.ACTIVE}:
-            return False
-        try:
-            goals = new_mode.goals_needing_method(mission.id)
-        except (GraphIntegrityError, ContractError):
-            return False
-        progressed = False
-        for goal_task_id in goals:
-            synthesis_round = 1
-            if new_mode.synthesis_round_recorded(
-                mission.id, goal_task_id, synthesis_round=synthesis_round
-            ):
-                continue
-            subject = self._synthesizer_subject(
-                mission.id, goal_task_id, ordinal=1, synthesis_round=synthesis_round
-            )
-            if self.store.get_intent_for_subject(subject) is not None:
-                # P2.3e (H-L3-C1, three identical episodes).  The round is out and the
-                # goal stays in ``goals_needing_method`` until its answer is recorded, so
-                # this method used to ask again every cycle; ``create_service_intent`` is
-                # idempotent per subject and handed the same intent back, and *that* was
-                # reported as progress.  A progressing cycle never sleeps, so ``run()``
-                # spun its whole ``max_cycles`` budget in ~28 s — the runtime's turn
-                # tasks starved the whole time — and then left by the ``max_cycles``
-                # exit with both planning turns submitted and nobody left to collect
-                # them.  Asking once is the bound; waiting is not progress.
-                continue
-            try:
-                if new_mode.empty_planner_should_skip(mission.id):
-                    self._record_planner_skipped(mission, new_mode, phase="method_synthesis")
-                await self._create_synthesizer_intent(
-                    mission.id,
-                    goal_task_id,
-                    ordinal=1,
-                    synthesis_round=synthesis_round,
-                )
-            except (ContractError, CommitRejected, BudgetError) as error:
-                self._note(f"method synthesis for {goal_task_id} not requested: {error}")
-                continue
-            self._note(
-                f"mission {mission.id}: method synthesis round {synthesis_round} requested for "
-                f"{goal_task_id}"
-            )
-            progressed = True
-        return progressed
-
-    @staticmethod
-    def _carried_review_feedback(intent: DispatchIntent) -> tuple[str, ...]:
-        """The ``review_feedback`` a synthesis intent's request carried, for its retry.
-
-        Read back from the sealed request rather than recomputed, so the second ask
-        (P2.3g's structured retry) puts exactly the same question with the codec's
-        problems added — and a request that carried none yields none.
-        """
-
-        message = intent.config.get("message")
-        if not isinstance(message, Mapping):
-            return ()
-        try:
-            payload = json.loads(str(message.get("content", "")))
-        except (TypeError, ValueError):
-            return ()
-        if not isinstance(payload, Mapping):
-            return ()
-        return tuple(str(item) for item in payload.get("review_feedback", ()) or ())
-
-    @staticmethod
-    def _synthesizer_subject(
-        mission_id: str, goal_task_id: str, *, ordinal: int, synthesis_round: int = 1
-    ) -> str:
-        """The MethodSynthesizer intent's subject — its creation key and its identity.
-
-        P2.3j: round 1 keeps its exact spelling; a round opened after a root review
-        rejection (``synthesis_round = plan_revision + 1``) has its own, so it is a
-        different intent with its own idempotency.
-        """
-
-        if int(synthesis_round) <= 1:
-            return f"{mission_id}:synthesizer:{goal_task_id}:{ordinal}"
-        return f"{mission_id}:synthesizer:{goal_task_id}:round:{int(synthesis_round)}:{ordinal}"
 
     # ------------------------------------------------------------- planning
     def _prune_deferred(self) -> None:
@@ -4292,32 +4137,6 @@ class Orchestrator:
                 if attempt.status is AttemptStatus.CANCELLED:
                     await self._release_attempt(attempt.id, cancel=True)
 
-    def _record_planner_skipped(
-        self, mission: Mission, new_mode: HierarchicalDispatch, *, phase: str
-    ) -> None:
-        """Audit trail for P2.3q's empty-Planner shortcut."""
-
-        try:
-            network = new_mode.network(mission.id)
-            revision = int(network.plan_revision)
-        except (GraphIntegrityError, ContractError, StoreError):
-            revision = 0
-        append_hierarchical_event(
-            self.store,
-            PLANNER_SKIPPED_FOR_SYNTHESIS,
-            mission.id,
-            key=f"{mission.id}:skip:{revision}:{phase}",
-            payload={
-                "reason": "evidence_saturated_no_applicable_method",
-                "phase": phase,
-                "plan_revision": revision,
-            },
-        )
-        self._note(
-            f"mission {mission.id}: skipping empty Planner ({phase}); "
-            "evidence is saturated and no applicable method remains"
-        )
-
     async def _start_planning(self, mission: Mission) -> bool:
         """``False`` when nothing could start (assembly missing, or the start gate is
         still waiting for a person).  2026-09-26 (Host 真机): the caller counted such a
@@ -4330,18 +4149,6 @@ class Orchestrator:
                 and not self._planning_start_gate(mission)):
             return False
         self.commit.begin_planning(mission.id)
-        # P2.3q: skip the doomed empty Planner when evidence is saturated and
-        # nothing applies.  Uses ``is_hierarchical`` + the installed assembly so
-        # this is not a 20th ``_new_mode`` site.
-        new_mode = self._dispatch_for(mission.id) if is_hierarchical(mission) else None
-        try:
-            should_skip = new_mode is not None and new_mode.empty_planner_should_skip(mission.id)
-        except (GraphIntegrityError, ContractError, StoreError):
-            should_skip = False
-        if should_skip and new_mode is not None:
-            self._record_planner_skipped(mission, new_mode, phase="initial")
-            await self._request_method_synthesis(mission)
-            return True
         try:
             await self._try_planner_intent(mission.id, ordinal=1)
         except BudgetExhausted as error:
@@ -4408,8 +4215,7 @@ class Orchestrator:
             network = new_mode.network(mission.id)
         except (GraphIntegrityError, StoreError):
             return False  # plan integrity is decided on its own path, not here
-        # The same test ``goals_needing_method`` applies: a compound occurrence with no
-        # adopted method instance is one nobody has refined.  ``ReadinessReason``'s
+        # A compound occurrence with no adopted method instance is one nobody has refined.  ``ReadinessReason``'s
         # ``NEEDS_REFINEMENT`` is deliberately *not* it — §18.5 constraint 4 makes every
         # compound answer that, refined or not, so that a legacy status can never walk
         # one into the Worker path.
@@ -4426,9 +4232,6 @@ class Orchestrator:
             # *ask*, below, is what needs to outlive the process.
             self._refinement_rounds[mission.id] = revision
             return False
-        if new_mode.empty_planner_should_skip(mission.id):
-            self._record_planner_skipped(mission, new_mode, phase="compound_refinement")
-            return await self._request_method_synthesis(mission)
         ordinal = self._next_planning_ordinal(mission.id)
         # Review P2-5: recorded **before** the intent, so a crash between the two ends
         # up asking nothing rather than asking twice, and recorded in the log rather
@@ -4480,9 +4283,7 @@ class Orchestrator:
 
         from ..contracts.planning_decisions import PlanningRetryBudgetView
 
-        allowance = max(
-            0, int(self._config.max_planning_attempts) + self._synthesis_credits(mission.id)
-        )
+        allowance = max(0, int(self._config.max_planning_attempts))
         return PlanningRetryBudgetView(
             same_request_format_retries_remaining=max(0, int(format_retries)),
             planning_rounds_remaining=max(0, allowance - self._planning_attempts(mission.id)),
@@ -4502,19 +4303,6 @@ class Orchestrator:
         return feedback_from_decision(
             row, budgets=self._planning_retry_budgets(mission, format_retries=1)
         )
-
-    def _remaining_synthesis_asks(self, mission: Mission, new_mode: HierarchicalDispatch) -> int:
-        remaining = 0
-        for goal_id in new_mode.goals_needing_method(mission.id):
-            round_id = 1
-            if new_mode.synthesis_round_recorded(mission.id, goal_id, synthesis_round=round_id):
-                continue
-            remaining += sum(
-                self.store.get_intent_for_subject(self._synthesizer_subject(
-                    mission.id, goal_id, ordinal=ordinal, synthesis_round=round_id
-                )) is None for ordinal in range(1, MAX_SYNTHESIS_ASKS + 1)
-            )
-        return remaining
 
     def _hierarchical_planner_package(
         self, new_mode: HierarchicalDispatch, mission: Mission, *, ordinal: int,
@@ -4584,6 +4372,7 @@ class Orchestrator:
                     "task_version": task.version,
                     "occurrence_outcome": str(outcomes[occurrence.occurrence_id]),
                 }
+        from .method_plan_reviews import reviews_by_method as method_reviews_by_method
         from .planning_repair_requests import repair_goal_occurrences
         package = hierarchical_planner_package(
             mission,
@@ -4612,6 +4401,7 @@ class Orchestrator:
             ).read_item,
             # What this plan already tried and retired, with the reason recorded then.
             retired_methods=new_mode.retired_methods(mission.id),
+            method_reviews=method_reviews_by_method(self.store, mission.id),
             previous_feedback=previous_feedback,
             authoritative_refs=method_instance_authorities,
             task_states=task_states,
@@ -4630,10 +4420,9 @@ class Orchestrator:
             store=self.store, mission=mission, network=network, world=world,
             htn=new_mode.semantics(), package=package, authorities=method_instance_authorities,
             selection_reports=reports, dispatch=new_mode,
-            selection_policy=self._config.method_selection_policy,
             budget=PlanningBudgetView(
-                planning_remaining=max(0, self._config.max_planning_attempts + self._synthesis_credits(mission.id) - self._planning_attempts(mission.id)),
-                synthesis_remaining=self._remaining_synthesis_asks(mission, new_mode),
+                planning_remaining=max(0, self._config.max_planning_attempts - self._planning_attempts(mission.id)),
+                synthesis_remaining=self._method_proposals_remaining(mission, new_mode),
                 root_repair_remaining=max(0, self._config.max_root_review_repairs - self._root_review_repairs(mission.id)),
                 max_method_candidates=12, max_new_steps=int(getattr(world, "max_steps", 64)),
                 max_repair_actions=1, token_budget=remaining_tokens,
@@ -5086,9 +4875,7 @@ class Orchestrator:
         enabled_effective = enabled or frozenset(
             key for key, value in H1_DECISION_ENABLEMENT.items() if value.executable
         )
-        allowance = max(
-            0, int(self._config.max_planning_attempts) + self._synthesis_credits(mission.id)
-        )
+        allowance = max(0, int(self._config.max_planning_attempts))
         remaining = max(0, allowance - self._planning_attempts(mission.id))
         epochs = new_mode.scope_epochs(mission.id)
         latest = new_mode.semantics().latest_requirements_revision(mission.id)
@@ -5184,9 +4971,7 @@ class Orchestrator:
         """
 
         from ..runtime.role_templates import (
-            PLANNER_HIERARCHICAL_V11,
-            PLANNER_HIERARCHICAL_V12,
-            PLANNER_HIERARCHICAL_V13,
+            PLANNER_HIERARCHICAL_V14,
             hierarchical_planner_versions,
         )
         from .planning_protocol_binding import current_planning_protocol
@@ -5195,11 +4980,8 @@ class Orchestrator:
         candidate = self._template(PLANNER_HIERARCHICAL, mission_id)
         if candidate.prompt_version in hierarchical_planner_versions(int(binding["package_version"])):
             return candidate
-        # 2026-09-29/30: the package pairs with v11, v12 and v13; a Mission keeps the
-        # prompt its durable binding names (replay stays exact), a new binding names v13.
-        paired = {template.prompt_version: template for template in (
-            PLANNER_HIERARCHICAL_V11, PLANNER_HIERARCHICAL_V12, PLANNER_HIERARCHICAL_V13)}
-        return paired.get(str(binding.get("prompt_version")), PLANNER_HIERARCHICAL_V13)
+        # One package, one prompt (2026-10-01): the current package pairs with v14 only.
+        return PLANNER_HIERARCHICAL_V14
 
     def _hierarchical_worker_template(self, role: Any, mission_id: str) -> Any:
         """The Worker prompt that knows about output ports (part 2d, decision 4).
@@ -5434,8 +5216,8 @@ class Orchestrator:
                     + json.dumps(feedback.to_json(), ensure_ascii=False, sort_keys=True)
                     + "\n按 problems 里的 field_path 改正，重新输出完整的 <planning_decision> 块。"
                 )
-        from .planning_selection import local_decision, reserve_selection
-        native_decision = local_decision(package.package) if new_mode is not None else None
+        from .planning_selection import infrastructure_retry
+        native_decision = infrastructure_retry(package.package) if new_mode is not None else None
         message = user_message_json(package_text)
         subject = f"{mission_id}:planner:{ordinal}"
         from .planning_runtime_block import planner_binding
@@ -5465,8 +5247,6 @@ class Orchestrator:
             reservation=self._reservation(0 if native_decision is not None else self._config.planner_reserve_tokens, decision.profile_id),
         )
         if new_mode is not None:
-            if retry_request_id is None:
-                reserve_selection(self.store, intent)
             self._bind_hierarchical_planning_request(
                 intent=intent,
                 mission=mission,
@@ -5540,107 +5320,6 @@ class Orchestrator:
             self._composition_assembly(mission, new_mode).resolve_ready(mission.id)
         except (GraphIntegrityError, ContractError, StoreError) as error:
             self._note(f"task {task.id}: inner composition review deferred ({error})")
-
-    async def _create_synthesizer_intent(
-        self,
-        mission_id: str,
-        goal_task_id: str,
-        *,
-        ordinal: int,
-        schema_feedback: Sequence[str] = (),
-        synthesis_round: int = 1,
-        review_feedback: Sequence[str] = (),
-        turn_failures: int = 0,
-    ) -> DispatchIntent:
-        """The MethodSynthesizer's own dispatch (§7.3 source 4, §18.5 C8, §13 v1.4).
-
-        P2.3j: ``synthesis_round`` / ``review_feedback`` are the round opened after a
-        root review rejected the adopted method (``_request_method_synthesis``); the
-        round number rides in the intent's config so the collector records the
-        outcome under the right key, and the findings ride in the request as their
-        own field.
-
-        A **new role**, not a new version of an existing one, and that shows in three
-        places rather than one:
-
-        * its own role template (``METHOD_SYNTHESIZER``), so it cannot masquerade as a
-          Task Critic;
-        * its own budget account — the Mission's planning account, which is the
-          ``mission_planning`` account of §13 v1.4 — so a synthesis round never lands
-          on the Task budget of whatever goal happened to need a method;
-        * its own typed context, ``synthesis.build_request``, which carries no
-          Mission id, no principal and no budget field at all.
-
-        The reply is admitted through
-        :meth:`HierarchicalDispatch.apply_synthesizer_reply`, where the author is
-        fixed at ``MODEL``.
-        """
-
-        from ..runtime.role_templates import METHOD_SYNTHESIZER
-
-        mission = self.store.get_mission(mission_id)
-        assert mission is not None
-        new_mode = self._new_mode(mission)
-        if new_mode is None:
-            raise ContractError(
-                "a MethodSynthesizer round belongs to a hierarchical Mission; a legacy "
-                "Mission has no method library to extend (§18.5 rule 1)"
-            )
-        request = new_mode.synthesis_request(
-            mission_id,
-            goal_task_id,
-            schema_feedback=tuple(schema_feedback),
-            review_feedback=tuple(review_feedback),
-        )
-        # P2.3j: v3 is v2 plus the sentence that says what ``review_feedback`` is; a
-        # deployment pinned to v1/v2 still gets its pin through ``_template``.
-        template = self._template(METHOD_SYNTHESIZER, mission_id)
-        decision = self._route_service("planner", mission_id)
-        config = AgentConfig(
-            name=f"method-synthesizer-{ordinal}",
-            instructions=template.instructions,
-            model_profile_ref=decision.profile_id,
-            tool_names=(),
-            # ``tool_names=()`` is what stops this agent calling a tool; the limit is a
-            # *bound*, and :class:`AgentLimits` refuses a non-positive one — a zero here
-            # raised ``ValueError`` before the intent was ever created, which the
-            # part-3a smoke found on the root-review path (the identical spelling).
-            limits=AgentLimits(
-                max_model_calls_per_turn=2,
-                max_tool_calls_per_turn=1,
-                turn_deadline_seconds=self._config.turn_deadline_seconds,
-            ),
-        )
-        message = user_message_json(json.dumps(request.to_json(), ensure_ascii=False))
-        subject = self._synthesizer_subject(
-            mission_id, goal_task_id, ordinal=ordinal, synthesis_round=synthesis_round
-        )
-        return self.commit.create_service_intent(
-            kind="plan",
-            subject_id=subject,
-            mission_id=mission_id,
-            # §13 v1.4: the cost lands on the Mission's planning account, never on the
-            # Task account of the goal that needed the method.
-            account_id=mission_account(mission_id),
-            creation_key=subject,
-            input_id="attempt-input",
-            input_hash=sha256_hex(message),
-            config={
-                "agent_config": config.to_json(),
-                "message": message,
-                "context_version": request.content_hash(),
-                "prompt_version": template.prompt_version,
-                "base_version": mission.version,
-                "ordinal": ordinal,
-                "role": "method_synthesizer",
-                "budget_account": str(ReviewAccount.MISSION_PLANNING),
-                "goal_task_id": str(goal_task_id),
-                "synthesis_round": int(synthesis_round),
-                **({"turn_failures": int(turn_failures)} if turn_failures else {}),
-                **self._service_config(decision),
-            },
-            reservation=self._reservation(self._config.planner_reserve_tokens, decision.profile_id),
-        )
 
     # -------------------------------------------------------------- dispatch
     def _reservation(self, tokens: int, profile_id: str | None = None) -> Reservation:
@@ -7048,6 +6727,20 @@ class Orchestrator:
     async def _planning_rejected(
         self, intent: DispatchIntent, *, reason: str, detail: Mapping[str, Any]
     ) -> None:
+        """规划器的一次回答没被采纳之后，还能不能再问（规划预算，片 A 第 8 项）。
+
+        此前这里是六条各自计数的阶梯（格式重试、回合重试、格式阶梯、规划阶梯、修复阶梯、
+        "已有计划不判失败"），再叠上"合成成功多给一次"。现在只有两个数：
+
+        * **服务故障宽限**（``PLANNER_TURN_FAILURE_GRACE``）：没拿到回复的回合（服务端报错、
+          超时、被重启打断）不算答错，宽限内原样再问；超出即按"运行环境不可用"停。
+        * **答错次数**（``max_planning_attempts``）：自上一次提交成功起，被拒的回答——读不懂、
+          不被准入、提交被拒——累计到上限即停。同一请求的格式重试计入其中，不另开阶梯。
+
+        已有计划的任务：被拒的这一问如果没有什么还欠着（没有待处理的修复请求、没有等重试
+        决定的步骤、没有还没做法的目标），任务带着现有计划继续，不为它判失败。
+        """
+
         mission = self.store.get_mission(intent.mission_id)
         assert mission is not None
         ordinal = int(intent.config.get("ordinal", 1))
@@ -7056,57 +6749,13 @@ class Orchestrator:
             self.commit.record_planning_rejected(
                 mission.id, ordinal=ordinal, reason=reason, detail=detail
             )
-        if reason == "proposal_unreadable" and "planning_decision_attempt_ordinal" in intent.config:
-            # A later repair/refinement request still owns one format retry. Its
-            # global Planner ordinal is scheduling identity, not retry allowance.
-            turn_failed = detail.get("turn_failed") is True
-            if turn_failed and not self._planner_turn_failure_forgiven(mission.id):
-                # Past the grace the model service is treated as down: every "fresh
-                # request" below would otherwise be reopened for ever (review 2026-09-28).
-                self._stop_planning_round(
-                    mission.id, reason="planner_turn_failures_exhausted",
-                    detail={"attempts": ordinal, **dict(detail)},
-                    stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
-                )
-            elif self._planning_format_retry_remaining(intent=intent, mission=mission):
-                await self._planner_round_on_committed_plan(
-                    mission.id, ordinal=ordinal + 1, phase="planning_format_retry"
-                )
-            elif turn_failed:
-                # No reply at all is not a second malformed answer: ask again (a fresh
-                # request) instead of ending the round on "format retry exhausted".
-                await self._planner_round_on_committed_plan(
-                    mission.id, ordinal=ordinal + 1, phase="planner_turn_retry"
-                )
-            elif not self._planning_ladder_spent(mission.id):
-                # 2026-09-30（收口第 6 项第 5 轮真机）：两次都没写对格式就整局失败，而规划
-                # 总次数还剩很多——格式没写对不算模型做错（用户 09-28）。同一请求的格式重试
-                # 用完就开一个新请求；这次拒绝照样记入规划次数，所以有界。
-                if mission.status is MissionStatus.PLANNING:
-                    await self._try_planner_intent(mission.id, ordinal=ordinal + 1)
-                else:
-                    await self._planner_round_on_committed_plan(
-                        mission.id, ordinal=ordinal + 1, phase="planning_format_ladder"
-                    )
-            else:
-                self._stop_planning_round(
-                    mission.id, reason="planning_format_retry_exhausted",
-                    detail={"attempts": ordinal, **dict(detail)},
-                    stop_reason=MissionStopReason.PLANNING_FAILED,
-                )
-            return
-        # Review P1-1: an admitted synthesised method buys one more round.  Without it
-        # the Mission raced two model calls against each other — planner ``n+1`` was
-        # created the instant planner ``n`` was refused, and whether the synthesiser's
-        # answer arrived before the ladder ran out decided whether the Mission lived.
-        allowance = int(self._config.max_planning_attempts) + self._synthesis_credits(mission.id)
         streak = self._after_handoff_zero_streak.get(mission.id, 0)
         if (
             reason == "provider_outcome_unknown"
             and streak >= MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS
         ):
-            # P2.3p: remaining ladder rungs must not open another planner ordinal
-            # after consecutive after-handoff 0-token UNKNOWNs (C2 r0).
+            # P2.3p: no further planner ordinal after consecutive after-handoff
+            # 0-token UNKNOWNs (C2 r0).
             await self._fail_runtime_unavailable(
                 mission,
                 reason=reason,
@@ -7117,77 +6766,82 @@ class Orchestrator:
                 },
             )
             return
-        if ordinal < allowance:
-            if mission.status is MissionStatus.PLANNING:
-                # The phase that produces the first plan, legacy included: unchanged,
-                # exception and all.  ``_start_planning`` guards ordinal 1 and this rung
-                # has never been guarded — widening that is a decision about the legacy
-                # path and not one this slice gets to make on the way past.
-                await self._try_planner_intent(mission.id, ordinal=ordinal + 1)
-            else:
-                # Verification of the P0-1 fix: it had closed only the *opening* of
-                # D5-A's and D5-B's rounds.  When the answer to one of them is refused
-                # the ladder climbs — with the runner passing ``max_planning_attempts=3``
-                # that is simply the next thing that happens — and this rung was still
-                # bare, so the same ``BudgetExhausted`` escaped ``_cycle()`` one rung
-                # later, Mission left ACTIVE and no ``MissionFailed``.
-                await self._planner_round_on_committed_plan(
-                    mission.id, ordinal=ordinal + 1, phase="planning_ladder"
-                )
-        elif self._synthesis_intents_in_flight(mission.id):
-            # The ladder is spent but the library is still being extended.  Ending here
-            # would be ending on the old library; ``_after_synthesis_round`` reopens the
-            # round when the answer lands, and ends the Mission when it is a refusal.
-            self._note(
-                f"mission {mission.id}: planning round {ordinal} rejected ({reason}); a method "
-                "synthesis round is still out, so the ladder waits for its answer"
-            )
-        elif mission.status is MissionStatus.PLANNING:
-            # P2.3l / N5: a Planner round that never reached a model (transport
-            # unknown, 0 tokens) is not a planning failure — the Planner was never
-            # heard.  ``runtime_unavailable`` is the existing stop reason for a
-            # model service that stayed down.
-            stop = (
-                MissionStopReason.RUNTIME_UNAVAILABLE
-                if reason == "provider_outcome_unknown"
-                else MissionStopReason.PLANNING_FAILED
-            )
-            self._commit_fail_planning(
-                mission.id,
-                reason=reason,
+        no_reply = detail.get("turn_failed") is True
+        if no_reply and not self._planner_turn_failure_forgiven(mission.id):
+            # Past the grace the model service is treated as down.
+            self._stop_planning_round(
+                mission.id, reason="planner_turn_failures_exhausted",
                 detail={"attempts": ordinal, **dict(detail)},
-                stop_reason=stop,
+                stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
             )
-        elif self._repair_still_owed(mission.id):
-            # 2026-09-25 desktop run: a repair round refused while the leaf waited for its
-            # retry decision left the Mission ACTIVE with no work and no human request —
-            # the ordinal (which also counts the committed rounds) had "spent" the ladder
-            # the planner was told still had rounds left, and the stall check skipped the
-            # ACTIVE leaf.  Count refusals, as the planning package does; open the next
-            # round with the refusal on the record, or end the Mission by name.
-            if not self._planning_ladder_spent(mission.id):
-                await self._planner_round_on_committed_plan(
-                    mission.id, ordinal=self._next_planning_ordinal(mission.id), phase="repair_ladder"
+            return
+        planning = mission.status is MissionStatus.PLANNING
+        owed = planning or self._planning_still_owed(mission)
+        if self._planning_ladder_spent(mission.id):
+            if planning:
+                # P2.3l / N5: a round that never reached a model is not a planning failure.
+                stop = (
+                    MissionStopReason.RUNTIME_UNAVAILABLE
+                    if reason == "provider_outcome_unknown"
+                    else MissionStopReason.PLANNING_FAILED
                 )
-            else:
+                self._commit_fail_planning(
+                    mission.id, reason=reason,
+                    detail={"attempts": ordinal, **dict(detail)}, stop_reason=stop,
+                )
+            elif owed:
                 self._stop_planning_round(
                     mission.id,
-                    reason="repair_planning_exhausted",
-                    detail={"attempts": ordinal, "rejected_rounds": self._planning_attempts(mission.id), **dict(detail)},
+                    reason="planning_attempts_exhausted",
+                    detail={"attempts": ordinal, "rejected_rounds": self._planning_attempts(mission.id),
+                            "last_reason": reason, **dict(detail)},
                     stop_reason=MissionStopReason.PLANNING_FAILED,
                 )
-        else:
-            # P2.3d: a Mission that already holds a committed plan is not killed by a
-            # round that came *after* it — the root-review repair (D5-A) and the nested
-            # compound refinement (D5-B) both run while the Mission is ACTIVE, and their
-            # ladder is one round each rather than ``max_planning_attempts``.  The
-            # rejection is recorded; the Mission carries on with the plan it has and,
-            # if that plan cannot dispatch anything, stops through the stall path with
-            # the refusals written down.
+            else:
+                self._note(
+                    f"mission {mission.id}: planning round {ordinal} rejected ({reason}); the "
+                    "committed plan stands and the Mission is not failed for it"
+                )
+            return
+        if not owed:
             self._note(
-                f"mission {mission.id}: planning round {ordinal} rejected ({reason}); the "
-                "committed plan stands and the Mission is not failed for it"
+                f"mission {mission.id}: planning round {ordinal} rejected ({reason}); nothing is "
+                "owed to the plan, so the Planner is not asked again"
             )
+            return
+        if planning and not is_hierarchical(mission):
+            # The flat mode's first-plan ladder: unchanged, exception and all.
+            await self._try_planner_intent(mission.id, ordinal=ordinal + 1)
+            return
+        format_retry = (
+            reason == "proposal_unreadable"
+            and "planning_decision_attempt_ordinal" in intent.config
+            and self._planning_format_retry_remaining(intent=intent, mission=mission) > 0
+        )
+        await self._planner_round_on_committed_plan(
+            mission.id,
+            # the same request's format retry is the very next ordinal
+            ordinal=ordinal + 1 if format_retry else self._next_planning_ordinal(mission.id),
+            phase="planning_format_retry" if format_retry else "planning_ladder",
+        )
+
+    def _planning_still_owed(self, mission: Mission) -> bool:
+        """Something only a planning round can give is still outstanding."""
+
+        if self._repair_still_owed(mission.id):
+            return True
+        new_mode = self._new_mode(mission)
+        if new_mode is None:
+            return False
+        from ..contracts.htn import TaskForm
+
+        try:
+            network = new_mode.network(mission.id)
+        except (GraphIntegrityError, ContractError, StoreError):
+            return False
+        return any(spec.form is TaskForm.COMPOUND
+                   and network.adopted_instance_for(spec.occurrence_id) is None
+                   for spec in network.occurrences)
 
     def _dispatch_h4_repair_trigger(
         self,
@@ -7270,16 +6924,6 @@ class Orchestrator:
                 stop_reason=MissionStopReason.MODEL_ECHO_MISMATCH,
             )
             self._note(f"planner: model echo mismatch {sorted(echoed)} → mission stopped")
-            return
-        # P2.3c part 2c: a MethodSynthesizer round rides on the same ``plan`` intent
-        # kind and is *not* a plan-revision proposal — its reply is a
-        # ``<method_proposal>`` for the registry, not operations on this Mission's plan.
-        # Part 2b created the intent and admitted the reply but wired nothing between
-        # them, so a synthesis round's answer was collected as a plan proposal and
-        # refused as unreadable.  The role is read from the intent's own config, which
-        # is where ``_create_synthesizer_intent`` wrote it.
-        if str(intent.config.get("role", "")) == "method_synthesizer":
-            await self._collect_synthesizer(intent, result, mission, text)
             return
         # P2.3c part 3a: the root MISSION_FINAL reviewer rides on the same ``plan``
         # intent kind (it has no Attempt, so the ``critic`` kind's attempt-bound
@@ -7421,252 +7065,6 @@ class Orchestrator:
         self._settle_intent(intent, "SETTLED" if verdict.passed else "FAILED")
         self._settle_service_if_known(intent.subject_id, mission.id)
 
-    async def _collect_synthesizer(  # type: ignore[no-untyped-def]
-        self, intent: DispatchIntent, result, mission: Mission, text: str
-    ) -> None:
-        """A ``<method_proposal>`` reply → the registry's admission protocol (§7.3).
-
-        Assembly only: the parse, the four-axis admission decision and the author lock
-        all live in :meth:`HierarchicalDispatch.apply_synthesizer_reply`, whose
-        signature has no ``author`` parameter precisely so this call cannot present a
-        model-written definition as anything else.  A refused proposal is **not** a
-        planning failure: the Mission's plan is untouched, the registry simply did not
-        take the definition, and the reason is recorded so an operator can see whether
-        the model proposed something unsafe or something unimplementable.
-
-        Two kinds of first reply earn one more ask on the same anchor, ordinal +1,
-        bounded by ``MAX_SYNTHESIS_ASKS`` (P2.3g, P2.3i): one the codec could not read
-        (``SynthesisReplyUnreadable``) and one the protocol read and refused for
-        nothing but a correctable slip (``rejection_is_correctable``).  In both the
-        second ask is opened **first** and the first ask is written down only once it
-        is — a record that says "asked again" must not precede a reservation that may
-        be refused (verification P2.3g P2-1).  A second ask the Mission cannot afford
-        ends the Mission for the budget, in the budget's own words, exactly as a
-        Planner round it cannot afford does.
-        """
-
-        from ..planning.htn.registry import RegistryAuthor
-        from ..planning.htn.synthesis import (
-            SynthesisReplyUnreadable,
-            rejection_is_correctable,
-            rejection_problems,
-            synthesis_rejection_feedback,
-            synthesis_schema_feedback,
-        )
-
-        new_mode = self._new_mode(mission)
-        goal_task_id = str(intent.config.get("goal_task_id", ""))
-        ordinal = int(intent.config.get("ordinal", 1))
-        # P2.3j: which round this is (1 = pre-plan; n = after the root review rejected
-        # the method adopted on revision n-1).  Read off the intent so the record and
-        # the retry stay on the round the request was opened for.
-        synthesis_round = int(intent.config.get("synthesis_round", 1) or 1)
-        # 2026-09-29: turns that ended without any reply (provider error, timeout,
-        # interruption) before this one — they are not answers and use up no ask
-        # (same grace as the Planner's).  ``answered`` is which real ask this is.
-        turn_failures = int(intent.config.get("turn_failures", 0) or 0)
-        answered = ordinal - turn_failures
-        if new_mode is None:
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            return
-        # What the next ask would carry, and how this ask is written down once the
-        # next one is really open.  Both stay ``None`` for a reply that is a conclusion.
-        feedback: tuple[str, ...] | None = None
-        record_first_ask: Any = None
-        try:
-            if result.state is not AgentTurnState.COMMITTED:
-                raise ContractError(f"synthesizer turn failed: {dict(result.error or {})}")
-            # User decision 2026-09-26: the first ask of a round is held to the
-            # one-step-per-file granularity; the re-ask is admitted as written.
-            receipt = new_mode.apply_synthesizer_reply(
-                mission.id, text, enforce_granularity=answered == 1)
-            admitted = bool(receipt.admitted)
-            problems = rejection_problems(receipt)
-            method_ref = str(receipt.method_ref.method_id)
-            verdict = str(receipt.verdict)
-            if not admitted and rejection_is_correctable(receipt):
-                # P2.3i: read, refused, and every problem names a reference or shape the
-                # package already states the right value for (a port the type does not
-                # declare, a ref not offered, a link to an unknown step …).  Not a
-                # conclusion: the protocol's own lines go back as ``schema_feedback``.
-                feedback = synthesis_rejection_feedback(receipt)
-
-                def record_first_ask() -> None:
-                    new_mode.record_synthesis_reply_rejected(
-                        mission.id,
-                        goal_task_id=goal_task_id,
-                        ordinal=ordinal,
-                        method_id=method_ref,
-                        verdict=verdict,
-                        problems=problems,
-                    )
-
-        except SynthesisReplyUnreadable as unreadable:
-            # P2.3g: the reply could not be decoded — the registry never saw it.  That
-            # is not an answer, so the same question is put once more with the codec's
-            # problems attached.
-            admitted, problems, method_ref, verdict = False, unreadable.problems, "", "UNREADABLE"
-            feedback = synthesis_schema_feedback(unreadable)
-            # The ``as`` name is unbound once the clause ends; the closure keeps the facts.
-            block_defect = unreadable.block_defect
-
-            def record_first_ask() -> None:
-                new_mode.record_synthesis_reply_unreadable(
-                    mission.id,
-                    goal_task_id=goal_task_id,
-                    ordinal=ordinal,
-                    problems=problems,
-                    block_defect=block_defect,
-                )
-
-        except (ContractError, BlockError, StoreError) as error:
-            admitted, problems, method_ref, verdict = False, (str(error),), "", "UNREADABLE"
-            if result.state is not AgentTurnState.COMMITTED:
-                # Desktop 2026-09-27: the provider hung past its deadline and the
-                # Mission failed on the spot.  A turn that never delivered a reply is
-                # not an answer either — the same question is asked once more.
-                feedback = ("上一次请求没有得到模型回复（请求失败或超时），请重新完整回答同一个问题。",)
-
-                def record_first_ask() -> None:
-                    new_mode.record_synthesis_reply_unreadable(
-                        mission.id,
-                        goal_task_id=goal_task_id,
-                        ordinal=ordinal,
-                        problems=problems,
-                        block_defect="turn_failed",
-                    )
-
-        retry_refused = ""
-        exhausted: BudgetExhausted | None = None
-        no_reply = result.state is not AgentTurnState.COMMITTED
-        forgiven = no_reply and turn_failures < PLANNER_TURN_FAILURE_GRACE
-        if feedback is not None and (answered < MAX_SYNTHESIS_ASKS or forgiven):
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            try:
-                await self._create_synthesizer_intent(
-                    mission.id,
-                    goal_task_id,
-                    ordinal=ordinal + 1,
-                    schema_feedback=feedback,
-                    # P2.3j: the second ask stays on the round the first was opened
-                    # for and carries the root review's findings it was carrying.
-                    synthesis_round=synthesis_round,
-                    review_feedback=self._carried_review_feedback(intent),
-                    turn_failures=turn_failures + (1 if forgiven else 0),
-                )
-            except BudgetExhausted as error:
-                # The second ask reserves on the Mission's planning account like the
-                # first; an account that cannot carry it stops the Mission for the
-                # budget below, after the round it was in is concluded honestly.
-                exhausted = error
-                retry_refused = f"budget_exhausted: {error}"
-            except (ContractError, CommitRejected, BudgetError, RoutingUnavailable) as refused:
-                # No second ask could be opened: the round concludes on the reply it
-                # has, with the reason the retry was not asked in its own field.
-                retry_refused = f"{type(refused).__name__}: {refused}"
-            else:
-                record_first_ask()
-                self._note(
-                    f"method synthesis for {goal_task_id}: reply {ordinal} {verdict.lower()} "
-                    f"({problems[0][:120] if problems else ''}); asking once more with the "
-                    "problems attached"
-                )
-                return
-        new_mode.record_synthesis_outcome(
-            mission.id,
-            goal_task_id=goal_task_id,
-            admitted=admitted,
-            problems=problems,
-            method_id=method_ref,
-            verdict=verdict,
-            author=str(RegistryAuthor.MODEL),
-            asks=ordinal,
-            synthesis_round=synthesis_round,
-            retry_refused=retry_refused,
-        )
-        self._note(
-            f"method synthesis for {goal_task_id}: "
-            f"{'admitted' if admitted else 'refused'} ({'; '.join(problems)[:200]})"
-            + (f"; retry not asked: {retry_refused[:120]}" if retry_refused else "")
-        )
-        self._settle_intent(intent, "SETTLED" if admitted else "FAILED")
-        self._settle_service_if_known(intent.subject_id, mission.id)
-        if exhausted is not None:
-            # One Mission's exhaustion is one Mission's stop (§24.1 decision 11), and
-            # the stop says what ran out — not "the synthesis was refused", which is
-            # not what happened to it.
-            self._stop_planning_round(
-                mission.id,
-                reason="budget_exhausted",
-                detail={
-                    "dimension": exhausted.dimension,
-                    "requested": exhausted.requested,
-                    "remaining": exhausted.remaining,
-                    "account": exhausted.account_id,
-                    "phase": "method_synthesis",
-                    "ordinal": ordinal + 1,
-                    "goal_task_id": goal_task_id,
-                    "scope": "global" if exhausted.account_id == GLOBAL_ACCOUNT else "mission",
-                },
-                stop_reason=MissionStopReason.BUDGET_EXHAUSTED,
-            )
-            self._note(
-                f"mission {mission.id} stopped in method_synthesis: budget_exhausted "
-                f"({exhausted.dimension})"
-            )
-            return
-        await self._after_synthesis_round(mission.id, admitted=admitted)
-
-    async def _after_synthesis_round(self, mission_id: str, *, admitted: bool) -> None:
-        """A synthesis round has concluded; somebody has to act on it (review P1-1).
-
-        D2b opened the round — ``goals_needing_method`` stopped answering "look again"
-        for a precondition two readings had already settled as unknowable — and nothing
-        was wired to the *other* side of it.  The method was admitted, the outcome was
-        recorded, the intent was settled, and all five callers of
-        ``_try_planner_intent`` were elsewhere: the Mission had bought a method it never
-        asked anybody to use.  The goal was still open, the Planner was never asked
-        again, and the L3 episodes ended exactly where they had before the fix.
-
-        A refused round is the other half and has to end the wait it caused: a Mission
-        held in PLANNING only because this round was in flight would otherwise sit there
-        with no intent and nothing to dispatch.
-        """
-
-        mission = self.store.get_mission(mission_id)
-        if mission is None or mission.status in TERMINAL_MISSION:
-            return
-        if self._planner_intents_in_flight(mission_id):
-            return  # one question at a time; that round carries the new method already
-        new_mode = self._dispatch_for(mission.id)
-        if admitted:
-            ordinal = self._next_planning_ordinal(mission_id)
-            self._note(
-                f"mission {mission_id}: a synthesised method was admitted; asking the "
-                f"Planner again (ordinal {ordinal})"
-            )
-            await self._planner_round_on_committed_plan(
-                mission_id, ordinal=ordinal, phase="method_synthesis"
-            )
-            return
-        skipped = any(
-            event.type == PLANNER_SKIPPED_FOR_SYNTHESIS
-            for event in self.store.list_events(mission_id)
-        )
-        skip_now = bool(new_mode is not None and new_mode.empty_planner_should_skip(mission_id))
-        if mission.status is MissionStatus.PLANNING and (
-            self._planning_ladder_spent(mission_id) or skipped or skip_now
-        ):
-            self._stop_planning_round(
-                mission_id,
-                reason="method_synthesis_refused",
-                detail={"attempts": self._planning_attempts(mission_id)},
-                stop_reason=MissionStopReason.PLANNING_FAILED,
-            )
-            return
-
     def _planner_intents_in_flight(self, mission_id: str) -> bool:
         """An open ``plan`` intent that is a *Planner* round, not a synthesis round.
 
@@ -7687,31 +7085,6 @@ class Orchestrator:
             for intent in self.store.list_intents(
                 "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
             )
-        )
-
-    def _synthesis_intents_in_flight(self, mission_id: str) -> bool:
-        return any(
-            intent.kind == "plan"
-            and intent.mission_id == mission_id
-            and str(intent.config.get("role", "")) == "method_synthesizer"
-            for intent in self.store.list_intents(
-                "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
-            )
-        )
-
-    def _synthesis_credits(self, mission_id: str) -> int:
-        """Planning rounds bought by a method the Mission synthesised for itself.
-
-        One admitted method is one more question worth asking — the ladder's bound is
-        "how many times may the Planner be wrong about the *same* library", and the
-        library just changed.  Read off the log, so it is the same number after a
-        restart; zero for a legacy Mission, which never writes these events.
-        """
-
-        return sum(
-            1
-            for event in self.store.list_events(mission_id)
-            if event.type == SYNTHESIS_ROUND_RECORDED and bool(event.payload.get("admitted"))
         )
 
     def _planning_attempts(self, mission_id: str) -> int:
@@ -7771,9 +7144,26 @@ class Orchestrator:
         return any(self._awaiting_retry_decision(mission_id, task) for task in self.store.list_tasks(mission_id))
 
     def _planning_ladder_spent(self, mission_id: str) -> bool:
-        return self._planning_attempts(mission_id) >= (
-            int(self._config.max_planning_attempts) + self._synthesis_credits(mission_id)
-        )
+        """答错次数用完了：自上一次提交成功起，被拒的回答已到 ``max_planning_attempts``。"""
+
+        return self._planning_attempts(mission_id) >= int(self._config.max_planning_attempts)
+
+    def _method_proposals_remaining(self, mission: Mission, new_mode: HierarchicalDispatch) -> int:
+        """How many more methods the Planner may propose for the goals still open."""
+
+        from .planning_method_proposal import MAX_METHOD_PROPOSALS_PER_GOAL, proposals_for
+
+        try:
+            network = new_mode.network(mission.id)
+        except (GraphIntegrityError, ContractError, StoreError):
+            return 0
+        from ..contracts.htn import TaskForm
+
+        open_goals = [str(spec.task_id) for spec in network.occurrences
+                      if spec.form is TaskForm.COMPOUND
+                      and network.adopted_instance_for(spec.occurrence_id) is None]
+        return sum(max(0, MAX_METHOD_PROPOSALS_PER_GOAL - proposals_for(self.store, mission.id, goal))
+                   for goal in open_goals)
 
     async def _collect_plan_hierarchical(  # type: ignore[no-untyped-def]
         self,
@@ -8015,7 +7405,8 @@ class Orchestrator:
             from .planning_runtime_block import resolve_after_decision
             resolve_after_decision(self, intent, status=str(status),
                 decision_type=str(payload.get("decision_type") or ""), decision_id=decision_id)
-            payload.setdefault("decision_origin", "deterministic_method_selection"
+            from .planning_selection import SYSTEM_RETRY_ORIGIN
+            payload.setdefault("decision_origin", SYSTEM_RETRY_ORIGIN
                                if intent.config.get("native_planning_decision") is not None else "planner_reply")
             payload.setdefault("decision_type", None)
             payload.setdefault("rejection_codes", [])
@@ -8299,7 +7690,9 @@ class Orchestrator:
                     else:
                         assert isinstance(decision.payload, ProposeMethodDecision)
                         prepared_method = prepare_method(new_mode, mission.id, decision.payload, checked.subject)
-                        service_detail = persist_method(new_mode, *prepared_method)
+                        # 每个目标最多提几次是按这条事件里的目标任务数的，所有通道都要带。
+                        service_detail = {**persist_method(new_mode, *prepared_method),
+                                          "subject_task_id": str(checked.subject["task_id"])}
                         event_type = "PlanningMethodProposed"
                         from ..storage.assurance_store import AssuranceStore
                         if AssuranceStore(self.store).lane(mission.id) == "ASSURANCE_1_1":
@@ -8310,6 +7703,11 @@ class Orchestrator:
                             if self._assurance_reviews is None:
                                 raise ContractError("Assurance review builder is not installed for METHOD_PLAN")
                             method_reference = prepared_method[1].method_ref()
+                            # 审阅以被规划的目标为归属任务；根目标在第一份计划前还没有任务行。
+                            subject_spec = next(
+                                spec for spec in new_mode.network(mission.id).occurrences
+                                if str(spec.task_id) == str(checked.subject["task_id"]))
+                            self.commit.materialise_planning_subject(mission.id, subject_spec)
                             try:
                                 review = self._assurance_reviews.ensure_method_plan(
                                     mission, task_id=str(checked.subject["task_id"]),
@@ -8338,6 +7736,11 @@ class Orchestrator:
                 # a malformed proposal: it waits for authorization, and the record
                 # says so instead of blaming the Planner.
                 code, reason, error_detail = "PARAMETER_INVALID", "proposal_not_grounded", {"error": str(error)}
+                from .planning_method_proposal import MethodProposalRefused
+                if isinstance(error, MethodProposalRefused):
+                    # 片 A 第 5 项：被拒的做法草案把每条可修正的问题原样列出。
+                    code = error.code
+                    error_detail = {"error": "method proposal refused", "problems": error.feedback()}
                 if isinstance(error, _AssuranceReviewUnavailable):
                     code, reason = "AUTHORIZATION_REQUIRED", "assurance_review_unavailable"
                     error_detail = {"error": str(error), "assurance_purpose": error.purpose,
@@ -8488,14 +7891,6 @@ class Orchestrator:
                     detail={"rejection_codes": list(codes), **detail},
                 )
                 return
-            if decision.decision_type is PlanningDecisionType.DECLARE_BLOCKED:
-                # A durable blocked declaration is the Planner's handoff to the
-                # existing method-synthesis gate.  The decision itself remains
-                # state-free; synthesis is requested only when the live world proves
-                # that no registered method can serve the open goal.
-                if not await self._request_method_synthesis(mission):
-                    self._ask_person_about_blockage(
-                        mission, intent, decision, decision_id, context, new_mode)
             return
         admitted: AdmittedPlanningDecision | Any
         preview_candidate: CandidatePreview | None = None
@@ -11668,7 +11063,6 @@ class Orchestrator:
     ) -> None:
         """The second unknown outcome ends the round through the role's own door."""
 
-        from ..planning.htn.registry import RegistryAuthor
 
         role = str(intent.config.get("role", ""))
         self._release_unknown_grants(intent)
@@ -11679,22 +11073,6 @@ class Orchestrator:
             f"{intent.subject_id}: unknown Provider outcome again after "
             f"{detail.get('rehandoffs')} re-hand-off(s); the round ends"
         )
-        if role == "method_synthesizer":
-            goal_task_id = str(intent.config.get("goal_task_id", ""))
-            new_mode.record_synthesis_outcome(
-                mission.id,
-                goal_task_id=goal_task_id,
-                admitted=False,
-                problems=(
-                    f"provider_outcome_unknown after {detail.get('rehandoffs')} re-hand-off(s)",
-                ),
-                method_id="",
-                verdict="UNANSWERED",
-                author=str(RegistryAuthor.MODEL),
-                asks=int(intent.config.get("ordinal", 1)),
-            )
-            await self._after_synthesis_round(mission.id, admitted=False)
-            return
         if role == "root_reviewer":
             coordinator = self._root_review(mission, new_mode)
             package_id = str(intent.config.get("review_package_id", ""))

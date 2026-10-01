@@ -315,7 +315,8 @@ def test_s3_08a_graph_over_budget_is_rejected_with_the_dimension(tmp_path):
     )
 
     async def case():
-        async with Orchestrator(config(tmp_path), provider) as orchestrator:
+        # 片 A：max_planning_attempts 默认 2→3；脚本两步，上限钉 2，否则第三问会挂住。
+        async with Orchestrator(config(tmp_path, max_planning_attempts=2), provider) as orchestrator:
             mission = await orchestrator.submit_mission(
                 spec("s3-08a", budget=Budget(max_tokens=100_000, max_attempts=12))  # Σ = 120k
             )

@@ -1261,15 +1261,17 @@ def test_a_legacy_prompt_pin_does_not_reach_the_hierarchical_branch() -> None:
     from agent_orchestrator.contracts.planning_decisions import UnsupportedPlanningPackage
     from agent_orchestrator.runtime.role_templates import (
         PLANNER,
-        PLANNER_HIERARCHICAL_V13,
+        PLANNER_HIERARCHICAL_V14,
         PLANNING_DECISION_PACKAGE_VERSION,
+        PLANNING_DECISION_PROMPT_VERSION,
     )
 
     current = PLANNING_DECISION_PACKAGE_VERSION
+    assert PLANNER_HIERARCHICAL_V14.prompt_version == PLANNING_DECISION_PROMPT_VERSION
     assert _Pinned(PLANNER.prompt_version, package_version=current,
-                   bound_prompt="planner-hierarchical-v13").choose() is PLANNER_HIERARCHICAL_V13
+                   bound_prompt=PLANNING_DECISION_PROMPT_VERSION).choose() is PLANNER_HIERARCHICAL_V14
     assert _Pinned(None, package_version=current,
-                   bound_prompt="planner-hierarchical-v13").choose() is PLANNER_HIERARCHICAL_V13
+                   bound_prompt=PLANNING_DECISION_PROMPT_VERSION).choose() is PLANNER_HIERARCHICAL_V14
     # 2026-10-01: a hierarchical Mission with no binding was created under the removed
     # proposal-text protocol; it gets no prompt at all.
     with pytest.raises(UnsupportedPlanningPackage, match="removed"):
@@ -1282,36 +1284,34 @@ def test_new_planning_decision_mission_selects_the_current_prompt_even_when_lega
 
     from agent_orchestrator.contracts.planning_decisions import UnsupportedPlanningPackage
     from agent_orchestrator.runtime.role_templates import (
-        PLANNER_HIERARCHICAL_V13,
         PLANNER_HIERARCHICAL_V7,
+        PLANNER_HIERARCHICAL_V14,
         PLANNING_DECISION_PACKAGE_VERSION,
     )
 
     assert _Pinned(PLANNER_HIERARCHICAL_V7.prompt_version, package_version=PLANNING_DECISION_PACKAGE_VERSION).choose() is (
-        PLANNER_HIERARCHICAL_V13
+        PLANNER_HIERARCHICAL_V14
     )
     with pytest.raises(UnsupportedPlanningPackage):
         _Pinned(PLANNER_HIERARCHICAL_V7.prompt_version, package_version=4).choose()
 
 
-def test_a_mission_bound_to_planner_v11_keeps_it_after_v12_ships() -> None:
-    """2026-09-29：v12 与 v11 同配第 8 版包；已绑 v11 的任务重放时仍拿 v11，新绑定拿 v12。"""
+def test_the_current_package_serves_v14_whatever_prompt_the_binding_names() -> None:
+    """2026-10-01 HTN 精简片 A：第 9 版规划包只配 v14（一个包一份提示词）。
+
+    此前（第 8 版包）v11/v12/v13 同配一个包，已绑旧版的任务重放时沿用旧版；第 9 版不再
+    有并列提示词，绑定里写的旧版本名不再起作用。
+    """
 
     from agent_orchestrator.runtime.role_templates import (
-        PLANNER_HIERARCHICAL_V11,
-        PLANNER_HIERARCHICAL_V12,
+        PLANNER_HIERARCHICAL_V14,
         PLANNING_DECISION_PACKAGE_VERSION,
     )
 
-    assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION,
-                   bound_prompt="planner-hierarchical-v11").choose() is PLANNER_HIERARCHICAL_V11
-    assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION,
-                   bound_prompt="planner-hierarchical-v12").choose() is PLANNER_HIERARCHICAL_V12
-    # 2026-09-30: v13 on the same package; a new binding names v13.
-    from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL_V13
-    assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION,
-                   bound_prompt="planner-hierarchical-v13").choose() is PLANNER_HIERARCHICAL_V13
-    assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION).choose() is PLANNER_HIERARCHICAL_V13
+    for bound in ("planner-hierarchical-v11", "planner-hierarchical-v13", "planner-hierarchical-v14"):
+        assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION,
+                       bound_prompt=bound).choose() is PLANNER_HIERARCHICAL_V14
+    assert _Pinned(None, package_version=PLANNING_DECISION_PACKAGE_VERSION).choose() is PLANNER_HIERARCHICAL_V14
 
 
 # ======================================================================================

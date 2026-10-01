@@ -29,14 +29,12 @@ Four changes, none of them in ``contracts/``:
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import test_evidence_saturation as saturation  # noqa: E402
 import test_htn_end_to_end as e2e  # noqa: E402
 from htn_world import const, method, out, param, step  # noqa: E402
 from test_htn_end_to_end import committed  # noqa: E402
@@ -49,20 +47,11 @@ from test_root_review_repair_library import (  # noqa: E402
 )
 
 from agent_orchestrator.contracts.htn import ReusePolicy, SideEffectKind, TaskForm  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
-from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
-    PLANNER_SKIPPED_FOR_SYNTHESIS,
-)
 from agent_orchestrator.planning.htn.registry import RejectionCode  # noqa: E402
 from agent_orchestrator.planning.htn.synthesis import (  # noqa: E402
     CORRECTABLE_REJECTIONS,
     MAX_SYNTHESIS_METHOD_STEPS,
     rejection_is_correctable,
-)
-from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    RoleScriptedProvider,
 )
 
 # ======================================================================================
@@ -373,11 +362,6 @@ def test_a_criterion_linked_leaf_is_not_shared_even_when_accepted(tmp_path) -> N
 
 
 # ======================================================================================
-# (b) empty Planner shortcut
-# ======================================================================================
-
-
-# ======================================================================================
 # (c) synthesis method width
 # ======================================================================================
 
@@ -414,56 +398,3 @@ def test_a_width_overflow_is_correctable_without_moving_size_bound() -> None:
     assert _is_synthesis_width_bound(width) is True
     assert _is_synthesis_width_bound(ports) is False, "substring match must not license a re-ask"
     assert rejection_is_correctable  # live re-ask path
-
-
-# ======================================================================================
-# (d) package flags + planner v7 + legacy
-# ======================================================================================
-
-
-def test_skip_events_of_two_phases_on_the_same_revision_both_land(tmp_path) -> None:
-    """P2-5: the skip event key includes phase, so a later write on the same
-    revision is not dropped by idempotency."""
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    world = saturation._gated_world(evidence, key="p23q-skip-phases")
-    for ordinal in (1, 2):
-        saturation._observe(world, observer="plan.observer", ordinal=ordinal)
-    world.store.close()
-    config = OrchestratorConfig(
-        evidence_root=evidence,
-        max_concurrency=1,
-        test_timeout_seconds=30,
-        max_planning_attempts=2,
-    )
-
-    async def case() -> list[str]:
-        async with Orchestrator(
-            config, RoleScriptedProvider({"planner": []}), poll_interval=0.02
-        ) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            mission = loop.store.get_mission(world.mission.id)
-            assert mission is not None
-            loop._record_planner_skipped(mission, loop.hierarchical, phase="initial")
-            loop._record_planner_skipped(mission, loop.hierarchical, phase="method_synthesis")
-            return [
-                str(item.payload.get("phase"))
-                for item in loop.store.list_events(mission.id)
-                if item.type == PLANNER_SKIPPED_FOR_SYNTHESIS
-            ]
-
-    phases = asyncio.run(case())
-    assert "initial" in phases and "method_synthesis" in phases, phases
-
-
-def test_legacy_missions_never_emit_the_skip_event(tmp_path) -> None:
-    """(d) the new event is hierarchical-only; a legacy run does not grow it."""
-
-    from test_hierarchical_event_flow import NEW_EVENT_TYPES, _legacy_events  # noqa: PLC0415
-
-    assert PLANNER_SKIPPED_FOR_SYNTHESIS in NEW_EVENT_TYPES
-    rows = _legacy_events(tmp_path, install=True)
-    kinds = {kind.split("|", 1)[0] for kind, _ in rows}
-    assert PLANNER_SKIPPED_FOR_SYNTHESIS not in kinds

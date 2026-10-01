@@ -288,7 +288,6 @@ SNAPSHOT_FIELDS: dict[str, str] = {
     **{
         name: "include"
         for name in (
-            "method_selection_policy",
             "planning_backend_limits",
             "model",
             "max_concurrency",

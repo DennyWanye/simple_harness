@@ -32,12 +32,6 @@ from agent_orchestrator.orchestrator.planning_repair_requests import (
 )
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.planning.htn.cross_domain_acceptance import FourArm, ScenarioKind
-from agent_orchestrator.planning.htn.method_selection import (
-    MethodSelectionCandidateV1,
-    SelectionCallLedger,
-    SelectionRoute,
-    select_method,
-)
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.method_evaluation_store import MethodEvaluationStore
 from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
@@ -57,49 +51,6 @@ from simple_harness.providers import (
 
 from test_htn_end_to_end import build_world
 from test_h1i_production_entry import _config, _events, _open_planner_round, _seed_new_protocol
-
-
-def _candidate(name: str) -> MethodSelectionCandidateV1:
-    return MethodSelectionCandidateV1(method_id=name, report="APPLICABLE")
-
-
-def test_h3_one_candidate_is_local_but_many_reserve_one_selection_identity() -> None:
-    one = select_method([_candidate("only")], plan_revision=4, evidence_epoch=9)
-    ledger = SelectionCallLedger()
-    many = select_method(
-        [_candidate("b"), _candidate("a")],
-        plan_revision=4,
-        evidence_epoch=9,
-        ledger=ledger,
-        subject_id="occ-1",
-    )
-    replay = select_method(
-        [_candidate("a"), _candidate("b")],
-        plan_revision=4,
-        evidence_epoch=9,
-        ledger=SelectionCallLedger.from_json(ledger.to_json()),
-        subject_id="occ-1",
-    )
-    assert (one.route, one.selected_method_id) == (SelectionRoute.DETERMINISTIC, "only")
-    assert many.route is SelectionRoute.MODEL_REFINE
-    assert replay.route is SelectionRoute.SELECTION_ALREADY_ATTEMPTED
-    assert replay.identity == many.identity
-
-
-def test_h3_selection_identity_changes_for_a_different_occurrence() -> None:
-    candidates = [_candidate("a"), _candidate("b")]
-    left = select_method(candidates, plan_revision=1, evidence_epoch=2, subject_id="occ-1")
-    right = select_method(candidates, plan_revision=1, evidence_epoch=2, subject_id="occ-2")
-    assert left.identity.candidate_set_digest != right.identity.candidate_set_digest
-
-
-def test_h3_thirteenth_candidate_is_part_of_identity_even_when_prompt_view_caps_at_twelve() -> None:
-    first = [_candidate(f"method-{index:02d}") for index in range(13)]
-    changed = [*first[:12], _candidate("method-13-replaced")]
-    before = select_method(first, plan_revision=7, evidence_epoch=3, subject_id="occ")
-    after = select_method(changed, plan_revision=7, evidence_epoch=3, subject_id="occ")
-    assert len(before.applicable) == 13
-    assert before.identity.candidate_set_digest != after.identity.candidate_set_digest
 
 
 def test_v14_malformed_planning_reply_records_unreadable_without_secondary_failure(tmp_path) -> None:

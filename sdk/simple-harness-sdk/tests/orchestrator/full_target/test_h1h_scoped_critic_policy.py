@@ -52,18 +52,27 @@ def test_real_new_protocol_commit_schedules_independent_critic_for_readonly_cont
     asyncio.run(case())
 
 
-def test_suspended_method_does_not_suppress_real_synthesis_request(tmp_path):
+def _goals_without_applicable_method(world):
+    """片 A：``goals_needing_method`` 已删；同一事实改从候选过滤结果读。"""
+    return tuple(
+        occurrence
+        for occurrence, result in world.dispatch.method_candidates(world.mission.id).items()
+        if not result.applicable
+    )
+
+
+def test_suspended_method_is_not_offered_as_a_candidate(tmp_path):
     from test_htn_end_to_end import build_world
     from agent_orchestrator.storage.htn_store import HtnStore
     from agent_orchestrator.contracts.htn import MissionRef
     world = build_world(tmp_path, key="registry-dispatch-scope")
     reference = world.contract.method_ref()
     assert world.dispatch.method_applicability(world.mission.id)
-    assert world.dispatch.goals_needing_method(world.mission.id) == ()
+    assert _goals_without_applicable_method(world) == ()
     registration = world.env.registry.suspend(reference, reason="confirmed counterexample")
     HtnStore(world.store).set_method_registration(registration)
     assert world.dispatch.method_applicability(world.mission.id) == ()
-    assert world.dispatch.goals_needing_method(world.mission.id)
+    assert _goals_without_applicable_method(world)
     # Immutable definitions stay available to historical instances.
     assert world.env.registry.definition(reference) == world.contract
     from agent_orchestrator.planning.htn.planner_package import method_library
@@ -72,10 +81,10 @@ def test_suspended_method_does_not_suppress_real_synthesis_request(tmp_path):
         mission_id=MissionRef("a-different-trial-mission"), reason="scoped re-evaluation")
     HtnStore(world.store).set_method_registration(registration)
     assert world.dispatch.method_applicability(world.mission.id) == ()
-    assert world.dispatch.goals_needing_method(world.mission.id)
+    assert _goals_without_applicable_method(world)
     world.env.registry.allow_evaluation_trials(reference, [world.mission.id])
     assert world.dispatch.method_applicability(world.mission.id)
-    assert world.dispatch.goals_needing_method(world.mission.id) == ()
+    assert _goals_without_applicable_method(world) == ()
 
 
 def test_current_runtime_views_do_not_reintroduce_suspended_methods(tmp_path):

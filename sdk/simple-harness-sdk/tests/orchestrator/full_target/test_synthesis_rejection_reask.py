@@ -24,30 +24,22 @@ What this file pins:
 2. which of the protocol's rejection codes are *correctable* — every one names a
    reference or shape the package states the right value for — and which conclude a
    round on the spot; the two sets partition ``RejectionCode``;
-3. on a real ``Orchestrator.run()``: the first refusal is written down as
-   ``MethodSynthesisReplyRejected``, the second ask carries the protocol's line as
-   ``schema_feedback`` on the same anchor, ordinal 2, same planning account, and the
-   corrected reply is admitted and adopted (``PlanRevisionCommitted``); a refusal the
-   model cannot correct is not re-asked; a second refusal concludes ``asks:2`` and
-   nobody is asked a third time;
-4. a second ask the Mission cannot afford ends it ``budget_exhausted`` in the budget's
-   words — no "asked again" record before the reservation, no run-loop crash
-   (verification P2.3g P2-1);
-5. ``method-synthesizer-v3`` tells the model both kinds of problem travel in
+3. ``method-synthesizer-v3`` tells the model both kinds of problem travel in
    ``schema_feedback``; v2 keeps its bytes and stays pinnable.
+
+2026-10-01 HTN 精简片 A：方法合成器运行路径（第二次询问、预算不足、
+``apply_synthesizer_reply`` 发布到库）整条删除，对应测试随之删除；
+只保留纯函数与提示词模板部分。
 """
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import hashlib
-import inspect
 import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -57,21 +49,10 @@ _HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
 if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
-import test_hierarchical_event_flow as flow  # noqa: E402
-import test_htn_deployment_wiring as wiring  # noqa: E402
 import test_method_synthesis as synth  # noqa: E402
-import test_service_intent_provider_blocker as blocker  # noqa: E402
 from htn_world import method, out, param, ref, step  # noqa: E402
 
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
-    Orchestrator,
-)
-from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
-    SYNTHESIS_REPLY_REJECTED,
-    SYNTHESIS_REPLY_UNREADABLE,
-    SYNTHESIS_ROUND_RECORDED,
-)
 from agent_orchestrator.planning.htn.registry import (  # noqa: E402
     AdmissionProblem,
     AdmissionStepId,
@@ -106,13 +87,9 @@ from agent_orchestrator.runtime.role_templates import (  # noqa: E402
     TEMPLATE_VERSIONS,
     template_for,
 )
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    RoleScriptedProvider,
     method_proposal_step,
-    role_of,
 )
-from simple_harness import MessageRole  # noqa: E402
 
 REPLIES = _HTN_FIXTURES / "replies"
 
@@ -234,24 +211,6 @@ def test_the_corrected_c1_reply_is_admitted_on_the_registry_that_refused_the_fir
     assert second.method_ref.content_hash != first.method_ref.content_hash
     assert second.method_ref in world.registry.method_refs()
     assert second.status.value == "TRIAL_ADMITTED"
-
-
-def test_on_the_real_dispatch_the_corrected_c1_method_is_published_to_the_library(tmp_path):
-    """``apply_synthesizer_reply`` twice on the shipped code domain: the refused
-    definition is not stored, the admitted one is — at the version the plan will read."""
-
-    service, mission, semantics, _world, dispatch = wiring._both_lane_world(tmp_path)
-    first = dispatch.apply_synthesizer_reply(mission.id, c1_reply())
-    assert first.verdict is AdmissionVerdict.REJECTED
-    assert list(rejection_problems(first)) == EPISODE_RECORD["problems"]
-    with pytest.raises(Exception):
-        semantics.get_method(EPISODE_RECORD["method_id"], 1)
-    second = dispatch.apply_synthesizer_reply(mission.id, c1_reply_corrected())
-    assert second.admitted, rejection_problems(second)
-    stored = semantics.get_method(EPISODE_RECORD["method_id"], 1)
-    assert stored.contract.method_ref() == second.method_ref
-    assert str(stored.registration.status) == "TRIAL_ADMITTED"
-    service.store.close()
 
 
 # ======================================================================================
@@ -377,221 +336,6 @@ def test_a_refusal_the_model_cannot_correct_is_not_correctable_even_beside_one_i
 
 
 # ======================================================================================
-# 3. on a real Orchestrator: the second ask, its bound, and the refusals that take it
-# ======================================================================================
-
-
-#: The C1 slip transposed to the neutral plan domain: ``review`` binds ``report``, which
-#: ``plan.review`` does not declare (its input port is ``result``).
-def _slipped():
-    return method(
-        "plan.outer.free",
-        "plan.goal",
-        parameter_schema="plan.goal.params",
-        applicable=(),
-        steps=(
-            step(
-                "leaf",
-                "plan.leaf",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject")},
-                capabilities=("plan.read",),
-            ),
-            step(
-                "review",
-                "plan.review",
-                TaskForm.PRIMITIVE,
-                {
-                    "subject": param("subject"),
-                    "result": out("leaf", "result"),
-                    "report": out("leaf", "result"),
-                },
-                capabilities=("plan.read",),
-            ),
-        ),
-        links=(("c-root", "review", "c-reviewed"),),
-        finalizer="review",
-    )
-
-
-def _corrected():
-    """Same method_id, same version, the one binding gone — as a model corrects a slip."""
-
-    return method(
-        "plan.outer.free",
-        "plan.goal",
-        parameter_schema="plan.goal.params",
-        applicable=(),
-        steps=(
-            step(
-                "leaf",
-                "plan.leaf",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject")},
-                capabilities=("plan.read",),
-            ),
-            step(
-                "review",
-                "plan.review",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject"), "result": out("leaf", "result")},
-                capabilities=("plan.read",),
-            ),
-        ),
-        links=(("c-root", "review", "c-reviewed"),),
-        finalizer="review",
-    )
-
-
-def _uncorrectable():
-    """A capability this deployment never declared: refused, and not a slip."""
-
-    return method(
-        "plan.outer.gapped",
-        "plan.goal",
-        parameter_schema="plan.goal.params",
-        applicable=(),
-        steps=(
-            step(
-                "leaf",
-                "plan.leaf",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject")},
-                capabilities=("plan.read", "plan.capability-nobody-declares"),
-            ),
-        ),
-        links=(("c-root", "leaf", "c-done"),),
-        finalizer="leaf",
-    )
-
-
-PLAN_SLIP = (
-    "PORT_UNAVAILABLE: step 'review' binds input port 'report', which task type "
-    "'plan.review' does not declare"
-)
-
-
-def _last_user_text(request: Any) -> str:
-    for message in reversed(request.messages):
-        if str(message.role) == str(MessageRole.USER):
-            return message.content if isinstance(message.content, str) else str(message.content)
-    return ""
-
-
-def _run(tmp_path, *, key: str, synthesizer_steps: list[Any], planner_steps: list[Any], tweak=None):
-    """H-L3-C1's opening on a real ``Orchestrator``, driven by ``run()`` alone."""
-
-    world, _invented, config = blocker.saturation_world(tmp_path, key=key)
-    provider = RoleScriptedProvider(
-        {"planner": list(planner_steps), "method_synthesizer": list(synthesizer_steps)}
-    )
-
-    async def case() -> dict[str, Any]:
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            if tweak is not None:
-                tweak(loop)
-            mission_id = world.mission.id
-            await loop._try_planner_intent(mission_id, ordinal=1)
-            await asyncio.wait_for(loop.run(max_cycles=400), timeout=60)
-            events = list(loop.store.list_events(mission_id))
-            intents = [
-                item
-                for item in loop.store.list_intents(
-                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "SETTLED", "FAILED"
-                )
-                if item.mission_id == mission_id
-                and str(item.config.get("role", "")) == "method_synthesizer"
-            ]
-            final = loop.store.get_mission(mission_id)
-            return {
-                "types": [item.type for item in events],
-                "rejected": [
-                    dict(item.payload) for item in events if item.type == SYNTHESIS_REPLY_REJECTED
-                ],
-                "unreadable": [
-                    dict(item.payload) for item in events if item.type == SYNTHESIS_REPLY_UNREADABLE
-                ],
-                "synthesis": [
-                    dict(item.payload) for item in events if item.type == SYNTHESIS_ROUND_RECORDED
-                ],
-                "committed": [item for item in events if item.type == "PlanRevisionCommitted"],
-                "synth_intents": sorted(
-                    (
-                        str(item.subject_id),
-                        str(item.state),
-                        str(item.config.get("budget_account")),
-                        int(item.config.get("ordinal", 0)),
-                    )
-                    for item in intents
-                ),
-                "synth_requests": [
-                    json.loads(_last_user_text(request))
-                    for request in provider.requests
-                    if role_of(request) == "method_synthesizer"
-                ],
-                "roles": dict(provider.by_role),
-                "status": final.status,
-                "stop_reason": final.stop_reason,
-                "report": dict(final.final_report or {}),
-                "mission_id": mission_id,
-            }
-
-    return asyncio.run(case())
-
-
-def _starve_the_second_ask(loop: Orchestrator) -> None:
-    """Make the reservation for ask 2 (and only ask 2) exceed the Mission's account."""
-
-    original_reservation = loop._reservation
-    original_create = loop._create_synthesizer_intent
-
-    # P2.3j merge: the second ask also carries ``synthesis_round`` / ``review_feedback``;
-    # the stub forwards whatever the handler passes so it stays a starvation, not a stub.
-    async def create(
-        mission_id: str, goal_task_id: str, *, ordinal: int, schema_feedback=(), **carried
-    ):
-        if ordinal >= 2:
-            loop._reservation = lambda tokens, profile_id=None: original_reservation(  # type: ignore[method-assign]
-                10**9, profile_id
-            )
-        try:
-            return await original_create(
-                mission_id,
-                goal_task_id,
-                ordinal=ordinal,
-                schema_feedback=schema_feedback,
-                **carried,
-            )
-        finally:
-            loop._reservation = original_reservation  # type: ignore[method-assign]
-
-    loop._create_synthesizer_intent = create  # type: ignore[method-assign]
-
-
-def test_the_second_ask_is_opened_before_the_first_is_written_down_and_the_gate_is_one_predicate():
-    source = inspect.getsource(Orchestrator._collect_synthesizer)
-    assert "if not admitted and rejection_is_correctable(receipt):" in source
-    assert "feedback = synthesis_rejection_feedback(receipt)" in source
-    assert "record_synthesis_reply_rejected(" in source
-    # 2026-09-29: the bound counts real answers; a turn without a reply is forgiven
-    assert "and (answered < MAX_SYNTHESIS_ASKS or forgiven):" in source
-    assert source.count("< MAX_SYNTHESIS_ASKS") == 1, "one bound, one gate"
-    # P2-1: the intent is created first; the first-ask record only on success
-    assert source.index("await self._create_synthesizer_intent(") < source.index(
-        "else:\n                record_first_ask()"
-    )
-    assert source.count("record_first_ask()\n") == 1, "one call site, after the open"
-    assert "except BudgetExhausted as error:" in source
-    assert "stop_reason=MissionStopReason.BUDGET_EXHAUSTED" in source
-    assert '"phase": "method_synthesis"' in source
-    assert "retry_refused=retry_refused" in source
-    assert SYNTHESIS_REPLY_REJECTED == "MethodSynthesisReplyRejected"
-    assert SYNTHESIS_REPLY_REJECTED in flow.NEW_EVENT_TYPES
-
-
-# ======================================================================================
 # 4. the prompt: v3 says what schema_feedback may hold; v2 keeps its bytes
 # ======================================================================================
 
@@ -662,28 +406,3 @@ def test_v2_keeps_its_bytes_stays_registered_and_is_still_pinnable():
     request = synth.synthesizer(env).build_request(synth.goal(env), env.capabilities())
     assert isinstance(request, SynthesisRequest)
     assert request.to_json()["role_prompt_version"] == "method-synthesizer-v9"
-
-
-def _fail_turns(count):
-    """Make the first ``count`` synthesizer turns end without a reply (provider error)."""
-    from dataclasses import replace as _replace
-
-    from simple_harness.agents.contracts import AgentTurnState
-
-    def tweak(loop):
-        original = loop._collect_synthesizer
-        seen = {"n": 0}
-
-        async def collect(intent, result, mission, text):
-            seen["n"] += 1
-            if seen["n"] <= count:
-                result = _replace(result, state=AgentTurnState.FAILED, public_output=None,
-                                  error={"error_code": "provider_protocol_error", "source_kind": "tool_parse"})
-                text = ""
-            return await original(intent, result, mission, text)
-
-        loop._collect_synthesizer = collect
-
-    return tweak
-
-

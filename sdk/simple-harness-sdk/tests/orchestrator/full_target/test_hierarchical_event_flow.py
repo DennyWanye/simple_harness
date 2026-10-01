@@ -89,11 +89,7 @@ from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E40
     DISPATCH_INTERCEPTED,
     PLAN_COMMIT_REFUSED,
     PLAN_INTEGRITY_FAILED,
-    PLANNER_SKIPPED_FOR_SYNTHESIS,
     RECOMPILABLE_REFUSALS,
-    SYNTHESIS_REPLY_REJECTED,
-    SYNTHESIS_REPLY_UNREADABLE,
-    SYNTHESIS_ROUND_RECORDED,
     CompoundPhase,
     HierarchicalDispatch,
     PlanIntegrityError,
@@ -1374,18 +1370,9 @@ NEW_EVENT_TYPES = frozenset(
         MANAGEMENT_NOT_APPLICABLE,
         REFINEMENT_REQUESTED,
         SERVICE_INTENT_REHANDED_OFF,
-        # P2.3g: the synthesiser's two events — the round's conclusion (part 2c) and
-        # the one ask the codec could not read (P2.3g).  Neither existed in legacy.
-        SYNTHESIS_ROUND_RECORDED,
-        SYNTHESIS_REPLY_UNREADABLE,
-        # P2.3i: the sibling for a reply the protocol read and refused for a slip the
-        # model can correct — the round goes on, this says which ask fell short.
-        SYNTHESIS_REPLY_REJECTED,
         # P2.3k / N3: the legacy artifact merge the Mission Judge does not run on a
         # hierarchical Mission, written down once with what the tree kept instead.
         ARTIFACT_MERGE_NOT_APPLICABLE,
-        # P2.3q: the empty-Planner shortcut (evidence saturated, nothing applies).
-        PLANNER_SKIPPED_FOR_SYNTHESIS,
     }
 )
 
@@ -1501,6 +1488,11 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     ``_retry_deferred_repair`` 与 ``_dispatch_h4_repair_trigger``（延后修补/H4 修补触发）；
     ``_idle_facts``（2026-09-28，空转时汇总"在等什么"的事实）；以及
     ``_resolve_provider_blocked_service`` 里保障层审阅分支的第二处询问（2026-09-24）。
+
+    2026-10-01 HTN 精简片 A（计数 25→23）：方法合成器运行路径整条删除，
+    ``_request_method_synthesis`` / ``_create_synthesizer_intent`` /
+    ``_collect_synthesizer`` 三处询问随之消失；新增 ``_planning_still_owed``
+    （任务是否还欠着规划）一处。
     """
 
     del tmp_path
@@ -1509,7 +1501,7 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     from agent_orchestrator.orchestrator import event_handler
 
     source = inspect.getsource(event_handler)
-    assert source.count("self._new_mode(mission)") == 25
+    assert source.count("self._new_mode(mission)") == 23
     assert "is_hierarchical(mission)" in inspect.getsource(event_handler.Orchestrator._new_mode)
 
 

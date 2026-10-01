@@ -91,7 +91,8 @@ class OrchestratorConfig:
     candidates_per_task: int = (
         1  # D3-5': explorative candidates per Task (each counts as an attempt)
     )
-    max_planning_attempts: int = 2  # D3-2': Planner proposals before planning_failed
+    #: 规划预算·答错次数：自上一次提交成功起，规划器的回答被拒几次即停（片 A 第 8 项）。
+    max_planning_attempts: int = 3
     # P2.3c part 3a: how many times one ``requirements_revision`` may have its root
     # MISSION_FINAL review cut.  A re-cut is the correct answer to a leaf accepted or
     # revoked after the review was cut (review P1-7); an *unbounded* re-cut is a loop
@@ -149,7 +150,6 @@ class OrchestratorConfig:
     # step 5 (D5-2 / D5-6 / D5-7 / D5-8 / D5-15)
     planning_backend: PlanningBackend | None = field(default=None, repr=False, compare=False, kw_only=True)
     planning_backend_limits: PlanningLimits | None = field(default=None, kw_only=True)
-    method_selection_policy: str = field(default="MODEL_ON_MULTIPLE", kw_only=True)
     dynamic_graph: bool = True  # False: no Manager decisions; non-candidate outcomes just retry
     max_graph_depth: int = 6
     max_proposals_per_agent: int = 3
@@ -288,7 +288,6 @@ class OrchestratorConfig:
     def to_json(self) -> dict[str, Any]:
         return {
             "planning": {
-                "method_selection_policy": self.method_selection_policy,
                 "backend_id": None if self.planning_backend is None else self.planning_backend.backend_id,
                 "limits": None if self.planning_backend_limits is None else self.planning_backend_limits.to_json(),
             },

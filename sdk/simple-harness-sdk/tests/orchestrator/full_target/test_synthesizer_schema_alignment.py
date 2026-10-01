@@ -23,9 +23,9 @@ What this file pins:
 1. the field-by-field gap between the prompt, the request and the codec, and that
    ``method-synthesizer-v2`` closes it — key names, one block that parses, the goal
    type ref and the codec's own field list carried in the request;
-2. a reply the codec cannot read is **asked once more** with the codec's problems
-   attached, on the same anchor, ordinal +1, written down — bounded at
-   ``MAX_SYNTHESIS_ASKS``; a reply that was read and refused is a conclusion;
+2. a reply the codec cannot read is named (``SynthesisReplyUnreadable``) and its
+   feedback carries the codec's words; a reply that was read and refused is not
+   (2026-10-01 HTN 精简片 A：合成器运行路径删除，"再问一次"的运行测试随之删除）;
 3. a Planner that writes the other role's block is filed ``proposal_wrong_block``
    with a hint that says whose job the method is, and the hint reaches the next
    round; ``planner-hierarchical-v4`` never asks for a method and gives the Planner
@@ -35,7 +35,6 @@ What this file pins:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import inspect
 import json
@@ -53,19 +52,10 @@ if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
 import test_method_synthesis as synth  # noqa: E402
-import test_service_intent_provider_blocker as blocker  # noqa: E402
 from htn_world import method, param, ref, step  # noqa: E402
 
 from agent_orchestrator.contracts.htn import MethodContract, TaskForm  # noqa: E402
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
-from agent_orchestrator.contracts.state_machines import TERMINAL_MISSION  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
-    Orchestrator,
-)
-from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
-    SYNTHESIS_REPLY_UNREADABLE,
-    SYNTHESIS_ROUND_RECORDED,
-)
 from agent_orchestrator.planning.htn.registry import AdmissionVerdict  # noqa: E402
 from agent_orchestrator.planning.htn.synthesis import (  # noqa: E402
     METHOD_SHAPE,
@@ -93,13 +83,9 @@ from agent_orchestrator.runtime.role_templates import (  # noqa: E402
     hierarchical_planner_versions,
     template_for,
 )
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    RoleScriptedProvider,
     method_proposal_step,
-    role_of,
 )
-from simple_harness import MessageRole  # noqa: E402
 
 REPLIES = _HTN_FIXTURES / "replies"
 
@@ -387,94 +373,6 @@ def test_an_unreadable_reply_is_named_and_a_refused_one_is_not():
     feedback = synthesis_schema_feedback(schema.value)
     assert feedback[0] == schema.value.problems[0]
     assert METHOD_PROPOSAL_TAG in feedback[-1] and "method_shape" in feedback[-1]
-
-
-def _synthesis_flow(tmp_path, *, key: str, synthesizer_steps: list[Any], planner_steps: list[Any]):
-    """H-L3-C1's opening on a real ``Orchestrator``, driven a cycle at a time."""
-
-    world, invented, config = blocker.saturation_world(tmp_path, key=key)
-    provider = RoleScriptedProvider(
-        {"planner": list(planner_steps), "method_synthesizer": list(synthesizer_steps)}
-    )
-
-    async def case() -> dict[str, Any]:
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            mission_id = world.mission.id
-            await loop._try_planner_intent(mission_id, ordinal=1)
-            for _ in range(40):
-                await loop._cycle()
-                await asyncio.sleep(0.02)
-                current = loop.store.get_mission(mission_id)
-                events = list(loop.store.list_events(mission_id))
-                if current is not None and (
-                    current.status in TERMINAL_MISSION
-                    or any(item.type == "PlanRevisionCommitted" for item in events)
-                ):
-                    break
-            events = list(loop.store.list_events(mission_id))
-            intents = [
-                item
-                for item in loop.store.list_intents(
-                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "SETTLED", "FAILED"
-                )
-                if item.mission_id == mission_id
-                and str(item.config.get("role", "")) == "method_synthesizer"
-            ]
-            final = loop.store.get_mission(mission_id)
-            return {
-                "invented": invented,
-                "types": [item.type for item in events],
-                "unreadable": [
-                    dict(item.payload) for item in events if item.type == SYNTHESIS_REPLY_UNREADABLE
-                ],
-                "synthesis": [
-                    dict(item.payload) for item in events if item.type == SYNTHESIS_ROUND_RECORDED
-                ],
-                "committed": [item for item in events if item.type == "PlanRevisionCommitted"],
-                "synth_intents": sorted(
-                    (
-                        str(item.subject_id),
-                        str(item.state),
-                        str(item.config.get("budget_account")),
-                        int(item.config.get("ordinal", 0)),
-                    )
-                    for item in intents
-                ),
-                "synth_requests": [
-                    request
-                    for request in provider.requests
-                    if role_of(request) == "method_synthesizer"
-                ],
-                "roles": dict(provider.by_role),
-                "status": final.status,
-                "report": dict(final.final_report or {}),
-                "mission_id": mission_id,
-            }
-
-    return asyncio.run(case())
-
-
-def _last_user_text(request: Any) -> str:
-    for message in reversed(request.messages):
-        if str(message.role) == str(MessageRole.USER):
-            return message.content if isinstance(message.content, str) else str(message.content)
-    return ""
-
-
-def test_the_retry_is_bounded_by_a_constant_read_off_the_intents_ordinal():
-    source = inspect.getsource(Orchestrator._collect_synthesizer)
-    # 2026-09-29: the bound counts real answers (a turn without a reply is forgiven)
-    assert "and (answered < MAX_SYNTHESIS_ASKS or forgiven):" in source
-    assert "record_synthesis_reply_unreadable(" in source
-    assert "feedback = synthesis_schema_feedback(unreadable)" in source
-    assert "except SynthesisReplyUnreadable as unreadable:" in source
-    assert "asks=ordinal" in source
-    # P2.3i: a read-and-refused reply is re-asked only when every problem is a
-    # correctable slip; the gate is the one predicate, pinned in
-    # ``test_synthesis_rejection_reask``.
-    assert "if not admitted and rejection_is_correctable(receipt):" in source
 
 
 # ======================================================================================

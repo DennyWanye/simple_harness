@@ -19,9 +19,8 @@ This file pins the bounded answer:
   off **once more** to a new executor (``ServiceIntentRehandedOff``; same subject,
   same reservation);
 * a second unknown outcome ends the round through the role's own door — Planner:
-  ``PlanningRejected{provider_outcome_unknown}`` and the ladder decides; Method-
-  Synthesizer: ``MethodSynthesisRoundRecorded{UNANSWERED}`` and the synthesis wait
-  ends; Critic: the runner's own "did not answer" path;
+  ``PlanningRejected{provider_outcome_unknown}`` and the ladder decides; Critic: the
+  runner's own "did not answer" path;
 * the abandoned turn's charge stays unknown in the runtime ledger and only the
   executor that answered is imported;
 * a legacy Mission is not touched.
@@ -40,7 +39,6 @@ _HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
 if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
-import test_evidence_saturation as saturation  # noqa: E402
 import test_htn_end_to_end as e2e  # noqa: E402
 from decision_loop import auto_grant, refine_step  # noqa: E402
 
@@ -82,8 +80,6 @@ def _config(evidence: Path, **overrides: Any) -> OrchestratorConfig:
         "test_timeout_seconds": 60,
         "max_planning_attempts": 2,
         "stall_seconds": LIMIT,
-        # the scripted Planner is the subject here: always ask the model
-        "method_selection_policy": "ALWAYS_MODEL",
     }
     values.update(overrides)
     return OrchestratorConfig(**values)
@@ -271,24 +267,6 @@ def test_a_second_unknown_outcome_ends_the_planner_round_through_the_ladder(tmp_
     assert outcome["status"] is MissionStatus.FAILED, outcome["types"]
     assert outcome["report"]["planning_failure"]["reason"] == "provider_outcome_unknown"
     assert outcome["open"] == [], outcome["open"]
-
-
-# ======================================================================================
-# 2. the MethodSynthesizer: UNANSWERED, and the wait it caused ends
-# ======================================================================================
-
-
-def saturation_world(tmp_path, *, key: str):
-    """The H-L3-C1 opening (gated method, two readings) with this file's bound."""
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    world = saturation._gated_world(evidence, key=key)
-    for ordinal in (1, 2):
-        saturation._observe(world, observer="plan.observer", ordinal=ordinal)
-    invented = saturation._free_method()
-    world.store.close()
-    return world, invented, _config(evidence)
 
 
 # ======================================================================================

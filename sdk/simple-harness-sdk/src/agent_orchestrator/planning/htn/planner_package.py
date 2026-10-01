@@ -211,6 +211,7 @@ def method_library(
     limit: int = MAX_METHODS_PER_SIGNATURE,
     retired: Sequence[Mapping[str, Any]] = (),
     mission_id: str | None = None,
+    reviews: Mapping[tuple[str, int, str], Mapping[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], ...]:
     """The methods this deployment holds for the open goals' signatures.
 
@@ -226,6 +227,12 @@ def method_library(
     ``rejected_reasons`` — which goal, at which plan revision, and the reason recorded
     at the time.  One field for every reason; it is a fact for the Planner to weigh,
     not a ban.
+
+    ``reviews`` is where the independent review of each method proposed in this Mission
+    stands (``method_plan_reviews.reviews_by_method``): still out, passed, rejected with
+    the reviewer's words, or ended without a verdict.  Shown as ``review`` on the row;
+    a library method has none.  The plan commit adopts a proposed method only once its
+    review passed.
     """
 
     reasons: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
@@ -242,10 +249,12 @@ def method_library(
                           if registry.retrievable(contract.method_ref(), mission_id=MissionRef(mission_id)))
         for contract in list(found)[: max(0, limit)]:
             reference = contract.method_ref()
+            review = (reviews or {}).get(_ref_key(reference))
             entries.append(
                 {
                     "goal_signature_id": signature,
                     "method_ref": reference.to_json(),
+                    **({} if review is None else {"review": dict(review)}),
                     "rejected_reasons": [dict(item) for item in reasons.get(_ref_key(reference), ())],
                     # P2.3c part 2b: the *same* triple again, spelled the way a
                     # ``refine`` operation has to spell it.  ``MethodRef.to_json``
@@ -984,6 +993,7 @@ def hierarchical_planner_package(
     rejected: Sequence[Mapping[str, Any]] = (),
     read_item: Any = None,
     retired_methods: Sequence[Mapping[str, Any]] = (),
+    method_reviews: Mapping[tuple[str, int, str], Mapping[str, Any]] | None = None,
     previous_feedback: Any = None,
     authoritative_refs: Sequence[Any] = (),
     task_states: Mapping[str, Mapping[str, Any]] | None = None,
@@ -1039,6 +1049,7 @@ def hierarchical_planner_package(
                 signatures,
                 retired=retired_methods,
                 mission_id=str(network.mission_id),
+                reviews=method_reviews,
             )
         ],
         "applicability": [dict(item) for item in applicability_reports(reports)],

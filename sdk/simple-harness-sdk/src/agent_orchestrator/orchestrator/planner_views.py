@@ -24,25 +24,27 @@ FORMAL_PACKAGE_LABEL = "planner-package-hierarchical-v7"
 def assemble_runtime_views(*, store: Any, mission: Any, network: Any, world: Any,
                            htn: Any, package: dict[str, Any], authorities: list[dict[str, Any]],
                            budget: PlanningBudgetView, selection_reports: Any = (), dispatch: Any = None,
-                           selection_policy: str = "MODEL_ON_MULTIPLE") -> dict[str, Any]:
+                           ) -> dict[str, Any]:
     # Select visible methods from the complete applicability read. A registry's
     # lexicographic first twelve must not hide the sole applicable method.
     from ..planning.htn.planner_package import method_library, _methods_for
     choices: list[dict[str, Any]] = []
     if dispatch is not None:
-        from .planning_selection import selection_context
-        choices = selection_context(dispatch, mission.id, selection_reports, policy=selection_policy)
+        from .planning_selection import candidate_context
+        choices = candidate_context(dispatch, mission.id, selection_reports)
     signatures = {row["goal_signature_id"] for row in package["method_library"]}
     priority = {c["method_id"] for choice in choices for c in choice["applicable"]}
-    selected_ids = {choice["selected_method_id"] for choice in choices if choice["selected_method_id"]}
     library: list[dict[str, Any]] = []
-    original = {row["method_id"]: row for row in package["method_library"]}
+    # 按做法的完整身份对回原行：同一编号的两个版本（打回的第 1 版、通过的第 2 版）各占一行。
+    def identity(row: dict[str, Any]) -> tuple[str, int, str]:
+        ref = row["method_ref"]
+        return str(ref["method_id"]), int(ref["version"]), str(ref["content_hash"])
+    original = {identity(row): row for row in package["method_library"]}
     for signature in sorted(signatures):
         all_rows = method_library(world.registry, (signature,),
             limit=len(_methods_for(world.registry, signature)), mission_id=mission.id)
-        ordered = sorted(all_rows, key=lambda row: (row["method_id"] not in selected_ids,
-                                                   row["method_id"] not in priority, row["method_id"]))
-        library.extend(original.get(row["method_id"], row) for row in ordered[:12])
+        ordered = sorted(all_rows, key=lambda row: (row["method_id"] not in priority, row["method_id"]))
+        library.extend(original.get(identity(row), row) for row in ordered[:12])
     package = {**package, "method_library": library}
     views = collect_planner_views(package)
     subjects = {row["occurrence_id"]: row for row in package["planning_subjects"]}
@@ -167,12 +169,6 @@ def assemble_runtime_views(*, store: Any, mission: Any, network: Any, world: Any
     result["repair_requests"] = pending_requests(store, mission.id)
     if dispatch is not None:
         result["method_selection"] = choices
-    if (choices and choices[0]["route"] == "MODEL_REFINE"
-            and not result["repair_requests"]):
-        # One model selection spends one occurrence's frozen identity. Other
-        # goals remain visible context, but cannot consume this call's authority.
-        result["planning_subjects"] = [subject for subject in result["planning_subjects"]
-            if subject["occurrence_id"] == choices[0]["occurrence_id"]]
     from ..contracts.planning_decisions import H4_DECISION_ENABLEMENT
     enablement = H4_DECISION_ENABLEMENT
     result["active_method_instances"] = [
@@ -184,7 +180,14 @@ def assemble_runtime_views(*, store: Any, mission: Any, network: Any, world: Any
     result["sharing_candidates"] = list(sharing_candidates)
     result["data_rebind_candidates"] = [{"requirement": edge.to_json(), "expected_requirement_hash": content_hash_of(edge.to_json())}
                                          for edge in network.data_requirements]
-    result["successor_types"] = [spec.to_json() for spec in world.catalog.task_types()]
+    # A successor replaces a step the plan already holds.  Before the first plan there is
+    # none, and the whole type catalogue (the largest single section of the request) says
+    # nothing the Planner can use; the types it may build a *method* from are in
+    # ``method_proposal_contexts``.
+    from ..contracts.htn import TaskForm
+    has_steps = any(spec.form is TaskForm.PRIMITIVE for spec in network.occurrences)
+    result["successor_types"] = ([spec.to_json() for spec in world.catalog.task_types()]
+                                 if has_steps else [])
     result["compensation_candidates"] = [
         {"action_key": action["action_key"], "action_hash": content_hash_of(action),
          "connector": action["connector"], "operation": action["operation"], "target": action["target"]}
@@ -198,13 +201,16 @@ def assemble_runtime_views(*, store: Any, mission: Any, network: Any, world: Any
                                    "enabled_decision_types": decision_types,
                                    "enabled_repair_kinds": repair_kinds}
     result["human_answers"] = answered_questions_for_planner(store, mission.id)
-    from ..planning.htn.synthesis import build_request
+    # 片 A 第 4 项：写做法的上下文按"目标还没有做法"给出，不看候选有几个——规划器随时可以
+    # 判断现有做法都不合适而自己提一个。内容与此前只给方法合成器的那份相同：每条要求的
+    # 原文、现有做法各自为什么不适用、新做法该用的编号与版本。审阅打回的意见在做法库条目
+    # 的 ``review`` 里。
+    open_goals = {choice["occurrence_id"] for choice in choices}
     result["method_proposal_contexts"] = [
-        {"subject_key": goal.subject_key, "request": build_request(network.binding_for_task(goal.task_id), world.capabilities(), world.registry,
-            catalog=world.catalog, mission_id=mission.id).to_json()}
-        for goal in goals if any(choice["occurrence_id"] == goal.occurrence_id
-            and choice["route"] == "EVIDENCE_OR_SYNTHESIS" for choice in result.get("method_selection", ()))
-    ]
+        {"subject_key": goal.subject_key,
+         "request": dispatch.method_proposal_context(mission.id, str(goal.task_id))}
+        for goal in goals if goal.occurrence_id in open_goals
+    ] if dispatch is not None else []
     result["evidence_predicates"] = [s.to_json() for s in world.predicates.signatures()
         if getattr(world, "observers", None) is not None
         and world.observers.observer_for(s.predicate_ref.id) is not None]

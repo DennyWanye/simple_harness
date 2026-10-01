@@ -32,6 +32,7 @@ from agent_orchestrator.runtime.role_templates import (
     HIERARCHICAL_PLANNER_VERSIONS,
     PLANNER_HIERARCHICAL_V12,
     PLANNER_HIERARCHICAL_V13,
+    PLANNER_HIERARCHICAL_V14_VERSION,
     PLANNING_DECISION_PACKAGE_VERSION,
     PLANNING_DECISION_PROMPT_VERSION,
     hierarchical_planner_pairing_is_valid,
@@ -55,8 +56,10 @@ def _added() -> str:
 
 
 def test_v13_is_the_prompt_new_missions_bind_on_package_8() -> None:
-    assert PLANNING_DECISION_PROMPT_VERSION == "planner-hierarchical-v13"
+    # 2026-10-01 HTN 精简片 A：当前包升到第 9 版、只配 v14；v13 仍是第 8 版包的提示词。
+    assert PLANNING_DECISION_PROMPT_VERSION == PLANNER_HIERARCHICAL_V14_VERSION
     assert PLANNER_HIERARCHICAL_V13.prompt_version in HIERARCHICAL_PLANNER_VERSIONS
+    assert hierarchical_planner_pairing_is_valid(PLANNER_HIERARCHICAL_V13.prompt_version, 8)
     assert hierarchical_planner_pairing_is_valid(
         PLANNING_DECISION_PROMPT_VERSION, PLANNING_DECISION_PACKAGE_VERSION
     )

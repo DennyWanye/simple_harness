@@ -770,15 +770,17 @@ def _conditions():
 # §7.3 source 4 / §18.5 C8: a new *role*, with its own template, its own budget
 # account and a typed context that carries no authority vocabulary at all.  Part 2
 # built the synthesiser and left it unreachable; this is the wiring.
+#
+# 2026-10-01 HTN 精简片 A：合成器运行路径删除，``synthesis_request`` 改为
+# ``method_proposal_context``（给规划器自己提做法用的字典）；合成器回复准入
+# (``apply_synthesizer_reply``) 与合成器意图 (``_create_synthesizer_intent``) 的测试删除。
 
 
-from agent_orchestrator.contracts.htn import RegistryAuthor  # noqa: E402
 from agent_orchestrator.contracts.obligations import Obligation  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
     HierarchicalDispatch,
 )
 from agent_orchestrator.planning.htn.synthesis import (  # noqa: E402
-    SYNTHESIS_AUTHOR,
     authority_claims,
 )
 from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
@@ -837,10 +839,10 @@ def synth(tmp_path) -> SynthWorld:
 def test_the_synthesis_request_describes_the_goal_and_the_real_operators(
     synth: SynthWorld,
 ) -> None:
-    request = synth.dispatch.synthesis_request(synth.mission.id, "task-root")
-    assert request.goal_task_id == "task-root"
-    assert request.obligation_id == "obl-root"
-    offered = {item.task_type_id for item in request.operators}
+    request = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
+    assert request["goal_task_ref"] == "task-root"
+    assert request["duty_ref"] == "obl-root"
+    offered = {item["task_type_ref"]["id"] for item in request["operators"]}
     assert "demo.shared-read" in offered
     assert "demo.goal" not in offered  # a compound is not an operator
 
@@ -848,10 +850,10 @@ def test_the_synthesis_request_describes_the_goal_and_the_real_operators(
 def test_the_synthesis_request_carries_no_authority_vocabulary(synth: SynthWorld) -> None:
     """§18.5: a model proposes the shape of the work, never its authority."""
 
-    request = synth.dispatch.synthesis_request(synth.mission.id, "task-root")
-    assert authority_claims(request.to_json()) == ()
-    assert "mission_id" not in request.to_json()
-    assert set(request.forbidden_fields) >= {"mission_id", "registry_status", "budget_account"}
+    request = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
+    assert authority_claims(request) == ()
+    assert "mission_id" not in request
+    assert set(request["forbidden_fields"]) >= {"mission_id", "registry_status", "budget_account"}
 
 
 def test_each_criterion_id_is_shown_with_its_own_statement(synth: SynthWorld) -> None:
@@ -869,8 +871,8 @@ def test_each_criterion_id_is_shown_with_its_own_statement(synth: SynthWorld) ->
         RequirementsRevision,
     )
 
-    before = synth.dispatch.synthesis_request(synth.mission.id, "task-root")
-    ids = [item["id"] for item in before.criterion_evidence]
+    before = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
+    ids = [item["id"] for item in before["criterion_evidence"]]
     assert ids, "the fixture's goal names coverage criteria"
     known, unknown = ids[0], ids[1:]
     HtnStore(synth.service.store).insert_requirements_revision(RequirementsRevision(
@@ -888,9 +890,9 @@ def test_each_criterion_id_is_shown_with_its_own_statement(synth: SynthWorld) ->
         success_expression=AllExpr((CriterionExpr(known),)),
     ))
     after = {item["id"]: item["evidence_requirement"]
-             for item in synth.dispatch.synthesis_request(synth.mission.id, "task-root").criterion_evidence}
+             for item in synth.dispatch.method_proposal_context(synth.mission.id, "task-root")["criterion_evidence"]}
     assert after[known] == "wordfreq.py 定义 top_words(text, n)"
-    old = {item["id"]: item["evidence_requirement"] for item in before.criterion_evidence}
+    old = {item["id"]: item["evidence_requirement"] for item in before["criterion_evidence"]}
     assert all(after[item] == old[item] for item in unknown)
 
 
@@ -899,7 +901,7 @@ def test_file_and_operation_criteria_say_publishing_is_the_systems(synth: SynthW
     README 的步骤都写了"在发布目录中给出落点路径"，又自设了发布步骤；审阅员照这句判
     写模块那步不通过，连败两次后向人要发布目录。file:/action: 要求原文后面附上说明。
 
-    **Mutation**: drop either note, or stop applying it in ``synthesis_request`` → red."""
+    **Mutation**: drop either note, or stop applying it in ``method_proposal_context`` → red."""
     from agent_orchestrator.contracts.resolution import (
         AllExpr, Criterion, CriterionExpr, CriterionOrigin, EvaluationKind,
         RequirementClass, RequirementsRevision,
@@ -913,7 +915,7 @@ def test_file_and_operation_criteria_say_publishing_is_the_systems(synth: SynthW
     assert "由系统执行" in action_note and "不要为它单独设步骤" in action_note
     assert synthesis_statement("README 说明用法") == "README 说明用法"
 
-    key = synth.dispatch.synthesis_request(synth.mission.id, "task-root").criterion_evidence[0]["id"]
+    key = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")["criterion_evidence"][0]["id"]
     HtnStore(synth.service.store).insert_requirements_revision(RequirementsRevision(
         revision_id="requirements-1",  # type: ignore[arg-type]
         mission_id=synth.mission.id, revision=1,
@@ -923,7 +925,7 @@ def test_file_and_operation_criteria_say_publishing_is_the_systems(synth: SynthW
             evaluation_kind=EvaluationKind.SEMANTIC),),
         success_expression=AllExpr((CriterionExpr(key),)),
     ))
-    shown = synth.dispatch.synthesis_request(synth.mission.id, "task-root").criterion_evidence[0]
+    shown = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")["criterion_evidence"][0]
     assert shown["evidence_requirement"] == file_note
 
 
@@ -931,53 +933,9 @@ def test_an_unusable_capability_is_reported_as_unavailable(synth: SynthWorld) ->
     synth.world.records = capability_records(
         synth.env.catalog, deployed_layers=(), unhealthy=("demo.read",)
     )
-    request = synth.dispatch.synthesis_request(synth.mission.id, "task-root")
-    assert "demo.read" in request.unavailable_capabilities
-    assert request.available_operators == ()
-
-
-def test_the_reply_is_admitted_with_the_author_locked_to_model(synth: SynthWorld) -> None:
-    """§6.3 / §7.3: text that reached us from a model is MODEL-authored, full stop."""
-
-    import inspect
-
-    source = inspect.getsource(HierarchicalDispatch.apply_synthesizer_reply)
-    assert (
-        "author" not in inspect.signature(HierarchicalDispatch.apply_synthesizer_reply).parameters
-    )
-    assert "MODEL" in source
-    assert SYNTHESIS_AUTHOR is RegistryAuthor.MODEL
-
-
-def test_a_model_that_awards_itself_a_status_is_refused_and_recorded(synth: SynthWorld) -> None:
-    import json as _json
-
-    method_json = _alternative("demo.synthesised", PRIMARY, "a").to_json()
-    text = (
-        "<method_proposal>"
-        + _json.dumps(
-            {"method": method_json, "rationale": "r", "registry_status": "ADMITTED"},
-            ensure_ascii=False,
-        )
-        + "</method_proposal>"
-    )
-    receipt = synth.dispatch.apply_synthesizer_reply(synth.mission.id, text)
-    assert not receipt.admitted
-    assert any("status" in str(problem).lower() for problem in receipt.problems)
-
-
-def test_the_synthesizer_intent_is_hierarchical_only_and_lands_on_mission_planning() -> None:
-    """The two facts §13 v1.4 and §18.5 ask for, read off the wiring itself."""
-
-    import inspect
-
-    from agent_orchestrator.orchestrator.event_handler import Orchestrator
-
-    source = inspect.getsource(Orchestrator._create_synthesizer_intent)
-    assert "self._new_mode(mission)" in source
-    assert "mission_account(mission_id)" in source
-    assert "METHOD_SYNTHESIZER" in source
-    assert "task_account" not in source
+    request = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
+    assert "demo.read" in request["unavailable_capabilities"]
+    assert [item for item in request["operators"] if item["available"]] == []
 
 
 # ======================================================================================

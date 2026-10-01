@@ -170,10 +170,9 @@ def approve_check_policy(
                 or binding.content_hash() != planning_subject.pin.content_hash
             ):
                 raise AssuranceError("CHECK_POLICY_SCOPE_MISMATCH")
-            covered = set(binding.goal_signature.coverage_criteria)
             projection = _PlanningProjection(
                 requirements,
-                tuple(c for c in requirements.criteria if c.criterion_id in covered),
+                planning_subject_criteria(commit.store, mission_id, binding, requirements),
             )
         elif purpose == "MISSION_FINAL":
             # The root review judges the whole root requirements, not only the
@@ -407,6 +406,13 @@ def lossless_scope_mapping(
                 store, mission_id, str(row["occurrence_id"]), str(row["task_id"])
             ).criteria
         )
+    return requirements_ref, scope_ref, _lossless_mapping(commit, mission_id, criteria_source)
+
+
+def _lossless_mapping(
+    commit: CommitService, mission_id: str, criteria_source: Sequence[Any]
+) -> tuple[CriterionPolicy, ...]:
+    """One policy row per original criterion, nothing invented and nothing dropped."""
     registry: dict[str, Any] | None = None
     mapping: list[CriterionPolicy] = []
     for criterion in criteria_source:
@@ -429,7 +435,53 @@ def lossless_scope_mapping(
                 raise AssuranceError("CHECK_POLICY_UNRESOLVED", name)
             group.append(entry.binding.spec_ref)
         mapping.append(CriterionPolicy(criterion.criterion_id, "CHECKED", (tuple(group),)))
-    return requirements_ref, scope_ref, tuple(sorted(mapping, key=lambda c: c.criterion_id))
+    return tuple(sorted(mapping, key=lambda c: c.criterion_id))
+
+
+def planning_subject_criteria(store: Any, mission_id: str, binding: Any, requirements: Any) -> tuple[Any, ...]:
+    """The requirement criteria a method proposed for this goal is reviewed against.
+
+    One definition for the three readers that must agree — the policy approval, the
+    lossless mapping a deployment derives for it, and the METHOD_PLAN review package:
+    the requirements criteria this goal's signature covers.
+    """
+    covered = set(binding.goal_signature.coverage_criteria)
+    return tuple(item for item in requirements.criteria if item.criterion_id in covered)
+
+
+def lossless_planning_subject_mapping(
+    commit: CommitService, *, mission_id: str, task_id: str
+) -> tuple[AssuranceRef, AssuranceRef, tuple[CriterionPolicy, ...]]:
+    """The METHOD_PLAN policy a deployment derives losslessly for one planning subject.
+
+    ``(requirements_ref, planning_subject_ref, mapping)`` for the exact compound Task
+    a method may be proposed for: its criteria are the requirements criteria the goal
+    covers (the catalogue :func:`approve_check_policy` projects for METHOD_PLAN), each
+    mapped by the same lossless rule as a Scope's.  A Task that is unknown, is not a
+    compound goal, or covers no requirements criterion is ``CHECK_POLICY_UNRESOLVED``:
+    there is nothing a method review could be asked about it.
+
+    2026-10-01 (HTN 精简 片 A): nothing approved this policy in production, so every
+    method a Planner proposed was refused before its independent review could open.
+    """
+    text(mission_id)
+    text(task_id)
+    htn = HtnStore(commit.store)
+    binding = htn.task_semantics_of(mission_id, task_id)
+    requirements = htn.latest_requirements_revision(mission_id)
+    if binding is None or requirements is None or binding.form is not TaskForm.COMPOUND:
+        raise AssuranceError("CHECK_POLICY_UNRESOLVED", task_id)
+    criteria = planning_subject_criteria(commit.store, mission_id, binding, requirements)
+    if not criteria:
+        raise AssuranceError("CHECK_POLICY_UNRESOLVED", task_id)
+    requirements_ref = AssuranceRef(
+        "requirements",
+        Pin(str(requirements.revision_id), int(requirements.revision), requirements.content_hash()),
+    )
+    subject_ref = AssuranceRef(
+        "task", Pin(str(binding.task_id), int(binding.contract_revision), binding.content_hash())
+    )
+    return requirements_ref, subject_ref, _lossless_mapping(commit, mission_id, criteria)
 
 
 def mission_final_scope_id(orchestrator: Any, mission_id: str) -> str | None:

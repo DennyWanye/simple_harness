@@ -54,7 +54,16 @@ def test_later_request_retries_its_own_frozen_package_once(tmp_path: Path, ordin
             assert store.get_planning_decision_by_attempt(opener.intent_id, 1)["status"] == "UNREADABLE"
             # 2026-09-30：同一请求的格式重试只有一次（上面），用完后规划总次数还有剩就开一个
             # **新请求**（新的冻结包、自己的一次格式重试），任务不因两次格式错失败。
-            fresh = loop.store.get_intent_for_subject(f"{mission.id}:planner:{ordinal + 2}")
+            # 片 A（2026-10-01）：新请求取下一个空闲序号（``_next_planning_ordinal``）。本测试
+            # 从第 ``ordinal`` 轮直接开题、前面的序号空着，所以按"开着的规划意图"找它。
+            opened = [
+                item for item in loop.store.list_intents(
+                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
+                if item.mission_id == mission.id and item.kind == "plan"
+                and item.intent_id not in {opener.intent_id, retry.intent_id}
+            ]
+            assert len(opened) == 1, [item.subject_id for item in opened]
+            fresh = opened[0]
             assert fresh is not None and fresh.intent_id != retry.intent_id
             assert store.get_planning_request(fresh.intent_id) is None or \
                 store.get_planning_request(fresh.intent_id).intent_id == fresh.intent_id

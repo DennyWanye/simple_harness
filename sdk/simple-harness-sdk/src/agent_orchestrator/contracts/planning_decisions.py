@@ -321,8 +321,11 @@ H4_DECISION_ENABLEMENT: Mapping[str, DecisionEnablement] = MappingProxyType({
     "REPAIR/REFINE_DEEPER": _EXECUTABLE,
     "REPAIR/RETRY_SAME_METHOD": _EXECUTABLE,
     "REPAIR/DECLARE_RUNTIME_BLOCKED": _EXECUTABLE,
-    "REPAIR/ESCALATE": _EXECUTABLE,
     "REPAIR/REQUEST_COMPENSATION": _EXECUTABLE,
+    # 片 A 第 9 项（2026-10-01）："卡住了"只有一种说法——问用户（REQUEST_HUMAN）。声明受阻
+    # 与修复里的升级不再可选；"运行环境受阻"是基础设施事实，带恢复条件，保留。
+    "DECLARE_BLOCKED": _DECODE_ONLY,
+    "REPAIR/ESCALATE": _DECODE_ONLY,
 })
 
 

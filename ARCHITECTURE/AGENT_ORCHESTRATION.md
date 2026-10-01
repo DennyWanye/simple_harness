@@ -1,3 +1,16 @@
+最后更新：2026-10-01 晚 CST（HTN 精简改造 片 A：编排 Agent 判断 + 自己提做法 + 审阅闸门，SDK opt.114）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版；逐步记录见同目录 `HTN-片A-实施记录.md`。
+- **选做法、提做法都由规划器判断**：程序只按能力与类型把跑不了的做法筛掉（`planning/htn/method_selection.filter_candidates`、`HierarchicalDispatch.method_candidates`），每个还没有做法的目标都开一轮规划器。删掉两条程序代答（只有一个候选时直接替它采用、同一组候选问过一次就回"无变更"）、选择策略档位与选择调用账本、部署配置里的选择策略项。非模型故障的原地重做保留，来源如实标为 `system_infrastructure_retry`（`planning_selection.infrastructure_retry`）。
+- **方法合成器的运行路径整条删除**：发起、收回复、重问、合成轮次记录、"跳过规划器"记录、"合成成功多给一次规划机会"全部删掉；"要不要新做法"的四个程序判定（需要做法的目标清单、空规划器跳过、值得合成的拒绝分类、取证是否饱和）一并删掉。做法草案的解码与结构检查（纯函数）保留，规划器这条路在用；合成器提示词模板与角色清单留到片 C。
+- **规划器自己提做法**（`PROPOSE_METHOD`，`orchestrator/planning_method_proposal.py`）：准入只做秩序检查——草案是为这次规划的目标写的、编号不撞车、要发布的文件恰好由一个步骤写出、注册协议的结构检查、每个目标最多提 3 次；被拒时逐条列出问题（结构化条目，下一轮在"上次被拒"里逐条看到）。"一步承担 3 个以上文件打回重拆"不再由程序检查，改由新做法审阅员按任务要求判断。写做法的材料（`HierarchicalDispatch.method_proposal_context`）对每个还没有做法的目标都给：每条要求的原文、现有做法各自为什么不适用、可用步骤类型、新做法该用的编号与版本。
+- **新做法审阅闸门**（`orchestrator/method_plan_reviews.py`、`PlanCommitsMixin._check_method_reviews`）：计划提交事务里，采用规划器在本任务里提出的做法必须有通过（或人裁决通过）的新做法审阅正式记录，否则以 `METHOD_NOT_AUTHORIZED` 拒绝。"在本任务里提出"按"本任务为这个做法开过新做法审阅"判定（登记与开审在同一事务）；登记表上的"试用"标记库做法也有，不能用来区分。只在保证通道生效。
+- **审阅结论才叫醒规划器**：保证通道上"做法已提出"不再叫醒规划器；每轮循环把有了结论的提案记成 `PlanningMethodReviewed`（通过 / 打回带审阅员原话 / 人已裁决 / 没有结论及原因），这条事件是唤醒源。两位审阅员都判不下来 → 问用户裁决（与根终审、组合审阅同一通道与回执）。等审阅期间任务算"在等"。做法库条目带 `review`（审到哪一步、原话、裁决）。
+- **根目标的任务行提前建**（`CommitService.materialise_planning_subject`）：新做法审阅以被规划的目标为归属任务，根目标在第一份计划之前没有任务行，开审会被数据库触发器拒绝；开审前建的就是计划提交会建的同一行，之后的提交原样复用。
+- **规划次数只有一处判断**（`Orchestrator._planning_rejected`）：答错次数 `max_planning_attempts` 默认 3（自上一次提交成功起，被拒的回答不分种类累计；同一请求的格式重试计入其中；被接受的提做法、问用户不算答错），服务故障宽限 6 次。已有计划的任务只有还欠着规划（有待处理的修复请求、有步骤等重试决定、有目标还没有做法）才因答错次数用完而停，原因 `planning_attempts_exhausted`。不再出现 `planning_format_retry_exhausted`、`repair_planning_exhausted`、`method_synthesis_refused`。
+- **"卡住了"只有问用户一种**：`DECLARE_BLOCKED` 与 `REPAIR/ESCALATE` 在启用表里改为只解码不可执行；`REQUEST_HUMAN` 与"运行环境受阻"保留。
+- **规划器提示词重写成一份**：`planner-hierarchical-v14`，完整文本、不从旧版本拼接；规划包第 9 版（标签 `planner-package-hierarchical-v11`）只配它。只并入合成器提示词里的通用协议部分（做法字段形状、完整示例、被拒后怎么读问题清单）。保证通道审阅指令加了新做法审阅的判断口径（含拆分粒度）。
+- **新测试夹具**：`tests/orchestrator/full_target/assurance_exec/_assured_loop.py`——保证通道 + 真实循环 + 脚本化模型，此前没有任何测试能在保证通道上跑完整规划循环。
+- 验证：变异检查见 `.local-test-evidence/2026-10-01/sliceA/mutations/results.txt`；真机记录见实施记录。
+
 最后更新：2026-10-01 下午 CST（HTN 精简改造 片 0：先删先并，SDK opt.113）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版；逐步记录见同目录 `HTN-片0-实施记录.md`。
 - **只剩一种规划协议**：旧的"计划提案"协议整条路径删除（文本解析器、回复收集、修复文本重放、按规划包版本号的分支）。SDK 默认值 = 分层模式 + 当前决定协议；平面模式仍可用但必须在任务规格里明写，平面任务没有规划协议、不写协议绑定。旧协议名在规格构造、请求解析、创建三处都被明确拒绝。库里按旧契约建的分层任务（没有协议绑定行，或绑的不是当前规划包版本）在主循环入口被停掉，停止原因 `unsupported_planning_package`（`Orchestrator._refuse_unsupported_contract` / `planning_protocol_binding.current_planning_protocol`）。
 - **修复只有一条路**：根终审打回、只读步骤越权改文件、同一步反复同样失败三种专用修复全部并入通用修复请求（`PlanningRepairRequested`）。Harness 只报告事实，不再替规划器退掉根目标的做法、取消步骤或写结论：

@@ -3,8 +3,8 @@
 
 Run against a frozen installed candidate. Missing deployment evidence is a hard
 failure: this fixture never substitutes a grant, certificate or APPLIED record.
-Only the model response is scripted; original SDK dispatch/collection and native
-deterministic method selection both retain their production behavior.
+Only the model response is scripted; original SDK dispatch/collection retain their
+production behavior.  The seed plan is the scripted Planner's own REFINE.
 """
 from __future__ import annotations
 

@@ -30,9 +30,22 @@ def test_commit_write_failure_leaves_no_plan_tasks_budget_or_graph_receipt(tmp_p
             store.connection.execute(
                 f"CREATE TRIGGER tg_test_abort BEFORE INSERT ON {table} WHEN {predicate} "
                 "BEGIN SELECT RAISE(ABORT,'TG_TEST_ATOMIC_WRITE'); END")
+            # 2026-10-01: the Planner is asked (the program no longer selects a sole candidate
+            # for it), so the commit — and the injected write failure — happens when its
+            # reply is collected, not at dispatch.
             try:
                 with pytest.raises((sqlite3.DatabaseError, StoreError)):
-                    await world.loop._dispatch(world.intent)
+                    async with asyncio.timeout(20):
+                        while True:
+                            current = store.get_intent(world.intent.intent_id)
+                            assert current is not None
+                            if current.state in {'PENDING', 'CLAIMED', 'AGENT_CREATED'}:
+                                await world.loop._dispatch(current)
+                            elif current.state == 'SUBMITTED':
+                                await world.loop._collect(current)
+                            else:
+                                raise AssertionError(f'Planner intent ended as {current.state}')
+                            await asyncio.sleep(.01)
             finally:
                 store.connection.execute('DROP TRIGGER tg_test_abort')
             assert store.list_tasks(mission) == []
@@ -49,7 +62,7 @@ def test_commit_write_failure_leaves_no_plan_tasks_budget_or_graph_receipt(tmp_p
                 (world.intent.intent_id,)).fetchone()[0] == 0
             assert not any(event.type in {'PlanRevisionCommitted', 'TaskGraphRevisionRecorded'}
                            for event in store.iter_events(mission))
-            assert world.provider.calls == 0
+            assert world.provider.calls == 1
     asyncio.run(case())
 
 

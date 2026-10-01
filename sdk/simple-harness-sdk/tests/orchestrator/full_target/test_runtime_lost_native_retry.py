@@ -4,7 +4,7 @@
 import copy
 
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionEnvelopeV1
-from agent_orchestrator.orchestrator.planning_selection import local_decision
+from agent_orchestrator.orchestrator.planning_selection import infrastructure_retry
 
 REF = {"kind": "method_instance", "id": "mi-bc2f82cc2378f8abde9b99dadbebb4b5",
        "semantic_revision": 1, "content_hash": "22e93841b021db7ae10a571eb248d35cbd646ac75b49d6155fe78361ced7087e"}
@@ -33,7 +33,7 @@ PACKAGE = {
 
 
 def test_a_lost_attempt_is_retried_by_the_system_with_the_same_method():
-    decision = local_decision(PACKAGE)
+    decision = infrastructure_retry(PACKAGE)
     assert decision is not None
     envelope = PlanningDecisionEnvelopeV1.from_json(decision)
     assert decision["decision_type"] == "REPAIR"
@@ -60,9 +60,9 @@ def _variant(**change):
 
 
 def test_anything_else_still_goes_to_the_planner():
-    assert local_decision(_variant(reason="executor_stalled")) is None  # 没有分类标记的旧请求
-    assert local_decision(_variant(unresolved=["op-1"])) is None
-    assert local_decision(_variant(kinds=["DECLARE_RUNTIME_BLOCKED"])) is None
+    assert infrastructure_retry(_variant(reason="executor_stalled")) is None  # 没有分类标记的旧请求
+    assert infrastructure_retry(_variant(unresolved=["op-1"])) is None
+    assert infrastructure_retry(_variant(kinds=["DECLARE_RUNTIME_BLOCKED"])) is None
 
 
 def _rejected(failure_class, attempt="task-742189979604bf7b96ea9335250e4a2c:attempt-5"):
@@ -79,12 +79,12 @@ def test_a_failure_that_is_not_the_models_fault_is_retried_by_the_system():
     for category in ("FORMAT", "INFRA", "INTERRUPTED"):
         package = copy.deepcopy(PACKAGE)
         package["repair_requests"] = [_rejected(category)]
-        decision = local_decision(package)
+        decision = infrastructure_retry(package)
         assert decision is not None, category
         assert decision["payload"]["failed_attempt_id"].endswith(":attempt-5")
     model = copy.deepcopy(PACKAGE)
     model["repair_requests"] = [_rejected("MODEL")]
-    assert local_decision(model) is None
+    assert infrastructure_retry(model) is None
 
 
 def test_the_first_non_model_request_is_taken_when_several_are_pending():
@@ -94,7 +94,7 @@ def test_the_first_non_model_request_is_taken_when_several_are_pending():
         _rejected("MODEL", "task-742189979604bf7b96ea9335250e4a2c:attempt-3"),
         _rejected("INFRA", "task-742189979604bf7b96ea9335250e4a2c:attempt-4"),
     ]
-    decision = local_decision(package)
+    decision = infrastructure_retry(package)
     assert decision is not None
     assert decision["payload"]["failed_attempt_id"].endswith(":attempt-4")
 
@@ -108,23 +108,54 @@ def test_an_interrupted_review_redoes_the_step_but_a_real_rejection_does_not():
              "summary": "critic verdict unusable: Assurance review awaits original-call reconciliation"}]}},
         "trigger_refs": ["task-742189979604bf7b96ea9335250e4a2c:attempt-1", "task-742189979604bf7b96ea9335250e4a2c"],
     }
-    decision = local_decision(package)
+    decision = infrastructure_retry(package)
     assert decision is not None
     assert decision["payload"]["failed_attempt_id"] == "task-742189979604bf7b96ea9335250e4a2c:attempt-1"
     rejected = copy.deepcopy(package)
     rejected["repair_requests"][0]["request"]["context"]["detail"]["failures"] = [
         {"layer": "critic_review", "status": "FAIL", "summary": "README lacks a real sample output"}]
-    assert local_decision(rejected) is None
+    assert infrastructure_retry(rejected) is None
     mixed = copy.deepcopy(package)
     mixed["repair_requests"][0]["request"]["context"]["detail"]["failures"].append(
         {"layer": "code_test", "status": "FAIL", "summary": "pytest failed"})
-    assert local_decision(mixed) is None
+    assert infrastructure_retry(mixed) is None
 
 
 def test_a_refused_native_decision_is_not_repeated():
     refused = copy.deepcopy(PACKAGE)
     refused["planning_rejected"] = [{"reason": "proposal_not_grounded", "detail": {}}]
-    assert local_decision(refused) is None
+    assert infrastructure_retry(refused) is None
     selection = {"repair_requests": [], "rejected_refinements": [], "method_selection": [{"route": "DETERMINISTIC"}],
                  "planning_rejected": [{"reason": "proposal_not_grounded", "detail": {}}]}
-    assert local_decision(selection) is None
+    assert infrastructure_retry(selection) is None
+
+
+def test_the_systems_own_retry_is_recorded_as_such_and_not_as_a_planner_choice(tmp_path):
+    """片 A 第 3 项：系统原地重做走决定管道，但来源如实标注，不再标成"确定性做法选择"。"""
+    import asyncio
+    from types import SimpleNamespace
+
+    import test_htn_end_to_end as e2e
+
+    from agent_orchestrator.orchestrator.planning_selection import SYSTEM_RETRY_ORIGIN, dispatch_local
+
+    assert SYSTEM_RETRY_ORIGIN == "system_infrastructure_retry"
+    world = e2e.build_world(tmp_path, key="system-retry-origin", bound=True)
+    collected: list[str] = []
+
+    async def collect(intent, result, mission, text, dispatch):
+        collected.append(text)
+
+    handler = SimpleNamespace(store=world.store, _new_mode=lambda mission: object(),
+                              _collect_plan_decision=collect)
+    document = {"schema_version": 1, "decision_type": "REPAIR"}
+    intent = SimpleNamespace(intent_id="intent-system-retry", mission_id=world.mission.id, kind="plan",
+                             config={"native_planning_decision": document})
+    assert asyncio.run(dispatch_local(handler, intent)) is True
+    [prepared] = [event for event in world.store.list_events(world.mission.id)
+                  if event.type == "NativePlanningDecisionPrepared"]
+    assert prepared.payload["origin"] == "system_infrastructure_retry"
+    assert len(collected) == 1 and "<planning_decision>" in collected[0]
+    # a Planner intent carries no such document and is never dispatched locally
+    plain = SimpleNamespace(intent_id="intent-planner", mission_id=world.mission.id, kind="plan", config={})
+    assert asyncio.run(dispatch_local(handler, plain)) is False

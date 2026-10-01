@@ -87,9 +87,15 @@ def _code(value: object) -> PlanningDecisionRejectionCode:
 
 def _problems(codes: list[PlanningDecisionRejectionCode], detail: Mapping[str, Any]) -> list:
     rows = detail.get("problems")
-    if isinstance(rows, list) and rows:
-        return [PlanningProblemDetailV1.from_json(row, "feedback.problem") for row in rows]
     code = codes[0] if codes else PlanningDecisionRejectionCode.MALFORMED_DECISION
+    if isinstance(rows, list) and rows:
+        # A stored row that is not a typed problem is still shown, as words under the
+        # decision's own code: building the next request must not fail on how an
+        # earlier refusal happened to be written down.
+        return [PlanningProblemDetailV1.from_json(row, "feedback.problem") if isinstance(row, Mapping)
+                else PlanningProblemDetailV1(code=code, subject_ref=None, field_path=None,
+                                             detail=str(row)[:600])
+                for row in rows]
     if isinstance(detail.get("error"), str) and detail["error"].strip():
         text = detail["error"]
         return [PlanningProblemDetailV1(code=code, subject_ref=None,

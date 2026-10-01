@@ -325,7 +325,7 @@ def test_a_refused_budget_reaches_the_planner_and_the_replan_completes(tmp_path)
     seen: list[dict] = []
     provider = RoleScriptedProvider(
         {
-            # exactly max_planning_attempts (2) steps: an exhausted script would hang
+            # two steps: the second commits, so the (default 3) bound is never reached
             "planner": [
                 _capturing(graph_proposal_step([_task(800)]), seen),
                 _capturing(graph_proposal_step([_task(30_000)]), seen),
@@ -366,7 +366,8 @@ def test_a_pool_that_cannot_hold_one_floor_ends_as_planning_failed(tmp_path):
     )
 
     async def run():
-        async with Orchestrator(_config(tmp_path), provider) as orchestrator:
+        # 片 A：max_planning_attempts 默认 2→3；脚本步数与上限相等，否则耗尽的脚本会挂住。
+        async with Orchestrator(_config(tmp_path, max_planning_attempts=2), provider) as orchestrator:
             created = await orchestrator.submit_mission(
                 _spec("fx4", budget=Budget(max_tokens=9_000, max_attempts=6))
             )
@@ -577,7 +578,8 @@ def test_a_proposal_that_meets_the_floor_but_not_the_pool_names_the_pool(tmp_pat
     )
 
     async def run():
-        async with Orchestrator(_config(tmp_path), provider) as orchestrator:
+        # 片 A：max_planning_attempts 默认 2→3；脚本步数与上限相等，否则耗尽的脚本会挂住。
+        async with Orchestrator(_config(tmp_path, max_planning_attempts=2), provider) as orchestrator:
             created = await orchestrator.submit_mission(
                 _spec("fx4-pool", budget=Budget(max_tokens=9_000, max_attempts=6))
             )

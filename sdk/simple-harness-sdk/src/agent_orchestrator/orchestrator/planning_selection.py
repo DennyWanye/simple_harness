@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
-"""H3 deterministic selection uses the original Decision admission and Commit lane."""
+"""做法候选视图，与非模型故障的原地重做（HTN 精简 片 A 第 3 项，2026-10-01）。
+
+为目标选做法由规划器判断：这里只把每个待定目标的候选如实列出来。程序不再代答（"只有
+一个候选就直接选""这组候选问过一次就回无变更"两条已删）。
+
+唯一由系统自己发起的决定是基础设施重试：上一次失败不是模型自己做错的（格式、服务出错、
+执行或审阅被打断），系统原样重做该步。它走与规划决定相同的准入与提交管道，但来源如实
+记为 ``system_infrastructure_retry``，不是规划器的决定。
+"""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -8,25 +16,21 @@ from typing import Any
 from simple_harness.contracts import canonical_json
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import PlanningDecisionEnvelopeV1
-from .hierarchical_dispatch import append_hierarchical_event, METHOD_SELECTION_CALL_CLAIMED
+from .hierarchical_dispatch import append_hierarchical_event
+
+SYSTEM_RETRY_ORIGIN = "system_infrastructure_retry"
 
 
-def selection_context(dispatch: Any, mission_id: str, reports: Any, *, policy: str = "MODEL_ON_MULTIPLE") -> list[dict[str, Any]]:
-    """Read only: assembling a package must not spend a selection call."""
-    from ..planning.htn.method_selection import MethodSelectionPolicyV1, SelectionPolicyMode
-    decisions = dispatch.select_method_candidates(mission_id, reports=reports, persist_claims=False,
-        policy=MethodSelectionPolicyV1(mode=SelectionPolicyMode(policy)))
+def candidate_context(dispatch: Any, mission_id: str, reports: Any) -> list[dict[str, Any]]:
+    """Per open goal, the candidates that can run.  Read only."""
+    candidates = dispatch.method_candidates(mission_id, reports=reports)
     network = dispatch.network(mission_id)
-    return [{"occurrence_id": occurrence, "route": str(result.route),
-             "identity": result.identity.to_json(),
-             "applicable": [item.to_json() for item in sorted(result.applicable,
-                 key=lambda item: (item.method_id != result.selected_method_id, item.method_id))[:12]],
-             "selected_method_id": result.selected_method_id,
+    return [{"occurrence_id": occurrence,
+             "applicable": [item.to_json() for item in result.applicable[:12]],
              "applicable_count": len(result.applicable),
              "omitted_count": max(0, len(result.applicable) - 12),
              "bindings": dict(network.binding_for_occurrence(occurrence).typed_parameters)}
-            for occurrence, result in sorted(decisions.items(), key=lambda item:
-                (item[1].route == "SELECTION_ALREADY_ATTEMPTED", item[0]))]
+            for occurrence, result in sorted(candidates.items())]
 
 
 # 2026-09-28 用户决定：不是模型自己做错的失败（格式没写对、服务出错、执行或审阅被打断）
@@ -110,62 +114,9 @@ def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
     return PlanningDecisionEnvelopeV1.from_json(document).to_json()
 
 
-def local_decision(package: Mapping[str, Any]) -> dict[str, Any] | None:
-    retry = _runtime_lost_retry(package)
-    if retry is not None:
-        return retry
-    # 2026-09-28 真机：同一原生决定被准入拒绝后，下一轮原样再生成、再被拒，三轮耗尽规划
-    # 次数。这一问已有被拒记录时交给模型（它能看到拒绝原因），不再原样重复。
-    if package.get("repair_requests") or package.get("planning_rejected"):
-        return None
-    choices = package.get("method_selection", ())
-    if not choices:
-        return None
-    selected = choices[0]
-    route = selected["route"]
-    if route not in {"DETERMINISTIC", "SELECTION_ALREADY_ATTEMPTED"}:
-        return None
-    subject = next(s for s in package["planning_subjects"] if s["occurrence_id"] == selected["occurrence_id"])
-    document: dict[str, Any] = {"schema_version": 1, "subject_key": subject["subject_key"],
-        "reason_refs": [], "assumptions": [], "uncertainties": [], "alternatives": [], "replan_triggers": []}
-    if route == "DETERMINISTIC":
-        applicable = selected["applicable"]
-        candidate = next((item for item in applicable
-                          if item["method_id"] == selected["selected_method_id"]), None)
-        if candidate is None:
-            raise ContractError("native policy selection is missing from its applicability snapshot")
-        refs = [r for r in package["visible_refs"] if r["kind"] == "method"
-                and r["id"] == candidate["method_id"]
-                and r["semantic_revision"] == candidate["method_version"]
-                and r["content_hash"] == candidate["method_content_hash"]]
-        if len(refs) != 1:
-            raise ContractError("native method selection lacks its authoritative visible reference")
-        document.update(decision_type="REFINE", rationale="The frozen applicability snapshot and deployment policy selected this method deterministically.",
-                        payload={"method_ref": refs[0], "bindings": selected["bindings"]})
-    else:
-        document.update(decision_type="NO_CHANGE", rationale="This candidate set already reserved its one model selection call.",
-                        payload={"reason": "selection identity already attempted; await a plan or evidence change"})
-    return PlanningDecisionEnvelopeV1.from_json(document).to_json()
-
-
-def reserve_selection(store: Any, intent: Any) -> None:
-    package = intent.config.get("planning_package", {})
-    if intent.config.get("native_planning_decision") is not None or package.get("repair_requests"):
-        return
-    choices = package.get("method_selection", ())
-    if not choices or choices[0]["route"] != "MODEL_REFINE":
-        return
-    choice = choices[0]
-    identity = choice["identity"]
-    for event in store.iter_events(intent.mission_id):
-        if event.type == METHOD_SELECTION_CALL_CLAIMED and event.payload.get("identity") == identity:
-            if event.payload.get("call_id") != intent.intent_id:
-                raise ContractError("selection call already reserved for this plan/evidence/candidate identity")
-            return
-    append_hierarchical_event(store, METHOD_SELECTION_CALL_CLAIMED, intent.mission_id,
-        key=f"{identity['plan_revision']}:{identity['evidence_epoch']}:{identity['candidate_set_digest']}",
-        payload={"occurrence_id": choice["occurrence_id"], "identity": identity,
-                 "call_id": intent.intent_id, "state": "RESERVED"})
+def infrastructure_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The system's own in-place redo of a step whose failure was not the model's, or None."""
+    return _runtime_lost_retry(package)
 
 
 async def dispatch_local(handler: Any, intent: Any) -> bool:
@@ -175,11 +126,11 @@ async def dispatch_local(handler: Any, intent: Any) -> bool:
     mission = handler.store.get_mission(intent.mission_id)
     dispatch = None if mission is None else handler._new_mode(mission)
     if mission is None or dispatch is None or intent.kind != "plan":
-        raise ContractError("native selection lost its original hierarchical Mission")
+        raise ContractError("system retry lost its original hierarchical Mission")
     text = "<planning_decision>" + canonical_json(dict(document)) + "</planning_decision>"
     append_hierarchical_event(handler.store, "NativePlanningDecisionPrepared", mission.id,
         key=intent.intent_id, payload={"intent_id": intent.intent_id,
-            "origin": "deterministic_method_selection", "decision": dict(document)})
+            "origin": SYSTEM_RETRY_ORIGIN, "decision": dict(document)})
     # No Agent/turn/provider receipt is fabricated. This method already accepts a
     # locally resumed decision and reads the original request's durable authority.
     await handler._collect_plan_decision(intent, None, mission, text, dispatch)

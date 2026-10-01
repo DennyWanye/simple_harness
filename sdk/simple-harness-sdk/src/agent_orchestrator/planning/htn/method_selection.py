@@ -1,23 +1,18 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""H3 method selection policy and evidence-request admission.
+"""做法候选的程序过滤，与取证请求的准入（HTN 精简 片 A 第 3 项，2026-10-01）。
 
-H3 is deliberately a pure seam.  The caller supplies the current HTN
-applicability reports, plan/evidence identities, and the installed observer /
-authority view.  This module decides whether a method may be selected by a
-deterministic fast path or whether one Planner ``REFINE`` call is warranted;
-it does not dispatch a model, mutate a plan, or write evidence.
+为目标选哪个做法由规划器判断；程序只做过滤：按能力与类型把跑不了的做法筛掉，把剩下的
+候选连同"为什么别的不适用"如实交给规划器。这里不再有"只有一个候选就由程序直接选""这组
+候选已经问过一次就回无变更"这类程序代答，也没有按部署切换的选择策略。
 
-The three-part selection identity is the recovery fence for a model call:
-``(plan_revision, evidence_epoch, candidate_set_digest)``.  A caller may persist
-``SelectionCallLedger`` beside its request record and restore it after a crash.
+本模块是纯函数：不派发模型、不改计划、不写证据。
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Any
 
 from ...contracts.models import ContractError, sha256_hex
@@ -26,52 +21,7 @@ from ...knowledge.predicates import PredicateRegistry
 from .applicability import ApplicabilityReport, ApplicabilityStatus
 from .observation_pipeline import ObserverIndex
 
-SELECTION_POLICY_SCHEMA_VERSION = 1
-SELECTION_IDENTITY_SCHEMA_VERSION = 1
 MAX_EVIDENCE_QUESTIONS = 8
-
-
-class SelectionPolicyMode(StrEnum):
-    """H3's versioned selection policies."""
-
-    DETERMINISTIC = "DETERMINISTIC"
-    MODEL_ON_MULTIPLE = "MODEL_ON_MULTIPLE"
-    ALWAYS_MODEL = "ALWAYS_MODEL"
-
-
-class SelectionRoute(StrEnum):
-    """The next operation selected by :func:`select_method`."""
-
-    EVIDENCE_OR_SYNTHESIS = "EVIDENCE_OR_SYNTHESIS"
-    DETERMINISTIC = "DETERMINISTIC"
-    MODEL_REFINE = "MODEL_REFINE"
-    SELECTION_ALREADY_ATTEMPTED = "SELECTION_ALREADY_ATTEMPTED"
-
-
-@dataclass(frozen=True, slots=True)
-class MethodSelectionPolicyV1:
-    """A versioned policy; new planning requests default to model-on-multiple."""
-
-    mode: SelectionPolicyMode = SelectionPolicyMode.MODEL_ON_MULTIPLE
-    schema_version: int = SELECTION_POLICY_SCHEMA_VERSION
-
-    def __post_init__(self) -> None:
-        if type(self.schema_version) is not int or self.schema_version != 1:
-            raise ContractError("unsupported method selection policy schema_version")
-        object.__setattr__(self, "mode", SelectionPolicyMode(self.mode))
-
-    @classmethod
-    def new_protocol(cls) -> MethodSelectionPolicyV1:
-        return cls()
-
-    def to_json(self) -> dict[str, Any]:
-        return {"schema_version": self.schema_version, "mode": str(self.mode)}
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "selection_policy") -> MethodSelectionPolicyV1:
-        if not isinstance(value, Mapping) or set(value) != {"schema_version", "mode"}:
-            raise ContractError(f"{name} must carry exactly schema_version and mode")
-        return cls(schema_version=value["schema_version"], mode=value["mode"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,41 +65,6 @@ class MethodSelectionCandidateV1:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class SelectionIdentityV1:
-    """The persisted idempotency identity for one selection opportunity."""
-
-    plan_revision: int
-    evidence_epoch: int
-    candidate_set_digest: str
-    schema_version: int = SELECTION_IDENTITY_SCHEMA_VERSION
-
-    def __post_init__(self) -> None:
-        for name in ("plan_revision", "evidence_epoch"):
-            value = getattr(self, name)
-            if type(value) is not int or value < 0:
-                raise ContractError(f"selection identity {name} must be a non-negative integer")
-        if not isinstance(self.candidate_set_digest, str) or len(self.candidate_set_digest) != 64:
-            raise ContractError("selection identity candidate_set_digest must be a SHA-256 hex")
-        try:
-            int(self.candidate_set_digest, 16)
-        except ValueError as error:
-            raise ContractError("selection identity candidate_set_digest must be hex") from error
-        if self.schema_version != 1:
-            raise ContractError("unsupported selection identity schema_version")
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "schema_version": self.schema_version,
-            "plan_revision": self.plan_revision,
-            "evidence_epoch": self.evidence_epoch,
-            "candidate_set_digest": self.candidate_set_digest,
-        }
-
-    def key(self) -> tuple[int, int, str]:
-        return (self.plan_revision, self.evidence_epoch, self.candidate_set_digest)
-
-
 def _candidate(value: MethodSelectionCandidateV1 | Mapping[str, Any]) -> MethodSelectionCandidateV1:
     if isinstance(value, MethodSelectionCandidateV1):
         return value
@@ -185,173 +100,21 @@ def normalize_candidates(
     )
 
 
-def candidate_set_digest(
-    candidates: Iterable[MethodSelectionCandidateV1 | Mapping[str, Any]],
-) -> str:
-    """Hash the complete, order-independent candidate set."""
-
-    normalized = normalize_candidates(candidates)
-    return sha256_hex(
-        {"schema_version": 1, "candidates": [item.to_json() for item in normalized]}
-    )
-
-
-def selection_identity(
-    plan_revision: int,
-    evidence_epoch: int,
-    candidates: Iterable[MethodSelectionCandidateV1 | Mapping[str, Any]],
-    *, subject_id: str | None = None,
-) -> SelectionIdentityV1:
-    """Build the exact H3 model-call identity from frozen inputs."""
-
-    return SelectionIdentityV1(
-        plan_revision=plan_revision,
-        evidence_epoch=evidence_epoch,
-        candidate_set_digest=(candidate_set_digest(candidates) if subject_id is None else
-            sha256_hex({"subject_id": subject_id, "candidates": candidate_set_digest(candidates)})),
-    )
-
-
 @dataclass(frozen=True, slots=True)
-class MethodSelectionResultV1:
-    route: SelectionRoute
+class MethodCandidates:
+    """One open goal's candidates after the program filter."""
+
     candidates: tuple[MethodSelectionCandidateV1, ...]
     applicable: tuple[MethodSelectionCandidateV1, ...]
-    identity: SelectionIdentityV1
-    selected_method_id: str | None = None
-    reason: str = ""
-
-    @property
-    def should_call_model(self) -> bool:
-        return self.route is SelectionRoute.MODEL_REFINE
 
 
-class SelectionCallLedger:
-    """Crash-safe-friendly in-memory representation of claimed selection calls.
-
-    Persist :meth:`to_json` with the request record in a real runtime.  ``claim``
-    is intentionally atomic for one process and refuses a second call for the
-    same H3 identity even if the first call has not produced a response yet.
-    """
-
-    def __init__(self, identities: Iterable[SelectionIdentityV1] = ()) -> None:
-        self._claims: dict[tuple[int, int, str], str] = {}
-        for identity in identities:
-            self._claims[identity.key()] = identity.candidate_set_digest
-
-    def claimed(self, identity: SelectionIdentityV1) -> bool:
-        return identity.key() in self._claims
-
-    def claim(self, identity: SelectionIdentityV1, *, call_id: str) -> bool:
-        if not isinstance(call_id, str) or not call_id:
-            raise ContractError("selection call_id must be non-empty")
-        key = identity.key()
-        if key in self._claims:
-            return False
-        self._claims[key] = call_id
-        return True
-
-    def call_id(self, identity: SelectionIdentityV1) -> str | None:
-        return self._claims.get(identity.key())
-
-    def to_json(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "identity": {
-                    "plan_revision": key[0],
-                    "evidence_epoch": key[1],
-                    "candidate_set_digest": key[2],
-                },
-                "call_id": call_id,
-            }
-            for key, call_id in sorted(self._claims.items())
-        ]
-
-    @classmethod
-    def from_json(cls, value: object) -> SelectionCallLedger:
-        if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
-            raise ContractError("selection call ledger must be an array")
-        ledger = cls()
-        for row in value:
-            if not isinstance(row, Mapping):
-                raise ContractError("selection call ledger rows must be objects")
-            raw = row.get("identity")
-            if not isinstance(raw, Mapping):
-                raise ContractError("selection call ledger row has no identity")
-            identity = SelectionIdentityV1(
-                plan_revision=int(raw.get("plan_revision", -1)),
-                evidence_epoch=int(raw.get("evidence_epoch", -1)),
-                candidate_set_digest=str(raw.get("candidate_set_digest", "")),
-            )
-            if not ledger.claim(identity, call_id=row.get("call_id", "")):
-                raise ContractError("selection call ledger repeats an identity")
-        return ledger
-
-
-def select_method(
+def filter_candidates(
     candidates: Iterable[MethodSelectionCandidateV1 | Mapping[str, Any]],
-    *,
-    plan_revision: int,
-    evidence_epoch: int,
-    policy: MethodSelectionPolicyV1 | Mapping[str, Any] | None = None,
-    ledger: SelectionCallLedger | None = None,
-    subject_id: str | None = None,
-) -> MethodSelectionResultV1:
-    """Route one method selection opportunity according to H3 §49.
-
-    Zero applicable methods goes to evidence/synthesis.  One applicable method
-    takes the deterministic fast path.  With two or more, one ``REFINE`` call is
-    used unless policy is ``DETERMINISTIC``.
-    """
+) -> MethodCandidates:
+    """The whole candidate set, and the part of it that can run at all."""
 
     normalized = normalize_candidates(candidates)
-    applicable = tuple(item for item in normalized if item.applicable)
-    identity = selection_identity(plan_revision, evidence_epoch, normalized, subject_id=subject_id)
-    if policy is None:
-        resolved = MethodSelectionPolicyV1.new_protocol()
-    elif isinstance(policy, MethodSelectionPolicyV1):
-        resolved = policy
-    else:
-        resolved = MethodSelectionPolicyV1.from_json(policy)
-    if not applicable:
-        return MethodSelectionResultV1(
-            SelectionRoute.EVIDENCE_OR_SYNTHESIS,
-            normalized,
-            applicable,
-            identity,
-            reason="no applicable method",
-        )
-    if resolved.mode is SelectionPolicyMode.DETERMINISTIC or (
-        len(applicable) == 1 and resolved.mode is not SelectionPolicyMode.ALWAYS_MODEL
-    ):
-        return MethodSelectionResultV1(
-            SelectionRoute.DETERMINISTIC,
-            normalized,
-            applicable,
-            identity,
-            applicable[0].method_id,
-            "deterministic fast path",
-        )
-    if ledger is not None:
-        call_id = (
-            f"selection:{identity.plan_revision}:{identity.evidence_epoch}:"
-            f"{identity.candidate_set_digest}"
-        )
-        if not ledger.claim(identity, call_id=call_id):
-            return MethodSelectionResultV1(
-                SelectionRoute.SELECTION_ALREADY_ATTEMPTED,
-                normalized,
-                applicable,
-                identity,
-                reason="selection identity already claimed",
-            )
-    return MethodSelectionResultV1(
-        SelectionRoute.MODEL_REFINE,
-        normalized,
-        applicable,
-        identity,
-        reason="multiple applicable methods",
-    )
+    return MethodCandidates(normalized, tuple(item for item in normalized if item.applicable))
 
 
 def _predicate_key(value: str) -> tuple[str, int | None]:
@@ -437,32 +200,10 @@ def validate_evidence_request(
 
 
 __all__ = (
-    "ALWAYS_MODEL",
-    "DETERMINISTIC",
     "MAX_EVIDENCE_QUESTIONS",
-    "MODEL_ON_MULTIPLE",
+    "MethodCandidates",
     "MethodSelectionCandidateV1",
-    "MethodSelectionPolicyV1",
-    "MethodSelectionResultV1",
-    "SELECTION_IDENTITY_SCHEMA_VERSION",
-    "SELECTION_POLICY_SCHEMA_VERSION",
-    "SelectionCallLedger",
-    "SelectionIdentityV1",
-    "SelectionPolicyMode",
-    "SelectionRoute",
-    "SelectionPolicy",
-    "SelectionPolicyV1",
-    "candidate_set_digest",
+    "filter_candidates",
     "normalize_candidates",
-    "select_method",
-    "selection_identity",
     "validate_evidence_request",
 )
-
-# Short names mirror the policy vocabulary in V2 §49 and make call sites read
-# naturally without sacrificing the versioned dataclass above.
-DETERMINISTIC = SelectionPolicyMode.DETERMINISTIC
-MODEL_ON_MULTIPLE = SelectionPolicyMode.MODEL_ON_MULTIPLE
-ALWAYS_MODEL = SelectionPolicyMode.ALWAYS_MODEL
-SelectionPolicyV1 = MethodSelectionPolicyV1
-SelectionPolicy = MethodSelectionPolicyV1

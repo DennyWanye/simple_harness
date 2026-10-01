@@ -195,11 +195,18 @@ class _CodeWorld:
             "repository": REPOSITORY
         })
         self.dispatch = HierarchicalDispatch(self.service.store, self.service, planning=self.world)
-        receipt = self.dispatch.apply_synthesizer_reply(
-            self.mission.id, method_proposal_step(method)
+        # 片 A（2026-10-01）：合成器运行路径（``apply_synthesizer_reply``）已删。做法事先
+        # 经同一准入协议（作者 MODEL）登记进本任务的库，再由计划采用——铺垫不变。
+        from agent_orchestrator.planning.htn.synthesis import MethodSynthesizer
+
+        receipt = MethodSynthesizer(self.world.registry, self.world.catalog).accept_response(
+            method_proposal_step(method), policy=self.dispatch._admission_policy(self.mission.id)
         )
         assert receipt.admitted, receipt.problems
         reference = receipt.method_ref
+        self.semantics.register_method(
+            self.world.registry.definition(reference), self.world.registry.registration(reference)
+        )
         outcome = apply_scripted_plan(self.dispatch,
             self.mission.id,
             plan_revision_proposal_step(

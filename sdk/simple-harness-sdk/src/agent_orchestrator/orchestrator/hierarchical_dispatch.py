@@ -130,7 +130,7 @@ from ..graph.projection_validation import GraphIntegrityError, require_topologic
 from ..graph.task_network import GATING_REQUIREDNESS, TaskNetworkSnapshot
 from ..knowledge.validity import CONDITION_REASON_PREFIX as WITNESS_CONDITION_PREFIX
 from ..knowledge.validity import acceptance_subject, condition_subject
-from ..planning.htn.applicability import ApplicabilityStatus, assess_method
+from ..planning.htn.applicability import assess_method
 from ..planning.htn.compiler import (
     RefinementCompilation,
     RootNetwork,
@@ -144,7 +144,6 @@ from ..planning.htn.grounding import (
     SharingSignature,
     ground_method,
 )
-from ..planning.planner import parse_method_proposal
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.obligation_store import ObligationStore
 from ..storage.store import StoreConflict, StoreError
@@ -172,7 +171,6 @@ from .resolution_commits import (
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..contracts import Mission
     from ..contracts.htn import PlanProposal
-    from ..planning.htn.registry import AdmissionReceipt
     from ..planning.plan_preview import CandidatePreview
     from ..storage.store import Store
     from .commit_service import CommitService
@@ -224,44 +222,15 @@ WITNESS_KEY_TAKEN = "HierarchicalWitnessKeyTaken"
 #: not see a supersede record would resolve from an anchor the world has moved past.
 ROOT_REVIEW_CUT = "HierarchicalRootReviewCut"
 ROOT_REVIEW_SUPERSEDED = "HierarchicalRootReviewSuperseded"
-#: P2.3c part 2c: one MethodSynthesizer round's outcome.  A refused proposal writes
-#: nothing to the registry and nothing to the plan, so without this event the only
-#: trace of the round would be its token cost.
-SYNTHESIS_ROUND_RECORDED = "MethodSynthesisRoundRecorded"
-#: P2.3g: one synthesiser reply the codec could not read, on a round that is *not*
-#: concluded by it — the same question is put once more with the codec's problems
-#: attached (``MAX_SYNTHESIS_ASKS`` in the event handler).  Keyed by ordinal, so the
-#: log shows which ask failed and why, and the round's one concluding event stays
-#: :data:`SYNTHESIS_ROUND_RECORDED`.
-SYNTHESIS_REPLY_UNREADABLE = "MethodSynthesisReplyUnreadable"
-#: P2.3i: one synthesiser reply the codec *read* and the admission protocol refused for
-#: something the model can correct (a port, a ref, a link — ``CORRECTABLE_REJECTIONS``
-#: in ``planning.htn.synthesis``), on a round that is not concluded by it: the same
-#: question is put once more with the protocol's problems attached.  Its own event
-#: rather than a ``kind`` on :data:`SYNTHESIS_REPLY_UNREADABLE`: that event's name and
-#: payload (``block_defect``) say the reply was never decoded, and a reader filtering
-#: on it — the Host runner's receipts, the P2.3g tests — would otherwise start seeing
-#: rows whose ``problems`` are registry verdicts.  Keyed by ordinal like its sibling;
-#: the round's one concluding event stays :data:`SYNTHESIS_ROUND_RECORDED`.
-SYNTHESIS_REPLY_REJECTED = "MethodSynthesisReplyRejected"
 #: G1 (Host acceptance runner): why each registered method was refused for each still
 #: open goal, at the plan revision the Planner was asked against.  The four-axis
 #: report was computed for the *prompt* and thrown away, so after a run nobody could
 #: say why a method had not been chosen — the runner had to re-derive it with a probe.
-#: One record per ``(mission, plan_revision)`` while the library is unchanged.  P2.3n:
-#: a synthesis round admits a method *without* moving the plan revision, so the key
-#: grows ``:synth:{n}`` once ``n > 1``; otherwise the post-admission Planner round
-#: would reuse the pre-admission assessment (H-L3-C1-r0/r1 ordinal 5).
+#: One record per ``(mission, plan_revision)`` while the library is unchanged.  A method
+#: the Planner proposes joins the library *without* moving the plan revision, so the key
+#: grows ``:library:{n}`` with the number of proposals; otherwise the round after a
+#: proposal would reuse the assessment made before it.
 METHOD_APPLICABILITY_ASSESSED = "MethodApplicabilityAssessed"
-# H3: one model-selection identity may open at most one Planner call.  The claim is
-# durable in the Mission event log so a restarted Orchestrator cannot recreate an
-# in-memory ledger and issue the same call again.
-METHOD_SELECTION_CALL_CLAIMED = "MethodSelectionCallClaimed"
-#: P2.3q: the Planner round that would have answered ``no_applicable_method``
-#: because evidence is saturated and nothing applies.  The loop skips it and opens
-#: a MethodSynthesizer round instead; this event is the audit trail.
-PLANNER_SKIPPED_FOR_SYNTHESIS = "PlannerRoundSkippedForSynthesis"
-
 #: A committed repair decision is waiting on sibling work under a live lease it must
 #: not steal; the durable continuation resumes it when the last blocker settles.
 REPAIR_BLOCKED_BY_RUNNING_WORK = "repair_blocked_by_running_work"
@@ -307,25 +276,6 @@ RECOMPILABLE_REFUSALS: frozenset[str] = frozenset(
         "BUDGET_REQUIREMENT_MISMATCH",
     }
 )
-
-#: P2.3c part 2c: the ``assess_method`` refusals a *different method* could route
-#: around, and therefore the only ones that make a MethodSynthesizer round the right
-#: repair (§7.3).  ``NEEDS_EVIDENCE`` and ``CONFLICT`` are deliberately absent: the
-#: first is answered by looking (:meth:`HierarchicalDispatch.run_evidence_round`) and
-#: the second by settling the contradiction, and synthesising a method while the
-#: question is open would be inventing a way past the check that is open.
-SYNTHESIS_WORTHY_REFUSALS: frozenset[Any] = frozenset(
-    {
-        ApplicabilityStatus.PRECONDITION_FALSE,
-        ApplicabilityStatus.CAPABILITY_UNAVAILABLE,
-        ApplicabilityStatus.TYPE_ERROR,
-    }
-)
-
-#: P2.3d / defect D2b: how many OBSERVED readings of one proposition by one observer,
-#: with the truth still UNKNOWN afterwards, make "look again" a non-answer.  Two is the
-#: smallest number that can tell a first reading apart from a repeat.
-DEFAULT_EVIDENCE_SATURATION_ROUNDS = 2
 
 #: Readiness answers that mean "the planner still owes something about the facts
 #: or the authority", as opposed to "a method has not been chosen yet".
@@ -744,10 +694,6 @@ class HierarchicalDispatch:
     compile_attempts: int = DEFAULT_COMPILE_ATTEMPTS
     target_rules: TargetRules | None = None
     resolution_policy: ResolutionPolicy = field(default_factory=ResolutionPolicy)
-    #: P2.3d / defect D2b: how many times one observer may record an OBSERVED reading
-    #: of one proposition, with the truth still UNKNOWN afterwards, before looking again
-    #: stops counting as an answer.  See :meth:`goals_needing_method`.
-    evidence_saturation_rounds: int = DEFAULT_EVIDENCE_SATURATION_ROUNDS
     _taskgraph_settlement_reader: Any = field(default=None, repr=False)
     _taskgraph_preview: Any = field(default=None, repr=False)
     _taskgraph_history: Any = field(default=None, repr=False)
@@ -755,8 +701,6 @@ class HierarchicalDispatch:
     def __post_init__(self) -> None:
         if int(self.compile_attempts) < 1:
             raise ContractError("compile_attempts must be at least 1")
-        if int(self.evidence_saturation_rounds) < 1:
-            raise ContractError("evidence_saturation_rounds must be at least 1")
 
     # ---------------------------------------------------------------- reading the plan
     @classmethod
@@ -2922,45 +2866,15 @@ class HierarchicalDispatch:
         return phases
 
     # ------------------------------------------------------------------ one plan round
-    def admit_method_proposal(self, text: str, **kwargs: Any) -> AdmissionReceipt:
-        """``<method_proposal>`` → the registry's admission protocol (§7.3).
-
-        **Not called from ``src`` yet — P2.3c wires it.**  The MethodSynthesizer is
-        its own dispatch intent with its own budget account (§18.5: a new role may
-        not wear the TaskCritic's), and opening that intent belongs with the
-        allocator work.  The parse and the admission call are here because they are
-        assembly, and assembling them once is what stops the two call sites P2.3c
-        will add from disagreeing about whether a declared ``registry_status`` is
-        dropped (it is not: the protocol refuses it and records the refusal).
-        """
-
-        world = self._world()
-        proposal = parse_method_proposal(text)
-        return world.registry.admit(proposal, **kwargs)
-
-    # ------------------------------------------------------- the MethodSynthesizer
-    def synthesis_request(
-        self,
-        mission_id: str,
-        goal_task_id: str,
-        *,
-        domain: str | None = None,
-        schema_feedback: Sequence[str] = (),
-        review_feedback: Sequence[str] = (),
-    ) -> Any:
-        """The typed context one synthesis round is given (§7.3 source 4, §18.5 C8).
+    # ----------------------------------------------- context for proposing a method
+    def method_proposal_context(self, mission_id: str, goal_task_id: str) -> dict[str, Any]:
+        """What the Planner needs to write a method for this goal (片 A 第 4 项).
 
         Built from the deployment's own declarations — the operators it really
         registered, the capability table, and the four-axis report explaining why
-        each existing method for this goal type does not apply.  Nothing about the
-        Mission, the principal or any budget account is in it: which Mission this is
-        belongs to the *dispatch* that carries the request, never to the payload the
-        model reads.
-
-        P2.3j: ``review_feedback`` is the other reason a method may be needed — one
-        that *did* apply was adopted, ran to acceptance and was then rejected by the
-        root review.  The findings travel as their own field, never as
-        ``schema_feedback`` (that one means "your last reply did not decode").
+        each existing method for this goal type does not apply — plus the original
+        wording of every requirement the goal covers and the identity a new method
+        should take.  Nothing about the principal or any budget account is in it.
         """
 
         from ..planning.htn.applicability import assess_method as _assess
@@ -2991,9 +2905,6 @@ class HierarchicalDispatch:
             catalog=world.catalog,
             reports=reports,
             mission_id=mission_id,
-            domain=domain,
-            schema_feedback=schema_feedback,
-            review_feedback=review_feedback,
         )
         from dataclasses import replace
         # 2026-09-29 第十局：criterion_evidence 原先给每个编号配同一句总目标，模型看不出
@@ -3008,10 +2919,17 @@ class HierarchicalDispatch:
                  "evidence_requirement": (synthesis_statement(statements[item["id"]])
                                           if item["id"] in statements else item["evidence_requirement"])}
                 for item in request.criterion_evidence))
-        fresh_id = "synth-" + content_hash_of({"goal_task_id": str(goal_task_id)})[:24]
+        fresh_id = "proposed-" + content_hash_of({"goal_task_id": str(goal_task_id)})[:24]
         occupied = [int(item.contract.method_version) for item in self.semantics().list_methods()
                     if item.contract.method_id == fresh_id]
-        return replace(request, new_method_identity=(fresh_id, max(occupied, default=0) + 1))
+        document = replace(
+            request, new_method_identity=(fresh_id, max(occupied, default=0) + 1)).to_json()
+        # The Planner writes the method inside its decision's payload; the fields that
+        # addressed a separate synthesiser role (its own output tag, its prompt version,
+        # its re-ask feedback) say nothing true here.
+        for name in ("output_tag", "role_prompt_version", "schema_feedback", "review_feedback"):
+            document.pop(name, None)
+        return document
 
     # ------------------------------------------------- rejected refinements (P2.3j)
     def retired_methods(self, mission_id: str) -> tuple[dict[str, Any], ...]:
@@ -3074,12 +2992,12 @@ class HierarchicalDispatch:
         return tuple(sorted(rows, key=lambda item: (item["occurrence_id"], item["retired_instance_id"])))
 
     def planner_round_in_flight(self, mission_id: str) -> bool:
-        """An open ``plan`` intent that is a *Planner* round (not a synthesis or review)."""
+        """An open ``plan`` intent that is a *Planner* round (not a review)."""
 
         return any(
             intent.kind == "plan"
             and intent.mission_id == mission_id
-            and str(intent.config.get("role", "")) not in {"method_synthesizer", "root_reviewer"}
+            and str(intent.config.get("role", "")) not in {"root_reviewer"}
             for intent in self.store.list_intents(
                 "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
             )
@@ -3184,38 +3102,20 @@ class HierarchicalDispatch:
         )
         return result
 
-    def select_method_candidates(
-        self,
-        mission_id: str,
-        *,
-        reports: Sequence[Any] | None = None,
-        policy: Any | None = None,
-        ledger: Any | None = None,
-        persist_claims: bool = False,
+    def method_candidates(
+        self, mission_id: str, *, reports: Sequence[Any] | None = None
     ) -> Mapping[str, Any]:
-        """Route current HTN method candidates through the H3 selection seam.
+        """Per open goal: its candidates after the program filter (片 A 第 3 项).
 
-        This is the production adapter between the dispatcher's authoritative
-        applicability read and the pure H3 policy.  It groups candidates by open
-        compound occurrence and binds the selection identity to the current plan
-        revision and evidence support revision.
-
-        The adapter returns decisions for every open compound, including an empty
-        candidate set.  A caller that owns the planner request may use the route
-        to take the deterministic fast path, open evidence/synthesis, or issue
-        one ``REFINE`` request; this method itself performs no model call or plan
-        mutation.
+        Every compound occurrence with no adopted method is listed, including one with
+        no candidate at all.  The filter is capability and type only (the applicability
+        read); which candidate to use, or whether to propose a new method, is the
+        Planner's.  No model call, no plan mutation, nothing persisted.
         """
 
-        from ..planning.htn.method_selection import (
-            MethodSelectionCandidateV1,
-            MethodSelectionPolicyV1,
-            SelectionCallLedger,
-            select_method,
-        )
+        from ..planning.htn.method_selection import MethodSelectionCandidateV1, filter_candidates
 
         network = self.network(mission_id)
-        world = self._world()
         current_reports = (
             tuple(reports) if reports is not None else self.method_applicability(mission_id)
         )
@@ -3231,62 +3131,12 @@ class HierarchicalDispatch:
                     bindings=dict(network.binding_for_occurrence(entry.goal_occurrence_id).typed_parameters),
                 )
             )
-        open_occurrences = tuple(
-            sorted(
-                str(spec.occurrence_id)
-                for spec in network.occurrences
-                if spec.form is TaskForm.COMPOUND
-                and network.adopted_instance_for(spec.occurrence_id) is None
-            )
-        )
-        resolved_policy = policy
-        if resolved_policy is None:
-            resolved_policy = MethodSelectionPolicyV1.new_protocol()
-        evidence_epoch = int(world.snapshot().support_revision)
-        owned_ledger = ledger is None
-        if ledger is None:
-            restored: list[dict[str, Any]] = []
-            for event in self.store.list_events(mission_id):
-                if event.type != METHOD_SELECTION_CALL_CLAIMED:
-                    continue
-                payload = dict(event.payload or {})
-                identity = payload.get("identity")
-                call_id = payload.get("call_id")
-                if isinstance(identity, Mapping) and isinstance(call_id, str) and call_id:
-                    restored.append({"identity": dict(identity), "call_id": call_id})
-            ledger = SelectionCallLedger.from_json(restored)
-        decisions = {
-            occurrence_id: select_method(
-                by_occurrence.get(occurrence_id, ()),
-                plan_revision=int(network.plan_revision),
-                evidence_epoch=evidence_epoch,
-                policy=resolved_policy,
-                ledger=ledger,
-                subject_id=occurrence_id,
-            )
-            for occurrence_id in open_occurrences
+        return {
+            str(spec.occurrence_id): filter_candidates(by_occurrence.get(str(spec.occurrence_id), ()))
+            for spec in sorted(network.occurrences, key=lambda item: str(item.occurrence_id))
+            if spec.form is TaskForm.COMPOUND
+            and network.adopted_instance_for(spec.occurrence_id) is None
         }
-        if owned_ledger and persist_claims:
-            for occurrence_id, result in decisions.items():
-                if not result.should_call_model:
-                    continue
-                identity = result.identity
-                call_id = ledger.call_id(identity)
-                if call_id is None:
-                    continue
-                append_hierarchical_event(
-                    self.store,
-                    METHOD_SELECTION_CALL_CLAIMED,
-                    mission_id,
-                    key=f"{identity.plan_revision}:{identity.evidence_epoch}:"
-                    f"{identity.candidate_set_digest}:{occurrence_id}",
-                    payload={
-                        "occurrence_id": occurrence_id,
-                        "identity": identity.to_json(),
-                        "call_id": call_id,
-                    },
-                )
-        return decisions
 
     def record_method_applicability(
         self, mission_id: str, *, reports: Sequence[Any] | None = None
@@ -3340,15 +3190,15 @@ class HierarchicalDispatch:
             else:
                 refused.append(row)
         revision = int(network.plan_revision)
-        synthesis_round = self.latest_synthesis_round(mission_id)
+        library_round = self.store.count_events(mission_id, "PlanningMethodProposed")
         return append_hierarchical_event(
             self.store,
             METHOD_APPLICABILITY_ASSESSED,
             mission_id,
-            key=self._applicability_record_key(mission_id, revision, synthesis_round),
+            key=self._applicability_record_key(mission_id, revision, library_round),
             payload={
                 "plan_revision": revision,
-                "synthesis_round": int(synthesis_round),
+                "library_round": int(library_round),
                 "refused_methods": refused,
                 "applicable_methods": applicable,
                 "refusal_count": len(refused),
@@ -3356,30 +3206,18 @@ class HierarchicalDispatch:
             },
         )
 
-    def latest_synthesis_round(self, mission_id: str) -> int:
-        """The highest ``synthesis_round`` recorded on this Mission, else 0."""
-
-        highest = 0
-        for event in self.store.list_events(mission_id):
-            if event.type != SYNTHESIS_ROUND_RECORDED:
-                continue
-            highest = max(highest, int(event.payload.get("synthesis_round", 1) or 1))
-        return highest
-
     def _applicability_record_key(
-        self, mission_id: str, plan_revision: int, synthesis_round: int
+        self, mission_id: str, plan_revision: int, library_round: int
     ) -> str:
-        """Idempotency key for one applicability assessment (P2.3n).
+        """Idempotency key for one applicability assessment.
 
-        Round 1 (and no synthesis at all) keeps the historical
-        ``{mission}:{plan_revision}`` spelling so earlier Missions' logs still
-        answer.  A later synthesis round changes the library without moving the
-        plan, so the key must move with it.
+        A method proposed by the Planner changes the library without moving the plan,
+        so the key moves with the number of proposals.
         """
 
-        if int(synthesis_round) <= 1:
+        if int(library_round) < 1:
             return f"{mission_id}:{int(plan_revision)}"
-        return f"{mission_id}:{int(plan_revision)}:synth:{int(synthesis_round)}"
+        return f"{mission_id}:{int(plan_revision)}:library:{int(library_round)}"
 
     def plan_revision_committed_at(self, mission_id: str, plan_revision: int) -> int | None:
         """When this plan revision was committed, in observation milliseconds.
@@ -3544,330 +3382,6 @@ class HierarchicalDispatch:
             now_ms=moment,
         )
 
-    def goals_needing_method(self, mission_id: str) -> tuple[str, ...]:
-        """The open goals for which no registered method can *ever* apply as things are.
-
-        P2.3c part 2c: the judgment part 2b left open — "when is a compound missing a
-        method".  It is deliberately narrow, because a MethodSynthesizer round costs a
-        model call and admitting a synthesised method is the most consequential thing
-        a model does in this system (§7.3):
-
-        * a goal with **no** registered method for its signature qualifies;
-        * a goal whose every candidate is refused for something a *different method*
-          could route around — a capability this deployment does not have, arguments
-          that do not type-check, a precondition that is simply false here — qualifies;
-        * a goal that has at least one applicable method does **not**, and neither
-          does one whose candidates are ``NEEDS_EVIDENCE`` or ``CONFLICT``: the repair
-          there is to look (:meth:`run_evidence_round`) or to settle the contradiction,
-          and synthesising a method around an unanswered question would be inventing a
-          way past the very check that is unanswered.
-
-        Returned as *goal task ids* because that is what ``synthesis_request`` takes.
-        """
-
-        world = self._world()
-        network = self.network(mission_id)
-        refused: dict[str, list[Any]] = {}
-        for entry in self.method_applicability(mission_id):
-            # P2.3n: applicable reports travel in the package so the Planner can
-            # *see* a newly admitted method; the synthesis judgment still counts
-            # only refusals, or ``len(seen) == candidates`` would look like "none
-            # apply" and open another round.
-            if entry.report.applicable:
-                continue
-            refused.setdefault(str(entry.goal_occurrence_id), []).append(entry.report)
-        by_signature: dict[str, int] = {}
-        for reference in world.registry.method_refs():
-            if not world.registry.retrievable(reference, mission_id=MissionRef(mission_id)):
-                continue
-            definition = world.registry.definition(reference)
-            if definition is None:
-                continue
-            key = str(definition.goal_type_ref.id)
-            by_signature[key] = by_signature.get(key, 0) + 1
-        needing: list[str] = []
-        for spec in sorted(network.occurrences, key=lambda item: str(item.occurrence_id)):
-            if spec.form is not TaskForm.COMPOUND:
-                continue
-            if network.adopted_instance_for(spec.occurrence_id) is not None:
-                continue
-            goal = network.binding_for_occurrence(spec.occurrence_id)
-            candidates = by_signature.get(str(goal.goal_signature.signature_id), 0)
-            seen = refused.get(str(spec.occurrence_id), [])
-            if candidates and len(seen) < candidates:
-                continue  # at least one method applies; nothing to synthesise
-            if any(
-                report.status not in SYNTHESIS_WORTHY_REFUSALS
-                and not self._evidence_is_saturated(mission_id, report)
-                for report in seen
-            ):
-                continue  # the answer is "look" or "settle", not "invent"
-            needing.append(str(spec.task_id))
-        return tuple(needing)
-
-    def empty_planner_should_skip(self, mission_id: str) -> bool:
-        """Whether asking the Planner would be a doomed empty round (P2.3q).
-
-        True only when every remaining method (rejected ones already excluded) is
-        either synthesis-worthy or evidence-saturated NEEDS_EVIDENCE, *and* there is
-        a goal that still needs a method — an open compound or a rejected
-        refinement.  An APPLICABLE method, even a just-admitted synthesised one,
-        is never skipped: that is the Planner's job.
-        """
-
-        reports = self.method_applicability(mission_id)
-        if any(entry.report.applicable for entry in reports):
-            return False
-        network = self.network(mission_id)
-        open_compounds = [
-            spec
-            for spec in network.occurrences
-            if spec.form is TaskForm.COMPOUND
-            and network.adopted_instance_for(spec.occurrence_id) is None
-        ]
-        if not open_compounds:
-            return False
-        if not reports:
-            return True
-        return all(
-            entry.report.status in SYNTHESIS_WORTHY_REFUSALS
-            or self._evidence_is_saturated(mission_id, entry.report)
-            for entry in reports
-        )
-
-    def _evidence_is_saturated(self, mission_id: str, report: Any) -> bool:
-        """Whether "look again" has stopped being an answer for this refusal (D2b).
-
-        ``NEEDS_EVIDENCE`` is excluded from :data:`SYNTHESIS_WORTHY_REFUSALS` because
-        its repair is to look, not to invent — and that is right until looking cannot
-        change anything.  The Grok acceptance run found the case where it cannot: for an
-        **OPEN** predicate a non-authoritative negative observation contributes
-        ``NO_SUPPORT``, so ``atom_truth`` answers UNKNOWN however many times the observer
-        reads the world and answers "no".  All six L3 episodes sat in that live-lock —
-        ``_gather_evidence`` reported progress every cycle because it had *recorded* an
-        observation, ``goals_needing_method`` returned nothing every cycle because the
-        refusal was NEEDS_EVIDENCE, and planning never had a way forward.
-
-        So: a precondition one observer has already read ``evidence_saturation_rounds``
-        times, while the truth is still UNKNOWN, is treated as a refusal a *different
-        method* could route around — which is all ``SYNTHESIS_WORTHY_REFUSALS`` means.
-        I18 is untouched: nothing here turns UNKNOWN into TRUE or opens a safety gate;
-        it only decides whether proposing a new method is a sensible next question.
-        """
-
-        if report.status is not ApplicabilityStatus.NEEDS_EVIDENCE:
-            return False
-        keys = tuple(report.needs_evidence)
-        if not keys:
-            return False
-        bound = int(self.evidence_saturation_rounds)
-        semantics = self.semantics()
-        for key in keys:
-            by_observer: dict[str, int] = {}
-            for record in semantics.list_observations(mission_id, proposition_key=str(key)):
-                observer = str(record.observer_id or "")
-                by_observer[observer] = by_observer.get(observer, 0) + 1
-            if not by_observer or max(by_observer.values()) < bound:
-                return False
-        return True
-
-    def record_synthesis_outcome(
-        self,
-        mission_id: str,
-        *,
-        goal_task_id: str,
-        admitted: bool,
-        problems: Sequence[str] = (),
-        method_id: str = "",
-        verdict: str = "",
-        author: str = "",
-        asks: int = 1,
-        synthesis_round: int = 1,
-        retry_refused: str = "",
-    ) -> Event:
-        """What one MethodSynthesizer round produced, recorded where it can be read.
-
-        A refused proposal leaves nothing in the registry and nothing on the plan, so
-        without this the only trace of a synthesis round would be its token cost.
-        Keyed by ``(mission, goal)``: one round per goal is what
-        :meth:`goals_needing_method` asks for, and a second event under the same key
-        would mean the bound was not held.
-
-        P2.3j: ``synthesis_round`` is the *reason* for the round — ``1`` is the
-        pre-plan round ("no method ever applied"); ``n = plan_revision + 1`` is the
-        round opened after the root review rejected the method adopted on that
-        revision.  Round 1 keeps its exact key so the log of every earlier Mission
-        reads the same; a later round is keyed by its number, which is what makes
-        "once per rejected revision" a bound the log enforces.
-
-        ``retry_refused`` (P2.3i, verification P2.3g P2-1): when the reply earned a
-        second ask and none could be opened, the reason is its own field — not a line
-        appended to ``problems``, which are the reply's problems and nobody else's.
-        """
-
-        return self._append(
-            SYNTHESIS_ROUND_RECORDED,
-            mission_id,
-            key=_synthesis_round_key(mission_id, goal_task_id, synthesis_round),
-            task_id=goal_task_id or None,
-            payload={
-                "goal_task_id": str(goal_task_id),
-                "admitted": bool(admitted),
-                "verdict": str(verdict),
-                "method_id": str(method_id),
-                "author": str(author),
-                "problems": [str(item) for item in problems][:12],
-                # P2.3g: how many times the synthesiser was asked on this round.
-                "asks": int(asks),
-                "synthesis_round": int(synthesis_round),
-                # P2.3i: why the ask after the last one was not opened ("" when it was,
-                # or when none was owed).
-                "retry_refused": str(retry_refused),
-            },
-        )
-
-    def record_synthesis_reply_unreadable(
-        self,
-        mission_id: str,
-        *,
-        goal_task_id: str,
-        ordinal: int,
-        problems: Sequence[str] = (),
-        block_defect: str = "",
-    ) -> Event:
-        """One reply the codec could not read, on a round that goes on (P2.3g).
-
-        Not :meth:`record_synthesis_outcome`: that event concludes the round and is
-        keyed one-per-goal.  This one is keyed by ask ordinal and says what the next
-        ask was told, so the log reads "ask 1: unreadable for X; ask 2: admitted".
-        """
-
-        return self._append(
-            SYNTHESIS_REPLY_UNREADABLE,
-            mission_id,
-            key=f"{mission_id}:{goal_task_id}:{int(ordinal)}",
-            task_id=goal_task_id or None,
-            payload={
-                "goal_task_id": str(goal_task_id),
-                "ordinal": int(ordinal),
-                "block_defect": str(block_defect),
-                "problems": [str(item) for item in problems][:12],
-            },
-        )
-
-    def record_synthesis_reply_rejected(
-        self,
-        mission_id: str,
-        *,
-        goal_task_id: str,
-        ordinal: int,
-        method_id: str = "",
-        verdict: str = "",
-        problems: Sequence[str] = (),
-    ) -> Event:
-        """One reply the protocol refused for a correctable slip, on a round that goes on.
-
-        P2.3i.  The sibling of :meth:`record_synthesis_reply_unreadable`, for the other
-        way a first ask can fall short: the codec read it, the registry refused it, and
-        every problem is one the model can fix from the package it already holds.  The
-        payload is the receipt's — the method it named, the verdict, the ``CODE: detail``
-        lines — so the log reads "ask 1: REJECTED for PORT_UNAVAILABLE; ask 2: admitted".
-        """
-
-        return self._append(
-            SYNTHESIS_REPLY_REJECTED,
-            mission_id,
-            key=f"{mission_id}:{goal_task_id}:{int(ordinal)}",
-            task_id=goal_task_id or None,
-            payload={
-                "goal_task_id": str(goal_task_id),
-                "ordinal": int(ordinal),
-                "method_id": str(method_id),
-                "verdict": str(verdict),
-                "problems": [str(item) for item in problems][:12],
-            },
-        )
-
-    def synthesis_round_recorded(
-        self, mission_id: str, goal_task_id: str, *, synthesis_round: int = 1
-    ) -> bool:
-        """Whether a MethodSynthesizer round for this goal has already been concluded.
-
-        Read from the event this assembly writes, not from a field on the plan: the
-        round produces nothing on the plan when it is refused, so the event *is* the
-        record that it happened.  ``synthesis_round`` selects which round (P2.3j).
-        """
-
-        key = (
-            f"{SYNTHESIS_ROUND_RECORDED}:"
-            f"{_synthesis_round_key(mission_id, goal_task_id, synthesis_round)}"
-        )
-        return any(event.idempotency_key == key for event in self.store.list_events(mission_id))
-
-    def apply_synthesizer_reply(
-        self, mission_id: str, text: str, *, policy: Any = None, enforce_granularity: bool = False
-    ) -> AdmissionReceipt:
-        """``<method_proposal>`` from the synthesiser → §7.3, author fixed at MODEL.
-
-        The author is **not** a parameter here.  ``text`` reached this method from a
-        model, and presenting it as anything else would hand a model-authored
-        definition the registration rights of the registry service — which
-        ``MethodRegistration`` allows only at DRAFT precisely to stop that (§6.3,
-        §7.3).  ``admit_method_proposal`` stays available for a caller that genuinely
-        has a human- or tool-authored definition and says so.
-        """
-
-        from ..planning.htn.synthesis import MethodSynthesizer
-
-        world = self._world()
-        self.require_hierarchical(mission_id)
-        synthesizer = MethodSynthesizer(world.registry, world.catalog)
-        resolved = policy if policy is not None else self._admission_policy(mission_id)
-        # Trial admission is Mission-scoped, but immutable method IDs live in a
-        # shared library. Reject a name/version collision before mutating this
-        # Mission's registry, and feed the correctable identity error through the
-        # existing bounded synthesis retry.
-        from ..planning.planner import parse_method_proposal
-        from ..planning.htn.synthesis import SynthesisReplyUnreadable
-        try:
-            proposed = parse_method_proposal(text).method
-        except ContractError as error:
-            raise SynthesisReplyUnreadable(error) from error
-        versions = [stored for stored in self.semantics().list_methods()
-                    if stored.contract.method_id == proposed.method_id]
-        if any(item.contract.method_version == proposed.method_version
-               and (item.contract.method_ref() != proposed.method_ref()
-                    or (item.registration.trial_scope_mission is not None
-                        and item.registration.trial_scope_mission != mission_id)) for item in versions):
-            next_version = max(int(item.contract.method_version) for item in versions) + 1
-            raise SynthesisReplyUnreadable(ContractError(
-                f"method {proposed.method_id}@{proposed.method_version} already has a different "
-                f"immutable definition or another Mission trial scope; use method_version={next_version} or a new method_id"))
-        if enforce_granularity:
-            coarse = self._coarse_file_steps(mission_id, proposed)
-            if coarse:
-                # User decision 2026-09-26 ("强制但留余地"): on the first ask only, a
-                # step that must write three or more of the Mission's file criteria
-                # goes back once through the bounded synthesis retry; the second
-                # reply is admitted as written even if it still merges them.
-                listed = "；".join(f"{step} 承担了 {len(files)} 个文件（{'、'.join(files)}）"
-                                  for step, files in coarse)
-                raise SynthesisReplyUnreadable(ContractError(
-                    "拆分过粗：" + listed + "。每个要求写出的文件（file: 条件）单独成一个步骤，"
-                    "有依赖的用 ordering 串起先后，汇总文件放最后一步；其余保持不变，重新输出方法。"))
-            unclear = self._publish_source_steps(mission_id, proposed)
-            if unclear:
-                # 2026-09-29 第 5 批：要发布的文件必须在计划里有唯一的产出步骤，系统发布时
-                # 只从那一步取。同样只在第一次退回；第二次照收，运行时按文件名回退。
-                raise SynthesisReplyUnreadable(ContractError(
-                    "发布来源不明确：" + "；".join(unclear) + "。每个要发布的文件对应的 file: 条件"
-                    "必须恰好链接到一个步骤（写出这个文件的那一步）；发布本身由系统完成，不要为发布"
-                    "单独设步骤；其余保持不变，重新输出方法。"))
-        receipt = synthesizer.accept_response(text, policy=resolved)
-        if receipt.admitted:
-            self._publish_admitted_method(world, receipt.method_ref)
-        return receipt
-
     def _publish_source_steps(self, mission_id: str, method: Any) -> list[str]:
         """Publish targets whose ``file:`` criterion is not linked to exactly one step.
 
@@ -3897,59 +3411,6 @@ class HierarchicalDispatch:
                 unclear.append(f"{parsed[2]} 链接到 {len(linked)} 个步骤"
                                + (f"（{'、'.join(linked)}）" if linked else ""))
         return unclear
-
-    def _coarse_file_steps(self, mission_id: str, method: Any) -> list[tuple[str, list[str]]]:
-        """Steps linked to three or more of the Mission's ``file:`` criteria.
-
-        ``c-user-<n>`` names the Mission's n-th success criterion (assurance
-        assembly); two files in one step (code + its test) are never flagged.
-        """
-        import re
-        from collections import defaultdict
-
-        mission = self.store.get_mission(mission_id)
-        if mission is None:
-            return []
-        criteria = [str(item).strip() for item in mission.success_criteria]
-        per_step: dict[str, set[str]] = defaultdict(set)
-        for link in getattr(method.composition, "criterion_links", ()) or ():
-            found = re.fullmatch(r"c-user-(\d+)", str(link.parent_criterion_id))
-            if found is None or link.child_step is None:
-                continue
-            index = int(found.group(1)) - 1
-            if 0 <= index < len(criteria) and criteria[index].startswith("file:"):
-                per_step[str(link.child_step)].add(criteria[index][len("file:"):].strip())
-        return [(step, sorted(files)) for step, files in sorted(per_step.items()) if len(files) >= 3]
-
-    def _publish_admitted_method(self, world: Any, reference: Any) -> None:
-        """A just-admitted method goes into the **library**, not only into memory.
-
-        P2.3d review P1-1.  Admission decides against the in-memory
-        :class:`MethodRegistry`, but ``compile_proposal`` reads the chosen method back
-        out of ``htn_store`` — the definition a plan revision was compiled from has to
-        be durable and re-readable at exactly the version the commit recorded.
-        ``build_planning_world`` publishes the *seed* methods for that reason
-        (:func:`~..planning.htn.world.publish_methods`); nothing published a method the
-        Mission synthesised for itself, so the Planner's next round died with
-        "method … is not stored" and the synthesis round bought nothing at all.
-
-        Same re-registration rule as the assembly path: identical bytes are a no-op.
-        """
-
-        # Verification P2-D: ``self.semantics()`` and not ``world.semantics``.  The
-        # latter is an attribute a deployment sets on its planning world, and when it is
-        # absent this method used to publish nothing at all, silently — while
-        # ``compile_proposal`` reads from ``self.semantics()`` regardless.  The two have
-        # to be the same store or this whole fix is a no-op on a world shaped slightly
-        # differently from the fixtures'.
-        if reference is None:
-            return
-        semantics = self.semantics()
-        contract = world.registry.definition(reference)
-        registration = world.registry.registration(reference)
-        if contract is None or registration is None:
-            return
-        semantics.register_method(contract, registration)
 
     def _admission_policy(self, mission_id: str) -> Any:
         """The policy a synthesised method is decided against on this deployment.
@@ -5058,18 +4519,6 @@ def _is_retirement(operation: object) -> bool:
     return isinstance(operation, RetireMethodOperation)
 
 
-def _synthesis_round_key(mission_id: str, goal_task_id: str, synthesis_round: int) -> str:
-    """The idempotency key of one synthesis round's concluding record (P2.3j).
-
-    Round 1 is spelled exactly as it was before rounds existed, so every earlier
-    Mission's log still answers ``synthesis_round_recorded`` the same way.
-    """
-
-    if int(synthesis_round) <= 1:
-        return f"{mission_id}:{goal_task_id}"
-    return f"{mission_id}:{goal_task_id}:round:{int(synthesis_round)}"
-
-
 __all__ = (
     "ASSEMBLY_MISSING",
     "MISSION_STALLED",
@@ -5077,9 +4526,6 @@ __all__ = (
     "ROOT_REVIEW_SUPERSEDED",
     "WITNESS_KEY_TAKEN",
     "COMPOUND_DISPLAY_STATUS",
-    "SYNTHESIS_REPLY_REJECTED",
-    "SYNTHESIS_REPLY_UNREADABLE",
-    "SYNTHESIS_ROUND_RECORDED",
     "COMPOUND_PHASE_CHANGED",
     "DEFAULT_COMPILE_ATTEMPTS",
     "DISPATCH_INTERCEPTED",
@@ -5094,11 +4540,8 @@ __all__ = (
     "PlanRefusal",
     "PlanRoundOutcome",
     "PlanningWorld",
-    "SYNTHESIS_WORTHY_REFUSALS",
     "METHOD_APPLICABILITY_ASSESSED",
-    "METHOD_SELECTION_CALL_CLAIMED",
     "REPAIR_DECISION_DISPATCHED",
-    "PLANNER_SKIPPED_FOR_SYNTHESIS",
     "append_hierarchical_event",
     "shared_goal_index",
     "is_hierarchical",

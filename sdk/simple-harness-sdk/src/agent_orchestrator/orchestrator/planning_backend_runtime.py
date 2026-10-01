@@ -12,16 +12,13 @@ from .hierarchical_dispatch import append_hierarchical_event
 
 
 def deployment_identity(handler: Any) -> dict[str, Any]:
-    """What this process plans with: native or solver, its limits, the selection policy."""
+    """What this process plans with: native or solver, and its limits."""
     backend = handler._config.planning_backend
     limits = handler._config.planning_backend_limits
     if (backend is None) != (limits is None):
         raise ContractError("solver deployment requires both backend and limits")
-    from ..planning.htn.method_selection import SelectionPolicyMode
-    selection_policy = str(SelectionPolicyMode(handler._config.method_selection_policy))
     return {"backend_id": "native" if backend is None else backend.backend_id,
-            "limits": None if limits is None else limits.to_json(),
-            "method_selection_policy": selection_policy}
+            "limits": None if limits is None else limits.to_json()}
 
 
 def frozen_deployment_conflict(handler: Any, mission_id: str) -> str | None:

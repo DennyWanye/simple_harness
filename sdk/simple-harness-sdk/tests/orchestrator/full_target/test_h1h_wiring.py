@@ -497,7 +497,6 @@ def test_the_admission_context_reports_this_rounds_remaining_format_retries(
         {
             "max_planning_attempts": 3,
             "max_root_review_repairs": 1,
-            "method_selection_policy": "MODEL_ON_MULTIPLE",
         },
     )()
 
@@ -561,7 +560,7 @@ def test_the_admission_context_reports_this_rounds_remaining_format_retries(
     )
 
     assert package.package["package_version"] == PLANNING_DECISION_PACKAGE_LABEL
-    assert context.package_version == PLANNING_DECISION_PACKAGE_VERSION == 8
+    assert context.package_version == PLANNING_DECISION_PACKAGE_VERSION
     binding_row = PlanningDecisionStore(world.store).get_planning_request(opener.intent_id)
     assert binding_row is not None
     assert binding_row.package_version == PLANNING_DECISION_PACKAGE_VERSION

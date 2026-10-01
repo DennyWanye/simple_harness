@@ -12,7 +12,6 @@ this regression suite offline and to leave the real model run to the H1-I gate.
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -32,7 +31,6 @@ from agent_orchestrator.contracts import Budget  # noqa: E402
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.contracts.obligations import Obligation  # noqa: E402
 from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
-    PlanningDecisionEnvelopeV1,
     PlanningDecisionStatus,
 )
 from agent_orchestrator.governance.permissions import Principal  # noqa: E402
@@ -54,7 +52,11 @@ from agent_orchestrator.planning.decision_codec import serialize_planning_decisi
 from agent_orchestrator.planning.htn.observers.code import code_observers  # noqa: E402
 from agent_orchestrator.planning.htn.world import build_planning_world  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL_V13, PLANNING_DECISION_PACKAGE_LABEL  # noqa: E402
+from agent_orchestrator.runtime.role_templates import (  # noqa: E402
+    PLANNER_HIERARCHICAL_V14,
+    PLANNING_DECISION_PACKAGE_LABEL,
+    PLANNING_DECISION_PACKAGE_VERSION,
+)
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider  # noqa: E402
@@ -109,7 +111,7 @@ def _approve_root_content_only_spec(commit, mission, binding, *, command_id: str
 def test_only_the_current_planning_package_label_binds() -> None:
     assert Orchestrator._planning_decision_package_version(
         {"package_version": PLANNING_DECISION_PACKAGE_LABEL}
-    ) == 8
+    ) == PLANNING_DECISION_PACKAGE_VERSION
     with pytest.raises(ContractError):  # 2026-09-25: historical labels are no longer served
         Orchestrator._planning_decision_package_version({"package_version": "planner-package-hierarchical-v8"})
 
@@ -205,8 +207,8 @@ async def _open_planner_round(
     assert intent.mission_id == mission.id
     from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
     frozen = PlanningDecisionStore(loop.store).get_mission_protocol(mission.id)
-    assert frozen["package_version"] == 8
-    assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL_V13.prompt_version
+    assert frozen["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
+    assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL_V14.prompt_version
     assert intent.config["planning_package"]["planning_protocol"]["protocol"] == (
         "planning-decision-v1"
     )
@@ -467,55 +469,5 @@ def test_state_free_decision_context_has_no_uninitialised_operation_snapshot(
             )
             assert context.operations.snapshot is None
             assert context.operations.unresolved_operations == ()
-
-    asyncio.run(case())
-
-
-def test_declare_blocked_hands_off_to_method_synthesis_without_plan_mutation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """DECLARE_BLOCKED is durable-only, then opens the existing synthesis gate."""
-
-    async def case() -> None:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="h1i-blocked-synthesis-handoff"
-            )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(
-                loop.store,
-                tenant_id=mission.tenant_id,
-                principal=Principal(loop._owner),
-            ).issue(
-                mission.id,
-                command_id="grant-h1i-blocked-synthesis",
-                request_id=opener.intent_id,
-            )
-            requested: list[str] = []
-
-            async def request_synthesis(current: Any) -> bool:
-                requested.append(current.id)
-                return True
-
-            monkeypatch.setattr(loop, "_request_method_synthesis", request_synthesis)
-            fixture = (
-                Path(__file__).parent
-                / "fixtures"
-                / "planning_decision_v1"
-                / "valid"
-                / "declare-blocked.json"
-            )
-            body = json.loads(fixture.read_text(encoding="utf-8"))
-            body["subject_key"] = opener.config["planning_package"]["planning_subjects"][0][
-                "subject_key"
-            ]
-            reply = serialize_planning_decision(PlanningDecisionEnvelopeV1.from_json(body))
-            await loop._collect_plan_decision(
-                opener, object(), mission, reply, dispatch
-            )
-            rows = _events(loop, mission.id, "PlanningDecisionEvaluated")
-            assert rows[-1].payload["status"] == str(PlanningDecisionStatus.NO_STATE_CHANGE)
-            assert requested == [mission.id]
-            assert not _events(loop, mission.id, "PlanRevisionCommitted")
 
     asyncio.run(case())
