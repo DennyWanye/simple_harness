@@ -130,6 +130,9 @@ class CompositionAcceptanceAssembly:
     #: 打回 / 拒绝（或人裁决打回）→ ``on_rejected(record, package, task_id, occurrence_id)``。
     ask_person: Any = None
     on_rejected: Any = None
+    #: 片 B：某个中间目标这一轮出不了结论、且原因是报错（审阅开不起来、提交被拒）时，
+    #: ``on_deferred(occurrence, task_id, goal_type, error)``——如实记下来，不再静默吞掉。
+    on_deferred: Any = None
 
     @property
     def semantics(self) -> HtnStore:
@@ -174,7 +177,12 @@ class CompositionAcceptanceAssembly:
                 continue
             try:
                 receipt = self.resolve_one(mission_id, spec.occurrence_id)
-            except (ContractError, ResolutionCommitRejected, StoreError):
+            except (ContractError, ResolutionCommitRejected, StoreError) as error:
+                # One stuck compound does not block its siblings — but it is said, not hidden.
+                if self.on_deferred is not None:
+                    binding = view.network.binding_for_occurrence(spec.occurrence_id)
+                    self.on_deferred(str(spec.occurrence_id), str(spec.task_id),
+                                     str(binding.goal_signature.signature_id), error)
                 continue
             if receipt is not None:
                 formed.append(receipt)

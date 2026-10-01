@@ -310,3 +310,33 @@ def test_the_publish_source_rule_still_holds_inside_the_goal_that_owns_the_file(
                        for item in refusal)
             assert not events_of(world, "PlanningMethodProposed")
     asyncio.run(case())
+
+
+def test_a_sub_goal_whose_review_cannot_be_opened_says_why(tmp_path, monkeypatch):
+    """片 B 真机第 1 局：中间目标的两步都验收通过后，它的组合审阅没有开起来；开审那一步的
+    异常被静默吞掉，任务停在"排队"十几分钟，库里一条线索都没有。现在这种失败记一条事件
+    （同一个目标同一个原因只记一次），原因原样写进去。"""
+    from agent_orchestrator.contracts.models import ContractError
+    from agent_orchestrator.orchestrator import composition_review
+    from agent_orchestrator.orchestrator.hierarchical_dispatch import CompoundPhase
+
+    async def case():
+        provider = RoleScriptedProvider({"planner": [refine_step(method_id="sg.outer")]})
+        async with assured_loop(tmp_path, provider, library=(outer(), inner()), **WORLD) as world:
+            assert await run_until(world, lambda w: plan_revision(w) == 1)
+            dispatch = world.loop._new_mode(world.mission)
+            assembly = world.loop._composition_assembly(world.mission, dispatch)
+            monkeypatch.setattr(composition_review, "next_compound_phase",
+                                lambda *args, **kwargs: CompoundPhase.COMPOSITION_REVIEW)
+
+            def refuse(self, mission_id, occurrence_id):
+                raise ContractError("Assurance COMPOSITION review unavailable: SOME_REASON")
+
+            monkeypatch.setattr(composition_review.CompositionAcceptanceAssembly, "resolve_one", refuse)
+            assert assembly.resolve_ready(world.mission.id) == ()
+            assert assembly.resolve_ready(world.mission.id) == ()
+            [deferred] = events_of(world, "CompositionReviewDeferred")
+            assert "SOME_REASON" in deferred.payload["reason"]
+            assert deferred.payload["goal_type"] == "sg.part"
+            assert deferred.task_id == deferred.payload["task_id"]
+    asyncio.run(case())

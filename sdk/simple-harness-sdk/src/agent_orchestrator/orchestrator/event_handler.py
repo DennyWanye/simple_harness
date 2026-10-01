@@ -11802,7 +11802,23 @@ class Orchestrator:
             self.store, self.commit, dispatch=dispatch, issued_by=self._owner,
             ask_person=partial(self._ask_person_to_adjudicate_compound, mission),
             on_rejected=partial(self._request_composition_repair, mission, dispatch),
+            on_deferred=partial(self._composition_deferred, mission),
         )
+
+    def _composition_deferred(self, mission: Mission, occurrence_id: str, task_id: str,
+                              goal_type: str, error: Exception) -> None:
+        """片 B：中间目标这一轮出不了结论（审阅开不起来、提交被拒）——记一条事件。
+
+        每轮循环都会重试，所以同一个目标、同一个原因只记一次。只陈述事实，不据此做任何决定。
+        """
+        reason = f"{type(error).__name__}: {error}"[:600]
+        with self.store.transaction():
+            append_hierarchical_event(
+                self.store, "CompositionReviewDeferred", mission.id, task_id=task_id,
+                key=f"{occurrence_id}:{content_hash_of(reason)[:16]}",
+                payload={"occurrence_id": occurrence_id, "task_id": task_id, "goal_type": goal_type,
+                         "reason": reason})
+        self._note(f"mission {mission.id}: composition review of {occurrence_id} deferred ({reason})")
 
     def _register_human_question(self, mission: Mission, new_mode: Any, *, decision_id: str, subject_key: str,
                                  payload: Any, current: Any, next_ordinal: int,
