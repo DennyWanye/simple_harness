@@ -185,7 +185,7 @@ const OPERATION: Record<string, Display> = {
 };
 export const DECISION_TYPE: Record<string, string> = {
   REFINE: "拆分", PROPOSE_METHOD: "提出新方法", REQUEST_EVIDENCE: "要求补充证据", REPAIR: "修补计划",
-  BIND_EXISTING_GOAL: "复用已有目标", DECLARE_BLOCKED: "声明受阻", REQUEST_HUMAN: "请人处理", WAIT: "等待",
+  BIND_EXISTING_GOAL: "复用已有目标", REQUEST_HUMAN: "请人处理", WAIT: "等待",
   NO_CHANGE: "不改动",
 };
 export const DECISION_STATUS: Record<string, string> = {
@@ -218,7 +218,7 @@ export function execDisplay(node: ExecNode): { title: string; status: Display } 
     case "planning": {
       const decisions = Array.isArray(r.decisions) ? r.decisions as Obj[] : [];
       const last = decisions[decisions.length - 1];
-      const role = r.role === "method_synthesizer" ? "设计步骤" : "规划";
+      const role = "规划";
       if (!last) return { title: role, status: running(node.turn) ? { label: "思考中", tone: "running" } : { label: "已结束", tone: "idle" } };
       const type = DECISION_TYPE[String(last.decision_type)] ?? String(last.decision_type ?? "未解析");
       const ok = last.status === "COMMITTED" || last.status === "NO_STATE_CHANGE";
