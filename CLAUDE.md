@@ -146,6 +146,18 @@ When a feature/module passes acceptance (pytest/vitest/cargo/manual E2E):
 
 `STATUS/` directory is legacy only (historical link compatibility) — DO NOT write new status content there.
 
+### 开发期不做旧数据兼容（硬约束，用户 2026-09-25 / 09-27 / 09-30 / 10-01 四次强调）
+
+**现在是开发阶段，不处理旧数据兼容。** 要改一样东西，就直接改成当前最合理的做法，把旧的删掉：
+
+- 不留"新旧版本双分支"、不留 `legacy` 回落路径、不把旧路径"隐藏"起来（除非用户明确要求保留）。
+- 提示词模板 / 工具说明 / 契约 / 配置：**只保留一份当前版本**。要改就改当前这份（或换成新版本后删掉旧版本），不要 `_revise` 链式保留历史版本，不要为历史版本写钉哈希测试；钉哈希基线随当前版本重生成。
+- 开发库里按旧契约建的任务不保证能跑：遇到时明确报错，不静默回落、不迁移。
+- 报告和取舍里不要拿"影响正常使用 / 老任务起不来"当理由。
+- 已知欠账：代码里仍有大量 `legacy` / 兼容分支（2026-10-01 盘点约 298 个文件），要单独立项逐步删除；新改动不得再增加。
+
+**"做了功能又加一层兼容" = 违反本约束。**
+
 ### Testing Phase: Immediate Default-ON (HARD CONSTRAINT)
 
 **Current phase is testing. Completed capabilities must be default-ON immediately, no gradual rollout.**
