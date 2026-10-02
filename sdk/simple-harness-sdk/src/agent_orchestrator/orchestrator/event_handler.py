@@ -457,16 +457,11 @@ class Orchestrator:
         self._provider_admission: ProviderBudgetGuard | None = None
         self._provider_token_estimators = provider_token_estimators
         self._provider_admissions: dict[str, ProviderBudgetGuard | None] | None = None
-        # D6-4' / D6-5': one provider == the single ``default`` profile (every earlier
-        # step's path); several profiles == several execution pools routed by rules
-        if profiles is None:
-            if provider is None:
-                raise ValueError("Orchestrator needs a provider or runtime profiles")
-            profiles = {
-                DEFAULT_PROFILE: RuntimeProfile(
-                    DEFAULT_PROFILE, provider, config.model, price_table=config.price_table
-                )
-            }
+        # D6-4' / D6-5': the deployment's execution pools, routed by rules.  Every pool
+        # runs on the native plane (2026-10-03: the pool without one was removed), so a
+        # deployment always passes its own profiles (``deployment.native_pools``).
+        if not profiles:
+            raise ValueError("Orchestrator needs the deployment's native runtime profiles")
         self._profiles: dict[str, RuntimeProfile] = dict(profiles)
         if provider_token_estimators is not None and (
             provider_token_estimator is not None
@@ -9844,11 +9839,6 @@ class Orchestrator:
         )
         if operator_tool_limit is not None:
             allowed = tuple(name for name in allowed if name in operator_tool_limit)
-        # NEXT-TG-1.0 §11: Skill tools are served by a native-plane pool's own runtime;
-        # a pool that does not serve them never has them frozen into its request.
-        skill_tools = set(self._config.deployment_policy.skill_tools)
-        if skill_tools and not self.assembled.pool(decision.profile_id).bridge.native_plane:
-            allowed = tuple(name for name in allowed if name not in skill_tools)
         # D6-8: the Attempt's tool-call cap = the deployment's per-turn cap, narrowed by the
         # Task budget's own dimension; it is reserved up front and enforced at the gateway
         tool_cap = self._config.max_tool_calls_per_turn
