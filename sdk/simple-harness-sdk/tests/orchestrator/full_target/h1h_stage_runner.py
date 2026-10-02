@@ -144,8 +144,8 @@ IMPLEMENTED_NODEIDS.update({
     "P02": "tests/orchestrator/full_target/test_h1h_p02_compiler_cycles.py",
     "P03": "tests/orchestrator/full_target/test_h1h_p03_compiler_data_coverage_resources.py",
     "P04": "tests/orchestrator/full_target/test_h1h_preview_compiler_refusal.py",
-    "P06": "tests/orchestrator/full_target/test_h1i_deferred_repair_resume.py",
-    "P07": "tests/orchestrator/full_target/test_h1i_deferred_repair_resume.py",
+    "P06": "tests/orchestrator/product_world/test_repair_replace_method.py",
+    "P07": "tests/orchestrator/product_world/test_repair_replace_method.py",
     "I06": "tests/orchestrator/full_target/test_h1h_commit_interleaving.py",
     "I08": "tests/orchestrator/full_target/test_h1h_no_nanojev_process.py",
 })
@@ -167,8 +167,8 @@ COVERAGE_NOTES.update({
     "O07": "real T0/T1 success receipts plus registered scoped cancellation evidence and late-send fence",
     "O08": "both new action and actual new handoff after preview are checked at Commit",
     "O09": "real T0 materialization fault rolls back Action/link/events; independent SQLite reader sees no uncommitted Action; exact replay is single identity",
-    "P06": "invalid identity and schema-invalid bindings preserve actual RUNNING work/foreign lease; legal replacement cold-resumes the original decision",
-    "P07": "real deferred replacement cold reopen reuses original decision/grant and commits once without LLM",
+    "P06": "2026-10-03: a replacement with running work on the retired instance converges first — the TaskGraph cancels the running Attempt and its late result is not accepted before the new revision commits (product world)",
+    "P07": "2026-10-03: replace = retire + refine in one TaskGraph commit after convergence; the repair request is addressed and the Mission completes on the new method. The deferred cold-resume path was removed: unreachable once every Mission is TaskGraph-bound",
     "I08": "isolated clean process blocks NanoJev imports, uses no Shadow provider/config/checkpoint/events, and runs all three producers and original Commit",
 })
 

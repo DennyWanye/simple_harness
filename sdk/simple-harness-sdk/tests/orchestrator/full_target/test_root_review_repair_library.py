@@ -275,45 +275,6 @@ def _adopted_root(world: World) -> str:
     return str(draft.instance_id)
 
 
-def test_retire_and_refine_replaces_the_root_method_in_one_revision(tmp_path) -> None:
-    """§9.1 "选择替代方法", through the compiler's ``retire_instance_ids`` and the commit."""
-
-    world = _rejected_open(tmp_path, key="p23j-replace", alt=True)
-    alt = _alt_method()
-    old = _adopted_root(world)
-    outcome = world.plan(
-        _replacement(world, alt, instance_id=old, revision=1), command_id="cmd-replace"
-    )
-    assert outcome.committed, outcome.last_reason
-    network = world.network()
-    assert int(network.plan_revision) == 2
-    new = network.adopted_instance_for(network.root_occurrence_ids[0])
-    assert new is not None and str(new.instance_id) != old
-    assert str(new.method_ref.method_id) == "plan.alt"
-    assert old not in {str(item) for item in network.adopted_instance_ids}
-    states = {
-        str(item.instance_id): item
-        for item in HtnStore(world.store).list_method_instances(world.mission.id, state="RETIRED")
-    }
-    assert old in states, "the rejected instance is RETIRED, not deleted"
-    # The old branch's occurrences left the plan; the new branch's are on the board.
-    kinds = sorted(
-        network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id
-        for spec in network.occurrences
-        if spec.form is TaskForm.PRIMITIVE
-    )
-    assert kinds == ["plan.leaf", "plan.review"]
-    committed_event = world.events(e2e.PLAN_REVISION_COMMITTED)[-1].payload
-    assert committed_event["retired_method_instances"] == [old]
-    assert committed_event["budget_conservation"]["holds"] is True
-    new_tasks = {
-        str(spec.task_id)
-        for spec in network.occurrences
-        if spec.form is TaskForm.PRIMITIVE
-    }
-    assert new_tasks <= set(world.tasks()), "the replacement's leaves are materialised"
-
-
 def test_a_retirement_must_name_the_instance_adopted_at_the_refined_occurrence(tmp_path) -> None:
     world = _rejected_open(tmp_path, key="p23j-replace-stranger", alt=True)
     # 撤的不是这一处正在用的做法：这一处仍被占着，候选认不出"还没细化的那一处"。
@@ -358,27 +319,6 @@ def test_refining_a_refined_goal_without_retiring_is_still_refused(tmp_path) -> 
     with pytest.raises(ContractError, match="exactly one open occurrence"):
         world.plan(text, command_id="cmd-implicit")
     assert int(world.network().plan_revision) == 1
-
-
-def test_a_replacement_waits_for_the_retired_leaves_open_attempts(tmp_path) -> None:
-    """P2.3s: a replacement is not committed while the retired leaves still run —
-    the commit under admission refuses until that work has converged."""
-
-    world = _rejected_open(tmp_path, key="p23j-retire-running", alt=True)
-    network = world.network()
-    leaf = next(
-        str(spec.task_id) for spec in network.occurrences if spec.form is TaskForm.PRIMITIVE
-    )
-    attempt = _running_attempt(world, leaf)
-    outcome = world.plan(
-        _replacement(world, _alt_method(), instance_id=_adopted_root(world), revision=1),
-        command_id="cmd-retire-running",
-    )
-    assert not outcome.committed
-    assert outcome.last_reason == "RUNNING_WORK_UNRESOLVED"
-    assert int(world.network().plan_revision) == 1
-    stored = world.store.get_attempt(attempt)
-    assert stored is not None and stored.status is AttemptStatus.RUNNING
 
 
 def test_readopting_the_same_method_with_the_same_parameters_is_refused_by_name(tmp_path) -> None:
