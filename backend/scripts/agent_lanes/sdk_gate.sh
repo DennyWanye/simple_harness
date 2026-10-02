@@ -4,7 +4,7 @@
 #                   [--allow <allowlist-file>] [--full] [--max-sentinel N] [--out <report.json>]
 # Every check is written into a JSON report as {name, ok, detail}; top-level ok is the AND.
 # Any failed check => exit code 1.
-# Env: GATE_SKIP_PYTHON=1 skips the python-dependent items (ruff/import_origin/targeted/full_target/legacy).
+# Env: GATE_SKIP_PYTHON=1 skips the python-dependent items (ruff/import_origin/targeted/full_target).
 set -u
 
 # ---------------------------------------------------------------------------
@@ -229,19 +229,17 @@ $secret_hits"
     fi
   fi
 
-  # ---- 8. full_target + legacy (only with --full) -------------------------
-  local baseline_json full_base legacy_base
+  # ---- 8. full_target (only with --full) -------------------------------------
+  local baseline_json full_base
   baseline_json="$SDK/plans/llm-native-htn/H0/test-results.json"
-  full_base=""; legacy_base=""
+  full_base=""
   if [ -f "$baseline_json" ]; then
     full_base=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('full_target',{}).get('passed',''))" "$baseline_json" 2>/dev/null || true)
-    legacy_base=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('legacy',{}).get('passed',''))" "$baseline_json" 2>/dev/null || true)
   fi
 
   if [ "$FULL" -eq 1 ]; then
     if [ "$SKIP_PY" -eq 1 ]; then
       record "full_target" "true" "skipped: GATE_SKIP_PYTHON=1"
-      record "legacy" "true" "skipped: GATE_SKIP_PYTHON=1"
     else
       # full_target
       local ft_log ft_rc ft_tail ft_par ft_passed ft_failed ft_errors
@@ -259,21 +257,6 @@ $secret_hits"
         record "full_target" "false" "rc=$ft_rc passed=$ft_passed (baseline=${full_base:-?}) failed=$ft_failed errors=$ft_errors; log: $ft_log; tail: $ft_tail"
       fi
 
-      # legacy
-      local lg_log lg_rc lg_tail lg_par lg_passed lg_failed lg_errors
-      lg_log="$OUTDIR/legacy.log"
-      ( cd "$SDK" && PYTHONPATH=src uv run pytest tests/orchestrator/step02 tests/orchestrator/step05 tests/orchestrator/step06 tests/orchestrator/step07 tests/orchestrator/p34 tests/orchestrator/p35 -q -p no:cacheprovider ) > "$lg_log" 2>&1
-      lg_rc=$?
-      lg_tail=$(grep -avE '^[[:space:]]*$' "$lg_log" | tail -1)
-      lg_par=$(parse_pytest_tail "$lg_tail")
-      lg_passed=$(printf '%s' "$lg_par" | sed -n 's/.*passed=\([0-9]*\).*/\1/p')
-      lg_failed=$(printf '%s' "$lg_par" | sed -n 's/.*failed=\([0-9]*\).*/\1/p')
-      lg_errors=$(printf '%s' "$lg_par" | sed -n 's/.*errors=\([0-9]*\).*/\1/p')
-      if [ "$lg_failed" -eq 0 ] && [ "$lg_errors" -eq 0 ] && [ -n "$legacy_base" ] && [ "$lg_passed" -ge "$legacy_base" ]; then
-        record "legacy" "true" "passed=$lg_passed (baseline=$legacy_base) failed=$lg_failed errors=$lg_errors; log: $lg_log"
-      else
-        record "legacy" "false" "rc=$lg_rc passed=$lg_passed (baseline=${legacy_base:-?}) failed=$lg_failed errors=$lg_errors; log: $lg_log; tail: $lg_tail"
-      fi
     fi
   fi
 

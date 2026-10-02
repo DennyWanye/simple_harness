@@ -9,10 +9,17 @@ from pathlib import Path
 import pytest
 from agent_orchestrator.api.facade import MissionControlV1
 from deskpet.orchestration.handlers import handle
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
-from ._support import SCRIPTED_LANE, notes_provider, notes_request
+from ._layered_lane import (
+    LayeredScriptedProvider,
+    layered_service,
+    notes_mission,
+    quick_runtime,
+    run_until_settled,
+)
+from ._support import notes_provider, notes_request
 
 
 @pytest.mark.asyncio
@@ -53,16 +60,15 @@ async def test_diagnostics_authenticates_before_reading_and_rejects_scope_overri
 async def test_completed_diagnostics_and_exports_preserve_state_calls_and_artifacts(
     orchestration_root, principal, monkeypatch
 ):
-    provider = notes_provider()
-    service = OrchestrationService(orchestration_root, OrchestrationSettings(),
-        provider=provider, principal=principal, drive=False,
-        test_scenario=SCRIPTED_LANE)  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
+    quick_runtime(monkeypatch)
+    provider = LayeredScriptedProvider()
+    service = layered_service(orchestration_root, principal, provider)
     await service.start()
     try:
-        mission_id = service.create_mission(notes_request("p36-completed"))["mission_id"]
-        await service.drain()
+        mission_id = service.create_mission(notes_mission("p36-completed"))["mission_id"]
+        assert (await run_until_settled(service, mission_id)).status.value == "COMPLETED"
         before = service._call("snapshot", mission_id)
-        calls = provider.calls
+        calls = len(provider.asked)
         assert service.status()["diagnostics_available"] is True
         response = await handle(service, "mission_diagnostics", {"mission_id": mission_id})
         assert response["payload"]["ok"] is True, response
@@ -82,7 +88,7 @@ async def test_completed_diagnostics_and_exports_preserve_state_calls_and_artifa
         assert path.parent == orchestration_root / "support"
         assert json.loads(path.read_text()) == report
         assert service._call("snapshot", mission_id) == before
-        assert provider.calls == calls
+        assert len(provider.asked) == calls  # diagnostics and exports never call the model
     finally:
         await service.close()
 

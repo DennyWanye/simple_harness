@@ -127,18 +127,6 @@ def test_publish_resume_does_not_repair_missing_or_changed_destination(launcher,
         launcher.bind_test_publish_config(tmp_path, enabled=True, resume=True)
 
 
-@pytest.mark.parametrize("case", ["native-load-three-mission", "native-load-verifier-pressure",
-                                  "native-context-rotation"])
-def test_load_case_requires_fixture_and_binds_actual_slot_limits(launcher, inputs, case):
-    argv = [*_required_cli(inputs), "--fixture-case", case,
-            "--logical-slots", "3", "--model-slots", "2"]
-    with pytest.raises(SystemExit):
-        launcher.parse_args(argv)
-    parsed = launcher.parse_args([*argv, "--fixture-dir", str(inputs.source_root)])
-    assert parsed.fixture_case == case
-    assert (parsed.logical_slots, parsed.model_slots) == (3, 2)
-
-
 def test_identity_keeps_venv_entry_and_names_honest_hash_scopes(launcher, inputs, monkeypatch):
     original = Path.read_bytes
 
@@ -181,7 +169,7 @@ def test_same_inputs_and_model_override_resume_without_launch(launcher, inputs, 
     assert not list(run.glob("launch-*.json"))
 
 
-@pytest.mark.parametrize("changed", ["venv", "distribution", "resources", "models", "manifest", "pth", "fixture_case"])
+@pytest.mark.parametrize("changed", ["venv", "distribution", "resources", "models", "manifest", "pth"])
 def test_changed_runtime_input_cannot_resume_same_prepared_identity(launcher, inputs, changed, tmp_path, monkeypatch):
     frozen = launcher.source_identity(inputs, host_head="recorded-head")
     # Exercise the same persisted marker comparison used by the actual launcher.
@@ -198,8 +186,6 @@ def test_changed_runtime_input_cannot_resume_same_prepared_identity(launcher, in
         next(inputs.python.parent.parent.glob("lib/python*/site-packages/*.dist-info/RECORD")).write_text("changed")
     elif changed == "manifest":
         (inputs.resource_root / "manifest.json").write_text('{"changed":true}')
-    elif changed == "fixture_case":
-        inputs.fixture_case = "n6-two-thirds"
     elif changed == "pth":
         site = next(inputs.python.parent.parent.glob("lib/python*/site-packages"))
         (site / "editable.pth").write_text("/different/source/root\n")

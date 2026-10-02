@@ -78,7 +78,7 @@ make_repo() {
   git -C "$repo" config user.name "selftest"
   printf '# contract a\n' > "$repo/src/agent_orchestrator/contracts/a.py"
   printf '# pkg\n' > "$repo/src/agent_orchestrator/__init__.py"
-  printf '{"full_target":{"passed":10},"legacy":{"passed":5}}\n' > "$repo/plans/llm-native-htn/H0/test-results.json"
+  printf '{"full_target":{"passed":10}}\n' > "$repo/plans/llm-native-htn/H0/test-results.json"
   git -C "$repo" add -A
   git -C "$repo" commit -q -m "base"
   guard_repo "$repo"
@@ -166,7 +166,7 @@ git -C "$R7" add -A && git -C "$R7" commit -q -m "newmod"
 GATE_SKIP_PYTHON=1 "$GATE" "$R7" "$B7" --full --out "$TMP/c7.json" > "$TMP/c7.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && ok "case6 skip-python: exit=0" || bad "case6 skip-python: exit=$rc; $(cat "$TMP/c7.out")"
-for it in ruff import_origin targeted full_target legacy; do
+for it in ruff import_origin targeted full_target; do
   det=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(next((i['detail'] for i in d['items'] if i['name']==sys.argv[2]),''))" "$TMP/c7.json" "$it")
   case "$det" in
     *skipped*) ok "case6 $it skipped ($det)" ;;

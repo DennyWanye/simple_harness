@@ -16,7 +16,7 @@ import json
 import pytest
 
 from deskpet.orchestration.manifest import MANIFEST_NAME
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationRequestError, OrchestrationService
 from deskpet.orchestration.settings import OrchestrationSettings
 

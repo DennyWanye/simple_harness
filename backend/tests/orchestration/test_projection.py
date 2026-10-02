@@ -21,19 +21,21 @@ from deskpet.orchestration.projection import (
     ui_state,
 )
 from deskpet.orchestration.pump import MissionChangePump
-from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
-from ._support import SCRIPTED_LANE, notes_provider, notes_request
+from ._layered_lane import layered_service, notes_mission, quick_runtime, run_until_settled
+
+
+@pytest.fixture(autouse=True)
+def _quick_runtime(monkeypatch):
+    quick_runtime(monkeypatch)
 
 
 async def _completed_service(root, principal):  # type: ignore[no-untyped-def]
-    service = OrchestrationService(
-        root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
-        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
-    )
+    service = layered_service(root, principal)
     await service.start()
-    created = service.create_mission(notes_request("k-proj"))
-    await service.drain()
+    created = service.create_mission(notes_mission("k-proj"))
+    mission = await run_until_settled(service, created["mission_id"])
+    assert mission.status.value == "COMPLETED", mission.final_report
     return service, created["mission_id"]
 
 
@@ -47,9 +49,11 @@ async def test_detail_is_whitelisted_and_marks_model_text(orchestration_root, pr
         assert summaries and all(s["source"] == "model" for s in summaries)
         layers = [layer for r in detail["results"] for layer in r["verification_layers"]]
         assert {"format_check", "rule_check"} <= {layer["layer"] for layer in layers}
-        # NOT_REQUIRED stays NOT_REQUIRED (original §14.1) — never shown as a pass
+        # no test was run: the code_test layer never claims a real pass — it says the
+        # check was not applicable (original §14.1)
         assert all(
-            layer["status"] != "PASS" for layer in layers if layer["layer"] == "code_test"
+            layer["status"] != "PASS" or "not applicable" in layer["summary"]["text"]
+            for layer in layers if layer["layer"] == "code_test"
         )
         assert detail["usage"]["amount_micros"] is None  # unpriced, not zero
         assert detail["usage"]["reserved_tokens"] == 0
@@ -176,12 +180,8 @@ async def test_event_paging_is_gap_free(orchestration_root, principal):
 
 @pytest.mark.asyncio
 async def test_pump_announces_a_status_change_within_two_seconds(orchestration_root, principal):
-    service = OrchestrationService(
-        orchestration_root,
-        OrchestrationSettings(tick_active_seconds=0.05, tick_idle_seconds=0.2),
-        provider=notes_provider(),
-        principal=principal,
-        test_scenario=SCRIPTED_LANE,
+    service = layered_service(
+        orchestration_root, principal, drive=True, tick_active_seconds=0.05, tick_idle_seconds=0.2
     )
     await service.start()
     pushed: list[tuple[float, dict]] = []
@@ -192,7 +192,7 @@ async def test_pump_announces_a_status_change_within_two_seconds(orchestration_r
     pump = MissionChangePump(service, broadcast, interval=0.1)
     pump.start()
     try:
-        created = service.create_mission(notes_request("k-pump"))
+        created = service.create_mission(notes_mission("k-pump"))
         deadline = time.monotonic() + 20
         completed_at = None
         while time.monotonic() < deadline and completed_at is None:

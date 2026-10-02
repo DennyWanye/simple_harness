@@ -19,7 +19,7 @@ from deskpet.orchestration.service import (
     OrchestrationService,
     OrchestrationSettings,
 )
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 
 from ._support import notes_provider, notes_request
 

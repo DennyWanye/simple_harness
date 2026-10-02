@@ -195,8 +195,6 @@ def source_identity(args, *, host_head: str) -> dict:
         },
         **({"publish_test_dir": str(args.run_dir.absolute() / "published")}
            if getattr(args, "publish_test_reports", False) else {}),
-        **({"fixture": _inventory(args.fixture_dir)} if getattr(args, "fixture_dir", None) else {}),
-        **({"fixture_case": args.fixture_case} if getattr(args, "fixture_case", None) else {}),
     }
 
 
@@ -315,19 +313,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--publish-test-reports", action="store_true",
                         help="Enable approved file publishing only in this run's published directory")
-    parser.add_argument("--fixture-dir", type=Path,
-                        help="Controlled UI inputs under ignored test evidence; no real model")
-    parser.add_argument("--fixture-case", choices=(
-        "n4-instruction-attribution", "n4-bad-quote", "n4-contradictory-uncertainty",
-        "native-context-rotation",
-        "native-load-three-mission",
-        "native-load-verifier-pressure",
-        "n6-half", "n6-two-thirds", "n6-active-revoke",
-    ), help="Controlled boundary case; requires --fixture-dir")
-    args = parser.parse_args(argv)
-    if args.fixture_case and args.fixture_dir is None:
-        parser.error("--fixture-case requires --fixture-dir")
-    return args
+    return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -425,14 +411,6 @@ def main(argv: list[str] | None = None) -> int:
         PYTHONDONTWRITEBYTECODE="1",
         PYTHONPYCACHEPREFIX=str(run / f"source-pycache-{ordinal}"),
     )
-    if args.fixture_dir is not None:
-        fixture = _path(args.fixture_dir, directory=True)
-        if ".local-test-evidence" not in fixture.parts:
-            raise LauncherError("fixture inputs must stay in ignored test evidence")
-        env["DESKPET_ORCHESTRATION_TEST_SCENARIO"] = "document-ui"
-        env["DESKPET_ORCH_UI_FIXTURE_DIR"] = str(fixture)
-        if args.fixture_case:
-            env["DESKPET_ORCH_UI_FIXTURE_CASE"] = args.fixture_case
     vite_env = {
         name: value for name, value in env.items() if name != "DESKPET_CLOUD_API_KEY"
     }

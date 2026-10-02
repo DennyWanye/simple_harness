@@ -40,11 +40,6 @@ def _activate(context: _Context, tmp_path, errors: list):  # type: ignore[no-unt
     )
 
 
-@pytest.fixture(autouse=True)
-def _no_test_scenario(monkeypatch):  # type: ignore[no-untyped-def]
-    monkeypatch.delenv("DESKPET_ORCHESTRATION_TEST_SCENARIO", raising=False)
-
-
 @pytest.mark.asyncio
 async def test_no_model_is_unavailable_but_not_a_startup_error(tmp_path):
     errors: list = []

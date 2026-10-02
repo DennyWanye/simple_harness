@@ -73,20 +73,13 @@ def root_setup(service: Any):
 def install_assurance(service: Any, orchestrator: Any) -> Any:
     """Bind the SDK's Assurance deployment on this Orchestrator lifetime.
 
-    Returns the SDK's ``InstalledAssurance`` or ``None`` when this wheel has no
-    Assurance assembly. Fixture lanes (``test_scenario``) keep their original
-    protocol and never install it.
+    Returns the SDK's ``InstalledAssurance``.
     """
-    if service._test_scenario is not None:
-        return None
-    try:
-        from agent_orchestrator.assurance.policy import AssurancePolicy
-        from agent_orchestrator.orchestrator.assurance_assembly import (
-            AssuranceDeploymentPorts,
-            install_assurance as sdk_install,
-        )
-    except ImportError:
-        return None
+    from agent_orchestrator.assurance.policy import AssurancePolicy
+    from agent_orchestrator.orchestrator.assurance_assembly import (
+        AssuranceDeploymentPorts,
+        install_assurance as sdk_install,
+    )
     from .hierarchical import root_requirements
 
     notices: deque[dict[str, Any]] = service._assurance_notices

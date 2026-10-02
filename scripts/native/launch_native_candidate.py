@@ -57,9 +57,6 @@ def main():
                         help='TOML whose top-level tables are merged into the run config, after the '
                              'launcher own overrides.  Used to grant a test run something the product '
                              'only takes from a person, e.g. [orchestration] publish_dir (P3.2 P32-14).')
-    parser.add_argument('--orchestration-test-scenario', default=None,
-                        help='passed to the backend as DESKPET_ORCHESTRATION_TEST_SCENARIO (the launcher drops inherited DESKPET_* variables); '
-                             'the backend honours it only when --userdata lies under .local-test-evidence/')
     parser.add_argument('--memory-probe', action='store_true',
                         help='event X-3: turn on the backend site-level memory probe (memory.probe.rss per terminal + full memory.probe samples on a background thread, tracemalloc snapshots under <userdata>/memory-probe/)')
     parser.add_argument('--memory-probe-light', action='store_true',
@@ -163,8 +160,6 @@ def main():
         HF_HOME=str(run / 'cache/hf'), HF_MODULES_CACHE=str(run / 'cache/hf-modules'),
         TORCH_HOME=str(run / 'cache/torch'), HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
     )
-    if args.orchestration_test_scenario:
-        env['DESKPET_ORCHESTRATION_TEST_SCENARIO'] = args.orchestration_test_scenario
     # Event X-3: the probe is opt-in and must be deterministic per run, so every
     # inherited value is dropped and only re-set when asked for.
     for name in ('SIMPLEHARNESS_MEMORY_PROBE', 'SIMPLEHARNESS_MEMORY_PROBE_EVERY',

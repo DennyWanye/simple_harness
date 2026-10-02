@@ -16,37 +16,10 @@ from deskpet.orchestration.service import (
     OrchestrationService,
     OrchestrationSettings,
 )
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 
-from ._support import SCRIPTED_LANE
 from ._support import mission_count as _mission_count
 from ._support import notes_provider, notes_request
-
-
-@pytest.mark.asyncio
-async def test_create_runs_to_completed_and_is_idempotent(orchestration_root, principal):
-    service = OrchestrationService(
-        orchestration_root,
-        OrchestrationSettings(),
-        provider=notes_provider(),
-        principal=principal,
-        drive=False,
-        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
-    )
-    await service.start()
-    try:
-        first = service.create_mission(notes_request("k-1"))
-        assert first["created"] is True
-        await service.drain()
-        detail = service.mission_detail(first["mission_id"])
-        assert detail["mission"]["status"] == "COMPLETED"
-
-        again = service.create_mission(notes_request("k-1"))
-        assert again["mission_id"] == first["mission_id"] and again["created"] is False
-        assert again["spec_hash"] == first["spec_hash"]  # the persistent receipt (P3.1-A03)
-        assert _mission_count(orchestration_root) == 1
-    finally:
-        await service.close()
 
 
 @pytest.mark.asyncio

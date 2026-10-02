@@ -11,10 +11,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 
 from deskpet.orchestration.service import OrchestrationService
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.settings import OrchestrationSettings, load_settings
 
 

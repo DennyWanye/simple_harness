@@ -2,7 +2,7 @@
 import pytest
 
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 
 
 class _Control:

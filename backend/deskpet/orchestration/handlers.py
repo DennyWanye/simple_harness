@@ -11,7 +11,6 @@ changes the policy library (HA-7).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
@@ -171,12 +170,7 @@ def _source_revoke(service: Any, body: Mapping[str, Any]) -> Any:
 
 
 async def _citation(service: Any, body: Mapping[str, Any]) -> Any:
-    result = service.citation_read(dict(body))
-    # The ignored-userdata fixture gives native clicks a reproducible in-flight
-    # window. Delay delivery only; the real receipt-bound read above is unchanged.
-    if service.status().get("test_scenario") == "document-ui" and body.get("offset", 0) == 0:
-        await asyncio.sleep(1.5)
-    return result
+    return service.citation_read(dict(body))
 
 
 def _list(service: Any, body: Mapping[str, Any]) -> Any:

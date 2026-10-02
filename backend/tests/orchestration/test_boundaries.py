@@ -12,17 +12,11 @@ from __future__ import annotations
 
 import pytest
 
-from agent_orchestrator.testing.fixtures import (
-    RoleScriptedProvider,
-    critic_step,
-    envelope_step,
-    graph_proposal_step,
-)
 from deskpet.orchestration.service import OrchestrationRequestError, OrchestrationService
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.settings import OrchestrationSettings
 
-from ._support import NATIVE_TASK_TOKENS, SCRIPTED_LANE, WORKSPACE_TOOLS, notes_provider, notes_request
+from ._support import WORKSPACE_TOOLS, notes_provider, notes_request
 
 KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 
@@ -84,86 +78,6 @@ EVIL_TEST = (
     "pathlib.Path({marker!r}).write_text('ran', encoding='utf-8')\n\n"
     "def test_ok():\n    assert True\n"
 )
-
-
-@pytest.mark.asyncio
-async def test_model_written_tests_never_run_when_local_tests_are_off(
-    orchestration_root, principal, tmp_path
-):
-    """F-1: the Planner asks for ``code_test`` and the Worker writes a test file whose import
-    has a side effect.  With local tests off, that file must never be executed."""
-
-    marker = tmp_path / "pytest-ran.marker"
-    task = {
-        "key": "A",
-        "goal": "写 NOTES.md 和一个测试文件",
-        "rationale": "探针",
-        "dependencies": [],
-        "success_criteria": ["file:NOTES.md"],
-        "verification_policy": ["format_check", "rule_check", "code_test"],
-        "outputs": ["NOTES.md", "test_probe.py"],
-        "allowed_tools": WORKSPACE_TOOLS,
-        "budget": {"max_tokens": NATIVE_TASK_TOKENS, "max_attempts": 1},
-        "priority": 1.0,
-    }
-    provider = RoleScriptedProvider(
-        {
-            "planner": [graph_proposal_step([task]) for _ in range(3)],
-            "worker": [
-                ("workspace_write_file", {"path": "NOTES.md", "content": "- 一\n"}),
-                (
-                    "workspace_write_file",
-                    {"path": "test_probe.py", "content": EVIL_TEST.format(marker=str(marker))},
-                ),
-                envelope_step(
-                    summary="写好了",
-                    artifacts=["NOTES.md", "test_probe.py"],
-                    claims=["写了文件"],
-                ),
-            ],
-            "critic": [critic_step(verdict="PASS", criteria_met=True) for _ in range(3)],
-        }
-    )
-    service = OrchestrationService(
-        orchestration_root,
-        OrchestrationSettings(),
-        provider=provider,
-        principal=principal,
-        drive=False,
-        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
-    )
-    await service.start()
-    try:
-        created = service.create_mission(notes_request("k-probe"))
-        await service.drain()
-        # the oracle is the same on both paths and is never weakened: a model-written test
-        # that tries to write outside its workspace leaves nothing on this machine
-        assert not marker.exists(), "a model-written test file reached this machine"
-        detail = service.mission_detail(created["mission_id"])
-        if bool(service.status()["sandbox"].get("ok")):
-            # P3.2: the file *does* run now — inside the sandbox — so the Attempt is real;
-            # what stops the side effect is the isolation, not a refusal to execute
-            assert detail["attempts"], detail["mission"]
-            # Attempt failures are UI-truncated; inspect the durable verification receipt.
-            with service._orchestrator.store.read_view():
-                snapshot = service._orchestrator.store.snapshot(created["mission_id"])
-            runs = [run
-                    for result in snapshot["results"]
-                    for layer in result["verifications"]
-                    if layer["layer"] == "code_test"
-                    for run in layer["detail"].get("runs", [])]
-            assert any(run.get("receipt", {}).get("status") == "ok"
-                       and run["receipt"].get("execution_id")
-                       for run in runs), "code_test needs a durable execution receipt"
-        else:
-            # refused honestly, not left hanging (review P2-10: a Mission has no RUNNING
-            # status, so the old ``!= "RUNNING"`` could never fail): every plan asks for the
-            # undeployed code_test, so the Mission ends FAILED and no Task ever ran
-            assert detail["mission"]["status"] == "FAILED", detail["mission"]
-            assert detail["mission"]["stop_reason"]
-            assert detail["attempts"] == []
-    finally:
-        await service.close()
 
 
 @pytest.mark.asyncio

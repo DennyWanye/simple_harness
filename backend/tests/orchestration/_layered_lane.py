@@ -28,7 +28,7 @@ from typing import Any
 
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of, role_of
 
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 #: 保证通道的审阅请求不带 ``[role:…]`` 标记，脚本化提供者把它归在这个名字下。
@@ -307,15 +307,17 @@ async def _auto_mode() -> str:
     return "auto"
 
 
-def layered_service(root: Path, principal: Any, provider: Any = None, **settings: Any) -> OrchestrationService:
-    """Host 默认部署的服务（不带测试场景），自动模式，模型回复来自脚本。"""
+def layered_service(
+    root: Path, principal: Any, provider: Any = None, *, drive: bool = False, **settings: Any
+) -> OrchestrationService:
+    """Host 默认部署的服务，自动模式，模型回复来自脚本；``drive`` 为真时由服务自己的主循环推进。"""
 
     return OrchestrationService(
         root,
         OrchestrationSettings(**settings),
         provider=provider if provider is not None else LayeredScriptedProvider(),
         principal=principal,
-        drive=False,
+        drive=drive,
         native_test_counter=FixtureWordCounter(),
         permission_mode_reader=_auto_mode,
     )

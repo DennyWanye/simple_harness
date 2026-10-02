@@ -40,7 +40,7 @@ def test_deployment_reports_actual_domain_profiles(tmp_path):
     from agent_orchestrator.governance.domains import DOMAINS
     from deskpet.orchestration.manifest import build_manifest
 
-    manifest = build_manifest(root=tmp_path, deployment={}, settings={}, test_scenario=None, model=None)
+    manifest = build_manifest(root=tmp_path, deployment={}, settings={}, model=None)
     domains = manifest["features"]["domains"]
     assert domains["default"] == "code-v1"
     assert {item["id"]: item["version"] for item in domains["items"]} == {

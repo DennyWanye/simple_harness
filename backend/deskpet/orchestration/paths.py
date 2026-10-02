@@ -5,9 +5,8 @@
 
 ``<user_data>/data/agent-orchestrator/`` holds ``orchestrator.db``, the orchestrator's own
 SDK execution library and the Attempt workspaces — apart from the chat's
-``execution-v6.sqlite3`` (two runtimes, two owners, two lease tables).  The test-only
-scenario gets ``agent-orchestrator-test/`` so it never touches the production library.
-Neither may be a symlink or resolve outside the user data directory.
+``execution-v6.sqlite3`` (two runtimes, two owners, two lease tables).  It may not be a
+symlink or resolve outside the user data directory.
 """
 
 from __future__ import annotations
@@ -15,7 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 
 ORCHESTRATION_DIR = "agent-orchestrator"
-TEST_SCENARIO_DIR = "agent-orchestrator-test"
 
 
 class OrchestrationPathError(RuntimeError):
@@ -40,14 +38,8 @@ def orchestration_root(user_data: str | Path) -> Path:
     return _checked(user_data, ORCHESTRATION_DIR)
 
 
-def test_scenario_root(user_data: str | Path) -> Path:
-    return _checked(user_data, TEST_SCENARIO_DIR)
-
-
 __all__ = (
     "ORCHESTRATION_DIR",
-    "TEST_SCENARIO_DIR",
     "OrchestrationPathError",
     "orchestration_root",
-    "test_scenario_root",
 )

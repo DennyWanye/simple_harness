@@ -31,7 +31,6 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .decision import DecisionSeam, build_decision_seam, seam_available
 from .lock import InstanceLock
 from .manifest import MANIFEST_SCHEMA, build_manifest, distributions, write_manifest
 from .projection import (
@@ -128,9 +127,7 @@ class OrchestrationService:
         provider: Any = None,
         provider_snapshot: ProviderSnapshot | None = None,
         http_client: Any = None,
-        test_scenario: str | None = None,
         drive: bool = True,
-        decision_shadow_provider: Any = None,
         taskgraph_deployment: Any = None,
         native_test_counter: Any = None,
         permission_mode_reader: Callable[[], Awaitable[str]] | None = None,
@@ -143,7 +140,6 @@ class OrchestrationService:
         self._provider = provider
         self._snapshot = provider_snapshot
         self._http_client = http_client
-        self._test_scenario = test_scenario
         self._drive_enabled = drive
         # Trusted deployment composition only: never populated from IPC/model
         # input. None selects the package-owned production deployment reader.
@@ -155,21 +151,12 @@ class OrchestrationService:
         # Orchestrator lifetime; ``native_test_counter`` is trusted test composition only
         # (a certified fixture counter standing in for the DeepSeek one).
         self._native: Any = None
-        if native_test_counter is None and test_scenario is not None:
-            # 2026-09-30: fixture scenarios run on native pools too (legacy pools deleted).
-            from .native_fixture import FixtureWordCounter
-
-            native_test_counter = FixtureWordCounter()
         self._native_test_counter = native_test_counter
-        # PR-7: test/local runtime may inject a typed shadow provider.  Production
-        # remains provider-free until a real NanoJev checkpoint is authorized.
-        self._decision_shadow_provider = decision_shadow_provider
         self._state = "created"
         self._reason: str | None = None
         self._lock = InstanceLock(self.root)
         self._orchestrator: Any = None
         self._effective_provider: Any = None
-        self._native_verifier_pressure = False
         self._config: Any = None
         self._runtime_options: dict[str, Any] = {}
         self._connectors: dict[str, Any] = {}
@@ -193,10 +180,6 @@ class OrchestrationService:
         # Settings page reads it and warns past ``storage_warn_bytes`` — nothing is deleted.
         self._storage = StorageUsage(self.root, warn_bytes=settings.storage_warn_bytes)
         self._authorization_mode: str | None = None
-        # PR-7: the Host's NanoJev decision seam.  Built once from the effective
-        # settings, never from the environment; it observes READY_TASK_PRIORITY and
-        # never decides anything.  In the default ``existing`` mode it is inert.
-        self._decision: DecisionSeam | None = None
         self.on_write: Callable[[], None] | None = None  # the change pump's poke
         # Assurance 1.1 (plan §13): the SDK deployment installed on the current
         # Orchestrator lifetime, and the NOTIFY payloads it delivered (bounded).
@@ -238,7 +221,6 @@ class OrchestrationService:
                 root=self.root,
                 deployment=self._deployment.to_json(),
                 settings=asdict(self.settings),
-                test_scenario=self._test_scenario,
                 model=None if self._snapshot is None else self._snapshot.public(),
                 sandbox=self._sandbox,
                 publish=self._publish,
@@ -269,46 +251,7 @@ class OrchestrationService:
 
         provider = self._provider
         enabled_connectors: tuple[str, ...] = ()
-        if self._test_scenario == "approval-action":  # plan §3.8: test-only, own directory
-            from agent_orchestrator.runtime.connectors import TestConfigService
-            from agent_orchestrator.testing.fixtures import (
-                demo_approval_action_provider,
-            )
-
-            # the Host deployment offers the workspace tools only (SDK 0.9.10 parameter)
-            # native pools need one turn + its review per Task (≈590k at 256K)
-            provider = demo_approval_action_provider(allowed_tools=WORKSPACE_TOOLS, task_tokens=1_200_000)
-            self._connectors = {
-                "test_config": TestConfigService(self.root / "test-services" / "config.json")
-            }
-            enabled_connectors = ("test_config",)
-        elif self._test_scenario == "document-ui":
-            import os
-
-            from .native_fixture import document_ui_provider
-
-            fixture_root = Path(os.environ["DESKPET_ORCH_UI_FIXTURE_DIR"])
-            case = os.environ.get("DESKPET_ORCH_UI_FIXTURE_CASE")
-            if case == "native-context-rotation":
-                from .native_context import native_context_provider
-
-                provider = native_context_provider(
-                    fixture_root, control_root=self.root / "native-context-controls"
-                )
-            elif case in {"native-load-three-mission", "native-load-verifier-pressure"}:
-                from .native_load import native_load_provider
-
-                provider = native_load_provider(
-                    fixture_root, control_root=self.root / "native-load-controls"
-                )
-                self._native_verifier_pressure = case == "native-load-verifier-pressure"
-            elif case:
-                from .native_cases import document_case_provider
-
-                provider = document_case_provider(case, fixture_root)
-            else:
-                provider = document_ui_provider(fixture_root)
-        elif provider is None:
+        if provider is None:
             raise ProviderUnavailable(NO_MODEL)
         publish = self._publish_connector()  # P3.2 P32-14: only a directory the user authorised
         if publish is not None:
@@ -377,7 +320,6 @@ class OrchestrationService:
             **self._runtime_options,
         )
         await self._orchestrator.__aenter__()
-        self._install_native_verifier_pressure(self._orchestrator)
         self._bind_host_duties(self._orchestrator)
         self._taskgraph = taskgraph
         self._assurance = assurance
@@ -386,59 +328,6 @@ class OrchestrationService:
         )
         self._diagnostics_available = self._detect_diagnostics()
         self._policy = PolicyApi(self._orchestrator.commit, self._principal)
-        # V1.4 scope amendment (2026-09-21): PR-7/NanoJev is deferred.
-        # Retain the historical seam below without attaching it to this runtime.
-
-    def _install_decision_seam(self) -> None:
-        """Build the PR-7 decision seam from the effective settings (plan §57).
-
-        The mode comes from ``config.toml [orchestration] decision_mode`` and
-        nowhere else.  The journal is the orchestrator's own store, so an
-        observation is filed as an additive event in the same library the Mission
-        lives in; no second database, no second schema.
-
-        This is deliberately non-fatal.  A wheel that predates the decision
-        package, or a store that is not ready, degrades the seam to "unavailable"
-        and the allocator behaves exactly as it always has.
-        """
-
-        if not seam_available():
-            self._decision = build_decision_seam(self.settings)
-            logger.info(
-                "decision_seam_unavailable mode=%s reason=%s",
-                self.settings.decision_mode,
-                self._decision.status.detail,
-            )
-            return
-        journal = None
-        store = getattr(self._orchestrator, "store", None)
-        if store is not None:
-            try:
-                from agent_orchestrator.decision import DecisionEventJournal
-
-                journal = DecisionEventJournal(store)
-            except Exception as error:  # noqa: BLE001 - an unusable store is not fatal
-                logger.info("decision_journal_unavailable reason=%s", type(error).__name__)
-                journal = None
-        self._decision = build_decision_seam(
-            self.settings,
-            journal=journal,
-            shadow_provider=self._decision_shadow_provider,
-        )
-        logger.info(
-            "decision_seam_ready mode=%s observation=%s",
-            self._decision.mode,
-            self._decision.observation_enabled,
-        )
-
-    async def observe_ready_priority(
-        self, mission: Any, tasks: Any, attempts: Any, plan: Any
-    ) -> bool:
-        """Host callback installed into the SDK's real allocation caller."""
-
-        if self._decision is None:
-            return False
-        return await self._decision.observe_ready_priority(mission, tasks, attempts, plan)
 
     def _publish_connector(self) -> Any:
         """The file publish connector, but only for a directory the user really authorised.
@@ -648,26 +537,13 @@ class OrchestrationService:
             self._wake.clear()
 
     def _install_hierarchical(self, orchestrator: Any) -> None:
-        # Old wheels and explicit historical fixture lanes keep their old protocol.
-        if self._test_scenario is None and hasattr(orchestrator, "install_hierarchical_deployment"):
-            from .hierarchical import install
-            install(orchestrator)
+        from .hierarchical import install
+        install(orchestrator)
 
     def _initialize_hierarchical_root(self, mission_id: str) -> None:
-        if self._test_scenario is None and hasattr(self._orchestrator, "install_hierarchical_deployment"):
-            from .hierarchical import initialize_root
-            mission = self._orchestrator.store.get_mission(mission_id)
-            initialize_root(self._orchestrator, mission, self._principal)
-
-    def _install_native_verifier_pressure(self, orchestrator: Any) -> None:
-        if not self._native_verifier_pressure:
-            return
-        from .native_load import verifier_pressure
-
-        orchestrator._router.verify = verifier_pressure(
-            orchestrator._router.verify, orchestrator=orchestrator,
-            control_root=self._effective_provider.control_root,
-        )
+        from .hierarchical import initialize_root
+        mission = self._orchestrator.store.get_mission(mission_id)
+        initialize_root(self._orchestrator, mission, self._principal)
 
     # ------------------------------------------------------------ native plane (RP-E3)
     def _native_skill_tools(self) -> tuple[str, ...]:
@@ -850,9 +726,7 @@ class OrchestrationService:
         return dict(body)
 
     def _assurance_root_setup(self) -> Any:
-        """The authenticated native root installation, or None for fixture lanes."""
-        if self._test_scenario is not None:
-            return None
+        """The authenticated native root installation."""
         from .assurance import root_setup
         return root_setup(self)
 
@@ -1034,8 +908,6 @@ class OrchestrationService:
         return enabled
 
     def _install_taskgraph(self, orchestrator: Any) -> Any:
-        if self._test_scenario is not None and self._taskgraph_deployment is None:
-            return None
         from agent_orchestrator.orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
         from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
         from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
@@ -1093,7 +965,6 @@ class OrchestrationService:
         )
         try:
             await candidate.__aenter__()
-            self._install_native_verifier_pressure(candidate)
             control = MissionControlV1(
                 candidate, tenant_id=self.tenant_id, principal=self._principal
             )
@@ -1215,7 +1086,6 @@ class OrchestrationService:
             ),
             "sandbox": dict(self._sandbox or {"ok": False, "reason": "尚未探测"}),
             "publish": dict(self._publish),
-            "test_scenario": self._test_scenario,
             "diagnostics_available": self._diagnostics_available,
             "assurance_available": self._assurance is not None,
             "assurance_notices": len(self._assurance_notices),
@@ -1231,11 +1101,6 @@ class OrchestrationService:
                 "max_attempts": self.settings.default_mission_max_attempts,
             },
             "deployment_manifest": self._manifest,
-            "decision": (
-                self._decision.status.to_json()
-                if self._decision is not None
-                else {"mode": self.settings.decision_mode, "observation_enabled": False}
-            ),
             "owner": self.owner,
         }
 
@@ -1332,22 +1197,6 @@ class OrchestrationService:
             self.tenant_id, str(body.get("idempotency_key", "")),
         ) if self._orchestrator is not None else None
         existing = found[0] if found else None
-        from agent_orchestrator.orchestrator.plan_commits import (
-            HIERARCHICAL_SEMANTICS, LEGACY_SEMANTICS, semantics_of,
-        )
-        if self._test_scenario is None and hasattr(self._orchestrator, "install_hierarchical_deployment"):
-            from agent_orchestrator.orchestrator.planning_protocol_binding import planning_protocol_for_mission
-            if existing is None:
-                body.setdefault("orchestration_semantics_version", HIERARCHICAL_SEMANTICS)
-                body.setdefault("planning_protocol_version", "planning-decision-v1")
-            elif semantics_of(existing) == HIERARCHICAL_SEMANTICS:
-                body.setdefault("orchestration_semantics_version", HIERARCHICAL_SEMANTICS)
-                frozen = planning_protocol_for_mission(self._orchestrator.store, existing.id)
-                if frozen is not None:
-                    body.setdefault("planning_protocol_version", frozen["protocol_version"])
-        # The mode is always written out: the SDK's own default is the hierarchical
-        # mode, and a scripted test scenario or a retry of a flat Mission is flat.
-        body.setdefault("orchestration_semantics_version", LEGACY_SEMANTICS)
         profiles = self._context_profiles()
         if "runtime_profile_id" in body:
             selected = body["runtime_profile_id"]
@@ -1381,15 +1230,6 @@ class OrchestrationService:
             elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise OrchestrationRequestError("invalid_request", f"预算 {name} 必须是正整数")
         body["budget"] = budget
-        if self._test_scenario == "approval-action":
-            from agent_orchestrator.testing.fixtures import APPROVAL_SEED
-
-            existing = [m for m in self._orchestrator.store.list_missions() if m.tenant_id == self.tenant_id]
-            if existing and existing[0].idempotency_key != body.get("idempotency_key"):
-                raise OrchestrationRequestError(
-                    "test_scenario_single_mission", "测试场景只允许一个 Mission（夹具脚本只够一次）"
-                )
-            body.setdefault("workspace_seed", dict(APPROVAL_SEED))
         return body
 
     # ------------------------------------------------------------ commands

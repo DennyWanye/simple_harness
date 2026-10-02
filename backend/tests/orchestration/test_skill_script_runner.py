@@ -94,7 +94,7 @@ def test_sync_run_outside_a_loop(tmp_path) -> None:
 def test_native_plane_binds_the_runner_only_with_a_proven_sandbox(tmp_path, with_sandbox) -> None:
     from deskpet.orchestration.native_plane import HostNativePlane
 
-    from deskpet.orchestration.native_fixture import FixtureWordCounter
+    from ._word_counter import FixtureWordCounter
 
     counter = FixtureWordCounter()
     executor = ProcessOnlyExecutor(sys.executable, exec_root=tmp_path / "exec") if with_sandbox else None

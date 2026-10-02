@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 from deskpet.orchestration.handlers import handle
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request
@@ -181,33 +181,6 @@ async def test_citation_read_dispatch_preserves_binding_and_character_page(tmp_p
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario,offset,delayed", [("document-ui", 0, True), (None, 0, False), ("document-ui", 3, False)])
-async def test_only_native_fixture_first_page_delays_delivery(tmp_path, principal, monkeypatch, scenario, offset, delayed):
-    from unittest.mock import AsyncMock
-
-    from deskpet.orchestration import handlers
-
-    service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal,
-                                   test_scenario=scenario, drive=False)
-    service._state = "available"
-    original = {"text": "真实原文", "offset": offset, "next_offset": None,
-                "total_chars": 4, "path": "sources/A.md", "version_hash": "a" * 64}
-    service._call = Mock(return_value=original)
-    delay = AsyncMock()
-    monkeypatch.setattr(handlers.asyncio, "sleep", delay)
-    reply = await handle(service, "mission_citation_read", {
-        "mission_id": "m", "result_id": "r", "receipt_id": "receipt", "citation_index": 2,
-        "offset": offset, "limit": 4}, request_id="real-page")
-    assert reply["payload"]["ok"]
-    assert reply["payload"]["data"]["text"] == original["text"]
-    assert service._call.call_count == 1
-    if delayed:
-        delay.assert_awaited_once_with(1.5)
-    else:
-        delay.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_citation_read_rejects_client_path_before_facade(tmp_path, principal):
     service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
     service._state = "available"
@@ -218,93 +191,3 @@ async def test_citation_read_rejects_client_path_before_facade(tmp_path, princip
     assert reply["payload"]["ok"] is False
     service._call.assert_not_called()
 
-
-@pytest.mark.asyncio
-async def test_real_sdk_accepted_report_25_claims_and_receipt_click(orchestration_root, principal):
-    """Actual SDK runner/producer/storage; scripted provider, never a real model call."""
-    import asyncio
-    import json
-
-    from agent_orchestrator.testing.fixtures import (
-        RoleScriptedProvider,
-        critic_step,
-        envelope_step,
-        graph_proposal_step,
-        package_of,
-    )
-
-    from ._support import NOTES_TASK, SCRIPTED_LANE
-
-    path = "sources/A.md"
-    quotes = [f"第{i}项记录完整。" for i in range(1, 26)]
-    content = "# 仅为资料记录\n\n" + "\n\n".join(quotes) + "\n"
-    task = {**NOTES_TASK, "success_criteria": [f"cite:{path}"],
-            "verification_policy": ["format_check", "rule_check", "critic_review"],
-            "outputs": ["REPORT.md"]}
-
-    def worker(request):
-        version = package_of(request)["source_versions"][path]
-
-        def cite(envelope):
-            for i, claim in enumerate(envelope["claims"]):
-                claim["citations"] = [{"path": path, "version": version, "start_line": 3 + 2 * i,
-                                       "end_line": 3 + 2 * i, "quote": quotes[i]}]
-            return envelope
-
-        return envelope_step(summary="模型正文只是分析", artifacts=["REPORT.md"],
-                             claims=quotes, override=cite)(request)
-
-    reviewed = []
-
-    def review(request):
-        tool_outputs = [json.loads(message.content) for message in request.messages
-                        if str(message.role) == "tool"]
-        actual = tool_outputs[-1]["value"]["content"]
-        reviewed.append(actual)
-        met = actual == content
-        return critic_step(verdict="PASS" if met else "FAIL", criteria_met=met)(request)
-
-    provider = RoleScriptedProvider({
-        "planner": [graph_proposal_step([task])],
-        "worker": [("workspace_write_file", {"path": "REPORT.md", "content": content}), worker],
-        "critic": [("workspace_read_file", {"path": "REPORT.md"}), review] * 3,
-    })
-    # 脚本化旧协议 Provider 只在夹具通道可用（见 _support.SCRIPTED_LANE）
-    service = OrchestrationService(orchestration_root, OrchestrationSettings(), principal=principal,
-                                   provider=provider, drive=False, test_scenario=SCRIPTED_LANE)
-    await service.start()
-    try:
-        command = {"mission": notes_request("accepted-report", domain="doc-research-v1",
-                                             success_criteria=[f"cite:{path}"]),
-                   "sources": [{"path": path, "content": content, "kind": "text/markdown"}]}
-        created = await handle(service, "mission_create_with_sources", command)
-        assert created["payload"]["ok"], created
-        mid = created["payload"]["data"]["mission_id"]
-        await asyncio.wait_for(service.drain(), timeout=20)
-        detail = service.mission_detail(mid)
-        assert detail["mission"]["status"] == "COMPLETED", detail
-        assert reviewed and all(actual == content for actual in reviewed)
-        doc = detail["document"]
-        assert len(doc["claims"]) == 25
-        assert all(c["source_trust"] == "untrusted_external" for c in doc["claims"])
-        target = doc["claims"][-1]["citations"][0]
-        identity = {key: target[key] for key in ("mission_id", "result_id", "receipt_id", "citation_index")}
-        before = service._orchestrator.store.snapshot(mid)
-        pages, offset = [], 0
-        while True:
-            reply = await handle(service, "mission_citation_read", {**identity, "offset": offset, "limit": 4})
-            assert reply["payload"]["ok"], reply
-            page = reply["payload"]["data"]
-            assert page["citation_id"] == target["citation_id"]
-            assert page["version"] == target["version"]
-            assert page["parent_headings"][0]["text"] == "# 仅为资料记录\n"
-            pages.append(page["text"])
-            if page["next_offset"] is None:
-                break
-            assert page["next_offset"] > offset
-            offset = page["next_offset"]
-        expected_line = content.splitlines(keepends=True)[target["locator"]["start_line"] - 1]
-        assert "".join(pages) == expected_line
-        assert service._orchestrator.store.snapshot(mid) == before
-    finally:
-        await service.close()

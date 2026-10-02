@@ -15,12 +15,11 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-import os
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from .paths import orchestration_root, test_scenario_root
+from .paths import orchestration_root
 from .provider import (
     NO_MODEL,
     ProviderUnavailable,
@@ -29,7 +28,7 @@ from .provider import (
 )
 from .pump import MissionChangePump
 from .service import OrchestrationService
-from .settings import load_settings, resolve_test_scenario, response_model_aliases
+from .settings import load_settings, response_model_aliases
 
 logger = logging.getLogger(__name__)
 
@@ -83,21 +82,19 @@ async def activate_orchestration(
     try:
         settings = load_settings(read_section(config_path))
         data = Path(user_data)
-        scenario = resolve_test_scenario(os.environ, data)
-        root = test_scenario_root(data) if scenario else orchestration_root(data)
+        root = orchestration_root(data)
         provider = snapshot = client = None
-        if scenario is None:
-            try:
-                snapshot = snapshot_from_registry(service_context.get("provider_registry"))
-                aliases = response_model_aliases(settings)
-                if aliases:
-                    snapshot = dataclasses.replace(snapshot, response_model_aliases=aliases)
-                from .runtime_profile import deepseek_thinking
+        try:
+            snapshot = snapshot_from_registry(service_context.get("provider_registry"))
+            aliases = response_model_aliases(settings)
+            if aliases:
+                snapshot = dataclasses.replace(snapshot, response_model_aliases=aliases)
+            from .runtime_profile import deepseek_thinking
 
-                thinking = deepseek_thinking(snapshot, settings)
-                provider, client = build_provider(snapshot, thinking=thinking)
-            except ProviderUnavailable as error:
-                logger.info("orchestration_without_model reason=%s", error)
+            thinking = deepseek_thinking(snapshot, settings)
+            provider, client = build_provider(snapshot, thinking=thinking)
+        except ProviderUnavailable as error:
+            logger.info("orchestration_without_model reason=%s", error)
         service = OrchestrationService(
             root,
             settings,
@@ -105,7 +102,6 @@ async def activate_orchestration(
             provider=provider,
             provider_snapshot=snapshot,
             http_client=client,
-            test_scenario=scenario,
             permission_mode_reader=_permission_mode_reader(service_context),
         )
         await service.start()
@@ -123,7 +119,7 @@ async def activate_orchestration(
         pump.start()
     service_context.register("orchestration_pump", pump)
     logger.info(
-        "orchestration_ready state=%s scenario=%s root=%s", status["state"], scenario, root.name
+        "orchestration_ready state=%s root=%s", status["state"], root.name
     )
     return service
 

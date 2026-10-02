@@ -18,7 +18,7 @@ import asyncio
 import pytest
 
 from deskpet.orchestration.handlers import handle
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
@@ -26,7 +26,7 @@ from deskpet.orchestration.service import (
     backoff_delay,
 )
 
-from ._support import SCRIPTED_LANE, notes_provider, notes_request
+from ._support import notes_provider, notes_request
 
 FAST = OrchestrationSettings(
     tick_active_seconds=0.01,
@@ -155,14 +155,13 @@ async def test_a_payload_that_is_not_an_object_is_answered(orchestration_root, p
 
 @pytest.mark.asyncio
 async def test_an_artifact_is_read_by_id_with_its_hash_checked(orchestration_root, principal):
-    service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
-        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
-    )
+    from ._layered_lane import layered_service, notes_mission, run_until_settled
+
+    service = layered_service(orchestration_root, principal)
     await service.start()
     try:
-        created = service.create_mission(notes_request("k-artifact"))
-        await service.drain()
+        created = service.create_mission(notes_mission("k-artifact"))
+        await run_until_settled(service, created["mission_id"])
         detail = service.mission_detail(created["mission_id"])
         notes = [a for a in detail["artifacts"] if a["path"] == "NOTES.md"]
         assert notes, detail["artifacts"]

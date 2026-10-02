@@ -16,7 +16,7 @@ from agent_orchestrator.orchestrator.operation_completion import OperationComple
 from agent_orchestrator.storage.htn_store import HtnStore
 
 from deskpet.orchestration.handlers import handle
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request

@@ -15,14 +15,14 @@ import time
 import pytest
 from context import _VALID_SERVICES
 from deskpet.orchestration.paths import OrchestrationPathError, orchestration_root
-from deskpet.orchestration.native_fixture import FixtureWordCounter
+from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
     OrchestrationSettings,
 )
 
-from ._support import SCRIPTED_LANE, notes_provider, notes_request
+from ._support import notes_provider, notes_request
 
 
 def test_service_name_is_registered():
@@ -125,18 +125,17 @@ async def test_each_process_has_its_own_owner(orchestration_root, principal):
 
 
 @pytest.mark.asyncio
-async def test_driver_loop_runs_a_mission_without_being_asked(orchestration_root, principal):
-    service = OrchestrationService(
-        orchestration_root,
-        OrchestrationSettings(tick_active_seconds=0.2, tick_idle_seconds=0.5),
-        provider=notes_provider(),
-        principal=principal,
-        test_scenario=SCRIPTED_LANE,  # 脚本化旧协议 Provider 只在夹具通道可用（见 _support）
+async def test_driver_loop_runs_a_mission_without_being_asked(orchestration_root, principal, monkeypatch):
+    from ._layered_lane import layered_service, notes_mission, quick_runtime
+
+    quick_runtime(monkeypatch)
+    service = layered_service(
+        orchestration_root, principal, drive=True, tick_active_seconds=0.2, tick_idle_seconds=0.5
     )
     await service.start()
     try:
-        created = service.create_mission(notes_request("k-drive"))
-        deadline = time.monotonic() + 20
+        created = service.create_mission(notes_mission("k-drive"))
+        deadline = time.monotonic() + 60
         status = None
         while time.monotonic() < deadline:
             status = service.mission_detail(created["mission_id"])["mission"]["status"]

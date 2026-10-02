@@ -99,7 +99,6 @@ const ERROR_TEXT: Record<string, string> = {
   orchestration_unavailable: "编排服务不可用",
   not_found: "找不到这个对象",
   conflict: "同一个请求键已经对应另一个不同的请求",
-  test_scenario_single_mission: "测试场景只允许一个 Mission",
   integrity_error: "产物内容与记录的哈希不一致",
 };
 /** 视图自己发、自己处理应答的消息类型；其余应答属于常驻订阅或别的视图。 */
@@ -868,9 +867,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
           overflowY: "auto",
         }}
       >
-        {status?.test_scenario ? (
-          <div role="status" style={{ ...box, borderColor: tokens.color.warning.bg }}>测试场景：{status.test_scenario}</div>
-        ) : null}
         {backgroundTrouble(status) ? (
           <div role="alert" data-testid="background-trouble" style={{ ...box, borderColor: tokens.color.warning.bg, flexShrink: 0 }}>{backgroundTrouble(status)}</div>
         ) : null}

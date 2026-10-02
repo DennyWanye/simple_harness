@@ -165,7 +165,6 @@ def build_manifest(
     root: Path,
     deployment: Mapping[str, Any],
     settings: Mapping[str, Any],
-    test_scenario: str | None,
     model: Mapping[str, Any] | None,
     sandbox: Mapping[str, Any] | None = None,
     publish: Mapping[str, Any] | None = None,
@@ -181,7 +180,6 @@ def build_manifest(
         "features": {
             "domains": _domain_features(),
             "deployment_policy": dict(deployment),
-            "test_scenario": test_scenario,
             "settings": dict(settings),
             # P3.2 (plan D9): what the capability probe found on *this* machine — the
             # deployment calls itself sandboxed only when every check passed
