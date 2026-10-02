@@ -294,10 +294,11 @@ class PlanningAdmissionCommitsMixin:
             return _write_taskgraph_applied(store, command, receipt, preview, admission, checked)
 
         with self._store.transaction():  # type: ignore[attr-defined]
-            from .taskgraph_dispatch import taskgraph_enabled
+            from ..storage.taskgraph_store import require_bound
             replay = self._store.connection.execute(  # type: ignore[attr-defined]
                 "SELECT 1 FROM plan_commit_receipts WHERE command_id=?", (command.command_id,)).fetchone()
-            if taskgraph is None and replay is None and taskgraph_enabled(self._store, command.mission_id):  # type: ignore[attr-defined]
+            if taskgraph is None and replay is None:
+                require_bound(self._store, command.mission_id)  # type: ignore[attr-defined]
                 factory = getattr(self, "_taskgraph_participant_factory", None)
                 if not callable(factory):
                     _raise("TASKGRAPH_COMMIT_PARTICIPANT_REQUIRED", "fixed TaskGraph admission assembly is missing")

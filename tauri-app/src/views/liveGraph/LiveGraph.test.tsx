@@ -105,14 +105,10 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     expect(detail.textContent).toContain("提交（candidate）：写了发布候选");
   });
 
-  it("未启用执行图的旧任务、正在启用的新任务：说清楚原因，不伪造图", () => {
+  it("没有执行图的旧任务：说清楚原因，不伪造图", () => {
     const channel = mount();
     channel.reply(SNAP, null, false, "NOT_ENABLED");
     expect(screen.getByRole("alert").textContent).toContain("创建于执行图启用之前");
-    cleanup();
-    const second = mount();
-    second.reply(SNAP, null, false, "ACTIVATION_PENDING");
-    expect(screen.getByRole("alert").textContent).toContain("执行图正在启用");
     expect(screen.queryByTestId("lg-node-root")).toBeNull();
   });
 

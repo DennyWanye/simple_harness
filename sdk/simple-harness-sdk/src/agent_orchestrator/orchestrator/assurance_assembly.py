@@ -9,10 +9,8 @@ consumers, the Mission factory and the durable tick, then reconciles startup
 state. It is called from the deployment's ``startup_assembly`` callback, after
 the root gate exists and before recovery resumes any runtime.
 
-Nothing here approves a policy, selects a Mission profile on its own or runs a
-model. The default profile selector is still
-``default_assurance_profile_for_new_mission`` (the registered policy: default ON
-since the verified 2026-09-23 delivery).
+Nothing here approves a policy or runs a model. Every planning-decision Mission
+is assured (2026-10-03: the other lane was removed).
 """
 
 from __future__ import annotations
@@ -43,7 +41,7 @@ from .assurance_consumers import (
     AssuranceNotifyConsumer,
     AssuranceValidityConsumer,
 )
-from .assurance_factory import AssuranceMissionFactory, default_assurance_profile_for_new_mission
+from .assurance_factory import AssuranceMissionFactory
 from .assurance_final_writer import finalize_assured_mission
 from .assurance_local_checks import AssuranceLocalChecks
 from .assurance_review_consumer import AssuranceReviewConsumer
@@ -315,9 +313,6 @@ class AssuranceDeploymentPorts:
     # The deployment's original approved Requirements builder; None selects
     # ``mission_requirements(principal)``.
     requirements: Callable[[Mission, Any], RequirementsRevision] | None = None
-    # Which new Missions take the assured lane; None consults the single default
-    # selection point ``default_assurance_profile_for_new_mission``.
-    select_profile: Callable[[Any], AssurancePolicy | None] | None = None
     # Host push for NOTIFY ``{mission_id, event_id, state_version}``.
     notify_transport: Callable[[Mapping[str, Any]], None] | None = None
     # Unique final writer for a READY closeout (handoff item 7); None installs
@@ -421,16 +416,6 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
             commit, tenant_id=tenant_id, transport=ports.notify_transport
         ),
     }
-    select = ports.select_profile or (lambda spec: default_assurance_profile_for_new_mission())
-
-    def selector(spec: Any) -> bool:
-        chosen = select(spec)
-        if chosen is None:
-            return False
-        if not isinstance(chosen, AssurancePolicy) or chosen.to_json() != policy.to_json():
-            raise AssuranceError("ASSURANCE_POLICY_UNREGISTERED")
-        return True
-
     factory = AssuranceMissionFactory(
         commit,
         tenant_id=tenant_id,
@@ -438,7 +423,6 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         require_creation_root=require_root,
         requirements=ports.requirements or mission_requirements(ports.principal),
         reconcile=lambda mission_id: activation_inventory(store, mission_id),
-        selector=selector,
     )
     tick = AssuranceTick(
         orchestrator,

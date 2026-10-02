@@ -173,13 +173,11 @@ class TaskGraphReadApi:
         was wrong.  Say so plainly instead; once enabled, the strict integrity
         checks below still apply unchanged.
         """
-        from ..orchestrator.taskgraph_dispatch import taskgraph_enabled
-        from ..orchestrator.taskgraph_requirement import taskgraph_required
+        from ..storage.taskgraph_store import taskgraph_enabled
         if not taskgraph_enabled(self._store, mission_id):
-            if taskgraph_required(self._store, mission_id):
-                # NEXT-TG-1.0 §8.6: say the graph is on its way; never fake an enabled one
-                _fail("ACTIVATION_PENDING", "执行图正在启用：等规划授权发出后由系统启用", retry="REQUERY")
-            _fail("NOT_ENABLED", "此任务未启用执行图")
+            # A user Mission is bound when it is created (2026-10-03); an unbound one is
+            # an older Mission in a development library, shown as having no graph.
+            _fail("NOT_ENABLED", "此任务没有执行图")
 
     def snapshot(self, mission_id: str, *, revision: int | None = None) -> dict[str, Any]:
         return self._snapshot(mission_id, revision=revision)[0]

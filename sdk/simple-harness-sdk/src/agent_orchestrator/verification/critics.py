@@ -12,13 +12,10 @@ machinery as a Worker so it is budgeted, replayable and settled (ORCH §12.2).
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ..contracts import ContractError
-from ..runtime.output_blocks import BlockError, extract_block
-from ..runtime.role_templates import CRITIC_VERDICT_TAG
 
 _MISSION_CRITERIA_MISMATCH = "critic mission_criteria must cover the Mission criteria in order"
 
@@ -58,65 +55,4 @@ class CriticVerdict:
         )
 
 
-def parse_critic_verdict(text: str, *, expected_criteria: Sequence[str]) -> CriticVerdict:
-    """Strict parse; a malformed verdict is a verification ERROR, never a PASS."""
-
-    try:
-        raw = extract_block(text, CRITIC_VERDICT_TAG)
-    except BlockError as error:
-        raise ContractError(f"critic verdict unreadable: {error}") from error
-    verdict = raw.get("verdict")
-    # ``isinstance`` first: P2.3c review round 4 (P1-7) found that an *unhashable*
-    # verdict — ``"verdict": ["PASS"]`` — raised ``TypeError`` out of the set test
-    # rather than ``ContractError``, and ``TypeError`` is not one of the exceptions
-    # the root-review collector catches, so a reply shaped that way took the loop
-    # down instead of being recorded as unreadable.  Every malformed verdict must
-    # leave here as the same refusal.
-    if not isinstance(verdict, str) or verdict not in {"PASS", "FAIL"}:
-        raise ContractError("critic verdict must be PASS or FAIL")
-    findings = raw.get("findings", [])
-    if not isinstance(findings, list) or any(not isinstance(item, Mapping) for item in findings):
-        raise ContractError("critic findings must be a list of objects")
-    blockers = [item for item in findings if item.get("severity") == "blocker"]
-    if (verdict == "FAIL") != bool(blockers):
-        raise ContractError("critic verdict must be FAIL iff a blocker finding exists")
-    criteria = raw.get("mission_criteria", [])
-    if not isinstance(criteria, list) or any(not isinstance(item, Mapping) for item in criteria):
-        raise ContractError("critic mission_criteria must be a list of objects")
-    seen = [str(item.get("criterion")) for item in criteria]
-    if seen != list(expected_criteria):
-        raise ContractError(_MISSION_CRITERIA_MISMATCH)
-    for item in criteria:
-        if not isinstance(item.get("met"), bool):
-            raise ContractError("critic mission_criteria[].met must be boolean")
-    needs_human = raw.get("needs_human", False)
-    if not isinstance(needs_human, bool):
-        raise ContractError("critic needs_human must be boolean")
-    return CriticVerdict(
-        verdict=str(verdict),
-        findings=tuple(dict(item) for item in findings),
-        mission_criteria=tuple(dict(item) for item in criteria),
-        raw=raw,
-        needs_human=needs_human and verdict == "PASS",  # a blocker always wins
-    )
-
-
-def critic_schema_retry_feedback(
-    error: ContractError | None, *, prompt_version: str = "critic-v3"
-) -> tuple[dict[str, str], ...]:
-    """Feedback is a frozen-version capability, independent of the current default."""
-    if (
-        prompt_version != "critic-v3"
-        or error is None
-        or str(error) != _MISSION_CRITERIA_MISMATCH
-    ):
-        return ()
-    return ({
-        "reason_code": "mission_criteria_mismatch",
-        "expected_source": "mission_success_criteria",
-        "excluded_source": "task_contract.success_criteria",
-        "required_order": "exact",
-    },)
-
-
-__all__ = ("CriticVerdict", "critic_schema_retry_feedback", "parse_critic_verdict")
+__all__ = ("CriticVerdict",)

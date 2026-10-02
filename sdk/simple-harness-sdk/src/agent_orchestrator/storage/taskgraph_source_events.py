@@ -8,24 +8,17 @@ from ..planning.htn.grounding import derive_id
 from .store import Store, StoreConflict, StoreError
 
 
-def taskgraph_enabled(store: Store, mission_id: str) -> bool:
-    """Select the explicitly bound protocol; this is not an authority check."""
-    return store.has_table("taskgraph_policy_bindings") and store.connection.execute(
-        "SELECT 1 FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)
-    ).fetchone() is not None
-
-
 def record_source_change(store: Store, mission_id: str, *, kind: str, source_id: str,
                          revision: int, content_hash: str) -> None:
-    """Append alongside the actual source write, only for an enabled Mission.
+    """Append alongside the actual source write (every Mission is bound at creation).
 
     This reference is a re-read signal, never a grant or a validity verdict.
     No raw source payload (in particular no grant body) goes into the event.
     """
     if not store.connection.in_transaction:
         raise StoreError("TASKGRAPH_SOURCE_EVENT_TRANSACTION_REQUIRED")
-    if not taskgraph_enabled(store, mission_id):
-        return
+    from .taskgraph_store import require_bound
+    require_bound(store, mission_id)
     source = FollowupCauseRef(kind=kind, id=source_id, revision=revision,
                               content_hash=content_hash).to_json()
     identity = derive_id("tg-source-change", mission_id, kind, source_id, str(revision))

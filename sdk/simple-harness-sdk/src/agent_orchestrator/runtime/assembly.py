@@ -23,10 +23,9 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from simple_harness.agents import build_agent_runtime
 from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.context.tokenizer import TokenizerPort, UpperBoundTokenizer
-from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
+from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.agents.runtime import AgentRuntime
 from simple_harness.contracts import canonical_json
 from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
@@ -523,11 +522,13 @@ def assemble_orchestrator_runtime(
         default_out = profile.default_max_output_tokens or config.default_max_output_tokens
         ceiling = profile.max_output_tokens_ceiling or config.max_output_tokens_ceiling
         native = profile.native_plane
+        if native is None:
+            raise ValueError(f"profile {profile_id!r} has no native plane; every pool runs on it")
         ports = AgentRuntimePorts(
             provider=profile.provider,
             # ARP-EXEC-1.1.1: a native-plane pool runs under the deployment's real
             # authorization port; the ARP factory refuses AllowAll by name.
-            authorization=AllowAllAuthorization() if native is None else native.authorization,
+            authorization=native.authorization,
             database_path=str(database),
             tool_executor=gateway,
             tool_names=(*TOOL_NAMES, *config.domain_tools),
@@ -551,16 +552,12 @@ def assemble_orchestrator_runtime(
             provider_handoff_fence=provider_handoff_fence,
             local_provider_admission=(local_provider_admissions or {}).get(profile_id),
         )
-        if native is None:
-            runtime = build_agent_runtime(ports, owner_scope=OWNER_SCOPE)
-            bridge = AgentBridge(runtime, unpriced=profile.unpriced)
-        else:
-            from simple_harness.agents.arp.runtime import build_arp_runtime
+        from simple_harness.agents.arp.runtime import build_arp_runtime
 
-            runtime = build_arp_runtime(ports, native.arp_ports(database), owner_scope=OWNER_SCOPE)
-            if native.after_build is not None:
-                native.after_build(runtime)
-            bridge = AgentBridge(runtime, unpriced=profile.unpriced, caller_for=native.caller_for)
+        runtime = build_arp_runtime(ports, native.arp_ports(database), owner_scope=OWNER_SCOPE)
+        if native.after_build is not None:
+            native.after_build(runtime)
+        bridge = AgentBridge(runtime, unpriced=profile.unpriced, caller_for=native.caller_for)
         pools[profile_id] = RuntimePool(
             profile=profile,
             runtime=runtime,

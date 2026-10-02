@@ -57,36 +57,19 @@ from enum import StrEnum
 from typing import Any
 
 from ..artifacts.store import ArtifactStoreError, read_verified
-from ..contracts.evidence_state import (
-    Availability,
-    TruthValue,
-    Validity,
-    ValidityWitness,
-    WitnessDecision,
-    WitnessPurpose,
-)
 from ..contracts.htn import TaskForm, TaskSemanticBindingV1
 from ..contracts.models import ContractError
 from ..contracts.resolution import (
-    AllExpr,
     CheckExecution,
-    Criterion,
-    CriterionExpr,
-    CriterionOrigin,
     CriterionOutcome,
     CriterionVerdict,
-    EvaluationKind,
-    RequiredEvidencePolicy,
-    RequirementClass,
     RequirementsRevision,
-    RequirementsRevisionId,
     ReviewAccount,
     ReviewBinding,
     ReviewPackage,
     ReviewPackageId,
     ReviewPurpose,
     ReviewRecord,
-    ReviewRecordId,
     ReviewVerdict,
     WorkspaceAccess,
     account_for_purpose,
@@ -97,7 +80,6 @@ from ..contracts.semantic_base import (
     TypedRefKind,
     content_hash_of,
 )
-from ..knowledge.validity import NO_SUBJECT, witness_subject
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
 from .accepted_outputs import CarriedCriterion, carried_criteria_in_revision
@@ -336,71 +318,6 @@ class RootReviewRequest:
         return tuple(str(item["criterion_id"]) for item in self.criteria)
 
 
-def root_criteria(binding: TaskSemanticBindingV1) -> tuple[Criterion, ...]:
-    """The root goal's coverage criteria, as the final review's criteria.
-
-    Two deliberate choices, because each is a way this could have been written
-    wrongly:
-
-    * ``EvaluationKind.SEMANTIC`` with **no** ``required_check_ids``.  A root
-      criterion is not re-executed here — the checks that could run already ran on
-      the leaves and their receipts live on the leaf acceptances — so naming a check
-      id would either be a check nobody runs (and the criterion could never be
-      satisfied) or a receipt this side forged.  What remains is a judgement, and
-      the enum has a word for that.
-    * ``independence_required=True``.  The one thing a composition review must not
-      be is the producers' own say-so, so the acceptance formula is *asked* to
-      enforce it rather than this module hoping for it: a reviewer who appears in
-      the package's ``producer_agent_ids`` makes the whole resolution refuse.
-    """
-
-    names = tuple(binding.goal_signature.coverage_criteria) or tuple(binding.requirement_refs)
-    if not names:
-        raise ContractError(
-            f"root task {binding.task_id!s} declares no coverage criterion and no requirement "
-            "ref; a Mission whose root owes nothing has nothing for a final review to judge "
-            "(AER §6.2)"
-        )
-    return tuple(
-        Criterion(
-            criterion_id=str(name),
-            revision=1,
-            origin=CriterionOrigin.DERIVED,
-            statement=(
-                f"{name} is covered by the accepted contributions of {binding.task_id!s}, "
-                "judged as a whole"
-            ),
-            requirement_class=RequirementClass.REQUIRED_OUTCOME,
-            evaluation_kind=EvaluationKind.SEMANTIC,
-            required_evidence_policy=RequiredEvidencePolicy(
-                independence_required=True,
-                coverage_statement=(
-                    "judged by the MISSION_FINAL review over the children's acceptances"
-                ),
-            ),
-        )
-        for name in dict.fromkeys(names)
-    )
-
-
-def root_requirements(
-    mission_id: str, binding: TaskSemanticBindingV1, *, revision: int
-) -> RequirementsRevision:
-    """The requirements revision a root review is cut against."""
-
-    criteria = root_criteria(binding)
-    expression: Any = CriterionExpr(criteria[0].criterion_id)
-    if len(criteria) > 1:
-        expression = AllExpr(children=tuple(CriterionExpr(item.criterion_id) for item in criteria))
-    return RequirementsRevision(
-        revision_id=RequirementsRevisionId(f"req-{mission_id}-{int(revision)}"),
-        mission_id=mission_id,
-        revision=int(revision),
-        criteria=criteria,
-        success_expression=expression,
-    )
-
-
 def acceptance_ref(store: Any, acceptance_id: str) -> TypedRef:
     """One contributing acceptance, referenced as the candidate it is.
 
@@ -550,41 +467,6 @@ def excerpt_of(
         "truncated": len(text) > limit,
         "text": text[:limit],
     }
-
-
-def refuse_self_contradicting_accept(
-    verdict: ReviewVerdict, criterion_verdicts: Mapping[str, CriterionVerdict]
-) -> None:
-    """An ACCEPT may not carry a criterion the reviewer itself judged FAIL.
-
-    The symmetric half of the fourth review round's P0-3.  One direction —
-    ``FAIL`` while every criterion is met — is **legal** and is in fact the shape a
-    composition review exists to produce: each part satisfies its own criterion and
-    the parts still do not add up to the root goal.  The other direction is not a
-    judgement at all, it is two judgements that contradict each other, and it must
-    not become a record: the AER §6.2 success expression would read the criteria and
-    ``evaluate_success_expression`` would refuse — but that is one layer's accident,
-    not a property of the record, and a record is what gets replayed.
-
-    Deliberately here and **not** in ``parse_critic_verdict``: that parser is also
-    the legacy Task Critic's, whose §22 contract does allow a PASS that names an
-    unmet criterion (a Critic is not the Mission's success authority; the Mission
-    Judge is).  Tightening it there would change a shipped contract on the legacy
-    path, which is not what this fix is about.
-    """
-
-    unmet = sorted(
-        str(key)
-        for key, value in criterion_verdicts.items()
-        if CriterionVerdict(value) is CriterionVerdict.FAIL
-    )
-    if verdict is ReviewVerdict.ACCEPT and unmet:
-        raise ContractError(
-            "a root review that ACCEPTs may not also report a criterion it judged FAIL "
-            f"({unmet}); the reply contradicts itself and no conclusion can be read off it "
-            "(AER I05).  A FAIL whose criteria are all met is a different thing and is legal: "
-            "that is a composition the parts satisfy and the whole does not"
-        )
 
 
 @dataclass(slots=True)
@@ -955,8 +837,7 @@ class RootReviewCoordinator:
 
         What it writes: a ``RequirementsRevision`` for the root's own criteria (re-used
         rather than re-published when the content is unchanged, so the revision number
-        moves exactly when the content does), the ``ReviewPackage``, the
-        ``purpose=ACCEPT`` witness the root commit consumes, and one
+        moves exactly when the content does), the ``ReviewPackage``, and one
         :data:`ROOT_REVIEW_CUT` event recording everything the cut was made over.
 
         What it does **not** write: a ``ReviewRecord``.  There is no conclusion yet.
@@ -1027,7 +908,6 @@ class RootReviewCoordinator:
             semantics.get_review_package(str(package.package_id))
         except StoreError:
             semantics.insert_review_package(package)
-        self._witness(mission_id, str(binding.task_id), now_ms=now_ms)
         append_hierarchical_event(
             self.store,
             ROOT_REVIEW_CUT,
@@ -1171,65 +1051,6 @@ class RootReviewCoordinator:
                 document = dict(resolved.manifest.to_json())
         return self.semantics.insert_input_manifest(mission_id, str(task_id), document)
 
-    def _witness(self, mission_id: str, task_id: str, *, now_ms: int) -> ValidityWitness:
-        """The ``purpose=ACCEPT`` licence the root commit consumes (§11.5, AER §8.1).
-
-        Its id is derived from exactly what the row's unique key is made of —
-        consumer, purpose, scope, epoch, support revision and subject — which is the
-        shape part 2d's review P0-2 settled on for the leaf side: "is this licence
-        already stored" is then one keyed read instead of an insert that raises.
-
-        The support revision is the **number of acceptances**, not the number of
-        observations the leaf lane counts.  A root review rests on its children's
-        acceptances, so that is what "how much support exists" means here — and it
-        makes a re-cut after a child was accepted or revoked a *new* licence rather
-        than a reuse of the one taken over the old support (I19: recompute, never
-        reuse the old TRUE).
-
-        The subject is :data:`~...knowledge.validity.NO_SUBJECT`: this licence is
-        taken over a *set* of acceptances, and ``witness_subject`` deliberately gives
-        no single subject to a witness that names several.  Naming them in
-        ``support_refs`` would file this licence under a subject that is one of them,
-        which is the collision migration 18 exists to prevent.
-        """
-
-        semantics = self.semantics
-        epoch = int(semantics.epoch(mission_id, self.scope_id))
-        support_revision = len(semantics.list_acceptances(mission_id))
-        witness = ValidityWitness(
-            witness_id="wit-"
-            + content_hash_of(
-                {
-                    "consumer": str(task_id),
-                    "purpose": str(WitnessPurpose.ACCEPT),
-                    "scope": self.scope_id,
-                    "epoch": epoch,
-                    "support_revision": int(support_revision),
-                    "subject": NO_SUBJECT,
-                }
-            )[:32],
-            consumer_ref=TypedRef(
-                kind=TypedRefKind.TASK,
-                id=str(task_id),
-                revision=1,
-                content_hash=content_hash_of(str(task_id)),
-            ),
-            purpose=WitnessPurpose.ACCEPT,
-            truth=TruthValue.TRUE,
-            freshness=Validity.CURRENT,
-            availability=Availability.READABLE,
-            decision=WitnessDecision.USABLE,
-            scope_id=self.scope_id,
-            scope_epoch=epoch,
-            support_revision=int(support_revision),
-            as_of_ms=int(now_ms),
-        )
-        subject = witness_subject(witness)
-        try:
-            return semantics.get_validity_witness(witness.witness_id)
-        except StoreError:
-            semantics.insert_validity_witness(mission_id, witness, subject=subject)
-            return witness
 
     # ------------------------------------------------------------------ reviewing
     def request(
@@ -1347,13 +1168,11 @@ class RootReviewCoordinator:
                     "evidence": _evidence_label(outputs, artifacts, review),
                 }
             )
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, mission_id):
-            from .taskgraph_review_evidence import accepted_verification_evidence
-            for contribution in contributions:
-                acceptance = semantics.get_acceptance(str(contribution["acceptance_id"]))
-                contribution["verification_evidence"] = accepted_verification_evidence(
-                    self.store, semantics, mission_id, acceptance)
+        from .taskgraph_review_evidence import accepted_verification_evidence
+        for contribution in contributions:
+            acceptance = semantics.get_acceptance(str(contribution["acceptance_id"]))
+            contribution["verification_evidence"] = accepted_verification_evidence(
+                self.store, semantics, mission_id, acceptance)
 
         from .completion_status import current_effect_proofs
 
@@ -1433,103 +1252,6 @@ class RootReviewCoordinator:
             },
         }
 
-    def record_review(
-        self,
-        mission_id: str,
-        package: ReviewPackage,
-        *,
-        verdict: ReviewVerdict,
-        criterion_verdicts: Mapping[str, CriterionVerdict],
-        reviewer_agent_id: str,
-        reviewer_turn_id: str,
-        findings: Sequence[Mapping[str, Any]] = (),
-    ) -> ReviewRecord:
-        """Freeze the reviewer's conclusion.  This module never supplies one.
-
-        ``verdict`` and ``criterion_verdicts`` both come from the reply the caller
-        parsed.  There is no default and no fallback: a criterion the reviewer did
-        not judge is written ``UNKNOWN`` — the enum's word for "not judged" — and the
-        acceptance formula answers for it, rather than this side answering on the
-        reviewer's behalf.  AER I05 is a property of that shape: nothing here can
-        turn "the review finished" into "the review passed".
-
-        A non-ACCEPT conclusion is recorded *and* announced
-        (:data:`ROOT_REVIEW_REJECTED`), because §9.1 sends it to a decision table and
-        a silent retry is the one response that table does not have.
-        """
-
-        resolved = ReviewVerdict(verdict)
-        refuse_self_contradicting_accept(resolved, criterion_verdicts)
-        limitations = tuple(
-            f"{one.get('severity', 'minor')}: {str(one.get('detail', ''))[:200]}"
-            for one in findings
-        )
-        outcomes = tuple(
-            self._outcome(
-                item.criterion_id,
-                criterion_verdicts.get(str(item.criterion_id), CriterionVerdict.UNKNOWN),
-                limitations,
-            )
-            for item in package.criteria
-        )
-        from dataclasses import replace
-        from .completion_status import current_effect_proofs
-
-        proofs = current_effect_proofs(self.store, mission_id)
-        anchors = {ref.id for ref in package.child_acceptance_refs}
-        outcomes = tuple(replace(outcome, evidence_refs=tuple(
-            ref for proof in proofs if proof["acceptance_id"] in anchors
-            and outcome.criterion_id in proof["criterion_ids"]
-            for ref in proof["evidence_refs"])) for outcome in outcomes)
-        record = ReviewRecord(
-            record_id=ReviewRecordId(
-                "rec-root-"
-                + content_hash_of(
-                    {"package": str(package.package_id), "turn": str(reviewer_turn_id)}
-                )[:32]
-            ),
-            package_id=package.package_id,
-            purpose=package.purpose,
-            binding=package.binding,
-            reviewer_agent_id=str(reviewer_agent_id),
-            reviewer_turn_id=str(reviewer_turn_id),
-            evidence_manifest_hash=content_hash_of(
-                {
-                    "contributions": [str(item.id) for item in package.child_acceptance_refs],
-                    "findings": [dict(item) for item in findings],
-                }
-            ),
-            criteria=outcomes,
-            verdict=resolved,
-        )
-        official = self.semantics.official_review_record(str(package.package_id))
-        if official is None:
-            self.semantics.insert_review_record(record, official=True)
-        elif official.to_json() != record.to_json():
-            raise ContractError(
-                f"review package {package.package_id!s} already carries official record "
-                f"{official.record_id!s}; a second conclusion for one anchor is a new review "
-                "and needs a new package (AER §5.2)"
-            )
-        if resolved is not ReviewVerdict.ACCEPT:
-            append_hierarchical_event(
-                self.store,
-                ROOT_REVIEW_REJECTED,
-                mission_id,
-                key=f"{mission_id}:{package.package_id}",
-                task_id=str(package.binding.subject_ref.id),
-                payload={
-                    "code": "root_review_not_accepted",
-                    "package_id": str(package.package_id),
-                    "record_id": str(record.record_id),
-                    "verdict": str(resolved),
-                    "requirements_revision": int(package.binding.requirements_revision),
-                    "reviewer_agent_id": str(reviewer_agent_id),
-                    "criteria": {str(item.criterion_id): str(item.verdict) for item in outcomes},
-                    "findings": [dict(item) for item in findings][:16],
-                },
-            )
-        return record
 
     @staticmethod
     def _outcome(
@@ -1557,35 +1279,6 @@ class RootReviewCoordinator:
             limitations=tuple(limitations),
         )
 
-    def record_unreadable(
-        self, mission_id: str, package: ReviewPackage, *, detail: str, reviewer_turn_id: str = ""
-    ) -> None:
-        """A reply that is not a verdict.  No record, no conclusion.
-
-        Writing an ``INCONCLUSIVE`` record here would burn the package's one official
-        record on an answer nobody gave, so the event is the whole response.  The
-        loop may put the *same* question once more with this event's ``detail``
-        attached (:data:`MAX_ROOT_REVIEW_ASKS`) — an unreadable reply is not an
-        answer, and the part-3a smoke found a model that produced the block on its
-        second try.  A reply that *was* read is never re-asked, whatever it said: a
-        FAIL goes to §9.1's decision table and stays there.
-        """
-
-        append_hierarchical_event(
-            self.store,
-            ROOT_REVIEW_UNREADABLE,
-            mission_id,
-            key=f"{mission_id}:{package.package_id}:{reviewer_turn_id}",
-            task_id=str(package.binding.subject_ref.id),
-            payload={
-                "code": "root_review_unreadable",
-                "package_id": str(package.package_id),
-                "requirements_revision": int(package.binding.requirements_revision),
-                "reviewer_turn_id": str(reviewer_turn_id),
-                "detail": str(detail)[:500],
-            },
-        )
-
 
 __all__ = (
     "DEFAULT_MAX_CUTS_PER_REVISION",
@@ -1601,11 +1294,8 @@ __all__ = (
     "RootReviewState",
     "RootReviewStatus",
     "acceptance_ref",
-    "refuse_self_contradicting_accept",
     "EXCERPT_BUDGET_CHARS",
     "EXCERPT_MAX_CHARS",
     "REQUIREMENTS_REVISION_SEMANTICS",
     "excerpt_of",
-    "root_criteria",
-    "root_requirements",
 )

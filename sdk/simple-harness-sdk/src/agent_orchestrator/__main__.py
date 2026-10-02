@@ -6,7 +6,6 @@
 
 Subcommands:
 
-    mission create --tenant T --evidence-dir DIR --spec spec.json [--provider ...]
     mission get|cancel|events --evidence-dir DIR MISSION_ID
     attempt get --evidence-dir DIR ATTEMPT_ID
     artifact show --evidence-dir DIR ARTIFACT_ID
@@ -20,28 +19,21 @@ of the library and compares it with the library; it never executes or writes.
 ``approval`` (step 7) acts as the caller named by ``--as`` — in this local build a
 self-declared identity; a real deployment binds it to its authentication.
 
-``mission create`` only creates the Mission (a Mission is run by a deployment that has
-the hierarchical assembly installed, such as the desktop Host).  ``--provider`` names the
-provider the Mission's policy binding records: ``fixtures`` or ``env`` (``SH_BASEURL`` /
-``SH_APIKEY`` / ``SH_MODEL`` and optional ``SH_PRICE_INPUT_MICROS`` /
-``SH_PRICE_OUTPUT_MICROS`` per million tokens, read from the environment; the key never
-reaches any file).  The flat-mode ``demo`` scenarios were removed on 2026-10-02.
+Missions are created only by a deployment (``deployment.assembly.UserMissionDeployment``,
+such as the desktop Host), which creates the Mission, its root and its TaskGraph binding in
+one transaction; the CLI only reads and cancels (``mission create`` was removed 2026-10-03).
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from . import __version__
 from .orchestrator.commit_service import CommitService
-from .orchestrator.event_handler import Orchestrator
-from .runtime.assembly import OrchestratorConfig, PriceTable
 from .storage.store import Store
 
 EXIT_OK = 0
@@ -53,80 +45,12 @@ def _print(value: Any) -> None:
     sys.stdout.write(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
 
-def _config(
-    args: argparse.Namespace, *, model: str | None, price: PriceTable | None
-) -> OrchestratorConfig:
-    return OrchestratorConfig(
-        evidence_root=Path(args.evidence_dir).resolve(),
-        model=model or "agent-model",
-        price_table=price,
-        hard_cap_micros=getattr(args, "hard_cap_micros", None),
-        max_concurrency=getattr(args, "max_concurrency", 1),
-        test_timeout_seconds=getattr(args, "test_timeout", 120.0),
-    )
-
-
-def _provider(args: argparse.Namespace):  # type: ignore[no-untyped-def]
-    """Return (provider, model, price_table, provider_kind)."""
-
-    if args.provider == "fixtures":
-        from .testing.fixtures import RoleScriptedProvider
-
-        return RoleScriptedProvider({}), "agent-model", None, "fixtures"
-    if args.provider == "env":
-        base_url = os.environ.get("SH_BASEURL")
-        api_key = os.environ.get("SH_APIKEY")
-        model = os.environ.get("SH_MODEL")
-        if not (base_url and api_key and model):
-            raise SystemExit("--provider env needs SH_BASEURL, SH_APIKEY and SH_MODEL")
-        import httpx
-
-        from simple_harness.providers import OpenAICompatibleProvider, Secret
-
-        provider = OpenAICompatibleProvider(
-            httpx.AsyncClient(), base_url, model, Secret(api_key), timeout=180.0
-        )
-        price = None
-        if os.environ.get("SH_PRICE_INPUT_MICROS") and os.environ.get("SH_PRICE_OUTPUT_MICROS"):
-            price = PriceTable(
-                snapshot_id=f"env-{model}",
-                input_micros_per_million_tokens=int(os.environ["SH_PRICE_INPUT_MICROS"]),
-                output_micros_per_million_tokens=int(os.environ["SH_PRICE_OUTPUT_MICROS"]),
-            )
-        elif not getattr(args, "unpriced", False):
-            raise SystemExit(
-                "--provider env is a paid provider: set SH_PRICE_INPUT_MICROS/SH_PRICE_OUTPUT_MICROS"
-                " (micros per million tokens) or pass --unpriced to record costs as unpriced"
-            )
-        return provider, model, price, "env"
-    raise SystemExit(f"unknown provider {args.provider!r}")
-
-
 def _open_store(args: argparse.Namespace) -> Store:
     return Store.open(Path(args.evidence_dir).resolve() / "orchestrator.db")
 
 
 # ------------------------------------------------------------------ commands
 def cmd_mission(args: argparse.Namespace) -> int:
-    if args.action == "create":
-        spec_data = json.loads(Path(args.spec).read_text(encoding="utf-8"))
-        provider, model, price, kind = _provider(args)
-
-        async def run() -> int:
-            async with Orchestrator(
-                _config(args, model=model, price=price), provider
-            ) as orchestrator:
-                from .api.missions import MissionApi
-
-                mission, created = MissionApi(  # host support 0.9.8: the deployment-aware door
-                    orchestrator.commit, orchestrator=orchestrator
-                ).create(tenant_id=args.tenant, request=spec_data)
-                _print(
-                    {"mission_id": mission.id, "created": created, "status": str(mission.status)}
-                )
-            return EXIT_OK
-
-        return asyncio.run(run())
     store = _open_store(args)
     try:
         if args.action == "get":
@@ -364,49 +288,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"agent_orchestrator {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    def common(p: argparse.ArgumentParser, *, provider: bool) -> None:
+    def common(p: argparse.ArgumentParser) -> None:
         p.add_argument("--evidence-dir", required=True)
-        if provider:
-            p.add_argument("--provider", default="fixtures", choices=("fixtures", "env"))
-            p.add_argument("--tenant", default="local")
-            p.add_argument("--hard-cap-micros", type=int, default=None, dest="hard_cap_micros")
-            p.add_argument("--max-concurrency", type=int, default=1, dest="max_concurrency")
-            p.add_argument("--test-timeout", type=float, default=120.0, dest="test_timeout")
-            p.add_argument(
-                "--unpriced",
-                action="store_true",
-                help="allow a paid provider without a price table (costs recorded as unpriced)",
-            )
 
     mission = sub.add_parser("mission")
     mission_sub = mission.add_subparsers(dest="action", required=True)
-    create = mission_sub.add_parser("create")
-    common(create, provider=True)
-    create.add_argument(
-        "--spec", required=True, help="JSON file with goal/success_criteria/idempotency_key/..."
-    )
     for action in ("get", "events", "cancel"):
         p = mission_sub.add_parser(action)
-        common(p, provider=False)
+        common(p)
         p.add_argument("mission_id")
 
     attempt = sub.add_parser("attempt")
     attempt_sub = attempt.add_subparsers(dest="action", required=True)
     get_attempt = attempt_sub.add_parser("get")
-    common(get_attempt, provider=False)
+    common(get_attempt)
     get_attempt.add_argument("attempt_id")
 
     artifact = sub.add_parser("artifact")
     artifact_sub = artifact.add_subparsers(dest="action", required=True)
     show = artifact_sub.add_parser("show")
-    common(show, provider=False)
+    common(show)
     show.add_argument("artifact_id")
 
     approval = sub.add_parser("approval")
     approval_sub = approval.add_subparsers(dest="action", required=True)
 
     def caller(p: argparse.ArgumentParser) -> None:
-        common(p, provider=False)
+        common(p)
         p.add_argument(
             "--as",
             required=True,
@@ -462,7 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--evidence", required=True, help="a JSON object with what the person saw")
 
     replay = sub.add_parser("replay")  # step 8
-    common(replay, provider=False)
+    common(replay)
     replay.add_argument("mission_id")
     replay.add_argument(
         "--events", default=None, help="replay an events.jsonl instead of the library's events"
@@ -476,9 +384,9 @@ def build_parser() -> argparse.ArgumentParser:
     policy_sub = policy.add_subparsers(dest="action", required=True)
     for name in ("list", "status"):
         p = policy_sub.add_parser(name)
-        common(p, provider=False)
+        common(p)
     p = policy_sub.add_parser("show")
-    common(p, provider=False)
+    common(p)
     p.add_argument("identifier")
 
     return parser

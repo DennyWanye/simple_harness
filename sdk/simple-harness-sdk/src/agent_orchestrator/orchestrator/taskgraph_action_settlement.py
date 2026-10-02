@@ -36,7 +36,7 @@ def require_action_settlement(orchestrator: Any, subject_id: str, mission_id: st
 
 def settle_resolved_actions(orchestrator: Any) -> bool:
     """Revisit actual held Action accounts after the original proof is imported."""
-    from .taskgraph_dispatch import taskgraph_enabled
+    from ..storage.taskgraph_store import taskgraph_enabled
     store = orchestrator.store
     progressed = False
     for mission in store.list_missions():

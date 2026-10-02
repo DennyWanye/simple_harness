@@ -669,6 +669,14 @@ CREATE TRIGGER tg_attempt_identity_guard BEFORE INSERT ON taskgraph_attempt_inpu
 END;
 """
 
+# 2026-10-03（HTN 补齐阶段 A′）：用户任务在建任务的同一事务里就绑定执行图，没有"已要求、
+# 还没绑定"的等待期，等待机制连同这张表一起删除。
+DDL_V35 = """
+DROP TRIGGER taskgraph_requirements_no_update;
+DROP TRIGGER taskgraph_requirements_no_delete;
+DROP TABLE taskgraph_requirements;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -704,6 +712,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(32, "orchestrator-drop-conflicts-graph-changes-system-tail", DDL_V32),
     Migration(33, "orchestrator-drop-criterion-assessments", DDL_V33),
     Migration(34, "orchestrator-drop-captured-baseline", DDL_V34),
+    Migration(35, "orchestrator-drop-taskgraph-requirements", DDL_V35),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

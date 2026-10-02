@@ -58,14 +58,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..artifacts.input_bindings import AcceptedOutput, DisclosureState, ResourceIdentity
-from ..contracts.evidence_state import (
-    Availability,
-    TruthValue,
-    Validity,
-    ValidityWitness,
-    WitnessDecision,
-    WitnessPurpose,
-)
 from ..contracts.htn import (
     OccurrenceId,
     ReadItem,
@@ -78,11 +70,8 @@ from ..contracts.htn import (
 )
 from ..contracts.models import ContractError
 from ..contracts.resolution import (
-    CheckExecution,
     Criterion,
     CriterionOrigin,
-    CriterionOutcome,
-    CriterionVerdict,
     EvaluationKind,
     RequiredEvidencePolicy,
     RequirementClass,
@@ -92,8 +81,6 @@ from ..contracts.resolution import (
     ReviewPackageId,
     ReviewPurpose,
     ReviewRecord,
-    ReviewRecordId,
-    ReviewVerdict,
     WorkspaceAccess,
 )
 from ..contracts.semantic_base import (
@@ -102,7 +89,6 @@ from ..contracts.semantic_base import (
     TypedRefKind,
     content_hash_of,
 )
-from ..knowledge.validity import acceptance_subject
 from ..runtime.output_blocks import PortClaim
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
@@ -280,42 +266,6 @@ def receipt_ref(result_id: str, layer: str) -> TypedRef:
     )
 
 
-def outcomes_for(
-    criteria: Sequence[Criterion], layers: Sequence[LayerOutcome], *, result_id: str
-) -> tuple[CriterionOutcome, ...]:
-    """One outcome per criterion, reporting what the layers reported.
-
-    Every gated criterion of a leaf is covered by the same verification verdict —
-    the leaf produced one result and the router judged that one result — so the
-    verdict is projected onto each criterion rather than split between them.  The
-    projection is honest in both directions: a single non-PASS conclusive layer
-    makes every criterion FAIL, and a layer that did not reach a conclusion makes
-    the execution ``NOT_RUN`` rather than leaving a PASS with a missing check.
-    """
-
-    conclusive = [item for item in layers if item.conclusive]
-    execution = CheckExecution.SUCCEEDED if conclusive else CheckExecution.NOT_RUN
-    verdict = (
-        CriterionVerdict.PASS
-        if conclusive and all(item.passed for item in conclusive)
-        else CriterionVerdict.FAIL
-    )
-    evidence = tuple(receipt_ref(result_id, item.layer) for item in conclusive)
-    return tuple(
-        CriterionOutcome(
-            criterion_id=item.criterion_id,
-            verdict=verdict,
-            check_execution=execution,
-            evidence_refs=evidence,
-            # A layer that did not reach a conclusion is a stated *limitation* of
-            # this outcome rather than a silence: the acceptance is still decided by
-            # the gate, and a reader can see which check was inconclusive.
-            limitations=tuple(f"{one.layer}={one.status}" for one in layers if not one.conclusive),
-        )
-        for item in criteria
-    )
-
-
 def accepted_outputs_for(
     ports: Mapping[str, Any],
     *,
@@ -443,13 +393,9 @@ class LeafAcceptanceAssembly:
         """
 
         outcomes = layer_outcomes(layers)
-        from .taskgraph_dispatch import taskgraph_enabled
         from .taskgraph_review import read_review_origin
-        origin = None
-        if taskgraph_enabled(self.store, mission_id):
-            origin = read_review_origin(self.commit, mission_id, task_id, result_id)
-        binding = (origin.semantic if origin is not None
-                   else self.semantics.task_semantics_of(mission_id, task_id))
+        origin = read_review_origin(self.commit, mission_id, task_id, result_id)
+        binding = origin.semantic
         if binding is None:
             raise ContractError(
                 f"task {task_id!r} has no TaskSemanticBindingV1 in mission {mission_id!r}; in "
@@ -470,15 +416,12 @@ class LeafAcceptanceAssembly:
         revision = projection.requirements
         outcomes = layer_outcomes(self.store.list_verifications(result_id))
         producer_agent_ids = (projection.producer_agent_id,)
-        if origin is not None:
-            manifest = origin.context.inputs.binding.manifest_hash
-            if input_manifest_hash and input_manifest_hash != manifest:
-                raise ContractError("TASKGRAPH_REVIEW_MANIFEST_MISMATCH")
-        else:
-            manifest = input_manifest_hash or self._manifest_hash(mission_id, task_id)
+        manifest = origin.context.inputs.binding.manifest_hash
+        if input_manifest_hash and input_manifest_hash != manifest:
+            raise ContractError("TASKGRAPH_REVIEW_MANIFEST_MISMATCH")
         from ..storage.assurance_store import AssuranceStore
 
-        assured = AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1"
+        AssuranceStore(self.store).require_assured(mission_id)
         package = self._package(
             mission_id,
             binding,
@@ -487,9 +430,8 @@ class LeafAcceptanceAssembly:
             manifest,
             producer_agent_ids,
             projection=projection,
-            reviewed=assured,
         )
-        record = self._record(package, outcomes, result_id, reviewer_agent_id, assured=assured)
+        record = self._official_record(package)
         acceptance_id = f"acc-{content_hash_of({'task': task_id, 'result': result_id})[:32]}"
         try:
             previous = self.semantics.get_acceptance(acceptance_id)
@@ -497,42 +439,36 @@ class LeafAcceptanceAssembly:
             previous = None
         if previous is not None:
             now_ms = previous.accepted_at_ms
-        if assured:
-            # An assured Mission is licensed by a current UseCertificate prepared
-            # outside this transaction and committed by accept_review beside the
-            # Acceptance. The legacy self-issued ValidityWitness is not minted.
-            from .resolution_commits import ResolutionCommitRejected
+        # The acceptance is licensed by a current UseCertificate prepared outside
+        # this transaction and committed by accept_review beside the Acceptance.
+        from .resolution_commits import ResolutionCommitRejected
 
-            validity = getattr(self.commit, "_assurance_validity", None)
-            candidate = (
-                None
-                if validity is None
-                else validity.candidate_for(mission_id, str(record.record_id))
+        validity = getattr(self.commit, "_assurance_validity", None)
+        candidate = (
+            None
+            if validity is None
+            else validity.candidate_for(mission_id, str(record.record_id))
+        )
+        committed = self.store.connection.execute(
+            "SELECT certificate_id FROM assurance_use_certificates WHERE mission_id=? "
+            "AND consumer_kind='ACCEPTANCE' AND consumer_id=? AND purpose='ACCEPT' "
+            "AND json_extract(certificate_json,'$.decision')='USABLE' "
+            "ORDER BY issued_at_ms DESC LIMIT 1",
+            (mission_id, acceptance_id),
+        ).fetchone()
+        if committed is not None and previous is not None:
+            # Exact replay of an already licensed acceptance: the command names
+            # the certificate that was committed beside it, never a new one.
+            witness_id = str(committed[0])
+        elif candidate is None:
+            raise ResolutionCommitRejected(
+                "USE_CERTIFICATE_REQUIRED",
+                f"no current use certificate is prepared for official review "
+                f"{record.record_id!s}; an assured acceptance is not licensed by a "
+                "cached verdict",
             )
-            committed = self.store.connection.execute(
-                "SELECT certificate_id FROM assurance_use_certificates WHERE mission_id=? "
-                "AND consumer_kind='ACCEPTANCE' AND consumer_id=? AND purpose='ACCEPT' "
-                "AND json_extract(certificate_json,'$.decision')='USABLE' "
-                "ORDER BY issued_at_ms DESC LIMIT 1",
-                (mission_id, acceptance_id),
-            ).fetchone()
-            if committed is not None and previous is not None:
-                # Exact replay of an already licensed acceptance: the command names
-                # the certificate that was committed beside it, never a new one.
-                witness_id = str(committed[0])
-            elif candidate is None:
-                raise ResolutionCommitRejected(
-                    "USE_CERTIFICATE_REQUIRED",
-                    f"no current use certificate is prepared for official review "
-                    f"{record.record_id!s}; an assured acceptance is not licensed by a "
-                    "cached verdict",
-                )
-            else:
-                witness_id = candidate.certificate_id
         else:
-            witness_id = self._witness(
-                mission_id, task_id, acceptance_id=acceptance_id, now_ms=now_ms
-            ).witness_id
+            witness_id = candidate.certificate_id
         command = AcceptReviewCommand(
             command_id=command_id or f"accept:{result_id}",
             mission_id=mission_id,
@@ -582,31 +518,6 @@ class LeafAcceptanceAssembly:
         return self.commit.accept_review(command, principal)
 
     # -- the anchors ----------------------------------------------------------------
-    def _manifest_hash(self, mission_id: str, task_id: str) -> str:
-        """Freeze what this dispatch consumed, and return the library's own digest.
-
-        An ``Acceptance`` names the inputs it was granted, and ``accept_review``
-        re-reads that manifest from the store — so the hash has to be the one
-        ``insert_input_manifest`` computed over the stored document, never a digest
-        this module invented over a shape nobody kept.
-
-        A deployment with no hierarchical assembly to ask records the **empty**
-        manifest: "this dispatch consumed nothing" is a claim the acceptance can
-        make honestly, and it is a different claim from "nobody resolved the inputs".
-        """
-
-        document: dict[str, Any] = {"consumer_task_ref": str(task_id), "bindings": []}
-        if self.dispatch is not None:
-            network = self.dispatch.network(mission_id)
-            spec = next(
-                (item for item in network.occurrences if str(item.task_id) == str(task_id)), None
-            )
-            if spec is not None:
-                resolved = self.dispatch.resolved_inputs(mission_id, network, spec)
-                if resolved.manifest is not None and resolved.manifest.is_frozen:
-                    document = dict(resolved.manifest.to_json())
-        return self.semantics.insert_input_manifest(mission_id, str(task_id), document)
-
     def _occurrence_in_active_revision(
         self, mission_id: str, task_id: str
     ) -> tuple[int, OccurrenceId] | None:
@@ -638,7 +549,6 @@ class LeafAcceptanceAssembly:
         *,
         projection: Any,
         persist: bool = True,
-        reviewed: bool = False,
     ) -> ReviewPackage:
         package = ReviewPackage(
             package_id=ReviewPackageId(
@@ -686,9 +596,9 @@ class LeafAcceptanceAssembly:
             # Assurance freezes the same original package before the reserve/
             # intent transaction. Its transport owns the atomic insertion.
             return package
-        return self._stored_package(package, reviewed=reviewed)
+        return self._stored_package(package)
 
-    def _stored_package(self, package: ReviewPackage, *, reviewed: bool) -> ReviewPackage:
+    def _stored_package(self, package: ReviewPackage) -> ReviewPackage:
         try:
             stored = self.semantics.get_review_package(str(package.package_id))
         except StoreError:
@@ -699,13 +609,13 @@ class LeafAcceptanceAssembly:
         # to the store to refuse rather than silently replaced.
         if stored.content_hash() == package.content_hash():
             return package
-        if reviewed and (
+        if (
             stored.purpose == package.purpose
             and stored.binding == package.binding
             and stored.candidate_refs == package.candidate_refs
             and tuple(stored.producer_agent_ids) == tuple(package.producer_agent_ids)
         ):
-            # Assured lane: the official review judged the package Assurance froze
+            # The official review judged the package Assurance froze
             # before its Critic ran (read_task_content_candidate: criteria from the
             # approved check policy).  Accept exactly that package; this reader's own
             # criteria view (checks that ran) is a different spelling of the same
@@ -715,119 +625,20 @@ class LeafAcceptanceAssembly:
         self.semantics.insert_review_package(package)
         return package
 
-    def _record(
-        self,
-        package: ReviewPackage,
-        layers: Sequence[LayerOutcome],
-        result_id: str,
-        reviewer_agent_id: str | None,
-        *,
-        assured: bool = False,
-    ) -> ReviewRecord:
-        if assured:
-            # Only the authenticated runtime importer writes an assured official
-            # record; the local layers never assemble a second one.
-            official = self.semantics.official_review_record(str(package.package_id))
-            if official is None:
-                from .resolution_commits import ResolutionCommitRejected
-
-                raise ResolutionCommitRejected(
-                    "REVIEW_NOT_OFFICIAL",
-                    f"no official Assurance review record is stored for package "
-                    f"{package.package_id!s}",
-                )
-            return official
-        outcomes = outcomes_for(package.criteria, layers, result_id=result_id)
-        passed = all(item.verdict is CriterionVerdict.PASS for item in outcomes)
-        record = ReviewRecord(
-            record_id=ReviewRecordId(f"rec-{content_hash_of(str(package.package_id))[:32]}"),
-            package_id=package.package_id,
-            purpose=package.purpose,
-            binding=package.binding,
-            reviewer_agent_id=reviewer_agent_id or self.reviewer_agent_id,
-            reviewer_turn_id=str(result_id),
-            evidence_manifest_hash=content_hash_of(
-                [{"layer": item.layer, "status": item.status} for item in layers]
-            ),
-            criteria=outcomes,
-            verdict=ReviewVerdict.ACCEPT if passed else ReviewVerdict.REJECTED,
-        )
+    def _official_record(self, package: ReviewPackage) -> ReviewRecord:
+        """Only the authenticated runtime importer writes the official record; the
+        local layers never assemble one."""
         official = self.semantics.official_review_record(str(package.package_id))
-        if official is None or official.to_json() != record.to_json():
-            self.semantics.insert_review_record(record, official=True)
-        return record
+        if official is None:
+            from .resolution_commits import ResolutionCommitRejected
 
-    def _witness(
-        self, mission_id: str, task_id: str, *, acceptance_id: str, now_ms: int
-    ) -> ValidityWitness:
-        """The ACCEPT licence, named after the key it occupies (part 2d, review P0-2).
+            raise ResolutionCommitRejected(
+                "REVIEW_NOT_OFFICIAL",
+                f"no official Assurance review record is stored for package "
+                f"{package.package_id!s}",
+            )
+        return official
 
-        Two things were wrong before, and they were the same thing.  The id was
-        ``hash(task, now_ms)`` while the row's unique key carried no clock, so a
-        *second* acceptance of one leaf minted a **new id** landing on the **old
-        key**: ``get_validity_witness`` missed it (different id), the insert hit the
-        index, and the ``StoreError`` travelled out of ``accept()`` into
-        ``_accept_hierarchical_leaf``, which records "acceptance refused" and moves
-        on.  Re-working a leaf after its acceptance was revoked could therefore never
-        produce a new acceptance, and ``_require_accepted_work`` then refused to
-        judge the Mission for ever.
-
-        So the id is now derived from exactly what the key is made of — consumer,
-        purpose, scope, epoch, support revision and the subject — which makes
-        "already stored" answerable by a keyed read instead of by an exception, and
-        makes the two acceptances of one leaf two rows rather than two claims on one.
-        It names ``acceptance_id`` in its ``support_refs`` because §11.5 requires a
-        witness to say what it was taken over, and because that is what
-        :func:`~..knowledge.validity.witness_subject` recomputes the subject from.
-        """
-
-        epoch = self.semantics.epoch(mission_id, self.scope_id)
-        subject = acceptance_subject(str(acceptance_id))
-        support_revision = len(self.semantics.list_observations(mission_id))
-        witness = ValidityWitness(
-            witness_id="wit-"
-            + content_hash_of(
-                {
-                    "consumer": str(task_id),
-                    "purpose": str(WitnessPurpose.ACCEPT),
-                    "scope": self.scope_id,
-                    "epoch": int(epoch),
-                    "support_revision": int(support_revision),
-                    "subject": subject,
-                }
-            )[:32],
-            consumer_ref=TypedRef(
-                kind=TypedRefKind.TASK,
-                id=str(task_id),
-                revision=1,
-                content_hash=content_hash_of(str(task_id)),
-            ),
-            purpose=WitnessPurpose.ACCEPT,
-            truth=TruthValue.TRUE,
-            freshness=Validity.CURRENT,
-            availability=Availability.READABLE,
-            decision=WitnessDecision.USABLE,
-            scope_id=self.scope_id,
-            scope_epoch=epoch,
-            support_revision=support_revision,
-            as_of_ms=int(now_ms),
-            support_refs=(
-                TypedRef(
-                    kind=TypedRefKind.ACCEPTANCE,
-                    id=str(acceptance_id),
-                    revision=1,
-                    content_hash=content_hash_of(str(acceptance_id)),
-                ),
-            ),
-        )
-        try:
-            # The id *is* the key, so "is this licence already stored" is one keyed
-            # read.  It used to be a read that could not answer the question (the id
-            # carried a clock the key did not) followed by an insert that raised.
-            return self.semantics.get_validity_witness(witness.witness_id)
-        except StoreError:
-            self.semantics.insert_validity_witness(mission_id, witness, subject=subject)
-            return witness
 
     def _read_set(
         self, mission_id: str, binding: TaskSemanticBindingV1, revision: RequirementsRevision
@@ -894,6 +705,5 @@ __all__ = (
     "check_ids",
     "criteria_for",
     "layer_outcomes",
-    "outcomes_for",
     "receipt_ref",
 )

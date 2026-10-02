@@ -56,7 +56,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from ..contracts import TERMINAL_MISSION, ContractError
-from ..contracts.evidence_state import Validity, ValidityWitness, WitnessPurpose
+from ..contracts.evidence_state import Validity
 from ..contracts.htn import ObligationId, SemanticReadSet
 from ..contracts.obligations import ObligationAccountView, ObligationLifecycle
 from ..contracts.resolution import (
@@ -83,7 +83,6 @@ from ..verification.acceptance_rules import (
     CompoundFacts,
     ExecutionPosture,
     IndependenceFacts,
-    acceptable,
 )
 from ._read_set import ReadSetChannelUnknown, SemanticReadSetChecker
 from .accepted_outputs import accepted_output_json, output_ports_in_revision
@@ -628,8 +627,7 @@ class ResolutionCommitsMixin:
                     replayed=True,
                 )
             binding = self._require_binding(semantics, command.mission_id, command.task_id)
-            from .taskgraph_dispatch import taskgraph_enabled
-            if taskgraph_enabled(self._store, command.mission_id) and command.purpose is ReviewPurpose.TASK_CONTENT:
+            if command.purpose is ReviewPurpose.TASK_CONTENT:
                 from .taskgraph_review import read_review_origin
                 result_id = command.source.get("result_id")
                 if not isinstance(result_id, str):
@@ -671,22 +669,11 @@ class ResolutionCommitsMixin:
             self._check_reads(semantics, command.mission_id, command.read_set, principal)
             from ..storage.assurance_store import AssuranceStore
 
-            assured_lane = AssuranceStore(self._store).lane(command.mission_id) == "ASSURANCE_1_1"
+            AssuranceStore(self._store).require_assured(command.mission_id)
+            # The current UseCertificate licenses the acceptance; it is committed
+            # here, in this transaction.
             witness = None
-            assured = None
-            licence_id = command.witness_id
-            if assured_lane:
-                # The legacy self-issued witness never licenses an assured Mission.
-                # The current UseCertificate is committed here, in this transaction.
-                assured, licence_id = self._require_assured_use(command)
-            else:
-                witness = self._require_accept_witness(
-                    semantics,
-                    command.mission_id,
-                    command.witness_id,
-                    subject=command.task_id,
-                    now_ms=int(command.accepted_at_ms),
-                )
+            assured, licence_id = self._require_assured_use(command)
             self._check_posture(command.posture)
             subject = AcceptanceSubject(
                 revision=command.requirements,
@@ -892,9 +879,8 @@ class ResolutionCommitsMixin:
         from .accepted_outputs import check_against_ports
 
         outputs = tuple(command.outputs)
-        from .taskgraph_dispatch import taskgraph_enabled
         pinned = None
-        if taskgraph_enabled(self._store, command.mission_id) and command.purpose is ReviewPurpose.TASK_CONTENT:
+        if command.purpose is ReviewPurpose.TASK_CONTENT:
             from .taskgraph_review import read_review_origin
             result_id = command.source.get("result_id")
             if not isinstance(result_id, str) or not result_id:
@@ -1064,25 +1050,19 @@ class ResolutionCommitsMixin:
                     )
             from ..storage.assurance_store import AssuranceStore
 
-            assured_root = (
-                command.is_mission_root
-                and AssuranceStore(self._store).lane(command.mission_id) == "ASSURANCE_1_1"
-            )
-            assured = None
-            licence_id = command.witness_id
-            if assured_root:
-                # Handoff item 7: the assured root is licensed by the current
-                # UseCertificate over the bound MISSION_FINAL manifest, committed in
-                # this same transaction; the legacy witness never licenses it.
+            AssuranceStore(self._store).require_assured(command.mission_id)
+            if command.is_mission_root:
+                # Handoff item 7: the root is licensed by the current UseCertificate
+                # over the bound MISSION_FINAL manifest, committed in this same
+                # transaction.
                 assured, licence_id = self._require_assured_root_use(command)
-            assured_compound = (
-                not command.is_mission_root
-                and command.purpose is ReviewPurpose.COMPOSITION
-                and AssuranceStore(self._store).lane(command.mission_id) == "ASSURANCE_1_1"
-            )
-            if assured_compound:
+            elif command.purpose is ReviewPurpose.COMPOSITION:
                 # 2026-10-01（第 3 项）：中间目标的结论由组合审阅证书许可，同根终审。
                 assured, licence_id = self._require_assured_compound_use(command)
+            else:
+                raise ResolutionCommitRejected(
+                    "REVIEW_PURPOSE_MISMATCH",
+                    "an intermediate goal is resolved by its COMPOSITION review")
             self._check_resolution_identity(
                 semantics,
                 command,
@@ -1103,15 +1083,6 @@ class ResolutionCommitsMixin:
             )
             self._check_reads(semantics, command.mission_id, command.read_set, principal)
             witness = None
-            if not assured_root and not assured_compound:
-                witness = self._require_accept_witness(
-                    semantics,
-                    command.mission_id,
-                    command.witness_id,
-                    subject=resolution.goal_task_id,
-                    now_ms=int(command.decided_at_ms),
-                )
-                licence_id = witness.witness_id
             duties = ObligationStore(self._store)
             account = self._require_open_duty(duties, command.mission_id, resolution.obligation_id)
             compound, contributions = self._compound_facts(semantics, duties, command)
@@ -1139,7 +1110,7 @@ class ResolutionCommitsMixin:
                     ),
                     assured=assured,
                 )
-            elif assured is not None:
+            else:
                 from ..verification.scoped_acceptance import acceptable_assured_root
 
                 decision = acceptable_assured_root(
@@ -1147,14 +1118,6 @@ class ResolutionCommitsMixin:
                     now_ms=int(command.decided_at_ms),
                     purpose=command.purpose,
                     assured=assured,
-                )
-            else:
-                decision = acceptable(
-                    subject,
-                    now_ms=int(command.decided_at_ms),
-                    purpose=command.purpose,
-                    witness=witness,
-                    current_scope_epoch=semantics.epoch(command.mission_id, witness.scope_id),
                 )
             if not decision.acceptable:
                 raise ResolutionCommitRejected(
@@ -1189,33 +1152,20 @@ class ResolutionCommitsMixin:
                 from .completion_status import current_effect_proofs
 
                 anchors = {ref.id for ref in command.package.child_acceptance_refs}
-                reviewed = {item.criterion_id: item for item in command.record.criteria}
-                resolved = {item.criterion_id: item for item in resolution.criteria}
                 for proof in current_effect_proofs(self._store, command.mission_id):
-                    expected = {content_hash_of(ref.to_json()) for ref in proof["evidence_refs"]}
                     if proof["acceptance_id"] not in anchors:
                         raise ResolutionCommitRejected("OP_OUTCOME_SOURCE_UNAVAILABLE",
                             "root review did not include current effect acceptance")
                     for criterion_id in proof["criterion_ids"]:
-                        if assured_root:
-                            # The assured V1 record and its resolution carry no
-                            # evidence refs (they live in the certified manifest):
-                            # the review above included the current effect
-                            # acceptance, and the certificate's re-decided grade
-                            # must be PASS (real run 2026-09-27: every assured
-                            # root with an effect was refused here).
-                            if assured.effective_grades.get(criterion_id) != "PASS":
-                                raise ResolutionCommitRejected(
-                                    "OP_OUTCOME_SOURCE_UNAVAILABLE",
-                                    "root effect criterion is not certified PASS")
-                            continue
-                        for outcomes in (reviewed, resolved):
-                            item = outcomes.get(criterion_id)
-                            actual = set() if item is None else {
-                                content_hash_of(ref.to_json()) for ref in item.evidence_refs}
-                            if not expected.issubset(actual):
-                                raise ResolutionCommitRejected("OP_OUTCOME_SOURCE_UNAVAILABLE",
-                                    "root effect criterion lost its reviewed evidence")
+                        # The V1 record and its resolution carry no evidence refs
+                        # (they live in the certified manifest): the review above
+                        # included the current effect acceptance, and the
+                        # certificate's re-decided grade must be PASS (real run
+                        # 2026-09-27: every root with an effect was refused here).
+                        if assured.effective_grades.get(criterion_id) != "PASS":
+                            raise ResolutionCommitRejected(
+                                "OP_OUTCOME_SOURCE_UNAVAILABLE",
+                                "root effect criterion is not certified PASS")
             delivery = self._check_delivery(semantics, command)
             withdrawn = bool(account.has_admitted_demand)
             shared = (not command.is_mission_root) and _duty_has_other_occurrences(
@@ -1605,18 +1555,17 @@ class ResolutionCommitsMixin:
                 f"the presented record {record.record_id!s} is not the official record "
                 f"{official.record_id!s} of package {package.package_id!s}",
             )
+        from ..assurance.codec import AssuranceError
         from ..storage.assurance_store import AssuranceStore
+        from .assurance_review_import import read_official_review_binding_locked
 
-        if AssuranceStore(self._store).lane(mission_id) == "ASSURANCE_1_1":
-            from ..assurance.codec import AssuranceError
-            from .assurance_review_import import read_official_review_binding_locked
-
-            try:
-                read_official_review_binding_locked(
-                    self, self._store.get_mission(mission_id).tenant_id, official
-                )
-            except AssuranceError as error:
-                raise ResolutionCommitRejected(error.code, "official Assurance runtime source is unavailable") from error
+        try:
+            AssuranceStore(self._store).require_assured(mission_id)
+            read_official_review_binding_locked(
+                self, self._store.get_mission(mission_id).tenant_id, official
+            )
+        except AssuranceError as error:
+            raise ResolutionCommitRejected(error.code, "official Assurance runtime source is unavailable") from error
         try:
             stored_revision = semantics.get_requirements_revision(
                 mission_id, int(requirements.revision)
@@ -2033,46 +1982,6 @@ class ResolutionCommitsMixin:
             candidate.certificate_id,
         )
 
-    @staticmethod
-    def _require_accept_witness(
-        semantics: HtnStore, mission_id: str, witness_id: str, *, subject: str, now_ms: int
-    ) -> ValidityWitness:
-        """§11.5 / AER §8.1: a ``purpose=ACCEPT`` witness, for this subject, right now.
-
-        A witness is not a transferable token, so a ``START`` witness that licensed
-        the dispatch does not license the acceptance, and one issued to another
-        consumer is that consumer's permission.  Freshness is the contract's own
-        ``is_fresh_for`` — epoch barrier, deadline and freshness together.
-        """
-
-        try:
-            witness = semantics.get_validity_witness(witness_id)
-        except StoreError as error:
-            raise ResolutionCommitRejected(
-                "WITNESS_UNKNOWN",
-                f"no ValidityWitness {witness_id!r} is stored ({error})",
-            ) from error
-        if witness.purpose is not WitnessPurpose.ACCEPT:
-            raise ResolutionCommitRejected(
-                "WITNESS_PURPOSE_NOT_ACCEPT",
-                f"witness {witness_id!r} was issued for {witness.purpose!s}; an acceptance "
-                "consumes a purpose=ACCEPT witness and a witness is not transferable (§11.5)",
-            )
-        if witness.consumer_ref.kind is not TypedRefKind.TASK or witness.consumer_ref.id != subject:
-            raise ResolutionCommitRejected(
-                "WITNESS_CONSUMER_MISMATCH",
-                f"witness {witness_id!r} was issued to {witness.consumer_ref.kind!s} "
-                f"{witness.consumer_ref.id!r}, not to task {subject!r}",
-            )
-        epoch = semantics.epoch(mission_id, witness.scope_id)
-        if not witness.is_fresh_for(now_ms=int(now_ms), current_scope_epoch=epoch):
-            raise ResolutionCommitRejected(
-                "WITNESS_STALE",
-                f"witness {witness_id!r} was taken at scope epoch {witness.scope_epoch} "
-                f"(now {epoch}), expires at {witness.not_after_ms} and is "
-                f"{witness.freshness!s}; recompute rather than reuse the old TRUE (§11.5)",
-            )
-        return witness
 
     @staticmethod
     def _check_posture(posture: ExecutionPosture) -> None:

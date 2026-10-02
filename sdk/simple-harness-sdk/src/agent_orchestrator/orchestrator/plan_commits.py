@@ -332,27 +332,17 @@ class PlanCommitsMixin:
                 "SELECT kernel_version FROM taskgraph_policy_bindings WHERE mission_id=?",
                 (command.mission_id,),
             ).fetchone()
-            graph_impact = None
-            if graph_binding is not None:
-                from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
-                if (not isinstance(taskgraph, TaskGraphPlanCommitParticipant)
-                        or taskgraph.store is not self._store
-                        or taskgraph.history.store is not self._store):
-                    raise PlanCommitRejected("TASKGRAPH_COMMIT_PARTICIPANT_REQUIRED",
-                                             "enabled TaskGraph requires the installed same-Store commit participant")
-                graph_impact = taskgraph.prepare(command, principal)
-            elif taskgraph is not None:
-                raise PlanCommitRejected("TASKGRAPH_POLICY_UNAVAILABLE", "TaskGraph is not enabled for this Mission")
-            else:
-                from .taskgraph_requirement import taskgraph_required
-                if taskgraph_required(self._store, command.mission_id):
-                    # NEXT-TG-1.0 §6.4: never an unbound plan for a Mission created
-                    # to run on the strict TaskGraph — it waits for its binding.  The
-                    # one write path of plan_revisions; checked after the original
-                    # authority guard, so an expired grant keeps its own refusal.
-                    raise PlanCommitRejected(
-                        "TASKGRAPH_REQUIRED_NOT_BOUND",
-                        "this Mission must run on the strict TaskGraph and is not bound yet")
+            if graph_binding is None:
+                # A hierarchical Mission is bound when it is created (2026-10-03); the
+                # one write path of plan_revisions never writes an unbound plan.
+                raise PlanCommitRejected("TASKGRAPH_NOT_BOUND", "this Mission has no TaskGraph binding")
+            from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
+            if (not isinstance(taskgraph, TaskGraphPlanCommitParticipant)
+                    or taskgraph.store is not self._store
+                    or taskgraph.history.store is not self._store):
+                raise PlanCommitRejected("TASKGRAPH_COMMIT_PARTICIPANT_REQUIRED",
+                                         "the TaskGraph requires the installed same-Store commit participant")
+            graph_impact = taskgraph.prepare(command, principal)
             if mission.status in TERMINAL_MISSION:
                 raise PlanCommitRejected(
                     "MISSION_NOT_WRITABLE",
@@ -372,8 +362,8 @@ class PlanCommitsMixin:
             self._check_budget(semantics, obligations, command)
             revoked = self._revoke_running_work(
                 semantics, command,
-                revocation_targets=(frozenset(item.occurrence_id for item in graph_impact.targets)
-                                    if graph_impact is not None else (frozenset() if taskgraph is not None else None)),
+                revocation_targets=(frozenset() if graph_impact is None
+                                    else frozenset(item.occurrence_id for item in graph_impact.targets)),
             )
             receipt = self._write(
                 semantics,
@@ -385,8 +375,7 @@ class PlanCommitsMixin:
                 intent=intent,
                 revoked=revoked,
             )
-            if taskgraph is not None:
-                taskgraph.record_applied(command, receipt)
+            taskgraph.record_applied(command, receipt)
             return receipt
 
     def _check_method_reviews(self, command: CommitPlanCommand) -> None:
@@ -396,12 +385,9 @@ class PlanCommitsMixin:
         不归这道闸管。闸门不判断做法好不好，只认正式记录（或人对"判不下来"的裁决）。
         """
 
-        from ..storage.assurance_store import AssuranceStore
         from .method_plan_reviews import REVIEW_REQUIRED, unreviewed_proposed_methods
 
         if not command.delta.method_instances:
-            return
-        if AssuranceStore(self._store).lane(command.mission_id) != "ASSURANCE_1_1":
             return
         refused = unreviewed_proposed_methods(self._store, command.mission_id, command.delta.method_instances)
         if refused:
@@ -778,10 +764,8 @@ class PlanCommitsMixin:
         projection = validate_execution_projection(
             network.execution_projection(), command.structure_budget
         )
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self._store, command.mission_id):
-            from ..graph.taskgraph_validation import taskgraph_projection_report
-            projection = taskgraph_projection_report(network, projection)
+        from ..graph.taskgraph_validation import taskgraph_projection_report
+        projection = taskgraph_projection_report(network, projection)
         refinement = validate_refinement_acyclic(network)
         problems = [*projection.problems, *refinement.problems]
         if problems:
@@ -987,34 +971,18 @@ class PlanCommitsMixin:
     # ------------------------------------------------ gate 10: work already in flight
     def _revoke_running_work(
         self, semantics: HtnStore, command: CommitPlanCommand,
-        *, revocation_targets: frozenset[str] | None = None,
+        *, revocation_targets: frozenset[str],
     ) -> dict[str, int]:
         """Take away the execution right of everything this delta replaces (§9.4).
 
         It withdraws eligibility; it does not approve the new version and it does not
         cancel an Attempt.  The dispatch generation is bumped so a dispatch that was
         already handed out no longer matches, and a durable recheck entry is written
-        so the reconciliation is somebody's job rather than a hope.
+        so the reconciliation is somebody's job rather than a hope.  The targets are
+        the TaskGraph participant's impact (TG §7.4).
         """
 
-        retired = self._retired_children(semantics, command) if revocation_targets is None else set()
-        listed = ({str(item) for item in command.superseded_occurrences}
-                  if revocation_targets is None else set(revocation_targets))
-        policy = command.running_work_policy
-        if policy is RunningWorkPolicy.RETAIN_IF_BINDINGS_UNCHANGED and retired - listed:
-            raise PlanCommitRejected(
-                "RUNNING_WORK_NOT_RECONCILED",
-                f"retiring a method instance changes the bindings of {sorted(retired - listed)}; "
-                "'retain if bindings unchanged' cannot decide that case",
-            )
-        if policy is RunningWorkPolicy.EXPLICIT_PER_SUBJECT_IN_COMMIT and retired - listed:
-            raise PlanCommitRejected(
-                "RUNNING_WORK_NOT_RECONCILED",
-                "this policy decides every replaced subject explicitly; "
-                f"{sorted(retired - listed)} "
-                "were replaced and not named in the command",
-            )
-        targets = sorted(listed | retired)
+        targets = sorted(revocation_targets)
         if not targets:
             return {}
         by_occurrence = self._occurrence_tasks(semantics, command)
@@ -1137,15 +1105,13 @@ class PlanCommitsMixin:
             orphaned -= {str(binding.obligation_id) for binding in draft.child_bindings}
         for draft in command.delta.method_instances:
             orphaned -= {str(binding.obligation_id) for binding in draft.child_bindings}
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self._store, command.mission_id):
-            from .taskgraph_demands import read_independent_demands
-            accounts = tuple(obligations.account(command.mission_id, identity)
-                             for identity in obligations.obligation_ids(command.mission_id))
-            independent = read_independent_demands(self._store, command.mission_id, accounts)
-            # This is the obligation ledger, not an occurrence identity lookup:
-            # a retiring method cannot withdraw somebody else's independent duty.
-            orphaned -= {item.obligation_id for item in independent}
+        from .taskgraph_demands import read_independent_demands
+        accounts = tuple(obligations.account(command.mission_id, identity)
+                         for identity in obligations.obligation_ids(command.mission_id))
+        independent = read_independent_demands(self._store, command.mission_id, accounts)
+        # This is the obligation ledger, not an occurrence identity lookup:
+        # a retiring method cannot withdraw somebody else's independent duty.
+        orphaned -= {item.obligation_id for item in independent}
         released: list[str] = []
         for duty in sorted(orphaned):
             account = obligations.account(command.mission_id, ObligationId(duty))

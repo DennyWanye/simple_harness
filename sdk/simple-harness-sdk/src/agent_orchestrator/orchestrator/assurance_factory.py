@@ -25,16 +25,6 @@ if TYPE_CHECKING:
     from .commit_service import CommitService, MissionSpec
 
 
-def default_assurance_profile_for_new_mission() -> AssurancePolicy | None:
-    """Single default selection point: the registered policy, i.e. default ON.
-
-    Flipped in the verified 2026-09-23 delivery (Assurance 1.1 item 10). A
-    deployment that wants the original lane passes its own ``select_profile``
-    returning ``None``; this function is consulted only when it passes none.
-    """
-    return AssurancePolicy()
-
-
 class AssuranceMissionFactory:
     def __init__(
         self,
@@ -45,13 +35,10 @@ class AssuranceMissionFactory:
         require_creation_root: Callable[[], None],
         requirements: Callable[[Mission, MissionSpec], RequirementsRevision],
         reconcile: Callable[[str], Mapping[str, Sequence[WorkTarget]]],
-        selector: Callable[[MissionSpec], bool] | None = None,
     ) -> None:
         if not isinstance(policy, AssurancePolicy) or not all(
             callable(value) for value in (require_creation_root, requirements, reconcile)
         ):
-            raise AssuranceError("ASSURANCE_FACTORY_UNBOUND")
-        if selector is not None and not callable(selector):
             raise AssuranceError("ASSURANCE_FACTORY_UNBOUND")
         self.commit = commit
         self.tenant_id = text(tenant_id)
@@ -59,18 +46,11 @@ class AssuranceMissionFactory:
         self.require_creation_root = require_creation_root
         self.requirements = requirements
         self.reconcile = reconcile
-        self.selector = selector
 
     def selects(self, spec: MissionSpec) -> bool:
-        """Whether this new Mission takes the assured lane (spec §11).
-
-        Only the planning-decision protocol can be assured. Without a selector
-        (isolated candidates, seams) every such Mission is; the production
-        installer passes the single default selection point.
-        """
-        if spec.bound_planning_protocol != PLANNING_DECISION_V1:
-            return False
-        return self.selector is None or bool(self.selector(spec))
+        """Whether this new Mission takes the assured lane (spec §11): every
+        planning-decision Mission does (2026-10-03: there is no other lane)."""
+        return spec.bound_planning_protocol == PLANNING_DECISION_V1
 
     def create(self, mission: Mission, spec: MissionSpec, event: Event) -> None:
         store = self.commit.store
@@ -181,43 +161,25 @@ def record_mission_creation(
         if commit._assurance_factory is not None:
             raise AssuranceError("ASSURANCE_SCHEMA_REQUIRED")
         return
-    if commit._assurance_factory is not None and commit._assurance_factory.selects(spec):
-        commit._assurance_factory.create(mission, spec, event)
-        return
-    lane = "COMPLETION_V1"
-    source_hash = fingerprint(event.to_json())
-    body = {
-        "schema_version": 1,
-        "mission_id": mission.id,
-        "lane": lane,
-        "creation_event_id": event.id,
-        "creation_event_hash": source_hash,
-        "planning_protocol_version": spec.bound_planning_protocol,
-    }
-    receipt = _receipt(
-        commit, "creation-contract:" + mission.id, "MissionCreationClassified", mission.id, body
-    )
-    AssuranceStore(commit.store).record_creation_contract(
-        mission.id,
-        lane=lane,
-        origin="FACTORY",
-        source_hash=source_hash,
-        receipt=receipt,
-        now_ms=int(commit.store.now * 1000),
-    )
+    # 2026-10-03: every Mission is assured; there is no ordinary completion lane.
+    if commit._assurance_factory is None:
+        raise AssuranceError("ASSURANCE_FACTORY_UNBOUND")
+    if not commit._assurance_factory.selects(spec):
+        raise AssuranceError("ASSURANCE_PLANNING_PROTOCOL_REQUIRED")
+    commit._assurance_factory.create(mission, spec, event)
 
 
 def validate_creation_replay(commit: CommitService, mission: Mission) -> None:
-    """An assured Mission cannot replay through an uninstalled legacy factory."""
+    """A Mission replays only through the installed Assurance factory it was created by."""
     row = commit.store.connection.execute(
         "SELECT lane FROM assurance_creation_contracts WHERE mission_id=?", (mission.id,)
     ).fetchone()
     if row is None:
         raise AssuranceError("CREATION_CONTRACT_UNRESOLVED")
-    lane = AssuranceStore(commit.store).lane(mission.id)
-    if lane == "ASSURANCE_1_1":
-        if commit._assurance_factory is None:
-            raise AssuranceError("ASSURANCE_FACTORY_UNBOUND")
-        if mission.tenant_id != commit._assurance_factory.tenant_id:
-            raise AssuranceError("ASSURANCE_CREATION_PROTOCOL_MISMATCH")
-        commit._assurance_factory.require_creation_root()
+    if AssuranceStore(commit.store).lane(mission.id) != "ASSURANCE_1_1":
+        raise AssuranceError("ASSURANCE_LANE_REQUIRED")
+    if commit._assurance_factory is None:
+        raise AssuranceError("ASSURANCE_FACTORY_UNBOUND")
+    if mission.tenant_id != commit._assurance_factory.tenant_id:
+        raise AssuranceError("ASSURANCE_CREATION_PROTOCOL_MISMATCH")
+    commit._assurance_factory.require_creation_root()

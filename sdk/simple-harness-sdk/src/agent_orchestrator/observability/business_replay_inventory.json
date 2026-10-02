@@ -765,7 +765,7 @@
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 failure_classes.record_review_interruption（审阅调用被打断）在事件事务之外单独写，不发事件",
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 operation_proposal_review.persist_action_proposal_review_inputs 在 operation_runtime.ensure_assured_proposal_reviews 路径上不发事件",
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_changes.original_source_mutation 在 PolicyCommitsMixin.seed_policy / record_policy_drift、HtnStore.register_method / set_method_registration 路径上不发事件",
-    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 MethodEvaluationStore.record_oracle 与 evaluation/htn_method_source.py（评测）不发事件"
+    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 MethodEvaluationStore.record_oracle（做法评测）不发事件"
    ]
   },
   "criterion_evaluations": {
@@ -2374,22 +2374,6 @@
    ],
    "events": [
     "TaskGraphContractEnabled"
-   ]
-  },
-  "taskgraph_requirements": {
-   "class": "business",
-   "fields": [
-    "mission_id",
-    "kernel_version",
-    "source",
-    "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/orchestrator/taskgraph_requirement.py:require_taskgraph"
-   ],
-   "events": [],
-   "gaps": [
-    "agent_orchestrator/orchestrator/taskgraph_requirement.py:require_taskgraph: 不发事件（SDK 内无调用方，Host deskpet/orchestration/service.py 调用）"
    ]
   },
   "taskgraph_revision_records": {

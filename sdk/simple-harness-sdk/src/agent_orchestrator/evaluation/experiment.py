@@ -28,11 +28,6 @@ from pathlib import Path
 from typing import Any
 
 ARMS = ("S", "R", "D", "F")
-HIERARCHICAL_ARM = "H"
-# G5: the hierarchical arm is declared after the frozen four so that a manifest that
-# names only S/R/D/F keeps the bytes (and therefore the fingerprint) it always had.
-ARM_NAMES = ARMS + (HIERARCHICAL_ARM,)
-DECLARABLE_ARMS = (ARMS, ARM_NAMES)
 _TERMINAL = {"success", "failure", "deadline", "interrupted"}
 
 
@@ -79,8 +74,8 @@ class ArmSpec:
     executor_id: str  # Host-declared implementation version or content hash.
 
     def __post_init__(self) -> None:
-        if self.arm not in ARM_NAMES:
-            raise ValueError("arm must be S, R, D, F, or H")
+        if self.arm not in ARMS:
+            raise ValueError("arm must be S, R, D, or F")
         _text(self.executor_id, "executor_id")
 
 
@@ -112,8 +107,8 @@ class ExperimentManifest:
             raise ValueError("task_ids must be nonempty and unique")
         if not all(isinstance(arm, ArmSpec) for arm in self.arms):
             raise TypeError("arms must contain ArmSpec values")
-        if tuple(arm.arm for arm in self.arms) not in DECLARABLE_ARMS:
-            raise ValueError("declare each arm exactly once, in S/R/D/F[/H] order")
+        if tuple(arm.arm for arm in self.arms) != ARMS:
+            raise ValueError("declare each arm exactly once, in S/R/D/F order")
         _integer(self.repetitions, "repetitions", 1)
         _integer(self.seed, "seed")
         _integer(self.physical_slots, "physical_slots", 1)
@@ -392,9 +387,6 @@ async def run_experiment(
 
 __all__ = (
     "ARMS",
-    "ARM_NAMES",
-    "DECLARABLE_ARMS",
-    "HIERARCHICAL_ARM",
     "ArmExecutor",
     "ArmSpec",
     "ExecutionCounters",

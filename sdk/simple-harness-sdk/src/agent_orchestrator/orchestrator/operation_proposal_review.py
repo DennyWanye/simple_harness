@@ -21,12 +21,9 @@ from ..contracts.operation_payloads import (
 )
 from ..contracts.resolution import (
     AllExpr,
-    CheckExecution,
     Criterion,
     CriterionExpr,
     CriterionOrigin,
-    CriterionOutcome,
-    CriterionVerdict,
     EvaluationKind,
     RequiredEvidencePolicy,
     RequirementClass,
@@ -35,7 +32,6 @@ from ..contracts.resolution import (
     ReviewPackageId,
     ReviewPurpose,
     ReviewRecord,
-    ReviewRecordId,
     ReviewVerdict,
     WorkspaceAccess,
     account_for_purpose,
@@ -53,7 +49,7 @@ from ..planning.htn.grounding import derive_id
 from ..runtime.operation_payloads import ConnectorProfileRegistry
 from ..storage.htn_store import HtnStore
 from ..storage.store import Store, StoreError
-from ..verification.critics import CriticVerdict, parse_critic_verdict
+from ..verification.critics import CriticVerdict
 from .operation_intent_sources import PreparedOperationIntentSources
 from .operation_materialization_inputs import (
     DeploymentOperationPolicyInputs,
@@ -536,121 +532,6 @@ def persist_action_proposal_review_package(htn: HtnStore, draft: ActionProposalR
     return existing.content_hash()
 
 
-def record_action_proposal_critic_verdict(
-    store: Store,
-    draft: ActionProposalReviewDraft,
-    *,
-    record_id: str,
-    dispatch_intent_id: str,
-    reviewer_agent_id: str,
-    reviewer_turn_id: str,
-    raw_critic_text: str,
-) -> ActionProposalReviewReceipt:
-    """Persist an official judgement from an independent, strictly parsed Critic.
-
-    Receipt references must name the actual persisted documents returned by this
-    coordinator.  Passing Critic output cannot manufacture a successful check.
-    """
-
-    dispatch_intent_id = identifier(dispatch_intent_id, "dispatch_intent_id")
-    reviewer_agent_id = identifier(reviewer_agent_id, "reviewer_agent_id")
-    reviewer_turn_id = identifier(reviewer_turn_id, "reviewer_turn_id")
-    package = draft.package
-    if package.produced_by(reviewer_agent_id):
-        raise ActionProposalReviewError("OP_REVIEWER_NOT_INDEPENDENT", reviewer_agent_id)
-    dispatch = store.get_intent(dispatch_intent_id)
-    expected_subject = "operation-review:" + str(
-        draft.request_content["input_manifest"]["intent_id"]
-    )
-    if (
-        dispatch is None
-        or dispatch.mission_id != package.binding.mission_id
-        or dispatch.subject_id != expected_subject
-        or dispatch.state not in {"SUBMITTED", "SETTLED"}
-        or dispatch.agent_id != reviewer_agent_id
-        or dispatch.expected_turn_id != reviewer_turn_id
-        or str(dispatch.config.get("role", "")) != "operation_proposal_reviewer"
-        or str(dispatch.config.get("review_package_id", "")) != str(package.package_id)
-        or str(dispatch.config.get("operation_intent_id", ""))
-        != str(draft.request_content["input_manifest"]["intent_id"])
-    ):
-        raise ActionProposalReviewError(
-            "OP_REVIEW_DISPATCH_UNAVAILABLE", "dispatch identity differs"
-        )
-    if len(draft.check_receipt_refs) != len(ACTION_PROPOSAL_CRITERIA):
-        raise ActionProposalReviewError(
-            "OP_REVIEW_CHECK_RECEIPTS_MISSING", "four exact receipts required"
-        )
-    check_by_id = {check.criterion_id: check for check in draft.checks}
-    evidence_refs: dict[str, TypedRef] = {}
-    for criterion_id, ref in zip(ACTION_PROPOSAL_CRITERIA, draft.check_receipt_refs, strict=True):
-        check = check_by_id.get(criterion_id)
-        if (
-            not isinstance(ref, TypedRef)
-            or ref.kind is not TypedRefKind.TOOL_RECEIPT
-            or check is None
-        ):
-            raise ActionProposalReviewError("OP_REVIEW_CHECK_RECEIPTS_MISSING", criterion_id)
-        receipt = store.get_receipt(ref.id)
-        if (
-            receipt is None
-            or ref.content_hash != content_hash_of(receipt)
-            or receipt.get("kind") != "operation_proposal_check"
-            or receipt.get("package_id") != str(package.package_id)
-            or receipt.get("subject_intent_id")
-            != draft.request_content["input_manifest"]["intent_id"]
-            or receipt.get("check") != check.to_json()
-        ):
-            raise ActionProposalReviewError("OP_REVIEW_CHECK_RECEIPT_STALE", criterion_id)
-        evidence_refs[criterion_id] = ref
-    verdict = parse_critic_verdict(raw_critic_text, expected_criteria=ACTION_PROPOSAL_CRITERIA)
-    critic_met = {str(item["criterion"]): bool(item["met"]) for item in verdict.mission_criteria}
-    outcomes = tuple(
-        CriterionOutcome(
-            criterion_id=criterion_id,
-            verdict=(
-                CriterionVerdict.PASS
-                if check_by_id[criterion_id].passed and critic_met[criterion_id]
-                else CriterionVerdict.FAIL
-            ),
-            check_execution=CheckExecution.SUCCEEDED,
-            evidence_refs=(evidence_refs[criterion_id],),
-            limitations=(),
-        )
-        for criterion_id in ACTION_PROPOSAL_CRITERIA
-    )
-    accepted = (
-        verdict.passed
-        and not verdict.needs_human
-        and all(item.verdict is CriterionVerdict.PASS for item in outcomes)
-    )
-    record = ReviewRecord(
-        record_id=ReviewRecordId(record_id),
-        package_id=package.package_id,
-        purpose=ReviewPurpose.ACTION_PROPOSAL,
-        binding=package.binding,
-        reviewer_agent_id=reviewer_agent_id,
-        reviewer_turn_id=reviewer_turn_id,
-        evidence_manifest_hash=content_hash_of(
-            {
-                "package": package.content_hash(),
-                "dispatch_intent_id": dispatch_intent_id,
-                "critic": verdict.to_json(),
-                "checks": {name: ref.to_json() for name, ref in evidence_refs.items()},
-            }
-        ),
-        criteria=outcomes,
-        verdict=ReviewVerdict.ACCEPT if accepted else ReviewVerdict.REJECTED,
-    )
-    htn = HtnStore(store)
-    official = htn.official_review_record(str(package.package_id))
-    if official is None:
-        htn.insert_review_record(record, official=True)
-    elif official.to_json() != record.to_json():
-        raise ActionProposalReviewError("OP_REVIEW_RECORD_CONFLICT", "official record differs")
-    return ActionProposalReviewReceipt(record, verdict)
-
-
 @dataclass(frozen=True, slots=True)
 class ActionProposalReviewCoordinator:
     """Runtime-bound façade used by T0 without owning its transaction or bridge."""
@@ -682,35 +563,6 @@ class ActionProposalReviewCoordinator:
 
     def persist_package(self, draft: ActionProposalReviewDraft) -> str:
         return persist_action_proposal_review_package(HtnStore(self.store), draft)
-
-    def record_critic_verdict(
-        self,
-        draft: ActionProposalReviewDraft,
-        *,
-        record_id: str,
-        dispatch_intent_id: str,
-        reviewer_agent_id: str,
-        reviewer_turn_id: str,
-        raw_critic_text: str,
-    ) -> ActionProposalReviewReceipt:
-        return record_action_proposal_critic_verdict(
-            self.store,
-            draft,
-            record_id=record_id,
-            dispatch_intent_id=dispatch_intent_id,
-            reviewer_agent_id=reviewer_agent_id,
-            reviewer_turn_id=reviewer_turn_id,
-            raw_critic_text=raw_critic_text,
-        )
-
-
-def _assured(store: Store, mission_id: str) -> bool:
-    from ..storage.assurance_store import AssuranceStore
-
-    try:
-        return AssuranceStore(store).lane(mission_id) == "ASSURANCE_1_1"
-    except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
-        return False
 
 
 def _assured_check_receipts(
@@ -843,20 +695,14 @@ def validate_materialization_review(
     by_id = {item.criterion_id: item for item in review.criteria}
     if set(by_id) != set(ACTION_PROPOSAL_CRITERIA):
         raise ActionProposalReviewError("OP_REVIEW_RECORD_MISSING", "criterion coverage differs")
-    if _assured(store, package.binding.mission_id):
-        receipts = _assured_check_receipts(store, package, review, proposal)
-    else:
-        receipts = {}
-        for criterion_id in ACTION_PROPOSAL_CRITERIA:
-            outcome = by_id[criterion_id]
-            if (
-                outcome.verdict is not CriterionVerdict.PASS
-                or outcome.check_execution is not CheckExecution.SUCCEEDED
-                or len(outcome.evidence_refs) != 1
-                or outcome.evidence_refs[0].kind is not TypedRefKind.TOOL_RECEIPT
-            ):
-                raise ActionProposalReviewError("OP_REVIEW_REJECTED", criterion_id)
-            receipts[criterion_id] = outcome.evidence_refs[0]
+    from ..assurance.codec import AssuranceError
+    from ..storage.assurance_store import AssuranceStore
+
+    try:
+        AssuranceStore(store).require_assured(package.binding.mission_id)
+    except AssuranceError as error:
+        raise ActionProposalReviewError(error.code, "the Mission is not assured") from error
+    receipts = _assured_check_receipts(store, package, review, proposal)
     for criterion_id in ACTION_PROPOSAL_CRITERIA:
         receipt_ref = receipts[criterion_id]
         receipt = store.get_receipt(receipt_ref.id)
@@ -900,5 +746,4 @@ __all__ = (
     "validate_materialization_review",
     "persist_action_proposal_review_inputs",
     "persist_action_proposal_review_package",
-    "record_action_proposal_critic_verdict",
 )

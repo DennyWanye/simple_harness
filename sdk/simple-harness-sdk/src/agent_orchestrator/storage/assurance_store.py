@@ -258,6 +258,12 @@ class AssuranceStore:
             raise AssuranceError("ASSURANCE_PROFILE_UNBOUND")
         return row["lane"]
 
+    def require_assured(self, mission_id: str) -> None:
+        """Every Mission is assured (2026-10-03); acting on one that is not is a named
+        contract error (an older Mission of a development library)."""
+        if self.lane(mission_id) != "ASSURANCE_1_1":
+            raise AssuranceError("ASSURANCE_PROFILE_REQUIRED")
+
     def record_creation_contract(
         self,
         mission_id: str,

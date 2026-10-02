@@ -134,7 +134,7 @@ CODE_PROFILE = DomainProfileV1(
 
 APPWORLD_PROFILE = DomainProfileV1(
     id=APPWORLD_DOMAIN,
-    version="4",
+    version="5",
     allowed_input_kinds=("text/*", "application/json"),
     allowed_artifact_kinds=("text/*",),
     allowed_evidence_kinds=("file", "artifact", "tool-run", "knowledge"),
@@ -143,7 +143,6 @@ APPWORLD_PROFILE = DomainProfileV1(
     default_policy=("format_check", "rule_check", "critic_review"),
     external_check="appworld-saved-world-after-stop",
     completion_rules={"handler": "appworld-v1"},
-    role_templates={"critic": "critic-appworld-v1"},
 )
 
 DRONE_SIM_PROFILE = DomainProfileV1(
