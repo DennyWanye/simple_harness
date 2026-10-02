@@ -1,0 +1,1788 @@
+{
+ "models=False,snapshot=False": {
+  "catalogue_owner": "deepseek-native-256k-v1",
+  "control_caller": {
+   "command_receipt_ref": {
+    "content_hash": "d49be0d6d5cf535529e6764d246399294062fa655eafe20b4561eb3130141037",
+    "id": "host:control:pin-command",
+    "kind": "receipt",
+    "revision": 0
+   },
+   "owner_contract_ref": {
+    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "id": "host-owner:tenant-pool-identity",
+    "kind": "policy",
+    "revision": 1
+   },
+   "principal_ref": {
+    "content_hash": "b69bddf1ba87b77aacdef426910fb893f2e9a4d7f1156f1c5ab6a8d93e3a0666",
+    "id": "principal-pool-identity",
+    "kind": "principal",
+    "revision": 0
+   }
+  },
+  "embedding_ref": {
+   "content_hash": "5a1d1a82c273744d910244bb3d66a0dc5c280946ce80deece579dae85c732310",
+   "id": "bge-m3-int8-local",
+   "kind": "deployment",
+   "revision": 1
+  },
+  "owner_contract": {
+   "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+   "id": "host-owner:tenant-pool-identity",
+   "kind": "policy",
+   "revision": 1
+  },
+  "pools": {
+   "deepseek-native-256k-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-256k-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "4369cafde6f6d16b86dbea9ba67533e2a850cc36b5d523fe02c584f4bb3c538a",
+      "id": "host:native-plane:deepseek-native-256k-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "bca3f119587ca3c6cc24f6e17b1a8ffae78fdb0507d3a51456ecb19b29c5f83e",
+      "id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 65536,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 262144,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-256k-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 32768,
+      "recent_min_tokens": 32768,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 8192,
+       "B": 16384,
+       "C": 16384,
+       "D": 16384,
+       "E": 8192
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "5a1d1a82c273744d910244bb3d66a0dc5c280946ce80deece579dae85c732310",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-256k-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": null,
+    "embedding_resource_ref": null,
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-256k-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 262144,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 8192,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "fixtures",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   },
+   "deepseek-native-512k-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-512k-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "486041e311d5f4c834dc3b6e6073540743094d891aaaa313ca23b1281eff721e",
+      "id": "host:native-plane:deepseek-native-512k-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "2ecfb05879cdd16c379c50a831acc6bfb794610f5685f3b8b3723ead8c2697b9",
+      "id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 131072,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 524288,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-512k-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 65536,
+      "recent_min_tokens": 65536,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 16384,
+       "B": 32768,
+       "C": 32768,
+       "D": 32768,
+       "E": 16384
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "5a1d1a82c273744d910244bb3d66a0dc5c280946ce80deece579dae85c732310",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-512k-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": "shared",
+    "embedding_resource_ref": null,
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-512k-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 524288,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 8192,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "fixtures",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   }
+  },
+  "read_caller": {
+   "command_receipt_ref": {
+    "content_hash": "11c73afd0ddb38e849b0174b7b51ada6d93afc83d81b4936341b132d9b900b29",
+    "id": "host:control:read:11c73afd0ddb38e8",
+    "kind": "receipt",
+    "revision": 0
+   },
+   "owner_contract_ref": {
+    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "id": "host-owner:tenant-pool-identity",
+    "kind": "policy",
+    "revision": 1
+   },
+   "principal_ref": {
+    "content_hash": "b69bddf1ba87b77aacdef426910fb893f2e9a4d7f1156f1c5ab6a8d93e3a0666",
+    "id": "principal-pool-identity",
+    "kind": "principal",
+    "revision": 0
+   }
+  },
+  "status": {
+   "authorization_policy": "host-deployment-policy:c38c398452440b12",
+   "available": true,
+   "embedding": "lexical-only",
+   "embedding_reason": "模型目录未配置",
+   "enabled": true,
+   "profiles": [
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+     "catalogue_role": "owner",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "lexical-only",
+     "embedding_reason": "模型目录未配置",
+     "max_context_tokens": 262144,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-256k-v1",
+     "script_runner": "unavailable"
+    },
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+     "catalogue_role": "member",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "lexical-only",
+     "embedding_reason": "模型目录未配置",
+     "max_context_tokens": 524288,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-512k-v1",
+     "script_runner": "unavailable"
+    }
+   ],
+   "skill_catalogue_owner": null
+  }
+ },
+ "models=False,snapshot=True": {
+  "catalogue_owner": "deepseek-native-256k-v1",
+  "control_caller": {
+   "command_receipt_ref": {
+    "content_hash": "d49be0d6d5cf535529e6764d246399294062fa655eafe20b4561eb3130141037",
+    "id": "host:control:pin-command",
+    "kind": "receipt",
+    "revision": 0
+   },
+   "owner_contract_ref": {
+    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "id": "host-owner:tenant-pool-identity",
+    "kind": "policy",
+    "revision": 1
+   },
+   "principal_ref": {
+    "content_hash": "b69bddf1ba87b77aacdef426910fb893f2e9a4d7f1156f1c5ab6a8d93e3a0666",
+    "id": "principal-pool-identity",
+    "kind": "principal",
+    "revision": 0
+   }
+  },
+  "embedding_ref": {
+   "content_hash": "5a1d1a82c273744d910244bb3d66a0dc5c280946ce80deece579dae85c732310",
+   "id": "bge-m3-int8-local",
+   "kind": "deployment",
+   "revision": 1
+  },
+  "owner_contract": {
+   "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+   "id": "host-owner:tenant-pool-identity",
+   "kind": "policy",
+   "revision": 1
+  },
+  "pools": {
+   "deepseek-native-256k-thinking-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-256k-thinking-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "0c9dbd7b9d888b489c6b4e6e9b94f142c705966c3e18fccc4df389dc384042af",
+      "id": "host:native-plane:deepseek-native-256k-thinking-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "d030595b6e5a61ca9f9f6098e8bedd0599c4a177946fce5b3bf4d14b85a49dc3",
+      "id": "host:tenant-pool-identity:deepseek-native-256k-thinking-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-thinking-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 65536,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 262144,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-256k-thinking-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 32768,
+      "recent_min_tokens": 32768,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 8192,
+       "B": 16384,
+       "C": 16384,
+       "D": 16384,
+       "E": 8192
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "5a1d1a82c273744d910244bb3d66a0dc5c280946ce80deece579dae85c732310",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-256k-thinking-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": "shared",
+    "embedding_resource_ref": null,
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-256k-thinking-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 262144,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 32768,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "env",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   },
+   "deepseek-native-256k-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-256k-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "4369cafde6f6d16b86dbea9ba67533e2a850cc36b5d523fe02c584f4bb3c538a",
+      "id": "host:native-plane:deepseek-native-256k-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "bca3f119587ca3c6cc24f6e17b1a8ffae78fdb0507d3a51456ecb19b29c5f83e",
+      "id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 65536,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 262144,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-256k-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 32768,
+      "recent_min_tokens": 32768,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 8192,
+       "B": 16384,
+       "C": 16384,
+       "D": 16384,
+       "E": 8192
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "5a1d1a82c273744d910244bb3d66a0dc5c280946ce80deece579dae85c732310",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-256k-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": null,
+    "embedding_resource_ref": null,
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-256k-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 262144,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 8192,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "env",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   },
+   "deepseek-native-512k-thinking-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-512k-thinking-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "7336305cc5598da90d627c4251eff441c876f91246e5bfae36a284e9f2b344b5",
+      "id": "host:native-plane:deepseek-native-512k-thinking-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "489715f1fc1f2d6a9c4ae12a8d8adb4876f6790d78e9f6fd3b103cf2a1e34dab",
+      "id": "host:tenant-pool-identity:deepseek-native-512k-thinking-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-thinking-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 131072,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 524288,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-512k-thinking-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 65536,
+      "recent_min_tokens": 65536,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 16384,
+       "B": 32768,
+       "C": 32768,
+       "D": 32768,
+       "E": 16384
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "5a1d1a82c273744d910244bb3d66a0dc5c280946ce80deece579dae85c732310",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-512k-thinking-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": "shared",
+    "embedding_resource_ref": null,
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-512k-thinking-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 524288,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 32768,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "env",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   },
+   "deepseek-native-512k-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-512k-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "486041e311d5f4c834dc3b6e6073540743094d891aaaa313ca23b1281eff721e",
+      "id": "host:native-plane:deepseek-native-512k-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "2ecfb05879cdd16c379c50a831acc6bfb794610f5685f3b8b3723ead8c2697b9",
+      "id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 131072,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 524288,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-512k-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 65536,
+      "recent_min_tokens": 65536,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 16384,
+       "B": 32768,
+       "C": 32768,
+       "D": 32768,
+       "E": 16384
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "5a1d1a82c273744d910244bb3d66a0dc5c280946ce80deece579dae85c732310",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-512k-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": "shared",
+    "embedding_resource_ref": null,
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-512k-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 524288,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 8192,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "env",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   }
+  },
+  "read_caller": {
+   "command_receipt_ref": {
+    "content_hash": "11c73afd0ddb38e849b0174b7b51ada6d93afc83d81b4936341b132d9b900b29",
+    "id": "host:control:read:11c73afd0ddb38e8",
+    "kind": "receipt",
+    "revision": 0
+   },
+   "owner_contract_ref": {
+    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "id": "host-owner:tenant-pool-identity",
+    "kind": "policy",
+    "revision": 1
+   },
+   "principal_ref": {
+    "content_hash": "b69bddf1ba87b77aacdef426910fb893f2e9a4d7f1156f1c5ab6a8d93e3a0666",
+    "id": "principal-pool-identity",
+    "kind": "principal",
+    "revision": 0
+   }
+  },
+  "status": {
+   "authorization_policy": "host-deployment-policy:c38c398452440b12",
+   "available": true,
+   "embedding": "lexical-only",
+   "embedding_reason": "模型目录未配置",
+   "enabled": true,
+   "profiles": [
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+     "catalogue_role": "owner",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "lexical-only",
+     "embedding_reason": "模型目录未配置",
+     "max_context_tokens": 262144,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-256k-v1",
+     "script_runner": "unavailable"
+    },
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+     "catalogue_role": "member",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "lexical-only",
+     "embedding_reason": "模型目录未配置",
+     "max_context_tokens": 524288,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-512k-v1",
+     "script_runner": "unavailable"
+    },
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-thinking-v1/agent-orchestrator/-",
+     "catalogue_role": "member",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "lexical-only",
+     "embedding_reason": "模型目录未配置",
+     "max_context_tokens": 262144,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-256k-thinking-v1",
+     "script_runner": "unavailable"
+    },
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-thinking-v1/agent-orchestrator/-",
+     "catalogue_role": "member",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "lexical-only",
+     "embedding_reason": "模型目录未配置",
+     "max_context_tokens": 524288,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-512k-thinking-v1",
+     "script_runner": "unavailable"
+    }
+   ],
+   "skill_catalogue_owner": null
+  }
+ },
+ "models=True,snapshot=False": {
+  "catalogue_owner": "deepseek-native-256k-v1",
+  "control_caller": {
+   "command_receipt_ref": {
+    "content_hash": "d49be0d6d5cf535529e6764d246399294062fa655eafe20b4561eb3130141037",
+    "id": "host:control:pin-command",
+    "kind": "receipt",
+    "revision": 0
+   },
+   "owner_contract_ref": {
+    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "id": "host-owner:tenant-pool-identity",
+    "kind": "policy",
+    "revision": 1
+   },
+   "principal_ref": {
+    "content_hash": "b69bddf1ba87b77aacdef426910fb893f2e9a4d7f1156f1c5ab6a8d93e3a0666",
+    "id": "principal-pool-identity",
+    "kind": "principal",
+    "revision": 0
+   }
+  },
+  "embedding_ref": {
+   "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+   "id": "bge-m3-int8-local",
+   "kind": "deployment",
+   "revision": 1
+  },
+  "owner_contract": {
+   "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+   "id": "host-owner:tenant-pool-identity",
+   "kind": "policy",
+   "revision": 1
+  },
+  "pools": {
+   "deepseek-native-256k-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-256k-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "4369cafde6f6d16b86dbea9ba67533e2a850cc36b5d523fe02c584f4bb3c538a",
+      "id": "host:native-plane:deepseek-native-256k-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "bca3f119587ca3c6cc24f6e17b1a8ffae78fdb0507d3a51456ecb19b29c5f83e",
+      "id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 65536,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 262144,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-256k-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 32768,
+      "recent_min_tokens": 32768,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 8192,
+       "B": 16384,
+       "C": 16384,
+       "D": 16384,
+       "E": 8192
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-256k-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": null,
+    "embedding_resource_ref": {
+     "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+     "id": "bge-m3-int8-local",
+     "kind": "deployment",
+     "revision": 1
+    },
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-256k-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 262144,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 8192,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "fixtures",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   },
+   "deepseek-native-512k-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-512k-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "486041e311d5f4c834dc3b6e6073540743094d891aaaa313ca23b1281eff721e",
+      "id": "host:native-plane:deepseek-native-512k-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "2ecfb05879cdd16c379c50a831acc6bfb794610f5685f3b8b3723ead8c2697b9",
+      "id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 131072,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 524288,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-512k-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 65536,
+      "recent_min_tokens": 65536,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 16384,
+       "B": 32768,
+       "C": 32768,
+       "D": 32768,
+       "E": 16384
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-512k-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": "shared",
+    "embedding_resource_ref": {
+     "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+     "id": "bge-m3-int8-local",
+     "kind": "deployment",
+     "revision": 1
+    },
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-512k-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 524288,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 8192,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "fixtures",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   }
+  },
+  "read_caller": {
+   "command_receipt_ref": {
+    "content_hash": "11c73afd0ddb38e849b0174b7b51ada6d93afc83d81b4936341b132d9b900b29",
+    "id": "host:control:read:11c73afd0ddb38e8",
+    "kind": "receipt",
+    "revision": 0
+   },
+   "owner_contract_ref": {
+    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "id": "host-owner:tenant-pool-identity",
+    "kind": "policy",
+    "revision": 1
+   },
+   "principal_ref": {
+    "content_hash": "b69bddf1ba87b77aacdef426910fb893f2e9a4d7f1156f1c5ab6a8d93e3a0666",
+    "id": "principal-pool-identity",
+    "kind": "principal",
+    "revision": 0
+   }
+  },
+  "status": {
+   "authorization_policy": "host-deployment-policy:c38c398452440b12",
+   "available": true,
+   "embedding": "bge-m3-int8",
+   "embedding_reason": null,
+   "enabled": true,
+   "profiles": [
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+     "catalogue_role": "owner",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "bge-m3-int8",
+     "embedding_reason": null,
+     "max_context_tokens": 262144,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-256k-v1",
+     "script_runner": "unavailable"
+    },
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+     "catalogue_role": "member",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "bge-m3-int8",
+     "embedding_reason": null,
+     "max_context_tokens": 524288,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-512k-v1",
+     "script_runner": "unavailable"
+    }
+   ],
+   "skill_catalogue_owner": null
+  }
+ },
+ "models=True,snapshot=True": {
+  "catalogue_owner": "deepseek-native-256k-v1",
+  "control_caller": {
+   "command_receipt_ref": {
+    "content_hash": "d49be0d6d5cf535529e6764d246399294062fa655eafe20b4561eb3130141037",
+    "id": "host:control:pin-command",
+    "kind": "receipt",
+    "revision": 0
+   },
+   "owner_contract_ref": {
+    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "id": "host-owner:tenant-pool-identity",
+    "kind": "policy",
+    "revision": 1
+   },
+   "principal_ref": {
+    "content_hash": "b69bddf1ba87b77aacdef426910fb893f2e9a4d7f1156f1c5ab6a8d93e3a0666",
+    "id": "principal-pool-identity",
+    "kind": "principal",
+    "revision": 0
+   }
+  },
+  "embedding_ref": {
+   "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+   "id": "bge-m3-int8-local",
+   "kind": "deployment",
+   "revision": 1
+  },
+  "owner_contract": {
+   "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+   "id": "host-owner:tenant-pool-identity",
+   "kind": "policy",
+   "revision": 1
+  },
+  "pools": {
+   "deepseek-native-256k-thinking-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-256k-thinking-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "0c9dbd7b9d888b489c6b4e6e9b94f142c705966c3e18fccc4df389dc384042af",
+      "id": "host:native-plane:deepseek-native-256k-thinking-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "d030595b6e5a61ca9f9f6098e8bedd0599c4a177946fce5b3bf4d14b85a49dc3",
+      "id": "host:tenant-pool-identity:deepseek-native-256k-thinking-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-thinking-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 65536,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 262144,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-256k-thinking-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 32768,
+      "recent_min_tokens": 32768,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 8192,
+       "B": 16384,
+       "C": 16384,
+       "D": 16384,
+       "E": 8192
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-256k-thinking-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": "shared",
+    "embedding_resource_ref": {
+     "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+     "id": "bge-m3-int8-local",
+     "kind": "deployment",
+     "revision": 1
+    },
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-256k-thinking-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 262144,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 32768,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "env",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   },
+   "deepseek-native-256k-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-256k-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "4369cafde6f6d16b86dbea9ba67533e2a850cc36b5d523fe02c584f4bb3c538a",
+      "id": "host:native-plane:deepseek-native-256k-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "bca3f119587ca3c6cc24f6e17b1a8ffae78fdb0507d3a51456ecb19b29c5f83e",
+      "id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 65536,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 262144,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-256k-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 32768,
+      "recent_min_tokens": 32768,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 8192,
+       "B": 16384,
+       "C": 16384,
+       "D": 16384,
+       "E": 8192
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-256k-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": null,
+    "embedding_resource_ref": {
+     "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+     "id": "bge-m3-int8-local",
+     "kind": "deployment",
+     "revision": 1
+    },
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-256k-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 262144,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 8192,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "env",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   },
+   "deepseek-native-512k-thinking-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-512k-thinking-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "7336305cc5598da90d627c4251eff441c876f91246e5bfae36a284e9f2b344b5",
+      "id": "host:native-plane:deepseek-native-512k-thinking-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "489715f1fc1f2d6a9c4ae12a8d8adb4876f6790d78e9f6fd3b103cf2a1e34dab",
+      "id": "host:tenant-pool-identity:deepseek-native-512k-thinking-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-thinking-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 131072,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 524288,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-512k-thinking-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 65536,
+      "recent_min_tokens": 65536,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 16384,
+       "B": 32768,
+       "C": 32768,
+       "D": 32768,
+       "E": 16384
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-512k-thinking-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": "shared",
+    "embedding_resource_ref": {
+     "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+     "id": "bge-m3-int8-local",
+     "kind": "deployment",
+     "revision": 1
+    },
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-512k-thinking-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 524288,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 32768,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "env",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   },
+   "deepseek-native-512k-v1": {
+    "activation_receipt": {
+     "kind": "deployment_activation",
+     "profile_id": "deepseek-native-512k-v1",
+     "revision": 1,
+     "tenant_id": "tenant-pool-identity"
+    },
+    "arp_profile": {
+     "activation_receipt_ref": {
+      "content_hash": "486041e311d5f4c834dc3b6e6073540743094d891aaaa313ca23b1281eff721e",
+      "id": "host:native-plane:deepseek-native-512k-v1:activate",
+      "kind": "receipt",
+      "revision": 0
+     },
+     "allow_lexical_degradation": true,
+     "capability_registry_ref": {
+      "content_hash": "2ecfb05879cdd16c379c50a831acc6bfb794610f5685f3b8b3723ead8c2697b9",
+      "id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+      "kind": "catalogue",
+      "revision": 1
+     },
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+     "context_policy": {
+      "embedding_chunk_tokens": 512,
+      "embedding_overlap_tokens": 64,
+      "embedding_required_for_activation": false,
+      "fixed_soft_max_tokens": 131072,
+      "index_mode": "ON_CLOSED_GROUP",
+      "max_candidates": 128,
+      "max_context_tokens": 524288,
+      "max_group_count": 8192,
+      "max_manifest_bytes": 8388608,
+      "max_query_candidates": 128,
+      "max_query_total_ms": 30000,
+      "max_recall_items": 32,
+      "max_request_bytes": 16777216,
+      "max_retrieval_ms": 500,
+      "max_scan_rows_per_page": 256,
+      "max_search_cursors": 16,
+      "max_session_disk_bytes": 2147483648,
+      "output_reserve_tokens": 32768,
+      "policy_id": "host-native-deepseek-native-512k-v1",
+      "query_cursor_ttl_ms": 900000,
+      "recall_max_tokens": 65536,
+      "recent_min_tokens": 65536,
+      "safety_reserve_tokens": 2048,
+      "schema_version": 1,
+      "section_soft_caps": {
+       "A": 16384,
+       "B": 32768,
+       "C": 32768,
+       "D": 32768,
+       "E": 16384
+      },
+      "tool_headroom_tokens": 8192
+     },
+     "default_skill_policy_ref": {
+      "content_hash": "b886eddbe6be625608c15b0367f629d23c370260055fbd7164aaa87ccc67fa00",
+      "id": "host-skill-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "embedding_deployment_ref": {
+      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+      "id": "bge-m3-int8-local",
+      "kind": "deployment",
+      "revision": 1
+     },
+     "owner_mode": "MISSION",
+     "parallel_model_per_agent": 1,
+     "profile_id": "deepseek-native-512k-v1",
+     "profile_revision": 2,
+     "protocol": "ARP_V1_1_1",
+     "retention_policy_ref": {
+      "content_hash": "dba739934204d68d1c8ec56ea3d751aff454812397482ef0bcd3204eb95244e8",
+      "id": "host-retention-default",
+      "kind": "policy",
+      "revision": 1
+     },
+     "schema_version": 1
+    },
+    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "catalogue_authority": "shared",
+    "embedding_resource_ref": {
+     "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
+     "id": "bge-m3-int8-local",
+     "kind": "deployment",
+     "revision": 1
+    },
+    "files": [
+     "execution.sqlite3.arp-root"
+    ],
+    "root_markers": {
+     "execution.sqlite3.arp-root/root.json": {
+      "root_id": "host:tenant-pool-identity:deepseek-native-512k-v1",
+      "schema_version": 1
+     }
+    },
+    "runtime_profile": {
+     "context_policy": {
+      "max_input_tokens": 524288,
+      "max_tool_result_tokens": 16384,
+      "max_total_tokens": null,
+      "output_reserve": 32768,
+      "render_slack_tokens": 0,
+      "safety_margin": 256,
+      "tool_result_preview_chars": 1024
+     },
+     "default_max_output_tokens": 8192,
+     "max_output_tokens_ceiling": 32768,
+     "model": "deepseek-flash",
+     "provider_kind": "env",
+     "tokenizer": "host-test-exact-words:v1"
+    },
+    "script_runner": null
+   }
+  },
+  "read_caller": {
+   "command_receipt_ref": {
+    "content_hash": "11c73afd0ddb38e849b0174b7b51ada6d93afc83d81b4936341b132d9b900b29",
+    "id": "host:control:read:11c73afd0ddb38e8",
+    "kind": "receipt",
+    "revision": 0
+   },
+   "owner_contract_ref": {
+    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "id": "host-owner:tenant-pool-identity",
+    "kind": "policy",
+    "revision": 1
+   },
+   "principal_ref": {
+    "content_hash": "b69bddf1ba87b77aacdef426910fb893f2e9a4d7f1156f1c5ab6a8d93e3a0666",
+    "id": "principal-pool-identity",
+    "kind": "principal",
+    "revision": 0
+   }
+  },
+  "status": {
+   "authorization_policy": "host-deployment-policy:c38c398452440b12",
+   "available": true,
+   "embedding": "bge-m3-int8",
+   "embedding_reason": null,
+   "enabled": true,
+   "profiles": [
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-v1/agent-orchestrator/-",
+     "catalogue_role": "owner",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "bge-m3-int8",
+     "embedding_reason": null,
+     "max_context_tokens": 262144,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-256k-v1",
+     "script_runner": "unavailable"
+    },
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-v1/agent-orchestrator/-",
+     "catalogue_role": "member",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "bge-m3-int8",
+     "embedding_reason": null,
+     "max_context_tokens": 524288,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-512k-v1",
+     "script_runner": "unavailable"
+    },
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-256k-thinking-v1/agent-orchestrator/-",
+     "catalogue_role": "member",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "bge-m3-int8",
+     "embedding_reason": null,
+     "max_context_tokens": 262144,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-256k-thinking-v1",
+     "script_runner": "unavailable"
+    },
+    {
+     "catalogue_namespace_id": "host:tenant-pool-identity:deepseek-native-512k-thinking-v1/agent-orchestrator/-",
+     "catalogue_role": "member",
+     "count_mode": "STUB",
+     "counter": "host-test-exact-words:v1",
+     "embedding": "bge-m3-int8",
+     "embedding_reason": null,
+     "max_context_tokens": 524288,
+     "output_tokens": 32768,
+     "owner_mode": "MISSION",
+     "profile_id": "deepseek-native-512k-thinking-v1",
+     "script_runner": "unavailable"
+    }
+   ],
+   "skill_catalogue_owner": null
+  }
+ }
+}
