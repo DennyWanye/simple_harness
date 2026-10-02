@@ -289,11 +289,7 @@ class OrchestrationService:
 
             fixture_root = Path(os.environ["DESKPET_ORCH_UI_FIXTURE_DIR"])
             case = os.environ.get("DESKPET_ORCH_UI_FIXTURE_CASE")
-            if case == "p34-fragment-crossbranch":
-                from .native_search import native_search_provider
-
-                provider = native_search_provider()
-            elif case == "native-context-rotation":
+            if case == "native-context-rotation":
                 from .native_context import native_context_provider
 
                 provider = native_context_provider(

@@ -25,7 +25,6 @@ import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { MissionDocument, SourceDrafts, type SourceDraft } from "./MissionDocument";
-import { MissionSearch } from "./MissionSearch";
 import { PlanningQuestions } from "./PlanningQuestions";
 import { PlanningAuthorization } from "./PlanningAuthorization";
 import { OperationWorkspace } from "./OperationWorkspace";
@@ -405,7 +404,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const [goal, setGoal] = useState("");
   const [criteria, setCriteria] = useState("");
   const [domain, setDomain] = useState("code");
-  const [searchPolicy, setSearchPolicy] = useState("");
   const [sources, setSources] = useState<SourceDraft[]>([]);
   const [sourceImporting, setSourceImporting] = useState(false);
   const [createPending, setCreatePending] = useState(false);
@@ -722,7 +720,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const status = store.status;
   const domains = record(record(record(status?.deployment_manifest).features).domains);
   const canCreateDocument = domains.atomic_source_create === true && list(domains.items).some((item) => item.id === "doc-research-v1");
-  const searchPolicies = list(store.policy?.eligible_search_policies);
   const reserveTokens = Number(conflictReserve);
   const proposedContextId = contextProfile ?? status?.default_context_profile_id ?? "";
   const contextOffered = status?.context_profiles ?? [];
@@ -761,7 +758,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const sourcesComplete = sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0);
   const submittable = validCaps && badPytestLines.length === 0 && validReserve && validSynthesis && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
     (!selectedContextId || !!selectedContext) &&
-    (!searchPolicy || searchPolicies.some((policy) => policy.version_id === searchPolicy)) &&
     // 2026-09-26：通用任务可以附带参考资料（可选）；严格引用模式必须至少一份。
     (domain === "code" ? (sources.length === 0 || (canAttachSources && sourcesComplete))
       : canCreateDocument && sources.length > 0 && sourcesComplete);
@@ -795,7 +791,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       ...(selectedContext ? { runtime_profile_id: selectedContext.profile_id } : {}),
       ...(Object.keys(budget).length ? { budget } : {}),
       ...(conflictReserve.trim() ? { conflict_reserve_tokens: reserveTokens } : {}),
-      ...(searchPolicy ? { search_policy_version_id: searchPolicy } : {}),
       ...(synthesisEnabled ? {
         synthesis: {
           goal: synthesisGoal.trim(),
@@ -991,14 +986,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 onChange={(e) => setDomain(e.target.checked ? "doc-research-v1" : "code")} />
               <span>严格引用模式：只根据我提供的资料作答，每个结论都要逐字引用原文，系统逐条核对引用（需要至少一份资料）</span>
             </label>}
-            {searchPolicies.length > 0 && <label style={muted}>执行方式
-              <select aria-label="执行方式" style={field} value={searchPolicy} disabled={createPending} onChange={(e) => setSearchPolicy(e.target.value)}>
-                <option value="">首个通过即交付</option>
-                {searchPolicies.map((policy) => <option key={text(policy.version_id)} value={text(policy.version_id)}>
-                  比较最多 {text(record(policy.policy).max_candidates)} 个候选后综合（已批准）
-                </option>)}
-              </select>
-            </label>}
             {!!status?.context_profiles?.length && <label style={muted}>输入上下文容量
               <select aria-label="输入上下文容量" style={field} value={selectedContextId} disabled={createPending} onChange={(e) => setContextProfile(e.target.value)}>
                 {status.context_profiles.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{profile.max_total_tokens ? `${profile.max_total_tokens / 1024}K 总窗口` : `${profile.max_input_tokens / 1024}K tokens`}</option>)}
@@ -1060,7 +1047,6 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               <div style={muted} data-testid="mission-budget">
                 {`预算：Token 上限 ${text(record(mission.budget).max_tokens) || "—"} · 尝试次数上限 ${text(record(mission.budget).max_attempts) || "—"}`}
               </div>
-              <MissionSearch value={detail.search} />
               {!!record(detail.runtime_context).max_input_tokens && <div style={muted} data-testid="mission-context">
                 {record(detail.runtime_context).max_total_tokens
                   ? `本任务总上下文 ${Number(record(detail.runtime_context).max_total_tokens) / 1024}K，输入最多 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`

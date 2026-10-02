@@ -320,7 +320,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--fixture-case", choices=(
         "n4-instruction-attribution", "n4-bad-quote", "n4-contradictory-uncertainty",
         "n4-document-contextual-arbitration",
-        "p34-fragment-crossbranch",
         "native-context-rotation",
         "native-load-three-mission",
         "native-load-verifier-pressure",

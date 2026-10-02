@@ -681,63 +681,7 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         },
         "event_count": snapshot.get("event_count"),
         "through_seq": view.get("through_seq"),
-        "search": _search(snapshot),
         **({"document": _document(snapshot, source_issues)} if is_document_snapshot(snapshot) else {}),
-    }
-
-
-def _search(snapshot: Mapping[str, Any]) -> dict[str, Any]:
-    search = snapshot.get("search") or {}
-    binding = search.get("binding") or {}
-    policy = binding.get("policy") or {}
-    tasks = {task["id"]: task for task in snapshot.get("tasks") or ()}
-    return {
-        "mode": policy.get("mode", "FIRST_VERIFIED"),
-        "policy_version_id": binding.get("version_id"),
-        "rounds": [
-            {key: row.get(key) for key in (
-                "round_id", "task_id", "state", "deadline_at", "attempt_ids",
-                "synthesis_attempt_id", "decision_id",
-            )}
-            for row in search.get("rounds") or ()
-        ],
-        "candidates": [
-            {key: row.get(key) for key in ("result_id", "attempt_id", "round_id", "state", "reason")}
-            for row in search.get("candidates") or ()
-        ],
-        "decisions": [
-            {
-                **{key: row.get(key) for key in (
-                    "receipt_id", "round_id", "action", "reason", "rule", "selected_results",
-                )},
-                "considered": [
-                    {key: item.get(key) for key in ("result_id", "eligible", "reason")}
-                    for item in row.get("considered") or ()
-                ],
-                "input_results": [item.get("result_id") for item in row.get("selected_inputs") or ()],
-            }
-            for row in search.get("decisions") or ()
-        ],
-        "graph_changes": [
-            {
-                **{key: row.get(key) for key in (
-                    "change_id", "from_version", "to_version", "affected_task_ids",
-                    "new_task_ids", "superseded", "cancelled",
-                )},
-                "rationale": model_text(row.get("rationale")),
-            }
-            for row in snapshot.get("graph_changes") or ()
-        ],
-        "fragments": [
-            {
-                "fragment_id": row.get("fragment_id"),
-                "origin_task_id": (row.get("origin") or {}).get("task_id"),
-                "validation_task_id": row.get("validation_task_id"),
-                "validation_status": tasks.get(row.get("validation_task_id"), {}).get("status"),
-                "criteria_count": len(row.get("criterion_mapping") or ()),
-            }
-            for row in snapshot.get("fragments") or ()
-        ],
     }
 
 

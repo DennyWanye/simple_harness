@@ -70,7 +70,7 @@ def _cost(value: object) -> dict[str, Any]:
     return {
         "success_path": _money(cost.get("success_path")),
         "exploration": _money(cost.get("exploration")),
-        "services": {role: _money(services.get(role)) for role in ("planner", "manager", "judge")
+        "services": {role: _money(services.get(role)) for role in ("planner", "judge")
                      if role in services},
         "unclassified": {
             **_money(unclassified),
@@ -94,8 +94,8 @@ def _cost(value: object) -> dict[str, Any]:
 
 def _replay_reference(value: object) -> dict[str, Any]:
     row = _mapping(value)
-    # SDK source keys are JSON-encoded [mission_id, path, version_hash]. Action,
-    # approval and selection keys may also contain caller-chosen text.
+    # SDK source keys are JSON-encoded [mission_id, path, version_hash]. Action
+    # and approval keys may also contain caller-chosen text.
     raw_kind = row.get("object")
     kind = raw_kind if isinstance(raw_kind, str) and raw_kind in FORMAL_FIELDS else None
     identifier = row.get("id")
@@ -139,7 +139,7 @@ _TIMELINE_CODES = frozenset({
 _TIMELINE_TYPES = frozenset({
     "AttemptCreated", "AttemptStarted", "ResultSubmitted", "VerificationFailed",
     "VerificationSuspended", "VerificationLayerRecorded", "AttemptLost", "AttemptTimedOut",
-    "OutcomeRecorded", "ManagementRequested", "ManagementDecided", "TaskFailed",
+    "OutcomeRecorded", "TaskFailed",
     "TaskCancelled", "MissionFailed", "ActionFailed", "ActionOutcomeUnknown",
     "ApprovalRejected",
 })

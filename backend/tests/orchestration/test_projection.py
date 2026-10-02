@@ -155,24 +155,6 @@ def test_final_rejection_requires_final_failure_and_whitelisted_attempt_reason(c
     assert project_detail(view)["results"][0]["final_rejection"] is None
 
 
-def test_search_projection_exposes_waiting_state_and_scoped_validation_without_raw_inputs():
-    detail = project_detail({"snapshot": {
-        "search": {
-            "binding": {"version_id": "approved", "policy": {"mode": "COMPARE_THEN_SYNTHESIZE"}},
-            "rounds": [{"round_id": "round", "task_id": "task", "state": "SYNTHESIZING", "raw": "hidden"}],
-            "candidates": [{"round_id": "round", "result_id": "A", "state": "READY", "raw": "hidden"}],
-        },
-        "tasks": [{"id": "validation", "status": "COMPLETED"}],
-        "fragments": [{"fragment_id": "f", "origin": {"task_id": "failed"},
-                       "validation_task_id": "validation", "criterion_mapping": [{"criterion_id": "new"}]}],
-    }})
-    search = detail["search"]
-    assert search["candidates"][0]["state"] == "READY"
-    assert search["fragments"][0]["validation_status"] == "COMPLETED"
-    assert search["fragments"][0]["criteria_count"] == 1
-    assert "hidden" not in str(search)
-
-
 @pytest.mark.asyncio
 async def test_event_paging_is_gap_free(orchestration_root, principal):
     service, mission_id = await _completed_service(orchestration_root, principal)
