@@ -8,7 +8,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import replace
 
-from graph_helpers7 import graph_service, node
+from leaf_world import leaf_world
 from provider_fixture import ScriptedProvider
 
 from agent_orchestrator.orchestrator.commit_service import Reservation
@@ -61,7 +61,10 @@ class ZeroUsageProvider(ActualProvider):
 async def setup_runtime(
     tmp_path, *, tokens=20_000, estimate=100, slots=1, blocked=False, empty_retry=False, provider_factory=ActualProvider
 ):
-    commit, mission, tasks = graph_service(tmp_path, nodes=[node("A", tokens=tokens)])
+    # 一个分层任务里的一个步骤，额度固定为 ``tokens``（删旧平面模式 第 2 步：提供方额度是
+    # 两种模式共用的机制，这里只需要一个能建尝试的任务行）。
+    world = leaf_world(tmp_path, key="g-1", task_max_tokens=tokens, tenant_id="tenant-5")
+    commit, mission, tasks = world.service, world.mission, {"A": world.tasks["a"]}
     counter = Counter(estimate)
     guard = ProviderBudgetGuard(commit, owner="test-owner", estimator=counter, max_slots=slots)
     provider = provider_factory(blocked=blocked)

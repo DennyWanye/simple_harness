@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 
 import pytest
-from graph_helpers7 import node, spec
+from leaf_world import leaf_world
 from test_provider_budget_guard import ActualProvider, Counter, create_bound, grants
 from test_provider_budget_recovery import until
 
@@ -47,46 +47,24 @@ async def priced_runtime(
     evidence=None,
     slots=1,
     estimate=100,
+    mission_money=None,
+    attempts=12,
 ):
-    store = Store.open(tmp_path / "orchestrator.db")
-    commit = CommitService(
-        store,
-        global_budget=Budget(
-            max_tokens=400_000,
-            max_cost_micros=40_000,
-            max_attempts=24,
+    # 一个分层任务里的一个步骤（删旧平面模式 第 2 步）。分层下一步的金额额度来自任务
+    # 的金额额度（这里只有一步，两者相等），所以把 ``money`` 给任务。
+    world = leaf_world(
+        tmp_path,
+        key="g-1",
+        tenant_id="tenant-5",
+        task_max_tokens=20_000,
+        global_budget=Budget(max_tokens=400_000, max_cost_micros=40_000, max_attempts=24),
+        budget=Budget(
+            max_tokens=200_000,
+            max_cost_micros=money if mission_money is None else mission_money,
+            max_attempts=attempts,
         ),
     )
-    mission, _ = commit.create_mission(
-        spec(
-            budget=Budget(
-                max_tokens=200_000,
-                max_cost_micros=20_000,
-                max_attempts=12,
-            )
-        )
-    )
-    planning = commit.begin_planning(mission.id)
-    tasks, _ = commit.commit_task_graph(
-        mission.id,
-        TaskGraphProposal.from_json(
-            {
-                "tasks": [
-                    node(
-                        "A",
-                        budget={
-                            "max_tokens": 20_000,
-                            "max_cost_micros": money,
-                            "max_attempts": 3,
-                        },
-                    )
-                ]
-            }
-        ),
-        base_version=planning.version,
-        source={"planner": "fixture"},
-    )
-    task = tasks[0]
+    commit, mission, task = world.service, world.mission, world.tasks["a"]
     price = price or FrozenPriceEstimator("price-original", "consumer", 1_000_000, 2_000_000)
     counter = Counter(estimate)
     guard = ProviderBudgetGuard(
@@ -123,7 +101,7 @@ async def priced_runtime(
             yield commit, mission, task, guard, provider, runtime
     finally:
         provider.allow.set()
-        store.close()
+        commit.store.close()
 
 
 def balances(commit, account):
@@ -220,7 +198,7 @@ def test_tail_blocks_worker_then_transfers_real_synthesis_without_double_reservi
 
 def test_tail_attempt_protection_and_failed_transfer_leave_all_chains_unchanged(tmp_path):
     async def exercise():
-        async with priced_runtime(tmp_path) as (commit, mission, task, _, _, _runtime):
+        async with priced_runtime(tmp_path, attempts=3) as (commit, mission, task, _, _, _runtime):
             tails = TailBudgetLedger(commit.ledger)
             account = task_account(task.id)
             with commit.store.transaction():

@@ -95,6 +95,7 @@ def leaf_world(
     tools: Sequence[str] = TOOLS,
     budget: Budget | None = None,
     task_max_tokens: int | None = None,
+    global_budget: Budget | None = None,
     clock: Any = None,
     name: str = "orchestrator.db",
     spec_overrides: Mapping[str, Any] | None = None,
@@ -104,7 +105,11 @@ def leaf_world(
 
     path = Path(tmp_path) / name
     store = Store.open(path) if clock is None else Store.open(path, clock=clock)
-    service = CommitService(store, task_max_tokens=task_max_tokens)
+    service = CommitService(
+        store,
+        task_max_tokens=task_max_tokens,
+        **({} if global_budget is None else {"global_budget": global_budget}),
+    )
     mission, _ = service.create_mission(
         MissionSpec(
             **{

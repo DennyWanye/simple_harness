@@ -302,7 +302,8 @@ def test_system_actual_attempt_creation_failure_rolls_back_provisional_transfer(
 def test_unused_mission_conflict_pool_releases_without_erasing_actual_sdk_unknown_charge(tmp_path):
     async def exercise():
         provider = ActualProvider(blocked=True)
-        async with priced_runtime(tmp_path, provider=provider) as (
+        # 冲突池从任务的钱里预留，任务得比这一步多留出这一份。
+        async with priced_runtime(tmp_path, provider=provider, mission_money=20_000) as (
             commit,
             mission,
             work,
