@@ -22,7 +22,7 @@ from typing import Any
 
 from ..graph.task_network import DEFAULT_PROJECTION_BUDGET
 from .duties import DeploymentDuties
-from .root import initialize_root, install_planning, user_requirements
+from .root import goal_parameters, initialize_root, install_planning, user_requirements
 
 #: The native Assurance root installation command of a deployment (receipt identity).
 ROOT_COMMAND_ID = "host-native-root"
@@ -49,6 +49,8 @@ class UserMissionDeployment:
     graph_budget: Any = DEFAULT_PROJECTION_BUDGET
     deployment_acceptance: Any = None
     taskgraph_ports: Any = None  # a deployment's own TaskGraph ports (tests inject doubles)
+    #: The root goal's parameters for a Mission (the product: the user's goal, verbatim).
+    root_parameters: Callable[[Any], dict[str, Any]] = goal_parameters
     duties: DeploymentDuties = field(init=False)
     taskgraph: Any = field(init=False, default=None)
     assurance: Any = field(init=False, default=None)
@@ -124,7 +126,7 @@ class UserMissionDeployment:
         mission = orchestrator.store.get_mission(str(receipt["mission_id"]))
         initialize_root(orchestrator, mission, self.principal, world_factory=self.world_factory,
                         root_type=self.names.root_type, task_prefix=self.names.task_prefix,
-                        duty_prefix=self.names.duty_prefix)
+                        duty_prefix=self.names.duty_prefix, root_parameters=self.root_parameters)
         if receipt.get("created") is True and self.taskgraph is not None:
             from ..orchestrator.hierarchical_dispatch import is_hierarchical
 

@@ -48,9 +48,15 @@ def user_requirements(mission: Any, principal: Any) -> RequirementsRevision:
     )
 
 
+def goal_parameters(mission: Any) -> dict[str, Any]:
+    """The product's root parameters: the user's goal, verbatim."""
+    return {"goal": mission.goal}
+
+
 def initialize_root(
     loop: Any, mission: Any, principal: Any, *,
     world_factory: Callable[[Any, Any], Any], root_type: str, task_prefix: str, duty_prefix: str,
+    root_parameters: Callable[[Any], dict[str, Any]] = goal_parameters,
 ) -> None:
     """Join the caller's create transaction; replay never inserts another root.
 
@@ -67,7 +73,7 @@ def initialize_root(
         return
     world = world_factory(loop, mission)
     definition = next(t for t in world.catalog.task_types() if t.task_type_ref.id == root_type)
-    parameters = {"goal": mission.goal}
+    parameters = root_parameters(mission)
     binding = TaskSemanticBindingV1(
         task_id=TaskRef(task_id), obligation_id=ObligationId(duty_id), contract_revision=ContractRevision(1),
         contract_hash=content_hash_of({"task_type": definition.to_json(), "parameters": parameters}),
@@ -119,4 +125,4 @@ def install_planning(loop: Any, world_factory: Callable[[Any, Any], Any]) -> Non
     loop.install_hierarchical_deployment(lambda mission: world_factory(loop, mission), start_gate=ready)
 
 
-__all__ = ("ROOT_RECURSION_FUEL", "criterion_ids", "initialize_root", "install_planning", "user_requirements")
+__all__ = ("ROOT_RECURSION_FUEL", "criterion_ids", "goal_parameters", "initialize_root", "install_planning", "user_requirements")
