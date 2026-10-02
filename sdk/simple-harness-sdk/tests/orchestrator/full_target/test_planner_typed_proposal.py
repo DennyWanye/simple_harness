@@ -41,7 +41,6 @@ _HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
 if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
-from htn_world import load_proposal  # noqa: E402
 
 from agent_orchestrator.contracts import ContractError  # noqa: E402
 from agent_orchestrator.contracts.htn import (  # noqa: E402
@@ -54,18 +53,11 @@ from agent_orchestrator.contracts.htn import (  # noqa: E402
 )
 from agent_orchestrator.contracts.semantic_base import content_hash_of  # noqa: E402
 from agent_orchestrator.graph.task_graph import TaskGraphProposal  # noqa: E402
-from agent_orchestrator.planning.htn.registry import (  # noqa: E402
-    MethodProposal,
-    MethodRegistryStatus,
-    RegistryAuthor,
-)
 from agent_orchestrator.planning.planner import (  # noqa: E402
     SYSTEM_BOUND_FIELDS,
-    parse_method_proposal,
     parse_task_graph_proposal,
 )
 from agent_orchestrator.runtime.role_templates import (  # noqa: E402
-    METHOD_PROPOSAL_TAG,
     PLAN_REVISION_PROPOSAL_TAG,
     PLANNER,
     PLANNER_HIERARCHICAL,
@@ -75,9 +67,6 @@ from agent_orchestrator.runtime.role_templates import (  # noqa: E402
     TASK_PROPOSAL_TAG,
     TEMPLATE_VERSIONS,
     registered_versions,
-)
-from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    method_proposal_step,
 )
 from scripted_plans import plan_revision_proposal_step, scripted_plan_proposal  # noqa: E402
 
@@ -304,56 +293,13 @@ def test_an_unknown_running_work_policy_is_refused():
     assert "running_work_policy" in _refused(running_work_policy="just_kill_it")
 
 
-# ============================================================ the method proposal block
-def test_a_well_formed_method_proposal_parses():
-    proposal = parse_method_proposal(method_proposal_step(load_proposal("valid")["method"]))
-    assert isinstance(proposal, MethodProposal)
-    assert proposal.author is RegistryAuthor.MODEL
-    assert proposal.rationale == "脚本化方法"
-
-
-def test_a_method_proposal_defaults_to_draft_status():
-    proposal = parse_method_proposal(method_proposal_step(load_proposal("valid")["method"]))
-    assert proposal.declared_status is MethodRegistryStatus.DRAFT
-
-
-def test_a_model_claimed_registry_status_is_kept_as_a_claim():
-    """Dropped here it would be refused by nobody; the admission protocol has to see
-    it to record the refusal (§7.3)."""
-
-    proposal = parse_method_proposal(
-        method_proposal_step(
-            load_proposal("valid")["method"], extras={"registry_status": "ADMITTED"}
-        )
-    )
-    assert proposal.declared_status is MethodRegistryStatus.ADMITTED
-
-
-def test_a_missing_method_block_is_reported_as_a_block_error():
-    with pytest.raises(ContractError) as caught:
-        parse_method_proposal("这个目标我没有方法。")
-    assert "block_missing" in str(caught.value)
-
-
-def test_a_method_block_with_bad_json_is_reported_as_a_block_error():
-    with pytest.raises(ContractError) as caught:
-        parse_method_proposal(f"<{METHOD_PROPOSAL_TAG}>{{</{METHOD_PROPOSAL_TAG}>")
-    assert "invalid_json" in str(caught.value)
-
-
-def test_a_method_block_without_a_definition_is_refused():
-    with pytest.raises(ContractError):
-        parse_method_proposal(f'<{METHOD_PROPOSAL_TAG}>{{"rationale":"x"}}</{METHOD_PROPOSAL_TAG}>')
-
-
 def test_the_two_new_tags_are_distinct_from_each_other_and_from_the_old_ones():
     tags = {
         PLAN_REVISION_PROPOSAL_TAG,
-        METHOD_PROPOSAL_TAG,
         TASK_GRAPH_PROPOSAL_TAG,
         TASK_PROPOSAL_TAG,
     }
-    assert len(tags) == 4
+    assert len(tags) == 3
 
 
 # ============================================================ the old protocol stands
@@ -475,9 +421,3 @@ def test_the_fixture_step_never_writes_a_mission_id_of_its_own():
     assert "mission_id" not in plan_revision_proposal_step(
         read_set=[_read_item()], operations=[_refine()]
     )
-
-
-def test_the_fixture_method_step_produces_exactly_one_parseable_block():
-    text = method_proposal_step(load_proposal("valid")["method"])
-    assert text.count(f"<{METHOD_PROPOSAL_TAG}>") == 1
-    assert parse_method_proposal(text).method.method_id == "code.fix-by-direct-patch"

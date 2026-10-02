@@ -991,11 +991,11 @@ class _ExplodingDispatch(HierarchicalDispatch):
         raise AssertionError("a legacy Mission reached the hierarchical assembly")
 
     network = seed_network = read = plan_view = _boom  # type: ignore[assignment]
-    apply_planner_reply = intercept_worker_dispatch = _boom  # type: ignore[assignment]
+    commit_preview_plan_proposal = intercept_worker_dispatch = _boom  # type: ignore[assignment]
     advance_compound_phases = root_review_ready = terminal = _boom  # type: ignore[assignment]
     attempt_inputs = occurrences = ready_occurrences = _boom  # type: ignore[assignment]
     running_occurrences = record_integrity_failure = _boom  # type: ignore[assignment]
-    admit_method_proposal = compile_proposal = build_command = _boom  # type: ignore[assignment]
+    admit_method_proposal = build_command = _boom  # type: ignore[assignment]
     # Review round 4, P2-8: part 3a added seven entry points and the sentinel still
     # covered the seventeen it was written with, so the one thing it exists to catch —
     # a legacy Mission reaching the hierarchical assembly through a *new* door — had no

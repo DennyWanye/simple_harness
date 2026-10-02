@@ -10,8 +10,12 @@ from types import SimpleNamespace
 import pytest
 from test_planning_decision_admission import _context, _valid_envelope
 
+from agent_orchestrator.contracts import ContractError
 from agent_orchestrator.contracts.htn import ReadItem, ReadItemKind
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
+from agent_orchestrator.orchestrator.planning_admission_commits import (
+    PlanningCommitAdmission,
+)
 from agent_orchestrator.planning.decision_adapter import AdapterContext, adapt_for_preview
 from agent_orchestrator.planning.decision_admission import (
     NoMutationDecision,
@@ -88,7 +92,15 @@ def test_preview_commit_passes_the_same_compilation_without_recompiling(monkeypa
     dispatch = object.__new__(HierarchicalDispatch)
     dispatch.require_hierarchical = lambda mission_id: object()  # type: ignore[attr-defined]
     dispatch.network = lambda mission_id: network  # type: ignore[attr-defined]
-    dispatch.commit = SimpleNamespace(commit_plan_revision=lambda command, principal: object())
+    admitted: list[object] = []
+
+    def commit_planning_revision(command, principal, *, admission):
+        admitted.append(admission)
+        return object()
+
+    dispatch.commit = SimpleNamespace(commit_planning_revision=commit_planning_revision)
+    admission = object.__new__(PlanningCommitAdmission)
+    object.__setattr__(admission, "taskgraph_candidate", None)
     seen: list[object] = []
 
     def build_command(*args, **kwargs):
@@ -104,19 +116,26 @@ def test_preview_commit_passes_the_same_compilation_without_recompiling(monkeypa
         "agent_orchestrator.contracts.models.sha256_hex",
         lambda value: "snapshot",
     )
-    monkeypatch.setattr(
-        dispatch,
-        "compile_proposal",
-        lambda *args, **kwargs: pytest.fail("preview commit recompiled the candidate"),
-    )
-
     result = dispatch.commit_preview_plan_proposal(
         "mission-1",
         proposal,
         preview=preview,
+        admission=admission,
         principal=SimpleNamespace(),
         command_id="plan:1",
     )
 
     assert result.committed
     assert seen == [compilation]
+    assert admitted == [admission], "the commit runs under the admission it was previewed with"
+
+    # A plan revision has no entry without an admission.
+    with pytest.raises(ContractError, match="requires H1-H admission"):
+        dispatch.commit_preview_plan_proposal(
+            "mission-1",
+            proposal,
+            preview=preview,
+            principal=SimpleNamespace(),
+            command_id="plan:2",
+        )
+    assert admitted == [admission]

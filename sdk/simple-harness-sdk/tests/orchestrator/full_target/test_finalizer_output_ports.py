@@ -299,8 +299,8 @@ def test_under_the_completion_protocol_a_step_declares_its_own_ports(three_step:
     ``read_review_origin`` 却用 ``declared_output_ports`` 算出 0 个端口——两边的输出
     永远对不上，验收连拒四次、任务停在向人提问。两个读者必须用同一条规则。
 
-    **Mutation**: ignore ``own_ports`` → the first assertion goes red; drop the
-    ``uses_completion_protocol`` flag in ``read_review_origin`` → the second."""
+    **Mutation**: ignore ``own_ports`` → the first assertion goes red; drop
+    ``own_ports=True`` in ``read_review_origin`` → the second."""
     import inspect
 
     from agent_orchestrator.orchestrator import taskgraph_review
@@ -315,7 +315,7 @@ def test_under_the_completion_protocol_a_step_declares_its_own_ports(three_step:
     declared = {port.port_key for port in network.binding_for_occurrence(audit).output_ports}
     assert declared and set(own) == declared
     source = inspect.getsource(taskgraph_review.read_review_origin)
-    assert "own_ports=uses_completion_protocol(" in source
+    assert "own_ports=True" in source
 
 
 # ======================================================================================

@@ -497,7 +497,7 @@ def publish_methods(world: DeploymentPlanningWorld) -> tuple[str, ...]:
     """Put every admitted method into the **library**, not only into memory.
 
     The in-memory :class:`MethodRegistry` is what the admission protocol decides
-    against; ``compile_proposal`` then reads the chosen method back out of
+    against; a plan commit then reads the chosen method back out of
     ``htn_store`` — because the definition a plan revision was compiled from has to
     be durable and re-readable at exactly the version the commit recorded.  Before
     this, a deployment assembled its world, the Planner proposed a perfectly valid

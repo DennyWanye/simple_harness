@@ -1523,9 +1523,7 @@ class PlanCommitsMixin:
 
         owned = owned_criteria(network, semantics)
         claimed = frozenset(ref for items in owned.values() for ref, _ in items)
-        from .scoped_content_review import uses_completion_protocol
-        requires_content_review = uses_completion_protocol(self._store, mission.id)
-        if requires_content_review and funded_now and "critic_review" not in self._deployed_layers:
+        if funded_now and "critic_review" not in self._deployed_layers:
             raise PlanCommitRejected("VERIFIER_UNAVAILABLE", "scoped content requires a deployed Critic")
         for spec, binding in pending:
             ordinal += 1
@@ -1538,7 +1536,6 @@ class PlanCommitsMixin:
                     criterion_linked=spec.occurrence_id in linked,
                     owned=owned.get(str(spec.occurrence_id), ()),
                     claimed=claimed,
-                    require_content_review=requires_content_review,
                     plan_revision=plan_revision,
                     budget=inherit_limits(
                         Budget(max_tokens=tokens, max_attempts=mission.budget.max_attempts),
@@ -1644,11 +1641,9 @@ class PlanCommitsMixin:
             raise ContractError(f"planning subject {task_id} is not a compound goal of this Mission")
         mission = self._require_mission(mission_id)
         from .commit_service import mission_account, task_account
-        from .scoped_content_review import uses_completion_protocol
 
         item = occurrence_task(
             mission, spec, binding,
-            require_content_review=uses_completion_protocol(self._store, mission.id),
             plan_revision=0,
             budget=inherit_limits(
                 Budget(max_tokens=COMPOUND_TOKENS, max_attempts=mission.budget.max_attempts),

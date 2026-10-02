@@ -13,11 +13,8 @@ from __future__ import annotations
 from ..contracts import ContractError
 from ..graph.task_graph import TaskGraphProposal
 from ..orchestrator.commit_service import TaskProposal
-from ..planning.htn.registry import MethodProposal
 from ..runtime.output_blocks import BlockError, extract_block
-from .unknown_fields import decode_dropping_unknown
 from ..runtime.role_templates import (
-    METHOD_PROPOSAL_TAG,
     TASK_GRAPH_PROPOSAL_TAG,
     TASK_PROPOSAL_TAG,
 )
@@ -77,25 +74,8 @@ def parse_task_graph_proposal(text: str) -> TaskGraphProposal:
     return TaskGraphProposal.from_json(raw)
 
 
-def parse_method_proposal(text: str) -> MethodProposal:
-    """Strict parse of a ``<method_proposal>`` block into a registry submission (§7.3).
-
-    A declared ``registry_status`` is *kept*, not dropped: the admission protocol
-    refuses a model-authored claim explicitly and records the refusal, which a
-    silent normalisation here would hide.
-    """
-
-    try:
-        raw = extract_block(text, METHOD_PROPOSAL_TAG)
-    except BlockError as error:
-        raise ContractError(f"method proposal unreadable: {error}") from error
-    # User decision 2026-09-26: keys the contract does not name are dropped.
-    return decode_dropping_unknown(MethodProposal.from_json, raw, root_names=("method_proposal",))
-
-
 __all__ = (
     "SYSTEM_BOUND_FIELDS",
-    "parse_method_proposal",
     "parse_task_graph_proposal",
     "parse_task_proposal",
 )

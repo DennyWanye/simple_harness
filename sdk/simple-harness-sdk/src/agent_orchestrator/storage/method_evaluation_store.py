@@ -255,9 +255,7 @@ class MethodEvaluationStore:
                         and str(r.goal_task_id) in member_tasks for r in resolutions)
                 for item in self.htn.list_method_instances(mission_id, state="ADOPTED")
             )
-        from ..orchestrator.scoped_content_review import uses_completion_protocol
-
-        if accepted and uses_completion_protocol(self.store, mission_id):
+        if accepted:
             from ..orchestrator.completion_status import read_occurrence_completion
 
             accepted = all(

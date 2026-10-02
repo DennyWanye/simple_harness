@@ -1,3 +1,14 @@
+最后更新：2026-10-02 CST（旧分层旁路清理，SDK opt.124）。依据 `plans/2026-09-27-desktop-next/HTN-片0-实施记录.md`"新增欠账 片0-欠1"；逐步记录见同目录 `旧分层旁路清理-实施记录.md`。
+
+**分层任务只有一个世界：带协议绑定、完成范围在计划提交时冻结。**
+
+- **没有"不带协议绑定的分层任务"这条路了**：它生产上早已建不出来（建任务时就绑定），只剩测试夹具在走。五个建世界的测试夹具全部迁到带绑定的世界后，源码里只服务分层任务的模块（分层调度、结论提交、组合审查、最终审查、叶子验收、计划提交与步骤建行、已验收产出、执行图的结果读取与完成来源、执行图接口、做法评估）把"没有绑定"那一支全部删掉。`uses_completion_protocol` 从 104 处/22 个文件减到 35 处/9 个文件，只留在与旧平面模式共用的入口（开尝试、记结果、验收结果、操作申请、选择轮、保证层收尾评估、主循环记账），在那里它区分"分层任务"和"旧平面任务"。
+- **现在的规则（都是秩序，不是判断）**：一步算不算完成，读它冻结的完成范围（叶子：已验收的准备 + 已证明的效果；中间目标：记录在案的结论），步骤行上写着"完成"不算；验收一步时判据、校验层、产出人都从已存的结果按冻结范围读回，不取调用方给的；组合审查和最终审查的判据来自冻结范围里钉住的那一版要求，不再自己另发一版；每个叶子的校验策略都带内容审阅层；一步该交哪些端口由它的冻结范围决定（没被下游消费、也没被做法链接的最后一步同样欠自己声明的端口）；还没有任何计划时，没有"已解决的目标"。
+- **计划提交只有一个入口**：`HierarchicalDispatch.commit_preview_plan_proposal` 只收"预览编译出的候选 + 它被预览时的准入凭据"，交给 `commit_planning_revision`。旧入口 `apply_plan_proposal` / `compile_proposal`（旧编译壳 + 不带准入的提交 + "过期就重编、最多几次"的循环 + 撤换时复用只读步骤的索引）与预览提交里的"兼容替身"全部删除。`commit_plan_revision` 仍是带准入提交内部调用的事务本体。
+- **测试侧**：`tests/orchestrator/full_target/scripted_plans.py` 的 `seed_verified_result` 按生产写入顺序造一条真实的已验证结果；`admitted_plans.py` 用编译器函数编译一处细化并经带准入的入口提交。夹具世界没有开执行图（生产一定开），这是记下的更外一层旧世界，没有动。
+- **没动的**：旧平面模式整条线（待用户定）；不走保证通道的旧根审阅员与裁判 Critic；不装执行图的分层夹具世界；管理范围周期（`bump_epoch` 只有测试在调）。
+- 验证：相关定向测试、变异、独立核验、真机，见实施记录。
+
 最后更新：2026-10-02 CST（HTN 精简改造 片 D：其余越位，SDK opt.122、opt.123）。依据 `plans/2026-09-27-desktop-next/HTN-后续-方案.md` 第 4 版；逐步记录见同目录 `HTN-片D-实施记录.md`。
 - **判停之前先问规划器一次**：`RepairTriggerSource.NO_DISPATCHABLE_WORK`。`Orchestrator._confirm_and_stop_stalled` 在停滞确认之后、判失败之前调用 `planning_repair_requests.request_planner_for_stall`，记一条 `PlanningRepairRequested`（幂等键 `stalled:<任务号>:<计划版本号>`，范围是整个计划），主循环回头再转一轮，由 `_resume_planning_services` 开出规划轮。请求里只有事实：`withheld`（哪些步骤被哪道闸挡住）、`admitted_not_dispatched`、`outstanding_obligations`，以及最终审查 / 组合审查没有结论或被打回时的 `final_review` / `composition_review` / `root_review`。同一版计划问过之后又停在原地才以 `NO_DISPATCHABLE_WORK` 结束，停机报告 `planner_asked` 写明请求编号与规划轮有没有开出来。计划换版本后旧请求由系统了结（`superseded_revision_requests`，与"目标还没有做法"的请求同一处理）。有名字的停机（最终审查修复次数用完）排在前面，不受影响。
 - **"审查的回复用完了"两种结局都算**：`_exhausted_reviews` 同时读 `AssuranceReviewFormatExhausted`（回复一直解码不了）与 `AssuranceReviewImportRejected`（第二次回复能解码但不能采用，如引用了没展示的证据）；`_final_review_unreadable_detail` 覆盖最终审查、组合审查、操作结果审查三类。操作结果审查以后一种方式结束时不再被当成合法等待；新做法审阅以后一种方式结束时规划器直接拿到原因。

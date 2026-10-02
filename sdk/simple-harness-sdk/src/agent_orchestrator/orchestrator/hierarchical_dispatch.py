@@ -12,14 +12,12 @@ optional collaborator and five ``if hierarchical`` branches.
 
 Four things this module is responsible for, and one it deliberately is not:
 
-* **One round of planning.**  :meth:`HierarchicalDispatch.apply_planner_reply`
-  runs ``parse_plan_proposal`` → ``assess_method`` / ``ground_method`` →
-  ``compile_refinement_bundle`` → ``commit_plan_revision``.  A refusal whose
-  reason a *recompilation* could fix is retried by compiling again against the
-  freshly read snapshot — at most ``compile_attempts`` times in total — and then
-  the round stops with a ``PlanCommitRefused`` event.  There is no rebase here
-  and no unbounded retry: ADR-13 / C19 say a hierarchical proposal is handed back
-  to its author, never replayed on its behalf.
+* **Committing one planning decision.**  :meth:`HierarchicalDispatch.
+  commit_preview_plan_proposal` takes the candidate the pure preview compiled and
+  the planning admission it was previewed under, and sends exactly that
+  compilation to ``commit_planning_revision``.  A refusal is recorded as
+  ``PlanCommitRefused`` and handed back to the proposer; nothing is recompiled or
+  rebased on its behalf (ADR-13 / C19).
 * **Reading the plan through the projection.**  ``list``, ready, terminal, the
   concurrency count and the root review all go through
   :class:`~..graph.task_network.TaskNetworkSnapshot` and
@@ -76,7 +74,6 @@ from ..contracts.evidence_state import (
     WitnessPurpose,
 )
 from ..contracts.htn import (
-    MethodInstanceId,
     MissionRef,
     ObligationId,
     OccurrenceId,
@@ -85,9 +82,6 @@ from ..contracts.htn import (
     PortCardinality,
     ReadItem,
     ReadItemKind,
-    RefineOperation,
-    RetireMethodOperation,
-    ReusePolicy,
     RunningWorkPolicy,
     ScopeEpochRead,
     SemanticReadSet,
@@ -110,7 +104,6 @@ from ..contracts.resolution import (
     WorkspaceAccess,
 )
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
-from ..contracts.state_machines import AttemptStatus
 from ..graph.eligibility import (
     ActivePlanView,
     EligiblePrimitiveTask,
@@ -134,19 +127,15 @@ from ..planning.htn.applicability import assess_method
 from ..planning.htn.compiler import (
     RefinementCompilation,
     RootNetwork,
-    compile_refinement_bundle,
 )
 from ..planning.htn.grounding import (
-    ShareDecision,
     SharedGoalEntry,
     SharedGoalIndex,
-    ShareVerdict,
     SharingSignature,
-    ground_method,
 )
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.obligation_store import ObligationStore
-from ..storage.store import StoreConflict, StoreError
+from ..storage.store import StoreError
 from ..verification.acceptance_rules import CompoundFacts, ExecutionPosture, IndependenceFacts
 from .accepted_outputs import (
     accepted_output_from_json,
@@ -244,38 +233,6 @@ REPAIR_DECISION_DISPATCHED = "RepairDecisionDispatched"
 #: only stops a pathological registry from writing an unbounded row), and a payload
 #: that hits it says so in ``truncated`` instead of quietly ending.
 MAX_RECORDED_REFUSALS = 200
-
-#: How many times one Planner reply may be compiled in total.  Two means: compile,
-#: and if the commit was refused for a reason a fresh snapshot could fix, compile
-#: once more against that snapshot.  It is a small number on purpose — a third
-#: attempt against a Mission that is moving underneath the proposer is a busy
-#: loop, and the honest answer is to hand the round back with a named reason.
-DEFAULT_COMPILE_ATTEMPTS = 2
-
-#: The refusals a *recompilation against the current snapshot* can plausibly fix:
-#: the four staleness gates, the structural ones that compare the increment against
-#: the plan it was compiled from, and the two budget ones.
-#:
-#: Everything else is deliberately absent.  A forged principal, a payload conflict,
-#: a terminal Mission, a missing semantic binding, an unresolvable read, a delta the
-#: compiler did not mark commit-ready and an unresolved OR say something about the
-#: *request* — recompiling against a newer snapshot changes none of them, and
-#: retrying would only hide where the defect is.
-RECOMPILABLE_REFUSALS: frozenset[str] = frozenset(
-    {
-        "GRAPH_VERSION_STALE",
-        "PLAN_REVISION_STALE",
-        "MANAGER_EPOCH_STALE",
-        "READ_SET_STALE",
-        "STRUCTURE_INVALID",
-        # The increment did not preserve what the plan it was compiled from held: a
-        # second compilation against the plan as it is *now* is exactly the answer.
-        "PLAN_NOT_PRESERVED",
-        "BOUND_REACHED",
-        "BUDGET_INSUFFICIENT",
-        "BUDGET_REQUIREMENT_MISMATCH",
-    }
-)
 
 #: Readiness answers that mean "the planner still owes something about the facts
 #: or the authority", as opposed to "a method has not been chosen yet".
@@ -691,16 +648,11 @@ class HierarchicalDispatch:
     store: Store
     commit: CommitService
     planning: PlanningWorld | None = None
-    compile_attempts: int = DEFAULT_COMPILE_ATTEMPTS
     target_rules: TargetRules | None = None
     resolution_policy: ResolutionPolicy = field(default_factory=ResolutionPolicy)
     _taskgraph_settlement_reader: Any = field(default=None, repr=False)
     _taskgraph_preview: Any = field(default=None, repr=False)
     _taskgraph_history: Any = field(default=None, repr=False)
-
-    def __post_init__(self) -> None:
-        if int(self.compile_attempts) < 1:
-            raise ContractError("compile_attempts must be at least 1")
 
     # ---------------------------------------------------------------- reading the plan
     @classmethod
@@ -1116,25 +1068,6 @@ class HierarchicalDispatch:
             legacy_status="" if task is None else str(task.status),
         )
 
-    def _goal_resolution_is_live(self, mission_id: str, item: Any) -> bool:
-        """P2.3l P1-2: ORDER only sees a CURRENT GoalResolution whose witness epoch stands."""
-
-        if str(item.verdict) != "ACCEPT":
-            return False
-        if str(item.validity) != "CURRENT":
-            return False
-        epoch = int(self.semantics().epoch(mission_id, "mission"))
-        for witness in self.semantics().list_validity_witnesses(mission_id):
-            if (
-                witness.purpose is WitnessPurpose.ACCEPT
-                and witness.consumer_ref.kind is TypedRefKind.TASK
-                and str(witness.consumer_ref.id) == str(item.goal_task_id)
-                and witness.decision is WitnessDecision.USABLE
-                and int(witness.scope_epoch) == epoch
-            ):
-                return True
-        return False
-
     def occurrence_outcomes(
         self, mission_id: str, network: TaskNetworkSnapshot
     ) -> dict[OccurrenceId, OccurrenceOutcome]:
@@ -1149,78 +1082,41 @@ class HierarchicalDispatch:
         if taskgraph_enabled(self.store, mission_id):
             from .taskgraph_outcomes import read_taskgraph_outcomes
             return read_taskgraph_outcomes(self.store, mission_id, network)
-        semantics = self.semantics()
-        # An Acceptance names a *task*, so an occurrence counts as accepted when the
-        # task it instantiates has a CURRENT Acceptance under the same duty.  A
-        # revoked or superseded Acceptance is not one (§11.5).
-        # P2.3l / N7: a compound never gets an Acceptance (leaf_acceptance refuses
-        # it).  Its conclusion is a GoalResolution *of that task*.  Keying on the
-        # duty would mark every REFINES_PARENT sibling ACCEPTED the moment the
-        # inner compound resolved — and SATISFY the shared root duty too early.
-        resolved_tasks = {
-            str(item.goal_task_id)
-            for item in semantics.list_goal_resolutions(mission_id)
-            if self._goal_resolution_is_live(mission_id, item)
-        }
-        accepted = {
-            (str(item.task_id), str(item.obligation_id))
-            for item in semantics.list_acceptances(mission_id)
-            if str(item.validity) == "CURRENT"
-        }
-        from .scoped_content_review import uses_completion_protocol
-        completion_protocol = uses_completion_protocol(self.store, mission_id)
+        from .completion_status import read_occurrence_completion
+        from .operation_completion import OperationCompletionError
+
+        # An occurrence is ACCEPTED when its frozen completion scope is complete — a
+        # leaf's accepted preparation and proven effects, a compound's recorded
+        # resolution.  A Task row's status never is: completed *without* that is
+        # SETTLED_OTHER (TG decision 1: an unknown ending never settles anything).
+        planned = self.semantics().active_plan_revision(mission_id) is not None
         outcomes: dict[OccurrenceId, OccurrenceOutcome] = {}
         for spec in network.occurrences:
-            if completion_protocol:
-                from .completion_status import read_occurrence_completion
-                from .operation_completion import OperationCompletionError
-                status = None
-                if semantics.active_plan_revision(mission_id) is not None:
-                    try:
-                        status = read_occurrence_completion(
-                            self.store, mission_id, str(spec.occurrence_id)
-                        )
-                    except OperationCompletionError as error:
-                        if error.code not in {
-                            "OP_COMPLETION_SCOPE_UNRESOLVED", "OP_REQUIREMENT_MAPPING_MISSING"
-                        }:
-                            raise
-                        # A planner may repair missing scope publication. Missing
-                        # completion facts never make the occurrence ACCEPTED.
-                if status is not None and status.complete:
-                    outcomes[spec.occurrence_id] = OccurrenceOutcome.ACCEPTED
-                    continue
-                task = self.store.get_task(str(spec.task_id))
-                outcomes[spec.occurrence_id] = (
-                    OccurrenceOutcome.FAILED if task is not None and task.status is TaskStatus.FAILED
-                    else OccurrenceOutcome.CANCELLED
-                    if task is not None and task.status is TaskStatus.CANCELLED
-                    else OccurrenceOutcome.SETTLED_OTHER
-                    if task is not None and task.status is TaskStatus.COMPLETED
-                    else OccurrenceOutcome.RUNNING
-                )
-                continue
-            if str(spec.task_id) in resolved_tasks:
-                outcomes[spec.occurrence_id] = OccurrenceOutcome.ACCEPTED
-                continue
-            if (str(spec.task_id), str(spec.obligation_id)) in accepted:
+            status = None
+            if planned:
+                try:
+                    status = read_occurrence_completion(
+                        self.store, mission_id, str(spec.occurrence_id)
+                    )
+                except OperationCompletionError as error:
+                    if error.code not in {
+                        "OP_COMPLETION_SCOPE_UNRESOLVED", "OP_REQUIREMENT_MAPPING_MISSING"
+                    }:
+                        raise
+                    # A planner may repair missing scope publication. Missing
+                    # completion facts never make the occurrence ACCEPTED.
+            if status is not None and status.complete:
                 outcomes[spec.occurrence_id] = OccurrenceOutcome.ACCEPTED
                 continue
             task = self.store.get_task(str(spec.task_id))
-            if task is None:
-                outcomes[spec.occurrence_id] = OccurrenceOutcome.UNKNOWN
-                continue
-            task_status = str(task.status)
-            if task_status == "FAILED":
-                outcomes[spec.occurrence_id] = OccurrenceOutcome.FAILED
-            elif task_status == "CANCELLED":
-                outcomes[spec.occurrence_id] = OccurrenceOutcome.CANCELLED
-            elif task_status == "COMPLETED":
-                # Completed *without* an Acceptance is not an acceptance: TG
-                # decision 1 says an unknown ending never settles anything.
-                outcomes[spec.occurrence_id] = OccurrenceOutcome.SETTLED_OTHER
-            else:
-                outcomes[spec.occurrence_id] = OccurrenceOutcome.RUNNING
+            outcomes[spec.occurrence_id] = (
+                OccurrenceOutcome.FAILED if task is not None and task.status is TaskStatus.FAILED
+                else OccurrenceOutcome.CANCELLED
+                if task is not None and task.status is TaskStatus.CANCELLED
+                else OccurrenceOutcome.SETTLED_OTHER
+                if task is not None and task.status is TaskStatus.COMPLETED
+                else OccurrenceOutcome.RUNNING
+            )
         return outcomes
 
     def resolved_occurrences(
@@ -1234,23 +1130,10 @@ class HierarchicalDispatch:
             if taskgraph_enabled(self.store, mission_id):
                 self.seed_network(mission_id)  # verify the original seed
             return frozenset()
-        from .scoped_content_review import uses_completion_protocol
-        if uses_completion_protocol(self.store, mission_id):
-            from .completion_status import read_occurrence_completion
-            return frozenset(spec.occurrence_id for spec in network.occurrences
-                if spec.form is TaskForm.COMPOUND and read_occurrence_completion(
-                    self.store, mission_id, str(spec.occurrence_id)).complete)
-
-        semantics = self.semantics()
-        adopted: set[ObligationId] = set()
-        for spec in network.occurrences:
-            if spec.obligation_id in adopted:
-                continue
-            if semantics.adopted_goal_resolution(mission_id, str(spec.obligation_id)) is not None:
-                adopted.add(spec.obligation_id)
-        return frozenset(
-            spec.occurrence_id for spec in network.occurrences if spec.obligation_id in adopted
-        )
+        from .completion_status import read_occurrence_completion
+        return frozenset(spec.occurrence_id for spec in network.occurrences
+            if spec.form is TaskForm.COMPOUND and read_occurrence_completion(
+                self.store, mission_id, str(spec.occurrence_id)).complete)
 
     def witnesses(
         self, mission_id: str, network: TaskNetworkSnapshot
@@ -1813,53 +1696,42 @@ class HierarchicalDispatch:
         ``WAITING_DATA`` rather than a silent all-ancestors sweep.
         """
 
-        from .scoped_content_review import uses_completion_protocol
-        if uses_completion_protocol(self.store, mission_id):
-            if self.semantics().active_plan_revision(mission_id) is None:
-                return AcceptedOutputsIndex(outputs=(), completed_producers=frozenset())
-            from .completion_status import read_occurrence_completion
-            statuses = {
-                spec.occurrence_id: read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id))
-                for spec in network.occurrences
-            }
-            prepared = frozenset(key for key, value in statuses.items() if value.preparation_ready)
-            allowed_acceptances = {
-                acceptance for value in statuses.values()
-                for acceptance in value.preparation_acceptance_ids
-            }
-            from ..storage.operation_completion_store import OperationCompletionStore
-            completion_store = OperationCompletionStore(self.store)
-            scoped_outputs = []
-            for output in self._recorded_outputs(mission_id, network):
-                state = statuses.get(output.producer_occurrence)
-                if (state is None or output.acceptance_id not in allowed_acceptances
-                        or output.acceptance_id not in state.preparation_acceptance_ids):
-                    continue
-                row = completion_store.get_acceptance_scope_exact(mission_id, output.acceptance_id)
-                if row is None:
-                    continue
-                contribution = row["document"]
-                if any(ref.id == output.artifact_id
-                       and str(ref.revision) == output.source_revision
-                       and ref.content_hash == output.content_hash
-                       for ref in contribution.output_artifact_refs):
-                    scoped_outputs.append(output)
-            # 片 B：完成的中间目标的端口对到它收尾步骤的产出；它也就成了"已完成的生产者"。
-            done = frozenset(key for key, value in statuses.items() if value.complete)
-            delivered = self.goal_port_outputs(mission_id, network, scoped_outputs, complete=done)
-            return AcceptedOutputsIndex(
-                outputs=(*scoped_outputs, *delivered),
-                completed_producers=prepared | {item.producer_occurrence for item in delivered},
-            )
-        settled = self.occurrence_outcomes(mission_id, network) if outcomes is None else outcomes
-        completed = frozenset(
-            occurrence
-            for occurrence, outcome in settled.items()
-            if outcome is OccurrenceOutcome.ACCEPTED
-        )
+        del outcomes  # the completion scopes below are the reading, not the projection
+        if self.semantics().active_plan_revision(mission_id) is None:
+            return AcceptedOutputsIndex(outputs=(), completed_producers=frozenset())
+        from .completion_status import read_occurrence_completion
+        statuses = {
+            spec.occurrence_id: read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id))
+            for spec in network.occurrences
+        }
+        prepared = frozenset(key for key, value in statuses.items() if value.preparation_ready)
+        allowed_acceptances = {
+            acceptance for value in statuses.values()
+            for acceptance in value.preparation_acceptance_ids
+        }
+        from ..storage.operation_completion_store import OperationCompletionStore
+        completion_store = OperationCompletionStore(self.store)
+        scoped_outputs = []
+        for output in self._recorded_outputs(mission_id, network):
+            state = statuses.get(output.producer_occurrence)
+            if (state is None or output.acceptance_id not in allowed_acceptances
+                    or output.acceptance_id not in state.preparation_acceptance_ids):
+                continue
+            row = completion_store.get_acceptance_scope_exact(mission_id, output.acceptance_id)
+            if row is None:
+                continue
+            contribution = row["document"]
+            if any(ref.id == output.artifact_id
+                   and str(ref.revision) == output.source_revision
+                   and ref.content_hash == output.content_hash
+                   for ref in contribution.output_artifact_refs):
+                scoped_outputs.append(output)
+        # 片 B：完成的中间目标的端口对到它收尾步骤的产出；它也就成了"已完成的生产者"。
+        done = frozenset(key for key, value in statuses.items() if value.complete)
+        delivered = self.goal_port_outputs(mission_id, network, scoped_outputs, complete=done)
         return AcceptedOutputsIndex(
-            outputs=tuple(self._recorded_outputs(mission_id, network)),
-            completed_producers=completed,
+            outputs=(*scoped_outputs, *delivered),
+            completed_producers=prepared | {item.producer_occurrence for item in delivered},
         )
 
     def goal_port_outputs(
@@ -1922,10 +1794,7 @@ class HierarchicalDispatch:
         """The non-root compound occurrences whose completion is recorded (片 B)."""
 
         from .completion_status import read_occurrence_completion
-        from .scoped_content_review import uses_completion_protocol
 
-        if not uses_completion_protocol(self.store, mission_id):
-            return frozenset()
         roots = {str(item) for item in network.root_occurrence_ids}
         return frozenset(
             spec.occurrence_id for spec in network.occurrences
@@ -2010,10 +1879,10 @@ class HierarchicalDispatch:
         """The root criteria this leaf is answerable for, for its own context (P2.3h).
 
         Read from the adopted method's ``criterion_links`` through
-        :func:`~.accepted_outputs.carried_criteria_for` — the same rows
-        :meth:`~..orchestrator.leaf_acceptance.LeafAcceptanceAssembly.carried_criteria`
-        builds the leaf's acceptance criteria from — so what the Worker is *told* it
-        carries and what its acceptance is *held to* cannot drift apart.  Each entry
+        :func:`~.accepted_outputs.carried_criteria_for` — the same rows the frozen
+        completion scope projects the leaf's acceptance criteria from — so what the
+        Worker is *told* it carries and what its acceptance is *held to* cannot drift
+        apart.  Each entry
         names the root criterion, the leaf criterion it is judged under, the
         ``evidence_requirement`` the method wrote for the link (the sentence the
         leaf's report has to satisfy) and the ports that output is read from.
@@ -2158,11 +2027,9 @@ class HierarchicalDispatch:
         if not roots:
             return False
         for root in roots:
-            from .scoped_content_review import uses_completion_protocol
-            if uses_completion_protocol(self.store, mission_id):
-                from .completion_status import read_occurrence_completion
-                if not read_occurrence_completion(self.store, mission_id, str(root)).effects_ready:
-                    return False
+            from .completion_status import read_occurrence_completion
+            if not read_occurrence_completion(self.store, mission_id, str(root)).effects_ready:
+                return False
             spec = view.network.occurrence(root)
             if spec.form is not TaskForm.COMPOUND:
                 if view.outcomes.get(root) is not OccurrenceOutcome.ACCEPTED:
@@ -2185,16 +2052,9 @@ class HierarchicalDispatch:
         required = set(view.network.required_obligations)
         if not required:
             return False
-        from .scoped_content_review import uses_completion_protocol
-        if uses_completion_protocol(self.store, mission_id):
-            from .completion_status import read_occurrence_completion
-            return all(read_occurrence_completion(self.store, mission_id, str(root)).complete
-                       for root in view.network.root_occurrence_ids)
-        semantics = self.semantics()
-        return all(
-            semantics.adopted_goal_resolution(mission_id, str(duty)) is not None
-            for duty in sorted(required, key=str)
-        )
+        from .completion_status import read_occurrence_completion
+        return all(read_occurrence_completion(self.store, mission_id, str(root)).complete
+                   for root in view.network.root_occurrence_ids)
 
     # --------------------------------------------------------- the root acceptance gate
     def root_contributions(self, mission_id: str) -> dict[str, tuple[str, ...]]:
@@ -2207,35 +2067,18 @@ class HierarchicalDispatch:
         of work nobody accepts any more (§21.5 "wrongly declared complete = 0").
         """
 
-        semantics = self.semantics()
-        network = self.network(mission_id)
-        from .scoped_content_review import uses_completion_protocol
-        if uses_completion_protocol(self.store, mission_id):
-            from .completion_status import read_occurrence_completion
-            scoped = {}
-            for spec in network.occurrences:
-                status = read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id))
-                if status.preparation_acceptance_ids:
-                    scoped[str(spec.occurrence_id)] = tuple(sorted(status.preparation_acceptance_ids))
-            from .completion_status import current_effect_proofs
+        from .completion_status import current_effect_proofs, read_occurrence_completion
 
-            for proof in current_effect_proofs(self.store, mission_id):
-                occurrence = proof["occurrence_id"]
-                scoped[occurrence] = tuple(sorted({*scoped.get(occurrence, ()), proof["acceptance_id"]}))
-            return scoped
-        by_occurrence: dict[str, list[str]] = {}
-        for acceptance in semantics.list_acceptances(mission_id):
-            if acceptance.validity is not Validity.CURRENT:
-                continue
-            for spec in network.occurrences:
-                if str(spec.task_id) != str(acceptance.task_id):
-                    continue
-                if str(spec.obligation_id) != str(acceptance.obligation_id):
-                    continue
-                by_occurrence.setdefault(str(spec.occurrence_id), []).append(
-                    str(acceptance.acceptance_id)
-                )
-        return {key: tuple(sorted(value)) for key, value in by_occurrence.items()}
+        network = self.network(mission_id)
+        scoped: dict[str, tuple[str, ...]] = {}
+        for spec in network.occurrences:
+            status = read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id))
+            if status.preparation_acceptance_ids:
+                scoped[str(spec.occurrence_id)] = tuple(sorted(status.preparation_acceptance_ids))
+        for proof in current_effect_proofs(self.store, mission_id):
+            occurrence = proof["occurrence_id"]
+            scoped[occurrence] = tuple(sorted({*scoped.get(occurrence, ()), proof["acceptance_id"]}))
+        return scoped
 
     def root_resolution_inputs(self, mission_id: str) -> RootResolutionInputs:
         """Everything the root ``commit_goal_resolution`` command is built from.
@@ -2346,35 +2189,11 @@ class HierarchicalDispatch:
             )
         instance = network.adopted_instance_for(root)
         # Direct children of the adopted root method, not every Acceptance in the
-        # Mission.  Nested leaves share a REFINES_PARENT duty with the inner
-        # compound; quoting them as root contributions made
-        # COMPOUND_FACTS_CONTRADICT_STORE (P2.3l / N7).
-        contributions: dict[str, tuple[str, ...]] = {}
-        for child in network.adopted_children(root):
-            child_spec = network.occurrence(child.occurrence_id)
-            task_id = str(child_spec.task_id)
-            usable = tuple(
-                str(item.acceptance_id)
-                for item in semantics.list_acceptances(
-                    mission_id, obligation_id=str(child.obligation_id)
-                )
-                if str(item.validity) == "CURRENT" and str(item.task_id) == task_id
-            )
-            if usable:
-                contributions[str(child.occurrence_id)] = usable
-                continue
-            if any(
-                str(item.goal_task_id) == task_id
-                and self._goal_resolution_is_live(mission_id, item)
-                for item in semantics.list_goal_resolutions(mission_id)
-            ):
-                contributions[str(child.occurrence_id)] = ()
-        from .scoped_content_review import uses_completion_protocol
+        # Mission: what supports the root is each direct child's current completion
+        # support (a leaf's accepted contribution, an inner goal's resolution).
+        from .completion_support import current_child_supports
 
-        if uses_completion_protocol(self.store, mission_id):
-            from .completion_support import current_child_supports
-
-            contributions = current_child_supports(self.store, mission_id, network.adopted_children(root))
+        contributions = current_child_supports(self.store, mission_id, network.adopted_children(root))
         return RootResolutionInputs(
             reason="",
             occurrence_id=str(root),
@@ -2494,8 +2313,6 @@ class HierarchicalDispatch:
         assert requirements is not None and inputs.package is not None
         assert inputs.record is not None
         manifest_hash = input_manifest_hash or inputs.package.binding.input_manifest_hash
-        from .scoped_content_review import uses_completion_protocol
-        completion_protocol = uses_completion_protocol(self.store, mission_id)
         resolution_id = resolution_id or f"res-{inputs.occurrence_id}"
         from .review_adjudication import accepted_or_adjudicated
         # Handoff item 7: on the assured lane the licence is the current
@@ -2548,8 +2365,7 @@ class HierarchicalDispatch:
             # UNKNOWN and the AER §6.2 formula answers for it, instead of the trigger
             # answering on the reviewer's behalf.
             criteria=_root_criteria(
-                requirements, inputs.record, include_evidence=completion_protocol,
-                effective_grades=effective_grades,
+                requirements, inputs.record, effective_grades=effective_grades,
             ),
             review_receipt_id=str(inputs.record.record_id),
             verdict=ReviewVerdict.ACCEPT,
@@ -2741,10 +2557,8 @@ class HierarchicalDispatch:
             task_view = view.views[spec.occurrence_id]
             if task_view.binding is not None:
                 bindings[task_id] = task_view.binding
-            from .scoped_content_review import uses_completion_protocol
             task = self.store.get_task(task_id)
-            if (uses_completion_protocol(self.store, mission_id)
-                    and task is not None and task.accepted_result_id):
+            if task is not None and task.accepted_result_id:
                 refusals.append(DispatchRefusal(
                     task_id=task_id, occurrence_id=str(spec.occurrence_id),
                     reason=ReadinessReason.NOT_SELECTED,
@@ -3563,60 +3377,6 @@ class HierarchicalDispatch:
             policy = replace(policy, max_steps=MAX_PROPOSED_METHOD_STEPS)
         return policy
 
-    def apply_plan_proposal(
-        self,
-        mission_id: str,
-        proposal: PlanProposal,
-        *,
-        principal: PlanPrincipal,
-        command_id: str,
-        source: Mapping[str, Any] | None = None,
-        owner: str | None = None,
-        proposal_text: str = "",
-    ) -> PlanRoundOutcome:
-        """Compile and commit an already decoded proposal.
-
-        The new planning-decision adapter produces the same typed ``PlanProposal``
-        used by the legacy text parser.  Keeping the compile/commit path here makes
-        that boundary explicit without duplicating the safety checks of one round.
-        """
-
-        mission = self.require_hierarchical(mission_id)
-        del mission
-        refusals: list[PlanRefusal] = []
-        limit = int(self.compile_attempts)
-        for attempt in range(1, limit + 1):
-            network = self.network(mission_id)
-            compilation = self.compile_proposal(mission_id, proposal, network)
-            command = self.build_command(
-                mission_id,
-                proposal,
-                compilation,
-                principal=principal,
-                command_id=f"{command_id}:{attempt}",
-                source={**dict(source or {}), "compile_attempt": attempt},
-            )
-            try:
-                receipt = self.commit.commit_plan_revision(command, principal)
-            except PlanCommitRejected as refused:
-                recompilable = refused.reason in RECOMPILABLE_REFUSALS
-                refusals.append(
-                    PlanRefusal(
-                        attempt=attempt,
-                        reason=refused.reason,
-                        detail=refused.detail,
-                        recompilable=recompilable,
-                    )
-                )
-                if recompilable and attempt < limit:
-                    continue
-                self._record_refusal(mission_id, proposal, refusals)
-                return PlanRoundOutcome(proposal_id=proposal.proposal_id, refusals=tuple(refusals))
-            return PlanRoundOutcome(
-                proposal_id=proposal.proposal_id, receipt=receipt, refusals=tuple(refusals)
-            )
-        raise AssertionError("unreachable: the loop returns on every path")  # pragma: no cover
-
     def solver_preview_lane(self, mission_id: str, proposal: PlanProposal, *,
                             preview: Any, admission: Any, principal: PlanPrincipal,
                             command_id: str, source: Mapping[str, Any]) -> Any:
@@ -3653,13 +3413,11 @@ class HierarchicalDispatch:
     ) -> PlanRoundOutcome:
         """Commit exactly the compilation produced by the H1-H candidate preview.
 
-        The ordinary ``apply_plan_proposal`` path deliberately recompiles because it
-        owns the legacy planner round.  A new-protocol decision has already frozen a
-        typed source snapshot and preview compilation, however: recompiling here
-        could commit a different candidate than the one admitted.  This seam therefore
-        only accepts a typed :class:`CandidatePreview`, rechecks the frozen network
-        identity, and sends that compilation directly to ``CommitService``.  Legacy
-        callers continue through ``apply_plan_proposal`` unchanged.
+        A planning decision has already frozen a typed source snapshot and a preview
+        compilation; recompiling here could commit a different candidate than the one
+        admitted.  This entry therefore only accepts a typed :class:`CandidatePreview`
+        and the admission it was previewed under, rechecks the frozen network
+        identity, and sends that compilation directly to ``CommitService``.
         """
 
         from ..contracts.models import sha256_hex
@@ -3668,14 +3426,7 @@ class HierarchicalDispatch:
 
         if not isinstance(preview, CandidatePreview):
             raise ContractError("SOURCE_UNAVAILABLE: final commit requires a typed preview")
-        # Existing unit seams use a tiny commit stub to assert that the exact
-        # preview compilation is forwarded.  Keep that seam working while the
-        # production CommitService (which exposes commit_planning_revision) always
-        # requires the typed H1-H admission below.
-        compatibility_stub = admission is None and not callable(
-            getattr(self.commit, "commit_planning_revision", None)
-        )
-        if not compatibility_stub and not isinstance(admission, PlanningCommitAdmission):
+        if not isinstance(admission, PlanningCommitAdmission):
             raise ContractError("SOURCE_UNAVAILABLE: final commit requires H1-H admission")
         mission = self.require_hierarchical(mission_id)
         del mission
@@ -3710,15 +3461,11 @@ class HierarchicalDispatch:
             },
         )
         try:
-            if compatibility_stub:
-                receipt = self.commit.commit_plan_revision(command, principal)
-            else:
-                assert isinstance(admission, PlanningCommitAdmission)
-                receipt = self.commit.commit_planning_revision(
-                    command,
-                    principal,
-                    admission=admission,
-                )
+            receipt = self.commit.commit_planning_revision(
+                command,
+                principal,
+                admission=admission,
+            )
         except PlanCommitRejected as refused:
             refusal = PlanRefusal(
                 attempt=1,
@@ -3732,173 +3479,9 @@ class HierarchicalDispatch:
             )
         return PlanRoundOutcome(proposal_id=proposal.proposal_id, receipt=receipt)
 
-    def compile_proposal(
-        self, mission_id: str, proposal: PlanProposal, network: TaskNetworkSnapshot
-    ) -> RefinementCompilation:
-        """The model's proposal, compiled into a checked increment (§18.3).
-
-        One ``refine`` operation per round.  A proposal carrying several is refused
-        rather than partly applied: §24.1 decision 8 requires the *merged* result to
-        be fully re-validated on the current transaction state, and that belongs to
-        P3.1 — silently taking the first operation would report a commit the Planner
-        did not ask for.
-
-        P2.3j: the one refinement may be accompanied by **one** ``retire_method``,
-        and only of the instance adopted at the very occurrence the refinement names.
-        That pair is a single semantic operation — §9.1's "选择替代方法", replacing the
-        method a root review rejected — and it compiles through the compiler's own
-        ``retire_instance_ids``: the retired instance's slots leave the network, the
-        new draft is adopted over the same occurrence, and the commit's retirement
-        checks (running work, preserved plan, released demands) run as they always
-        have.  A retirement on its own is refused — it would leave the duty with
-        nobody working on it — and so is a retirement of anything but the adopted
-        instance of the refined occurrence: a merged delta touching two occurrences
-        is the P3.1 case above.
-        """
-
-        world = self._world()
-        operations = [item for item in proposal.operations if _is_refine(item)]
-        retirements = [item for item in proposal.operations if _is_retirement(item)]
-        if (
-            len(operations) + len(retirements) != len(proposal.operations)
-            or len(operations) != 1
-            or len(retirements) > 1
-        ):
-            raise ContractError(
-                f"proposal {proposal.proposal_id!r} carries "
-                f"{len(proposal.operations)} operation(s) of which {len(operations)} refine "
-                f"and {len(retirements)} retire; this slice assembles exactly one refinement "
-                "per round, optionally replacing the method instance adopted at that same "
-                "occurrence with one retire_method (a merged delta is re-validated as a "
-                "whole, §24.1 decision 8)"
-            )
-        operation: RefineOperation = operations[0]
-        try:
-            parent = network.binding_for_task(TaskRef(str(operation.goal_id)))
-        except KeyError as error:
-            raise missing_bindings(mission_id, [str(operation.goal_id)]) from error
-        retiring: tuple[MethodInstanceId, ...] = ()
-        if retirements:
-            retirement: RetireMethodOperation = retirements[0]
-            retiring = (MethodInstanceId(str(retirement.method_instance_id)),)
-        # P2.3c part 2c: *which occurrence* of that goal is being refined.  A
-        # ``refine`` operation names a goal and a duty, and for the Mission root the
-        # occurrence id happens to equal the task id — so the draft's default
-        # (``goal_occurrence_id = goal_id``) was right by coincidence and every
-        # *child* compound was refused by the compiler with "the draft refines
-        # occurrence <task id>, which this network does not contain".  A plan deeper
-        # than one level could therefore never be committed at all, which is also why
-        # no test in this suite had ever run a second refinement round.
-        occurrence = _refined_occurrence(mission_id, network, operation, retiring=retiring)
-        if retiring:
-            adopted = network.adopted_instance_for(occurrence)
-            if adopted is None or str(adopted.instance_id) != str(retiring[0]):
-                raise ContractError(
-                    f"proposal {proposal.proposal_id!r} retires {str(retiring[0])!r}, which is "
-                    f"not the adopted method instance of occurrence {str(occurrence)!r} that "
-                    "the same proposal refines; a replacement retires exactly the instance it "
-                    "replaces (§9.1), and retiring anything else is a different revision"
-                )
-            self._check_retirement_has_no_running_work(mission_id, network, proposal, adopted)
-        contract = (
-            self.semantics()
-            .get_method(operation.method_ref.id, int(operation.method_ref.version))
-            .contract
-        )
-        report = assess_method(
-            parent,
-            contract,
-            world.snapshot(),
-            world.capabilities(),
-            registry=world.predicates,
-        )
-        # G2: what this network already holds that a slot of the new method may bind
-        # instead of re-doing.  Without it ``sharing`` was always ``None`` here, so a
-        # read-only sub-goal two consumers both need — TG §12's shared goal, and
-        # §21.5's "a shared sub-goal is reused at least once" — could not happen in a
-        # running Mission at all, whatever the method library said.
-        # P2.3n: a replacement must not share slots with the instance it retires —
-        # those occurrences leave with the membership, and grounding against them
-        # produced ``binds slot … to unknown occurrence`` (C1-shape same task types).
-        # P2.3q / N10a: accepted read-only leaves of the retiring instance (facts /
-        # reproduce: not criterion-linked) are the exception — they re-enter as
-        # ``share_active`` and ``_merge`` keeps them.
-        leaving = _occurrences_leaving_with(network, retiring)
-        repair_share = self._repair_read_only_share_index(
-            mission_id, network, catalog=world.catalog, retiring=retiring
-        )
-        sharing = _CompositeShareIndex(
-            repair_share,
-            shared_goal_index(
-                network,
-                catalog=world.catalog,
-                exclude_occurrence_ids=tuple(leaving),
-            ),
-        )
-        draft = ground_method(
-            parent,
-            contract,
-            dict(operation.bindings),
-            report,
-            catalog=world.catalog,
-            schemas=world.schemas,
-            sharing=sharing,
-            plan_revision=network.plan_revision,
-            goal_occurrence_id=occurrence,
-        )
-        # Verification P0-1, the second guard: the draft's id is a function of its
-        # inputs (``instance_identity``), and a RETIRED row keeps that id.  A draft
-        # that would collide is refused as a proposal, never handed to the commit —
-        # whose UNIQUE violation is a ``StoreConflict`` no planning round should raise.
-        # Only a replacement can collide: a plain re-refinement of an adopted
-        # occurrence is refused by ``_refined_occurrence`` before this, as it always was.
-        state = ""
-        if retiring:
-            try:
-                state = self.semantics().method_instance_state(
-                    mission_id, str(draft.instance_id)
-                )
-            except StoreConflict:
-                state = ""
-        if state:
-            raise ContractError(
-                f"proposal {proposal.proposal_id!r} would re-create method instance "
-                f"{str(draft.instance_id)!r}, which this Mission already holds in state "
-                f"{state} (method_instance_already_stored); the same method with the same "
-                "bindings over the same occurrence is the instance that was retired, not a "
-                "new one"
-            )
-        return compile_refinement_bundle(
-            draft,
-            network,
-            method=contract,
-            catalog=world.catalog,
-            schemas=world.schemas,
-            registry=world.registry,
-            sharing=sharing,
-            retire_instance_ids=retiring,
-            # P2.3j: the read-set's requirements entry is frozen at the revision that
-            # is *current*, not at the compiler's default of 0.  Every round before
-            # the first acceptance saw 0 and 0, so the default was never wrong; a
-            # repair round runs after leaves were accepted and a MISSION_FINAL package
-            # was cut, both of which move the requirements revision — and the commit
-            # then refused the replacement as READ_SET_STALE ("read at 0, the current
-            # state is 2") before any of its own checks were reached.
-            requirements_revision=self._current_requirements_revision(mission_id),
-            # The delta records which proposal it was compiled from, so the commit's
-            # own read-set row and event name the model's proposal and not a derived
-            # delta id (§18.3's naming convention: the two are different objects).
-            compiled_from_proposal_id=proposal.proposal_id,
-        )
-
     @staticmethod
     def preview_plan_proposal(proposal: PlanProposal, *, inputs: Any) -> Any:
-        """Run the H1H pure candidate preview without entering dispatch/commit.
-
-        The live ``compile_proposal`` method remains the legacy shell.  This
-        explicit seam makes it impossible for preview callers to accidentally
-        invoke ``apply_planner_reply`` or its reconciliation side effects.
-        """
+        """Run the pure candidate preview without entering dispatch or commit."""
 
         from ..planning.plan_preview import preview_candidate
 
@@ -3920,117 +3503,6 @@ class HierarchicalDispatch:
             return False
         return holder != str(owner)
 
-    def _check_retirement_has_no_running_work(
-        self,
-        mission_id: str,
-        network: TaskNetworkSnapshot,
-        proposal: PlanProposal,
-        adopted: Any,
-    ) -> None:
-        """A replacement is not committed over work that is still running."""
-
-        open_states = {
-            AttemptStatus.PENDING,
-            AttemptStatus.CLAIMED,
-            AttemptStatus.RUNNING,
-            AttemptStatus.SUBMITTED,
-            AttemptStatus.VERIFYING,
-        }
-        for child in adopted.child_bindings:
-            try:
-                spec = network.occurrence(child.occurrence_id)
-            except KeyError:
-                continue
-            open_attempts = [
-                attempt.id
-                for attempt in self.store.list_attempts(str(spec.task_id))
-                if attempt.status in open_states
-            ]
-            if open_attempts:
-                raise ContractError(
-                    f"proposal {proposal.proposal_id!r} retires {str(adopted.instance_id)!r} "
-                    f"while occurrence {str(child.occurrence_id)!r} still has open attempt(s) "
-                    f"{open_attempts} (running_work_not_reconciled); nothing in this slice "
-                    "stops or reconciles running work, so a replacement waits for it to end"
-                )
-
-    def _repair_read_only_share_index(
-        self,
-        mission_id: str,
-        network: TaskNetworkSnapshot,
-        *,
-        catalog: Any,
-        retiring: Sequence[MethodInstanceId],
-    ) -> _RepairReadOnlyShareIndex:
-        """Accepted read-only leaves of the retiring instance with no write predecessor.
-
-        P2.3q / N10a, tightened by P1-1.  Facts / reproduce (no DATA/ORDER ancestor
-        that writes) that already have a CURRENT Acceptance are offered as
-        ``share_active`` targets.  A read-only inspect/summarize fed by apply is
-        not: reusing it would carry the rejected patch's findings.  Criterion-linked
-        leaves (verify), unaccepted leaves and write-typed leaves stay new work.
-        """
-
-        if not retiring:
-            return _RepairReadOnlyShareIndex()
-        from .accepted_outputs import criterion_linked_occurrences
-        from .occurrence_tasks import read_only_leaf
-
-        accepted = self.root_contributions(mission_id)
-        linked = criterion_linked_occurrences(network.obligation_coverage)
-        retired = {str(item) for item in retiring}
-        entries: list[SharedGoalEntry] = []
-        for instance in network.method_instances:
-            if str(instance.instance_id) not in retired:
-                continue
-            for child in instance.child_bindings:
-                occ_id = child.occurrence_id
-                if str(occ_id) not in accepted:
-                    continue
-                if occ_id in linked:
-                    continue
-                try:
-                    binding = network.binding_for_occurrence(occ_id)
-                except (KeyError, ContractError):
-                    continue
-                if not read_only_leaf(binding):
-                    continue
-                if _has_write_typed_predecessor(network, occ_id):
-                    continue
-                by_signature = {
-                    (str(item.goal_signature.signature_id), int(item.goal_signature.version)): item
-                    for item in catalog.task_types()
-                }
-                spec = by_signature.get(
-                    (
-                        str(binding.goal_signature.signature_id),
-                        int(binding.goal_signature.version),
-                    )
-                )
-                if spec is None:
-                    continue
-                entries.append(
-                    SharedGoalEntry(
-                        occurrence_id=occ_id,
-                        task_id=binding.task_id,
-                        obligation_id=binding.obligation_id,
-                        signature=SharingSignature.of(
-                            spec,
-                            dict(binding.typed_parameters),
-                            authority_scope=binding.semantic_scope,
-                            semantic_scope=binding.semantic_scope,
-                        ),
-                        reuse_policy=ReusePolicy.SHARE_ACTIVE,
-                    )
-                )
-        return _RepairReadOnlyShareIndex(entries)
-
-    def _current_requirements_revision(self, mission_id: str) -> int:
-        """The requirements revision in force, as the read-set checker will re-read it."""
-
-        latest = self.semantics().latest_requirements_revision(mission_id)
-        return 0 if latest is None else int(latest.revision)
-
     def build_command(
         self,
         mission_id: str,
@@ -4051,9 +3523,9 @@ class HierarchicalDispatch:
         which for a plain refinement keeps the command byte-for-byte as before.
 
         Verification P1-2: the policy is a label the commit honours without anybody
-        stopping or reconciling anything, so the compiler only lets a retirement
-        through when there is nothing running to stop
-        (:meth:`_check_retirement_has_no_running_work`).
+        stopping or reconciling anything; the commit under admission refuses a
+        retirement while the retired work has not converged
+        (``RUNNING_WORK_UNRESOLVED``).
         """
 
         mission = self.mission(mission_id)
@@ -4215,7 +3687,6 @@ class HierarchicalDispatch:
             payload={
                 "proposal_id": proposal.proposal_id,
                 "attempts": len(refusals),
-                "compile_attempts_allowed": int(self.compile_attempts),
                 "reason": last.reason,
                 "detail": last.detail,
                 "refusals": [item.to_json() for item in refusals],
@@ -4249,73 +3720,10 @@ class HierarchicalDispatch:
         )
 
 
-def _refined_occurrence(
-    mission_id: str,
-    network: TaskNetworkSnapshot,
-    operation: RefineOperation,
-    *,
-    retiring: Sequence[MethodInstanceId] = (),
-) -> OccurrenceId:
-    """Which occurrence a ``refine`` operation is about (P2.3c part 2c).
-
-    The proposal contract names a *goal* and a *duty*, not an occurrence — the model
-    is shown ``task_id`` / ``obligation_id`` in the package's ``views.goals``
-    and must quote them back.  The occurrence is therefore resolved here, from the
-    plan, and two situations are refusals rather than guesses:
-
-    * nothing in the plan matches that (goal, duty) pair — the proposal is about a
-      goal this revision does not carry;
-    * more than one still-open occurrence matches — TG §12 lets two slots share a
-      goal, and choosing one of them would be this module deciding which of the
-      Planner's two open goals it meant.
-
-    An occurrence that is already refined is skipped rather than matched, so a replay
-    of the same proposal is refused for the honest reason ("no open occurrence") and
-    not by silently re-refining the one that is adopted.
-    """
-
-    named = [
-        spec
-        for spec in network.occurrences
-        if str(spec.task_id) == str(operation.goal_id)
-        and str(spec.obligation_id) == str(operation.obligation_id)
-    ]
-    if not named:
-        raise missing_bindings(mission_id, [str(operation.goal_id)])
-    # P2.3j: an occurrence whose adopted instance this same proposal retires is open
-    # *for this proposal* — that is what a replacement is.  Any other adopted
-    # occurrence stays closed, exactly as before.
-    leaving = {str(item) for item in retiring}
-    matches = [
-        spec
-        for spec in named
-        if spec.form is TaskForm.COMPOUND
-        and (
-            (held := network.adopted_instance_for(spec.occurrence_id)) is None
-            or str(held.instance_id) in leaving
-        )
-    ]
-    if len(matches) == 1:
-        return matches[0].occurrence_id
-    if not matches:
-        # The goal is in the plan but every occurrence of it is already refined (or is
-        # primitive).  The occurrence is still handed over so the *compiler* refuses in
-        # its own vocabulary — "this occurrence is already refined", "this occurrence is
-        # primitive" — rather than this resolver inventing a second way to say no.
-        return named[0].occurrence_id
-    raise ContractError(
-        f"goal {operation.goal_id!r} on duty {operation.obligation_id!r} has "
-        f"{len(matches)} open occurrences in this plan revision; a refinement names one "
-        "of them and choosing here would be this module picking which goal the Planner "
-        "meant (TG §12)"
-    )
-
-
 def _root_criteria(
     requirements: Any,
     record: Any,
     *,
-    include_evidence: bool = False,
     effective_grades: Mapping[str, str] | None = None,
 ) -> tuple[ResolutionCriterion, ...]:
     """The root resolution's criteria, restated from the review record (review F4).
@@ -4347,7 +3755,7 @@ def _root_criteria(
                 EvidenceRef.from_json(ref.to_json())
                 for outcome in record.criteria if outcome.criterion_id == item.criterion_id
                 for ref in outcome.evidence_refs
-                if include_evidence and str(ref.kind) in {str(kind) for kind in EvidenceRefKind}
+                if str(ref.kind) in {str(kind) for kind in EvidenceRefKind}
             ),
         )
         for item in requirements.criteria
@@ -4444,29 +3852,6 @@ def record_assembly_missing(store: Store, mission: Mission, *, at: str) -> Event
     )
 
 
-def _occurrences_leaving_with(
-    network: TaskNetworkSnapshot, retiring: Sequence[MethodInstanceId]
-) -> frozenset[OccurrenceId]:
-    """Occurrences that exist only because of the instances this proposal retires.
-
-    A shared child another adopted instance still binds is not leaving: §8.3 says
-    one consumer departing must not cancel work another consumer still needs.
-    """
-
-    if not retiring:
-        return frozenset()
-    dropped: set[OccurrenceId] = set()
-    surviving: set[OccurrenceId] = set()
-    retired = set(retiring)
-    for instance in network.method_instances:
-        children = {child.occurrence_id for child in instance.child_bindings}
-        if instance.instance_id in retired:
-            dropped |= children
-        elif instance.instance_id in set(network.adopted_instance_ids) - retired:
-            surviving |= children
-    return frozenset(dropped - surviving)
-
-
 def shared_goal_index(
     network: TaskNetworkSnapshot,
     *,
@@ -4522,118 +3907,6 @@ def shared_goal_index(
     return SharedGoalIndex(entries)
 
 
-def _has_write_typed_predecessor(network: TaskNetworkSnapshot, occurrence_id: OccurrenceId) -> bool:
-    """Whether any DATA/ORDER ancestor of ``occurrence_id`` is a writing leaf.
-
-    Walks producer→consumer DATA edges and before→after ORDER edges backwards.
-    A read-only inspect fed by apply is True; facts with no writer upstream is
-    False.
-    """
-
-    from .occurrence_tasks import read_only_leaf
-
-    seen: set[str] = set()
-    stack = [occurrence_id]
-    while stack:
-        current = stack.pop()
-        key = str(current)
-        if key in seen:
-            continue
-        seen.add(key)
-        if current != occurrence_id:
-            try:
-                binding = network.binding_for_occurrence(current)
-            except (KeyError, ContractError):
-                continue
-            if not read_only_leaf(binding):
-                return True
-        for requirement in network.data_requirements:
-            if requirement.consumer_occurrence == current:
-                stack.append(requirement.producer_occurrence)
-        for constraint in network.order_constraints:
-            if constraint.after == current:
-                stack.append(constraint.before)
-    return False
-
-
-class _RepairReadOnlyShareIndex:
-    """Accepted read-only leaves of a retiring instance, matched by signature.
-
-    ``may_share`` refuses ``NEW_WORK`` and requires a full sharing signature.
-    Repair reuse is a default *policy* of the retire+refine compiler, not a
-    declaration on the task type: facts / reproduce are ``NEW_WORK`` in the
-    catalogue and still share.  Lookup matches ``goal_type_ref`` id **and**
-    version plus ``typed_parameters`` (P2-3); local ids may still differ.
-    """
-
-    def __init__(self, entries: Sequence[SharedGoalEntry] = ()) -> None:
-        self._entries = tuple(entries)
-
-    @property
-    def entries(self) -> tuple[SharedGoalEntry, ...]:
-        return self._entries
-
-    def lookup(
-        self, signature: SharingSignature, *, reuse_policy: ReusePolicy
-    ) -> tuple[SharedGoalEntry | None, ShareDecision]:
-        del reuse_policy
-        wanted = (
-            str(signature.goal_type_ref.id),
-            int(signature.goal_type_ref.version),
-            signature.typed_parameters,
-        )
-        for entry in self._entries:
-            have = (
-                str(entry.signature.goal_type_ref.id),
-                int(entry.signature.goal_type_ref.version),
-                entry.signature.typed_parameters,
-            )
-            if have != wanted:
-                continue
-            return entry, ShareDecision(
-                verdict=ShareVerdict.SHAREABLE,
-                reason="repair reuses an accepted read-only leaf of the same type and parameters",
-            )
-        return None, ShareDecision(
-            verdict=ShareVerdict.SIGNATURE_DIFFERS,
-            reason="no accepted read-only leaf matches this type, version and parameters",
-        )
-
-
-class _CompositeShareIndex(SharedGoalIndex):
-    """Try the repair-share index first, then the ordinary network index."""
-
-    def __init__(self, primary: Any, fallback: SharedGoalIndex) -> None:
-        super().__init__((*primary.entries, *fallback.entries()))
-        self._primary = primary
-        self._fallback = fallback
-
-    def lookup(
-        self, signature: SharingSignature, *, reuse_policy: ReusePolicy
-    ) -> tuple[SharedGoalEntry | None, ShareDecision]:
-        entry, decision = self._primary.lookup(signature, reuse_policy=reuse_policy)
-        if entry is not None:
-            return entry, decision
-        return self._fallback.lookup(signature, reuse_policy=reuse_policy)
-
-
-def _is_refine(operation: object) -> bool:
-    """Whether one parsed plan operation is a refinement.
-
-    ``isinstance`` and not a duck-typed field probe: ``ProposeSuccessorOperation``
-    also carries a versioned reference and a goal-shaped id, so a structural test
-    would silently accept it as a refinement and compile the wrong thing.
-    """
-
-    return isinstance(operation, RefineOperation)
-
-
-def _is_retirement(operation: object) -> bool:
-    """Whether one parsed plan operation retires a method instance (P2.3j)."""
-
-    return isinstance(operation, RetireMethodOperation)
-
-
 __all__ = (
     "ASSEMBLY_MISSING",
     "MISSION_STALLED",
@@ -4642,11 +3915,9 @@ __all__ = (
     "WITNESS_KEY_TAKEN",
     "COMPOUND_DISPLAY_STATUS",
     "COMPOUND_PHASE_CHANGED",
-    "DEFAULT_COMPILE_ATTEMPTS",
     "DISPATCH_INTERCEPTED",
     "PLAN_COMMIT_REFUSED",
     "PLAN_INTEGRITY_FAILED",
-    "RECOMPILABLE_REFUSALS",
     "CompoundPhase",
     "DispatchInterception",
     "HierarchicalDispatch",

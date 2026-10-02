@@ -55,28 +55,3 @@ def test_an_ambiguous_unnamed_holder_is_not_guessed() -> None:
     with pytest.raises(ContractError, match="unknown fields"):
         decode_dropping_unknown(refuse, {"items": [{"rationale": 1}, {"rationale": 2}]}, root_names=("list",))
     assert decode_dropping_unknown(refuse, {"items": [{"rationale": 1}, {}]}, root_names=("list",)) == {"items": [{}, {}]}
-
-
-def test_the_real_method_proposal_codec_drops_the_synthesiser_extras() -> None:
-    import sys
-    from pathlib import Path
-
-    sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures" / "htn"))
-    from htn_world import load_proposal
-
-    from agent_orchestrator.planning.planner import parse_method_proposal
-    from agent_orchestrator.testing.fixtures import method_proposal_step
-
-    method = dict(load_proposal("valid")["method"])
-    clean = parse_method_proposal(method_proposal_step(method))
-    # The seventh run's two replies: ``rationale`` inside the method, then
-    # ``review_feedback_note`` beside it.  Both decode to the same method.
-    noisy = parse_method_proposal(method_proposal_step(
-        {**method, "rationale": "为什么这样拆"}, extras={"review_feedback_note": "已按反馈修改"}))
-    assert noisy.method == clean.method and noisy.rationale == clean.rationale
-    # A declared status is a known key and is still kept for admission to refuse.
-    claimed = parse_method_proposal(method_proposal_step(method, extras={"registry_status": "ADMITTED"}))
-    assert str(claimed.declared_status) == "ADMITTED"
-    # Nothing is invented: a proposal without its required method is still refused.
-    with pytest.raises(ContractError, match="missing required fields"):
-        parse_method_proposal("<method_proposal>{\"review_feedback_note\": \"x\"}</method_proposal>")

@@ -80,7 +80,6 @@ from ..contracts.models import ContractError
 from ..contracts.resolution import (
     CheckExecution,
     Criterion,
-    CriterionExpr,
     CriterionOrigin,
     CriterionOutcome,
     CriterionVerdict,
@@ -88,7 +87,6 @@ from ..contracts.resolution import (
     RequiredEvidencePolicy,
     RequirementClass,
     RequirementsRevision,
-    RequirementsRevisionId,
     ReviewBinding,
     ReviewPackage,
     ReviewPackageId,
@@ -109,7 +107,7 @@ from ..runtime.output_blocks import PortClaim
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
 from ..verification.acceptance_rules import ExecutionPosture, IndependenceFacts
-from .accepted_outputs import CarriedCriterion, carried_criteria_for, output_ports_in_revision
+from .accepted_outputs import CarriedCriterion, output_ports_in_revision
 from .resolution_commits import AcceptanceReceipt, AcceptReviewCommand, ResolutionPrincipal
 
 #: The review policy this deployment reviews a hierarchical leaf under.  A named
@@ -266,31 +264,6 @@ def criteria_for(
             required_evidence_policy=RequiredEvidencePolicy(required_check_ids=gates),
         )
         for name, statement in statements.items()
-    )
-
-
-def requirements_for(
-    mission_id: str,
-    binding: TaskSemanticBindingV1,
-    layers: Sequence[LayerOutcome],
-    *,
-    revision: int,
-    carried: Sequence[CarriedCriterion] = (),
-) -> RequirementsRevision:
-    """The requirements revision this leaf's acceptance is decided against."""
-
-    criteria = criteria_for(binding, layers, carried=carried)
-    expression: Any = CriterionExpr(criteria[0].criterion_id)
-    if len(criteria) > 1:
-        from ..contracts.resolution import AllExpr
-
-        expression = AllExpr(children=tuple(CriterionExpr(item.criterion_id) for item in criteria))
-    return RequirementsRevision(
-        revision_id=RequirementsRevisionId(f"req-{mission_id}-{int(revision)}"),
-        mission_id=mission_id,
-        revision=int(revision),
-        criteria=criteria,
-        success_expression=expression,
     )
 
 
@@ -489,17 +462,14 @@ class LeafAcceptanceAssembly:
                 "of its own (§6.3)"
             )
         semantics = self.semantics
-        carried = origin.carried if origin is not None else self.carried_criteria(mission_id, binding)
-        from .scoped_content_review import read_task_content_projection, uses_completion_protocol
+        from .scoped_content_review import read_task_content_projection
 
-        projection = None
-        if uses_completion_protocol(self.store, mission_id):
-            projection = read_task_content_projection(self.store, mission_id, task_id, result_id)
-            revision = projection.requirements
-            outcomes = layer_outcomes(self.store.list_verifications(result_id))
-            producer_agent_ids = (projection.producer_agent_id,)
-        else:
-            revision = self._requirements(mission_id, binding, outcomes, carried=carried)
+        # What is judged — criteria, layers, producer — is read back from the stored
+        # result under the frozen completion scope, never taken from the caller.
+        projection = read_task_content_projection(self.store, mission_id, task_id, result_id)
+        revision = projection.requirements
+        outcomes = layer_outcomes(self.store.list_verifications(result_id))
+        producer_agent_ids = (projection.producer_agent_id,)
         if origin is not None:
             manifest = origin.context.inputs.binding.manifest_hash
             if input_manifest_hash and input_manifest_hash != manifest:
@@ -521,14 +491,12 @@ class LeafAcceptanceAssembly:
         )
         record = self._record(package, outcomes, result_id, reviewer_agent_id, assured=assured)
         acceptance_id = f"acc-{content_hash_of({'task': task_id, 'result': result_id})[:32]}"
-        previous = None
-        if projection is not None:
-            try:
-                previous = self.semantics.get_acceptance(acceptance_id)
-            except StoreError:
-                previous = None
-            if previous is not None:
-                now_ms = previous.accepted_at_ms
+        try:
+            previous = self.semantics.get_acceptance(acceptance_id)
+        except StoreError:
+            previous = None
+        if previous is not None:
+            now_ms = previous.accepted_at_ms
         if assured:
             # An assured Mission is licensed by a current UseCertificate prepared
             # outside this transaction and committed by accept_review beside the
@@ -594,7 +562,7 @@ class LeafAcceptanceAssembly:
             ),
             artifact_refs=tuple(
                 TypedRef(kind=TypedRefKind.ARTIFACT, **ref.to_json(), produced_by=Provenance.TOOL)
-                for ref in (() if projection is None else projection.artifacts)
+                for ref in projection.artifacts
             ),
             purpose=ReviewPurpose.TASK_CONTENT,
             # The Critic layer is the independent semantic review; this deployment
@@ -639,65 +607,6 @@ class LeafAcceptanceAssembly:
                     document = dict(resolved.manifest.to_json())
         return self.semantics.insert_input_manifest(mission_id, str(task_id), document)
 
-    def _requirements(
-        self,
-        mission_id: str,
-        binding: TaskSemanticBindingV1,
-        layers: Sequence[LayerOutcome],
-        *,
-        carried: Sequence[CarriedCriterion] = (),
-    ) -> RequirementsRevision:
-        """This leaf's requirements revision, published once and re-read after that.
-
-        A second leaf publishes a *later* revision rather than overwriting the
-        first: a requirements revision is immutable, and the read-set channel that
-        re-checks "which revision was this decided at" only means something if the
-        number moves when the content does.  The number is therefore **Mission-wide
-        and monotone**, not per leaf: four leaves accepted in turn are recorded at
-        revisions 1–4 and the root's own revision comes after them.  The root review
-        request states that semantics beside the numbers (P2.3h), because a reviewer
-        who reads them as "accepted against an older root requirement" is reading
-        them wrongly.
-        """
-
-        semantics = self.semantics
-        latest = semantics.latest_requirements_revision(mission_id)
-        candidate = requirements_for(
-            mission_id,
-            binding,
-            layers,
-            revision=1 if latest is None else int(latest.revision),
-            carried=carried,
-        )
-        if latest is not None and latest.content_hash() == candidate.content_hash():
-            return latest
-        published = (
-            candidate
-            if latest is None
-            else requirements_for(
-                mission_id, binding, layers, revision=int(latest.revision) + 1, carried=carried
-            )
-        )
-        semantics.insert_requirements_revision(published)
-        return published
-
-    def carried_criteria(
-        self, mission_id: str, binding: TaskSemanticBindingV1
-    ) -> tuple[CarriedCriterion, ...]:
-        """The root criteria the adopted plan hangs on this leaf's occurrence (P2.3h).
-
-        Read from the same rows :meth:`_outputs` reads its ports from — the active
-        plan revision's memberships and adopted method instances — so "which root
-        criterion this leaf carries" and "which port it delivers on" come from one
-        plan.  An occurrence the active revision does not contain carries nothing.
-        """
-
-        located = self._occurrence_in_active_revision(mission_id, str(binding.task_id))
-        if located is None:
-            return ()
-        revision, occurrence = located
-        return carried_criteria_for(self.semantics, mission_id, revision, occurrence)
-
     def _occurrence_in_active_revision(
         self, mission_id: str, task_id: str
     ) -> tuple[int, OccurrenceId] | None:
@@ -727,7 +636,7 @@ class LeafAcceptanceAssembly:
         manifest_hash: str,
         producer_agent_ids: Sequence[str],
         *,
-        projection: Any = None,
+        projection: Any,
         persist: bool = True,
         reviewed: bool = False,
     ) -> ReviewPackage:
@@ -754,10 +663,8 @@ class LeafAcceptanceAssembly:
                     content_hash=content_hash_of(LEAF_REVIEW_POLICY),
                 ),
             ),
-            criteria=revision.criteria if projection is None else projection.criteria,
-            success_expression=revision.success_expression
-            if projection is None
-            else projection.expression,
+            criteria=projection.criteria,
+            success_expression=projection.expression,
             candidate_refs=(
                 TypedRef(
                     # The candidate is the recorded *result*, referenced as the
@@ -989,5 +896,4 @@ __all__ = (
     "layer_outcomes",
     "outcomes_for",
     "receipt_ref",
-    "requirements_for",
 )

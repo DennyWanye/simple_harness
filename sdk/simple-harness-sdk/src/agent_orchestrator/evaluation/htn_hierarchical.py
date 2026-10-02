@@ -39,7 +39,6 @@ def read_formal_root_completion(store: Store, mission_id: str) -> dict[str, Any]
     exact active root and recheck its official record and current completion.
     """
     from ..orchestrator.completion_status import read_occurrence_completion
-    from ..orchestrator.scoped_content_review import uses_completion_protocol
 
     with store.read_view():
         mission = store.get_mission(mission_id)
@@ -85,12 +84,10 @@ def read_formal_root_completion(store: Store, mission_id: str) -> dict[str, Any]
                 or package.binding.requirements_revision != requirements.revision
                 or package.requirements_content_hash != requirements.content_hash()):
             return None
-        scope = None
-        if uses_completion_protocol(store, mission_id):
-            completion = read_occurrence_completion(store, mission_id, str(root.occurrence_id))
-            if not completion.complete:
-                return None
-            scope = completion.scope.to_json()
+        completion = read_occurrence_completion(store, mission_id, str(root.occurrence_id))
+        if not completion.complete:
+            return None
+        scope = completion.scope.to_json()
         return {"kind": "root-goal-resolution", "resolution": resolution.to_json(),
                 "review_record_id": str(record.record_id), "completion_scope": scope}
 

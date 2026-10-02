@@ -127,10 +127,7 @@ class TaskGraphReadApi:
 
     def _completion_phase(self, mission_id: str, occurrence_id: str,
                           fallback: str) -> tuple[str, list[str]]:
-        from ..orchestrator.scoped_content_review import uses_completion_protocol
         from ..storage.htn_store import HtnStore
-        if not uses_completion_protocol(self._store, mission_id):
-            return fallback, []
         if HtnStore(self._store).active_plan_revision(mission_id) is None:
             return "AWAITING_INITIAL_PLAN", ["尚无已提交计划；初始目标不具有执行或完成许可。"]
         from ..orchestrator.completion_status import read_current_effect, read_occurrence_completion

@@ -12855,8 +12855,8 @@ class Orchestrator:
                         },
                     }
                 )
-        from .scoped_content_review import uses_completion_protocol, task_content_prompt_scope
-        if new_mode is not None and uses_completion_protocol(self.store, mission.id):
+        from .scoped_content_review import task_content_prompt_scope
+        if new_mode is not None:
             from ..context.context_builder import _seal
             content_scope = task_content_prompt_scope(self.store, mission.id, task.id)
             # The Task contract is a durable document-assessment identity. Keep it

@@ -37,11 +37,6 @@ TASK_PROPOSAL_TAG = "task_proposal"
 TASK_GRAPH_PROPOSAL_TAG = "task_graph_proposal"
 RESULT_ENVELOPE_TAG = "result_envelope"
 CRITIC_VERDICT_TAG = "critic_verdict"
-# §18.5 C8: the two hierarchical-mode blocks.  They are separate tags because they
-# enter two different codecs and two different authorities — a plan revision is
-# checked by the Commit Service, a method definition by the registry's admission
-# protocol — and one tag carrying both would put that choice in the model's hands.
-METHOD_PROPOSAL_TAG = "method_proposal"
 PLAN_REVISION_PROPOSAL_TAG = "plan_revision_proposal"
 
 
@@ -1084,7 +1079,6 @@ __all__ = (
     "SYNTHESIZER_VERSION",
     "SYNTHESIZER_V2",
     "TASK_GRAPH_PROPOSAL_TAG",
-    "METHOD_PROPOSAL_TAG",
     "ROOT_REVIEWER",
     "ROOT_REVIEWER_VERSION",
     "PLAN_REVISION_PROPOSAL_TAG",

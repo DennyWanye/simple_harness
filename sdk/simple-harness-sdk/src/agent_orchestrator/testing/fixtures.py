@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from simple_harness import Message, MessageRole
@@ -179,30 +179,6 @@ def graph_proposal_step(tasks: Sequence[dict[str, Any]]) -> str:
     return "<task_graph_proposal>" + body + "</task_graph_proposal>"
 
 
-# ------------------------------------------------- the hierarchical-mode method block
-# Deliberately unvalidated.  A fixture that refused a malformed block could not be
-# used to test the parser's refusals, so shaping the JSON is the caller's business
-# and ``extras`` exists precisely to script a block that *must* be rejected.
-
-
-def method_proposal_step(
-    method: Mapping[str, Any],
-    *,
-    rationale: str = "脚本化方法",
-    extras: Mapping[str, Any] | None = None,
-) -> str:
-    """One scripted ``<method_proposal>`` block (§7.3).
-
-    ``registry_status`` is *not* set by default and is passed through when a caller
-    does set it — the admission protocol has to see and refuse a model-authored
-    claim, so the fixture may not quietly drop it.
-    """
-
-    body: dict[str, Any] = {"method": dict(method), "rationale": rationale}
-    body.update({key: value for key, value in dict(extras or {}).items()})
-    return "<method_proposal>" + json.dumps(body, ensure_ascii=False) + "</method_proposal>"
-
-
 def critic_step(
     *, verdict: str, criteria_met: bool, blocker: str | None = None
 ) -> Callable[[ProviderRequest], str]:
@@ -293,7 +269,6 @@ __all__ = (
     "demo_worker_script",
     "envelope_step",
     "graph_proposal_step",
-    "method_proposal_step",
     "package_of",
     "proposal_step",
     "role_of",

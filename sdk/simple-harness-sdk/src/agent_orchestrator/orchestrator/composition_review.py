@@ -49,20 +49,13 @@ from ..contracts.htn import (
 )
 from ..contracts.models import ContractError
 from ..contracts.resolution import (
-    AllExpr,
     CheckExecution,
     Criterion,
-    CriterionExpr,
-    CriterionOrigin,
     CriterionOutcome,
     CriterionVerdict,
-    EvaluationKind,
     GoalResolution,
     GoalResolutionId,
-    RequiredEvidencePolicy,
-    RequirementClass,
     RequirementsRevision,
-    RequirementsRevisionId,
     ResolutionCriterion,
     ReviewBinding,
     ReviewPackage,
@@ -74,7 +67,6 @@ from ..contracts.resolution import (
     WorkspaceAccess,
 )
 from ..contracts.semantic_base import (
-    Provenance,
     TypedRef,
     TypedRefKind,
     content_hash_of,
@@ -92,11 +84,9 @@ from .resolution_commits import (
     ResolutionCommitRejected,
     ResolutionPrincipal,
 )
-from .scoped_content_review import uses_completion_protocol
 
 COMPOSITION_REVIEW_POLICY = "hierarchical-composition-review-v1"
 COMPOSITION_REVIEWER = "composition-reviewer"
-COMPOSITION_LOCAL_CRITERION = "c-composition"
 COMPOSITION_UNCOVERED = "composition_criterion_uncovered"
 REVIEWER_ACCESS = WorkspaceAccess.READ_ONLY
 
@@ -156,11 +146,6 @@ class CompositionAcceptanceAssembly:
                 continue
             if spec.occurrence_id in view.resolved:
                 continue
-            if not uses_completion_protocol(self.store, mission_id) and any(
-                str(item.goal_task_id) == str(spec.task_id)
-                for item in self.semantics.list_goal_resolutions(mission_id)
-            ):
-                continue
             children = {
                 binding.occurrence_id: view.outcomes[binding.occurrence_id]
                 for binding in view.network.adopted_children(spec.occurrence_id)
@@ -207,24 +192,20 @@ class CompositionAcceptanceAssembly:
             if binding.requiredness in GATING_REQUIREDNESS
         ]
         accepted = self._accepted_children(
-            mission_id, (view.network.adopted_children(occurrence_id)
-                if uses_completion_protocol(self.store, mission_id) else gating)
+            mission_id, view.network.adopted_children(occurrence_id)
         )
         if any(str(binding.occurrence_id) not in accepted for binding in gating):
             return None
         binding = view.network.binding_for_occurrence(occurrence_id)
         now_ms = int(self.store.now * 1000)
         producers = self._producers(mission_id, accepted)
-        projection = None
-        if uses_completion_protocol(self.store, mission_id):
-            from .scoped_composition_review import read_compound_projection
+        # The goal's criteria and success expression are its frozen completion scope's.
+        from .scoped_composition_review import read_compound_projection
 
-            projection = read_compound_projection(
-                self.store, mission_id, str(occurrence_id), str(spec.task_id)
-            )
-            revision = projection.requirements
-        else:
-            revision = self._requirements(mission_id, binding, occurrence_id)
+        projection = read_compound_projection(
+            self.store, mission_id, str(occurrence_id), str(spec.task_id)
+        )
+        revision = projection.requirements
         manifest = self._manifest_hash(mission_id, str(spec.task_id))
         from ..storage.assurance_store import AssuranceStore
 
@@ -238,8 +219,8 @@ class CompositionAcceptanceAssembly:
             producers,
             manifest_hash=manifest,
             method_instance_id=instance_id,
-            criteria=None if projection is None else projection.criteria,
-            expression=None if projection is None else projection.expression,
+            criteria=projection.criteria,
+            expression=projection.expression,
             persist=not assured,
         )
         if assured:
@@ -287,7 +268,6 @@ class CompositionAcceptanceAssembly:
         resolution = GoalResolution(
             resolution_id=GoalResolutionId(
                 f"res-{occurrence_id}-{content_hash_of(str(package.package_id))[:16]}"
-                if projection is not None else f"res-{occurrence_id}"
             ),
             mission_id=mission_id,
             obligation_id=str(spec.obligation_id),
@@ -418,107 +398,21 @@ class CompositionAcceptanceAssembly:
     def _accepted_children(
         self, mission_id: str, gating: Sequence[Any]
     ) -> dict[str, tuple[str, ...]]:
-        semantics = self.semantics
-        if uses_completion_protocol(self.store, mission_id):
-            from .completion_support import current_child_supports
+        from .completion_support import current_child_supports
 
-            return current_child_supports(self.store, mission_id, gating)
-        view = self.dispatch.read(mission_id)
-        found: dict[str, tuple[str, ...]] = {}
-        for binding in gating:
-            spec = view.network.occurrence(binding.occurrence_id)
-            task_id = str(spec.task_id)
-            usable = tuple(
-                str(item.acceptance_id)
-                for item in semantics.list_acceptances(mission_id)
-                if str(item.validity) == "CURRENT" and str(item.task_id) == task_id
-            )
-            if usable:
-                found[str(binding.occurrence_id)] = usable
-        return found
+        return current_child_supports(self.store, mission_id, gating)
 
     def _producers(
         self, mission_id: str, accepted: Mapping[str, tuple[str, ...]]
     ) -> tuple[str, ...]:
-        semantics = self.semantics
+        from .completion_support import read_completion_support
+
         agents: list[str] = []
         for ids in accepted.values():
-            for acceptance_id in ids:
-                if uses_completion_protocol(self.store, mission_id):
-                    from .completion_support import read_completion_support
-
-                    support = read_completion_support(self.store, mission_id, acceptance_id)
-                    agents.extend(support.package.producer_agent_ids)
-                    continue
-                try:
-                    acceptance = semantics.get_acceptance(acceptance_id)
-                except StoreError:
-                    continue
-                try:
-                    stored = semantics.get_review_record(str(acceptance.review_record_id))
-                except StoreError:
-                    continue
-                try:
-                    package = semantics.get_review_package(str(stored.record.package_id))
-                except StoreError:
-                    continue
-                agents.extend(str(item) for item in package.producer_agent_ids)
+            for source_id in ids:
+                support = read_completion_support(self.store, mission_id, source_id)
+                agents.extend(support.package.producer_agent_ids)
         return tuple(dict.fromkeys(item for item in agents if item))
-
-    def _requirements(
-        self, mission_id: str, binding: Any, occurrence_id: OccurrenceId
-    ) -> RequirementsRevision:
-        semantics = self.semantics
-        latest = semantics.latest_requirements_revision(mission_id)
-        criteria = self._criteria(binding, occurrence_id)
-        expression: Any = CriterionExpr(criteria[0].criterion_id)
-        if len(criteria) > 1:
-            expression = AllExpr(
-                children=tuple(CriterionExpr(item.criterion_id) for item in criteria)
-            )
-        revision_no = 1 if latest is None else int(latest.revision) + 1
-        candidate = RequirementsRevision(
-            revision_id=RequirementsRevisionId(f"req-{mission_id}-{revision_no}-compose"),
-            mission_id=mission_id,
-            revision=revision_no if latest is None else int(latest.revision),
-            criteria=criteria,
-            success_expression=expression,
-        )
-        if latest is not None and latest.content_hash() == candidate.content_hash():
-            return latest
-        published = (
-            candidate
-            if latest is None
-            else RequirementsRevision(
-                revision_id=RequirementsRevisionId(f"req-{mission_id}-{revision_no}-compose"),
-                mission_id=mission_id,
-                revision=revision_no,
-                criteria=criteria,
-                success_expression=expression,
-            )
-        )
-        semantics.insert_requirements_revision(published)
-        return published
-
-    def _criteria(self, binding: Any, occurrence_id: OccurrenceId) -> tuple[Criterion, ...]:
-        names = [str(item) for item in binding.goal_signature.coverage_criteria]
-        if not names:
-            names = [COMPOSITION_LOCAL_CRITERION]
-        policy = RequiredEvidencePolicy(required_check_ids=(), independence_required=False)
-        return tuple(
-            Criterion(
-                criterion_id=name,
-                revision=1,
-                origin=CriterionOrigin.DERIVED,
-                statement=(
-                    f"{name} is covered by the accepted children of {occurrence_id}"
-                ),
-                requirement_class=RequirementClass.REQUIRED_OUTCOME,
-                evaluation_kind=EvaluationKind.SEMANTIC,
-                required_evidence_policy=policy,
-            )
-            for name in names
-        )
 
     def _manifest_hash(self, mission_id: str, task_id: str) -> str:
         document: dict[str, Any] = {"consumer_task_ref": str(task_id), "bindings": []}
@@ -535,31 +429,22 @@ class CompositionAcceptanceAssembly:
         *,
         manifest_hash: str,
         method_instance_id: str,
-        criteria: tuple[Criterion, ...] | None = None,
-        expression: Any | None = None,
+        criteria: tuple[Criterion, ...],
+        expression: Any,
         persist: bool = True,
     ) -> ReviewPackage:
-        resolution_refs: tuple[TypedRef, ...] = ()
-        if uses_completion_protocol(self.store, mission_id):
-            # 完成协议下 ``accepted`` 装的是子步骤的支撑（验收或复用的目标结论），引用由支撑读取给出。
-            from .completion_support import read_completion_support
+        # ``accepted`` 装的是子步骤的支撑（验收或复用的目标结论），引用由支撑读取给出。
+        from .completion_support import read_completion_support
 
-            supports = tuple(read_completion_support(self.store, mission_id, source_id)
-                for source_ids in accepted.values() for source_id in source_ids)
-            child_refs = tuple(item.ref for item in supports if item.ref.kind is TypedRefKind.ACCEPTANCE)
-            resolution_refs = tuple(item.ref for item in supports if item.ref.kind is TypedRefKind.RESOLUTION)
-        else:
-            from .root_review import acceptance_ref  # 与根审查包同一构造：真实验收正文（2026-10-01）
-
-            child_refs = tuple(
-                acceptance_ref(self.store, acceptance_id)
-                for ids in accepted.values()
-                for acceptance_id in ids
-            )
-        identity: dict[str, Any] = {"occ": str(spec.occurrence_id), "rev": revision.revision}
-        if uses_completion_protocol(self.store, mission_id):
-            identity.update(method_instance_id=method_instance_id, manifest_hash=manifest_hash,
-                supports=[ref.to_json() for ref in (*child_refs, *resolution_refs)])
+        supports = tuple(read_completion_support(self.store, mission_id, source_id)
+            for source_ids in accepted.values() for source_id in source_ids)
+        child_refs = tuple(item.ref for item in supports if item.ref.kind is TypedRefKind.ACCEPTANCE)
+        resolution_refs = tuple(item.ref for item in supports if item.ref.kind is TypedRefKind.RESOLUTION)
+        identity: dict[str, Any] = {
+            "occ": str(spec.occurrence_id), "rev": revision.revision,
+            "method_instance_id": method_instance_id, "manifest_hash": manifest_hash,
+            "supports": [ref.to_json() for ref in (*child_refs, *resolution_refs)],
+        }
         digest = content_hash_of(identity)[:32]
         package = ReviewPackage(
             package_id=ReviewPackageId(f"pkg-compose-{digest}"),
@@ -582,8 +467,8 @@ class CompositionAcceptanceAssembly:
                     content_hash=content_hash_of(COMPOSITION_REVIEW_POLICY),
                 ),
             ),
-            criteria=revision.criteria if criteria is None else criteria,
-            success_expression=revision.success_expression if expression is None else expression,
+            criteria=criteria,
+            success_expression=expression,
             child_acceptance_refs=child_refs,
             candidate_refs=resolution_refs,
             producer_agent_ids=tuple(producers),
@@ -622,8 +507,7 @@ class CompositionAcceptanceAssembly:
             reviewer_agent_id=COMPOSITION_REVIEWER,
             reviewer_turn_id=f"compose-{occurrence_id}",
             evidence_manifest_hash=content_hash_of(
-                {key: list(refs) for key, refs in accepted.items()} if uses_completion_protocol(self.store, mission_id)
-                else sorted(accepted)
+                {key: list(refs) for key, refs in accepted.items()}
             ),
             criteria=outcomes,
             verdict=ReviewVerdict.ACCEPT if passed else ReviewVerdict.REJECTED,
@@ -695,33 +579,13 @@ class CompositionAcceptanceAssembly:
     def _child_covers(
         self, mission_id: str, acceptance_ids: Sequence[str], leaf_criterion_id: str
     ) -> bool:
-        semantics = self.semantics
-        for acceptance_id in acceptance_ids:
-            if uses_completion_protocol(self.store, mission_id):
-                from .completion_support import read_completion_support
+        from .completion_support import read_completion_support
 
-                support = read_completion_support(self.store, mission_id, acceptance_id)
-                if any(item.criterion_id == leaf_criterion_id and item.verdict is CriterionVerdict.PASS
-                       for item in support.record.criteria):
-                    return True
-                continue
-            try:
-                acceptance = semantics.get_acceptance(acceptance_id)
-            except StoreError:
-                continue
-            if str(acceptance.validity) != "CURRENT":
-                continue
-            try:
-                stored = semantics.get_review_record(str(acceptance.review_record_id))
-            except StoreError:
-                continue
-            record = stored.record
-            if record.verdict is not ReviewVerdict.ACCEPT:
-                continue
-            by_id = {str(item.criterion_id): item.verdict for item in record.criteria}
-            if by_id.get(str(leaf_criterion_id)) is CriterionVerdict.PASS:
+        for source_id in acceptance_ids:
+            support = read_completion_support(self.store, mission_id, source_id)
+            if any(item.criterion_id == leaf_criterion_id and item.verdict is CriterionVerdict.PASS
+                   for item in support.record.criteria):
                 return True
-        del mission_id
         return False
 
     def _witness(self, mission_id: str, task_id: str, *, now_ms: int) -> ValidityWitness:

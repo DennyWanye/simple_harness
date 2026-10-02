@@ -613,18 +613,15 @@ class ResolutionCommitsMixin:
             replayed = self._replayed(semantics, command.mission_id, command.command_id, intent)
             if replayed is not None:
                 self._require_kind(replayed, ACCEPTANCE_KIND)
-                from .scoped_content_review import uses_completion_protocol
+                from ..storage.operation_completion_store import OperationCompletionStore
 
-                if uses_completion_protocol(self._store, command.mission_id):
-                    from ..storage.operation_completion_store import OperationCompletionStore
-
-                    replayed_contribution = OperationCompletionStore(self._store).get_acceptance_scope_exact(
-                        command.mission_id, replayed.subject_id
+                replayed_contribution = OperationCompletionStore(self._store).get_acceptance_scope_exact(
+                    command.mission_id, replayed.subject_id
+                )
+                if replayed_contribution is None:
+                    raise ResolutionCommitRejected(
+                        "OP_COMPLETION_SCOPE_UNRESOLVED", "accepted review has no contribution"
                     )
-                    if replayed_contribution is None:
-                        raise ResolutionCommitRejected(
-                            "OP_COMPLETION_SCOPE_UNRESOLVED", "accepted review has no contribution"
-                        )
                 return AcceptanceReceipt(
                     acceptance=semantics.get_acceptance(replayed.subject_id),
                     commit=replayed,
@@ -699,51 +696,36 @@ class ResolutionCommitsMixin:
                 posture=command.posture,
                 semantic_review_required=command.semantic_review_required,
             )
-            from .scoped_content_review import uses_completion_protocol
+            # The command is judged against the frozen completion scope's own
+            # projection of the stored result, never against what the command claims.
+            from ..verification.scoped_acceptance import (
+                acceptable_scoped_task_content, acceptable_scoped_operation_outcome,
+            )
+            from .scoped_content_review import validate_scoped_command
 
-            projection: Any = None
-            if assured_lane and not uses_completion_protocol(self._store, command.mission_id):
-                raise ResolutionCommitRejected(
-                    "USE_PURPOSE_UNSUPPORTED",
-                    "an assured acceptance requires the completion protocol's frozen Scope",
-                )
-            if uses_completion_protocol(self._store, command.mission_id):
-                from ..verification.scoped_acceptance import (
-                    acceptable_scoped_task_content, acceptable_scoped_operation_outcome,
-                )
-                from .scoped_content_review import validate_scoped_command
+            checker = acceptable_scoped_task_content
+            if command.purpose is ReviewPurpose.OPERATION_OUTCOME:
+                from .operation_outcomes import validate_scoped_outcome_command
 
-                checker = acceptable_scoped_task_content
-                if command.purpose is ReviewPurpose.OPERATION_OUTCOME:
-                    from .operation_outcomes import validate_scoped_outcome_command
-
-                    projection = validate_scoped_outcome_command(
-                        self._store, command,
-                        runtime=getattr(self, "_operation_materialization_runtime", None),
-                    )
-                    checker = acceptable_scoped_operation_outcome
-                else:
-                    projection = validate_scoped_command(self._store, command)
-                decision = checker(
-                    subject,
-                    projected_criteria=projection.criteria,
-                    projected_expression=projection.expression,
-                    now_ms=int(command.accepted_at_ms),
-                    witness=witness,
-                    current_scope_epoch=semantics.epoch(
-                        command.mission_id,
-                        command.scope_id if witness is None else witness.scope_id,
-                    ),
-                    assured=assured,
+                projection = validate_scoped_outcome_command(
+                    self._store, command,
+                    runtime=getattr(self, "_operation_materialization_runtime", None),
                 )
+                checker = acceptable_scoped_operation_outcome
             else:
-                decision = acceptable(
-                    subject,
-                    now_ms=int(command.accepted_at_ms),
-                    purpose=command.purpose,
-                    witness=witness,
-                    current_scope_epoch=semantics.epoch(command.mission_id, witness.scope_id),
-                )
+                projection = validate_scoped_command(self._store, command)
+            decision = checker(
+                subject,
+                projected_criteria=projection.criteria,
+                projected_expression=projection.expression,
+                now_ms=int(command.accepted_at_ms),
+                witness=witness,
+                current_scope_epoch=semantics.epoch(
+                    command.mission_id,
+                    command.scope_id if witness is None else witness.scope_id,
+                ),
+                assured=assured,
+            )
             if not decision.acceptable:
                 raise ResolutionCommitRejected(
                     "NOT_ACCEPTABLE",
@@ -773,7 +755,7 @@ class ResolutionCommitsMixin:
             # empty outputs and verifies the original accepted-input chain.
             indexed = (
                 ()
-                if projection is not None and command.purpose is ReviewPurpose.OPERATION_OUTCOME
+                if command.purpose is ReviewPurpose.OPERATION_OUTCOME
                 else self._record_accepted_outputs(semantics, command, acceptance)
             )
             payload = {
@@ -817,56 +799,55 @@ class ResolutionCommitsMixin:
                 payload=payload,
             )
             commit = self._record_receipt(semantics, command.mission_id, event.id, payload)
-            if projection is not None:
-                from ..contracts.operation_completion import (
-                    AcceptanceContributionScopeV1,
-                    CompletionPinV1,
-                    CompletionScopeRole,
-                    ContributionKind,
-                )
-                from ..storage.operation_completion_store import OperationCompletionStore
+            from ..contracts.operation_completion import (
+                AcceptanceContributionScopeV1,
+                CompletionPinV1,
+                CompletionScopeRole,
+                ContributionKind,
+            )
+            from ..storage.operation_completion_store import OperationCompletionStore
 
-                delivery_pin = None
-                if command.purpose is ReviewPurpose.OPERATION_OUTCOME:
-                    delivery = semantics.record_delivery_receipt(
-                        command.mission_id, projection.delivery_receipt,
-                        command_id="delivery:" + command.command_id,
-                        intent_hash=intent,
-                    )
-                    delivery_pin = CompletionPinV1(
-                        id=delivery.receipt_id, revision=1, content_hash=content_hash_of(delivery.to_json()),
-                    )
-                contribution = AcceptanceContributionScopeV1(
-                    schema_version=1,
-                    mission_id=command.mission_id,
-                    acceptance_id=command.acceptance_id,
-                    completion_scope_id=projection.scope.scope_id,
-                    spec_hash=projection.spec.content_hash(),
-                    kind=(
-                        ContributionKind.OPERATION_EFFECT
-                        if command.purpose is ReviewPurpose.OPERATION_OUTCOME
-                        else ContributionKind.CONTENT
-                        if projection.scope.role is CompletionScopeRole.CONTENT
-                        else ContributionKind.PREPARATION
-                    ),
-                    content_criterion_ids=() if command.purpose is ReviewPurpose.OPERATION_OUTCOME else tuple(
-                        sorted(item.criterion_id for item in projection.criteria)
-                    ),
-                    effect_keys=(projection.effect_key,) if command.purpose is ReviewPurpose.OPERATION_OUTCOME else (),
-                    output_artifact_refs=projection.artifacts,
-                    outcome_binding_id=projection.binding_id if command.purpose is ReviewPurpose.OPERATION_OUTCOME else None,
-                    delivery_receipt_ref=delivery_pin,
+            delivery_pin = None
+            if command.purpose is ReviewPurpose.OPERATION_OUTCOME:
+                delivery = semantics.record_delivery_receipt(
+                    command.mission_id, projection.delivery_receipt,
+                    command_id="delivery:" + command.command_id,
+                    intent_hash=intent,
                 )
-                self._store.fault(
-                    "completion_acceptance_before_contribution", "operation_completion"
+                delivery_pin = CompletionPinV1(
+                    id=delivery.receipt_id, revision=1, content_hash=content_hash_of(delivery.to_json()),
                 )
-                OperationCompletionStore(self._store).insert_acceptance_scope(
-                    contribution,
-                    producer_receipt_id=command.command_id,
-                )
-                self._store.fault(
-                    "completion_acceptance_after_contribution", "operation_completion"
-                )
+            contribution = AcceptanceContributionScopeV1(
+                schema_version=1,
+                mission_id=command.mission_id,
+                acceptance_id=command.acceptance_id,
+                completion_scope_id=projection.scope.scope_id,
+                spec_hash=projection.spec.content_hash(),
+                kind=(
+                    ContributionKind.OPERATION_EFFECT
+                    if command.purpose is ReviewPurpose.OPERATION_OUTCOME
+                    else ContributionKind.CONTENT
+                    if projection.scope.role is CompletionScopeRole.CONTENT
+                    else ContributionKind.PREPARATION
+                ),
+                content_criterion_ids=() if command.purpose is ReviewPurpose.OPERATION_OUTCOME else tuple(
+                    sorted(item.criterion_id for item in projection.criteria)
+                ),
+                effect_keys=(projection.effect_key,) if command.purpose is ReviewPurpose.OPERATION_OUTCOME else (),
+                output_artifact_refs=projection.artifacts,
+                outcome_binding_id=projection.binding_id if command.purpose is ReviewPurpose.OPERATION_OUTCOME else None,
+                delivery_receipt_ref=delivery_pin,
+            )
+            self._store.fault(
+                "completion_acceptance_before_contribution", "operation_completion"
+            )
+            OperationCompletionStore(self._store).insert_acceptance_scope(
+                contribution,
+                producer_receipt_id=command.command_id,
+            )
+            self._store.fault(
+                "completion_acceptance_after_contribution", "operation_completion"
+            )
             return AcceptanceReceipt(acceptance=acceptance, commit=commit, decision=decision)
 
     def _record_accepted_outputs(
@@ -1061,14 +1042,8 @@ class ResolutionCommitsMixin:
                 requirements=command.requirements,
                 purpose=command.purpose,
             )
-            from .scoped_content_review import uses_completion_protocol
-
             scoped_projection = None
-            if (
-                uses_completion_protocol(self._store, command.mission_id)
-                and not command.is_mission_root
-                and command.purpose is ReviewPurpose.COMPOSITION
-            ):
+            if not command.is_mission_root and command.purpose is ReviewPurpose.COMPOSITION:
                 from .scoped_composition_review import read_compound_projection
 
                 occurrence_id = str(command.source.get("occurrence_id", ""))
@@ -1187,61 +1162,60 @@ class ResolutionCommitsMixin:
                     "the AER §6.2 formula refused: "
                     + ", ".join(str(reason) for reason in decision.reasons),
                 )
-            if uses_completion_protocol(self._store, command.mission_id):
-                from .completion_status import read_occurrence_completion
+            from .completion_status import read_occurrence_completion
 
-                active = semantics.active_plan_revision(command.mission_id)
-                members = (
-                    []
-                    if active is None
-                    else [
-                        member
-                        for member in semantics.list_plan_memberships(
-                            command.mission_id, active.revision
-                        )
-                        if str(member.task_id) == str(resolution.goal_task_id)
-                    ]
-                )
-                if (
-                    len(members) != 1
-                    or not read_occurrence_completion(
-                        self._store, command.mission_id, str(members[0].occurrence_id)
-                    ).effects_ready
-                ):
-                    raise ResolutionCommitRejected(
-                        "OP_REQUIRED_EFFECTS_INCOMPLETE", "Goal still has required effects"
+            active = semantics.active_plan_revision(command.mission_id)
+            members = (
+                []
+                if active is None
+                else [
+                    member
+                    for member in semantics.list_plan_memberships(
+                        command.mission_id, active.revision
                     )
-                if command.is_mission_root:
-                    from .completion_status import current_effect_proofs
+                    if str(member.task_id) == str(resolution.goal_task_id)
+                ]
+            )
+            if (
+                len(members) != 1
+                or not read_occurrence_completion(
+                    self._store, command.mission_id, str(members[0].occurrence_id)
+                ).effects_ready
+            ):
+                raise ResolutionCommitRejected(
+                    "OP_REQUIRED_EFFECTS_INCOMPLETE", "Goal still has required effects"
+                )
+            if command.is_mission_root:
+                from .completion_status import current_effect_proofs
 
-                    anchors = {ref.id for ref in command.package.child_acceptance_refs}
-                    reviewed = {item.criterion_id: item for item in command.record.criteria}
-                    resolved = {item.criterion_id: item for item in resolution.criteria}
-                    for proof in current_effect_proofs(self._store, command.mission_id):
-                        expected = {content_hash_of(ref.to_json()) for ref in proof["evidence_refs"]}
-                        if proof["acceptance_id"] not in anchors:
-                            raise ResolutionCommitRejected("OP_OUTCOME_SOURCE_UNAVAILABLE",
-                                "root review did not include current effect acceptance")
-                        for criterion_id in proof["criterion_ids"]:
-                            if assured_root:
-                                # The assured V1 record and its resolution carry no
-                                # evidence refs (they live in the certified manifest):
-                                # the review above included the current effect
-                                # acceptance, and the certificate's re-decided grade
-                                # must be PASS (real run 2026-09-27: every assured
-                                # root with an effect was refused here).
-                                if assured.effective_grades.get(criterion_id) != "PASS":
-                                    raise ResolutionCommitRejected(
-                                        "OP_OUTCOME_SOURCE_UNAVAILABLE",
-                                        "root effect criterion is not certified PASS")
-                                continue
-                            for outcomes in (reviewed, resolved):
-                                item = outcomes.get(criterion_id)
-                                actual = set() if item is None else {
-                                    content_hash_of(ref.to_json()) for ref in item.evidence_refs}
-                                if not expected.issubset(actual):
-                                    raise ResolutionCommitRejected("OP_OUTCOME_SOURCE_UNAVAILABLE",
-                                        "root effect criterion lost its reviewed evidence")
+                anchors = {ref.id for ref in command.package.child_acceptance_refs}
+                reviewed = {item.criterion_id: item for item in command.record.criteria}
+                resolved = {item.criterion_id: item for item in resolution.criteria}
+                for proof in current_effect_proofs(self._store, command.mission_id):
+                    expected = {content_hash_of(ref.to_json()) for ref in proof["evidence_refs"]}
+                    if proof["acceptance_id"] not in anchors:
+                        raise ResolutionCommitRejected("OP_OUTCOME_SOURCE_UNAVAILABLE",
+                            "root review did not include current effect acceptance")
+                    for criterion_id in proof["criterion_ids"]:
+                        if assured_root:
+                            # The assured V1 record and its resolution carry no
+                            # evidence refs (they live in the certified manifest):
+                            # the review above included the current effect
+                            # acceptance, and the certificate's re-decided grade
+                            # must be PASS (real run 2026-09-27: every assured
+                            # root with an effect was refused here).
+                            if assured.effective_grades.get(criterion_id) != "PASS":
+                                raise ResolutionCommitRejected(
+                                    "OP_OUTCOME_SOURCE_UNAVAILABLE",
+                                    "root effect criterion is not certified PASS")
+                            continue
+                        for outcomes in (reviewed, resolved):
+                            item = outcomes.get(criterion_id)
+                            actual = set() if item is None else {
+                                content_hash_of(ref.to_json()) for ref in item.evidence_refs}
+                            if not expected.issubset(actual):
+                                raise ResolutionCommitRejected("OP_OUTCOME_SOURCE_UNAVAILABLE",
+                                    "root effect criterion lost its reviewed evidence")
             delivery = self._check_delivery(semantics, command)
             withdrawn = bool(account.has_admitted_demand)
             shared = (not command.is_mission_root) and _duty_has_other_occurrences(
@@ -1409,9 +1383,7 @@ class ResolutionCommitsMixin:
                     f"delivery receipt {receipt.receipt_id!r} quotes an acceptance of mission "
                     f"{acceptance.mission_id!r}",
                 )
-            from .scoped_content_review import uses_completion_protocol
-
-            if receipt.operation_id is not None and uses_completion_protocol(self._store, mission_id):
+            if receipt.operation_id is not None:
                 from ..storage.operation_completion_store import OperationCompletionStore
 
                 contribution = OperationCompletionStore(self._store).get_acceptance_scope_exact(
@@ -1847,48 +1819,10 @@ class ResolutionCommitsMixin:
         longer the work this method asked for (§6.1).
         """
 
-        from .scoped_content_review import uses_completion_protocol
+        from .completion_support import current_child_supports
 
-        if uses_completion_protocol(semantics._store, mission_id):
-            from .completion_support import current_child_supports
-
-            return current_child_supports(semantics._store, mission_id, children)
-        found: dict[str, tuple[str, ...]] = {}
-        active = semantics.active_plan_revision(mission_id)
-        members = (
-            {
-                str(spec.occurrence_id): str(spec.task_id)
-                for spec in semantics.list_plan_memberships(mission_id, int(active.revision))
-            }
-            if active is not None
-            else {}
-        )
-        for child in children:
-            duty = ObligationId(str(child.obligation_id))
-            if not duties.exists(mission_id, duty):
-                continue
-            account = duties.account(mission_id, duty)
-            if account.lifecycle in CLOSED_DUTY_LIFECYCLES:
-                continue
-            task_id = members.get(str(child.occurrence_id))
-            usable = tuple(
-                str(item.acceptance_id)
-                for item in semantics.list_acceptances(mission_id, obligation_id=str(duty))
-                if item.validity in USABLE_ACCEPTANCE_VALIDITY
-                and (task_id is None or str(item.task_id) == task_id)
-            )
-            if usable:
-                found[str(child.occurrence_id)] = usable
-                continue
-            if any(
-                str(item.goal_task_id) == task_id
-                and str(item.verdict) == "ACCEPT"
-                and str(item.validity) == "CURRENT"
-                for item in semantics.list_goal_resolutions(mission_id)
-            ):
-                # A nested compound contributes its GoalResolution, not an Acceptance.
-                found[str(child.occurrence_id)] = ()
-        return found
+        del duties  # the completion supports read the duty's standing themselves
+        return current_child_supports(semantics._store, mission_id, children)
 
     def _check_reads(
         self,

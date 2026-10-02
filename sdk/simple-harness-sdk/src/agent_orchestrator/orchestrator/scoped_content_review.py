@@ -34,6 +34,14 @@ from .operation_completion import OperationCompletionError, OperationCompletionR
 
 
 def uses_completion_protocol(store: Store, mission_id: str) -> bool:
+    """Whether this Mission holds the planning-protocol binding.
+
+    Every hierarchical Mission is bound at creation and the hierarchical modules read
+    the frozen completion scope unconditionally; a flat-mode Mission never is.  What
+    still asks this question are the entries both modes share (attempts, results,
+    actions, the loop's bookkeeping), where it tells the two apart.
+    """
+
     row = store.connection.execute(
         "SELECT protocol_version FROM mission_planning_protocols WHERE mission_id=?",
         (mission_id,),

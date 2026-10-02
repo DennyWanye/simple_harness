@@ -515,7 +515,6 @@ def occurrence_task(
     now: float = 0.0,
     declared_policy: Sequence[str] = (),
     criterion_linked: bool = False,
-    require_content_review: bool = False,
     owned: Sequence[tuple[str, str]] = (),
     claimed: Collection[str] = (),
 ) -> OccurrenceTask:
@@ -543,7 +542,9 @@ def occurrence_task(
         criteria, deployed, declared_policy,
         read_only=read_only_leaf(binding) and not criterion_linked,
     )
-    if primitive and require_content_review:
+    if primitive:
+        # Every leaf's content is accepted against its frozen completion scope, which
+        # is a review: the content review layer is part of every leaf's policy.
         if "critic_review" not in deployed:
             raise ContractError("scoped content acceptance requires a deployed Critic")
         policy = tuple(dict.fromkeys((*policy, "critic_review")))

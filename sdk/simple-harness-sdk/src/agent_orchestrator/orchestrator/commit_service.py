@@ -5806,12 +5806,10 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         network = self._judgment_network(mission)
         if network is None:
             return
-        from .scoped_content_review import uses_completion_protocol
-        if uses_completion_protocol(self._store, mission_id):
-            from .completion_status import read_occurrence_completion
-            if not all(read_occurrence_completion(self._store, mission_id, str(root)).complete
-                       for root in network.root_occurrence_ids):
-                raise CommitRejected("approved completion Scope still has unmet content or effects")
+        from .completion_status import read_occurrence_completion
+        if not all(read_occurrence_completion(self._store, mission_id, str(root)).complete
+                   for root in network.root_occurrence_ids):
+            raise CommitRejected("approved completion Scope still has unmet content or effects")
         semantics = HtnStore(self._store)
         unresolved = sorted(
             str(duty)

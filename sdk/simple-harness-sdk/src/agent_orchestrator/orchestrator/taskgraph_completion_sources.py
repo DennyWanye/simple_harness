@@ -10,7 +10,6 @@ from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store
 from .completion_status import current_effect_proofs, read_occurrence_completion
 from .operation_completion import OperationCompletionError
-from .scoped_content_review import uses_completion_protocol
 
 
 def read_completion_sources(store: Store, mission_id: str,
@@ -21,8 +20,6 @@ def read_completion_sources(store: Store, mission_id: str,
     authority. Explicit pre-plan/unmapped states remain incomplete.
     """
     with store.read_view() as db:
-        if not uses_completion_protocol(store, mission_id):
-            return {"protocol": "LEGACY"}
         completion = OperationCompletionStore(store)
         semantics = HtnStore(store)
         specs = tuple(completion.get_spec_exact(mission_id, row[0], row[1]) for row in db.execute(

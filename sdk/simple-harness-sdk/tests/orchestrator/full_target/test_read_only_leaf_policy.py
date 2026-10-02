@@ -216,8 +216,9 @@ def test_a_criterion_linked_leaf_keeps_code_test_whatever_its_side_effect_says()
     linked = occurrence_task(
         mission, spec, binding, criterion_linked=True, **common
     ).task.verification_policy
-    assert plain == ("format_check", "rule_check")
-    assert linked == ("format_check", "rule_check", "code_test")
+    # 每个叶子都带内容审阅层；这条测的是确定性的 ``code_test`` 层留不留。
+    assert plain == ("format_check", "rule_check", "critic_review")
+    assert linked == ("format_check", "rule_check", "code_test", "critic_review")
 
 
 def test_the_task_committed_proposal_says_the_same(tmp_path) -> None:

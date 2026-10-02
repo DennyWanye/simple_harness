@@ -32,10 +32,7 @@ def compile_scripted(dispatch: Any, mission_id: str, proposal: PlanProposal) -> 
         RetireMethodOperation,
         TaskRef,
     )
-    from agent_orchestrator.orchestrator.hierarchical_dispatch import (
-        _occurrences_leaving_with,
-        shared_goal_index,
-    )
+    from agent_orchestrator.orchestrator.hierarchical_dispatch import shared_goal_index
     from agent_orchestrator.planning.htn.applicability import assess_method
     from agent_orchestrator.planning.htn.compiler import compile_refinement_bundle
     from agent_orchestrator.planning.htn.grounding import ground_method
@@ -92,6 +89,27 @@ def compile_scripted(dispatch: Any, mission_id: str, proposal: PlanProposal) -> 
         requirements_revision=0 if confirmed is None else int(confirmed.revision),
         compiled_from_proposal_id=proposal.proposal_id,
     )
+
+
+def _occurrences_leaving_with(network: Any, retiring: Any) -> frozenset[Any]:
+    """Occurrences that exist only because of the instances this proposal retires.
+
+    A shared child another adopted instance still binds is not leaving: one consumer
+    departing must not cancel work another consumer still needs.
+    """
+
+    if not retiring:
+        return frozenset()
+    dropped: set[Any] = set()
+    surviving: set[Any] = set()
+    retired = set(retiring)
+    for instance in network.method_instances:
+        children = {child.occurrence_id for child in instance.child_bindings}
+        if instance.instance_id in retired:
+            dropped |= children
+        elif instance.instance_id in set(network.adopted_instance_ids) - retired:
+            surviving |= children
+    return frozenset(dropped - surviving)
 
 
 def admission_for(dispatch: Any, command: Any, principal: Any) -> Any:

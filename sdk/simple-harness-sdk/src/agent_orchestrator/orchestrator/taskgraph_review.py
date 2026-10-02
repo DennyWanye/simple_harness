@@ -23,8 +23,6 @@ class TaskGraphReviewOrigin:
 
 def read_review_origin(commit: Any, mission_id: str, task_id: str,
                        result_id: str) -> TaskGraphReviewOrigin:
-    from .scoped_content_review import uses_completion_protocol
-
     store = commit.store
     with store.read_view():
         # The result remains historical evidence while convergence owns this
@@ -77,4 +75,4 @@ def read_review_origin(commit: Any, mission_id: str, task_id: str,
         return TaskGraphReviewOrigin(context=context, semantic=semantic, carried=tuple(carried),
                                     ports=tuple(sorted(declared_output_ports(
                                         network, occurrence,
-                                        own_ports=uses_completion_protocol(store, mission_id)).items())))
+                                        own_ports=True).items())))

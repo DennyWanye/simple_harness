@@ -77,6 +77,49 @@ def test_scoped_review_cannot_replace_frozen_input_or_result_claims(tmp_path, mu
     assert _write_counts(world) == before
 
 
+def test_a_stored_package_judging_another_criterion_of_the_requirements_is_refused(tmp_path) -> None:
+    """What a leaf is accepted against is the frozen completion scope's own projection
+    of the stored result — the criteria *this step* owes — never whichever criteria of
+    the Mission's requirements the quoted package happens to carry.
+
+    The package and its official record are really stored, and the criterion they
+    judge is a real criterion of the approved requirements; it is simply not one this
+    step's scope carries.  The review is re-derived from the recorded verification
+    of the stored result, so a record judging anything else is refused before the
+    acceptance formula is even asked."""
+
+    world, _, _, task, stored, _ = _mixed_world(tmp_path, with_output=True)
+    command, principal = _capture_legal_command(world, task, stored.envelope.id)
+    semantics = HtnStore(world.store)
+    owed = {str(item.criterion_id) for item in command.package.criteria}
+    other = next(
+        item for item in command.requirements.criteria if str(item.criterion_id) not in owed
+    )
+    package = dataclasses.replace(
+        command.package,
+        package_id="pkg-criteria-not-the-scopes",
+        criteria=(other,),
+        success_expression=CriterionExpr(other.criterion_id),
+    )
+    record = dataclasses.replace(
+        command.record,
+        record_id="rec-criteria-not-the-scopes",
+        package_id=package.package_id,
+        criteria=(dataclasses.replace(command.record.criteria[0], criterion_id=other.criterion_id),),
+    )
+    semantics.insert_review_package(package)
+    semantics.insert_review_record(record, official=True)
+    before = _write_counts(world)
+
+    with pytest.raises(ResolutionCommitRejected) as refused:
+        world.service.accept_review(
+            dataclasses.replace(command, package=package, record=record), principal
+        )
+    assert refused.value.reason == "OP_CONTENT_REVIEW_UNAVAILABLE"
+
+    assert _write_counts(world) == before
+
+
 class _CaptureCommit:
     def __init__(self) -> None:
         self.command = None
