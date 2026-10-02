@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-from test_provider_budget_guard import create_bound, grants, setup_runtime
+from test_provider_budget_guard import create_bound, grants, setup_runtime, sibling
 
 from agent_orchestrator.governance.budgets import BudgetError
 from agent_orchestrator.runtime.agent_worker import AgentBridge
@@ -117,8 +117,9 @@ def test_cold_overrun_commits_actual_usage_before_refusing_and_blocks_next_call(
             cold.recover(runtime.uow)
             assert grants(commit) == observed
 
+            # The overrun Attempt is still open, so the next call comes from the other step.
             next_agent, _, next_key = await create_bound(
-                commit, task, guard, runtime, "after-overrun"
+                commit, sibling(task), guard, runtime, "after-overrun"
             )
             denied = await next_agent.ask("request", input_id=next_key, timeout=5)
             assert str(denied.state) == "failed" and provider.calls == 1

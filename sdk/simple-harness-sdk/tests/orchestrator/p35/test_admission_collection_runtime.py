@@ -57,7 +57,7 @@ def test_one_empty_reply_does_not_pause_the_task(tmp_path):
     async def exercise():
         provider = EmptyFirstProvider({"worker": [("workspace_list", {})] * 6})
         profile = RuntimeProfile("default", provider, MODEL, default_max_output_tokens=1000, max_output_tokens_ceiling=1000)
-        config = OrchestratorConfig(evidence_root=tmp_path, max_concurrency=1, candidates_per_task=1, attempt_reserve_tokens=4000)
+        config = OrchestratorConfig(evidence_root=tmp_path, max_concurrency=1, attempt_reserve_tokens=4000)
         async with Orchestrator(config, profiles={"default": profile}, provider_token_estimator=Counter("ok")) as orch:
             mission = await orch.submit_mission(
                 MissionSpec(

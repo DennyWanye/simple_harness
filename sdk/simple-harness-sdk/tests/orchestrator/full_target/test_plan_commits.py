@@ -2384,8 +2384,9 @@ def test_a_legacy_graph_rejection_still_answers_with_commit_rejected(tmp_path):
 #: an old Mission already wrote has changed shape, and a golden that recomputed
 #: itself from the live code could never say so.
 #: 2026-10-02: moved once because the policy parameters lost the Manager items, so the
-#: seeded policy version id that ``MissionCreated`` carries changed.
-LEGACY_GRAPH_EVENT_DIGEST = "b3819a45340b2626673aeb4a7762bc21fb8fc91be6f8ea5a44238bfc11cf5b40"
+#: seeded policy version id that ``MissionCreated`` carries changed; moved again the same
+#: day for the same reason when ``candidates_per_task`` was removed (only that id differs).
+LEGACY_GRAPH_EVENT_DIGEST = "923cfe4ec6aae01d75805140345b0512d2600e99ee50ecc653881c7351bdd612"
 
 
 def _legacy_graph_world(root: Path) -> tuple[CommitService, str]:

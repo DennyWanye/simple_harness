@@ -180,7 +180,7 @@ def scenes(tmp_path, monkeypatch):
         store.close()
 
 
-def dispatch(s, *, task_index=0, config_overrides=None, candidates=1):
+def dispatch(s, *, task_index=0, config_overrides=None):
     task = s.store.get_task(s.tasks[task_index].id)
     contract = contract_for(task)
     config = {
@@ -200,7 +200,6 @@ def dispatch(s, *, task_index=0, config_overrides=None, candidates=1):
         reservation=Reservation(1_000, 0),
         intent_config=config,
         input_hash="fixture",
-        candidates_per_task=candidates,
     )
 
 
@@ -430,23 +429,6 @@ def test_hard_citation_or_binding_failures_never_consume_uncertainty_allowance(s
     assert e.store.get_attempt(e.attempt.id).failure["reason"] == "verification_failed"
     assert e.commit.inconclusive_failure_count(e.task.id) == 0
     assert not e.commit.stop_inconclusive_task(e.task.id)
-
-
-def test_exhausted_rework_does_not_cancel_an_existing_sibling(scenes):
-    s = scenes()
-    first = submitted(s, full=False)
-    fail(first, produce(first))
-    second_pair = dispatch(s, candidates=2)
-    sibling_pair = dispatch(s, candidates=2)
-    second = submitted(s, full=False, attempt_pair=second_pair)
-    fail(second, produce(second))
-    assert s.commit.inconclusive_failure_count(second.task.id) == 2
-    assert not s.commit.stop_inconclusive_task(second.task.id)
-    assert s.store.get_attempt(sibling_pair[0].id).status is AttemptStatus.PENDING
-    sibling = submitted(s, attempt_pair=sibling_pair)
-    produce(sibling)
-    assert accept(sibling).status is TaskStatus.COMPLETED
-    assert not s.commit.stop_inconclusive_task(sibling.task.id)
 
 
 def test_doc3_dispatch_freezes_authoritative_checks_and_mission_catalogue(scenes):

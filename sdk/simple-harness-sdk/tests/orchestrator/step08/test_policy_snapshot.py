@@ -58,7 +58,7 @@ def test_s8_07_the_same_configuration_has_the_same_hash_wherever_it_runs(tmp_pat
 def test_s8_07_model_profile_and_configuration_differences_name_their_source(tmp_path):
     base = policy_snapshot(_config(tmp_path), routing=RoutingRules(default="small"))
     other = policy_snapshot(
-        _config(tmp_path, model="deepseek-flash", candidates_per_task=2, knowledge_sharing=False),
+        _config(tmp_path, model="deepseek-flash", max_planning_attempts=5, knowledge_sharing=False),
         routing=RoutingRules(default="large"),
     )
     diff = {d["key"]: d for d in snapshot_diff(base, other)}
@@ -66,7 +66,7 @@ def test_s8_07_model_profile_and_configuration_differences_name_their_source(tmp
         diff["config.model"]["source"] == "OrchestratorConfig.model"
         and diff["config.model"]["b"] == "deepseek-flash"
     )
-    assert diff["config.candidates_per_task"]["source"] == "OrchestratorConfig.candidates_per_task"
+    assert diff["config.max_planning_attempts"]["source"] == "OrchestratorConfig.max_planning_attempts"
     assert (
         diff["config.knowledge_sharing"]["a"] is True
         and diff["config.knowledge_sharing"]["b"] is False

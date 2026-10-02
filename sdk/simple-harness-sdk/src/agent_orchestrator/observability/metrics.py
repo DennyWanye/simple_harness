@@ -15,20 +15,9 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from ..runtime.role_templates import ROLE_MIX_START
 from ..storage.store import Store
 
 METRICS_VERSION = "metrics-v1"
-ALL_ROLES = (
-    "explorer",
-    "exploiter",
-    "critic",
-    "simplifier",
-    "connector",
-    "failure_analyst",
-    "synthesizer",
-    "verifier",
-)
 
 
 def _service_role(subject_id: str) -> str:
@@ -95,16 +84,10 @@ def metrics(store: Store, mission_id: str, *, unpriced: bool) -> dict[str, Any]:
     total_roles = sum(role_counts.values()) or 1
     role_mix = {
         role: {
-            "start_share": ROLE_MIX_START.get(role),
-            "observed": role_counts.get(role, 0),
-            "observed_share": round(role_counts.get(role, 0) / total_roles, 4),
+            "observed": count,
+            "observed_share": round(count / total_roles, 4),
         }
-        for role in ALL_ROLES
-    }
-    role_mix["worker"] = {  # this build's default Worker template sits outside the §9.2 names
-        "start_share": None,
-        "observed": role_counts.get("worker", 0),
-        "observed_share": round(role_counts.get("worker", 0) / total_roles, 4),
+        for role, count in sorted(role_counts.items())
     }
     approvals = store.list_approvals(mission_id)
     actions = store.list_actions(mission_id)
@@ -168,4 +151,4 @@ def metrics(store: Store, mission_id: str, *, unpriced: bool) -> dict[str, Any]:
     }
 
 
-__all__ = ("ALL_ROLES", "METRICS_VERSION", "metrics")
+__all__ = ("METRICS_VERSION", "metrics")

@@ -225,66 +225,6 @@ def test_s3_03_failed_sibling_repairs_alone_and_the_join_waits(tmp_path):
 
 
 # --------------------------------------------------------------------------- S3-05
-def test_s3_05_two_candidates_first_pass_accepted_second_superseded(tmp_path):
-    hold_second = asyncio.Event()
-    single = [dict(DEMO_DAG_TASKS[0], dependencies=[])]  # one Task: A alone
-    scripts_a = demo_static_dag_provider().worker_by_key["A"]
-    provider = demo_static_dag_provider(
-        planner_steps=[graph_proposal_step(single)],
-        holds={
-            "A": [None, hold_second]
-        },  # the second candidate is held until the first is accepted
-        extra_scripts={"A": list(scripts_a)},
-    )
-
-    async def case():
-        async with Orchestrator(config(tmp_path, candidates_per_task=2), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(
-                spec("s3-05", success_criteria=("file:textkit/__init__.py",))
-            )
-            runner = asyncio.create_task(orchestrator.run())
-            store = orchestrator.store
-            await wait_until(
-                lambda: any(t.status is TaskStatus.COMPLETED for t in store.list_tasks(mission.id))
-            )
-            task = store.list_tasks(mission.id)[0]
-            statuses = {a.id: a.status for a in store.list_attempts(task.id)}
-            assert sorted(statuses.values()) == [AttemptStatus.COMPLETED, AttemptStatus.SUPERSEDED]
-            hold_second.set()  # the loser now finishes its turn: a late result
-            await runner
-            final = store.get_mission(mission.id)
-            assert final.status is MissionStatus.COMPLETED, orchestrator.progress_log
-            attempts = store.list_attempts(task.id)
-            assert [a.status for a in attempts] == [
-                AttemptStatus.COMPLETED,
-                AttemptStatus.SUPERSEDED,
-            ]
-            loser = attempts[1]
-            assert (
-                task.accepted_result_id == store.find_result_for_attempt(attempts[0].id).envelope.id
-            )
-            # both candidates counted against max_attempts; the loser was cancelled (receipt) and charged
-            assert task.attempt_count == 2
-            assert any(r["attempt_id"] == loser.id for r in orchestrator.cancel_receipts)
-            with store.transaction():
-                reservation = orchestrator.commit.ledger.reservation(loser.id)
-            assert reservation["state"] == "SETTLED"
-            events = {e.type for e in store.list_events(mission.id) if e.attempt_id == loser.id}
-            assert "AttemptSuperseded" in events
-            # the late result was not accepted: no second accepted result, history only
-            late = [
-                e
-                for e in store.list_events(mission.id)
-                if e.type == "ResultRejected" and e.attempt_id == loser.id
-            ]
-            assert store.find_result_for_attempt(loser.id) is None  # never a StoredResult
-            assert store.count_events(mission.id, "TaskCompleted") == 1
-            assert len(late) == 1 and late[0].payload["reason"] == "superseded"
-            assert store.get_intent_for_subject(loser.id).state in {"SETTLED", "FAILED"}
-
-    asyncio.run(case())
-
-
 # --------------------------------------------------------------------------- S3-06
 def test_s3_06_all_tasks_pass_but_the_mission_criterion_is_unmet(tmp_path):
     provider = demo_static_dag_provider()
@@ -391,13 +331,17 @@ def test_r1_mission_wide_concurrency_is_enforced_in_the_commit(tmp_path):
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
     mission, _ = service.create_mission(spec("r1-conc"))
     planning = service.begin_planning(mission.id)
+    # two independent steps: one open Attempt per step, so the Mission-wide bound is
+    # exercised across steps
     tasks, _ = service.commit_task_graph(
         mission.id,
-        TaskGraphProposal.from_json({"tasks": DEMO_DAG_TASKS}),
+        TaskGraphProposal.from_json(
+            {"tasks": [DEMO_DAG_TASKS[0], dict(DEMO_DAG_TASKS[4], dependencies=[])]}
+        ),
         base_version=planning.version,
         source={},
     )
-    a = tasks[0]
+    a, b = tasks[0], tasks[1]
     kwargs = dict(
         role="worker",
         model="agent-model",
@@ -406,13 +350,14 @@ def test_r1_mission_wide_concurrency_is_enforced_in_the_commit(tmp_path):
         reservation=Reservation(tokens=1000, cost_micros=0),
         intent_config={"agent_config": {}, "message": {}},
         input_hash="h",
-        candidates_per_task=3,
     )
     service.create_attempt(a.id, max_open_attempts=1, **kwargs)
     with pytest.raises(CommitRejected) as exc:
-        service.create_attempt(a.id, max_open_attempts=1, **kwargs)
+        service.create_attempt(b.id, max_open_attempts=1, **kwargs)
     assert "max_concurrency" in str(exc.value)
-    attempt2, intent2 = service.create_attempt(a.id, max_open_attempts=2, **kwargs)
+    with pytest.raises(CommitRejected, match="already has an open Attempt"):
+        service.create_attempt(a.id, max_open_attempts=3, **kwargs)  # one per step
+    attempt2, intent2 = service.create_attempt(b.id, max_open_attempts=2, **kwargs)
     assert intent2.config["attempt_id"] == attempt2.id  # P1-7: authoritative id in the intent
 
 

@@ -36,7 +36,7 @@ WEIGHTS = {
 }
 # Only Verified Knowledge is ranked in this build (plan §6.1 / review P2-6): the trust
 # factor is constant for it and is kept as a weighted term so a later build that ranks
-# candidate claims for explorer/critic templates changes RETRIEVAL_VERSION, not the shape.
+# candidate claims for critic templates changes RETRIEVAL_VERSION, not the shape.
 TRUST = {"VERIFIED": 1.0, "SUPPORTED": 0.5}
 DEFAULT_LIMIT = 12
 _TOKEN = re.compile(r"[A-Za-z0-9_]+|[一-鿿]")
@@ -327,7 +327,6 @@ class KnowledgeContext:
     global_summary: Mapping[str, Any] | None = None
     summary_status: Mapping[str, Any] = field(default_factory=lambda: {"status": "ok"})
     raw_refs: Mapping[str, Any] | None = None  # §11 layer 1: references only (P2-11)
-    role_materials: Mapping[str, Any] | None = None  # bounded new-role projection only
 
     @classmethod
     def unavailable(cls, reason: str, *, status: str = "unavailable") -> KnowledgeContext:

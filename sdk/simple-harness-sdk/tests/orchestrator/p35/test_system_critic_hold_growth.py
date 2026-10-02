@@ -110,8 +110,7 @@ def _scenario(tmp_path, mode):
         "critic": critic_script * 4,
     })
     config = OrchestratorConfig(
-        evidence_root=tmp_path / "runtime", max_concurrency=1, candidates_per_task=1,
-        knowledge_sharing=False,
+        evidence_root=tmp_path / "runtime", max_concurrency=1, knowledge_sharing=False,
         attempt_reserve_tokens=60_000, critic_reserve_tokens=30_000,
         default_max_output_tokens=8192, max_output_tokens_ceiling=8192,
     )
@@ -329,16 +328,14 @@ def test_critic_delta_and_known_unused_return_are_atomic_and_idempotent(tmp_path
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize("boundary", ["sibling_floor", "foreign_attempt", "foreign_account",
-                                      "revision", "route", "cost"])
+@pytest.mark.parametrize("boundary", ["foreign_attempt", "foreign_account", "revision", "route",
+                                      "cost"])
 def test_critic_cannot_borrow_foreign_or_protected_funds(tmp_path, boundary):
     async def exercise():
         async with _runtime(tmp_path, priced=boundary == "cost") as (
             commit, _, task, hold, guard, provider, runtime,
         ):
             agent, intent = await _critic(commit, task, guard, runtime, priced=boundary == "cost")
-            if boundary == "sibling_floor":
-                await _worker(commit, task, guard, runtime, key="sibling")
             # Corrupt one durable binding at a time: simulate stale/foreign input,
             # not a replacement admission implementation or fabricated PASS.
             with commit.store.transaction():

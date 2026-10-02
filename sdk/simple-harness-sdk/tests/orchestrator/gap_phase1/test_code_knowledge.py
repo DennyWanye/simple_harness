@@ -166,6 +166,8 @@ def test_code_v2_prompts_describe_scoped_observations():
     from agent_orchestrator.runtime.role_templates import ROLES, template_for_domain
 
     for role in CODE_PROFILE.role_templates:
+        if role not in ROLES:  # the profile still names removed Worker variants
+            continue
         template = template_for_domain(ROLES[role], CODE_PROFILE, {})
         assert "test_observation" in template.instructions
         assert "才可能被判 VERIFIED" not in template.instructions

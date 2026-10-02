@@ -55,20 +55,6 @@ def register_document_templates() -> None:
     register_template(
         replace(worker, tool_names=tuple(n for n in worker.tool_names if n != "run_tests"))
     )
-    for name in ("explorer", "exploiter", "simplifier", "connector", "failure_analyst"):
-        template = TEMPLATE_VERSIONS[name][f"{name}-v1"]
-        bias = template.instructions.split("\n搜索偏置：", 1)[1].replace("通过测试", "通过领域验证")
-        register_template(
-            replace(
-                worker,
-                name=name,
-                prompt_version=f"{name}-doc-research-v1",
-                instructions=worker.instructions.replace("[role:worker]", f"[role:{name}]", 1)
-                + "\n搜索偏置："
-                + bias,
-                tool_names=tuple(n for n in worker.tool_names if n != "run_tests"),
-            )
-        )
     arbiter = _revise(
         arbiter_base,
         "arbiter-doc-research-v1",
@@ -148,10 +134,7 @@ def _register_document_ordinal_refs() -> None:
         "没有足够依据排除全部反例时，停止提出全来源缺失结论；"
         "改为精确引用来源中明确记载的缺口，并保留其他阶段的实际记录及不确定性。"
     )
-    for role in (
-        "worker", "arbiter", "synthesizer", "explorer", "exploiter", "simplifier",
-        "connector", "failure_analyst",
-    ):
+    for role in ("worker", "arbiter", "synthesizer"):
         previous = TEMPLATE_VERSIONS[role][f"{role}-doc-research-v4"]
         register_template(replace(previous, prompt_version=f"{role}-doc-research-v5",
                                   instructions=previous.instructions + refs + review))
@@ -212,16 +195,7 @@ def _register_document_submission_v2() -> None:
         "每个 Task 的预算需覆盖多次模型输入、输出、独立核验和必要返工，"
         "不要把首次预留下限当成整次任务的足够预算。"
     )
-    result_roles = {
-        "worker",
-        "arbiter",
-        "synthesizer",
-        "explorer",
-        "exploiter",
-        "simplifier",
-        "connector",
-        "failure_analyst",
-    }
+    result_roles = {"worker", "arbiter", "synthesizer"}
     for name in (*sorted(result_roles), "planner", "critic"):
         previous = TEMPLATE_VERSIONS[name][f"{name}-doc-research-v1"]
         instructions = previous.instructions
@@ -287,10 +261,7 @@ def _register_document_submission_v3() -> None:
         "确认连续页面的原始bytes hash一致并拼接完整引文，再使用覆盖它的起止行范围。"
         "starts_mid_line/ends_mid_line 表示页切在行中，不能把单页片段当作完整行。"
     )
-    for name in (
-        "worker", "arbiter", "synthesizer", "explorer", "exploiter", "simplifier",
-        "connector", "failure_analyst",
-    ):
+    for name in ("worker", "arbiter", "synthesizer"):
         previous = TEMPLATE_VERSIONS[name][f"{name}-doc-research-v2"]
         register_template(replace(
             previous, prompt_version=f"{name}-doc-research-v3",
@@ -351,10 +322,7 @@ def _register_document_scope_review() -> None:
         "分析与 limitations 也须对照反例，标为分析并不豁免来源一致性；"
         "无法消解的新旧记录应明确并列其原文范围与局限。"
     )
-    for role in (
-        "worker", "arbiter", "synthesizer", "explorer", "exploiter", "simplifier",
-        "connector", "failure_analyst",
-    ):
+    for role in ("worker", "arbiter", "synthesizer"):
         previous = TEMPLATE_VERSIONS[role][f"{role}-doc-research-v3"]
         register_template(replace(
             previous, prompt_version=f"{role}-doc-research-v4",

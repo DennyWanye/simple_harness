@@ -184,7 +184,6 @@ def test_legacy_unknown_without_profile_identity_blocks_new_profile_admission(tm
                             "provider_admission_fingerprint": new.fingerprint,
                         },
                         input_hash="h",
-                        candidates_per_task=1,
                     )
                     commit.claim_intent(incoming.intent_id, owner="test-owner", lease_seconds=60)
                     commit.record_agent_created(

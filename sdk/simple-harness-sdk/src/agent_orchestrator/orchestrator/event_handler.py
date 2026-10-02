@@ -346,7 +346,6 @@ MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS = MAX_SERVICE_REHANDOFFS + 1
 # difference from the ACTIVE version is recorded as drift (the version still governs)
 CONFIG_DERIVED = frozenset(
     {
-        "candidates_per_task",
         "exploration_slots",
         "mission_concurrency",
         "aging_window_seconds",
@@ -625,7 +624,6 @@ class Orchestrator:
                 task_max_tokens=self._config.task_max_tokens,
                 deployed_layers=self._deployed,
                 task_floor=self._task_floor,
-                candidates_for=self._candidates_for,
                 system_tail_factory=self._mission_system_tail_plan,
                 mission_profile_validator=self._validate_mission_profile,
                 task_floor_for=self._task_floor_for_mission,
@@ -993,20 +991,13 @@ class Orchestrator:
         )
         return TaskBudgetFloor(base=first_tokens, critic=first_tokens)
 
-    def _candidates_for(self, mission_id: str) -> int:
-        """Candidates per Task from the policy ``mission_id`` is bound to (plan review P1-2)."""
-
-        # step 9 (D9-4'): a whitelisted value is read from the bound policy, never the config
-        return max(1, int(self.policy_for(mission_id)["candidates_per_task"]))
-
     def _budget_floor(self, mission_id: str) -> dict[str, int]:
         """What the Planner is told a Task must at least hold."""
 
-        candidates = self._candidates_for(mission_id)
         floor = self._task_floor_for_mission(mission_id)
         return {
-            "min_task_tokens": floor.floor_for((), candidates),
-            "min_task_tokens_with_critic_review": floor.floor_for(("critic_review",), candidates),
+            "min_task_tokens": floor.floor_for(()),
+            "min_task_tokens_with_critic_review": floor.floor_for(("critic_review",)),
         }
 
     def policy_for(self, mission_id: str) -> dict[str, Any]:
@@ -5800,8 +5791,6 @@ class Orchestrator:
         mission: Mission,
         task: Task,
         tasks_by_id: Mapping[str, Task],
-        *,
-        search_visibility: bool = False,
     ) -> KnowledgeContext:
         """§10 items 4/5/7 for one Task: ranked Verified Knowledge (read back in full),
         the disputed claims (marked), the candidate / rejected claims for the templates
@@ -5850,33 +5839,11 @@ class Orchestrator:
         from ..context.compression import GLOBAL_BRANCH, branch_of
 
         branch = branch_of(task, tasks_by_id)
-        from ..context.role_visibility import SEARCH_ROLES, build_role_materials
-
-        role_materials = None
         visible_records = [by_id[item.id] for item in ranked.items]
-        search_role = role_for_task(task).name
-        if search_visibility and search_role in SEARCH_ROLES:
-            role_materials = build_role_materials(
-                self.store,
-                task=task,
-                role=search_role,
-                claims=claims,
-                records=visible_records,
-                artifact_store=self.assembled.workspaces.artifact_store,
-                document=document,
-            )
-            visible_ids = {
-                item["id"]
-                for values in role_materials["sections"].values()
-                for item in values
-                if "id" in item
-            }
-            visible_records = [record for record in visible_records if record.id in visible_ids]
         scored = {item.id: item for item in ranked.items}
         return KnowledgeContext(
             retrieval=ranked,
             verified=tuple(knowledge_view(record, scored[record.id]) for record in visible_records),
-            role_materials=role_materials,
             disputed=tuple(disputes),
             candidates=tuple(
                 candidate_claims(
@@ -10323,7 +10290,6 @@ class Orchestrator:
                 concurrency_limit=min(
                     int(bound["mission_concurrency"]), self._config.max_concurrency
                 ),
-                candidates_per_task=int(bound["candidates_per_task"]),
                 now=self.store.now,
                 aging_window_seconds=float(bound["aging_window_seconds"]),
                 mission_max_tokens=mission.budget.max_tokens,
@@ -10340,7 +10306,6 @@ class Orchestrator:
                 concurrency_limit=min(
                     int(bound["mission_concurrency"]), self._config.max_concurrency
                 ),
-                candidates_per_task=int(bound["candidates_per_task"]),
                 now=self.store.now,
                 aging_window_seconds=float(bound["aging_window_seconds"]),
                 mission_max_tokens=mission.budget.max_tokens,
@@ -10368,7 +10333,6 @@ class Orchestrator:
                 else {
                     **score.to_json(),
                     "policy_version_id": self.policy_version_of(mission.id),
-                    "candidates_per_task": int(bound["candidates_per_task"]),
                     "concurrency_limit": plan.concurrency_limit,
                     "eligible": plan.eligible,
                     "slots": plan.slots,
@@ -11382,7 +11346,7 @@ class Orchestrator:
             role = self._hierarchical_worker_template(role, mission.id)
         untrusted = [str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])]
         try:
-            knowledge = self._gather_knowledge(mission, task, all_tasks, search_visibility=True)
+            knowledge = self._gather_knowledge(mission, task, all_tasks)
         except RetrievalUnavailable as error:
             # S4-07 / D4-11': never "no knowledge" — degrade explicitly or block visibly
             count = self.commit.record_retrieval_unavailable(
@@ -11664,10 +11628,7 @@ class Orchestrator:
         if self._pressure.is_raised:  # §18.5 "缩小每个 Attempt 预算" (D6-3 ④)
             tokens = max(4_000, int(tokens * self._config.reduced_reserve_ratio))
         if task.budget.max_tokens is not None:
-            # D3-5': explorative candidates share the Task's token budget evenly
-            tokens = min(
-                tokens, max(1, task.budget.max_tokens // int(bound["candidates_per_task"]))
-            )
+            tokens = min(tokens, max(1, task.budget.max_tokens))
             # step 4: a repair reserves what the Task still has rather than failing on a
             # nominal share it no longer can afford (the reservation is a cap, not a spend)
             with self.store.transaction():
@@ -11790,7 +11751,6 @@ class Orchestrator:
                 input_hash=sha256_hex(message),
                 retry_of=placeholder.retry_of,
                 feedback=feedback,
-                candidates_per_task=int(bound["candidates_per_task"]),
                 inputs=[item.to_json() for item in inputs],
                 max_open_attempts=min(
                     int(bound["mission_concurrency"]), self._config.max_concurrency

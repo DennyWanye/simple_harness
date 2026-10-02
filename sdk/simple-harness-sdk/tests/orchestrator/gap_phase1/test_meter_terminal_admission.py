@@ -112,7 +112,6 @@ def test_pre_handoff_budget_refusal_stops_actual_orchestrator_without_retry(tmp_
         config = OrchestratorConfig(
             evidence_root=tmp_path,
             max_concurrency=1,
-            candidates_per_task=1,
             attempt_reserve_tokens=4000,
         )
         async with Orchestrator(config, profiles={"default": profile}) as orch:

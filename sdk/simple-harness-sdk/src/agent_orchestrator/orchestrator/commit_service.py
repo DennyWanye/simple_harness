@@ -362,7 +362,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin,
         task_max_tokens: int | None = None,
         deployed_layers: frozenset[str] = STEP2_IMPLEMENTED_LAYERS,
         task_floor: TaskBudgetFloor | None = None,
-        candidates_for: Callable[[str], int] | None = None,
         artifact_store: ArtifactStore | None = None,
         system_tail_factory: Callable[..., Any] | None = None,
         mission_profile_validator: Callable[[str, Mapping[str, Any]], None] | None = None,
@@ -384,11 +383,9 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin,
         self._source_artifact_store = artifact_store
         if self._source_artifact_store is None and str(store.path) != ":memory:":
             self._source_artifact_store = ArtifactStore(store.path.parent / "artifacts")
-        # P3.1 fix F-ORCH-1: the Task budget floor the Graph Manager applies — only the
-        # Orchestrator injects one (None = no floor, every earlier construction unchanged);
-        # ``candidates_for`` gives a Mission's candidates per Task from its bound policy
+        # P3.1 fix F-ORCH-1: the Task budget floor the graph gate applies — only the
+        # Orchestrator injects one (None = no floor, every earlier construction unchanged)
         self._task_floor = task_floor
-        self._candidates_for = candidates_for
         self._ledger = BudgetLedger(store)
         self._conflict_tasks = conflict_tasks  # D4-19: False = defer every conflict
         self._global_budget = global_budget  # D6-1: None = no deployment-wide cap
@@ -432,13 +429,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin,
 
     def off_task_accepted(self, observer: Callable[[Task], None]) -> None:
         self._accepted_task_observers.remove(observer)
-
-    def _candidates(self, mission_id: str) -> int:
-        """Candidates per Task of ``mission_id``'s bound policy (1 when nobody told us)."""
-
-        if self._candidates_for is None:
-            return 1
-        return max(1, int(self._candidates_for(mission_id)))
 
     def _floor_for_mission(self, mission_id: str) -> TaskBudgetFloor | None:
         return self._task_floor if self._task_floor_for is None else self._task_floor_for(mission_id)
@@ -1299,7 +1289,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin,
                 proposal,
                 deployed_layers=self._deployed_layers,
                 task_floor=self._floor_for_mission(mission_id),
-                candidates=self._candidates(mission.id),
                 domain=self.domain_for(mission.id),
             )
             key_to_id = {
@@ -2760,7 +2749,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin,
         input_hash: str,
         retry_of: str | None = None,
         feedback: Sequence[str] = (),
-        candidates_per_task: int = 1,
         inputs: Sequence[Mapping[str, Any]] = (),
         max_open_attempts: int | None = None,
         max_running_attempts: int | None = None,
@@ -2771,10 +2759,9 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin,
         """Atomic Reserve + Attempt(PENDING) + dispatch intent (ORCH-BUILD §4.3 step 1).
 
         Refuses (nothing written) when the Task is not READY/ACTIVE/VERIFYING, when it
-        already has ``candidates_per_task`` open Attempts (D3-5': the Task status is a
-        function of its Attempt set, so a second candidate may join while the first is
-        being verified) or when the budget does not fit; the caller turns
-        ``BudgetExhausted`` into a stop.  Every candidate counts against ``max_attempts``.
+        already has an open Attempt (one at a time per Task) or when the budget does not
+        fit; the caller turns ``BudgetExhausted`` into a stop.  Every Attempt counts
+        against ``max_attempts``.
         """
 
         with self._store.transaction():
@@ -2843,10 +2830,9 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin,
                 intent_config = {**dict(intent_config), "taskgraph_inputs": graph_prepared.intent_binding()}
             existing = self._store.list_attempts(task_id)
             open_attempts = [a for a in existing if a.status in OPEN_ATTEMPT_STATES]
-            if len(open_attempts) >= max(1, candidates_per_task):
+            if open_attempts:
                 raise CommitRejected(
-                    f"task {task_id} already has {len(open_attempts)} open Attempt(s) "
-                    f"(candidates_per_task={candidates_per_task}): {open_attempts[0].id}"
+                    f"task {task_id} already has an open Attempt: {open_attempts[0].id}"
                 )
             if max_open_attempts is not None:  # D3-4: the Mission-wide bound, checked here
                 open_in_mission = sum(

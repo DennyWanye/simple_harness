@@ -25,7 +25,10 @@ from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.role_templates import ROLES, TEMPLATE_VERSIONS, template_for_domain
 from agent_orchestrator.verification.evidence_resolver import EvidenceResolver
 
-RESULT_ROLES = (
+RESULT_ROLES = ("worker", "arbiter", "synthesizer")
+#: The result-role keys the published document profiles still carry (the five Worker
+#: variants were removed on 2026-10-02; the profiles keep their keys, unread).
+PROFILE_RESULT_KEYS = (
     "worker", "arbiter", "synthesizer", "explorer", "exploiter", "simplifier",
     "connector", "failure_analyst",
 )
@@ -39,12 +42,12 @@ def test_published_profiles_and_prompt_bytes_are_unchanged():
         "fbcefdba9801b4ec5dbd62adaafbd8490a63fe1240617c5271b1d7a73b901061"
     )
     for version, digest in (
-        (1, "215201bc43dfe4c085fe487bbed01593eccbced45282639afa11b7de23479bb7"),
-        (2, "066e8017288f143699ae12bd6069ea0625ddaf9bca827cf01e5615359f6067b4"),
+        (1, "a3e8493e546de7e2aeea2f8455c8f94b9765598376e8ebcf954f362002e63602"),
+        (2, "9642fc48c2d955ac61d26a4da728d46a5f29e5bb3dcc6ed88395ed03001ad405"),
     ):
         rows = {}
         for role in domains.DOC_PROFILE_V5.role_templates:
-            if role == "manager":  # the profile still names it; the role itself was removed
+            if role not in TEMPLATE_VERSIONS:  # named by the profile, removed as a role
                 continue
             template = TEMPLATE_VERSIONS[role][f"{role}-doc-research-v{version}"]
             rows[role] = {"instructions": template.instructions, "tools": list(template.tool_names)}
@@ -57,7 +60,7 @@ def test_published_profiles_and_prompt_bytes_are_unchanged():
             TEMPLATE_VERSIONS[role][f"{role}-v2"]
             if role in {"critic", "worker", "synthesizer"} else current
         ]
-    }) == "8596b24d491c67a2c88faa00588680d8b518389f61d87c5707ad6091955a6718"
+    }) == "0c20a98d1d2d1bec2892633bcf99998e9b8faf752ccaddeabe0299f715ce7c79"
 
 
 @pytest.mark.parametrize("role", RESULT_ROLES)
@@ -110,7 +113,7 @@ def test_doc6_keeps_all_capabilities_and_changes_only_successor_role_bindings():
     expected = old.to_json()
     expected["version"] = "6"
     expected["role_templates"].update({
-        r: f"{r}-doc-research-v3" for r in (*RESULT_ROLES, "planner", "manager")
+        r: f"{r}-doc-research-v3" for r in (*PROFILE_RESULT_KEYS, "planner", "manager")
     })
     assert new.to_json() == expected
     assert domains.DomainProfileV1.from_json(new.to_json()).to_json() == expected

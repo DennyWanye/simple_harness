@@ -14,9 +14,12 @@ from agent_orchestrator.governance.domains import (
 )
 from agent_orchestrator.runtime.role_templates import ROLES, template_for_domain
 
-RESULT_ROLES = (
-    "worker", "arbiter", "synthesizer", "explorer", "exploiter", "simplifier",
-    "connector", "failure_analyst",
+RESULT_ROLES = ("worker", "arbiter", "synthesizer")
+#: Roles removed on 2026-10-02 (the Manager and the five Worker variants only it could
+#: set).  Published profiles still name them until the benchmark arms are settled;
+#: ``template_for_domain`` never asks for them.
+REMOVED_ROLES = frozenset(
+    {"manager", "explorer", "exploiter", "simplifier", "connector", "failure_analyst"}
 )
 
 
@@ -71,9 +74,7 @@ def test_the_hierarchical_worker_pointer_is_beside_the_profile_not_inside_it():
         hierarchical_worker_for_domain,
     )
 
-    # ``manager`` was removed on 2026-10-02; the published profile keeps the key
-    # until the benchmark arms are settled, and ``template_for_domain`` never asks for it.
-    assert set(APPWORLD_PROFILE.role_templates) - {"manager"} <= set(ROLES), (
+    assert set(APPWORLD_PROFILE.role_templates) - REMOVED_ROLES <= set(ROLES), (
         "every key of role_templates names a role; a non-role key breaks both readers"
     )
     assert HIERARCHICAL_WORKER_TEMPLATES["appworld-v1"] == "worker-appworld-hierarchical-v1"

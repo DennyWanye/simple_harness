@@ -34,11 +34,6 @@ OLD = {
         "worker",
         "arbiter",
         "synthesizer",
-        "explorer",
-        "exploiter",
-        "simplifier",
-        "connector",
-        "failure_analyst",
     ],
 )
 def test_current_document_prompt_example_is_a_real_valid_literal_claim(role):

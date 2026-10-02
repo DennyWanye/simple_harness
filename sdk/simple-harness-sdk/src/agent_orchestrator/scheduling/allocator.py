@@ -238,7 +238,6 @@ def allocate(
     attempts: Sequence[Attempt],
     *,
     concurrency_limit: int | None,
-    candidates_per_task: int = 1,
     now: float | None = None,
     aging_window_seconds: float = 300.0,
     mission_max_tokens: int | None = None,
@@ -247,11 +246,11 @@ def allocate(
     exploration_slots: int = 1,
     weights: Mapping[str, float] | None = None,
 ) -> AllocationPlan:
-    """Bounded allocation over the Frontier plus ACTIVE Tasks that still lack a candidate.
+    """Bounded allocation over the Frontier plus ACTIVE Tasks that have no open Attempt.
 
-    Eligibility first (paused, dependencies, the Mission-wide concurrency limit, the
-    per-Task candidate count), then §29.3 ordering: conflict Tasks, then starving
-    Tasks (a whole aging window waited), then by score, ordinal as the tie-break.
+    Eligibility first (paused, dependencies, the Mission-wide concurrency limit, one
+    open Attempt per Task), then §29.3 ordering: conflict Tasks, then starving Tasks
+    (a whole aging window waited), then by score, ordinal as the tie-break.
     """
 
     open_by_task: dict[str, int] = {}
@@ -309,13 +308,12 @@ def allocate(
         ordered = kept
     slots = None if concurrency_limit is None else max(0, concurrency_limit - open_total)
     for task in ordered:
-        open_here = open_by_task.get(task.id, 0)
-        while open_here < max(1, candidates_per_task):
-            if concurrency_limit is not None and open_total >= concurrency_limit:
-                break
-            grants.append((task, open_here + 1))
-            open_here += 1
-            open_total += 1
+        if open_by_task.get(task.id, 0):
+            continue  # one open Attempt per Task
+        if concurrency_limit is not None and open_total >= concurrency_limit:
+            break
+        grants.append((task, 1))
+        open_total += 1
     return AllocationPlan(
         grants=tuple(grants),
         open_attempts=open_total,
@@ -588,7 +586,6 @@ def allocate_v2(
     readiness: Mapping[str, EligiblePrimitiveTask],
     *,
     concurrency_limit: int | None,
-    candidates_per_task: int = 1,
     now: float | None = None,
     aging_window_seconds: float = 300.0,
     mission_max_tokens: int | None = None,
@@ -640,13 +637,12 @@ def allocate_v2(
     slots = None if concurrency_limit is None else max(0, concurrency_limit - open_total)
     grants: list[tuple[EligiblePrimitiveTask, int]] = []
     for task in ordered:
-        open_here = open_by_task.get(task.id, 0)
-        while open_here < max(1, candidates_per_task):
-            if concurrency_limit is not None and open_total >= concurrency_limit:
-                break
-            grants.append((admitted_by_task[task.id], open_here + 1))
-            open_here += 1
-            open_total += 1
+        if open_by_task.get(task.id, 0):
+            continue  # one open Attempt per Task
+        if concurrency_limit is not None and open_total >= concurrency_limit:
+            break
+        grants.append((admitted_by_task[task.id], 1))
+        open_total += 1
     return AllocationPlanV2(
         grants=tuple(grants),
         open_attempts=open_total,

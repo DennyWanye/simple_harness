@@ -5,14 +5,14 @@
 """P3.1 遗留修复（plans/2026-09-12-phase3/p31-fixes, plan v2）· FX-1..FX-5.
 
 F-ORCH-1: a Task budget below what its first Attempt and that Attempt's Critic can reserve
-— ``k × (base + critic)`` with k candidates per Task, the critic part only when the policy
+— ``base + critic``, the critic part only when the policy
 names critic_review — is refused at the graph gate (``task_budget_below_floor``) and the
 proposer is told why; nothing invents a number for the model.  The floor is a necessary
 condition only: it never promises that repairs will be affordable.  System tasks
 (synthesis / conflict) are not proposals and are not bound by it.  Without ``task_floor``
 the gates behave as before (only the Orchestrator injects one).
 F-ORCH-3: the artifacts of an accepted result become VERIFIED and those of a failed result
-REJECTED, each in its own commit transaction; superseded candidates stay UNVERIFIED.
+REJECTED, each in its own commit transaction.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ import pytest
 
 from agent_orchestrator.contracts import (
     Artifact,
-    AttemptStatus,
     Budget,
     ClaimProposal,
     Mission,
@@ -41,11 +40,10 @@ from agent_orchestrator.graph.task_graph import (
     TaskGraphProposal,
     validate_graph,
 )
-from agent_orchestrator.orchestrator.commit_service import MissionSpec, Reservation
+from agent_orchestrator.orchestrator.commit_service import MissionSpec
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.model_router import RuntimeProfile
-from agent_orchestrator.storage.store import Store
 from agent_orchestrator.testing.fixtures import (
     RoleScriptedProvider,
     critic_step,
@@ -55,8 +53,7 @@ from agent_orchestrator.testing.fixtures import (
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "step05"))
-from graph_helpers import HASH, drive_to_running, graph_service  # noqa: E402
-from graph_helpers import node as graph_node  # noqa: E402
+from graph_helpers import HASH  # noqa: E402
 
 TOOLS3 = ("workspace_read_file", "workspace_write_file", "workspace_list")
 OFF = DeploymentPolicy(allowed_tools=TOOLS3, local_code_execution=False)
@@ -110,37 +107,32 @@ def proposal(*nodes):
 def test_the_floor_formula():
     assert FLOOR.floor_for(NO_CRITIC) == 4096
     assert FLOOR.floor_for(WITH_CRITIC) == 10_096
-    assert FLOOR.floor_for(WITH_CRITIC, candidates=2) == 20_192
-    assert TaskBudgetFloor(base=0, critic=6000).floor_for(WITH_CRITIC, candidates=3) == 0
+    assert TaskBudgetFloor(base=0, critic=6000).floor_for(WITH_CRITIC) == 0
 
 
 @pytest.mark.parametrize(
-    ("tokens", "policy", "floor", "candidates", "refused"),
+    ("tokens", "policy", "floor", "refused"),
     [
-        (800, WITH_CRITIC, FLOOR, 1, True),  # the native run: 800 with critic_review
-        (800, NO_CRITIC, FLOOR, 1, True),  # below one turn even without a Critic
-        (4095, NO_CRITIC, FLOOR, 1, True),
-        (4096, NO_CRITIC, FLOOR, 1, False),  # exactly the floor passes
-        (10_095, WITH_CRITIC, FLOOR, 1, True),
-        (10_096, WITH_CRITIC, FLOOR, 1, False),  # base + critic share
-        (10_096, WITH_CRITIC, FLOOR, 2, True),  # two candidates each reserve a turn and a Critic
-        (20_192, WITH_CRITIC, FLOOR, 2, False),
-        (800, WITH_CRITIC, TaskBudgetFloor(base=0, critic=6000), 1, False),  # 0 switches it off
+        (800, WITH_CRITIC, FLOOR, True),  # the native run: 800 with critic_review
+        (800, NO_CRITIC, FLOOR, True),  # below one turn even without a Critic
+        (4095, NO_CRITIC, FLOOR, True),
+        (4096, NO_CRITIC, FLOOR, False),  # exactly the floor passes
+        (10_095, WITH_CRITIC, FLOOR, True),
+        (10_096, WITH_CRITIC, FLOOR, False),  # base + critic share
+        (800, WITH_CRITIC, TaskBudgetFloor(base=0, critic=6000), False),  # 0 switches it off
     ],
 )
-def test_the_graph_gate_refuses_a_task_budget_below_the_floor(
-    tokens, policy, floor, candidates, refused
-):
+def test_the_graph_gate_refuses_a_task_budget_below_the_floor(tokens, policy, floor, refused):
     graph = proposal(node("A", tokens=tokens, policy=policy))
     if refused:
         with pytest.raises(GraphRejected) as rejected:
-            validate_graph(mission(), graph, task_floor=floor, candidates=candidates)
+            validate_graph(mission(), graph, task_floor=floor)
         assert rejected.value.reason == "budget"
         text = str(rejected.value)
         assert "task_budget_below_floor" in text
-        assert str(floor.floor_for(policy, candidates=candidates)) in text  # what must be met
+        assert str(floor.floor_for(policy)) in text  # what must be met
     else:
-        validate_graph(mission(), graph, task_floor=floor, candidates=candidates)
+        validate_graph(mission(), graph, task_floor=floor)
 
 
 def test_a_pool_share_below_the_floor_is_refused_too():
@@ -320,17 +312,16 @@ def test_min_task_tokens_zero_switches_the_floor_off(tmp_path):
     ("overrides", "profile_output", "expected"),
     [
         ({}, None, (4096, 10_096)),
-        ({"candidates_per_task": 2}, None, (8192, 20_192)),  # k from the bound policy
         ({}, 8192, (8192, 14_192)),  # a profile's larger output cap raises the base
         ({"min_task_tokens": 5000}, None, (5000, 11_000)),  # an explicit base
         ({"min_task_tokens": 0}, None, (0, 0)),  # switched off
     ],
-    ids=["default", "two-candidates", "profile-8192", "explicit-5000", "off"],
+    ids=["default", "profile-8192", "explicit-5000", "off"],
 )
 def test_the_floor_is_wired_from_config_profiles_and_the_bound_policy(
     tmp_path, overrides, profile_output, expected
 ):
-    """Review P2-1: ``_budget_floor_rule`` and ``_candidates_for`` without running a turn."""
+    """Review P2-1: ``_budget_floor_rule`` without running a turn."""
 
     provider = RoleScriptedProvider({})
     profiles = (
@@ -419,46 +410,3 @@ def _submit_candidate(service, task, attempt, *, agent):
         attempt.id, envelope=envelope, turn_id=f"turn-{agent}", artifacts=[artifact], usage_refs=()
     )
 
-
-def _drive_second_candidate(service, task, *, agent, turn):
-    """``graph_helpers.drive_to_running`` for a second, concurrent candidate (k = 2)."""
-
-    attempt, intent = service.create_attempt(
-        task.id,
-        role="worker",
-        model="agent-model",
-        prompt_version="worker-v2",
-        context_version="ctx",
-        reservation=Reservation(tokens=4_000, cost_micros=0),
-        intent_config={"agent_config": {}, "message": "do"},
-        input_hash="h",
-        candidates_per_task=2,
-    )
-    service.claim_intent(intent.intent_id, owner="orch-1", lease_seconds=60)
-    service.record_agent_created(intent.intent_id, agent_id=agent, expected_turn_id=turn)
-    service.record_submitted(intent.intent_id, receipt={"turn_id": turn, "seq": 1})
-    return service.store.get_attempt(attempt.id)
-
-
-def test_a_superseded_candidate_keeps_its_artifact_unverified(tmp_path):
-    """Review P1-1: two candidates of one Task both submit; the first is accepted and the
-    second is superseded — read from the file, the winner's artifact is VERIFIED and the
-    loser's stays UNVERIFIED (never judged, so neither VERIFIED nor REJECTED)."""
-
-    service, _current, t = graph_service(tmp_path, nodes=[graph_node("A")])
-    task = t["A"]
-    first = drive_to_running(service, task, agent="agent-1", turn="turn-agent-1")
-    second = _drive_second_candidate(service, task, agent="agent-2", turn="turn-agent-2")
-    winner = _submit_candidate(service, task, first, agent="agent-1")
-    _submit_candidate(service, task, second, agent="agent-2")
-    service.start_verification(winner.envelope.id)
-    service.accept_result(
-        winner.envelope.id, verifier_results=[{"layer": "rule_check", "status": "PASS"}]
-    )
-    assert service.store.get_attempt(second.id).status is AttemptStatus.SUPERSEDED
-    store = Store.open_readonly(tmp_path / "orchestrator.db")  # a fresh connection
-    try:
-        assert [a.verification_status for a in store.list_artifacts(first.id)] == ["VERIFIED"]
-        assert [a.verification_status for a in store.list_artifacts(second.id)] == ["UNVERIFIED"]
-    finally:
-        store.close()

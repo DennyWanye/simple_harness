@@ -163,10 +163,9 @@ def _sum_dimension(nodes: Sequence[TaskNode], name: str) -> int | None:
 @dataclass(frozen=True)
 class TaskBudgetFloor:
     """P3.1 fix F-ORCH-1: the least a Task's token budget must hold for its first Attempt
-    and that Attempt's Critic to be *reserved* — per candidate, because every candidate
-    reserves a turn and has its own result reviewed.  ``base`` is what one turn of a
-    routable profile may emit, ``critic`` the Critic's reservation (counted only when the
-    policy names critic_review).  ``base == 0`` switches the floor off.
+    and that Attempt's Critic to be *reserved*.  ``base`` is what one turn of a routable
+    profile may emit, ``critic`` the Critic's reservation (counted only when the policy
+    names critic_review).  ``base == 0`` switches the floor off.
 
     A necessary condition at reservation time, and no more (review round 1 P2-2): it holds
     only while a turn settles within its reservation, since the ledger books what a turn
@@ -177,29 +176,27 @@ class TaskBudgetFloor:
     base: int
     critic: int = 0
 
-    def floor_for(self, policy: Sequence[str], candidates: int = 1) -> int:
+    def floor_for(self, policy: Sequence[str]) -> int:
         if self.base <= 0:
             return 0
-        per_candidate = self.base + (self.critic if "critic_review" in policy else 0)
-        return max(1, int(candidates)) * per_candidate
+        return self.base + (self.critic if "critic_review" in policy else 0)
 
 
 def floor_refusal(
-    floor: TaskBudgetFloor | None, policy: Sequence[str], granted: int | None, candidates: int = 1
+    floor: TaskBudgetFloor | None, policy: Sequence[str], granted: int | None
 ) -> str | None:
     """Why ``granted`` tokens cannot carry a Task under ``floor`` — or None when it can
     (no floor, an unlimited budget, or enough)."""
 
     if floor is None or granted is None:
         return None
-    need = floor.floor_for(policy, candidates)
+    need = floor.floor_for(policy)
     if granted >= need:
         return None
     critic = floor.critic if "critic_review" in policy else 0
     return (
         f"task_budget_below_floor: max_tokens={granted} < {need} "
-        f"(= {max(1, int(candidates))} candidate(s) × "
-        f"({floor.base} for one turn + {critic} for its Critic)); "
+        f"(= {floor.base} for one turn + {critic} for its Critic); "
         f"a first Attempt and its Critic could not both be reserved — give at least {need}"
     )
 
@@ -285,7 +282,6 @@ def _node_checks(
     *,
     deployed_layers: frozenset[str],
     task_floor: TaskBudgetFloor | None,
-    candidates: int,
     domain: DomainProfileV1,
 ) -> None:
     """The per-node contract, domain, tool and budget checks, shared by both gates.
@@ -339,9 +335,7 @@ def _node_checks(
                 f"{node.key}: budget exceeds the Mission budget (§18.2); "
                 f"mission={mission.budget.to_json()}",
             )
-        refusal = floor_refusal(
-            task_floor, node.verification_policy, node.budget.max_tokens, candidates
-        )
+        refusal = floor_refusal(task_floor, node.verification_policy, node.budget.max_tokens)
         if refusal:
             raise GraphRejected("budget", f"{node.key}: {refusal}")
 
@@ -352,7 +346,6 @@ def validate_graph(
     *,
     deployed_layers: frozenset[str] = STEP2_IMPLEMENTED_LAYERS,
     task_floor: TaskBudgetFloor | None = None,
-    candidates: int = 1,
     domain: DomainProfileV1 | None = None,
 ) -> ValidatedGraph:
     if not proposal.tasks:
@@ -385,7 +378,6 @@ def validate_graph(
         proposal,
         deployed_layers=deployed_layers,
         task_floor=task_floor,
-        candidates=candidates,
         domain=profile,
     )
     # §18.2: the children's budgets come from the parent — in sum, per limited dimension;
@@ -492,7 +484,6 @@ def validate_graph_v2(
     typed_order: Mapping[str, Sequence[str]] | None = None,
     deployed_layers: frozenset[str] = STEP2_IMPLEMENTED_LAYERS,
     task_floor: TaskBudgetFloor | None = None,
-    candidates: int = 1,
     domain: DomainProfileV1 | None = None,
 ) -> ValidatedGraph:
     """The hierarchical-mode graph gate (§18.5, ADR-08).
@@ -579,7 +570,6 @@ def validate_graph_v2(
         proposal,
         deployed_layers=deployed_layers,
         task_floor=task_floor,
-        candidates=candidates,
         domain=profile,
     )
     for name in ("max_tokens", "max_cost_micros"):

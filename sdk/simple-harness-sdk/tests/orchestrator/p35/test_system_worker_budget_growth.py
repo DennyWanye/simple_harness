@@ -150,7 +150,6 @@ async def _worker(commit, task, guard, runtime, *, key="one", priced=False, floo
             },
         },
         input_hash=key,
-        candidates_per_task=2,
     )
     commit.claim_intent(intent.intent_id, owner="test-owner", lease_seconds=60)
     commit.record_agent_created(
@@ -267,7 +266,7 @@ def test_system_worker_grows_only_request_deficit_and_returns_unused_once(
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize("boundary", ["tokens", "cost", "sibling"])
+@pytest.mark.parametrize("boundary", ["tokens", "cost"])
 def test_system_growth_refusal_keeps_critic_and_other_worker_reservations(tmp_path, boundary):
     async def exercise():
         priced = boundary == "cost"
@@ -289,8 +288,6 @@ def test_system_growth_refusal_keeps_critic_and_other_worker_reservations(tmp_pa
                 priced=priced,
                 floor_cost=5000 if priced else None,
             )
-            if boundary == "sibling":
-                await _worker(commit, task, guard, runtime, key="sibling")
             before = _rows(commit, "budget_accounts", "budget_reservations", "commit_receipts")
             # Catch inside the transaction too: refusal must not rely on an
             # outer rollback to hide a partially debited token/cost hold.

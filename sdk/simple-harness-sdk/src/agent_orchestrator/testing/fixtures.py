@@ -529,16 +529,7 @@ class TaskRoutedProvider(RoleScriptedProvider):
 
 
 DEMO_TASK_GOALS = {task["key"]: task["goal"] for task in DEMO_DAG_TASKS}
-TASK_ROLES = (
-    "worker",
-    "explorer",
-    "exploiter",
-    "simplifier",
-    "connector",
-    "failure_analyst",
-    "arbiter",
-    "synthesizer",
-)
+TASK_ROLES = ("worker", "arbiter", "synthesizer")
 
 
 def demo_static_dag_provider(

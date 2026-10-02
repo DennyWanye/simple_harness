@@ -57,14 +57,27 @@ class ZeroUsageProvider(ActualProvider):
         return replace(response, usage=ProviderUsage(input_tokens=0, output_tokens=0, total_tokens=0))
 
 
+_SIBLINGS: dict[str, object] = {}
+
+
+def sibling(task):
+    """The other step of the same world (a second concurrent Attempt needs its own step)."""
+
+    return _SIBLINGS[task.id]
+
+
 @asynccontextmanager
 async def setup_runtime(
     tmp_path, *, tokens=20_000, estimate=100, slots=1, blocked=False, empty_retry=False, provider_factory=ActualProvider
 ):
     # 一个分层任务里的一个步骤，额度固定为 ``tokens``（删旧平面模式 第 2 步：提供方额度是
     # 两种模式共用的机制，这里只需要一个能建尝试的任务行）。
-    world = leaf_world(tmp_path, key="g-1", task_max_tokens=tokens, tenant_id="tenant-5")
+    # 两个并排的步骤：同一步同时只能有一次尝试，要两次并发调用就用两个步骤。
+    world = leaf_world(
+        tmp_path, key="g-1", leaves=("a", "b"), task_max_tokens=tokens, tenant_id="tenant-5"
+    )
     commit, mission, tasks = world.service, world.mission, {"A": world.tasks["a"]}
+    _SIBLINGS[tasks["A"].id] = world.tasks["b"]
     counter = Counter(estimate)
     guard = ProviderBudgetGuard(commit, owner="test-owner", estimator=counter, max_slots=slots)
     provider = provider_factory(blocked=blocked)
@@ -104,7 +117,6 @@ async def create_bound(commit, task, guard, runtime, key, *, role="worker", rese
             "provider_admission_fingerprint": guard.fingerprint,
         },
         input_hash="h",
-        candidates_per_task=2,
     )
     key = intent.input_id
     commit.claim_intent(intent.intent_id, owner="test-owner", lease_seconds=60)
@@ -159,44 +171,6 @@ def test_input_plus_output_refuses_before_physical_handoff(tmp_path):
     asyncio.run(exercise())
 
 
-def test_shared_task_reservation_admits_only_one_concurrent_request(tmp_path):
-    async def exercise():
-        async with setup_runtime(tmp_path, estimate=15_000, slots=2, blocked=True) as (
-            commit,
-            _,
-            task,
-            guard,
-            provider,
-            runtime,
-        ):
-            first = await create_bound(commit, task, guard, runtime, "one")
-            second = await create_bound(commit, task, guard, runtime, "two")
-            calls = [
-                asyncio.create_task(agent.ask("request", input_id=key, timeout=5))
-                for agent, _, key in (first, second)
-            ]
-            await asyncio.wait_for(provider.entered.wait(), 3)
-            for _ in range(100):
-                if any(call.done() for call in calls):
-                    break
-                await asyncio.sleep(0.001)
-            assert provider.calls == 1
-            assert len(grants(commit)) == 1
-            assert (
-                sum(
-                    commit.ledger.reservation(attempt.id)["reserved_tokens"]
-                    for _, attempt, _ in (first, second)
-                )
-                == 20_000
-            )
-            provider.allow.set()
-            outcomes = await asyncio.gather(*calls)
-            assert sorted(str(result.state) for result in outcomes) == ["committed", "failed"]
-            assert grants(commit)[0]["actual_tokens"] == 150
-
-    asyncio.run(exercise())
-
-
 def test_public_cancel_while_slot_waiting_never_hands_off_waiter(tmp_path):
     async def exercise():
         async with setup_runtime(tmp_path, blocked=True) as (
@@ -208,7 +182,7 @@ def test_public_cancel_while_slot_waiting_never_hands_off_waiter(tmp_path):
             runtime,
         ):
             first = await create_bound(commit, task, guard, runtime, "one")
-            second = await create_bound(commit, task, guard, runtime, "two")
+            second = await create_bound(commit, sibling(task), guard, runtime, "two")
             running = asyncio.create_task(first[0].ask("request", input_id=first[2], timeout=5))
             await asyncio.wait_for(provider.entered.wait(), 3)
             waiting = asyncio.create_task(second[0].ask("request", input_id=second[2], timeout=5))
@@ -358,7 +332,7 @@ def test_a_call_left_on_the_wire_by_a_dead_process_frees_its_slot(tmp_path):
             commit, _, task, guard, provider, runtime,
         ):
             first = await create_bound(commit, task, guard, runtime, "one")
-            second = await create_bound(commit, task, guard, runtime, "two")
+            second = await create_bound(commit, sibling(task), guard, runtime, "two")
             running = asyncio.create_task(first[0].ask("request", input_id=first[2], timeout=5))
             await asyncio.wait_for(provider.entered.wait(), 3)
             with commit.store.transaction():

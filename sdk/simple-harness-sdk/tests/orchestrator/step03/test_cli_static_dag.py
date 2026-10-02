@@ -60,7 +60,6 @@ def test_demo_static_dag_on_fixtures_writes_evidence(tmp_path, capsys):
     costs = json.loads((evidence / "costs.json").read_text())
     assert all(r["state"] == "SETTLED" for r in costs["reservations"])
     baseline = json.loads((evidence / "baseline.json").read_text())
-    assert baseline["config"]["candidates_per_task"] == 1
     assert "SH_APIKEY" not in json.dumps(baseline)
     mission_id = report["mission_id"]
     assert main(["mission", "get", "--evidence-dir", str(evidence), mission_id]) == EXIT_OK

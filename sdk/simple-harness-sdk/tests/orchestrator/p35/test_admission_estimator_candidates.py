@@ -32,7 +32,7 @@ def _profiles():  # type: ignore[no-untyped-def]
 
 
 def _config(tmp_path):  # type: ignore[no-untyped-def]
-    return OrchestratorConfig(evidence_root=tmp_path, max_concurrency=1, candidates_per_task=1, attempt_reserve_tokens=4000)
+    return OrchestratorConfig(evidence_root=tmp_path, max_concurrency=1, attempt_reserve_tokens=4000)
 
 
 def test_a_pool_without_persisted_intents_takes_the_first_candidate(tmp_path) -> None:

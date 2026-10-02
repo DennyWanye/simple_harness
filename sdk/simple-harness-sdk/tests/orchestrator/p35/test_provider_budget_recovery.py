@@ -8,7 +8,9 @@ from dataclasses import replace
 
 import pytest
 from graph_helpers7 import graph_service, node
-from test_provider_budget_guard import ActualProvider, Counter, create_bound, grants, setup_runtime
+from test_provider_budget_guard import (
+    ActualProvider, Counter, create_bound, grants, setup_runtime, sibling,
+)
 
 from agent_orchestrator.governance.budgets import BudgetError
 from agent_orchestrator.orchestrator.commit_service import Reservation
@@ -72,7 +74,7 @@ def test_slot_queue_has_explicit_nonbillable_liveness_and_original_deadline(tmp_
             runtime,
         ):
             first = await create_bound(commit, task, guard, runtime, "active")
-            second = await create_bound(commit, task, guard, runtime, "queued")
+            second = await create_bound(commit, sibling(task), guard, runtime, "queued")
             running = asyncio.create_task(first[0].ask("request", input_id=first[2], timeout=5))
             await asyncio.wait_for(provider.entered.wait(), 3)
             waiting = asyncio.create_task(second[0].ask("request", input_id=second[2], timeout=5))

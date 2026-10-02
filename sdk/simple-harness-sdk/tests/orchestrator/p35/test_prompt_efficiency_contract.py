@@ -97,8 +97,7 @@ def test_new_worker_reaches_actual_code_request_with_only_exposed_tools(
 
     async def exercise():
         async with Orchestrator(OrchestratorConfig(
-            evidence_root=tmp_path, max_concurrency=1, candidates_per_task=1,
-            deployment_policy=deployment,
+            evidence_root=tmp_path, max_concurrency=1, deployment_policy=deployment,
         ), provider) as orch:
             mission = await orch.submit_mission(spec(success_criteria=("file:a.md",)))
             await asyncio.wait_for(orch.run(), 30)
@@ -129,8 +128,7 @@ def test_new_synthesizer_request_cannot_reuse_source_success_as_own_verification
 
     async def exercise():
         async with Orchestrator(OrchestratorConfig(
-            evidence_root=tmp_path, max_concurrency=1, candidates_per_task=1,
-            test_timeout_seconds=60,
+            evidence_root=tmp_path, max_concurrency=1, test_timeout_seconds=60,
         ), provider) as orch:
             mission = await orch.submit_mission(MissionSpec(
                 goal=COMPARE_SPEC["goal"],

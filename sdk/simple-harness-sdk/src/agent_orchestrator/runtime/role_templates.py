@@ -246,44 +246,6 @@ SYNTHESIZER = _revise(
     ),
 )
 
-def _variant(name: str, version: str, bias: str) -> RoleTemplate:
-    # Published variant-v1 and their document descendants stay on worker-v2.
-    return RoleTemplate(
-        name=name,
-        prompt_version=version,
-        tool_names=WORKER_V2.tool_names,
-        instructions=WORKER_V2.instructions.replace("[role:worker]", f"[role:{name}]", 1)
-        + "\n搜索偏置："
-        + bias,
-    )
-
-
-EXPLORER = _variant(
-    "explorer",
-    "explorer-v1",
-    "寻找全新路线和不同假设——先列出至少两种与已有尝试不同的做法，再选一种实现；不要重复失败过的路线。",
-)
-EXPLOITER = _variant(
-    "exploiter",
-    "exploiter-v1",
-    "把当前最好的路线继续做深做完——沿用已验证知识与已通过的部分，只补缺口。",
-)
-SIMPLIFIER = _variant(
-    "simplifier",
-    "simplifier-v1",
-    "从特殊情况、简化版本入手——先让最小可验证的子集通过测试，再扩展；宁可交付有限但正确的部分。",
-)
-CONNECTOR = _variant(
-    "connector",
-    "connector-v1",
-    "连接不同分支里的知识——优先复用 verified_knowledge 里其他分支的结论，把它们组合成本任务的解。",
-)
-FAILURE_ANALYST = _variant(
-    "failure_analyst",
-    "failure_analyst-v1",
-    "分析重复失败的共同原因——读取 failure_history 与 verifier_feedback，写出 analysis/failure_analysis.md，并在 proposed_tasks 里提出更小、可验证的子任务；不必自己解决原问题。",
-)
-
 ROLES = {
     template.name: template
     for template in (
@@ -292,34 +254,15 @@ ROLES = {
         CRITIC,
         ARBITER,
         SYNTHESIZER,
-        EXPLORER,
-        EXPLOITER,
-        SIMPLIFIER,
-        CONNECTOR,
-        FAILURE_ANALYST,
     )
 }
 TASK_ROLE_BY_KIND = {"work": WORKER, "conflict": ARBITER, "synthesis": SYNTHESIZER}
-WORKER_VARIANTS = {
-    t.name: t for t in (WORKER, EXPLORER, EXPLOITER, SIMPLIFIER, CONNECTOR, FAILURE_ANALYST)
-}
-# §29.2 起始比例：登记为常量，第 6 步的配比调度使用；本步不据此分配
-ROLE_MIX_START = {
-    "explorer": 0.20,
-    "exploiter": 0.40,
-    "critic": 0.20,
-    "synthesizer": 0.10,
-    "verifier": 0.10,
-}
 
 
 def role_for_task(task) -> RoleTemplate:  # type: ignore[no-untyped-def]
-    """The template an Attempt of ``task`` uses: system kinds are fixed; a work Task
-    uses its ``context.role`` variant when one is set, else the Worker."""
+    """The template an Attempt of ``task`` uses: fixed by the Task kind."""
 
-    if task.kind != "work":
-        return TASK_ROLE_BY_KIND[task.kind]
-    return WORKER_VARIANTS.get(str(task.context.get("role", "worker")), WORKER)
+    return TASK_ROLE_BY_KIND[task.kind]
 
 
 # step 9 (plan D9-1'): the prompt versions a policy may choose from.  Production code
@@ -840,10 +783,7 @@ register_template(ROOT_REVIEWER)
 
 # New code-domain semantics are selected by the Mission's frozen profile. Old
 # prompt versions remain available verbatim for recovery and historical replay.
-for _name in (
-    "worker", "explorer", "exploiter", "simplifier", "connector", "failure_analyst",
-    "arbiter", "synthesizer",
-):
+for _name in ("worker", "arbiter", "synthesizer"):
     _base = ROLES[_name]
     register_template(RoleTemplate(
         name=_name,
@@ -862,10 +802,7 @@ for _name in (
 
 
 # Keep v2 replayable; only new code-domain profiles select this clarified contract.
-for _name in (
-    "worker", "explorer", "exploiter", "simplifier", "connector", "failure_analyst",
-    "arbiter", "synthesizer",
-):
+for _name in ("worker", "arbiter", "synthesizer"):
     _previous = TEMPLATE_VERSIONS[_name][f"{_name}-code-observation-v2"]
     register_template(RoleTemplate(
         name=_name,
@@ -955,18 +892,11 @@ HIERARCHICAL_WORKER_VERSIONS: frozenset[str] = hierarchical_worker_versions()
 __all__ = (
     "ARBITER",
     "ARBITER_VERSION",
-    "CONNECTOR",
-    "EXPLOITER",
-    "EXPLORER",
-    "FAILURE_ANALYST",
-    "ROLE_MIX_START",
-    "SIMPLIFIER",
     "TEMPLATE_VERSIONS",
     "register_hierarchical_worker",
     "register_template",
     "registered_versions",
     "template_for",
-    "WORKER_VARIANTS",
     "role_for_task",
     "SYNTHESIZER",
     "SYNTHESIZER_VERSION",

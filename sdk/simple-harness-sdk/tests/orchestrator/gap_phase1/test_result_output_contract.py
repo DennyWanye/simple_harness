@@ -28,11 +28,6 @@ def example(text):
         "worker",
         "synthesizer",
         "arbiter",
-        "explorer",
-        "exploiter",
-        "simplifier",
-        "connector",
-        "failure_analyst",
     ],
 )
 def test_concrete_example_has_actual_ids_and_frozen_legacy_unchanged(tmp_path, role):

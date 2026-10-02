@@ -288,7 +288,6 @@ SNAPSHOT_FIELDS: dict[str, str] = {
             "model",
             "max_concurrency",
             "max_concurrent_model_calls",
-            "candidates_per_task",
             "max_planning_attempts",
             "lease_seconds",
             "sdk_lease_ttl_seconds",

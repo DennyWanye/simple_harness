@@ -74,9 +74,6 @@ class OrchestratorConfig:
     owner_id: str = "agent-orchestrator"
     max_concurrency: int = 2
     max_concurrent_model_calls: int = 2
-    candidates_per_task: int = (
-        1  # D3-5': explorative candidates per Task (each counts as an attempt)
-    )
     #: 规划预算·答错次数：自上一次提交成功起，规划器的回答被拒几次即停（片 A 第 8 项）。
     max_planning_attempts: int = 3
     # P2.3c part 3a: how many times one ``requirements_revision`` may have its root
@@ -165,8 +162,8 @@ class OrchestratorConfig:
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.candidates_per_task < 1 or self.max_concurrency < 1:
-            raise ValueError("candidates_per_task and max_concurrency must be >= 1")
+        if self.max_concurrency < 1:
+            raise ValueError("max_concurrency must be >= 1")
         if self.max_planning_attempts < 1:
             raise ValueError("max_planning_attempts must be >= 1")
         if self.max_root_review_cuts < 1:
@@ -255,7 +252,6 @@ class OrchestratorConfig:
             "owner_id": self.owner_id,
             "max_concurrency": self.max_concurrency,
             "max_concurrent_model_calls": self.max_concurrent_model_calls,
-            "candidates_per_task": self.candidates_per_task,
             "max_planning_attempts": self.max_planning_attempts,
             "max_root_review_cuts": self.max_root_review_cuts,
             "max_root_review_repairs": self.max_root_review_repairs,

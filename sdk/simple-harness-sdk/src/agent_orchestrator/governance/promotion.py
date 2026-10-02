@@ -33,7 +33,6 @@ PROMOTION_VERSION = "promotion-v1"
 DEPLOYMENT_TIMELINE = "deployment"  # the sentinel event timeline of deployment-level facts
 
 INT_RANGES: dict[str, tuple[int, int | None]] = {
-    "candidates_per_task": (1, 3),
     "exploration_slots": (0, 2),
     "mission_concurrency": (1, None),  # the upper bound is the deployment's max_concurrency
 }
@@ -105,7 +104,6 @@ def resolve_params(
 
     resolved: dict[str, Any] = {
         "allocator_weights": builtin_weights(),
-        "candidates_per_task": int(config.candidates_per_task),
         "exploration_slots": int(config.exploration_slots),
         "mission_concurrency": int(config.max_concurrency),
         "aging_window_seconds": float(config.aging_window_seconds),

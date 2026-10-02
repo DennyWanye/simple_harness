@@ -114,47 +114,6 @@ def balances(commit, account):
     }
 
 
-def test_priced_shared_last_money_allows_only_one_actual_concurrent_handoff(tmp_path):
-    async def exercise():
-        provider = ActualProvider(blocked=True)
-        async with priced_runtime(tmp_path, money=3000, provider=provider, slots=2) as (
-            commit,
-            _,
-            task,
-            guard,
-            _,
-            runtime,
-        ):
-            first = await create_bound(commit, task, guard, runtime, "first")
-            second = await create_bound(commit, task, guard, runtime, "second")
-            running = asyncio.create_task(first[0].ask("request", input_id=first[2], timeout=5))
-            await asyncio.wait_for(provider.entered.wait(), 5)
-            before = balances(commit, task_account(task.id))
-            captured = []
-            acquire = guard.acquire
-
-            async def capture(**kwargs):
-                try:
-                    return await acquire(**kwargs)
-                except ProviderAdmissionDenied as exc:
-                    captured.append(exc.detail)
-                    raise
-
-            guard.acquire = capture
-            result = await second[0].ask("request", input_id=second[2], timeout=5)
-            assert str(result.state) == "failed" and provider.calls == 1
-            assert balances(commit, task_account(task.id)) == before
-            assert len(grants(commit)) == 1
-            assert captured[0]["reason_code"] == "budget_exhausted"
-            assert captured[0]["dimension"] == "cost_micros"
-            assert captured[0]["requested"] == 2100 and captured[0]["remaining"] == 900
-            assert captured[0]["invocation_id"] and captured[0]["handoff_ordinal"] == 1
-            provider.allow.set()
-            assert str((await running).state) == "committed"
-
-    asyncio.run(exercise())
-
-
 def test_priced_real_empty_retry_settles_original_frozen_price_and_prior_outputs(tmp_path):
     async def exercise():
         async with priced_runtime(tmp_path, empty_retry=True) as (

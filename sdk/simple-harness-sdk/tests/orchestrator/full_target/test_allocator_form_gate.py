@@ -111,7 +111,7 @@ from agent_orchestrator.scheduling.backpressure import (  # noqa: E402
 # here — which is the point: §18.5 constraint 2 is about the old entry being left
 # alone, not about it being equivalent to something new.
 LEGACY_FRONTIER_SHA256 = "0ae7cd4c24ee902e1fac2f8e8193920a64e9ff10c408baf0f33d1d6cc366e1b8"
-LEGACY_ALLOCATE_SHA256 = "d865d3d6b379a61e2b8cfedb8e7e24748dba8bdb6ec1164986184d81ea88ebd5"  # 2026-10-02: 删选择轮的两个参数
+LEGACY_ALLOCATE_SHA256 = "0971d5b768b6f05b26aa964892c025f427e9180efdaa04a4448dbd772e861e34"  # 2026-10-02: 删选择轮参数与并行候选
 
 ALL_STATUSES = tuple(TaskStatus)
 
@@ -537,14 +537,6 @@ def test_allocate_v2_respects_the_mission_concurrency_limit() -> None:
     assert plan.slots == 0
 
 
-def test_allocate_v2_grants_the_configured_number_of_candidates() -> None:
-    tasks, bindings, readiness = world()
-    plan = allocate_v2(
-        tasks, (), bindings, readiness, concurrency_limit=None, candidates_per_task=3
-    )
-    assert [ordinal for _item, ordinal in plan.grants] == [1, 2, 3]
-
-
 def test_raised_backpressure_halves_the_concurrency_limit_as_the_legacy_gate_does() -> None:
     tasks, bindings, readiness = world()
     pressure = BackpressureState(level=RAISED, raised={"verification_queue": {"value": 9}})
@@ -709,22 +701,16 @@ def test_mutant_ignoring_the_task_id_match_would_transfer_an_admission() -> None
 
 def test_mutant_a_frontier_that_ignored_capacity_would_overrun_the_limit() -> None:
     tasks, bindings, readiness = world()
-    open_attempt = attempt_row(str(T_B), 1, AttemptStatus.RUNNING)
-    unbounded = allocate_v2(
-        tasks,
-        (open_attempt,),
-        bindings,
-        readiness,
-        concurrency_limit=None,
-        candidates_per_task=2,
-    )
-    bounded = allocate_v2(
-        tasks,
-        (open_attempt,),
-        bindings,
-        readiness,
-        concurrency_limit=1,
-        candidates_per_task=2,
-    )
-    assert [ordinal for _item, ordinal in unbounded.grants] == [2]
+    # an open Attempt elsewhere in the Mission takes the only slot
+    open_attempt = attempt_row(str(T_ROOT), 1, AttemptStatus.RUNNING)
+    unbounded = allocate_v2(tasks, (open_attempt,), bindings, readiness, concurrency_limit=None)
+    bounded = allocate_v2(tasks, (open_attempt,), bindings, readiness, concurrency_limit=1)
+    assert [ordinal for _item, ordinal in unbounded.grants] == [1]
     assert bounded.grants == ()
+
+
+def test_a_step_with_an_open_attempt_gets_no_second_one() -> None:
+    tasks, bindings, readiness = world()
+    open_attempt = attempt_row(str(T_B), 1, AttemptStatus.RUNNING)
+    plan = allocate_v2(tasks, (open_attempt,), bindings, readiness, concurrency_limit=None)
+    assert plan.grants == ()
