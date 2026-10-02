@@ -78,9 +78,7 @@ async def test_completion_confirmation_uses_actual_host_principal(orchestration_
             assert rejected["payload"]["ok"] is False
             assert rejected["payload"]["error_code"] == "invalid_request"
         assert store.connection.total_changes == before
-        assert service._decision is None
-        await service._rebuild()
-        assert service._decision is None
+        await service._rebuild()  # the decision shadow was removed (第三刀第 1 步)
         recovered = await handle(service, "mission_operation_completion_approve", body)
         assert recovered["payload"]["ok"], recovered
         assert recovered["payload"]["data"] == receipt
