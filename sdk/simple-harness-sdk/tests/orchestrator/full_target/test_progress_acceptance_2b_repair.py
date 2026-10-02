@@ -77,7 +77,6 @@ async def _slow_entrances(loop, mission) -> list[bool]:
         collect_triggers(loop, current),
         loop._resume_planning_services(current),
         await loop._retry_deferred_planning(),
-        await loop._retry_deferred_repair(),
     ]
 
 

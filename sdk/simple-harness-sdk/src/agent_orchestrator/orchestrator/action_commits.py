@@ -902,14 +902,6 @@ class ActionCommitsMixin:
             # Every action is linked to the operation it was materialised from (2026-10-02:
             # the flat mode, whose actions carried no link, was removed).
             if reason is None:
-                from .planning_repair_continuations import planning_repair_stop_gate
-
-                action_task_id = str(action.get("task_id") or "")
-                if action_task_id and planning_repair_stop_gate(
-                    self._store, str(action["mission_id"]), action_task_id
-                ):
-                    reason = "planning_repair_stop_gate"
-            if reason is None:
                 from ..storage.planning_admission_store import PlanningAdmissionStore
 
                 bridge = PlanningAdmissionStore(self._store).get_operation_action_link_for_action(

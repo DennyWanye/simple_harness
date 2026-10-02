@@ -1692,7 +1692,6 @@
    ],
    "events": [
     "PlanRevisionCommitted",
-    "PlanningRepairDeferred",
     "TaskGraphRevisionRecorded"
    ]
   },
@@ -1816,54 +1815,6 @@
     "ActionSuperseded",
     "ApprovalRequested",
     "ApprovalSuperseded"
-   ]
-  },
-  "planning_repair_continuations": {
-   "class": "business",
-   "fields": [
-    "continuation_id",
-    "mission_id",
-    "decision_id",
-    "request_id",
-    "command_id",
-    "raw_artifact_ref_json",
-    "raw_hash",
-    "decision_hash",
-    "codec_version",
-    "protocol_version",
-    "package_hash",
-    "prompt_hash",
-    "base_plan_revision",
-    "requirements_revision",
-    "authority_binding_json",
-    "targets_json",
-    "last_preview_hash",
-    "state",
-    "row_version",
-    "policy_version",
-    "created_at_ms",
-    "deadline_ms",
-    "resume_limit",
-    "resume_count",
-    "next_check_at_ms",
-    "owner_id",
-    "lease_until_ms",
-    "last_reason_code",
-    "updated_at_ms"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.administrative_transition",
-    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.claim_due",
-    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.put",
-    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.transition"
-   ],
-   "events": [
-    "PlanningRepairDeferred"
-   ],
-   "gaps": [
-    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.claim_due: 认领续跑不发事件",
-    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.transition: 续跑状态迁移（resume_pending_planning_repairs / claim_due_planning_repair / settle_claimed_planning_repair）不发事件",
-    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.administrative_transition: 管理迁移（set_planning_repair_state）不发事件"
    ]
   },
   "planning_request_authority_bindings": {

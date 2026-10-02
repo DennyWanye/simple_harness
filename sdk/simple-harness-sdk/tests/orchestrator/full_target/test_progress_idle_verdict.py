@@ -25,7 +25,6 @@ WAITS = (
     ("approvals_pending", "APPROVAL_PENDING"),
     ("operation_completion", "OPERATION_OUTCOME_PENDING"),
     ("assurance_work", "ASSURANCE_WORK_QUEUED"),
-    ("repair_continuation_waiting", "REPAIR_CONTINUATION_WAITING"),
     ("planning_wait", "PLANNING_WAIT"),
     ("taskgraph_sources", "TASKGRAPH_SOURCES_PENDING"),
 )
@@ -71,7 +70,6 @@ def _loop(*, closeout: bool, actions=(), approvals=()):
         _awaiting_retry_decision=lambda mission_id, task: False,
         _has_pending_operation_completion=lambda mission: False,
         _has_pending_assurance_work=lambda mission_id: False,
-        _repair_continuation_waiting=lambda mission_id: False,
         _has_pending_planning_waits=lambda mission_id: False,
         _taskgraph_notifications=None,
         _note=notes.append,

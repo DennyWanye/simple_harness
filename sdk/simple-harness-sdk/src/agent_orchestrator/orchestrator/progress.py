@@ -54,7 +54,6 @@ class IdleFacts:
     assurance_work: bool = False
     unknown_actions: bool = False
     approvals_pending: bool = False
-    repair_continuation_waiting: bool = False
     #: the plan withholds or admits something; ``None`` when it was not read
     plan_has_work: bool | None = None
 
@@ -69,7 +68,6 @@ _WAITS: tuple[tuple[str, str, str], ...] = (
     ("approvals_pending", "APPROVAL_PENDING", "a person's approval"),
     ("operation_completion", "OPERATION_OUTCOME_PENDING", "operation outcome"),
     ("assurance_work", "ASSURANCE_WORK_QUEUED", "assurance work"),
-    ("repair_continuation_waiting", "REPAIR_CONTINUATION_WAITING", "repair continuation"),
     ("planning_wait", "PLANNING_WAIT", "planning wait target"),
     ("taskgraph_sources", "TASKGRAPH_SOURCES_PENDING", "taskgraph notification"),
 )

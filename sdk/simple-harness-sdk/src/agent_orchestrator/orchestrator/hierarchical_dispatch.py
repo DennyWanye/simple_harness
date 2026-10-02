@@ -217,9 +217,6 @@ ROOT_REVIEW_SUPERSEDED = "HierarchicalRootReviewSuperseded"
 #: grows ``:library:{n}`` with the number of proposals; otherwise the round after a
 #: proposal would reuse the assessment made before it.
 METHOD_APPLICABILITY_ASSESSED = "MethodApplicabilityAssessed"
-#: A committed repair decision is waiting on sibling work under a live lease it must
-#: not steal; the durable continuation resumes it when the last blocker settles.
-REPAIR_BLOCKED_BY_RUNNING_WORK = "repair_blocked_by_running_work"
 # H4: the adapter result is a durable handoff record.  The model/compiler may act
 # later, but the trigger, program-computed impact and admitted action survive a
 # process restart as one idempotent event.

@@ -261,7 +261,6 @@ from .taskgraph_epochs import planning_scope_digest
 
 logger = logging.getLogger("agent_orchestrator")
 
-from .hierarchical_dispatch import REPAIR_BLOCKED_BY_RUNNING_WORK  # noqa: E402
 
 #: The Mission was handed back to the Planner ``max_root_review_repairs`` times and
 #: the final review still stands rejected.  A named stop, not idle
@@ -810,8 +809,6 @@ class Orchestrator:
             raise
 
     def _tool_execution_refusal(self, attempt_id: str) -> str | None:
-        from .planning_repair_continuations import planning_repair_stop_gate
-
         with self.store.read_view():
             attempt = self.store.get_attempt(attempt_id)
             if attempt is None:
@@ -826,8 +823,6 @@ class Orchestrator:
                 if mission is not None and mission.status not in TERMINAL_MISSION:
                     return None
                 return "attempt_unavailable"
-            if planning_repair_stop_gate(self.store, attempt.mission_id, attempt.task_id):
-                return "planning_repair_stop_gate"
         return None
 
     @contextlib.contextmanager
@@ -857,19 +852,6 @@ class Orchestrator:
             ):
                 raise ProviderAdmissionDenied(
                     public_message="Provider subject Mission or intent stopped."
-                )
-            from .planning_repair_continuations import planning_repair_stop_gate
-
-            task_id = intent.config.get("task_id")
-            if intent.kind == "attempt":
-                attempt = self.store.get_attempt(intent.subject_id)
-                task_id = None if attempt is None else attempt.task_id
-            elif not task_id and intent.config.get("attempt_id"):
-                attempt = self.store.get_attempt(str(intent.config["attempt_id"]))
-                task_id = None if attempt is None else attempt.task_id
-            if task_id and planning_repair_stop_gate(self.store, mission.id, str(task_id)):
-                raise ProviderAdmissionDenied(
-                    public_message="Planning repair stop gate blocks Provider handoff."
                 )
             try:
                 self.commit.require_taskgraph_handoff(intent)
@@ -2348,7 +2330,6 @@ class Orchestrator:
             or bool(self.store.list_approvals(mission.id, "PENDING")),
             "operation_completion": self._has_pending_operation_completion(mission),
             "assurance_work": self._has_pending_assurance_work(mission.id),
-            "repair_continuation_waiting": self._repair_continuation_waiting(mission.id),
             "planning_wait": self._has_pending_planning_waits(mission.id),
             "taskgraph_sources": bool(
                 self._taskgraph_notifications is not None
@@ -2388,16 +2369,6 @@ class Orchestrator:
             return False
         return False
 
-    def _repair_continuation_waiting(self, mission_id: str) -> bool:
-        try:
-            row = self.store.connection.execute(
-                "SELECT 1 FROM planning_repair_continuations WHERE mission_id=? "
-                "AND state='WAITING' LIMIT 1",
-                (mission_id,),
-            ).fetchone()
-        except sqlite3.Error:
-            return False
-        return row is not None
 
     async def _record_hierarchical_stall(self) -> None:
         """A hierarchical Mission that idles with work left over says so, once.
@@ -3340,8 +3311,6 @@ class Orchestrator:
                     progressed = True
         if await self._retry_deferred_planning():
             progressed = True
-        if await self._retry_deferred_repair():
-            progressed = True
         active = {mission.id for mission in self._active_missions()}
         for intent in self.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED"):
             if (intent.kind == "critic" or intent.config.get("assurance_protocol") == "assurance-exec-v1.1") and self._critic_subject_stopped(intent):
@@ -3635,131 +3604,6 @@ class Orchestrator:
                 progressed = True
         return progressed
 
-    async def _retry_deferred_repair(self) -> bool:
-        """Resume durable D3 decisions locally (a replay of the frozen Decision)."""
-
-        dispatch = self._hierarchical
-        if dispatch is None:
-            return False
-        progressed = False
-
-        # A deferred repair is a replay of the original, frozen Decision. It must
-        # never call a provider or reinterpret it. One row is claimed per scheduler
-        # pass so ordinary orchestration keeps making progress.
-        from ..contracts.planning_decisions import PlanningDecisionStatus
-        from ..storage.planning_decision_store import PlanningDecisionStore
-        from .planning_repair_continuations import (
-            RepairResumeResult,
-            ResumeState,
-            claim_due_planning_repair,
-            settle_claimed_planning_repair,
-        )
-
-        now_ms = int(self.store.now * 1000)
-        prepared = claim_due_planning_repair(
-            self.store,
-            self.assembled.workspaces.artifact_store,
-            owner_id=self._owner,
-            now_ms=now_ms,
-        )
-        if prepared is not None:
-            continuation = prepared.continuation
-            await self._stop_deferred_repair_work(continuation.mission_id)
-            request = PlanningDecisionStore(self.store).get_planning_request(
-                continuation.request_id
-            )
-            intent = None if request is None else self.store.get_intent(request.intent_id)
-            mission = self.store.get_mission(continuation.mission_id)
-            mode = None if mission is None else self._new_mode(mission)
-            if intent is None or mission is None or mode is None:
-                result = RepairResumeResult(
-                    ResumeState.STALE_FENCED, "REPAIR_SOURCE_UNAVAILABLE"
-                )
-            else:
-                try:
-                    await self._collect_plan_decision(
-                        intent, None, mission, prepared.raw_bytes.decode("utf-8"), mode,
-                        repair_resume=prepared,
-                    )
-                except (ContractError, UnicodeDecodeError, StoreConflict) as error:
-                    self._note(
-                        f"mission {mission.id}: durable repair resume refused ({error})"
-                    )
-                    result = RepairResumeResult(
-                        ResumeState.STALE_FENCED, "REPAIR_SOURCE_UNAVAILABLE"
-                    )
-                else:
-                    decision = PlanningDecisionStore(self.store).get_planning_decision(
-                        continuation.decision_id
-                    )
-                    status = None if decision is None else str(decision["status"])
-                    if status == str(PlanningDecisionStatus.COMMITTED):
-                        result = RepairResumeResult(
-                            ResumeState.APPLIED,
-                            "REPAIR_APPLIED",
-                            preview_hash=continuation.last_preview_hash,
-                        )
-                        progressed = True
-                    elif status in {
-                        str(PlanningDecisionStatus.ADMITTED),
-                        str(PlanningDecisionStatus.COMPILED),
-                    }:
-                        result = RepairResumeResult(
-                            ResumeState.WAITING, REPAIR_BLOCKED_BY_RUNNING_WORK
-                        )
-                    else:
-                        result = RepairResumeResult(
-                            ResumeState.STALE_FENCED, "REPAIR_COMMIT_REFUSED"
-                        )
-            if result.state is ResumeState.APPLIED:
-                # The successful Plan commit consumed this lease in its own transaction.
-                from ..storage.planning_repair_store import PlanningRepairStore
-
-                settled = PlanningRepairStore(self.store).get(continuation.continuation_id)
-                if settled is None or settled.state != "APPLIED":
-                    raise StoreConflict("committed repair has no atomic continuation receipt")
-            else:
-                settled = settle_claimed_planning_repair(
-                    self.store, prepared, owner_id=self._owner,
-                    now_ms=int(self.store.now * 1000), result=result,
-                )
-            self._note(
-                f"mission {continuation.mission_id}: durable repair "
-                f"{continuation.continuation_id} is {settled.state}"
-            )
-
-        return progressed
-
-    async def _stop_deferred_repair_work(self, mission_id: str) -> None:
-        from ..storage.planning_repair_store import PlanningRepairStore
-
-        dispatch = self._dispatch_for(mission_id)
-        if dispatch is None:
-            return
-        for continuation in PlanningRepairStore(self.store).list_active_fences(mission_id):
-            for target in continuation.targets:
-                for attempt in self.store.list_attempts(str(target["task_id"])):
-                    if attempt.status in TERMINAL_ATTEMPT:
-                        continue
-                    if dispatch._lease_blocks_cancel(attempt, self._owner):
-                        continue
-                    with self.store.transaction():
-                        current = self.store.get_attempt(attempt.id)
-                        if current is None or current.status in TERMINAL_ATTEMPT:
-                            continue
-                        if dispatch._lease_blocks_cancel(current, self._owner):
-                            continue
-                        self.commit._close_attempt(current, AttemptStatus.CANCELLED,
-                            reason="planning_repair_deferred:" + continuation.continuation_id)
-                    await self._release_attempt(attempt.id, cancel=True)
-
-    async def _release_cancelled_repair_work(self, mission_id: str) -> None:
-        """Abort SDK turns of Attempts a repair just cancelled so they do not hold slots."""
-
-        for task in self.store.list_tasks(mission_id):
-            for attempt in self.store.list_attempts(task.id):
-                if attempt.status is AttemptStatus.CANCELLED:
-                    await self._release_attempt(attempt.id, cancel=True)
 
     async def _start_planning(self, mission: Mission) -> bool:
         """``False`` when nothing could start (assembly missing, or the start gate is
@@ -5932,8 +5776,6 @@ class Orchestrator:
         mission: Mission,
         text: str,
         new_mode: HierarchicalDispatch,
-        *,
-        repair_resume: Any = None,
     ) -> None:
         """Evaluate one new-protocol reply and bridge executable decisions to HTN."""
 
@@ -5986,23 +5828,7 @@ class Orchestrator:
 
         del result
 
-        def record_decision(**values: Any) -> Any:
-            if (repair_resume is not None
-                and values["status"] not in {PlanningDecisionStatus.DECODED,
-                    PlanningDecisionStatus.ADMITTED, PlanningDecisionStatus.COMPILED,
-                    PlanningDecisionStatus.COMMITTED}
-                and "REQUEST_EXPIRED" not in values.get("rejection_codes", ())):
-                # Changed authority/inputs fence the saved Decision. They do not
-                # turn a still-pending repair into a fresh model rejection round.
-                raise ContractError("REPAIR_SOURCE_UNAVAILABLE: deferred Decision no longer admits")
-            return store.record_planning_decision(**values)
-
-        async def reject_planning(*args: Any, **kwargs: Any) -> None:
-            # A deferred Decision is replayed locally; its refusal cannot ask a
-            # Planner to reinterpret or replace the frozen raw output.
-            if repair_resume is None:
-                await self._planning_rejected(*args, **kwargs)
-
+        reject_planning = self._planning_rejected
 
         def commit_rejection_code(value: object) -> str:
             """Map a commit refusal to the closed planning rejection enum.
@@ -6018,6 +5844,7 @@ class Orchestrator:
                 return str(PlanningDecisionRejectionCode.INTERNAL_CONTRACT_ERROR)
 
         store = PlanningDecisionStore(self.store)
+        record_decision = store.record_planning_decision
         from .planning_protocol_binding import current_planning_protocol
 
         current_planning_protocol(self.store, mission.id)
@@ -6764,141 +6591,6 @@ class Orchestrator:
                     )
                 ),
             )
-        async def defer_current_repair(instance_ids: str | Sequence[str], attempt_ids: Sequence[str]) -> None:
-            from ..contracts.semantic_base import TypedRef, TypedRefKind
-            from ..storage.planning_repair_store import PlanningRepairStore
-            from .planning_repair_continuations import (
-                DeferredPlanningRepair,
-                RepairAuthorityBinding,
-                RepairContinuationError,
-                capture_repair_targets,
-                defer_planning_repair,
-            )
-
-            try:
-                # A cold resume re-enters this exact collector. Its immutable
-                # continuation already owns the decision; do not try to recreate it
-                # after the lease/row version changed.
-                with self.store.transaction():
-                    record_progress(PlanningDecisionStatus.ADMITTED)
-                    record_progress(PlanningDecisionStatus.COMPILED)
-                    continuation = PlanningRepairStore(self.store).get_by_decision(decision_id)
-                    if continuation is None:
-                        if preview_candidate is None or planning_commit_admission is None:
-                            raise RepairContinuationError(
-                                "REPAIR_SOURCE_UNAVAILABLE",
-                                "deferred repair has no frozen preview",
-                            )
-                        authority = planning_commit_admission.authority
-                        read_set = preview_candidate.compilation.delta.read_set
-                        requirements = new_mode.semantics().get_requirements_revision(
-                            mission.id, int(context.requirements_revision)
-                        )
-                        targets = capture_repair_targets(
-                            self.store,
-                            mission_id=mission.id,
-                            plan_revision=int(binding.base_plan_revision),
-                            blocking_attempt_ids=attempt_ids,
-                            source_method_instance_ids=(() if graph_mutation else
-                                (instance_ids,) if isinstance(instance_ids, str) else tuple(instance_ids)),
-                            additional_task_ids=tuple(sorted({str(network.occurrence(occ).task_id)
-                                for occ in preview_candidate.compilation.superseded_occurrences})),
-                        )
-                        authority_binding = RepairAuthorityBinding.from_json(
-                            {
-                                "grant_id": authority.grant_id,
-                                "grant_revision": authority.grant_revision,
-                                "grant_hash": authority.grant_hash,
-                                "policy_hash": authority.policy_hash,
-                                "scope_id": authority.scope_id,
-                                "manager_epoch": int(read_set.manager_epoch),
-                                "scope_epochs": sorted(
-                                    (
-                                        {
-                                            "scope_id": str(item.scope_id),
-                                            "epoch": int(item.validity_epoch),
-                                        }
-                                        for item in read_set.scope_epochs
-                                    ),
-                                    key=lambda item: str(item["scope_id"]),
-                                ),
-                                "requirements_hash": requirements.content_hash(),
-                                "base_network_hash": preview_candidate.source_snapshot_hash,
-                            }
-                        )
-                        defer_planning_repair(
-                            self.store,
-                            DeferredPlanningRepair(
-                                continuation_id=f"repair-{decision_id}",
-                                mission_id=mission.id,
-                                decision_id=decision_id,
-                                request_id=request_id,
-                                command_id=f"plan:{intent.intent_id}",
-                                raw_artifact_ref=TypedRef(
-                                    kind=TypedRefKind.ARTIFACT,
-                                    id=raw_artifact_ref,
-                                    revision=1,
-                                    content_hash=raw_hash,
-                                ),
-                                raw_hash=raw_hash,
-                                decision_hash=canonical_hash,
-                                codec_version="planning-decision-v1",
-                                package_hash=binding.package_hash,
-                                prompt_hash=binding.prompt_hash,
-                                base_plan_revision=int(binding.base_plan_revision),
-                                requirements_revision=int(binding.requirements_revision),
-                                authority_binding=authority_binding,
-                                targets=targets,
-                                preview_hash=preview_candidate.compilation_hash,
-                                authority_hash=sha256_hex(authority.to_json()),
-                                operations_hash=planning_commit_admission.operations.read_digest,
-                                delta_hash=sha256_hex(
-                                    preview_candidate.compilation.delta.to_json()
-                                ),
-                            ),
-                            now_ms=int(self.store.now * 1000),
-                        )
-            except (ContractError, RepairContinuationError, StoreConflict) as error:
-                refusal_code = commit_rejection_code(
-                    getattr(error, "code", "INTERNAL_CONTRACT_ERROR")
-                )
-                record_decision(
-                    request_id=request_id,
-                    attempt_ordinal=attempt_ordinal,
-                    raw_output_hash=raw_hash,
-                    raw_artifact_ref=raw_artifact_ref,
-                    decision_id=decision_id,
-                    status=PlanningDecisionStatus.COMMIT_REJECTED,
-                    rejection_codes=(refusal_code,),
-                    detail={"error": str(error)[:300]},
-                    canonical_json=canonical_json,
-                    canonical_hash=canonical_hash,
-                    decision_type=str(decision.decision_type),
-                )
-                self._settle_intent(intent, "FAILED")
-                self._settle_service_if_known(intent.subject_id, mission.id)
-                return
-            self._settle_intent(intent, "SETTLED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            await self._stop_deferred_repair_work(mission.id)
-            await self._release_cancelled_repair_work(mission.id)
-            self._note(
-                f"mission {mission.id}: repair compile deferred on "
-                f"{list(attempt_ids)} ({REPAIR_BLOCKED_BY_RUNNING_WORK})"
-            )
-            return
-
-        if (isinstance(pre_admitted, PreAdmittedPlanningDecision)
-            and decision.decision_type in {PlanningDecisionType.REPAIR, PlanningDecisionType.BIND_EXISTING_GOAL}
-            and preview_candidate is not None and not preview_candidate.mapped_problems
-            and planning_commit_admission is not None
-            and planning_commit_admission.taskgraph_candidate is None
-            and planning_commit_admission.runtime_work.requires_convergence):
-            pending = planning_commit_admission.runtime_work
-            if pending.retiring_instance_ids or preview_candidate.compilation.superseded_occurrences:
-                await defer_current_repair(pending.retiring_instance_ids,
-                    tuple(str(ref["attempt_id"]) for ref in pending.live_attempt_refs))
-                return
         admitted = admit_planning_decision(decision, context=context)
         if not isinstance(admitted, AdmittedPlanningDecision):
             codes = [str(code) for code in admitted.rejection_codes]
@@ -7046,19 +6738,6 @@ class Orchestrator:
                         decision_type=str(decision.decision_type),
                         plan_revision=plan_outcome.receipt.new_plan_revision,
                     )
-                    if repair_resume is not None:
-                        from .planning_repair_continuations import (
-                            RepairResumeResult, ResumeState, settle_claimed_planning_repair,
-                        )
-
-                        if repair_resume.continuation.decision_id != decision_id:
-                            raise StoreConflict("resumed repair Decision identity differs")
-                        settle_claimed_planning_repair(
-                            self.store, repair_resume, owner_id=self._owner,
-                            now_ms=int(self.store.now * 1000),
-                            result=RepairResumeResult(ResumeState.APPLIED, "REPAIR_APPLIED",
-                                preview_hash=preview_candidate.compilation_hash),
-                        )
                     new_mode.advance_compound_phases(mission.id)
                     self._settle_intent(intent, "SETTLED")
                     self._settle_service_if_known(intent.subject_id, mission.id)

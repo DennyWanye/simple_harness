@@ -827,13 +827,6 @@ class CommitService(ProtectedTailCommitsMixin,
             existing = self._store.get_intent_for_subject(subject_id)
             if existing is not None:
                 return existing
-            if task_id is not None:
-                from .planning_repair_continuations import planning_repair_stop_gate
-
-                if planning_repair_stop_gate(self._store, mission_id, task_id):
-                    raise CommitRejected(
-                        "planning repair stop gate blocks a new service intent for this Task"
-                    )
             first_hold = (
                 self.protected_tail_hold(self.critic_tail_id(attempt_id))
                 if kind == "critic" and attempt_id is not None and task_id is not None else None
@@ -1499,12 +1492,6 @@ class CommitService(ProtectedTailCommitsMixin,
             task = self._require_task(task_id)
             if task.accepted_result_id:
                 raise CommitRejected("accepted preparation waits for completion, not another Worker")
-            from .planning_repair_continuations import planning_repair_stop_gate
-
-            if planning_repair_stop_gate(self._store, task.mission_id, task.id):
-                raise CommitRejected(
-                    "planning repair stop gate blocks a new Attempt for this Task"
-                )
             if task.status not in {TaskStatus.READY, TaskStatus.ACTIVE, TaskStatus.VERIFYING}:
                 raise CommitRejected(f"task {task_id} is {task.status}; no new Attempt")
             from .failure_classes import NON_MODEL_FAILURE_CAP, non_model_failures

@@ -177,10 +177,6 @@ class ProviderBudgetCommitAdapter:
                     raise _deny("provider parent Attempt is terminal")
                 task_id = parent_attempt.task_id
         if task_id:
-            from ..orchestrator.planning_repair_continuations import planning_repair_stop_gate
-
-            if planning_repair_stop_gate(self.store, mission.id, str(task_id)):
-                raise _deny("planning repair stop gate blocks Provider handoff", reason_code="planning_repair_stop_gate")
             task = self.store.get_task(str(task_id))
             if (
                 task is None
