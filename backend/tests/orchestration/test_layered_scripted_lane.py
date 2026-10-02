@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
@@ -238,3 +239,35 @@ async def test_a_restart_during_a_model_call_resumes_and_completes(orchestration
         assert [a.status.value for a in attempts] == ["LOST", "COMPLETED"]
     finally:
         await asyncio.wait_for(reopened.close(), 30)
+
+
+@pytest.mark.asyncio
+async def test_a_general_mission_with_attached_sources_gives_them_to_the_worker(orchestration_root, principal):
+    """通用任务附资料：资料在建任务的同一个事务里登记，执行者的工作区里读得到，任务照常完成。"""
+
+    from agent_orchestrator.testing.fixtures import package_of
+
+    packages: list[dict] = []
+
+    def worker(request):
+        packages.append(package_of(request))
+        return worker_reply(request)
+
+    provider = LayeredScriptedProvider(worker=worker)
+    service = layered_service(orchestration_root, principal, provider)
+    await asyncio.wait_for(service.start(), 30)
+    try:
+        created = service.create_mission_with_sources({
+            "mission": notes_mission("layered-sources-1"),
+            "sources": [{"path": "sources/policy.md", "content": "# 值班规则\n\n每天九点交接。\n",
+                         "kind": "text/markdown"}],
+        })
+        mission = await run_until_settled(service, created["mission_id"])
+        types = _types(service, mission.id)
+        assert mission.status.value == "COMPLETED", (mission.status.value, types[-15:])
+        assert types.count("SourceRegistered") == 1
+        first = packages[0]
+        assert "sources/policy.md" in first["tools_and_permissions"]["workspace_files"]
+        assert "sources" in json.dumps(first.get("source_roots"), ensure_ascii=False)
+    finally:
+        await asyncio.wait_for(service.close(), 30)
