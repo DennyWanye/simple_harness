@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v17"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v18"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -165,8 +165,8 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "已记录的观察、已接受的结果、这台机器的能力、剩余的规划次数与额度。\n"
         "  - method_selection：系统为每个还没有做法的目标列出的候选做法。系统只按能力和类型把跑不了的"
         "筛掉，没有替你选：候选有一个、多个还是没有，都由你读了做法的步骤和目标的要求之后自己判断。\n"
-        "  - method_proposal_contexts：为每个还没有做法的目标给出写新做法要用的全部材料"
-        "（见下面的 PROPOSE_METHOD）。\n"
+        "  - method_proposal_contexts：为每个还没有做法的目标、以及 under_repair 的目标，给出写新做法要用的"
+        "全部材料（见下面的 PROPOSE_METHOD）。\n"
         "  - repair_requests：真实发生的失败和程序算出的影响范围，失败的完整记录只在这里。"
         "context 里是事实：哪个事件、"
         "审阅员的全部意见（findings）、这一步第几次失败（step_failures）、连续几次是同样的失败"
@@ -197,7 +197,8 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "  - REPAIR（payload.repair_kind 为下列之一）：\n"
         "      REPLACE_METHOD：退掉一个已采用的做法实例、换一个做法；rejected_method_instance 与 "
         "replacement_method_ref 都从 visible_refs 照抄。被修复请求指向的、已经细化过的目标是 "
-        "views.goals 里 under_repair=true 的那些（含目标参数与当前采用的做法实例）。\n"
+        "views.goals 里 under_repair=true 的那些（含目标参数与当前采用的做法实例）。替换的做法可以是 "
+        "views.methods 里别的做法，也可以先用 PROPOSE_METHOD 为这个目标提一个，审阅通过后再换。\n"
         "      REFINE_DEEPER：继续分解一个已存在、还没有做法的目标；payload 为 repair_kind、method_ref、"
         "bindings，subject_key 是该目标。\n"
         "      RETRY_SAME_METHOD：原步骤、原做法再做一次；payload 为 repair_kind、failed_attempt_id"

@@ -191,6 +191,7 @@ def read_planner_package(
     # what the Planner is asked about, and what its decisions may name ----------------
     sharing = graph_repair_sources(store, network)
     open_goals = {choice["occurrence_id"] for choice in choices}
+    repaired = {str(item) for item in under_repair}
     # A successor replaces a step the plan already holds.  Before the first plan there
     # is none, and the type catalogue says nothing the Planner can use; the types it
     # may build a *method* from are in ``method_proposal_contexts``.
@@ -202,10 +203,14 @@ def read_planner_package(
         "method_selection": choices,
         # Written for every goal that has no method yet, however many candidates it
         # has: the Planner may judge at any time that none of them fits and propose one.
+        # And for every refined goal a repair request is about (2026-10-03): whether to
+        # retry or to replace the method is the Planner's call, and replacing it needs a
+        # method to replace it with — the desktop has no seed library to pick from.
         "method_proposal_contexts": [
             {"subject_key": goal["subject_key"],
              "request": dispatch.method_proposal_context(mission.id, goal["task_id"])}
-            for goal in goals if goal["occurrence_id"] in open_goals],
+            for goal in goals
+            if goal["occurrence_id"] in open_goals or str(goal["occurrence_id"]) in repaired],
         "sharing_candidates": list(sharing),
         "successor_types": ([task_type_row(spec, world.schemas) for spec in world.catalog.task_types()]
                             if has_steps else []),

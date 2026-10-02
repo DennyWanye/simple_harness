@@ -1,5 +1,5 @@
 {
-  "deployment_id": "d8d66f96773280c60a2b1b0d63007f40fd1e887573a6ad6828e95e2de08408cc",
+  "deployment_id": "0e1ee1c0494af133f1d5020711ad1053f829501539ff55c533ec237119879fd2",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -215,7 +215,7 @@
     "agent_orchestrator/orchestrator/operation_reconciliation.py": "b256bca28e0f2c3664c3cae2c94f8ae2e0d8cfd03487a80f5d414130506ca392",
     "agent_orchestrator/orchestrator/operation_runtime.py": "da7251945b84f7cc939a88aaa62b472efc00a26bfe3f856c34e081dbc02c49cb",
     "agent_orchestrator/orchestrator/plan_commits.py": "501f28b42e404cf8dcade72f26dad9e4798cfca72c3cd62f1008e72675c2fedc",
-    "agent_orchestrator/orchestrator/planner_views.py": "a92f02994bb77f92d446afb45fd50c80dd735b8c9df08c747f0f452ff1573f9a",
+    "agent_orchestrator/orchestrator/planner_views.py": "34565d26152f3122739057b7f494eccb949071c47ce60cd9fd70b8c0ff14cc7e",
     "agent_orchestrator/orchestrator/planning_admission_commits.py": "50a785756b1ef612d071314eb385919c43d3a534bf5b5149f323baf813f25022",
     "agent_orchestrator/orchestrator/planning_backend_commit.py": "2a93f2465d658174df17b8c16588c52e78332188e5f80e5275c2d221eb0c3baa",
     "agent_orchestrator/orchestrator/planning_backend_runtime.py": "dc8951379fa9baf2844be61cebaecf1cbf0289e9c2f5e6919ebdf4c39e113163",
@@ -359,7 +359,7 @@
     "agent_orchestrator/runtime/output_blocks.py": "43b2f1cb7c10556ecc42c531ce7651d053b71d5937294921d64a8c90b8038fc8",
     "agent_orchestrator/runtime/planning_operations.py": "aa68f8c22e768ed967a67997a70a49026234c3c4228872be964afcb0e29febe1",
     "agent_orchestrator/runtime/provider_budget_guard.py": "3f2bbe761c3e726c32f863891e1a44541ddbea390c47ce1c56ee66fa15016c3f",
-    "agent_orchestrator/runtime/role_templates.py": "d9dab9d75ccf8420591cf3a580a65bba6f3ebeb7feef1d6a4619df7282057fe6",
+    "agent_orchestrator/runtime/role_templates.py": "e98c8fdc89f9d803285e33b9e24b2684bf8cc627d34c0b7bc12df6cefbad2d44",
     "agent_orchestrator/runtime/sandbox.py": "9a257d133a5b54da66649e23cbbe6af11d91027126e0c9cecb8200d97bd87f89",
     "agent_orchestrator/runtime/taskgraph_local_work.py": "7633316454532fba9aa50890b3c92513c70e67dd18737e2bd0784739310dd623",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "26cafeaaad2c2684bc9058c730616ea962ef6056f5038ad60e0b1c3f0d581219",
